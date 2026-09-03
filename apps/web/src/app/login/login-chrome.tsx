@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft } from "lucide-react";
+import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -99,9 +100,23 @@ export function LoginLayout({
 
         <div className="mx-auto w-full max-w-md border-t border-line pt-4">
           {footer ?? (
-            <p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">
-              Secure identity by Clerk · application data by Convex
-            </p>
+            <div className="space-y-2 text-center">
+              <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
+                <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="hover:text-ink" dir="ltr">WhatsApp {RIVET_CONTACT.phoneDisplay}</a>
+                <span aria-hidden>·</span>
+                <a href={RIVET_CONTACT.instagramHref} target="_blank" rel="noreferrer" className="hover:text-ink" dir="ltr">{RIVET_CONTACT.instagramHandle}</a>
+                <span aria-hidden>·</span>
+                {LEGAL_LINKS.map((item, index) => (
+                  <span key={item.href} className="contents">
+                    {index > 0 ? <span aria-hidden>·</span> : null}
+                    <Link href={item.href} className="hover:text-ink">{item.label}</Link>
+                  </span>
+                ))}
+              </p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">
+                Secure identity by Clerk · application data by Convex
+              </p>
+            </div>
           )}
         </div>
       </div>

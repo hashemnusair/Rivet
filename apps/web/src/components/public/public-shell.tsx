@@ -22,6 +22,7 @@ import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { MemberPwaManager } from "@/components/pwa/member-pwa";
 
@@ -170,7 +171,7 @@ function MarketingSignedOutActions({ mobile = false, onClose }: { mobile?: boole
 export function PublicFooter() {
   return (
     <footer className="night-surface bg-night text-night-ink">
-      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.5fr_1fr_1fr_1fr] lg:px-12">
+      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.5fr_1fr_1fr_1fr_1fr] lg:px-12">
         <div>
             <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={36} />
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
@@ -201,10 +202,22 @@ export function PublicFooter() {
             ["Sign in to RIVET", "/login"],
           ]}
         />
+        <nav aria-label="Contact RIVET">
+          <p className="font-mono text-[10px] uppercase tracking-[0.17em] text-night-ink-3">Contact</p>
+          <div className="mt-4 grid gap-3 text-[13px]">
+            <a href={RIVET_CONTACT.phoneHref} className="text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>
+            <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink">WhatsApp RIVET</a>
+            <a href={RIVET_CONTACT.instagramHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.instagramHandle}</a>
+            <span className="text-night-ink-3">{RIVET_CONTACT.city}</span>
+          </div>
+        </nav>
       </div>
       <div className="border-t border-night-line px-5 py-5 sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 font-mono text-[9.5px] uppercase tracking-[0.14em] text-night-ink-3">
           <span>© 2026 RIVET · Amman, Jordan</span>
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {LEGAL_LINKS.map((item) => <Link key={item.href} href={item.href} className="transition-colors hover:text-night-ink">{item.label}</Link>)}
+          </span>
           <span>Every member. Every dinar. Every shift.</span>
         </div>
       </div>
@@ -387,9 +400,12 @@ export function CustomerShell({ children }: { children: ReactNode }) {
         <footer className="border-t border-line bg-surface">
           <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-4 py-5 text-[12px] text-ink-3 sm:px-6 lg:px-8">
             <span className="font-mono text-[9.5px] uppercase tracking-[0.14em]">© 2026 RIVET · Amman</span>
-            <nav className="flex flex-wrap items-center gap-5">
+            <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">
               <Link href="/" className="transition-colors hover:text-ink">RIVET for gyms</Link>
               <Link href="/customer/discover" className="transition-colors hover:text-ink">Find a gym</Link>
+              <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="transition-colors hover:text-ink" dir="ltr">WhatsApp {RIVET_CONTACT.phoneDisplay}</a>
+              <a href={RIVET_CONTACT.instagramHref} target="_blank" rel="noreferrer" className="transition-colors hover:text-ink" dir="ltr">{RIVET_CONTACT.instagramHandle}</a>
+              {LEGAL_LINKS.map((item) => <Link key={item.href} href={item.href} className="transition-colors hover:text-ink">{item.label}</Link>)}
             </nav>
           </div>
         </footer>
