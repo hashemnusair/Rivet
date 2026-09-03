@@ -9,8 +9,13 @@
  *
  * This module has no Convex imports so the browser, the mock adapter and
  * the server all render and hash the same document.
+ *
+ * 1.1 removes the quote number and the fixed initial term from the signature
+ * block: the plan comes from the account RIVET set up, fees from RIVET's
+ * written quote or published prices, and the agreement runs until ended
+ * with 30 days' notice. 1.0 was never signed outside tests.
  */
-export const SUBSCRIPTION_AGREEMENT_VERSION = "1.0 · 3 September 2026";
+export const SUBSCRIPTION_AGREEMENT_VERSION = "1.1 · 3 September 2026";
 
 export interface AgreementSection {
   number: string;
@@ -30,16 +35,16 @@ export const SUBSCRIPTION_AGREEMENT_SECTIONS: readonly AgreementSection[] = [
     number: "02",
     heading: "Plan, fees and payment",
     paragraphs: [
-      "The Customer subscribes to the Plan selected in the signature block, with the modules, branches and staff accounts that Plan includes as confirmed in RIVET's written quote referenced there. Fees are those in the quote, in Jordanian dinars, exclusive of sales tax, which is added at the rate in force.",
-      "Fees are invoiced in advance, monthly or yearly as stated in the quote, from the Contract Start Date. Invoices are payable within 14 days by bank transfer, CliQ, card or another method agreed in writing. If an invoice is more than 14 days overdue, RIVET may suspend access after 7 days' written notice, and will restore it on payment. Suspension does not shorten the term or reduce the Fees. RIVET may change Fees for a renewal term with at least 60 days' written notice before the current term ends.",
+      "The Customer subscribes to the Plan shown in the signature block, which RIVET has set up on the Customer's account, with the modules, branches and staff accounts that Plan includes. Fees are those RIVET has quoted to the Customer in writing or, absent a written quote, RIVET's published prices for that Plan, in Jordanian dinars, exclusive of sales tax, which is added at the rate in force.",
+      "Fees are invoiced in advance, monthly or yearly as agreed with RIVET, from the Contract Start Date. Invoices are payable within 14 days by bank transfer, CliQ, card or another method agreed in writing. If an invoice is more than 14 days overdue, RIVET may suspend access after 7 days' written notice, and will restore it on payment. Suspension does not reduce the Fees for the period. RIVET may change Fees with at least 60 days' written notice; a change takes effect from the first billing period that starts after the notice period ends.",
     ],
   },
   {
     number: "03",
-    heading: "Term and renewal",
+    heading: "Term and ending",
     paragraphs: [
-      "This agreement starts on the Contract Start Date and runs for the Initial Term selected in the signature block. It then renews for successive terms of the same length unless either party gives written notice at least 30 days before the end of the current term.",
-      "The Customer may end this agreement early by written notice. Fees for the remainder of the current term remain payable, unless the Customer ends it because RIVET is in material breach and has not fixed the breach within 30 days of written notice.",
+      "This agreement starts on the Contract Start Date and continues until either party ends it. Either party may end it by written notice of at least 30 days; the agreement ends at the close of the billing period in which the notice period expires.",
+      "Fees already invoiced for a period that has started are not refunded, unless the Customer ends this agreement because RIVET is in material breach and has not fixed the breach within 30 days of written notice. After the agreement ends, the Customer's data is handled as section 06 sets out.",
     ],
   },
   {
@@ -88,7 +93,7 @@ export const SUBSCRIPTION_AGREEMENT_SECTIONS: readonly AgreementSection[] = [
     number: "10",
     heading: "Electronic signature",
     paragraphs: [
-      "The parties agree to sign this agreement electronically. The signature captured in RIVET, together with the signatory's details, the date and time of signing, the device used, and the cryptographic fingerprint of this text as displayed, constitutes the signed agreement and has the same legal effect as a handwritten signature under the Electronic Transactions Law No. 15 of 2015. RIVET will countersign and send the Customer a copy of the completed agreement.",
+      "The parties agree to sign this agreement electronically. The signature captured in RIVET, together with the signatory's name and identity document number, the date and time of signing as recorded by RIVET's server, the device used, and the cryptographic fingerprint of this text as displayed, constitutes the signed agreement and has the same legal effect as a handwritten signature under the Electronic Transactions Law No. 15 of 2015. RIVET will countersign and send the Customer a copy of the completed agreement.",
     ],
   },
 ];
@@ -106,7 +111,11 @@ export async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export const AGREEMENT_TERMS_MONTHS = [12, 24] as const;
+/**
+ * Every signed agreement is copied to RIVET's founders as well as to the
+ * signer. The copy carries the masked ID number only.
+ */
+export const AGREEMENT_COPY_RECIPIENTS = ["elias@rivetjo.com", "hashem@rivetjo.com"] as const;
 export const AGREEMENT_PLANS = ["Starter", "Growth", "Pro", "Enterprise"] as const;
 export const AGREEMENT_ID_TYPES = ["national", "passport"] as const;
 export const SIGNATURE_METHODS = ["drawn", "typed"] as const;

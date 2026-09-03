@@ -27,6 +27,7 @@ import type * as identity from "../identity.js";
 import type * as invariants from "../invariants.js";
 import type * as invitations from "../invitations.js";
 import type * as legalAgreement from "../legalAgreement.js";
+import type * as legalAgreementEmail from "../legalAgreementEmail.js";
 import type * as legalAgreementText from "../legalAgreementText.js";
 import type * as managementReports from "../managementReports.js";
 import type * as marketing from "../marketing.js";
@@ -85,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   invariants: typeof invariants;
   invitations: typeof invitations;
   legalAgreement: typeof legalAgreement;
+  legalAgreementEmail: typeof legalAgreementEmail;
   legalAgreementText: typeof legalAgreementText;
   managementReports: typeof managementReports;
   marketing: typeof marketing;

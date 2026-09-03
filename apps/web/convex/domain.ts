@@ -234,7 +234,7 @@ const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
 const GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"] as const;
-const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned"] as const;
+const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"] as const;
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};

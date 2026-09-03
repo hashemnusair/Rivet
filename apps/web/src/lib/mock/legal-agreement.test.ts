@@ -14,13 +14,12 @@ beforeEach(async () => {
 
 async function input(overrides: Record<string, unknown> = {}) {
   return {
-    customer: { legalName: "Forge Fitness Club LLC", tradeName: "Forge", address: "Abdoun Circle", city: "Amman", branches: 2 },
-    signatory: { name: "Omar Al-Khatib", title: "Owner", idType: "national" as const, idNumber: "9871234567", phone: "079 555 0101", email: "omar@forgefitness.jo" },
-    subscription: { plan: "Pro" as const, startDate: "2026-10-01", termMonths: 12 },
+    customer: { legalName: "Forge Fitness Club LLC", address: "Abdoun Circle, Amman" },
+    signatory: { name: "Omar Al-Khatib", idType: "national" as const, idNumber: "9871234567", email: "omar@forgefitness.jo" },
+    subscription: { plan: "Pro" as const, startDate: "2026-10-01" },
     consents: { agreement: true, authority: true, electronic: true, accurate: true },
     signature: { method: "drawn" as const, imageDataUrl: PNG },
     client: { userAgent: "test", language: "en", viewport: "390x844" },
-    placeOfSigning: "Amman",
     clientDocumentSha256: await sha256Hex(canonicalAgreementText()),
     idempotencyKey: "mock-sign-1",
     ...overrides,
@@ -33,6 +32,7 @@ describe("mock subscription agreement parity", () => {
     expect(session.legal).toEqual({ agreementStatus: "countersigned", agreementReference: "RVT-20260815-FORGE" });
     const context = await api.getSubscriptionAgreementContext();
     expect(context).toMatchObject({ status: "countersigned", canSign: false, agreement: { reference: "RVT-20260815-FORGE", signatory: { idNumberMasked: "••••••4567" } } });
+    expect(Object.keys(context.prefill).sort()).toEqual(["address", "email", "legalName", "plan", "signatoryName", "startDate"]);
     expect(context.sha256).toBe(await sha256Hex(context.text));
     api.setBehavior({ agreementUnsigned: true });
     expect((await api.getSession()).legal).toEqual({ agreementStatus: "required" });
@@ -44,7 +44,8 @@ describe("mock subscription agreement parity", () => {
   it("signs once, masks the ID, replays by key, and lets the platform countersign and reveal with a reason", async () => {
     api.setBehavior({ agreementUnsigned: true });
     await expect(api.signSubscriptionAgreement(await input({ consents: { agreement: true, authority: false, electronic: true, accurate: true } }))).rejects.toMatchObject({ code: ERR.VALIDATION });
-    await expect(api.signSubscriptionAgreement(await input({ signatory: { name: "Omar Al-Khatib", title: "Owner", idType: "national", idNumber: "123", phone: "079", email: "x" } }))).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.signSubscriptionAgreement(await input({ signatory: { name: "Omar Al-Khatib", idType: "national", idNumber: "123", email: "omar@forgefitness.jo" } }))).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.signSubscriptionAgreement(await input({ customer: { legalName: "Forge Fitness Club LLC", address: "" } }))).rejects.toMatchObject({ code: ERR.VALIDATION });
     const signed = await api.signSubscriptionAgreement(await input());
     expect(signed.reference).toMatch(/^RVT-\d{8}-[A-Z2-9]{5}$/);
     expect(signed).toMatchObject({ status: "signed", hashMatch: true, signatory: { idNumberMasked: "••••••4567" } });

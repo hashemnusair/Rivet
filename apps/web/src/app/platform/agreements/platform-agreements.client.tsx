@@ -71,7 +71,7 @@ export function PlatformAgreements() {
                 <TableRow key={row.id} data-testid="platform-agreement-row">
                   <TableCell><span className="font-medium">{row.organizationName}</span><span className="block text-[11.5px] text-ink-3">{row.signatoryName}</span></TableCell>
                   <TableCell><span className="font-mono text-[12px]" dir="ltr">{row.reference}</span>{row.hashMatch ? null : <Badge variant="warning" className="ms-2">Fingerprint mismatch</Badge>}</TableCell>
-                  <TableCell>{row.plan} · {row.termMonths}m</TableCell>
+                  <TableCell>{row.plan}{row.termMonths ? ` · ${row.termMonths}m` : ""}</TableCell>
                   <TableCell dir="ltr">{row.startDate}</TableCell>
                   <TableCell>{formatDateTime(row.signedAt)}</TableCell>
                   <TableCell><Badge variant={row.status === "countersigned" ? "success" : "warning"} dot>{row.status === "countersigned" ? "Countersigned" : "Awaiting RIVET"}</Badge></TableCell>

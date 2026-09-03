@@ -53,17 +53,23 @@
   and appear in the marketing, sign-in and member-portal footers; the gym
   application form names the documents an applicant accepts.
 - **E-signature:** a gym owner who has not signed the subscription agreement
-  is taken to `/onboarding/agreement` before anything else. The agreement
-  text is code-owned and versioned; the server publishes its SHA-256, the
-  browser hashes what it displayed, and a mismatch is flagged for review.
-  The signing records the gym's legal details, the signatory (name, role,
-  national ID or passport, phone, email), plan, contract start date, term,
-  four declarations, a drawn or typed signature, the device, and the server
-  time. The ID number is masked everywhere and revealed only by a platform
-  admin with a reason and an audit event; platform admins countersign from
-  the new Agreements console; signer and countersign copies go through the
-  operational email boundary. The demo gym is seeded as countersigned;
-  `rivet.demo.agreement=required` simulates an unsigned gym in previews.
+  gets a blocking modal over the workspace (no close, Escape and outside
+  clicks ignored) until they sign; staff are never blocked. Three steps:
+  read (agree unlocks only once the end of the text is scrolled into view),
+  details (only the essentials: registered gym name, address, owner's name
+  as on ID, national ID or passport number, contract start date; the plan is
+  shown from the account), sign (drawn or typed signature, two declarations).
+  The agreement text is code-owned and versioned (1.1 · 3 September 2026);
+  the server publishes its SHA-256, the browser hashes what it displayed,
+  and a mismatch is flagged for review. The server clock is the time of
+  signing. A rendered copy (ID masked, full text, fingerprint) is queued to
+  the signer and to elias@rivetjo.com and hashem@rivetjo.com through the
+  operational email boundary. The ID number is masked everywhere and
+  revealed only by a platform admin with a reason and an audit event;
+  platform admins countersign from the Agreements console; the owner views
+  or prints the record under Settings → Agreement. The demo gym is seeded as
+  countersigned; `rivet.demo.agreement=required` simulates an unsigned gym in
+  previews.
 - **Operational email go-live flag:** `RIVET_EMAIL_MODE` = off | sandbox |
   allowlist | live (default off; the legacy boolean is honoured as live only
   while the new variable is unset). Sandbox redirects to

@@ -68,7 +68,7 @@ import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
-import { AGREEMENT_PLANS, AGREEMENT_TERMS_MONTHS, MAX_SIGNATURE_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
+import { AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
@@ -510,7 +510,7 @@ const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
 type PageParams = { page?: number; pageSize?: number; sort?: string; search?: string };
 
 /** Stored agreement row: the view plus the unmasked ID number that only platform admins may reveal. */
-type MockSubscriptionAgreement = Omit<T.SubscriptionAgreement, "signatory"> & { signatory: { name: string; title: string; idType: T.AgreementIdType; idNumber: string; phone: string; email: string } };
+type MockSubscriptionAgreement = Omit<T.SubscriptionAgreement, "signatory"> & { signatory: { name: string; title?: string; idType: T.AgreementIdType; idNumber: string; phone?: string; email: string } };
 
 type MockPlatformAuditEvent = PlatformGymActivity & {
   entityType: "platform_gym" | "platform_plan" | "subscription_agreement";
@@ -10353,18 +10353,11 @@ export class MockGymOSApi implements GymOSApi {
         timezone: organization.timezone,
         prefill: {
           legalName: organization.name,
-          tradeName: organization.name,
-          branches: Math.max(1, branches.length),
-          city: "Amman",
           address: branches[0]?.address,
           signatoryName: user.name,
-          signatoryTitle: "Owner",
-          phone: user.phone,
           email: user.email,
           plan: organization.subscriptionPlan ?? "Growth",
           startDate: organization.subscriptionStartedAt ? managementLocalDate(organization.subscriptionStartedAt, organization.timezone) : this.today(),
-          termMonths: 12,
-          placeOfSigning: "Amman",
         },
         agreement: current ? this.agreementView(current) : undefined,
       };
@@ -10386,31 +10379,32 @@ export class MockGymOSApi implements GymOSApi {
       const legalName = customer.legalName?.trim() ?? "";
       field(legalName.length >= 2 && legalName.length <= 160, "legalName", "Enter the registered name of the gym or company.");
       const address = customer.address?.trim() ?? "";
-      field(address.length >= 3 && address.length <= 240, "address", "Enter the gym's address.");
-      const city = customer.city?.trim() ?? "";
-      field(city.length >= 2 && city.length <= 80, "city", "Enter the city.");
-      field(Number.isSafeInteger(customer.branches) && customer.branches >= 1 && customer.branches <= 100, "branches", "Enter the number of branches (1 to 100).");
+      field(address.length >= 3 && address.length <= 240, "address", "Enter the gym's address, including the city.");
+      const city = customer.city?.trim() || undefined;
+      field(!city || city.length <= 80, "city", "City is too long.");
+      field(customer.branches === undefined || (Number.isSafeInteger(customer.branches) && customer.branches >= 1 && customer.branches <= 100), "branches", "Enter the number of branches (1 to 100).");
       const signatoryName = input.signatory.name?.trim() ?? "";
-      field(signatoryName.length >= 2 && signatoryName.length <= 120, "signatoryName", "Enter the signatory's full name as on their ID.");
-      const signatoryTitle = input.signatory.title?.trim() ?? "";
-      field(signatoryTitle.length >= 2 && signatoryTitle.length <= 80, "signatoryTitle", "Enter the signatory's role at the gym.");
+      field(signatoryName.length >= 2 && signatoryName.length <= 120, "signatoryName", "Enter the owner's full name as on their ID.");
+      const signatoryTitle = input.signatory.title?.trim() || undefined;
+      field(!signatoryTitle || signatoryTitle.length <= 80, "signatoryTitle", "Role is too long.");
       field(input.signatory.idType === "national" || input.signatory.idType === "passport", "idType", "Choose the ID document.");
       const idNumber = input.signatory.idNumber?.trim() ?? "";
       field(input.signatory.idType === "national" ? validNationalId(idNumber) : validPassportNumber(idNumber), "idNumber", input.signatory.idType === "national" ? "Enter the ten-digit Jordanian national ID number." : "Enter a valid passport number.");
-      const phone = input.signatory.phone?.trim() ?? "";
-      field(/^\+?[\d\s().-]{7,}$/.test(phone) && phone.length <= 40, "phone", "Enter a phone or WhatsApp number RIVET can reach.");
-      const email = input.signatory.email?.trim().toLowerCase() ?? "";
+      const phone = input.signatory.phone?.trim() || undefined;
+      field(!phone || (/^\+?[\d\s().-]{7,}$/.test(phone) && phone.length <= 40), "phone", "Enter a valid phone number.");
+      const email = (input.signatory.email?.trim() || user.email).toLowerCase();
       field(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), "email", "Enter the email address for the signed copy.");
       field((AGREEMENT_PLANS as readonly string[]).includes(input.subscription.plan), "plan", "Choose a plan.");
       field(validCalendarDate(input.subscription.startDate ?? ""), "startDate", "Enter the contract start date.");
-      field((AGREEMENT_TERMS_MONTHS as readonly number[]).includes(input.subscription.termMonths), "termMonths", "Choose the initial term.");
+      const termMonths = input.subscription.termMonths;
+      field(termMonths === undefined || (Number.isSafeInteger(termMonths) && termMonths >= 1 && termMonths <= 60), "termMonths", "Term must be between 1 and 60 months.");
       for (const key of ["agreement", "authority", "electronic", "accurate"] as const) field(input.consents?.[key] === true, `consent_${key}`, "Every declaration must be accepted before signing.");
       const method = input.signature.method;
       field(method === "drawn" || method === "typed", "signature", "Sign, or type your name instead.");
       const imageDataUrl = input.signature.imageDataUrl?.trim();
       const typedName = input.signature.typedName?.trim();
       if (method === "drawn") field(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length > 200 && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH, "signature", "Draw your signature before signing.");
-      else field(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the signatory's full name.");
+      else field(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the owner's full name.");
       const documentSha256 = await sha256Hex(canonicalAgreementText());
       const clientDocumentSha256 = input.clientDocumentSha256?.trim().toLowerCase() || undefined;
       const now = nowISO();
@@ -10423,7 +10417,7 @@ export class MockGymOSApi implements GymOSApi {
         organizationName: this.db.organization.name,
         customer: { legalName, tradeName: customer.tradeName?.trim() || undefined, registrationNumber: customer.registrationNumber?.trim() || undefined, address, city, branches: customer.branches },
         signatory: { name: signatoryName, title: signatoryTitle, idType: input.signatory.idType, idNumber, phone, email },
-        subscription: { plan: input.subscription.plan, startDate: input.subscription.startDate, termMonths: input.subscription.termMonths, quote: input.subscription.quote?.trim() || undefined },
+        subscription: { plan: input.subscription.plan, startDate: input.subscription.startDate, termMonths, quote: input.subscription.quote?.trim() || undefined },
         consents: { agreement: true, authority: true, electronic: true, accurate: true },
         signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
         client: { userAgent: (input.client?.userAgent ?? "").slice(0, 300), language: (input.client?.language ?? "").slice(0, 20), viewport: (input.client?.viewport ?? "").slice(0, 40) },
@@ -10442,7 +10436,7 @@ export class MockGymOSApi implements GymOSApi {
       this.db.subscriptionAgreements.unshift(row);
       this.behavior.agreementUnsigned = false;
       try { if (typeof window !== "undefined") window.sessionStorage.removeItem("rivet.demo.agreement"); } catch { /* preview only */ }
-      this.audit({ category: "legal", action: "legal.agreement.sign", entityType: "subscription_agreement", entityId: row.id, entityLabel: row.reference, summary: `Signed subscription agreement ${row.reference} (${row.subscription.plan}, ${row.subscription.termMonths} months from ${row.subscription.startDate})`, after: { reference: row.reference, plan: row.subscription.plan, signatory: signatoryName, hashMatch: row.hashMatch ? "yes" : "no", method } });
+      this.audit({ category: "legal", action: "legal.agreement.sign", entityType: "subscription_agreement", entityId: row.id, entityLabel: row.reference, summary: `Signed subscription agreement ${row.reference} (${row.subscription.plan}, from ${row.subscription.startDate})`, after: { reference: row.reference, plan: row.subscription.plan, signatory: signatoryName, hashMatch: row.hashMatch ? "yes" : "no", method } });
       const view = this.agreementView(row);
       this.operationsIdempotency.set(`legal.agreement.sign:${idempotencyKey}`, { signature: "agreement", result: view });
       return view;

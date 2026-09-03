@@ -164,7 +164,7 @@ export interface MockDb {
   shifts: CashShift[];
   supplierPayments: SupplierPayment[];
   /** Signed subscription agreements; the stored row keeps the unmasked ID number. */
-  subscriptionAgreements: Array<Omit<SubscriptionAgreement, "signatory"> & { signatory: { name: string; title: string; idType: AgreementIdType; idNumber: string; phone: string; email: string } }>;
+  subscriptionAgreements: Array<Omit<SubscriptionAgreement, "signatory"> & { signatory: { name: string; title?: string; idType: AgreementIdType; idNumber: string; phone?: string; email: string } }>;
   checkIns: CheckInSummary[];
   leads: LeadRecord[];
   offers: Offer[];

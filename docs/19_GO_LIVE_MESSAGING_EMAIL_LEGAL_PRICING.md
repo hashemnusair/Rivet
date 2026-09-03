@@ -127,10 +127,10 @@ needed) in Arabic and English. The catalogue version is
 |---|---|---|
 | Privacy policy | `/privacy` | Draft 1.0 · 3 September 2026 |
 | Terms of service with the data processing addendum | `/terms` | Draft 1.0 · 3 September 2026 |
-| Subscription agreement, signed at onboarding | `/onboarding/agreement` (owner), `/platform/agreements` (RIVET) | Draft 1.0 · 3 September 2026 |
+| Subscription agreement, signed at onboarding | blocking modal in the app shell (owner); copy under `/settings?section=agreement`; `/platform/agreements` (RIVET) | Draft 1.1 · 3 September 2026 |
 
 All three are consistent with each other (14-day payment terms, 7-day
-suspension notice, 30-day renewal notice, 60-day fee-change notice, 99.5%
+suspension notice, 30-day notice to end, 60-day fee-change notice, 99.5%
 availability target, support 09:00–21:00 Saturday to Thursday, liability
 capped at twelve months of fees, Jordanian law, courts of Amman) and with
 what the platform actually records.
@@ -138,26 +138,48 @@ what the platform actually records.
 ### How the e-signature works
 
 1. A newly provisioned gym's owner signs in; the session says the agreement
-   is required and the app takes them to `/onboarding/agreement`.
-2. The page shows the versioned agreement text next to a form prefilled
-   from the organization and the owner account: registered name, trade
-   name, commercial registration number (optional until invoicing), address,
-   city, branches; signatory name, role, national ID (ten digits) or
-   passport number, phone, email; plan, quote number, contract start date,
-   initial term (12 or 24 months); place of signing.
-3. The signer draws a signature on the canvas or types their full name and
-   adopts it, ticks four declarations, and signs.
-4. The browser hashes the exact text it displayed (SHA-256). The server
+   is required and the app shell opens a modal over the workspace that
+   cannot be closed (no close button, Escape and outside clicks are
+   ignored). Staff are never blocked; they see the workspace as usual.
+2. **Step 1, read.** The modal shows the versioned agreement text with a
+   reading progress bar. "I have read and agree" stays disabled until the
+   end of the text has been scrolled into view.
+3. **Step 2, details.** Only what the agreement needs, prefilled from the
+   account where RIVET already knows it: registered name of the gym or
+   company, gym address (one line, with the city), the owner's full name as
+   on their ID, Jordanian national ID (ten digits) or passport number, and
+   the contract start date. The plan is shown read-only from the account
+   RIVET set up; the signer's copy goes to the account email. Trade name,
+   commercial registration, branch count, role, phone, quote number, term
+   and place of signing are no longer asked for (the record keeps them as
+   optional fields for a future form).
+4. **Step 3, sign.** A summary of the details with the ID masked, a drawn or
+   typed signature, and two declarations (owner or authorised and details
+   true; electronic signature is binding). The "read and agree" click from
+   step 1 is recorded as the agreement consent.
+5. The browser hashes the exact text it displayed (SHA-256). The server
    hashes its own copy, records the signing with **its own clock**, and
    stores the evidence record. A hash mismatch is flagged for review, never
    silently rejected.
-5. The owner sees the signed copy (ID masked) with a print-to-PDF action and
-   receives it by email; RIVET is notified. RIVET countersigns from
-   Platform → Agreements by typing the admin's own name; the signatory gets
-   the countersigned copy by email.
-6. The ID number is stored only in the agreement row (Convex encrypts at
-   rest), masked in every view and audit payload, and revealed to a
+6. **Copies.** The same rendered copy (details with the ID masked, the full
+   agreement text, the fingerprint) is queued to the signer and to
+   `elias@rivetjo.com` and `hashem@rivetjo.com` (`AGREEMENT_COPY_RECIPIENTS`
+   in `convex/legalAgreementText.ts`, kind `subscription_agreement_copy`).
+   All three go through the operational email boundary, so `RIVET_EMAIL_MODE`
+   decides whether anything leaves the platform; the queue rows are the
+   evidence either way. The confirmation screen names all three addresses,
+   then "Continue to RIVET" closes the modal.
+7. RIVET countersigns from Platform → Agreements by typing the admin's own
+   name; the signatory gets the countersigned copy by email. The owner can
+   view or print the record under Settings → Agreement.
+8. The ID number is stored only in the agreement row (Convex encrypts at
+   rest), masked in every view, email and audit payload, and revealed to a
    platform admin only with a reason and a platform audit event.
+
+Agreement text 1.1 (same date) replaced 1.0 before any real signature: the
+signature block no longer carries a quote number or a fixed initial term, so
+section 02 points to RIVET's written quote or published prices and section
+03 runs the agreement until ended with 30 days' notice.
 
 ### Before a lawyer sees them
 

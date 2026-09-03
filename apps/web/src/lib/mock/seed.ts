@@ -2062,7 +2062,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
     subscriptionAgreements: [{
       id: seedUuid(82),
       reference: "RVT-20260815-FORGE",
-      version: "1.0 · 3 September 2026",
+      version: "1.1 · 3 September 2026",
       status: "countersigned",
       organizationId: ORG_ID,
       organizationName: "Forge Fitness Club",

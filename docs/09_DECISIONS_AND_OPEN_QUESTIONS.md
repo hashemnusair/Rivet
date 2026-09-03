@@ -192,17 +192,24 @@ decisions explicit:
   first real signature. RIVET's contact details (Instagram @rivet.jo, phone
   077 837 8608, WhatsApp) live in one constant and appear in every footer.
 - **The subscription agreement is signed inside RIVET with RIVET's own
-  e-signature.** The text is code-owned and versioned; the server publishes
-  its SHA-256 and the browser hashes what it displayed, with a mismatch
-  flagged for review, never silently rejected. Signing is owner-only, records
-  the gym's legal details, the signatory's national ID or passport number,
-  plan, contract start date, initial term, four declarations, and a drawn or
-  typed signature; the server clock is the time of signing. RIVET
-  countersigns from the platform console. **Decided:** the ID number is
-  stored in the agreement row on Convex (encrypted at rest), masked
-  everywhere, never in audit payloads, and revealed only by a platform admin
-  with a reason and an audit event. **Open:** field-level encryption of the
-  ID number and capturing the signer's IP address both need a trusted server
+  e-signature, in a modal the owner cannot close.** The text is code-owned
+  and versioned (1.1 · 3 September 2026; 1.0 was never signed for real); the
+  server publishes its SHA-256 and the browser hashes what it displayed, with
+  a mismatch flagged for review, never silently rejected. The flow is read
+  (agree unlocks only at the end of the text), details, sign. **Decided:**
+  ask only what a binding agreement needs: registered gym name, address,
+  owner's name, national ID or passport number, contract start date, then a
+  drawn or typed signature and two declarations; the plan comes from the
+  account RIVET set up and the signer's copy goes to the account email.
+  Trade name, registration number, branches, role, phone, quote, term and
+  place of signing stay optional in the record and are not asked for.
+  **Decided:** every signing is copied to elias@rivetjo.com and
+  hashem@rivetjo.com as well as to the signer, through the operational email
+  boundary, with the ID masked. **Decided:** the ID number is stored in the
+  agreement row on Convex (encrypted at rest), masked everywhere, never in
+  audit payloads or emails, and revealed only by a platform admin with a
+  reason and an audit event. **Open:** field-level encryption of the ID
+  number and capturing the signer's IP address both need a trusted server
   hop (a Next.js route or Convex HTTP action); neither is in this release and
   the privacy policy wording reflects what is actually recorded.
 - **Operational email has one go-live flag**, `RIVET_EMAIL_MODE`

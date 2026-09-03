@@ -38,13 +38,12 @@ async function seeded() {
 
 async function signingInput(overrides: Record<string, unknown> = {}) {
   return {
-    customer: { legalName: "Iron House Fitness Co.", tradeName: "Iron House Gym", registrationNumber: "123456", address: "Mecca Street, Umm Uthaina", city: "Amman", branches: 2 },
-    signatory: { name: "Omar Haddad", title: "Owner", idType: "national", idNumber: "9871234567", phone: "077 123 4567", email: "omar@ironhouse.example" },
-    subscription: { plan: "Growth", startDate: "2026-10-01", termMonths: 12, quote: "Q-1042" },
+    customer: { legalName: "Iron House Fitness Co.", address: "Mecca Street, Umm Uthaina, Amman" },
+    signatory: { name: "Omar Haddad", idType: "national", idNumber: "9871234567", email: "omar@ironhouse.example" },
+    subscription: { plan: "Growth", startDate: "2026-10-01" },
     consents: { agreement: true, authority: true, electronic: true, accurate: true },
     signature: { method: "drawn", imageDataUrl: PNG },
     client: { userAgent: "Mozilla/5.0 (test)", language: "en-JO", viewport: "1440x900" },
-    placeOfSigning: "Amman",
     clientDocumentSha256: await sha256Hex(canonicalAgreementText()),
     idempotencyKey: "sign-1",
     ...overrides,
@@ -62,7 +61,9 @@ describe("subscription agreement e-signature", () => {
     expect(context.sections.map((section) => section.number)).toEqual(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]);
     expect(context.sha256).toBe(await sha256Hex(context.text));
     expect(context.text).toBe(canonicalAgreementText());
-    expect(context).toMatchObject({ status: "required", canSign: true, prefill: { legalName: "Iron House Fitness", signatoryName: "Omar Haddad", email: "omar@ironhouse.example", plan: "Growth", startDate: "2026-10-01", termMonths: 12, branches: 1 } });
+    expect(context).toMatchObject({ status: "required", canSign: true, prefill: { legalName: "Iron House Fitness", address: "Mecca Street, Amman", signatoryName: "Omar Haddad", email: "omar@ironhouse.example", plan: "Growth", startDate: "2026-10-01" } });
+    // The trimmed form never asks for these, so the server does not prefill them.
+    expect(Object.keys(context.prefill).sort()).toEqual(["address", "email", "legalName", "plan", "signatoryName", "startDate"]);
     const session = await owner.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } };
     expect(session.legal).toEqual({ agreementStatus: "required" });
     const managerSession = await manager.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } };
@@ -70,7 +71,7 @@ describe("subscription agreement e-signature", () => {
     expect((await manager.query(api.domain.query, operation("legal.agreement.current")) as Context).canSign).toBe(false);
   });
 
-  it("records a drawn signature with server time, a verified document fingerprint, a masked ID, audit, and an email copy", async () => {
+  it("records a drawn signature with server time, a verified document fingerprint, a masked ID, audit, and copies to the signer and both founders", async () => {
     const { owner, admin, t } = await seeded();
     const signed = await owner.mutation(api.domain.mutate, operation("legal.agreement.sign", await signingInput())) as Agreement;
     expect(signed.reference).toMatch(/^RVT-\d{8}-[A-Z2-9]{5}$/);
@@ -93,7 +94,20 @@ describe("subscription agreement e-signature", () => {
     expect(audits).toHaveLength(1);
     expect(JSON.stringify(audits[0]?.after)).not.toContain("9871234567");
     const emails = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
-    expect(emails.find((row) => row.kind === "subscription_agreement_signed")).toMatchObject({ recipientEmail: "omar@ironhouse.example" });
+    const signerCopy = emails.find((row) => row.kind === "subscription_agreement_signed");
+    expect(signerCopy).toMatchObject({ recipientEmail: "omar@ironhouse.example", subject: `Your signed RIVET subscription agreement ${signed.reference}` });
+    expect(signerCopy?.html).toContain("••••••4567");
+    expect(signerCopy?.text).toContain("10. Electronic signature");
+    const founderCopies = emails.filter((row) => row.kind === "subscription_agreement_copy");
+    expect(founderCopies.map((row) => row.recipientEmail).sort()).toEqual(["elias@rivetjo.com", "hashem@rivetjo.com"]);
+    for (const row of founderCopies) {
+      expect(row.subject).toBe(`Iron House Fitness signed the RIVET subscription agreement (${signed.reference})`);
+      expect(row.html).toContain("••••••4567");
+      expect(`${row.html}${row.text}${row.subject}`).not.toContain("9871234567");
+      expect(row.relatedEntityPublicId).toBe(signed.id);
+    }
+    // A replayed signing must not queue a second set of copies.
+    expect(emails.filter((row) => row.relatedEntityPublicId === signed.id)).toHaveLength(3);
     const notices = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());
     expect(notices.find((row) => row.kind === "subscription_agreement_signed")).toBeDefined();
 
@@ -117,11 +131,14 @@ describe("subscription agreement e-signature", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, signature: { method: "drawn" } })), "VALIDATION_ERROR");
     await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, signature: { method: "typed", typedName: "Someone Else" } })), "VALIDATION_ERROR");
     await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, subscription: { ...base.subscription, startDate: "2026-02-30" } })), "VALIDATION_ERROR");
-    await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, subscription: { ...base.subscription, termMonths: 6 } })), "VALIDATION_ERROR");
+    await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, subscription: { ...base.subscription, termMonths: 0 } })), "VALIDATION_ERROR");
     await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, customer: { ...base.customer, branches: 0 } })), "VALIDATION_ERROR");
+    await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, customer: { legalName: "Iron House Fitness Co." } })), "VALIDATION_ERROR");
+    await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, signatory: { ...base.signatory, email: "not-an-email" } })), "VALIDATION_ERROR");
     expect(await t.run(async (ctx) => await ctx.db.query("subscriptionAgreements").collect())).toHaveLength(0);
-    const typed = await owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, signature: { method: "typed", typedName: "omar haddad" }, signatory: { ...base.signatory, idType: "passport", idNumber: "P1234567" } })) as Agreement;
-    expect(typed).toMatchObject({ signature: { method: "typed" }, signatory: { idNumberMasked: "••••4567" } });
+    // Optional details a future form may add are validated when present and stored as given.
+    const typed = await owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...base, signature: { method: "typed", typedName: "omar haddad" }, signatory: { ...base.signatory, idType: "passport", idNumber: "P1234567", title: "Owner", phone: "077 123 4567" }, customer: { ...base.customer, city: "Amman", branches: 2 }, subscription: { ...base.subscription, termMonths: 12, quote: "Q-1" } })) as Agreement & { customer: Record<string, unknown>; subscription: Record<string, unknown>; placeOfSigning?: string };
+    expect(typed).toMatchObject({ signature: { method: "typed" }, signatory: { idNumberMasked: "••••4567", title: "Owner" }, customer: { city: "Amman", branches: 2 }, subscription: { termMonths: 12, quote: "Q-1" }, placeOfSigning: "Amman" });
     expect((await otherOwner.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } }).legal.agreementStatus).toBe("required");
   });
 

@@ -407,25 +407,27 @@ export interface SubscriptionAgreementCustomer {
   legalName: string;
   tradeName?: string;
   registrationNumber?: string;
+  /** One line, including the city. */
   address: string;
-  city: string;
-  branches: number;
+  city?: string;
+  branches?: number;
 }
 
 export interface SubscriptionAgreementSignatoryView {
   name: string;
-  title: string;
+  title?: string;
   idType: AgreementIdType;
   /** All but the last four characters masked; the full number is platform-only. */
   idNumberMasked: string;
-  phone: string;
+  phone?: string;
+  /** Where the signer's copy is sent; the account email unless changed. */
   email: string;
 }
 
 export interface SubscriptionAgreementTerms {
   plan: AgreementPlan;
   startDate: ISODate;
-  termMonths: number;
+  termMonths?: number;
   quote?: string;
 }
 
@@ -463,7 +465,7 @@ export interface SubscriptionAgreement {
   consents: SubscriptionAgreementConsents;
   signature: SubscriptionAgreementSignature;
   client: SubscriptionAgreementClient;
-  placeOfSigning: string;
+  placeOfSigning?: string;
   /** Server receipt time; the browser clock is never trusted. */
   signedAt: ISODateTime;
   signedAtLocal: string;
@@ -482,18 +484,13 @@ export interface SubscriptionAgreement {
 
 export interface SubscriptionAgreementPrefill {
   legalName: string;
-  tradeName?: string;
-  branches: number;
-  city?: string;
   address?: string;
   signatoryName: string;
-  signatoryTitle: string;
-  phone?: string;
+  /** The account email; the signer's copy goes here. */
   email: string;
+  /** The plan RIVET set up on the account; shown, not chosen, at signing. */
   plan: AgreementPlan;
   startDate: ISODate;
-  termMonths: number;
-  placeOfSigning: string;
 }
 
 /** Everything the signing page needs, from one server call. */
@@ -513,12 +510,12 @@ export interface SubscriptionAgreementContext {
 
 export interface SignSubscriptionAgreementInput {
   customer: SubscriptionAgreementCustomer;
-  signatory: { name: string; title: string; idType: AgreementIdType; idNumber: string; phone: string; email: string };
+  signatory: { name: string; idType: AgreementIdType; idNumber: string; email: string; title?: string; phone?: string };
   subscription: SubscriptionAgreementTerms;
   consents: SubscriptionAgreementConsents;
   signature: SubscriptionAgreementSignature;
   client: SubscriptionAgreementClient;
-  placeOfSigning: string;
+  placeOfSigning?: string;
   clientDocumentSha256: string;
   idempotencyKey: string;
 }
@@ -532,7 +529,7 @@ export interface PlatformAgreementSummary {
   organizationName: string;
   plan: AgreementPlan;
   startDate: ISODate;
-  termMonths: number;
+  termMonths?: number;
   signatoryName: string;
   signedAt: ISODateTime;
   countersignedAt?: ISODateTime;

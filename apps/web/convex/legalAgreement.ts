@@ -3,10 +3,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { domainError, publicOrganizationId, publicUserId, requireActor, requirePlatformAdmin, requireReason, type ActorContext, type RequestArgs } from "./security";
 import { notifyPlatformAdmins } from "./notificationDelivery";
 import { enqueueOperationalEmail } from "./operationalEmail";
+import { renderAgreementCopyEmail, type AgreementCopy } from "./legalAgreementEmail";
 import {
+  AGREEMENT_COPY_RECIPIENTS,
   AGREEMENT_ID_TYPES,
   AGREEMENT_PLANS,
-  AGREEMENT_TERMS_MONTHS,
   MAX_SIGNATURE_IMAGE_LENGTH,
   SIGNATURE_METHODS,
   SUBSCRIPTION_AGREEMENT_SECTIONS,
@@ -153,6 +154,7 @@ async function signingContext(ctx: ReadContext, actor: ActorContext): Promise<Da
     : undefined;
   const timeZone = organization.timezone || "Asia/Amman";
   const startDate = organization.subscriptionStartedAt ? localDate(organization.subscriptionStartedAt, timeZone) : localDate(Date.now(), timeZone);
+  const address = branches.find((branch) => branch.active && branch.address)?.address ?? branches[0]?.address;
   return {
     version: SUBSCRIPTION_AGREEMENT_VERSION,
     sections: SUBSCRIPTION_AGREEMENT_SECTIONS.map((section) => ({ ...section, paragraphs: [...section.paragraphs] })),
@@ -164,21 +166,70 @@ async function signingContext(ctx: ReadContext, actor: ActorContext): Promise<Da
     timezone: timeZone,
     prefill: {
       legalName: organization.name,
-      tradeName: organization.name,
-      branches: Math.max(1, branches.filter((branch) => branch.active && branch.status !== "inactive").length),
-      city: branches[0]?.address ? undefined : "Amman",
-      address: branches[0]?.address,
+      address,
       signatoryName: actor.user.fullName,
-      signatoryTitle: "Owner",
-      phone: actor.user.phone ?? application?.contactNumber,
       email: actor.user.email,
       plan: organization.subscriptionPlan ?? application?.plan ?? "Growth",
       startDate,
-      termMonths: 12,
-      placeOfSigning: "Amman",
     },
     agreement: current ? agreementView(current, organization.name) : undefined,
   };
+}
+
+/** The email-safe projection of a row: masked ID, local times, no image. */
+function agreementCopy(row: AgreementRow, organizationName: string): AgreementCopy {
+  return {
+    reference: row.reference,
+    version: row.agreementVersion,
+    organizationName,
+    customer: { legalName: row.customer.legalName, address: row.customer.address, city: row.customer.city },
+    signatory: { name: row.signatory.name, idType: row.signatory.idType, idNumberMasked: maskIdNumber(row.signatory.idNumber), email: row.signatory.email },
+    subscription: { plan: row.subscription.plan, startDate: row.subscription.startDate },
+    signature: { method: row.signature.method, typedName: row.signature.typedName },
+    signedAtLocal: row.signedAtLocal,
+    timezone: row.timezone,
+    documentSha256: row.documentSha256,
+    hashMatch: row.hashMatch,
+    countersign: row.countersignedAt ? { byName: row.countersignedByName ?? "RIVET", title: row.countersignTitle ?? "", atLocal: localDateTime(row.countersignedAt, row.timezone) } : undefined,
+  };
+}
+
+/**
+ * One copy to the signer and one to each founder address. All of them go
+ * through the operational email boundary, so RIVET_EMAIL_MODE decides
+ * whether anything leaves the platform; the queue rows are the evidence.
+ */
+async function sendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar"): Promise<Doc<"operationalEmailDeliveries">> {
+  const copy = agreementCopy(row, organizationName);
+  const options = { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: process.env.RIVET_SITE_URL };
+  const signerDelivery = await enqueueOperationalEmail(ctx, {
+    organizationId: row.organizationId,
+    kind: "subscription_agreement_signed",
+    templateVersion: row.agreementVersion,
+    language,
+    recipientReference: `agreement:${row.publicId}`,
+    recipientEmail: row.signatory.email,
+    relatedEntityType: "subscription_agreement",
+    relatedEntityPublicId: row.publicId,
+    dedupeKey: `agreement-signed:${row.publicId}`,
+    ...renderAgreementCopyEmail(copy, "signer", options),
+  });
+  const rivetCopy = renderAgreementCopyEmail(copy, "rivet", options);
+  for (const recipient of AGREEMENT_COPY_RECIPIENTS) {
+    await enqueueOperationalEmail(ctx, {
+      organizationId: row.organizationId,
+      kind: "subscription_agreement_copy",
+      templateVersion: row.agreementVersion,
+      language: "en",
+      recipientReference: `agreement:${row.publicId}:rivet`,
+      recipientEmail: recipient,
+      relatedEntityType: "subscription_agreement",
+      relatedEntityPublicId: row.publicId,
+      dedupeKey: `agreement-copy:${row.publicId}:${recipient}`,
+      ...rivetCopy,
+    });
+  }
+  return signerDelivery;
 }
 
 async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -198,6 +249,9 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   const signature = value(input.signature);
   const client = value(input.client);
 
+  // Only what a binding agreement needs: the parties, the signatory's
+  // identity document, the plan RIVET set up, the start date, and the
+  // signature. Everything else stays optional and is never asked for.
   const legalName = trimmed(customer.legalName);
   requireField(legalName.length >= 2 && legalName.length <= MAX_TEXT, "legalName", "Enter the registered name of the gym or company.", correlationId);
   const tradeName = optionalTrimmed(customer.tradeName);
@@ -205,31 +259,31 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   const registrationNumber = optionalTrimmed(customer.registrationNumber);
   requireField(!registrationNumber || registrationNumber.length <= 40, "registrationNumber", "Commercial registration number is too long.", correlationId);
   const address = trimmed(customer.address);
-  requireField(address.length >= 3 && address.length <= MAX_ADDRESS, "address", "Enter the gym's address.", correlationId);
-  const city = trimmed(customer.city);
-  requireField(city.length >= 2 && city.length <= 80, "city", "Enter the city.", correlationId);
-  const branches = typeof customer.branches === "number" ? customer.branches : Number.parseInt(trimmed(customer.branches), 10);
-  requireField(Number.isSafeInteger(branches) && branches >= 1 && branches <= 100, "branches", "Enter the number of branches (1 to 100).", correlationId);
+  requireField(address.length >= 3 && address.length <= MAX_ADDRESS, "address", "Enter the gym's address, including the city.", correlationId);
+  const city = optionalTrimmed(customer.city);
+  requireField(!city || city.length <= 80, "city", "City is too long.", correlationId);
+  const branches = customer.branches === undefined || customer.branches === null || customer.branches === "" ? undefined : typeof customer.branches === "number" ? customer.branches : Number.parseInt(trimmed(customer.branches), 10);
+  requireField(branches === undefined || (Number.isSafeInteger(branches) && branches >= 1 && branches <= 100), "branches", "Enter the number of branches (1 to 100).", correlationId);
 
   const signatoryName = trimmed(signatory.name);
-  requireField(signatoryName.length >= 2 && signatoryName.length <= 120, "signatoryName", "Enter the signatory's full name as on their ID.", correlationId);
-  const signatoryTitle = trimmed(signatory.title);
-  requireField(signatoryTitle.length >= 2 && signatoryTitle.length <= 80, "signatoryTitle", "Enter the signatory's role at the gym.", correlationId);
+  requireField(signatoryName.length >= 2 && signatoryName.length <= 120, "signatoryName", "Enter the owner's full name as on their ID.", correlationId);
+  const signatoryTitle = optionalTrimmed(signatory.title);
+  requireField(!signatoryTitle || signatoryTitle.length <= 80, "signatoryTitle", "Role is too long.", correlationId);
   const idType = trimmed(signatory.idType) as (typeof AGREEMENT_ID_TYPES)[number];
   requireField(AGREEMENT_ID_TYPES.includes(idType), "idType", "Choose the ID document.", correlationId);
   const idNumber = trimmed(signatory.idNumber);
   requireField(idType === "national" ? validNationalId(idNumber) : validPassportNumber(idNumber), "idNumber", idType === "national" ? "Enter the ten-digit Jordanian national ID number." : "Enter a valid passport number.", correlationId);
-  const phone = trimmed(signatory.phone);
-  requireField(validPhone(phone) && phone.length <= 40, "phone", "Enter a phone or WhatsApp number RIVET can reach.", correlationId);
-  const email = trimmed(signatory.email).toLowerCase();
+  const phone = optionalTrimmed(signatory.phone);
+  requireField(!phone || (validPhone(phone) && phone.length <= 40), "phone", "Enter a valid phone number.", correlationId);
+  const email = (optionalTrimmed(signatory.email) ?? actor.user.email).toLowerCase();
   requireField(validEmail(email) && email.length <= 160, "email", "Enter the email address for the signed copy.", correlationId);
 
   const plan = trimmed(subscription.plan) as (typeof AGREEMENT_PLANS)[number];
   requireField(AGREEMENT_PLANS.includes(plan), "plan", "Choose a plan.", correlationId);
   const startDate = trimmed(subscription.startDate);
   requireField(validCalendarDate(startDate), "startDate", "Enter the contract start date.", correlationId);
-  const termMonths = typeof subscription.termMonths === "number" ? subscription.termMonths : Number.parseInt(trimmed(subscription.termMonths), 10);
-  requireField((AGREEMENT_TERMS_MONTHS as readonly number[]).includes(termMonths), "termMonths", "Choose the initial term.", correlationId);
+  const termMonths = subscription.termMonths === undefined || subscription.termMonths === null || subscription.termMonths === "" ? undefined : typeof subscription.termMonths === "number" ? subscription.termMonths : Number.parseInt(trimmed(subscription.termMonths), 10);
+  requireField(termMonths === undefined || (Number.isSafeInteger(termMonths) && termMonths >= 1 && termMonths <= 60), "termMonths", "Term must be between 1 and 60 months.", correlationId);
   const quote = optionalTrimmed(subscription.quote);
   requireField(!quote || quote.length <= 60, "quote", "Quote number is too long.", correlationId);
 
@@ -244,11 +298,11 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   if (method === "drawn") {
     requireField(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH && imageDataUrl!.length > 200, "signature", "Draw your signature before signing.", correlationId);
   } else {
-    requireField(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the signatory's full name.", correlationId);
+    requireField(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the owner's full name.", correlationId);
   }
 
-  const placeOfSigning = trimmed(input.placeOfSigning) || city;
-  requireField(placeOfSigning.length <= 80, "placeOfSigning", "Place of signing is too long.", correlationId);
+  const placeOfSigning = optionalTrimmed(input.placeOfSigning) ?? city;
+  requireField(!placeOfSigning || placeOfSigning.length <= 80, "placeOfSigning", "Place of signing is too long.", correlationId);
   const clientDocumentSha256 = optionalTrimmed(input.clientDocumentSha256)?.toLowerCase();
   const documentText = canonicalAgreementText();
   const documentSha256 = await sha256Hex(documentText);
@@ -300,8 +354,8 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     entityType: "subscription_agreement",
     entityPublicId: publicId,
     entityLabel: reference,
-    summary: `Signed subscription agreement ${reference} (${plan}, ${termMonths} months from ${startDate})`,
-    after: { reference, version: SUBSCRIPTION_AGREEMENT_VERSION, plan, startDate, termMonths, signatory: signatoryName, hashMatch, method },
+    summary: `Signed subscription agreement ${reference} (${plan}, from ${startDate})`,
+    after: { reference, version: SUBSCRIPTION_AGREEMENT_VERSION, plan, startDate, signatory: signatoryName, hashMatch, method },
     correlationId,
     occurredAt: now,
   });
@@ -312,18 +366,8 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     href: "/platform/agreements",
     dedupeKey: `agreement-signed:${publicId}`,
   });
-  const delivery = await enqueueOperationalEmail(ctx, {
-    organizationId: actor.organization._id,
-    kind: "subscription_agreement_signed",
-    templateVersion: SUBSCRIPTION_AGREEMENT_VERSION,
-    language: actor.organization.defaultLanguage ?? "en",
-    recipientReference: `agreement:${publicId}`,
-    recipientEmail: email,
-    relatedEntityType: "subscription_agreement",
-    relatedEntityPublicId: publicId,
-    dedupeKey: `agreement-signed:${publicId}`,
-  });
   const row = (await ctx.db.query("subscriptionAgreements").withIndex("by_public_id", (q) => q.eq("publicId", publicId)).unique())!;
+  const delivery = await sendAgreementCopies(ctx, row, actor.organization.name, actor.organization.defaultLanguage ?? "en");
   await ctx.db.patch(row._id, { emailDeliveryPublicId: delivery.publicId });
   const result = agreementView({ ...row, emailDeliveryPublicId: delivery.publicId }, actor.organization.name);
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "legal.agreement.sign", key: idempotencyKey, requestHash: documentSha256, result, createdAt: now, expiresAt: now + 90 * 86_400_000 });
@@ -416,6 +460,8 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
       const now = Date.now();
       await ctx.db.patch(row._id, { status: "countersigned", countersignedAt: now, countersignedByUserId: admin.user._id, countersignedByName: admin.user.fullName, countersignTitle: title, countersignTypedName: typedName, updatedAt: now });
       await insertPlatformAudit(ctx, admin, { action: "agreement.countersigned", entityPublicId: row.publicId, entityLabel: row.reference, summary: `Countersigned subscription agreement ${row.reference} for ${organizationName}`, after: { title, hashMatch: row.hashMatch } });
+      const updated = (await ctx.db.get(row._id))!;
+      const rendered = renderAgreementCopyEmail(agreementCopy(updated, organizationName), "signer", { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: process.env.RIVET_SITE_URL });
       await enqueueOperationalEmail(ctx, {
         organizationId: row.organizationId,
         kind: "subscription_agreement_countersigned",
@@ -426,8 +472,8 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
         relatedEntityType: "subscription_agreement",
         relatedEntityPublicId: row.publicId,
         dedupeKey: `agreement-countersigned:${row.publicId}`,
+        ...rendered,
       });
-      const updated = (await ctx.db.get(row._id))!;
       return agreementView(updated, organizationName);
     }
     default:

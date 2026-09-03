@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -15,6 +15,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { useDampedRootOverscroll } from "@/lib/hooks/use-damped-root-overscroll";
 import { cn } from "@/lib/utils/cn";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
+import { SubscriptionAgreementGate } from "@/features/legal/subscription-agreement-modal";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, signedIn, sessionLoading, signIn, sidebarCollapsed } = useApp();
@@ -24,7 +25,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const scrollShellRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const pathname = usePathname();
   const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
   const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
   const convexMode = isConvexMode();
@@ -54,13 +54,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useDampedRootOverscroll(scrollShellRef, workspaceReady);
 
-  // A gym owner who has not signed RIVET's subscription agreement is taken to
-  // the signing step before anything else. Staff are never blocked by it.
+  // A gym owner who has not signed RIVET's subscription agreement gets a
+  // blocking modal over the workspace until they do. Staff are never
+  // blocked by it.
   const agreementRequired = workspaceReady && session?.legal?.agreementStatus === "required";
-  useEffect(() => {
-    if (!agreementRequired || pathname.startsWith("/onboarding/agreement")) return;
-    router.replace("/onboarding/agreement");
-  }, [agreementRequired, pathname, router]);
 
   useEffect(() => {
     if (convexMode || binding.current || sessionLoading || !gymRole || sessionMatchesIdentity) return;
@@ -133,6 +130,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       </div>
+      <SubscriptionAgreementGate required={agreementRequired} />
     </TenantBrandProvider>
   );
 }

@@ -12,7 +12,7 @@ const LEASE_MS = 2 * 60 * 1000;
 type Language = "en" | "ar";
 type MessageClass = "service" | "marketing";
 type Delivery = Doc<"operationalEmailDeliveries">;
-const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned"]);
+const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"]);
 
 function providerConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
@@ -54,6 +54,10 @@ const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: strin
   subscription_agreement_signed: {
     en: { subject: "Your signed RIVET subscription agreement", body: "Thank you for signing your RIVET subscription agreement. Your copy, with your ID number masked, is available in RIVET under Settings → Agreement. RIVET will countersign and confirm the completed agreement." },
     ar: { subject: "اتفاقية اشتراك RIVET الموقّعة", body: "شكرًا لتوقيع اتفاقية اشتراك RIVET. نسختك، مع إخفاء رقم الهوية، متاحة داخل RIVET ضمن الإعدادات ← الاتفاقية. ستوقّع RIVET بدورها وتؤكد الاتفاقية النهائية." },
+  },
+  subscription_agreement_copy: {
+    en: { subject: "A gym signed its RIVET subscription agreement", body: "A gym owner signed the RIVET subscription agreement. The full record, with the signature, is in the platform console under Agreements." },
+    ar: { subject: "وقّع نادٍ اتفاقية اشتراك RIVET", body: "وقّع مالك نادٍ اتفاقية اشتراك RIVET. السجل الكامل مع التوقيع متاح في لوحة المنصة ضمن الاتفاقيات." },
   },
   subscription_agreement_countersigned: {
     en: { subject: "RIVET countersigned your subscription agreement", body: "RIVET has countersigned your subscription agreement. The completed agreement, with both signatures, is available in RIVET under Settings → Agreement." },
