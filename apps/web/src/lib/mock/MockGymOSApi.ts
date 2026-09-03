@@ -66,6 +66,8 @@ import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
+import { resolveMessagingMode } from "../../../convex/messagingMode";
+import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
 import { AGREEMENT_PLANS, AGREEMENT_TERMS_MONTHS, MAX_SIGNATURE_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
@@ -10487,6 +10489,18 @@ export class MockGymOSApi implements GymOSApi {
       this.recordPlatformAudit({ action: "agreement.countersigned", summary: `Countersigned subscription agreement ${row.reference} for ${row.organizationName}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Countersign", after: { title, hashMatch: row.hashMatch } });
       return this.agreementView(row);
     });
+  }
+
+  getMessagingStatus(): Promise<T.MessagingStatus> {
+    return this.respond(() => {
+      const resolution = resolveMessagingMode(typeof process === "undefined" ? {} : process.env);
+      const notifications = this.db.notificationSettings;
+      return { mode: resolution.mode, provider: resolution.provider, whatsappReady: resolution.whatsappReady, smsReady: resolution.smsReady, sandboxConfigured: resolution.sandboxConfigured, allowlistSize: resolution.allowlistSize, warning: resolution.warning, gymDeliveryMode: notifications.automationDeliveryMode, quietHoursStart: notifications.quietHoursStart ?? "22:00", quietHoursEnd: notifications.quietHoursEnd ?? "08:00", catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION };
+    });
+  }
+
+  listMessageTemplateCatalogue(): Promise<T.MessageTemplateCatalogueEntry[]> {
+    return this.respond(() => MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] })));
   }
 
   getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }> {

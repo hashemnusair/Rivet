@@ -344,6 +344,8 @@ async function createDelivery(ctx: MutationCtx, input: {
   quietStart: string;
   quietEnd: string;
   taskDueAt?: number;
+  /** The gym switched external delivery on; the outbound worker will send it. */
+  liveDelivery: boolean;
 }): Promise<{ delivery: Delivery; created: boolean; status: DeliveryStatus }> {
   const consent = input.channel === "staff_task" ? { status: "not_applicable" as const, channelOptedOut: false } : consentForRenewalChannel(input.member, input.channel);
   const phone = cleanPhone(input.member.phone);
@@ -351,7 +353,7 @@ async function createDelivery(ctx: MutationCtx, input: {
   const existing = await ctx.db.query("renewalDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey)).unique();
   if (existing) return { delivery: existing, created: false, status: existing.status };
   const initialReason = suppressionReason(consent.status, input.channel, phone);
-  const initialStatus: DeliveryStatus = initialReason ? "suppressed" : input.channel === "staff_task" ? "queued" : input.quiet ? "deferred" : "sandboxed";
+  const initialStatus: DeliveryStatus = initialReason ? "suppressed" : input.channel === "staff_task" ? "queued" : input.quiet ? "deferred" : input.liveDelivery ? "queued" : "sandboxed";
   const now = input.now;
   const deliveryPublicId = `RENEWAL-${crypto.randomUUID()}`;
   const taskDueAt = input.channel === "staff_task" ? input.taskDueAt : undefined;
@@ -379,6 +381,7 @@ async function createDelivery(ctx: MutationCtx, input: {
     status: initialStatus,
     suppressionReason: initialStatus === "suppressed" ? initialReason : undefined,
     deferredUntil: initialStatus === "deferred" ? input.quietUntil : undefined,
+    nextAttemptAt: initialStatus === "queued" && input.channel !== "staff_task" ? now : undefined,
     attempts: [],
     createdAt: now,
     updatedAt: now,
@@ -395,6 +398,8 @@ async function createDelivery(ctx: MutationCtx, input: {
     await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_message_suppressed", title: "Renewal message suppressed", body: initialReason, occurredAt: now, meta: { deliveryId, channel: input.channel, checkpointDaysBefore: input.checkpoint.days } });
   } else if (initialStatus === "deferred") {
     await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "deferred", afterStatus: "deferred", reason: "Tenant quiet hours", details: { deferredUntil: input.quietUntil }, occurredAt: now });
+  } else if (initialStatus === "queued") {
+    await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "queued", afterStatus: "queued", reason: "Queued for the outbound messaging worker", occurredAt: now });
   } else if (initialStatus === "sandboxed") {
     await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "sandboxed", afterStatus: "sandboxed", reason: "External SMS/WhatsApp provider is sandboxed", occurredAt: now });
     await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_message_sandboxed", title: "Renewal message prepared in sandbox", body: `A ${input.channel} reminder was prepared but not sent.`, occurredAt: now, meta: { deliveryId, channel: input.channel, checkpointDaysBefore: input.checkpoint.days } });
@@ -415,6 +420,7 @@ async function processOrganization(ctx: MutationCtx, organization: Doc<"organiza
   const quietEnd = stringValue(notifications.quietHoursEnd, "08:00");
   const quiet = isQuietHours(organization.timezone || "UTC", quietStart, quietEnd, new Date(now));
   const quietUntil = quiet ? nextQuietHoursEnd(now, organization.timezone || "UTC", quietStart, quietEnd) : undefined;
+  const liveDelivery = stringValue(notifications.automationDeliveryMode, "sandbox") === "live";
   const reconciliation = await reconcileOrganization(ctx, organization, now, today);
   const memberships = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership")).collect();
   const members = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect();
@@ -444,8 +450,9 @@ async function processOrganization(ctx: MutationCtx, organization: Doc<"organiza
     }
     const consent = consentForRenewalChannel(member, delivery.channel);
     const reason = suppressionReason(consent.status, delivery.channel, delivery.recipientPhone);
-    const nextStatus: DeliveryStatus = reason ? "suppressed" : "sandboxed";
+    const nextStatus: DeliveryStatus = reason ? "suppressed" : liveDelivery ? "queued" : "sandboxed";
     await updateDeliveryStatus(ctx, { delivery, status: nextStatus, now, reason, consentStatus: consent.status, consentSource: consent.source, consentChangedAt: consent.changedAt, channelOptedOut: consent.channelOptedOut });
+    if (nextStatus === "queued") await ctx.db.patch(delivery._id, { nextAttemptAt: now, updatedAt: now });
     if (nextStatus === "suppressed") suppressed += 1;
     else {
       sandboxed += 1;
@@ -497,6 +504,7 @@ async function processOrganization(ctx: MutationCtx, organization: Doc<"organiza
       quietUntil,
       quietStart,
       quietEnd,
+      liveDelivery,
       taskDueAt: wallClockUtc(addDays(endDate, -1), 9, 0, organization.timezone || "UTC"),
     });
     if (!result.created) continue;

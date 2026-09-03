@@ -49,6 +49,8 @@ import { operationsMutation, operationsQuery } from "./operations";
 import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
 import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
 import { resolveEmailMode } from "./emailMode";
+import { resolveMessagingMode } from "./messagingMode";
+import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
@@ -5438,6 +5440,26 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const access = await workspaceAccessData(ctx, actor);
       return access.preferences;
     }
+    case "messaging.status": {
+      const resolution = resolveMessagingMode();
+      const settings = (await recordsOf(ctx, actor, "settings"))[0];
+      const notifications = data(data(settings?.data).notifications);
+      return {
+        mode: resolution.mode,
+        provider: resolution.provider,
+        whatsappReady: resolution.whatsappReady,
+        smsReady: resolution.smsReady,
+        sandboxConfigured: resolution.sandboxConfigured,
+        allowlistSize: resolution.allowlistSize,
+        warning: resolution.warning,
+        gymDeliveryMode: stringValue(notifications.automationDeliveryMode, "sandbox"),
+        quietHoursStart: stringValue(notifications.quietHoursStart, "22:00"),
+        quietHoursEnd: stringValue(notifications.quietHoursEnd, "08:00"),
+        catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION,
+      };
+    }
+    case "messaging.templates.catalogue":
+      return MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] }));
     case "workspace.module": {
       const key = stringValue(input.moduleKey);
       if (!WORKSPACE_MODULE_CATALOG.some((module) => module.key === key)) domainError("VALIDATION_ERROR", "Unknown workspace module.", { correlationId: actor.correlationId, details: { module: key } });

@@ -359,6 +359,38 @@ export interface PurchaseOrder {
 }
 
 // ---------------------------------------------------------------------------
+// Outbound messaging (WhatsApp / SMS)
+// ---------------------------------------------------------------------------
+export type MessagingMode = "off" | "sandbox" | "allowlist" | "live";
+
+/** Global provider state plus this gym's own delivery switch; never carries secrets. */
+export interface MessagingStatus {
+  mode: MessagingMode;
+  provider: "twilio" | "none";
+  whatsappReady: boolean;
+  smsReady: boolean;
+  sandboxConfigured: boolean;
+  allowlistSize: number;
+  warning?: string;
+  gymDeliveryMode: "sandbox" | "live";
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  catalogueVersion: string;
+}
+
+export interface MessageTemplateCatalogueEntry {
+  key: string;
+  family: "renewal" | "payment" | "class" | "entry";
+  name: string;
+  category: "utility";
+  channels: Array<"whatsapp" | "sms">;
+  variables: string[];
+  bodyEn: string;
+  bodyAr: string;
+  version: string;
+}
+
+// ---------------------------------------------------------------------------
 // Subscription agreement (e-signature at onboarding)
 // ---------------------------------------------------------------------------
 export type AgreementPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
@@ -2936,8 +2968,9 @@ export type AutomationActionKey = "create_task" | "queue_message" | "notify_mana
 
 export interface AutomationAction {
   key: AutomationActionKey;
-  /** for queue_message */
+  /** for queue_message: a gym template id, or a key from the code-owned catalogue */
   templateId?: UUID;
+  templateKey?: string;
   channel?: "whatsapp" | "sms";
   /** for create_task */
   taskOwnerRole?: RoleKey;
