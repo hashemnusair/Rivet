@@ -205,7 +205,12 @@ decisions explicit:
   place of signing stay optional in the record and are not asked for.
   **Decided:** every signing is copied to elias@rivetjo.com and
   hashem@rivetjo.com as well as to the signer, through the operational email
-  boundary, with the ID masked. **Decided:** the ID number is stored in the
+  boundary, with the ID masked, and each copy carries the agreement as a PDF.
+  **Decided:** the PDF is produced by RIVET's own dependency-free writer
+  rather than a service or an npm library, so the server and the browser
+  build the same bytes and nothing about a contract leaves the platform to be
+  rendered. It draws Latin text only; Arabic in a typed field appears as
+  question marks in the PDF and correctly everywhere else. **Decided:** the ID number is stored in the
   agreement row on Convex (encrypted at rest), masked everywhere, never in
   audit payloads or emails, and revealed only by a platform admin with a
   reason and an audit event. **Open:** field-level encryption of the ID

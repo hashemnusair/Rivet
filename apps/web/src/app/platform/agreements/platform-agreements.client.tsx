@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, FileSignature, PenLine, Printer } from "lucide-react";
+import { Download, Eye, FileSignature, PenLine } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useApp } from "@/lib/providers/app-providers";
 import { formatDateTime } from "@/lib/utils/dates";
 import { AgreementRecord } from "@/features/legal/agreement-record";
+import { downloadAgreementPdf } from "@/features/legal/agreement-pdf";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -144,7 +145,7 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
           )}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => window.print()}><Printer /> Print</Button>
+          <Button variant="secondary" disabled={!agreement} onClick={() => { if (agreement) downloadAgreementPdf(agreement); }} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>
           <Button variant="secondary" onClick={onClose}>Close</Button>
         </DialogFooter>
       </DialogContent>

@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { api } from "./_generated/api";
 import schema from "./schema";
 import { SUBSCRIPTION_AGREEMENT_VERSION, canonicalAgreementText, sha256Hex } from "./legalAgreementText";
+import { decodeBase64 } from "./pdfDocument";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
@@ -108,6 +109,20 @@ describe("subscription agreement e-signature", () => {
     }
     // A replayed signing must not queue a second set of copies.
     expect(emails.filter((row) => row.relatedEntityPublicId === signed.id)).toHaveLength(3);
+
+    // Every copy carries the signed agreement as a PDF a reader can open,
+    // and the PDF never carries the unmasked ID number.
+    for (const row of emails.filter((item) => item.relatedEntityPublicId === signed.id)) {
+      expect(row.attachments).toHaveLength(1);
+      const attachment = row.attachments![0]!;
+      expect(attachment).toMatchObject({ filename: `RIVET-agreement-${signed.reference}.pdf`, contentType: "application/pdf" });
+      const pdf = Array.from(decodeBase64(attachment.contentBase64), (byte) => String.fromCharCode(byte)).join("");
+      expect(pdf.startsWith("%PDF-1.4")).toBe(true);
+      expect(pdf.trimEnd().endsWith("%%EOF")).toBe(true);
+      expect(pdf).toContain("(RIVET subscription agreement) Tj");
+      expect(pdf).toContain("4567 \\(masked\\)");
+      expect(pdf).not.toContain("9871234567");
+    }
     const notices = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());
     expect(notices.find((row) => row.kind === "subscription_agreement_signed")).toBeDefined();
 
@@ -169,5 +184,10 @@ describe("subscription agreement e-signature", () => {
     expect((await owner.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } }).legal.agreementStatus).toBe("countersigned");
     const emails = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
     expect(emails.map((row) => row.kind)).toEqual(expect.arrayContaining(["subscription_agreement_signed", "subscription_agreement_countersigned"]));
+    // The completed copy carries a PDF that shows both signatures.
+    const completed = emails.find((row) => row.kind === "subscription_agreement_countersigned")!;
+    const pdf = Array.from(decodeBase64(completed.attachments![0]!.contentBase64), (byte) => String.fromCharCode(byte)).join("");
+    expect(pdf).toContain("(Elias Hreish, Co-founder");
+    expect(pdf).toContain("Signed and countersigned");
   });
 });

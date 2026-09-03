@@ -108,6 +108,17 @@ describe("subscription agreement modal", () => {
     expect(done).toHaveTextContent("omar@forgefitness.jo");
     expect(done).toHaveTextContent("elias@rivetjo.com · hashem@rivetjo.com");
 
+    // The signed copy is downloadable straight from the confirmation, and it
+    // is a real PDF built from the record.
+    const saved: Array<{ name: string; type: string; bytes: number }> = [];
+    vi.stubGlobal("URL", { ...URL, createObjectURL: (blob: Blob) => { saved.push({ name: "", type: blob.type, bytes: blob.size }); return "blob:agreement"; }, revokeObjectURL: () => {} });
+    const clicks = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { saved[saved.length - 1]!.name = this.download; });
+    await user.click(within(done).getByTestId("download-agreement-pdf"));
+    expect(saved).toEqual([{ name: expect.stringMatching(/^RIVET-agreement-RVT-\d{8}-[A-Z2-9]{5}\.pdf$/), type: "application/pdf", bytes: expect.any(Number) }]);
+    expect(saved[0]!.bytes).toBeGreaterThan(2000);
+    clicks.mockRestore();
+    vi.unstubAllGlobals();
+
     await user.click(within(done).getByTestId("agreement-continue"));
     await waitFor(() => expect(screen.queryByTestId("agreement-modal")).not.toBeInTheDocument());
     expect((await api.getSession()).legal?.agreementStatus).toBe("signed");

@@ -121,6 +121,12 @@ export const AGREEMENT_ID_TYPES = ["national", "passport"] as const;
 export const SIGNATURE_METHODS = ["drawn", "typed"] as const;
 /** PNG data URL cap; a drawn signature at 2× on a phone is well under this. */
 export const MAX_SIGNATURE_IMAGE_LENGTH = 160_000;
+/**
+ * A drawn signature is captured twice: a transparent PNG for the screen and
+ * an opaque JPEG for the PDF, because a PDF embeds JPEG bytes directly and
+ * would otherwise need a decompressor RIVET does not have on the server.
+ */
+export const MAX_SIGNATURE_PRINT_IMAGE_LENGTH = 200_000;
 
 export function maskIdNumber(value: string): string {
   const trimmed = value.trim();

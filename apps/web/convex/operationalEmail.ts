@@ -39,6 +39,7 @@ export interface QueueOperationalEmailInput {
   subject?: string;
   html?: string;
   text?: string;
+  attachments?: Array<{ filename: string; contentType: string; contentBase64: string }>;
 }
 
 function utcIso(value: number): string {
@@ -185,6 +186,7 @@ async function mirrorDelivery(ctx: MutationCtx, delivery: Delivery) {
       mode: attempt.mode,
       deliveredTo: attempt.deliveredTo,
     })),
+    attachments: delivery.attachments?.map((attachment) => ({ filename: attachment.filename, contentType: attachment.contentType, bytes: Math.floor((attachment.contentBase64.length * 3) / 4) })),
     retryPolicy: { maxAttempts: MAX_ATTEMPTS, backoffMinutes: [...RETRY_MINUTES] },
     nextAttemptAt: delivery.nextAttemptAt ? utcIso(delivery.nextAttemptAt) : undefined,
     status: delivery.status,
@@ -238,6 +240,7 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
     subject: input.subject ?? content.subject,
     html: input.html ?? content.html,
     text: input.text ?? content.text,
+    attachments: input.attachments,
     dedupeKey: input.dedupeKey,
     attempts: [],
     status: suppressionReason ? "suppressed" : "queued",
@@ -473,7 +476,14 @@ export const processDue = internalAction({
         const response = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": delivery.dedupeKey },
-          body: JSON.stringify({ from, to: [to], subject, html: delivery.html, text: delivery.text }),
+          body: JSON.stringify({
+            from,
+            to: [to],
+            subject,
+            html: delivery.html,
+            text: delivery.text,
+            ...(delivery.attachments?.length ? { attachments: delivery.attachments.map((attachment) => ({ filename: attachment.filename, content: attachment.contentBase64, content_type: attachment.contentType })) } : {}),
+          }),
         });
         statusCode = response.status;
         accepted = response.ok;

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
 const DEMO_PERSONA_KEY = "rivet.demo.persona";
@@ -65,6 +66,12 @@ test.describe("legal pages and the subscription agreement", () => {
     await expect(done).toContainText("omar@forgefitness.jo");
     await expect(done).toContainText("elias@rivetjo.com");
     await expect(done).toContainText("hashem@rivetjo.com");
+    // The signed copy downloads as a real PDF, the same file RIVET emails.
+    const [download] = await Promise.all([page.waitForEvent("download"), done.getByTestId("download-agreement-pdf").click()]);
+    expect(download.suggestedFilename()).toMatch(/^RIVET-agreement-RVT-\d{8}-[A-Z2-9]{5}\.pdf$/);
+    const saved = await download.path();
+    expect(readFileSync(saved!).subarray(0, 8).toString("latin1")).toBe("%PDF-1.4");
+
     await done.getByTestId("agreement-continue").click();
     await expect(modal).toBeHidden();
     await expect(page).toHaveURL(/\/members$/);

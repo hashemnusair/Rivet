@@ -161,14 +161,16 @@ what the platform actually records.
    hashes its own copy, records the signing with **its own clock**, and
    stores the evidence record. A hash mismatch is flagged for review, never
    silently rejected.
-6. **Copies.** The same rendered copy (details with the ID masked, the full
-   agreement text, the fingerprint) is queued to the signer and to
-   `elias@rivetjo.com` and `hashem@rivetjo.com` (`AGREEMENT_COPY_RECIPIENTS`
-   in `convex/legalAgreementText.ts`, kind `subscription_agreement_copy`).
-   All three go through the operational email boundary, so `RIVET_EMAIL_MODE`
-   decides whether anything leaves the platform; the queue rows are the
-   evidence either way. The confirmation screen names all three addresses,
-   then "Continue to RIVET" closes the modal.
+6. **Copies, with the agreement attached as a PDF.** The same rendered copy
+   (details with the ID masked, the full agreement text, the fingerprint) is
+   queued to the signer and to `elias@rivetjo.com` and `hashem@rivetjo.com`
+   (`AGREEMENT_COPY_RECIPIENTS` in `convex/legalAgreementText.ts`, kind
+   `subscription_agreement_copy`), each carrying
+   `RIVET-agreement-<reference>.pdf`. All three go through the operational
+   email boundary, so `RIVET_EMAIL_MODE` decides whether anything leaves the
+   platform; the queue rows, attachment bytes included, are the evidence
+   either way. The confirmation screen names all three addresses and offers
+   the same PDF as a download, then "Continue to RIVET" closes the modal.
 7. RIVET countersigns from Platform → Agreements by typing the admin's own
    name; the signatory gets the countersigned copy by email. The owner can
    view or print the record under Settings → Agreement.
@@ -193,6 +195,34 @@ section 02 points to RIVET's written quote or published prices and section
   must show members if they collect member IDs
 - Arabic versions of all three documents and which language prevails
   (Terms section 18 currently says English unless the law requires otherwise)
+
+### The PDF
+
+`convex/pdfDocument.ts` is a small PDF writer with no dependencies: the
+standard Helvetica faces, WinAnsi text and JPEG images, which is what a Latin
+contract needs. It has no Convex imports, so the server builds the emailed
+attachment and the browser builds the "Download PDF" file from the same
+record, byte for byte. `convex/legalAgreementPdf.ts` lays out the document:
+the signed details with the ID masked, the full agreement text of the version
+that was signed, the signature, the server time, the fingerprint and the
+countersignature once it exists.
+
+A drawn signature is captured twice: the transparent PNG the app shows on
+screen, and an opaque JPEG (`signature.printImageDataUrl`) for the PDF,
+because a PDF embeds JPEG bytes directly and the server has no image decoder.
+A record without the JPEG twin, including anything signed before this change,
+prints "Signature drawn in RIVET and held with the signed record" instead.
+
+Two limits worth knowing:
+
+- **Latin only.** A standard PDF font cannot draw Arabic, so any Arabic in a
+  typed field, a gym's registered name for instance, appears as question
+  marks in the PDF. The app record and the email body show it correctly.
+  Arabic in the PDF needs an embedded font with shaping, which is not in this
+  release.
+- **The masked ID travels, the full one does not.** A PDF gets forwarded, so
+  it carries the same masked number the app shows. The full number stays in
+  the platform console behind a reason and an audit event.
 
 ### Known limitations recorded in docs/09
 

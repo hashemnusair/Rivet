@@ -5,11 +5,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
+import { MAX_SIGNATURE_PRINT_IMAGE_LENGTH } from "../../../convex/legalAgreementText";
 import type { AgreementSignatureMethod } from "@/lib/domain/types";
 
 export interface SignatureValue {
   method: AgreementSignatureMethod;
   imageDataUrl?: string;
+  /** An opaque JPEG of the same strokes; the PDF embeds JPEG bytes directly. */
+  printImageDataUrl?: string;
   typedName?: string;
 }
 
@@ -73,6 +76,31 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
     if (!hasStrokes) setHasStrokes(true);
   };
 
+  /**
+   * The strokes on white, as a JPEG. A PDF can embed JPEG bytes as they are,
+   * so this is what ends up in the signed agreement file; the transparent PNG
+   * stays the version shown on screen.
+   */
+  const flatten = (canvas: HTMLCanvasElement): string | undefined => {
+    try {
+      const flat = document.createElement("canvas");
+      flat.width = canvas.width;
+      flat.height = canvas.height;
+      const context = flat.getContext("2d");
+      if (!context) return undefined;
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, flat.width, flat.height);
+      context.drawImage(canvas, 0, 0);
+      for (const quality of [0.9, 0.6]) {
+        const encoded = flat.toDataURL("image/jpeg", quality);
+        if (encoded.startsWith("data:image/jpeg") && encoded.length <= MAX_SIGNATURE_PRINT_IMAGE_LENGTH) return encoded;
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   const end = () => {
     if (!drawing.current) return;
     drawing.current = false;
@@ -84,7 +112,8 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
     } catch {
       imageDataUrl = undefined;
     }
-    onChange({ method: "drawn", imageDataUrl: imageDataUrl && imageDataUrl.length > 200 ? imageDataUrl : undefined });
+    const usable = imageDataUrl && imageDataUrl.length > 200 ? imageDataUrl : undefined;
+    onChange({ method: "drawn", imageDataUrl: usable, printImageDataUrl: usable ? flatten(canvas) : undefined });
   };
 
   const clear = () => {
@@ -92,13 +121,13 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
     const context = canvas?.getContext("2d");
     if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
     setHasStrokes(false);
-    onChange({ method: value.method, imageDataUrl: undefined, typedName: value.method === "typed" ? "" : undefined });
+    onChange({ method: value.method, imageDataUrl: undefined, printImageDataUrl: undefined, typedName: value.method === "typed" ? "" : undefined });
   };
 
   return (
     <div className="space-y-3" data-testid="signature-pad">
       <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Signature method">
-        <button type="button" role="radio" aria-checked={value.method === "drawn"} onClick={() => onChange({ method: "drawn", imageDataUrl: undefined })} className={cn("inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-[13px]", value.method === "drawn" ? "border-ink bg-ink text-paper" : "border-line-2 text-ink-2 hover:border-line-3")}>
+        <button type="button" role="radio" aria-checked={value.method === "drawn"} onClick={() => onChange({ method: "drawn", imageDataUrl: undefined, printImageDataUrl: undefined })} className={cn("inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-[13px]", value.method === "drawn" ? "border-ink bg-ink text-paper" : "border-line-2 text-ink-2 hover:border-line-3")}>
           <PenLine className="size-3.5" /> Draw
         </button>
         <button type="button" role="radio" aria-checked={value.method === "typed"} onClick={() => onChange({ method: "typed", typedName: value.typedName ?? "" })} className={cn("inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-[13px]", value.method === "typed" ? "border-ink bg-ink text-paper" : "border-line-2 text-ink-2 hover:border-line-3")}>

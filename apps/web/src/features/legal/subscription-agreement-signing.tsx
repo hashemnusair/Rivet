@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSignature, Printer } from "lucide-react";
+import { Download, FileSignature } from "lucide-react";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { RIVET_CONTACT } from "@/lib/rivet-contact";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { QueryErrorState, StatePanel } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { AgreementRecord } from "./agreement-record";
+import { downloadAgreementPdf } from "./agreement-pdf";
 
 /**
  * The gym's signed subscription agreement, with a print action. Signing
@@ -26,7 +27,7 @@ export function SubscriptionAgreementSigning({ embedded = false }: { embedded?: 
   if (context.agreement) {
     return (
       <div className="space-y-5">
-        {!embedded ? <PageHeader title="Your subscription agreement" description={context.agreement.status === "countersigned" ? "Signed by you and countersigned by RIVET. Keep a copy for your records." : "Signed. RIVET will countersign and confirm the completed agreement by email."} actions={<Button variant="secondary" onClick={() => window.print()}><Printer /> Print or save as PDF</Button>} /> : null}
+        {!embedded ? <PageHeader title="Your subscription agreement" description={context.agreement.status === "countersigned" ? "Signed by you and countersigned by RIVET. Keep a copy for your records." : "Signed. RIVET will countersign and confirm the completed agreement by email."} actions={<Button variant="secondary" onClick={() => downloadAgreementPdf(context.agreement!, context.sections)} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>} /> : null}
         <AgreementRecord agreement={context.agreement} sections={context.sections} />
         {!embedded ? <p className="text-[12.5px] text-ink-3">Questions about the agreement? WhatsApp RIVET on <a href={RIVET_CONTACT.whatsappHref} className="underline underline-offset-4" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>.</p> : null}
       </div>

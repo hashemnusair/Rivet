@@ -440,8 +440,10 @@ export interface SubscriptionAgreementConsents {
 
 export interface SubscriptionAgreementSignature {
   method: AgreementSignatureMethod;
-  /** PNG data URL when drawn. */
+  /** PNG data URL when drawn; what the app shows on screen. */
   imageDataUrl?: string;
+  /** The same drawn signature as an opaque JPEG, for the PDF. */
+  printImageDataUrl?: string;
   typedName?: string;
 }
 

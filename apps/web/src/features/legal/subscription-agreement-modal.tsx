@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, CheckCircle2, FileSignature, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Download, FileSignature, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/switch";
 import { QueryErrorState, StatePanel } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { AGREEMENT_ID_TYPE_LABELS, AgreementText } from "./agreement-record";
+import { downloadAgreementPdf } from "./agreement-pdf";
 import { SignaturePad, type SignatureValue } from "./signature-pad";
 
 type Step = "read" | "details" | "sign";
@@ -231,7 +232,7 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
       signatory: { name: form.signatoryName.trim(), idType: form.idType, idNumber: form.idNumber.trim(), email: prefill.email },
       subscription: { plan: prefill.plan, startDate: form.startDate },
       consents: { agreement: true, authority: declarations.identity, electronic: declarations.electronic, accurate: declarations.identity },
-      signature: signature.method === "drawn" ? { method: "drawn", imageDataUrl: signature.imageDataUrl } : { method: "typed", typedName: signature.typedName?.trim() },
+      signature: signature.method === "drawn" ? { method: "drawn", imageDataUrl: signature.imageDataUrl, printImageDataUrl: signature.printImageDataUrl } : { method: "typed", typedName: signature.typedName?.trim() },
       client: { userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent, language: typeof navigator === "undefined" ? "" : navigator.language, viewport: typeof window === "undefined" ? "" : `${window.innerWidth}x${window.innerHeight}` },
       clientDocumentSha256: clientHash ?? "",
       idempotencyKey,
@@ -351,9 +352,10 @@ function SignedConfirmation({ agreement, finishing, onContinue }: { agreement: S
           <div className="flex justify-between gap-4 rounded-md border border-line px-3 py-2"><dt className="text-ink-3">Your copy</dt><dd className="text-ink" dir="ltr">{agreement.signatory.email}</dd></div>
           <div className="flex justify-between gap-4 rounded-md border border-line px-3 py-2"><dt className="text-ink-3">RIVET&apos;s copies</dt><dd className="text-end text-ink" dir="ltr">{AGREEMENT_COPY_RECIPIENTS.join(" · ")}</dd></div>
         </dl>
-        <p className="mt-5 max-w-md text-[12.5px] text-ink-3">RIVET will countersign and email you the completed agreement. You can view or print your copy any time under Settings → Agreement.</p>
+        <p className="mt-5 max-w-md text-[12.5px] text-ink-3">Your copy is attached to that email as a PDF. RIVET will countersign and send the completed agreement. You can download it again any time under Settings → Agreement.</p>
       </div>
-      <Footer className="justify-end">
+      <Footer>
+        <Button variant="secondary" onClick={() => downloadAgreementPdf(agreement)} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>
         <Button size="lg" loading={finishing} onClick={onContinue} data-testid="agreement-continue">Continue to RIVET <ArrowRight /></Button>
       </Footer>
     </div>

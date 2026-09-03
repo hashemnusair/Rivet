@@ -4,11 +4,13 @@ import { domainError, publicOrganizationId, publicUserId, requireActor, requireP
 import { notifyPlatformAdmins } from "./notificationDelivery";
 import { enqueueOperationalEmail } from "./operationalEmail";
 import { renderAgreementCopyEmail, type AgreementCopy } from "./legalAgreementEmail";
+import { agreementPdfFilename, renderAgreementPdfBase64 } from "./legalAgreementPdf";
 import {
   AGREEMENT_COPY_RECIPIENTS,
   AGREEMENT_ID_TYPES,
   AGREEMENT_PLANS,
   MAX_SIGNATURE_IMAGE_LENGTH,
+  MAX_SIGNATURE_PRINT_IMAGE_LENGTH,
   SIGNATURE_METHODS,
   SUBSCRIPTION_AGREEMENT_SECTIONS,
   SUBSCRIPTION_AGREEMENT_VERSION,
@@ -102,7 +104,7 @@ function agreementView(row: AgreementRow, organizationName: string, options: { r
     },
     subscription: { ...row.subscription },
     consents: { ...row.consents },
-    signature: { method: row.signature.method, imageDataUrl: row.signature.imageDataUrl, typedName: row.signature.typedName },
+    signature: { method: row.signature.method, imageDataUrl: row.signature.imageDataUrl, printImageDataUrl: row.signature.printImageDataUrl, typedName: row.signature.typedName },
     client: { ...row.client },
     placeOfSigning: row.placeOfSigning,
     signedAt: iso(row.signedAt),
@@ -185,12 +187,27 @@ function agreementCopy(row: AgreementRow, organizationName: string): AgreementCo
     customer: { legalName: row.customer.legalName, address: row.customer.address, city: row.customer.city },
     signatory: { name: row.signatory.name, idType: row.signatory.idType, idNumberMasked: maskIdNumber(row.signatory.idNumber), email: row.signatory.email },
     subscription: { plan: row.subscription.plan, startDate: row.subscription.startDate },
-    signature: { method: row.signature.method, typedName: row.signature.typedName },
+    signature: { method: row.signature.method, typedName: row.signature.typedName, printImageDataUrl: row.signature.printImageDataUrl },
     signedAtLocal: row.signedAtLocal,
     timezone: row.timezone,
     documentSha256: row.documentSha256,
     hashMatch: row.hashMatch,
     countersign: row.countersignedAt ? { byName: row.countersignedByName ?? "RIVET", title: row.countersignTitle ?? "", atLocal: localDateTime(row.countersignedAt, row.timezone) } : undefined,
+  };
+}
+
+/** The signed agreement as a PDF, named by its reference. */
+function agreementPdfAttachment(row: AgreementRow, organizationName: string): { filename: string; contentType: string; contentBase64: string } {
+  const copy = agreementCopy(row, organizationName);
+  return {
+    filename: agreementPdfFilename(row.reference),
+    contentType: "application/pdf",
+    contentBase64: renderAgreementPdfBase64({
+      ...copy,
+      status: row.status,
+      placeOfSigning: row.placeOfSigning,
+      signature: { method: row.signature.method, typedName: row.signature.typedName, printImageDataUrl: row.signature.printImageDataUrl },
+    }, SUBSCRIPTION_AGREEMENT_SECTIONS),
   };
 }
 
@@ -202,6 +219,7 @@ function agreementCopy(row: AgreementRow, organizationName: string): AgreementCo
 async function sendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar"): Promise<Doc<"operationalEmailDeliveries">> {
   const copy = agreementCopy(row, organizationName);
   const options = { sections: SUBSCRIPTION_AGREEMENT_SECTIONS, siteUrl: process.env.RIVET_SITE_URL };
+  const attachments = [agreementPdfAttachment(row, organizationName)];
   const signerDelivery = await enqueueOperationalEmail(ctx, {
     organizationId: row.organizationId,
     kind: "subscription_agreement_signed",
@@ -212,6 +230,7 @@ async function sendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organiza
     relatedEntityType: "subscription_agreement",
     relatedEntityPublicId: row.publicId,
     dedupeKey: `agreement-signed:${row.publicId}`,
+    attachments,
     ...renderAgreementCopyEmail(copy, "signer", options),
   });
   const rivetCopy = renderAgreementCopyEmail(copy, "rivet", options);
@@ -226,6 +245,7 @@ async function sendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organiza
       relatedEntityType: "subscription_agreement",
       relatedEntityPublicId: row.publicId,
       dedupeKey: `agreement-copy:${row.publicId}:${recipient}`,
+      attachments,
       ...rivetCopy,
     });
   }
@@ -294,9 +314,13 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   const method = trimmed(signature.method) as (typeof SIGNATURE_METHODS)[number];
   requireField(SIGNATURE_METHODS.includes(method), "signature", "Sign, or type your name instead.", correlationId);
   const imageDataUrl = optionalTrimmed(signature.imageDataUrl);
+  const printImageDataUrl = optionalTrimmed(signature.printImageDataUrl);
   const typedName = optionalTrimmed(signature.typedName);
   if (method === "drawn") {
     requireField(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH && imageDataUrl!.length > 200, "signature", "Draw your signature before signing.", correlationId);
+    // The PDF twin is optional: an older client, or a browser that cannot
+    // produce it, still signs. The PDF then says the signature is on file.
+    requireField(!printImageDataUrl || (printImageDataUrl.startsWith("data:image/jpeg;base64,") && printImageDataUrl.length <= MAX_SIGNATURE_PRINT_IMAGE_LENGTH), "signature", "The signature image could not be read. Draw it again.", correlationId);
   } else {
     requireField(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the owner's full name.", correlationId);
   }
@@ -330,7 +354,7 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     signatory: { name: signatoryName, title: signatoryTitle, idType, idNumber, phone, email },
     subscription: { plan, startDate, termMonths, quote },
     consents: { agreement: true, authority: true, electronic: true, accurate: true },
-    signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
+    signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, printImageDataUrl: method === "drawn" ? printImageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
     client: { userAgent: trimmed(client.userAgent).slice(0, 300), language: trimmed(client.language).slice(0, 20), viewport: trimmed(client.viewport).slice(0, 40) },
     placeOfSigning,
     signedAt: now,
@@ -472,6 +496,7 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
         relatedEntityType: "subscription_agreement",
         relatedEntityPublicId: row.publicId,
         dedupeKey: `agreement-countersigned:${row.publicId}`,
+        attachments: [agreementPdfAttachment(updated, organizationName)],
         ...rendered,
       });
       return agreementView(updated, organizationName);

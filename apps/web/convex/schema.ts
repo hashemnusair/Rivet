@@ -1199,6 +1199,8 @@ export default defineSchema({
     subject: v.optional(v.string()),
     html: v.optional(v.string()),
     text: v.optional(v.string()),
+    /** Files sent with the message; the bytes are kept as the record of what left. */
+    attachments: v.optional(v.array(v.object({ filename: v.string(), contentType: v.string(), contentBase64: v.string() }))),
     dedupeKey: v.string(),
     providerId: v.optional(v.string()),
     providerEventAt: v.optional(v.number()),
@@ -1259,6 +1261,7 @@ export default defineSchema({
     signature: v.object({
       method: v.union(v.literal("drawn"), v.literal("typed")),
       imageDataUrl: v.optional(v.string()),
+      printImageDataUrl: v.optional(v.string()),
       typedName: v.optional(v.string()),
     }),
     client: v.object({ userAgent: v.string(), language: v.string(), viewport: v.string(), ipAddress: v.optional(v.string()) }),

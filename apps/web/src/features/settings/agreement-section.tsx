@@ -1,9 +1,10 @@
 "use client";
 
-import { FileSignature, Printer } from "lucide-react";
+import { Download, FileSignature } from "lucide-react";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { AgreementRecord } from "@/features/legal/agreement-record";
+import { downloadAgreementPdf } from "@/features/legal/agreement-pdf";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { QueryErrorState, StatePanel } from "@/components/ui/states";
@@ -23,7 +24,7 @@ export function AgreementSection() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[12.5px] text-ink-3">Version {context.agreement.version} · {context.agreement.status === "countersigned" ? "countersigned by RIVET" : "awaiting RIVET's countersignature"}</p>
-        <Button variant="secondary" size="sm" onClick={() => window.print()}><Printer /> Print or save as PDF</Button>
+        <Button variant="secondary" size="sm" onClick={() => downloadAgreementPdf(context.agreement!, context.sections)} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>
       </div>
       <AgreementRecord agreement={context.agreement} sections={context.sections} />
     </div>

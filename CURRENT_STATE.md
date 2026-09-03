@@ -64,7 +64,11 @@
   and a mismatch is flagged for review. The server clock is the time of
   signing. A rendered copy (ID masked, full text, fingerprint) is queued to
   the signer and to elias@rivetjo.com and hashem@rivetjo.com through the
-  operational email boundary. The ID number is masked everywhere and
+  operational email boundary, each carrying the signed agreement as a PDF.
+  The PDF comes from a dependency-free writer (`convex/pdfDocument.ts`) that
+  the server and the browser share, so the emailed attachment and the
+  "Download PDF" action produce the same file; a drawn signature is stored a
+  second time as an opaque JPEG so the PDF can embed it. The ID number is masked everywhere and
   revealed only by a platform admin with a reason and an audit event;
   platform admins countersign from the Agreements console; the owner views
   or prints the record under Settings → Agreement. The demo gym is seeded as

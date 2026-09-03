@@ -68,7 +68,7 @@ import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
-import { AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
+import { AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
@@ -10403,7 +10403,11 @@ export class MockGymOSApi implements GymOSApi {
       field(method === "drawn" || method === "typed", "signature", "Sign, or type your name instead.");
       const imageDataUrl = input.signature.imageDataUrl?.trim();
       const typedName = input.signature.typedName?.trim();
-      if (method === "drawn") field(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length > 200 && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH, "signature", "Draw your signature before signing.");
+      const printImageDataUrl = input.signature.printImageDataUrl?.trim();
+      if (method === "drawn") {
+        field(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length > 200 && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH, "signature", "Draw your signature before signing.");
+        field(!printImageDataUrl || (printImageDataUrl.startsWith("data:image/jpeg;base64,") && printImageDataUrl.length <= MAX_SIGNATURE_PRINT_IMAGE_LENGTH), "signature", "The signature image could not be read. Draw it again.");
+      }
       else field(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the owner's full name.");
       const documentSha256 = await sha256Hex(canonicalAgreementText());
       const clientDocumentSha256 = input.clientDocumentSha256?.trim().toLowerCase() || undefined;
@@ -10419,7 +10423,7 @@ export class MockGymOSApi implements GymOSApi {
         signatory: { name: signatoryName, title: signatoryTitle, idType: input.signatory.idType, idNumber, phone, email },
         subscription: { plan: input.subscription.plan, startDate: input.subscription.startDate, termMonths, quote: input.subscription.quote?.trim() || undefined },
         consents: { agreement: true, authority: true, electronic: true, accurate: true },
-        signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
+        signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, printImageDataUrl: method === "drawn" ? printImageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
         client: { userAgent: (input.client?.userAgent ?? "").slice(0, 300), language: (input.client?.language ?? "").slice(0, 20), viewport: (input.client?.viewport ?? "").slice(0, 40) },
         placeOfSigning: input.placeOfSigning?.trim() || city,
         signedAt: now,

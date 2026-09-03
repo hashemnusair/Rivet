@@ -12,7 +12,7 @@ export interface AgreementCopy {
   customer: { legalName: string; address: string; city?: string };
   signatory: { name: string; idType: "national" | "passport"; idNumberMasked: string; email: string };
   subscription: { plan: string; startDate: string };
-  signature: { method: "drawn" | "typed"; typedName?: string };
+  signature: { method: "drawn" | "typed"; typedName?: string; printImageDataUrl?: string };
   signedAtLocal: string;
   timezone: string;
   documentSha256: string;
