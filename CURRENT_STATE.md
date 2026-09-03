@@ -1,5 +1,49 @@
 # GymOS / RIVET current implementation state
 
+## Product UI system refinement — 3 September 2026
+
+- **The approved RIVET product identity is now implemented across the app.**
+  The gym workspace, member portal, platform console, authentication,
+  onboarding, offers and public product surfaces use one quieter visual
+  language while the marketing/landing-page system remains untouched.
+  Manrope carries human language; IBM Plex Mono is limited to identifiers,
+  receipt numbers, codes and genuinely technical metadata. Repetitive
+  uppercase eyebrows, colored navigation rails, redundant panel nesting,
+  undersized operational copy and broad `transition-all` motion were removed.
+- **Shared primitives now own the result.** Page context, technical labels,
+  buttons, fields, tables, navigation, tabs and inline/section/page feedback
+  states share the same hierarchy, focus treatment, responsive behavior and
+  reduced-motion contract. Primary and Settings navigation use one tonal
+  active cue. The enclosed Stock & purchasing tabs use that same quiet tonal
+  state instead of the earlier heavy underline. Coarse pointers retain 44px
+  targets and logical-direction properties preserve the later RTL path.
+- **The product reference is reviewable and reproducible.** The gated
+  `/dev/design-system` gallery uses real product components and synthetic data;
+  it is available locally and in explicitly enabled previews and is forced to
+  404 in Production. Deterministic Playwright captures cover the owner
+  dashboard, Members, Settings permissions, Reception, member finance,
+  platform gyms and the gallery at representative phone, tablet and desktop
+  sizes. The product owner approved both the representative checkpoint and the
+  complete preview.
+- **The design source of truth is extracted.** Root `DESIGN.md` contains the
+  normative product tokens and usage rules; `.impeccable/design.json` adds
+  tonal metadata, motion, elevation, breakpoints and nine literal component
+  specimens. Two exact 3840×2400 boards under `docs/brand/` document the
+  identity and its owner/night/member applications. They use the existing
+  RIVET assets and deterministic synthetic product captures—no replacement
+  logo, invented interface or Production tenant data.
+- **Verification is green.** Both TypeScript checks, zero-warning lint and the
+  secret-output audit, 197 Vitest files / 1,175 tests plus 14 repository-safety
+  tests, the 66-route Production build, 64 credential-free Playwright
+  journeys with 14 explicit staging-only skips, the Production dependency
+  audit and `git diff --check` passed. The fresh Web Interface Guidelines
+  review passed the changed product surfaces. The Impeccable detector reported
+  only the pre-existing `marketing-grid` utility, which belongs to the
+  deliberately excluded landing-page system and was left untouched.
+- This was a frontend-only refinement: no Convex schema, domain contract,
+  authorization, money behavior, workflow policy, provider setting or
+  Production data changed. `FRONTEND_HANDOFF.md` remains frozen.
+
 ## Legal pages, e-signature onboarding, email and messaging go-live — 3 September 2026
 
 - **Legal:** `/privacy` and `/terms` (with the data processing addendum) are

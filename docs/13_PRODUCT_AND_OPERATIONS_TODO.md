@@ -1,6 +1,7 @@
 # RIVET product, engineering, and operations backlog
 
-Updated 31 August 2026 for credentialed release verification and the complete quality-of-life implementation batch,
+Updated 3 September 2026 for the approved product UI system refinement,
+credentialed release verification and the complete quality-of-life implementation batch,
 in addition to the 29 August 2026 Production backend closure, owner/platform
 acceptance, public QA cleanup, the current recovery export, the Jordan-first
 workflow-hardening sprint, the unified Today queue, clean-tenant imports,
@@ -16,6 +17,35 @@ consolidates the former
 values, applicant details, and provider credentials out of this file.
 
 ## Current release index — 3 September 2026
+
+### Product UI system refinement — 3 September 2026
+
+- [x] Replace repetitive product eyebrows with sentence-case context labels and
+  reserve technical mono labels for identifiers, references, codes and terse
+  system metadata.
+- [x] Standardize product navigation on one quiet tonal active state, remove
+  colored active rails and simultaneous parent/child signals, and align the
+  enclosed Stock & purchasing tabs with that treatment.
+- [x] Refine shared panels, fields, buttons, tables, loading/error/empty/
+  permission/stale states and product motion across the gym workspace, member
+  portal, platform console, authentication, onboarding, offers and public
+  product surfaces without changing workflows or the landing-page system.
+- [x] Add deterministic responsive visual coverage for the six representative
+  product screens plus the design gallery at phone, tablet and desktop sizes.
+- [x] Add the local/Preview-only `/dev/design-system` gallery with synthetic
+  data and an unconditional Production not-found guard.
+- [x] Extract the implemented product system into root `DESIGN.md`, the
+  `.impeccable/design.json` sidecar and two exact 3840×2400 boards under
+  `docs/brand/`; preserve the existing logo, palette, fonts and tenant accent
+  contract.
+- [x] Obtain product-owner approval for the representative checkpoint and the
+  complete preview. No Convex deploy is required for this frontend-only pass.
+- [x] Pass both TypeScript checks, zero-warning lint/secret audit, 197 Vitest
+  files / 1,175 tests plus 14 repository-safety tests, the 66-route Production
+  build, 64 credential-free browser journeys with 14 staging-only skips, the
+  Production dependency audit, the fresh interface-guideline review and
+  `git diff --check`. The sole Impeccable advisory was the intentionally
+  excluded pre-existing marketing-grid utility.
 
 ### Legal pages, e-signature onboarding, email and messaging go-live flags — 3 September 2026
 
