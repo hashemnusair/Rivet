@@ -204,7 +204,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "cancelled", currentPeriodEndsAt: SELECTED_PERIOD_END, reason: "Reconfirmed cancellation state." }));
     const emails = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "operationalEmailDelivery")).collect()).map((record) => record.data));
     expect(emails.filter((email) => email.kind === "platform_subscription_cancelled")).toHaveLength(1);
-    expect(emails).toEqual([expect.objectContaining({ kind: "platform_subscription_cancelled", status: "suppressed", suppressionReason: expect.stringContaining("disabled or the provider is not configured") })]);
+    expect(emails).toEqual([expect.objectContaining({ kind: "platform_subscription_cancelled", status: "suppressed", suppressionReason: expect.stringMatching(/mode is off/) })]);
   });
 
   it("uses organization lifecycle as the public discovery authority and keeps stale rows out", async () => {
