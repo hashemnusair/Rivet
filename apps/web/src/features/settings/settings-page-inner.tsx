@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { AgreementSection } from "@/features/settings/agreement-section";
 import { Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Gate, PageHeader } from "@/components/shared/chrome";
@@ -48,6 +49,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
       { id: "profile", label: "Public profile", keywords: "page publish website directory photos banner cover tagline amenities category", component: GymPublicProfileSection },
       { id: "branches", label: "Branches", keywords: "locations address codes", component: BranchesSection },
       { id: "spaces", label: "Gym spaces", keywords: "zones areas rooms floors studios", component: GymSpacesSection },
+      { id: "agreement", label: "Agreement", keywords: "legal contract subscription agreement signature signed terms privacy", component: AgreementSection },
     ],
   },
   {

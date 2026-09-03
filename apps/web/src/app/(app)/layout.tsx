@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -24,6 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const scrollShellRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
   const identityReady = DEMO_AUTH_BYPASS || clerkLoaded;
   const identitySignedIn = DEMO_AUTH_BYPASS || clerkSignedIn;
   const convexMode = isConvexMode();
@@ -52,6 +53,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const workspaceReady = Boolean(identityReady && !sessionLoading && !identityStillResolving && identitySignedIn && signedIn);
 
   useDampedRootOverscroll(scrollShellRef, workspaceReady);
+
+  // A gym owner who has not signed RIVET's subscription agreement is taken to
+  // the signing step before anything else. Staff are never blocked by it.
+  const agreementRequired = workspaceReady && session?.legal?.agreementStatus === "required";
+  useEffect(() => {
+    if (!agreementRequired || pathname.startsWith("/onboarding/agreement")) return;
+    router.replace("/onboarding/agreement");
+  }, [agreementRequired, pathname, router]);
 
   useEffect(() => {
     if (convexMode || binding.current || sessionLoading || !gymRole || sessionMatchesIdentity) return;

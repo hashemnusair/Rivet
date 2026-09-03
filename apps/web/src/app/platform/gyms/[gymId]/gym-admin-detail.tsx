@@ -157,6 +157,10 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           <div className="grid gap-5">
             <section className="border border-line bg-surface p-5">
               <p className="eyebrow">Account owner</p>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3 text-[12px]">
+                <span className="text-ink-3">Subscription agreement</span>
+                {detail.agreement.state === "available" ? <Link href={`/platform/agreements?agreement=${detail.agreement.value.id}`} className="font-medium text-ink underline-offset-2 hover:underline" data-testid="gym-agreement-link">{detail.agreement.value.reference} · {detail.agreement.value.status === "countersigned" ? "countersigned" : "awaiting RIVET"}</Link> : detail.agreement.state === "not_configured" ? <span className="text-warning-deep">Not signed yet</span> : <span className="text-ink-3">Not available</span>}
+              </div>
               {detail.owner.state === "available" ? <><h2 className="mt-2 text-[17px] font-semibold">{detail.owner.value.name}</h2><div className="mt-5 grid gap-3 text-[11.5px] text-ink-2"><p className="flex items-center gap-2"><Mail className="size-3.5 text-ink-3" />{detail.owner.value.email}</p><p className="flex items-center gap-2"><Phone className="size-3.5 text-ink-3" />{detail.owner.value.phone || "Not available"}</p></div></> : <UnavailableValue state={detail.owner.state} className="mt-3" />}
             </section>
             <section className="night-surface bg-night p-5 text-night-ink">

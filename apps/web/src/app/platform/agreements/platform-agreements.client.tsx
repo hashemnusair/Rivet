@@ -1,0 +1,153 @@
+"use client";
+
+import { Eye, FileSignature, PenLine, Printer } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { isApiError } from "@/lib/api/errors";
+import { qk } from "@/lib/api/keys";
+import type { PlatformAgreementSummary, SubscriptionAgreement } from "@/lib/domain/types";
+import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useApp } from "@/lib/providers/app-providers";
+import { formatDateTime } from "@/lib/utils/dates";
+import { AgreementRecord } from "@/features/legal/agreement-record";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
+import { Input, Textarea } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/misc";
+import { EmptyState, QueryErrorState } from "@/components/ui/states";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+function newKey(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Platform console: every signed subscription agreement, with countersigning
+ * and an audited reveal of the signatory's ID number.
+ */
+export function PlatformAgreements() {
+  const searchParams = useSearchParams();
+  const requested = searchParams.get("agreement");
+  const [selectedId, setSelectedId] = useState<string | null>(requested);
+  const list = useApiQuery(qk.platformAgreements, (api) => api.listPlatformAgreements());
+
+  useEffect(() => { if (requested) setSelectedId(requested); }, [requested]);
+
+  if (list.isLoading) return <div className="space-y-3"><Skeleton className="h-8 w-56" /><Skeleton className="h-64 w-full" /></div>;
+  if (list.isError || !list.data) return <QueryErrorState error={list.error} onRetry={() => void list.refetch()} />;
+  const rows = list.data;
+  const awaiting = rows.filter((row) => row.status === "signed").length;
+
+  return (
+    <div className="space-y-5" data-testid="platform-agreements">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">Legal</p>
+          <h1 className="mt-1 font-display text-[26px] font-semibold tracking-tight">Subscription agreements</h1>
+          <p className="mt-1 max-w-2xl text-[13px] text-ink-2">Every agreement a gym owner has signed in RIVET. Countersign to complete one; the signatory’s ID number stays masked until you reveal it with a reason.</p>
+        </div>
+        <Badge variant={awaiting > 0 ? "warning" : "success"} dot>{awaiting > 0 ? `${awaiting} awaiting countersignature` : "All countersigned"}</Badge>
+      </header>
+
+      {rows.length === 0 ? <EmptyState icon={FileSignature} title="No agreements signed yet" description="When a gym owner signs during onboarding, the agreement appears here for countersigning." /> : (
+        <section className="panel overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Gym</TableHead>
+                <TableHead>Reference</TableHead>
+                <TableHead>Plan</TableHead>
+                <TableHead>Starts</TableHead>
+                <TableHead>Signed</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-end">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id} data-testid="platform-agreement-row">
+                  <TableCell><span className="font-medium">{row.organizationName}</span><span className="block text-[11.5px] text-ink-3">{row.signatoryName}</span></TableCell>
+                  <TableCell><span className="font-mono text-[12px]" dir="ltr">{row.reference}</span>{row.hashMatch ? null : <Badge variant="warning" className="ms-2">Fingerprint mismatch</Badge>}</TableCell>
+                  <TableCell>{row.plan} · {row.termMonths}m</TableCell>
+                  <TableCell dir="ltr">{row.startDate}</TableCell>
+                  <TableCell>{formatDateTime(row.signedAt)}</TableCell>
+                  <TableCell><Badge variant={row.status === "countersigned" ? "success" : "warning"} dot>{row.status === "countersigned" ? "Countersigned" : "Awaiting RIVET"}</Badge></TableCell>
+                  <TableCell className="text-end"><Button size="xs" variant="secondary" onClick={() => setSelectedId(row.id)} aria-label={`Open agreement ${row.reference}`}><Eye /> Open</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
+      )}
+
+      {selectedId ? <AgreementDialog agreementId={selectedId} summary={rows.find((row) => row.id === selectedId)} onClose={() => setSelectedId(null)} /> : null}
+    </div>
+  );
+}
+
+function AgreementDialog({ agreementId, summary, onClose }: { agreementId: string; summary?: PlatformAgreementSummary; onClose: () => void }) {
+  const { session } = useApp();
+  const invalidate = useInvalidate();
+  const detail = useApiQuery(qk.platformAgreement(agreementId), (api) => api.getPlatformAgreement(agreementId));
+  const [title, setTitle] = useState("Co-founder");
+  const [typedName, setTypedName] = useState(session?.user.name ?? "");
+  const [revealReason, setRevealReason] = useState("");
+  const [revealedId, setRevealedId] = useState<string>();
+  const [error, setError] = useState<string | null>(null);
+  const [countersignKey] = useState(() => newKey("countersign"));
+
+  const countersign = useApiMutation((api) => api.countersignPlatformAgreement({ agreementId, title: title.trim(), typedName: typedName.trim(), idempotencyKey: countersignKey }), {
+    onSuccess: async () => { toast.success("Agreement countersigned. The signatory will receive the completed copy."); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
+    onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not countersign."),
+  });
+  const reveal = useApiMutation((api) => api.revealPlatformAgreementId({ agreementId, reason: revealReason.trim() }), {
+    onSuccess: async (result) => { setRevealedId(result.idNumber); await invalidate([qk.platformAgreement(agreementId)]); },
+    onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not reveal the ID number."),
+  });
+
+  const agreement: SubscriptionAgreement | undefined = detail.data;
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>{summary ? `${summary.organizationName} · ${summary.reference}` : "Subscription agreement"}</DialogTitle>
+          <DialogDescription>Countersigning completes the agreement and emails the signatory. Revealing the ID number is audited with your name and reason.</DialogDescription>
+        </DialogHeader>
+        <DialogBody className="max-h-[70vh] space-y-4 overflow-y-auto">
+          {detail.isLoading ? <Skeleton className="h-64 w-full" /> : detail.isError || !agreement ? <QueryErrorState error={detail.error} onRetry={() => void detail.refetch()} /> : (
+            <>
+              <AgreementRecord agreement={agreement} idNumberOverride={revealedId} />
+              <div className="grid gap-4 md:grid-cols-2">
+                <section className="panel space-y-3 p-4">
+                  <p className="eyebrow">Reveal ID number</p>
+                  <p className="text-[12px] text-ink-3">Revealed {agreement.idRevealCount} {agreement.idRevealCount === 1 ? "time" : "times"} so far. Each reveal is written to the platform audit trail.</p>
+                  <Field label="Reason" required><Textarea rows={2} value={revealReason} onChange={(event) => setRevealReason(event.target.value)} placeholder="Verifying the signatory before countersigning" data-testid="reveal-reason" /></Field>
+                  <Button variant="secondary" size="sm" disabled={revealReason.trim().length < 3} loading={reveal.isPending} onClick={() => reveal.mutate()} data-testid="reveal-id"><Eye /> Reveal ID number</Button>
+                </section>
+                <section className="panel space-y-3 p-4">
+                  <p className="eyebrow">Countersign for RIVET</p>
+                  {agreement.status === "countersigned" ? <p className="text-[12.5px] text-ink-2">Countersigned by {agreement.countersign?.byName} ({agreement.countersign?.title}) on {agreement.countersign ? formatDateTime(agreement.countersign.at) : ""}.</p> : (
+                    <>
+                      {!agreement.hashMatch ? <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12px] text-warning-deep">The signer’s browser produced a different document fingerprint from RIVET’s copy. Review before countersigning.</p> : null}
+                      <Field label="Your role at RIVET" required><Input value={title} onChange={(event) => setTitle(event.target.value)} /></Field>
+                      <Field label="Type your full name to sign" required hint="Must match your RIVET account name exactly."><Input value={typedName} onChange={(event) => setTypedName(event.target.value)} className="font-display text-[18px] italic" data-testid="countersign-name" /></Field>
+                      <Button size="sm" disabled={title.trim().length < 2 || typedName.trim().length < 2} loading={countersign.isPending} onClick={() => countersign.mutate()} data-testid="countersign"><PenLine /> Countersign</Button>
+                    </>
+                  )}
+                </section>
+              </div>
+              {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
+            </>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => window.print()}><Printer /> Print</Button>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
