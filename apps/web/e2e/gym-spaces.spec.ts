@@ -5,6 +5,7 @@ test.describe("gym-space setup", () => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /owner/i }).click();
     await page.getByRole("button", { name: /Open .+ workspace/i }).click();
+    await expect(page).not.toHaveURL(/\/login/);
     await page.goto("/settings?section=spaces");
 
     await expect(page.getByRole("heading", { name: "Gym spaces" })).toBeVisible();
