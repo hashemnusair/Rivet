@@ -51,7 +51,7 @@ export function Sidebar() {
           ) : (
             <>
               <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
-              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[9px] uppercase tracking-[0.14em] text-night-ink-3">Operated by RIVET™</span> : null}
+              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-night-ink-3">Operated by RIVET™</span> : null}
             </>
           )}
         </Link>

@@ -177,7 +177,7 @@ export function PublicFooter() {
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
             The revenue and operations system for gyms — and the simplest way for members to find, join, and enter them.
           </p>
-          <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.18em] text-night-ink-3">صُنع في عمّان · Made in Amman</p>
+          <p className="mt-6 text-[12px] font-medium text-night-ink-3">صُنع في عمّان · Made in Amman</p>
         </div>
         <FooterColumn
           title="Product"
@@ -203,7 +203,7 @@ export function PublicFooter() {
           ]}
         />
         <nav aria-label="Contact RIVET">
-          <p className="font-mono text-[10px] uppercase tracking-[0.17em] text-night-ink-3">Contact</p>
+          <p className="text-[12px] font-medium text-night-ink-3">Contact</p>
           <div className="mt-4 grid gap-3 text-[13px]">
             <a href={RIVET_CONTACT.phoneHref} className="text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>
             <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink">WhatsApp RIVET</a>
@@ -213,7 +213,7 @@ export function PublicFooter() {
         </nav>
       </div>
       <div className="border-t border-night-line px-5 py-5 sm:px-8 lg:px-12">
-        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 font-mono text-[9.5px] uppercase tracking-[0.14em] text-night-ink-3">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 text-[12px] font-medium text-night-ink-3">
           <span>© 2026 RIVET · Amman, Jordan</span>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {LEGAL_LINKS.map((item) => <Link key={item.href} href={item.href} className="transition-colors hover:text-night-ink">{item.label}</Link>)}
@@ -228,7 +228,7 @@ export function PublicFooter() {
 function FooterColumn({ title, links }: { title: string; links: Array<[string, string]> }) {
   return (
     <nav>
-      <p className="font-mono text-[10px] uppercase tracking-[0.17em] text-night-ink-3">{title}</p>
+      <p className="text-[12px] font-medium text-night-ink-3">{title}</p>
       <div className="mt-4 grid gap-3">
         {links.map(([label, href]) => (
           <Link key={href + label} href={href} className="text-[13px] text-night-ink-2 transition-colors hover:text-night-ink">
@@ -308,7 +308,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
           <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
             <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={29} priority />
             {customerSignedIn ? (
-              <span className="hidden border-s border-line-2 ps-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.16em] text-ink-3 sm:block">
+              <span className="hidden border-s border-line-2 ps-3 text-[12px] font-medium text-ink-3 sm:block">
                 Member
               </span>
             ) : null}
@@ -352,7 +352,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   <DropdownMenuContent align="end" className="w-64">
                     <DropdownMenuLabel>
                       <span className="block text-[12.5px] font-semibold text-ink">{customer.name}</span>
-                      <span className="mt-0.5 block truncate text-[10.5px] font-normal text-ink-3">{customer.email}</span>
+                      <span className="mt-0.5 block truncate text-[12px] font-normal text-ink-3">{customer.email}</span>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
@@ -399,7 +399,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
       {!customerSignedIn ? (
         <footer className="border-t border-line bg-surface">
           <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-4 py-5 text-[12px] text-ink-3 sm:px-6 lg:px-8">
-            <span className="font-mono text-[9.5px] uppercase tracking-[0.14em]">© 2026 RIVET · Amman</span>
+            <span className="text-[12px] font-medium">© 2026 RIVET · Amman</span>
             <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">
               <Link href="/" className="transition-colors hover:text-ink">RIVET for gyms</Link>
               <Link href="/customer/discover" className="transition-colors hover:text-ink">Find a gym</Link>
@@ -424,7 +424,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-1 text-[10.5px] font-medium transition-colors",
+                    "flex flex-col items-center justify-center gap-1 text-[12px] font-medium transition-colors",
                     active ? "text-ink" : "text-ink-3",
                   )}
                   aria-current={active ? "page" : undefined}
@@ -439,7 +439,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="flex flex-col items-center justify-center gap-1 text-[10.5px] font-medium text-ink-3" aria-label="Open account menu">
+                <button type="button" className="flex flex-col items-center justify-center gap-1 text-[12px] font-medium text-ink-3" aria-label="Open account menu">
                   <span className="flex size-8 items-center justify-center rounded-md">
                     <UserRound className="size-[17px]" aria-hidden />
                   </span>
@@ -449,7 +449,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
               <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-64">
                 <DropdownMenuLabel>
                   <span className="block text-[12.5px] font-semibold text-ink">{customer.name}</span>
-                  <span className="mt-0.5 block truncate text-[10.5px] font-normal text-ink-3">{customer.email}</span>
+                  <span className="mt-0.5 block truncate text-[12px] font-normal text-ink-3">{customer.email}</span>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>

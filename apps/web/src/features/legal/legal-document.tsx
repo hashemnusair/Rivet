@@ -13,16 +13,16 @@ export interface LegalSection {
  * version line, and one column of sections. Print-friendly and readable on a
  * phone without any client-side code.
  */
-export function LegalDocument({ eyebrow, title, summary, version, sections, related }: { eyebrow: string; title: string; summary: string; version: string; sections: LegalSection[]; related?: Array<{ label: string; href: string }> }) {
+export function LegalDocument({ context, title, summary, version, sections, related }: { context?: string; title: string; summary: string; version: string; sections: LegalSection[]; related?: Array<{ label: string; href: string }> }) {
   return (
     <article className="mx-auto max-w-3xl px-5 py-12 sm:px-8 lg:py-16" data-testid="legal-document">
-      <p className="eyebrow">{eyebrow}</p>
-      <h1 className="mt-3 font-display text-[34px] font-semibold leading-[1.1] tracking-tight text-ink sm:text-[42px]">{title}</h1>
+      {context ? <p className="context-label">{context}</p> : null}
+      <h1 className={context ? "mt-3 font-display text-[34px] font-semibold leading-[1.1] tracking-tight text-ink sm:text-[42px]" : "font-display text-[34px] font-semibold leading-[1.1] tracking-tight text-ink sm:text-[42px]"}>{title}</h1>
       <p className="mt-5 text-[15px] leading-relaxed text-ink-2">{summary}</p>
       <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-3">Version {version} · Governed by the laws of the Hashemite Kingdom of Jordan</p>
 
       <nav aria-label="Contents" className="mt-10 border-y border-line py-5">
-        <p className="eyebrow">Contents</p>
+        <p className="context-label">Contents</p>
         <ol className="mt-3 grid gap-1.5 text-[13px] sm:grid-cols-2">
           {sections.map((section, index) => (
             <li key={section.id}>

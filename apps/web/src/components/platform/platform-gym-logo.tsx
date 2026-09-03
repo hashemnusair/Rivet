@@ -22,7 +22,7 @@ export function PlatformGymLogo({ name, shortName, accent, logoUrl, className = 
   }, [logoUrl]);
 
   return (
-    <span className={`relative flex shrink-0 items-center justify-center overflow-hidden font-mono text-[10px] font-semibold text-white ${className}`} style={{ backgroundColor: accent }} role="img" aria-label={`${name} logo`}>
+    <span className={`relative flex shrink-0 items-center justify-center overflow-hidden font-mono text-[10.5px] font-semibold text-white ${className}`} style={{ backgroundColor: accent }} role="img" aria-label={`${name} logo`}>
       {hasLogo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logoUrl} alt="" className="absolute inset-0 size-full object-cover" onError={() => setFailedUrl(logoUrl)} />

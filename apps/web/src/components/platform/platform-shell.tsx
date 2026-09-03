@@ -119,10 +119,10 @@ export function PlatformShell({ children }: { children: ReactNode }) {
             <NotificationCenter />
             <div className="hidden text-end sm:block">
               <p className="text-[12px] font-semibold">{administratorName}</p>
-              <ContextLabel className="text-[10.5px]">Platform owner</ContextLabel>
+              <ContextLabel className="text-[12px]">Platform owner</ContextLabel>
             </div>
             <span
-              className="flex size-8 items-center justify-center rounded-full bg-ink font-mono text-[9px] text-paper"
+              className="flex size-8 items-center justify-center rounded-full bg-ink font-mono text-[10.5px] text-paper"
               aria-label={`${administratorName} avatar`}
             >
               {administratorInitials}
@@ -144,7 +144,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
       <div className="px-5 pb-7 pt-5">
         <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3">
           <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt="RIVET" />
-          <TechnicalLabel as="span" tone="night" className="border-s border-night-line ps-3 text-[8px]">Platform</TechnicalLabel>
+          <TechnicalLabel as="span" tone="night" className="border-s border-night-line ps-3 text-[10.5px]">Platform</TechnicalLabel>
         </Link>
       </div>
       <nav className="flex-1 px-3" aria-label="Platform navigation">
@@ -330,7 +330,7 @@ function PlatformSearch() {
               className={cn("w-full rounded-sm px-3 py-2.5 text-start transition-colors hover:bg-sunken focus-visible:bg-sunken focus-visible:outline-none", index === activeIndex && "bg-sunken")}
             >
               <span className="block truncate text-[12px] font-medium">{result.label}</span>
-              <span className="mt-0.5 block truncate text-[10px] text-ink-3">{result.detail}</span>
+              <span className="mt-0.5 block truncate text-[12px] text-ink-3">{result.detail}</span>
             </button>
           )) : <p className="px-3 py-3 text-[11px] text-ink-3" role="status">No matching platform records.</p> : <p className="px-3 py-3 text-[11px] text-ink-3" role="status">Loading platform records…</p>}
         </div>

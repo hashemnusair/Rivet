@@ -453,7 +453,7 @@ export function CustomerSignupClient() {
     <LoginLayout
       portal={PORTALS.member}
       mode="sign-up"
-      footer={<p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">Secure identity by Clerk · data by Convex</p>}
+      footer={<p className="text-center font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">Secure identity by Clerk · data by Convex</p>}
     >
       <PortalHeading portal={PORTALS.member} mode="sign-up" />
 
@@ -508,7 +508,7 @@ export function CustomerSignupClient() {
             <button type="button" onClick={() => void startOver()} className="inline-flex items-center gap-1.5 text-ink-3 transition-colors hover:text-ink"><ArrowLeft className="size-3.5" /> Use another account</button>
             <button type="button" onClick={() => void resendCode()} className="inline-flex items-center gap-1.5 font-medium text-ink-2 transition-colors hover:text-ink"><RefreshCcw className="size-3.5" /> Resend code</button>
           </div>
-          <p className="mt-4 flex items-center justify-center gap-1.5 text-center font-mono text-[9px] uppercase tracking-[0.11em] text-ink-4"><ShieldCheck className="size-3" /> Secure verification by Clerk</p>
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-center font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-4"><ShieldCheck className="size-3" /> Secure verification by Clerk</p>
         </div>
       ) : null}
 

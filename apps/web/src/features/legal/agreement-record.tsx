@@ -41,7 +41,7 @@ export function AgreementRecord({ agreement, sections, idNumberOverride }: { agr
     <article id="receipt-print" className="panel bg-surface p-6 sm:p-8" data-testid="agreement-record">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-dashed border-line-3 pb-5">
         <div>
-          <p className="eyebrow">Signed subscription agreement</p>
+          <p className="context-label">Signed subscription agreement</p>
           <h2 className="mt-1 font-display text-[22px] font-semibold tracking-tight">{agreement.reference}</h2>
           <p className="mt-1 text-[12px] text-ink-3">Version {agreement.version} · signed {agreement.signedAtLocal} ({agreement.timezone})</p>
         </div>

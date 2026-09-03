@@ -51,7 +51,7 @@ export function SubscriptionAgreementSigning({ embedded = false }: { embedded?: 
   if (context.agreement) {
     return (
       <div className="space-y-5">
-        {!embedded ? <PageHeader eyebrow="Onboarding" title="Your subscription agreement" description={context.agreement.status === "countersigned" ? "Signed by you and countersigned by RIVET. Keep a copy for your records." : "Signed. RIVET will countersign and confirm the completed agreement by email."} actions={<Button variant="secondary" onClick={() => window.print()}><Printer /> Print or save as PDF</Button>} /> : null}
+        {!embedded ? <PageHeader title="Your subscription agreement" description={context.agreement.status === "countersigned" ? "Signed by you and countersigned by RIVET. Keep a copy for your records." : "Signed. RIVET will countersign and confirm the completed agreement by email."} actions={<Button variant="secondary" onClick={() => window.print()}><Printer /> Print or save as PDF</Button>} /> : null}
         <AgreementRecord agreement={context.agreement} sections={context.sections} />
         {!embedded ? <p className="text-[12.5px] text-ink-3">Questions about the agreement? WhatsApp RIVET on <a href={RIVET_CONTACT.whatsappHref} className="underline underline-offset-4" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>.</p> : null}
       </div>
@@ -143,7 +143,7 @@ function SigningForm({ context, onSigned }: { context: SubscriptionAgreementCont
 
   return (
     <div className="space-y-6" data-testid="agreement-signing">
-      <PageHeader eyebrow="Onboarding" title="Sign your RIVET agreement" description={`This is the subscription agreement between ${context.organizationName} and RIVET. Read it, check the gym's details, sign, and keep a copy. RIVET countersigns and sends you the final version.`} />
+      <PageHeader title="Sign your RIVET agreement" description={`This is the subscription agreement between ${context.organizationName} and RIVET. Read it, check the gym's details, sign, and keep a copy. RIVET countersigns and sends you the final version.`} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <section className="panel max-h-[70vh] overflow-y-auto p-5 sm:p-6" aria-label="Agreement text">
@@ -152,7 +152,7 @@ function SigningForm({ context, onSigned }: { context: SubscriptionAgreementCont
 
         <form className="space-y-6" onSubmit={submit} noValidate>
           <section className="panel space-y-4 p-5">
-            <div><p className="eyebrow">01 · The gym</p><p className="mt-1 text-[12.5px] text-ink-3">Use the name on the commercial registration, and the trade name the gym is known by if it differs.</p></div>
+            <div><p className="context-label">01 · The gym</p><p className="mt-1 text-[12.5px] text-ink-3">Use the name on the commercial registration, and the trade name the gym is known by if it differs.</p></div>
             <Field label="Registered name of the gym or company" required error={fieldErrors.legalName}><Input value={form.legalName} onChange={set("legalName")} required /></Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Trade name, if different"><Input value={form.tradeName} onChange={set("tradeName")} /></Field>
@@ -166,7 +166,7 @@ function SigningForm({ context, onSigned }: { context: SubscriptionAgreementCont
           </section>
 
           <section className="panel space-y-4 p-5">
-            <div><p className="eyebrow">02 · The person signing</p><p className="mt-1 text-[12.5px] text-ink-3">The owner, or a person authorised to sign for the gym. The name must match the ID.</p></div>
+            <div><p className="context-label">02 · The person signing</p><p className="mt-1 text-[12.5px] text-ink-3">The owner, or a person authorised to sign for the gym. The name must match the ID.</p></div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Full name, as on your ID" required error={fieldErrors.signatoryName}><Input value={form.signatoryName} onChange={set("signatoryName")} required /></Field>
               <Field label="Role at the gym" required error={fieldErrors.signatoryTitle}><Input value={form.signatoryTitle} onChange={set("signatoryTitle")} required /></Field>
@@ -188,7 +188,7 @@ function SigningForm({ context, onSigned }: { context: SubscriptionAgreementCont
           </section>
 
           <section className="panel space-y-4 p-5">
-            <div><p className="eyebrow">03 · The subscription</p><p className="mt-1 text-[12.5px] text-ink-3">As agreed with RIVET. If a quote number was given to you, enter it; the quote sets the fees and the limits of the plan.</p></div>
+            <div><p className="context-label">03 · The subscription</p><p className="mt-1 text-[12.5px] text-ink-3">As agreed with RIVET. If a quote number was given to you, enter it; the quote sets the fees and the limits of the plan.</p></div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Plan" required error={fieldErrors.plan}>
                 <Select value={form.plan} onValueChange={(value) => setForm((current) => ({ ...current, plan: value as AgreementPlan }))}>
@@ -210,7 +210,7 @@ function SigningForm({ context, onSigned }: { context: SubscriptionAgreementCont
           </section>
 
           <section className="panel space-y-4 p-5">
-            <div><p className="eyebrow">04 · Signature</p><p className="mt-1 text-[12.5px] text-ink-3">Sign with your finger, a pen or the mouse. If you would rather type, you can adopt your typed name as your signature.</p></div>
+            <div><p className="context-label">04 · Signature</p><p className="mt-1 text-[12.5px] text-ink-3">Sign with your finger, a pen or the mouse. If you would rather type, you can adopt your typed name as your signature.</p></div>
             <SignaturePad value={signature} onChange={setSignature} signatoryName={form.signatoryName} invalid={Boolean(fieldErrors.signature)} />
             {fieldErrors.signature ? <p className="text-[12px] text-danger" role="alert">{fieldErrors.signature}</p> : null}
             <div className="grid gap-3 sm:grid-cols-2">
@@ -220,7 +220,7 @@ function SigningForm({ context, onSigned }: { context: SubscriptionAgreementCont
           </section>
 
           <section className="panel space-y-3 p-5">
-            <p className="eyebrow">05 · Declarations</p>
+            <p className="context-label">05 · Declarations</p>
             {CONSENTS.map((consent) => (
               <label key={consent.key} className="flex cursor-pointer items-start gap-3 rounded-md border border-line px-3 py-2.5 text-[12.5px] leading-relaxed text-ink-2">
                 <Checkbox checked={consents[consent.key]} onCheckedChange={(checked) => setConsents((current) => ({ ...current, [consent.key]: checked === true }))} aria-label={consent.label} className="mt-0.5" />

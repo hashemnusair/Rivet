@@ -37,11 +37,11 @@ export function GymSubscriptions({ gyms, onBill }: {
 
   return (
     <section className="mt-7 border border-line bg-surface" aria-labelledby="gym-subscriptions-heading">
-      <div className="border-b border-line px-5 py-4"><p className="eyebrow">Subscriptions</p><h2 id="gym-subscriptions-heading" className="mt-1 text-[17px] font-semibold">Gym subscriptions</h2><p className="mt-1 text-[10.5px] text-ink-3">Every provisioned tenant. Plan, billing, reactivation, suspension, and cancellation all live here; gym pages stay informational.</p></div>
+      <div className="border-b border-line px-5 py-4"><p className="context-label">Subscriptions</p><h2 id="gym-subscriptions-heading" className="mt-1 text-[17px] font-semibold">Gym subscriptions</h2><p className="mt-1 text-[12px] text-ink-3">Every provisioned tenant. Plan, billing, reactivation, suspension, and cancellation all live here; gym pages stay informational.</p></div>
       {tenants.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-ink-3">No provisioned gyms yet.</p> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-start">
-            <thead><tr className="border-b border-line font-mono text-[8px] uppercase tracking-[.1em] text-ink-3"><th className="px-5 py-3 text-start font-medium">Gym</th><th className="px-4 py-3 text-start font-medium">Plan · billing</th><th className="px-4 py-3 text-start font-medium">Status</th><th className="px-4 py-3 text-start font-medium">Paid through</th><th className="px-5 py-3 text-end font-medium">Actions</th></tr></thead>
+            <thead><tr className="border-b border-line text-[11.5px] font-medium text-ink-3"><th className="px-5 py-3 text-start">Gym</th><th className="px-4 py-3 text-start">Plan · billing</th><th className="px-4 py-3 text-start">Status</th><th className="px-4 py-3 text-start">Paid through</th><th className="px-5 py-3 text-end">Actions</th></tr></thead>
             <tbody>
               {tenants.map((gym) => {
                 const active = gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial";
@@ -87,5 +87,5 @@ export function GymSubscriptions({ gyms, onBill }: {
 
 function StatusBadge({ status }: { status: MarketplaceGym["subscriptionStatus"] }) {
   const label = status === "overdue" ? "past due" : status;
-  return <span className={cn("rounded-sm px-1.5 py-0.5 font-mono text-[7.5px] uppercase tracking-[.1em]", status === "active" ? "bg-success-bg text-success-deep" : status === "trial" ? "bg-sunken text-ink-2" : "bg-signal-bg text-signal-deep")}>{label}</span>;
+  return <span className={cn("rounded-sm px-2 py-1 text-[11px] font-medium capitalize", status === "active" ? "bg-success-bg text-success-deep" : status === "trial" ? "bg-sunken text-ink-2" : "bg-signal-bg text-signal-deep")}>{label}</span>;
 }

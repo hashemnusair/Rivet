@@ -58,7 +58,7 @@ function SignedInIdentity() {
     <div className="mt-6 flex items-center gap-3 rounded-lg border border-line-2 bg-surface p-3">
       <Monogram name={user.fullName ?? label} size="sm" />
       <span className="min-w-0 flex-1">
-        <span className="block font-mono text-[9.5px] uppercase tracking-[0.12em] text-ink-4">Signed in as</span>
+        <span className="block text-[12px] font-medium text-ink-4">Signed in as</span>
         <span className="block truncate text-[13px] font-medium text-ink">{label}</span>
       </span>
       <Button variant="ghost" size="sm" onClick={() => void signOut({ redirectUrl: "/login" })}>
@@ -83,7 +83,7 @@ function PortalSignInFallback({ audience, mode = "sign-in" }: { audience: Audien
       portal={portal}
       mode={mode}
       footer={
-        <p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">
+        <p className="text-center font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">
           {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · data by Convex"}
         </p>
       }
@@ -153,7 +153,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
       portal={portal}
       mode={mode}
       footer={
-        <p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">
+        <p className="text-center font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">
           {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · data by Convex"}
         </p>
       }
@@ -225,7 +225,7 @@ const CLERK_APPEARANCE = {
     socialButtonsBlockButton: "!border-line-2 !bg-surface !text-ink !shadow-none hover:!bg-sunken !transition-colors",
     socialButtonsBlockButtonText: "!text-[13.5px] !font-medium !text-ink",
     dividerLine: "!bg-line-2",
-    dividerText: "!text-ink-3 !font-mono !text-[10px] !uppercase !tracking-[0.12em]",
+    dividerText: "!text-ink-3 !text-[12px] !font-medium",
     formFieldLabel: "!text-ink-2 !text-[13px] !font-medium",
     formFieldInput: "!border-line-2 !bg-surface !text-ink !shadow-none !h-9 !rounded-md",
     // Clerk paints a gradient sheen through ::after on its primary button.
@@ -288,7 +288,7 @@ function safeInternalRedirect(value: string | null, fallback: string): string {
 function PreviewAccountOptions() {
   return (
     <div className="mt-7 grid gap-2">
-      <p className="eyebrow mb-1">Preview an account</p>
+      <p className="context-label mb-1">Preview an account</p>
       <Button asChild variant="secondary"><Link href="/login/member">Member preview</Link></Button>
       <Button asChild variant="secondary"><Link href="/login/gym">Gym team preview</Link></Button>
       <Button asChild variant="secondary"><Link href="/login/admin">Platform admin preview</Link></Button>
@@ -312,7 +312,7 @@ function StaffRoles({ loading, onEnter }: { loading: boolean; onEnter: (role: Ro
         void onEnter(role);
       }}
     >
-      <p className="eyebrow">Open the workspace as</p>
+      <p className="context-label">Open the workspace as</p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Staff role">
         {STAFF_ROLES.map((item) => {
           const active = role === item.role;
@@ -330,7 +330,7 @@ function StaffRoles({ loading, onEnter }: { loading: boolean; onEnter: (role: Ro
             >
               <span className="flex items-center justify-between">
                 <item.icon className={cn("size-4", active ? "text-signal" : "text-ink-3")} aria-hidden />
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-ink-3">{ROLE_LABELS[item.role]}</span>
+                <span className="text-[12px] font-medium text-ink-3">{ROLE_LABELS[item.role]}</span>
               </span>
               <span className="text-[13.5px] font-medium text-ink">{item.name}</span>
               <span className="text-[11.5px] leading-snug text-ink-3">{item.scope}</span>
@@ -365,7 +365,7 @@ function MemberAccounts({
         if (selected) onEnter(selected.id);
       }}
     >
-      <p className="eyebrow">Continue as</p>
+      <p className="context-label">Continue as</p>
       <div className="mt-3 grid gap-2" role="radiogroup" aria-label="Member account">
         {customers.map((persona) => {
           const active = selected?.id === persona.id;

@@ -53,7 +53,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-night-line px-4">
             <div className="flex min-w-0 flex-col">
               <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} priority unoptimized={Boolean(brandLogo)} />
-              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[9px] uppercase tracking-[0.14em] text-night-ink-3">Operated by RIVET™</span> : null}
+              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-night-ink-3">Operated by RIVET™</span> : null}
             </div>
             <DialogPrimitive.Close
               className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"

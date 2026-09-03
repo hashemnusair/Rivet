@@ -51,7 +51,7 @@ export function invitationErrorMessage(error: unknown): string {
 }
 
 function InvitationFrame({ children }: { children: ReactNode }) {
-  return <LoginLayout portal={PORTALS.staff} footer={<p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">Secure identity by Clerk · gym access issued by RIVET</p>}>{children}</LoginLayout>;
+  return <LoginLayout portal={PORTALS.staff} footer={<p className="text-center font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">Secure identity by Clerk · gym access issued by RIVET</p>}>{children}</LoginLayout>;
 }
 
 export function AcceptInvitation() {
@@ -161,7 +161,7 @@ export function AcceptInvitation() {
         <div className="animate-fade-up">
           <div className="flex items-start gap-3.5">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper"><ShieldCheck className="size-5" /></span>
-            <div><p className="eyebrow">RIVET gym access</p><h1 className="mt-2 font-display text-[23px] font-semibold leading-tight tracking-tight">Create your owner account</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">Your invitation is verified. Set a password to open the gym workspace.</p></div>
+            <div><p className="context-label">RIVET gym access</p><h1 className="mt-2 font-display text-[23px] font-semibold leading-tight tracking-tight">Create your owner account</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">Your invitation is verified. Set a password to open the gym workspace.</p></div>
           </div>
           <form className="mt-7 grid gap-4" onSubmit={(event) => void submit(event)} noValidate>
             <div className="grid gap-4 sm:grid-cols-2">

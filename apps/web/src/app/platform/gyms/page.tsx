@@ -160,7 +160,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
       </div>
       <div className="mt-5 flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <ContextLabel className="text-[10.5px]">{lifecycle.label}</ContextLabel>
+          <ContextLabel className="text-[12px]">{lifecycle.label}</ContextLabel>
           <p className="mt-1 truncate text-[12px] font-semibold">{lifecycle.value}</p>
         </div>
         <Button asChild variant="secondary" size="sm">
@@ -210,5 +210,5 @@ function isArchivedGym(gym: MarketplaceGym): boolean {
 }
 
 function Metric({ icon, value, label }: { icon?: React.ReactNode; value: string; label: string }) {
-  return <div className="min-w-0 bg-surface px-3 py-3"><div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-semibold"><span className="shrink-0 text-ink-3 [&_svg]:size-3" aria-hidden>{icon}</span><span className="truncate tabular">{value}</span></div><ContextLabel className="mt-1 text-[10.5px]">{label}</ContextLabel></div>;
+  return <div className="min-w-0 bg-surface px-3 py-3"><div className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-semibold"><span className="shrink-0 text-ink-3 [&_svg]:size-3" aria-hidden>{icon}</span><span className="truncate tabular">{value}</span></div><ContextLabel className="mt-1 text-[12px]">{label}</ContextLabel></div>;
 }

@@ -231,7 +231,7 @@ export function PasswordSignIn({ redirectUrl = "/login" }: { redirectUrl?: strin
             </button>
           ) : null}
         </div>
-        <p className="mt-4 flex items-center justify-center gap-1.5 text-center font-mono text-[9px] uppercase tracking-[0.11em] text-ink-4">
+        <p className="mt-4 flex items-center justify-center gap-1.5 text-center font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-4">
           <LockKeyhole className="size-3" /> Secure verification by Clerk
         </p>
       </div>

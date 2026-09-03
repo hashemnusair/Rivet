@@ -80,7 +80,7 @@ export default function MemberProfilePage() {
       <div className="flex items-start gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-2"><UserRound className="size-5" /></span>
         <div>
-          <p className="eyebrow">Your account</p>
+          <p className="context-label">Your account</p>
           <h1 className="mt-1 font-display text-[26px] font-semibold tracking-tight">Profile</h1>
           <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-ink-2">Keep your contact and emergency details current. The same member-owned information is shared with every gym you join.</p>
         </div>
@@ -135,7 +135,7 @@ export default function MemberProfilePage() {
 
         <aside className="space-y-4">
           <div className="rounded-lg border border-line bg-surface p-5">
-            <p className="eyebrow">Privacy boundary</p>
+            <p className="context-label">Privacy boundary</p>
             <p className="mt-3 text-[12.5px] leading-relaxed text-ink-2">Your email, phone, personal details, and emergency contact are member-owned. Each gym sees only your synchronized record in that gym.</p>
             <p className="mt-3 text-[12px] leading-relaxed text-ink-3">Gym staff still control operational notes, tags, branch assignment, and membership details. Medical records are not collected here.</p>
           </div>

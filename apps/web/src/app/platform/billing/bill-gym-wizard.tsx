@@ -112,7 +112,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
           <DialogDescription>Three steps: pick the gym, pick the plan and billing, confirm the invoice. The server derives every date and credit.</DialogDescription>
         </DialogHeader>
         <DialogBody className="grid gap-4">
-          <ol className="flex flex-wrap items-center gap-2 text-[10.5px]" aria-label="Billing steps">
+          <ol className="flex flex-wrap items-center gap-2 text-[12px]" aria-label="Billing steps">
             {STEPS.map((item, index) => {
               const activeIndex = STEPS.findIndex((candidate) => candidate.key === step);
               const state = index < activeIndex ? "done" : index === activeIndex ? "current" : "todo";
@@ -138,7 +138,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
                       <span className="text-[13px] font-semibold">{item.name}</span>
                       <StatusBadge status={item.subscriptionStatus} />
                     </span>
-                    <span className="text-[10.5px] text-ink-3">
+                    <span className="text-[12px] text-ink-3">
                       {item.rivetPlan} · {item.billingInterval === "annual" ? "annual" : "monthly"}
                       {item.subscriptionStatus === "active" && item.currentPeriodEndsAt ? ` · paid through ${formatBillingDate(new Date(item.currentPeriodEndsAt))}` : ""}
                     </span>
@@ -156,7 +156,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
                   <button key={item.name} type="button" role="radio" aria-checked={selectedPlan === item.name} onClick={() => setPlan(item.name as PlanName)} className={cn("grid gap-1 border px-4 py-3 text-start transition-colors", selectedPlan === item.name ? "border-ink bg-sunken" : "border-line hover:bg-sunken/60")}>
                     <span className="flex items-baseline justify-between gap-2">
                       <span className="text-[13px] font-semibold">{item.name}</span>
-                      {item.name === gym.rivetPlan ? <span className="rounded-sm bg-night px-1.5 py-0.5 font-mono text-[7.5px] uppercase tracking-[.1em] text-night-ink">Current</span> : null}
+                      {item.name === gym.rivetPlan ? <span className="rounded-sm bg-night px-1.5 py-0.5 text-[11px] font-medium text-night-ink">Current</span> : null}
                     </span>
                     <span className="text-[11px] text-ink-2">JOD {(item.priceMinor / 1_000).toFixed(3)} / month</span>
                   </button>
@@ -216,5 +216,5 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
 
 function StatusBadge({ status }: { status: MarketplaceGym["subscriptionStatus"] }) {
   const label = status === "overdue" ? "past due" : status;
-  return <span className={cn("rounded-sm px-1.5 py-0.5 font-mono text-[7.5px] uppercase tracking-[.1em]", status === "active" ? "bg-success-bg text-success-deep" : status === "trial" ? "bg-sunken text-ink-2" : "bg-signal-bg text-signal-deep")}>{label}</span>;
+  return <span className={cn("rounded-sm px-2 py-1 text-[11px] font-medium capitalize", status === "active" ? "bg-success-bg text-success-deep" : status === "trial" ? "bg-sunken text-ink-2" : "bg-signal-bg text-signal-deep")}>{label}</span>;
 }

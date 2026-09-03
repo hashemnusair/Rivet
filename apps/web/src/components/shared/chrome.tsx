@@ -12,25 +12,21 @@ import type { Page } from "@/lib/domain/types";
 /** Page title block: optional human context + display title + actions. */
 export function PageHeader({
   sectionLabel,
-  eyebrow,
   title,
   description,
   actions,
   className,
 }: {
   sectionLabel?: string;
-  /** @deprecated Migrate callers to sectionLabel, then remove this alias. */
-  eyebrow?: string;
   title: string;
   description?: string;
   actions?: ReactNode;
   className?: string;
 }) {
-  const context = sectionLabel ?? eyebrow;
   return (
     <div className={cn("flex flex-wrap items-end justify-between gap-3", className)}>
       <div className="min-w-0">
-        {context ? <ContextLabel className="mb-1.5">{context}</ContextLabel> : null}
+        {sectionLabel ? <ContextLabel className="mb-1.5">{sectionLabel}</ContextLabel> : null}
         <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight text-ink">
           {title}
         </h1>

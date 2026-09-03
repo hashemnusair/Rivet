@@ -94,7 +94,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
       >
         <Search className="size-3.5" aria-hidden />
         <span className="flex-1 text-start truncate">Search…</span>
-        <kbd className="hidden sm:inline-flex h-5 items-center rounded-sm border border-line bg-paper px-1 font-mono text-[10px] text-ink-3">
+        <kbd className="hidden sm:inline-flex h-5 items-center rounded-sm border border-line bg-paper px-1 font-mono text-[10.5px] text-ink-3">
           ⌘K
         </kbd>
       </button>
@@ -269,7 +269,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               <Monogram name={session.user.name} size="sm" />
               <span className="hidden lg:block text-start leading-tight">
                 <span className="block text-[13px] font-medium text-ink">{session.user.name}</span>
-                <span className="block font-mono text-[10px] uppercase tracking-[0.1em] text-ink-3">
+                <span className="block text-[12px] font-medium text-ink-3">
                   {role ? ROLE_LABELS[role] : ""}
                 </span>
               </span>

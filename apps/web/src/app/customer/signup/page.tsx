@@ -18,7 +18,7 @@ export default function CustomerSignupPage() {
 function PreviewSignupNotice() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5 py-12">
-      <p className="eyebrow">RIVET member preview</p>
+      <p className="context-label">RIVET member preview</p>
       <h1 className="mt-2 font-display text-[28px] font-semibold tracking-tight">Member signup runs through Clerk.</h1>
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
         The local preview does not create accounts or store passwords. Use a seeded member persona to inspect the member experience.

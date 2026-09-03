@@ -27,7 +27,7 @@ export default function DiscoverGymsPage() {
       <section className="border-b border-line bg-surface px-4 py-8 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-[1280px] flex-wrap items-end justify-between gap-5">
           <div>
-            <p className="eyebrow">RIVET network · Amman</p>
+            <p className="context-label">RIVET network · Amman</p>
             <h1 className="mt-2 font-display text-[28px] font-semibold tracking-tight">Find a gym</h1>
             <p className="mt-1.5 max-w-xl text-[13.5px] text-ink-2">Compare gyms running on RIVET, pick a branch, and book a free trial that lands on the gym&rsquo;s follow-up queue.</p>
           </div>
@@ -69,16 +69,16 @@ export default function DiscoverGymsPage() {
                   <div className="relative h-28 overflow-hidden bg-cover bg-center px-5 py-4 text-white" style={{ backgroundColor: gym.accent, backgroundImage: gym.cover?.url ? `linear-gradient(rgb(0 0 0 / .45), rgb(0 0 0 / .45)), url(${gym.cover.url})` : undefined }}>
                     <div className="absolute inset-0 opacity-20 marketing-grid" />
                     <div className="relative flex items-start justify-between">
-                      <span className="flex items-center gap-2 font-mono text-[10px] font-medium uppercase tracking-[0.18em]"><span className="size-8 rounded-full border border-white/50 bg-cover bg-center" role="img" aria-label={`${gym.name} logo`} style={{ backgroundColor: gym.accent, backgroundImage: gym.logo?.url ? `url(${gym.logo.url})` : undefined }} />{gym.shortName}</span>
+                      <span className="flex items-center gap-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.18em]"><span className="size-8 rounded-full border border-white/50 bg-cover bg-center" role="img" aria-label={`${gym.name} logo`} style={{ backgroundColor: gym.accent, backgroundImage: gym.logo?.url ? `url(${gym.logo.url})` : undefined }} />{gym.shortName}</span>
                       {gym.featured ? (
-                        <span className="rounded-sm border border-white/40 px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em]">Featured</span>
+                        <span className="rounded-sm border border-white/40 px-2 py-1 text-[11px] font-medium">Featured</span>
                       ) : null}
                     </div>
                     <Dumbbell className="absolute -bottom-3 end-3 size-20 opacity-20 transition-transform duration-500 group-hover:scale-110" strokeWidth={1.2} />
                   </div>
 
                   <div className="flex flex-1 flex-col p-5">
-                    <p className="eyebrow">{gym.category}</p>
+                    <p className="context-label">{gym.category}</p>
                     <h2 className="mt-1.5 text-[21px] font-semibold tracking-tight">{gym.name}</h2>
                     <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">{gym.tagline}</p>
 
@@ -90,7 +90,7 @@ export default function DiscoverGymsPage() {
 
                     <div className="mt-auto flex items-end justify-between gap-4 pt-4">
                       <div>
-                        <p className="eyebrow">From</p>
+                        <p className="context-label">From</p>
                         <p className="mt-1 text-[18px] font-semibold">
                           {gym.fromPriceMinor > 0 ? <>JD {gym.fromPriceMinor / 1000}<span className="text-[11px] font-normal text-ink-3"> / month</span></> : <span className="text-[14px]">Contact gym</span>}
                         </p>

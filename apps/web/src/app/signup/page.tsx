@@ -105,7 +105,7 @@ export default function GymApplicationPage() {
           ) : (
             <>
               <div className="mb-8 max-w-2xl">
-                <p className="eyebrow">Partner with RIVET</p>
+                <p className="context-label">Partner with RIVET</p>
                 <h1 className="mt-3 text-[32px] font-semibold tracking-tight sm:text-[38px]">Send a gym application.</h1>
                 <p className="mt-4 text-[14px] leading-relaxed text-ink-2">
                   Tell us about your gym and the team behind it. We review every application, contact you directly, and create access for approved gyms.
@@ -118,7 +118,7 @@ export default function GymApplicationPage() {
                   <input id="application-website" name="website" type="text" tabIndex={-1} autoComplete="off" />
                 </label>
                 <section>
-                  <p className="eyebrow">Your details</p>
+                  <p className="context-label">Your details</p>
                   <h2 className="mt-2 text-[21px] font-semibold">Who should we contact?</h2>
                   <div className="mt-7 grid gap-4">
                     <Field label="Owner name" htmlFor="application-owner" error={errors.ownerName} required>
@@ -139,7 +139,7 @@ export default function GymApplicationPage() {
                 </section>
 
                 <section className="border-t border-line pt-6 lg:border-s lg:border-t-0 lg:ps-9 lg:pt-0">
-                  <p className="eyebrow">Your gym</p>
+                  <p className="context-label">Your gym</p>
                   <h2 className="mt-2 text-[21px] font-semibold">Which plan fits?</h2>
                   <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-7" required>
                     <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" disabled={!hydrated} />
@@ -175,7 +175,7 @@ export default function GymApplicationPage() {
                     {plans.map((item) => (
                       <button key={item.name} type="button" role="radio" aria-checked={plan === item.name} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", plan === item.name ? "border-signal bg-signal/[0.035]" : "border-line hover:border-ink")}>
                         <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", plan === item.name ? "border-signal bg-signal text-white" : "border-line-3")}>{plan === item.name ? <Check className="size-3" /> : null}</span>
-                        <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">JD {formatJodMinor(calculatePlanPrice(item, billingInterval).effectiveMonthlyMinor)} / month{billingInterval === "annual" ? ` · JD ${formatJodMinor(calculatePlanPrice(item, billingInterval).annualTotalMinor)} billed annually` : ""}</span><span className="mt-1 block text-[10px] text-ink-4">{publicPlanFeatures(item).slice(-1)[0]}</span></span>
+                        <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">JD {formatJodMinor(calculatePlanPrice(item, billingInterval).effectiveMonthlyMinor)} / month{billingInterval === "annual" ? ` · JD ${formatJodMinor(calculatePlanPrice(item, billingInterval).annualTotalMinor)} billed annually` : ""}</span><span className="mt-1 block text-[12px] text-ink-4">{publicPlanFeatures(item).slice(-1)[0]}</span></span>
                       </button>
                     ))}
                   </div>
@@ -198,7 +198,7 @@ function ApplicationReceived({ result, gymName, email }: { result: SubmitGymAppl
   return (
     <div className="mx-auto max-w-xl border border-ink bg-surface p-8 text-center shadow-pop sm:p-12">
       <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-success-bg text-success"><CheckCircle2 className="size-8" /></span>
-      <p className="mt-7 eyebrow">Application received</p>
+      <p className="mt-7 context-label">Application received</p>
       <h1 className="mt-3 text-[32px] font-semibold tracking-tight">We’ll be in touch soon.</h1>
       <p className="mt-4 text-[13.5px] leading-relaxed text-ink-2">We received the application for <strong>{gymName || "your gym"}</strong>. We sent a confirmation to <strong>{email}</strong> and our team will contact you after review.</p>
       {result.duplicate ? <p className="mt-4 text-[11.5px] text-ink-3">This application is already in our review queue.</p> : null}

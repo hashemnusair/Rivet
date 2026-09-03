@@ -45,7 +45,7 @@ export function PlatformAgreements() {
     <div className="space-y-5" data-testid="platform-agreements">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="eyebrow">Legal</p>
+          <p className="context-label">Legal</p>
           <h1 className="mt-1 font-display text-[26px] font-semibold tracking-tight">Subscription agreements</h1>
           <p className="mt-1 max-w-2xl text-[13px] text-ink-2">Every agreement a gym owner has signed in RIVET. Countersign to complete one; the signatory’s ID number stays masked until you reveal it with a reason.</p>
         </div>
@@ -122,13 +122,13 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
               <AgreementRecord agreement={agreement} idNumberOverride={revealedId} />
               <div className="grid gap-4 md:grid-cols-2">
                 <section className="panel space-y-3 p-4">
-                  <p className="eyebrow">Reveal ID number</p>
+                  <p className="context-label">Reveal ID number</p>
                   <p className="text-[12px] text-ink-3">Revealed {agreement.idRevealCount} {agreement.idRevealCount === 1 ? "time" : "times"} so far. Each reveal is written to the platform audit trail.</p>
                   <Field label="Reason" required><Textarea rows={2} value={revealReason} onChange={(event) => setRevealReason(event.target.value)} placeholder="Verifying the signatory before countersigning" data-testid="reveal-reason" /></Field>
                   <Button variant="secondary" size="sm" disabled={revealReason.trim().length < 3} loading={reveal.isPending} onClick={() => reveal.mutate()} data-testid="reveal-id"><Eye /> Reveal ID number</Button>
                 </section>
                 <section className="panel space-y-3 p-4">
-                  <p className="eyebrow">Countersign for RIVET</p>
+                  <p className="context-label">Countersign for RIVET</p>
                   {agreement.status === "countersigned" ? <p className="text-[12.5px] text-ink-2">Countersigned by {agreement.countersign?.byName} ({agreement.countersign?.title}) on {agreement.countersign ? formatDateTime(agreement.countersign.at) : ""}.</p> : (
                     <>
                       {!agreement.hashMatch ? <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12px] text-warning-deep">The signer’s browser produced a different document fingerprint from RIVET’s copy. Review before countersigning.</p> : null}

@@ -65,7 +65,7 @@ export function CustomerCommunicationPreferences() {
                     <span className="block text-[13px] font-medium">{entry.status === "unknown" ? "No choice recorded" : entry.optedIn ? "Marketing updates enabled" : "Marketing updates disabled"}</span>
                     <span className="mt-0.5 block text-[11.5px] text-ink-3">{entry.source === "system_default" ? "Historical state" : "Selected by you"}{entry.changedAt ? ` · ${formatDate(entry.changedAt)}` : ""}</span>
                   </span>
-                  {index === 0 ? <span className="rounded-sm bg-sunken px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">Current</span> : null}
+                  {index === 0 ? <span className="rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] font-medium text-ink-3">Current</span> : null}
                 </li>
               ))}
             </ol>

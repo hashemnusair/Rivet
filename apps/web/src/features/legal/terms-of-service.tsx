@@ -205,7 +205,6 @@ const SECTIONS: LegalSection[] = [
 export function TermsOfService() {
   return (
     <LegalDocument
-      eyebrow="Legal"
       title="Terms of service"
       summary="The terms on which RIVET provides this website and the RIVET platform. Gyms that subscribe also sign a subscription agreement, which sets the plan, fees and dates and incorporates these terms and the data processing addendum in section 09."
       version={TERMS_OF_SERVICE_VERSION}

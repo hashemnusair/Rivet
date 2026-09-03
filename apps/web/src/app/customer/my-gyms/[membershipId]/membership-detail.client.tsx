@@ -95,7 +95,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span
-            className="flex size-11 shrink-0 items-center justify-center rounded-md font-mono text-[9px] font-semibold uppercase text-white"
+            className="flex size-11 shrink-0 items-center justify-center rounded-md font-mono text-[10.5px] font-semibold uppercase text-white"
             style={{ backgroundColor: gym.accent, backgroundImage: membership.gymLogoUrl ?? gym.logo?.url ? `url(${membership.gymLogoUrl ?? gym.logo?.url})` : undefined, backgroundSize: "cover", backgroundPosition: "center" }}
             aria-hidden
           >
@@ -125,7 +125,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
         <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4"><Stat icon={<Ticket />} label="Plan" value={membership.planName} /><Stat icon={<CalendarDays />} label="Valid until" value={formatDate(membership.endDate)} /><Stat icon={<ScanLine />} label="Visits · all time" value={String(membership.totalCheckIns ?? membership.visitHistory.length)} /><Stat icon={<CreditCard />} label="Balance" value={`JD ${(membership.balanceMinor / 1000).toFixed(3)}`} /></div>
         <FreezeRequestCard membershipId={membership.id} />
         {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} gymPhone={gym.contactPhone} /> : null}
-        <div className="rounded-lg border border-line bg-surface p-4"><p className="eyebrow">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch?.name ?? "Branch unavailable"}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
+        <div className="rounded-lg border border-line bg-surface p-4"><p className="context-label">Membership details</p><dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2"><div><dt className="text-ink-3">Member number</dt><dd className="mt-1 font-mono">{membership.memberNumber}</dd></div><div><dt className="text-ink-3">Branch</dt><dd className="mt-1">{branch?.name ?? "Branch unavailable"}</dd></div><div><dt className="text-ink-3">Started</dt><dd className="mt-1">{formatDate(membership.startDate)}</dd></div><div><dt className="text-ink-3">Ends</dt><dd className="mt-1">{formatDate(membership.endDate)} · {daysLeft} days</dd></div></dl></div>
       </div> : tab === "classes" ? <CustomerClassesPanel membershipId={membership.id} /> : <CustomerPtPanel membershipId={membership.id} gymName={gym.name} branchNames={new Map(gym.branches.map((item) => [item.id, item.name]))} />}
       {tab === "membership" ? <ActivityHistory membership={membership} visits={membership.visitHistory ?? []} /> : null}
       <Dialog open={qrOpen} onOpenChange={(open) => { setQrOpen(open); if (!open) { setQrToken(""); setQrError(undefined); } }}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{gym.name} entry QR</DialogTitle></DialogHeader><DialogBody className="text-center">{qrLoading ? <div className="flex min-h-64 items-center justify-center text-[12.5px] text-ink-3" role="status">Preparing a short-lived entry pass…</div> : qrError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-left text-[12.5px] text-danger">{qrError}<Button className="mt-3" size="sm" variant="secondary" onClick={() => void openQr()}>Try again</Button></div> : qrToken ? <><div className="mx-auto w-fit rounded-lg border border-line bg-white p-5"><QRCodeSVG value={qrToken} size={224} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label="Membership entry QR code" /></div><p className="mt-4 font-mono text-[18px] tracking-wide">{membership.memberNumber}</p><p className="mt-3 text-[11.5px] text-ink-3">Expires {qrExpiresAt ? formatDateTime(qrExpiresAt) : "soon"}. Close this window when finished.</p></> : null}</DialogBody></DialogContent></Dialog>
@@ -192,7 +192,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
     {panelView === "week" ? <section aria-label="This week's classes" className="animate-fade-up">
       <div className="mb-3 flex items-center justify-between gap-3">
         <Button variant="secondary" size="sm" aria-label="Previous day" disabled={date <= today} onClick={() => setSelectedDate(addDays(date, -1))}><ChevronLeft /></Button>
-        <div className="text-center"><h3 className="text-[15px] font-semibold">{date === today ? "Today" : date === addDays(today, 1) ? "Tomorrow" : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3><p className="text-[10.5px] text-ink-3">Next 7 days — a new day opens as each one passes.</p></div>
+        <div className="text-center"><h3 className="text-[15px] font-semibold">{date === today ? "Today" : date === addDays(today, 1) ? "Tomorrow" : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3><p className="text-[12px] text-ink-3">Next 7 days — a new day opens as each one passes.</p></div>
         <Button variant="secondary" size="sm" aria-label="Next day" disabled={date >= weekEnd} onClick={() => setSelectedDate(addDays(date, 1))}><ChevronRight /></Button>
       </div>
       <div key={date} className="animate-fade-up">
@@ -222,7 +222,7 @@ function CustomerClassCard({ occurrence, busy, onBook, onCancel }: { occurrence:
     <div className="p-4">
       <div className="flex items-start justify-between gap-3"><div><h4 className="text-[14px] font-semibold">{occurrence.name}</h4><p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-ink-3"><Clock3 className="size-3" /> {formatTime(occurrence.startsAt)} · {Math.round((Date.parse(occurrence.endsAt) - Date.parse(occurrence.startsAt)) / 60_000)} min</p></div><Badge variant="outline">{occurrence.audience === "mixed" ? "Everyone" : occurrence.audience === "women" ? "Women" : "Men"}</Badge></div>
       <div className="mt-3 flex items-center justify-between border-y border-line py-2.5 text-[11.5px]"><span className="flex items-center gap-1.5 text-ink-2"><UserRoundCheck className="size-3.5" /> {occurrence.coachName ?? "Coach TBA"}</span><span className={cn("font-mono", full ? "text-warning-deep" : "text-ink-3")}>{full ? `${occurrence.waitlistCount} waiting` : `${occurrence.spotsRemaining} spots left`}</span></div>
-      {active ? <div className="mt-3 flex items-center justify-between gap-3"><div><p className="text-[12px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? `Waitlist · #${occurrence.booking.position ?? "—"}` : occurrence.booking?.fromWaitlist ? "Booked from waitlist" : "Booked"}</p><p className="mt-0.5 text-[10.5px] text-ink-3">Cancel anytime; late cancellation is recorded without a fee.</p></div><Button size="sm" variant="secondary" loading={busy} onClick={onCancel}>Cancel</Button></div> : <div className="mt-3"><Button className="w-full" loading={busy} disabled={!occurrence.canBook} onClick={onBook}>{full ? "Join waitlist" : "Book class"}</Button>{occurrence.bookingBlockReason ? <p className="mt-2 text-[10.5px] leading-4 text-ink-3">{occurrence.bookingBlockReason}</p> : null}</div>}
+      {active ? <div className="mt-3 flex items-center justify-between gap-3"><div><p className="text-[12px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? `Waitlist · #${occurrence.booking.position ?? "—"}` : occurrence.booking?.fromWaitlist ? "Booked from waitlist" : "Booked"}</p><p className="mt-0.5 text-[12px] text-ink-3">Cancel anytime; late cancellation is recorded without a fee.</p></div><Button size="sm" variant="secondary" loading={busy} onClick={onCancel}>Cancel</Button></div> : <div className="mt-3"><Button className="w-full" loading={busy} disabled={!occurrence.canBook} onClick={onBook}>{full ? "Join waitlist" : "Book class"}</Button>{occurrence.bookingBlockReason ? <p className="mt-2 text-[12px] leading-4 text-ink-3">{occurrence.bookingBlockReason}</p> : null}</div>}
     </div>
   </article>;
 }
@@ -254,7 +254,7 @@ function ReferralCard({ initialProgram, gymName, gymPhone }: { initialProgram: C
   };
   return <section className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby="referral-title">
     <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
-      <div className="p-5"><span className="flex size-9 items-center justify-center rounded-md bg-success-bg text-success-deep"><Gift className="size-4" aria-hidden /></span><p className="eyebrow mt-4">Member referrals</p><h2 id="referral-title" className="mt-1 font-display text-[18px] font-semibold">Bring a friend. Earn {program.rewardDays} free day{program.rewardDays === 1 ? "" : "s"}.</h2><p className="mt-2 max-w-2xl text-[12.5px] leading-5 text-ink-2">Share your link. If your friend books through it and buys their first membership, {gymName} applies the reward automatically.</p><div className="mt-4 flex flex-wrap gap-2">{sharePath ? <><Button onClick={() => void share()}><Share2 /> Share link</Button><Button variant="secondary" onClick={() => void copy()}><Copy /> Copy</Button></> : <Button loading={ensureLink.isPending} onClick={() => ensureLink.mutate(program.membershipId)}><Share2 /> Create my link</Button>}{gymPhone ? <><Button variant="secondary" asChild><a href={`https://wa.me/${gymPhone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(`Hi ${gymName}, I want to refer a friend from my membership.`)}`} target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp the gym</a></Button><Button variant="ghost" asChild><a href={`tel:${gymPhone}`}><Phone /> Call</a></Button></> : null}</div></div>
+      <div className="p-5"><span className="flex size-9 items-center justify-center rounded-md bg-success-bg text-success-deep"><Gift className="size-4" aria-hidden /></span><p className="context-label mt-4">Member referrals</p><h2 id="referral-title" className="mt-1 font-display text-[18px] font-semibold">Bring a friend. Earn {program.rewardDays} free day{program.rewardDays === 1 ? "" : "s"}.</h2><p className="mt-2 max-w-2xl text-[12.5px] leading-5 text-ink-2">Share your link. If your friend books through it and buys their first membership, {gymName} applies the reward automatically.</p><div className="mt-4 flex flex-wrap gap-2">{sharePath ? <><Button onClick={() => void share()}><Share2 /> Share link</Button><Button variant="secondary" onClick={() => void copy()}><Copy /> Copy</Button></> : <Button loading={ensureLink.isPending} onClick={() => ensureLink.mutate(program.membershipId)}><Share2 /> Create my link</Button>}{gymPhone ? <><Button variant="secondary" asChild><a href={`https://wa.me/${gymPhone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(`Hi ${gymName}, I want to refer a friend from my membership.`)}`} target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp the gym</a></Button><Button variant="ghost" asChild><a href={`tel:${gymPhone}`}><Phone /> Call</a></Button></> : null}</div></div>
       <div className="border-t border-line bg-sunken p-5 lg:border-s lg:border-t-0"><div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 text-[12.5px] font-medium text-ink"><Users className="size-4 text-ink-3" /> Reward progress</span><span className="font-mono text-[11px] text-ink-3">{program.earnedDays}/{program.maxRewardDaysPerWindow} days</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-sunken-2"><div className="h-full rounded-full bg-success transition-[width]" style={{ width: `${progress}%` }} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-[11.5px]"><div><dt className="text-ink-3">Successful referrals</dt><dd className="mt-1 text-[16px] font-semibold text-ink">{program.successfulReferrals}</dd></div><div><dt className="text-ink-3">Days still available</dt><dd className="mt-1 text-[16px] font-semibold text-ink">{program.remainingDays}</dd></div></dl><p className="mt-4 text-[10.5px] leading-4 text-ink-3">The {program.maxRewardDaysPerWindow}-day cap looks back {program.windowDays} days. A referral counts once, after the first membership sale.</p></div>
     </div>
     <div className="border-t border-line p-5">
@@ -268,7 +268,7 @@ function ReferralCard({ initialProgram, gymName, gymPhone }: { initialProgram: C
             return (
               <li key={event.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-[12.5px]">
                 <span className="w-24 shrink-0 text-ink-3">{formatDate(event.occurredAt)}</span>
-                <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-medium", meta.tone)}>{meta.label}</span>
+                <span className={cn("rounded-full px-2 py-0.5 text-[12px] font-medium", meta.tone)}>{meta.label}</span>
                 <span className="font-medium text-ink">{event.days > 0 ? `+${event.days} day${event.days === 1 ? "" : "s"}` : "0 days"}</span>
                 <span className="min-w-0 flex-1 basis-full text-[11.5px] text-ink-3 sm:basis-auto">{meta.explanation}</span>
               </li>
@@ -311,7 +311,7 @@ function VisitHistory({ visits }: { visits: CustomerVisit[] }) {
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby="visit-history-title">
       <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-        <h2 id="visit-history-title" className="eyebrow">Visit history</h2>
+        <h2 id="visit-history-title" className="context-label">Visit history</h2>
         <span className="text-[11px] tabular text-ink-3">{visits.length} recorded</span>
       </header>
       {visits.length === 0 ? (
@@ -399,18 +399,18 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
               <label className="grid gap-1 text-[11px] font-medium">Date<input className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" type="date" min={todayISODate()} value={date} onChange={(event) => setDate(event.target.value)} /></label>
             </div>
           )}
-          {(value.availableSessions > 0 || Boolean(rescheduleBookingId)) && trainerId && selectedBranchId ? <div className="mt-5"><p className="eyebrow">Available times</p>{slots.isLoading ? <p className="mt-3 text-[12px] text-ink-3">Loading current availability…</p> : slots.data?.length ? <div className="mt-3 flex flex-wrap gap-2">{slots.data.map((slot) => <Button key={slot.startsAt} size="sm" variant="secondary" loading={book.isPending} onClick={() => book.mutate(slot.startsAt)}>{rescheduleBookingId ? "Move to " : ""}{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit" }).format(new Date(slot.startsAt))}</Button>)}</div> : <p className="mt-3 text-[12px] text-ink-3">No open slots on this date.</p>}</div> : null}
+          {(value.availableSessions > 0 || Boolean(rescheduleBookingId)) && trainerId && selectedBranchId ? <div className="mt-5"><p className="context-label">Available times</p>{slots.isLoading ? <p className="mt-3 text-[12px] text-ink-3">Loading current availability…</p> : slots.data?.length ? <div className="mt-3 flex flex-wrap gap-2">{slots.data.map((slot) => <Button key={slot.startsAt} size="sm" variant="secondary" loading={book.isPending} onClick={() => book.mutate(slot.startsAt)}>{rescheduleBookingId ? "Move to " : ""}{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit" }).format(new Date(slot.startsAt))}</Button>)}</div> : <p className="mt-3 text-[12px] text-ink-3">No open slots on this date.</p>}</div> : null}
         </section>
 
         <section className="overflow-hidden rounded-lg border border-line bg-surface">
-          <header className="border-b border-line px-4 py-3"><p className="eyebrow">PT packages</p></header>
+          <header className="border-b border-line px-4 py-3"><p className="context-label">PT packages</p></header>
           <div className="divide-y divide-line">{value.packages.length ? value.packages.map((item) => <article key={item.id} className="flex items-start justify-between gap-3 p-4"><div><p className="text-[13px] font-semibold">{item.name}</p><p className="mt-1 text-[11.5px] text-ink-3">{item.sessionCount} sessions · valid {item.validityDays} days</p><p className="mt-1 text-[13px]"><MoneyText money={item.totalPrice} /></p></div><Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>Request</Button></article>) : <p className="p-5 text-[12px] text-ink-3">This gym has no active PT packages.</p>}</div>
-          {value.orders.length ? <div className="border-t border-line p-4"><p className="eyebrow">Package orders</p><ul className="mt-2 space-y-2">{value.orders.map((order) => <li key={order.id} className="flex items-center justify-between text-[11.5px]"><span className="font-mono">{order.id.slice(0, 8)}</span><Badge variant="outline">{order.status.replaceAll("_", " ")}</Badge></li>)}</ul></div> : null}
+          {value.orders.length ? <div className="border-t border-line p-4"><p className="context-label">Package orders</p><ul className="mt-2 space-y-2">{value.orders.map((order) => <li key={order.id} className="flex items-center justify-between text-[11.5px]"><span className="font-mono">{order.id.slice(0, 8)}</span><Badge variant="outline">{order.status.replaceAll("_", " ")}</Badge></li>)}</ul></div> : null}
         </section>
       </div>
 
       <section className="overflow-hidden rounded-lg border border-line bg-surface">
-        <header className="border-b border-line px-4 py-3"><p className="eyebrow">Upcoming bookings</p></header>
+        <header className="border-b border-line px-4 py-3"><p className="context-label">Upcoming bookings</p></header>
         {value.upcomingBookings.length ? <div className="divide-y divide-line">{value.upcomingBookings.map((booking) => <article key={booking.id} className="flex flex-wrap items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="text-[13px] font-medium">{booking.trainerName}</p><p className="mt-0.5 text-[11.5px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {branchNames.get(booking.branchId) ?? booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge><Button size="sm" variant="secondary" onClick={() => { setRescheduleBookingId(booking.id); setTrainerId(booking.trainerProfileId); setBranchId(booking.branchId); setDate(booking.startsAt.slice(0, 10)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Reschedule</Button><Button size="sm" variant="ghost" loading={cancel.isPending} onClick={() => cancel.mutate(booking.id)}>Cancel</Button></article>)}</div> : <p className="p-5 text-[12px] text-ink-3">No upcoming PT bookings.</p>}
       </section>
     </div>
@@ -420,7 +420,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="bg-surface p-4">
-      <p className="flex items-center gap-1.5 eyebrow [&_svg]:size-3.5">
+      <p className="flex items-center gap-1.5 context-label [&_svg]:size-3.5">
         {icon} {label}
       </p>
       <p className="mt-2 truncate text-[15px] font-semibold">{value}</p>
@@ -458,7 +458,7 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
     <section className="rounded-lg border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="eyebrow">Freeze</p>
+          <p className="context-label">Freeze</p>
           <p className="mt-1 text-[12.5px] text-ink-2">
             {pending
               ? `Requested ${pending.days} days from ${pending.startDate} — waiting for the gym${pending.expectedFeeMinor > 0 ? ` (expected fee JOD ${(pending.expectedFeeMinor / 1000).toFixed(3)})` : ""}.`

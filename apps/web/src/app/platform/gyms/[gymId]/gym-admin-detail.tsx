@@ -136,11 +136,11 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr]">
           <section className="border border-line bg-surface">
-            <div className="border-b border-line px-5 py-4"><p className="eyebrow">Organization</p><h2 className="mt-1 text-[17px] font-semibold">Branches and usage</h2></div>
+            <div className="border-b border-line px-5 py-4"><p className="context-label">Organization</p><h2 className="mt-1 text-[17px] font-semibold">Branches and usage</h2></div>
             <div className="divide-y divide-line">
               {detail.branches.state === "available" && detail.branches.value.length > 0 ? detail.branches.value.map((branch) => (
                 <div key={branch.id} className="grid gap-4 px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center">
-                  <div><p className="text-[13px] font-semibold">{branch.name}</p><p className="mt-1 flex items-center gap-1.5 text-[10.5px] text-ink-3"><MapPin className="size-3" />{branch.address || "Not available"}</p><p className="mt-1 text-[10.5px] text-ink-3">Code {branch.code} · {branch.status}</p></div>
+                  <div><p className="text-[13px] font-semibold">{branch.name}</p><p className="mt-1 flex items-center gap-1.5 text-[12px] text-ink-3"><MapPin className="size-3" />{branch.address || "Not available"}</p><p className="mt-1 text-[12px] text-ink-3">Code {branch.code} · {branch.status}</p></div>
                   <p className="text-[11px] text-ink-3">Branch actions are not configured</p>
                 </div>
               )) : <UnavailableBlock field={detail.branches} empty="No branches recorded" />}
@@ -156,7 +156,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
           <div className="grid gap-5">
             <section className="border border-line bg-surface p-5">
-              <p className="eyebrow">Account owner</p>
+              <p className="context-label">Account owner</p>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3 text-[12px]">
                 <span className="text-ink-3">Subscription agreement</span>
                 {detail.agreement.state === "available" ? <Link href={`/platform/agreements?agreement=${detail.agreement.value.id}`} className="font-medium text-ink underline-offset-2 hover:underline" data-testid="gym-agreement-link">{detail.agreement.value.reference} · {detail.agreement.value.status === "countersigned" ? "countersigned" : "awaiting RIVET"}</Link> : detail.agreement.state === "not_configured" ? <span className="text-warning-deep">Not signed yet</span> : <span className="text-ink-3">Not available</span>}
@@ -165,8 +165,8 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             </section>
             <section className="night-surface bg-night p-5 text-night-ink">
               <div className="flex items-baseline justify-between gap-3">
-                <p className="eyebrow-night">Subscription facts</p>
-                <Link href={`/platform/billing?bill=${detail.id}`} className="text-[10.5px] text-night-ink-3 underline-offset-2 hover:text-night-ink hover:underline">Manage in Billing</Link>
+                <p className="context-label">Subscription facts</p>
+                <Link href={`/platform/billing?bill=${detail.id}`} className="text-[12px] text-night-ink-3 underline-offset-2 hover:text-night-ink hover:underline">Manage in Billing</Link>
               </div>
               <dl className="mt-5 grid gap-3 text-[12px]">
                 <FactRow label="Plan"><FieldValue field={detail.subscription.plan} /></FactRow>
@@ -189,7 +189,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         <section className="mt-5 border border-line bg-surface p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="eyebrow">Marketplace</p>
+              <p className="context-label">Marketplace</p>
               <h2 className="mt-1 text-[16px] font-semibold">Public page</h2>
               <p className="mt-1 text-[11px] text-ink-2">
                 {publicPage
@@ -224,9 +224,9 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         <section className="mt-5 border border-line bg-surface p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="eyebrow">Marketplace</p>
+              <p className="context-label">Marketplace</p>
               <h2 className="mt-1 text-[16px] font-semibold">Public directory listing</h2>
-              <p className="mt-1 text-[10.5px] text-ink-3">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while the subscription is not active. Reactivate from Billing first." : "Suppressed: this row is not provisioned."}</p>
+              <p className="mt-1 text-[12px] text-ink-3">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while the subscription is not active. Reactivate from Billing first." : "Suppressed: this row is not provisioned."}</p>
             </div>
             <Switch checked={publicListingAllowed && isPublic} onCheckedChange={setIsPublic} disabled={!organizationAvailable || !publicListingAllowed} aria-label="Public directory listing" />
           </div>
@@ -243,7 +243,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
         <section className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-danger/30 bg-danger-bg p-5">
           <div>
-            <p className="eyebrow text-danger">Danger zone</p>
+            <p className="context-label text-danger">Danger zone</p>
             <h2 className="mt-1 text-[16px] font-semibold">Remove gym access</h2>
             <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-danger">Archiving removes access and public discovery. All records and history are kept.</p>
           </div>
@@ -259,7 +259,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             <DialogBody className="grid gap-4">
               <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-confirmation">Type the gym name to confirm<Input id="delete-gym-confirmation" value={deleteConfirmation} onChange={(event) => { setDeleteConfirmation(event.target.value); setDeleteError(undefined); }} placeholder={detail.name} autoComplete="off" /></label>
               <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-reason">Reason for archiving<Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></label>
-              {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[10.5px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
+              {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[12px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
               {deleteError ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{deleteError}</p> : null}
             </DialogBody>
             <DialogFooter>
@@ -270,8 +270,8 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         </Dialog>
 
         <section className="mt-5 border border-line bg-surface">
-          <div className="border-b border-line px-5 py-4"><p className="eyebrow">Account activity</p><h2 className="mt-1 text-[17px] font-semibold">Platform timeline</h2></div>
-          {detail.activity.state === "available" && detail.activity.value.length > 0 ? <div className="grid divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0">{detail.activity.value.map((event) => <div key={event.id} className="p-5"><p className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">{formatDateTime(event.occurredAt)}</p><p className="mt-3 text-[12.5px] font-semibold">{event.summary}</p><p className="mt-1 text-[10.5px] leading-relaxed text-ink-3">{event.action} · {event.actorName}</p></div>)}</div> : <UnavailableBlock field={detail.activity} empty="No platform activity recorded" />}
+          <div className="border-b border-line px-5 py-4"><p className="context-label">Account activity</p><h2 className="mt-1 text-[17px] font-semibold">Platform timeline</h2></div>
+          {detail.activity.state === "available" && detail.activity.value.length > 0 ? <div className="grid divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0">{detail.activity.value.map((event) => <div key={event.id} className="p-5"><p className="font-mono text-[10.5px] uppercase tracking-[.1em] text-ink-3">{formatDateTime(event.occurredAt)}</p><p className="mt-3 text-[12.5px] font-semibold">{event.summary}</p><p className="mt-1 text-[10.5px] leading-relaxed text-ink-3">{event.action} · {event.actorName}</p></div>)}</div> : <UnavailableBlock field={detail.activity} empty="No platform activity recorded" />}
         </section>
       </div>
     </div>
@@ -297,7 +297,7 @@ function statusLabel(value: string) {
 function HeroStatus({ status }: { status: PlatformGymDetail["controls"]["status"] }) {
   const label = status === "overdue" ? "past due" : status;
   const tone = status === "active" ? "bg-success-bg text-success-deep" : status === "trial" ? "bg-sunken text-ink-2" : "bg-signal-bg text-signal-deep";
-  return <span className={`rounded-sm px-2 py-1 font-mono text-[8px] uppercase tracking-[.12em] ${tone}`}>{label}</span>;
+  return <span className={`rounded-sm px-2 py-1 font-mono text-[10.5px] uppercase tracking-[.12em] ${tone}`}>{label}</span>;
 }
 
 function isPublicSubscriptionStatus(status: PlatformGymDetail["controls"]["status"] | undefined): boolean {
@@ -313,7 +313,7 @@ function billingIntervalLabel(value: BillingInterval): string {
 }
 
 function Usage({ icon, label, field }: { icon: React.ReactNode; label: string; field: PlatformData<number | string> }) {
-  return <div className="bg-surface p-4"><span className="text-ink-3 [&_svg]:size-3.5">{icon}</span><p className="mt-4 font-mono text-[7.5px] uppercase tracking-[.1em] text-ink-3">{label}</p><p className="mt-1 text-[12px] font-semibold"><FieldValue field={field} render={(value) => typeof value === "number" ? value.toLocaleString() : value} /></p></div>;
+  return <div className="bg-surface p-4"><span className="text-ink-3 [&_svg]:size-3.5">{icon}</span><p className="mt-4 font-mono text-[10.5px] uppercase tracking-[.1em] text-ink-3">{label}</p><p className="mt-1 text-[12px] font-semibold"><FieldValue field={field} render={(value) => typeof value === "number" ? value.toLocaleString() : value} /></p></div>;
 }
 
 function FactRow({ label, children }: { label: string; children: React.ReactNode }) {

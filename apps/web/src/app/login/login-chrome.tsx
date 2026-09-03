@@ -9,29 +9,29 @@ import { cn } from "@/lib/utils/cn";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
 import type { Audience, Portal } from "./portals";
 
-const BRAND_COPY: Record<Audience | "chooser", { eyebrow: string; headline: string; body: string }> = {
+const BRAND_COPY: Record<Audience | "chooser", { context: string; headline: string; body: string }> = {
   chooser: {
-    eyebrow: "Gym revenue & operations",
+    context: "Gym revenue & operations",
     headline: "Never lose a renewal, a lead, or a dinar again.",
     body: "Members, sales follow-up, reception, payments and cash — one chronological record per member, full accountability per staff action.",
   },
   account: {
-    eyebrow: "One account · the right workspace",
+    context: "One account · the right workspace",
     headline: "Sign in once. RIVET handles the rest.",
     body: "Your assigned role decides whether RIVET opens the member dashboard, gym operations, reception, or the platform console.",
   },
   staff: {
-    eyebrow: "RIVET for gyms",
+    context: "RIVET for gyms",
     headline: "Never lose a renewal, a lead, or a dinar again.",
     body: "Members, sales follow-up, reception, payments and cash — one chronological record per member, full accountability per staff action.",
   },
   member: {
-    eyebrow: "RIVET for members",
+    context: "RIVET for members",
     headline: "Every gym you train at, in one account.",
     body: "Membership status, expiry, visits, balance and receipts — plus a single QR identity that gets you through the door.",
   },
   admin: {
-    eyebrow: "RIVET platform",
+    context: "RIVET platform",
     headline: "Every gym on the network, on one screen.",
     body: "Tenant health, subscriptions, invoices and support in one console — with the same audit discipline the gyms get.",
   },
@@ -59,7 +59,7 @@ export function LoginLayout({
         </Link>
 
         <div className="max-w-md">
-          <p className="eyebrow-night mb-4">{copy.eyebrow}</p>
+          <p className="context-label mb-4 text-night-ink-3">{copy.context}</p>
           <h2 className="font-display text-[38px] font-semibold leading-[1.08] tracking-tight">{copy.headline}</h2>
           <p className="mt-5 text-[15px] leading-relaxed text-night-ink-2">{copy.body}</p>
           <p className="mt-4 font-['var(--font-plex-arabic)'] text-[15px] leading-relaxed text-night-ink-3" dir="rtl">
@@ -113,7 +113,7 @@ export function LoginLayout({
                   </span>
                 ))}
               </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">
+              <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">
                 Secure identity by Clerk · application data by Convex
               </p>
             </div>

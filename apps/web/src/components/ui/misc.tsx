@@ -91,8 +91,8 @@ function Monogram({
 }) {
   const tone = AVATAR_TONES[hashString(name) % AVATAR_TONES.length];
   const sizes = {
-    xs: "size-6 text-[9px]",
-    sm: "size-7 text-[10px]",
+    xs: "size-6 text-[12px]",
+    sm: "size-7 text-[12px]",
     md: "size-9 text-[11.5px]",
     lg: "size-12 text-[15px]",
     xl: "size-16 text-[20px]",

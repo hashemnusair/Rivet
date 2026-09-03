@@ -85,7 +85,7 @@ export function DesignSystemGallery() {
                 <div className={cn("h-20 border-b border-line", color)} />
                 <div className="flex items-center justify-between gap-3 p-3">
                   <ContextLabel className="text-ink-2">{name}</ContextLabel>
-                  <TechnicalLabel className="text-[9.5px]">{value}</TechnicalLabel>
+                  <TechnicalLabel className="text-[10.5px]">{value}</TechnicalLabel>
                 </div>
               </article>
             ))}
@@ -220,7 +220,7 @@ export function DesignSystemGallery() {
             <article className="overflow-hidden rounded-lg border border-line bg-surface">
               <div className="border-b border-line px-4 py-3"><ContextLabel>Member mobile</ContextLabel><h3 className="mt-1 text-[16px] font-semibold">Membership</h3></div>
               <div className="space-y-3 p-4"><div className="rounded-md border border-line p-4"><StatusChip tone="green">Active</StatusChip><p className="mt-3 text-[20px] font-semibold">Annual access</p><p className="mt-1 text-[12px] text-ink-3">Renews 18 October · Abdoun</p></div><Button className="w-full" size="lg">Show entry pass</Button></div>
-              <nav className="grid grid-cols-4 border-t border-line bg-paper px-2 py-2" aria-label="Example member navigation">{[{ icon: LayoutDashboard, label: "Home" }, { icon: CalendarDays, label: "Classes" }, { icon: CircleDollarSign, label: "Payments" }, { icon: Users, label: "Account" }].map(({ icon: MemberIcon, label }) => <span key={label} className={cn("flex flex-col items-center gap-1 py-1 text-[10px]", label === "Payments" ? "font-semibold text-ink" : "text-ink-3")}><MemberIcon className="size-4" />{label}</span>)}</nav>
+              <nav className="grid grid-cols-4 border-t border-line bg-paper px-2 py-2" aria-label="Example member navigation">{[{ icon: LayoutDashboard, label: "Home" }, { icon: CalendarDays, label: "Classes" }, { icon: CircleDollarSign, label: "Payments" }, { icon: Users, label: "Account" }].map(({ icon: MemberIcon, label }) => <span key={label} className={cn("flex flex-col items-center gap-1 py-1 text-[12px]", label === "Payments" ? "font-semibold text-ink" : "text-ink-3")}><MemberIcon className="size-4" />{label}</span>)}</nav>
             </article>
           </div>
         </GallerySection>
@@ -246,7 +246,7 @@ function GallerySection({ title, description, children }: { title: string; descr
 }
 
 function TokenSpec({ title, detail, specimen }: { title: string; detail: string; specimen: React.ReactNode }) {
-  return <article className="panel p-4"><ContextLabel>{title}</ContextLabel><div className="mt-4 min-h-12">{specimen}</div><TechnicalLabel className="mt-3 text-[9.5px]">{detail}</TechnicalLabel></article>;
+  return <article className="panel p-4"><ContextLabel>{title}</ContextLabel><div className="mt-4 min-h-12">{specimen}</div><TechnicalLabel className="mt-3 text-[10.5px]">{detail}</TechnicalLabel></article>;
 }
 
 function ExampleMemberRow({ name, number, branch, balance, status }: { name: string; number: string; branch: string; balance: string; status: "Active" | "Expiring" }) {
