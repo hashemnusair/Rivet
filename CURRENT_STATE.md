@@ -1,5 +1,14 @@
 # GymOS / RIVET current implementation state
 
+## Daily front-desk workflow UI pass — 5 September 2026
+
+- **Pass 1 is approved, integrated and live.** Hashem approved both the shift-command and member-to-sale portions after reviewing the mock-data Vercel Preview. The eight coherent commits were fast-forwarded to `main` without squashing at implementation finish `797ae99`; the separate landing-page worktree remained untouched.
+- **Daily work is clearer and more truthful.** Dashboard/Today, Reception, Checkout, Members, member creation/detail/duplicates/import, Memberships, Plans, Payments, cash shifts, receipts, the command palette, notifications and shared branch selection now use stronger next-action hierarchy, explicit loading/error/retry/stale states, responsive semantic records and URL-backed view state. Duplicate checking cannot be mistaken for an unavailable check, and shift closure waits for authoritative totals.
+- **Reception remains deliberately distinct.** Its dark, focused command-desk treatment was preserved while its branch, lookup, verdict, warning and recovery behavior was aligned with the RIVET product system. Mobile Checkout uses an accessible focus-trapped sheet; member and finance surfaces avoid squeezed desktop tables at phone and tablet widths.
+- **Release verification is green.** Local verification passed both TypeScript checks, zero-warning lint and secret audit, 1,240 Vitest tests plus 14 repository-safety tests, the 67-route Production build, 67 credential-free Playwright journeys with 14 explicit credential-gated skips, the Production dependency audit, the Impeccable detector and repository checks. GitHub Actions run `33925997793` passed all three jobs for `797ae99`.
+- **Production is healthy.** Vercel deployment `dpl_4P5CmBPkyWMGQTJQQxNY4ZHKcRWk` is `READY` and owns the canonical RIVET aliases. `rivetjo.com`, `app.rivetjo.com/login/gym` and `dashboard.rivetjo.com/login/gym` returned HTTP 200; `/dev/design-system` returned 404 in Production as required. This pass changed no Convex schema, backend contract, authorization rule, financial behavior or Production data.
+- The complete tickable evidence is in `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md`. Pass 2 has not started.
+
 ## Product workflow UI refinement tracker — 4 September 2026
 
 - `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` is the living, tickable plan for

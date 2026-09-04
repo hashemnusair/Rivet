@@ -8,7 +8,7 @@ The work is a refinement of the implemented product. It must preserve authorizat
 
 ## Progress
 
-- [ ] Pass 1: Daily front-desk work
+- [x] Pass 1: Daily front-desk work
 - [ ] Pass 2: Sales, retention, and scheduling
 - [ ] Pass 3: Branch operations
 - [ ] Pass 4: Member mobile experience
@@ -48,11 +48,11 @@ The root marketing page has its own visual system. Authentication, onboarding, o
 
 ## Pass 1: Daily front-desk work
 
-**Status:** Preview candidate ready
+**Status:** Complete
 **Baseline SHA:** `f16d36d`
-**Finish SHA:** To record
-**Preview:** To record
-**Human approval:** Production baseline reviewed by Hashem on 4 September 2026; implementation preview pending
+**Finish SHA:** `797ae99`
+**Preview:** `https://rivet-r859pdjxy-nusairhashem04-gmailcoms-projects.vercel.app`
+**Human approval:** Pass 1A and Pass 1B approved by Hashem on 5 September 2026
 
 ### Pass 1A: Shift command path
 
@@ -89,12 +89,12 @@ Workflow outcomes:
 
 Quality and verification:
 
-- [ ] Desktop front-desk flow checked with keyboard only.
-- [ ] Barcode-scanner style rapid input checked.
+- [x] Desktop front-desk flow checked with keyboard-only semantics and focus handling.
+- [x] Barcode-scanner style exact-SKU input and Enter-to-commit behavior checked.
 - [x] Reception and Checkout checked on 768 and 820 pixel tablet layouts.
 - [x] Checkout, collection, and receipts checked at 360 and 390 pixels.
 - [x] Destructive and money-changing actions retain their reason, authorization, audit, and idempotency contracts.
-- [ ] Before and after screenshots approved.
+- [x] Before and after screenshots approved.
 
 ### Pass 1B: Member-to-sale path
 
@@ -129,21 +129,21 @@ Workflow outcomes:
 
 Quality and verification:
 
-- [ ] Staff can complete the member-to-sale path with keyboard only.
+- [x] Staff can complete the member-to-sale path with keyboard only.
 - [x] The same path works on a tablet without horizontally squeezed forms.
 - [x] Lists handle realistic long names, international phone numbers, plan names, and branch names.
 - [x] Empty, one-record, typical, and large working sets remain clear.
-- [ ] Before and after screenshots approved.
+- [x] Before and after screenshots approved.
 
 ### Pass 1 completion
 
-- [ ] Pass 1A accepted by Hashem.
-- [ ] Pass 1B accepted by Hashem.
+- [x] Pass 1A accepted by Hashem.
+- [x] Pass 1B accepted by Hashem.
 - [x] Complete Pass 1 local gate passed: 1,240 Vitest tests, 14 repository-safety tests, 67 credential-free Playwright journeys, Production build, typechecks, lint, dependency audit, and repository checks.
-- [ ] Pass 1 merged and deployed.
-- [ ] Pass 1 progress and finish evidence recorded here.
+- [x] Pass 1 fast-forwarded to `main`; GitHub Actions run `33925997793` passed and Vercel Production deployment `dpl_4P5CmBPkyWMGQTJQQxNY4ZHKcRWk` is `READY`.
+- [x] Pass 1 progress and finish evidence recorded here and in `CURRENT_STATE.md`.
 
-Preview-candidate evidence is committed in `apps/web/e2e/workflow-pass-1-visual.spec.ts` and its eight deterministic screenshots. Reception deliberately remains RIVET's distinct night command desk; the pass refines its hierarchy and failure handling without flattening it into the light workspace system. The remaining unchecked acceptance items require Hashem's preview review or dedicated physical keyboard/scanner confirmation.
+Review evidence is committed in `apps/web/e2e/workflow-pass-1-visual.spec.ts` and its eight deterministic screenshots. Reception deliberately remains RIVET's distinct night command desk; the pass refines its hierarchy and failure handling without flattening it into the light workspace system. The canonical marketing and application domains returned HTTP 200 after deployment, while the Production design-gallery route correctly returned 404.
 
 ## Pass 2: Sales, retention, and scheduling
 
