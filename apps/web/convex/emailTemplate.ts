@@ -4,8 +4,8 @@
  * One column at 600px, a small lockup on paper, one headline, one action and
  * a complete footer, in the manner of an account receipt rather than a
  * marketing send. The markup is table-based with inline styles because mail
- * clients are not browsers; the only stylesheet is the dark-mode block, which
- * clients that ignore it simply render light.
+ * clients are not browsers; the stylesheet carries only the phone rules and
+ * the overrides that hold a client's dark mode off.
  *
  * No Convex imports: the mock adapter and the tests render the same bytes.
  */
@@ -56,6 +56,19 @@ const MONO = "'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace";
 const SANS = "Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 const SANS_AR = "'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif";
 
+/**
+ * Gmail gives a sender no way to refuse its dark mode, and on Android it
+ * recolours a light message wholesale. It does leave alone any element that
+ * carries a background image, so every surface here is painted three ways: the
+ * `bgcolor` attribute, the inline `background-color`, and a one-pixel image of
+ * that exact colour. A client that blocks images still sees the colour.
+ */
+function surface(origin: string, colour: keyof typeof SURFACE_PIXELS): string {
+  return `background-color:${BRAND[colour]};background-image:url(${origin}/brand/email-${SURFACE_PIXELS[colour]}.png);background-repeat:repeat;background-size:1px 1px`;
+}
+
+const SURFACE_PIXELS = { paper: "paper", surface: "surface", sunken: "sunken", ink: "ink" } as const;
+
 export function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
@@ -104,7 +117,7 @@ function footerHtml(message: BrandedEmail, origin: string): string {
   const link = (label: string, path: string) => `<a href="${origin}${path}" style="color:${BRAND.inkMuted};text-decoration:underline">${escapeHtml(label)}</a>`;
   const links = [link(arabic ? "سياسة الخصوصية" : "Privacy policy", "/privacy"), link(arabic ? "شروط الخدمة" : "Terms of service", "/terms")];
   if (message.audience === "gym") links.push(link(arabic ? "تفضيلات البريد" : "Email preferences", "/settings?section=email"));
-  return `<tr><td class="rv-footer" style="background:${BRAND.sunken};border-top:1px solid ${BRAND.line};padding:24px 32px">
+  return `<tr><td class="rv-footer" bgcolor="${BRAND.sunken}" style="${surface(origin, "sunken")};border-top:1px solid ${BRAND.line};padding:24px 32px">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
 <td valign="top" width="32" style="padding-${arabic ? "left" : "right"}:12px"><img src="${origin}/brand/rivet-glyph.png" width="14" alt="" style="height:20px;width:auto;display:block;border:0"></td>
 <td valign="top" class="rv-muted" style="font-family:${font};font-size:12px;line-height:1.6;color:${BRAND.inkMuted}">
@@ -118,7 +131,7 @@ ${legal ? `<div style="color:${BRAND.inkMuted}">${escapeHtml(legal)}</div>` : ""
 </td></tr></table></td></tr>`;
 }
 
-function rowsHtml(rows: EmailRow[], arabic: boolean): string {
+function rowsHtml(rows: EmailRow[], arabic: boolean, origin: string): string {
   const font = arabic ? SANS_AR : SANS;
   const start = arabic ? "right" : "left";
   const end = arabic ? "left" : "right";
@@ -132,19 +145,22 @@ function rowsHtml(rows: EmailRow[], arabic: boolean): string {
 <td class="rv-ink rv-value" align="${end}" style="${border}padding:12px 16px;${valueStyle}color:${BRAND.ink};word-break:break-word">${escapeHtml(row.value)}</td>
 </tr>`;
   });
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-card" style="border:1px solid ${BRAND.line};border-radius:8px;background:${BRAND.surface}">${cells.join("")}</table>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-card" bgcolor="${BRAND.surface}" style="border:1px solid ${BRAND.line};border-radius:8px;${surface(origin, "surface")}">${cells.join("")}</table>`;
 }
 
-function buttonHtml(button: { label: string; href: string }, accent: string | undefined, arabic: boolean): string {
+function buttonHtml(button: { label: string; href: string }, accent: string | undefined, arabic: boolean, origin: string): string {
   const background = accent ?? BRAND.ink;
   const colour = accent ? "#FFFFFF" : BRAND.paper;
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="rv-button" align="center" bgcolor="${background}" style="border-radius:6px;background:${background}">
+  const paint = accent
+    ? `background-color:${background}`
+    : surface(origin, "ink");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="rv-button" align="center" bgcolor="${background}" style="border-radius:6px;${paint}">
 <a href="${escapeHtml(button.href)}" class="rv-button-link" style="display:inline-block;height:44px;line-height:44px;padding:0 24px;font-family:${arabic ? SANS_AR : SANS};font-size:15px;font-weight:600;color:${colour};text-decoration:none;border-radius:6px">${escapeHtml(button.label)}</a>
 </td></tr></table>`;
 }
 
-function attachmentHtml(attachment: { filename: string; sizeLabel: string }, arabic: boolean): string {
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="rv-chip" style="background:${BRAND.paper};border-radius:4px;padding:8px 12px;font-family:${MONO};font-size:13px;color:${BRAND.ink}">
+function attachmentHtml(attachment: { filename: string; sizeLabel: string }, arabic: boolean, origin: string): string {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="rv-chip" bgcolor="${BRAND.paper}" style="${surface(origin, "paper")};border-radius:4px;padding:8px 12px;font-family:${MONO};font-size:13px;color:${BRAND.ink}">
 <span style="display:inline-block;width:11px;height:14px;border:1.5px solid ${BRAND.ink};border-radius:2px;vertical-align:-2px;margin-${arabic ? "left" : "right"}:10px"></span><span class="rv-filename">${escapeHtml(attachment.filename)}</span>
 <span class="rv-muted" style="font-family:${arabic ? SANS_AR : SANS};font-size:12px;color:${BRAND.inkMuted};padding-${arabic ? "right" : "left"}:8px;white-space:nowrap">${escapeHtml(attachment.sizeLabel)}</span>
 </td></tr></table>`;
@@ -159,8 +175,11 @@ function statusHtml(status: { label: string; tone: EmailStatusTone }, arabic: bo
  * The message is light in every client. Dark-mode inversion is refused
  * where a client offers a way to refuse it: the colour-scheme declarations
  * for Apple Mail and iOS, and the data-ogsc/data-ogsb overrides Outlook
- * applies when it recolours a message. Every colour is also set inline, so
- * a client that ignores the stylesheet still shows paper, white and ink.
+ * applies when it recolours a message. Gmail offers no such switch, so every
+ * surface additionally carries a one-pixel background image of its own
+ * colour, which Gmail's inverter leaves alone (see `surface`). Every colour
+ * is also set inline and as a `bgcolor`, so a client that ignores the
+ * stylesheet, or a reader with images off, still sees paper, white and ink.
  *
  * The phone rules keep one column with tighter gutters, stack each summary
  * row so long values read top to bottom, and make the button full width.
@@ -208,24 +227,24 @@ export function renderBrandedEmail(subject: string, message: BrandedEmail): Rend
   for (const paragraph of message.paragraphs) {
     blocks.push(`<div class="rv-secondary" style="font-family:${font};font-size:15px;line-height:${arabic ? 1.7 : 1.55};color:${BRAND.inkSecondary}">${escapeHtml(paragraph)}</div>`);
   }
-  if (message.rows?.length) blocks.push(rowsHtml(message.rows, arabic));
-  if (message.button) blocks.push(buttonHtml(message.button, message.audience === "member" ? message.accent : undefined, arabic));
-  if (message.attachment) blocks.push(attachmentHtml(message.attachment, arabic));
+  if (message.rows?.length) blocks.push(rowsHtml(message.rows, arabic, origin));
+  if (message.button) blocks.push(buttonHtml(message.button, message.audience === "member" ? message.accent : undefined, arabic, origin));
+  if (message.attachment) blocks.push(attachmentHtml(message.attachment, arabic, origin));
   if (message.note) blocks.push(`<div class="rv-secondary" style="font-family:${font};font-size:14px;line-height:1.55;color:${BRAND.inkSecondary}">${escapeHtml(message.note)}</div>`);
 
   const body = blocks.map((block) => `<tr><td style="padding-bottom:20px">${block}</td></tr>`).join("");
 
   const html = `<!doctype html>
 <html dir="${direction}" lang="${message.language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${escapeHtml(subject)}</title><style>${STYLE_CSS}</style></head>
-<body class="rv-body" style="margin:0;padding:0;background:${BRAND.sunken};color:${BRAND.ink}">
+<body class="rv-body" bgcolor="${BRAND.sunken}" style="margin:0;padding:0;${surface(origin, "sunken")};color:${BRAND.ink}">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(message.paragraphs[0] ?? subject)}</div>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-body" style="background:${BRAND.sunken}"><tr><td align="center" class="rv-outer" style="padding:24px 12px">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="rv-frame" style="width:600px;max-width:100%;background:${BRAND.surface};border:1px solid ${BRAND.lineStrong}" dir="${direction}">
-<tr><td class="rv-header rv-pad" align="${start}" style="background:${BRAND.paper};border-bottom:1px solid ${BRAND.line};padding:32px">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-body" bgcolor="${BRAND.sunken}" style="${surface(origin, "sunken")}"><tr><td align="center" class="rv-outer" bgcolor="${BRAND.sunken}" style="${surface(origin, "sunken")};padding:24px 12px">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="rv-frame" bgcolor="${BRAND.surface}" style="width:600px;max-width:100%;${surface(origin, "surface")};border:1px solid ${BRAND.lineStrong}" dir="${direction}">
+<tr><td class="rv-header rv-pad" align="${start}" bgcolor="${BRAND.paper}" style="${surface(origin, "paper")};border-bottom:1px solid ${BRAND.line};padding:32px">
 <img src="${origin}/brand/rivet-lockup.png" width="112" alt="RIVET" style="width:112px;height:auto;display:block;border:0">
 ${message.gymName ? `<div class="rv-muted" style="font-family:${font};font-size:13px;color:${BRAND.inkMuted};padding-top:12px">${escapeHtml(message.gymName)}</div>` : ""}
 </td></tr>
-<tr><td class="rv-pad" align="${start}" style="padding:32px 32px 12px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${body}</table></td></tr>
+<tr><td class="rv-pad" align="${start}" bgcolor="${BRAND.surface}" style="${surface(origin, "surface")};padding:32px 32px 12px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${body}</table></td></tr>
 ${footerHtml(message, origin)}
 </table></td></tr></table></body></html>`;
 

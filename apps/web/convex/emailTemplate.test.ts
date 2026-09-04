@@ -76,6 +76,27 @@ describe("branded email", () => {
     expect(html).toContain(`[data-ogsc] .rv-button-link,[data-ogsb] .rv-button-link{color:${"#F5F4EF"}!important}`);
   });
 
+  it("holds its colour in Gmail, which offers no way to refuse dark mode", () => {
+    const { html } = renderBrandedEmail("s", {
+      ...base,
+      siteUrl: "https://www.rivetjo.com",
+      rows: [{ label: "Amount", value: "JOD 129.133", strong: true }],
+      button: { label: "View invoice", href: "https://www.rivetjo.com" },
+      attachment: { filename: "invoice.pdf", sizeLabel: "84 KB" },
+    });
+    // Gmail leaves an element alone when it carries a background image, so
+    // every surface is painted with a pixel of its own colour.
+    for (const [colour, pixel] of [["#EDECE5", "sunken"], ["#FFFFFF", "surface"], ["#F5F4EF", "paper"], ["#1B1A15", "ink"]] as const) {
+      expect(html).toContain(`background-color:${colour};background-image:url(https://www.rivetjo.com/brand/email-${pixel}.png)`);
+    }
+    // The page, the frame, the header, the card, the chip, the button and the
+    // footer each state their colour three ways, so a reader with images off
+    // still sees the same message.
+    expect(html.match(/bgcolor="/g)?.length ?? 0).toBeGreaterThanOrEqual(7);
+    expect(html).toContain('<body class="rv-body" bgcolor="#EDECE5"');
+    expect(html).not.toContain("background:#FFFFFF;border:1px solid");
+  });
+
   it("reads on a phone: tighter gutters, stacked rows, a full-width button", () => {
     const { html } = renderBrandedEmail("s", { ...base, rows: [{ label: "Amount", value: "JOD 129.133", strong: true }], button: { label: "View invoice", href: "https://www.rivetjo.com" } });
     expect(html).toContain('<meta name="viewport" content="width=device-width,initial-scale=1">');
