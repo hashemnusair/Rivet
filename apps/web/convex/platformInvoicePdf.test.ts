@@ -27,9 +27,10 @@ describe("invoice document", () => {
     expect(blocks).toContain("Total due");
     expect(blocks).toContain("Payment terms 14 days.");
     expect(blocks).toContain("Quote INV-2026-000184 as the payment reference.");
-    // Nothing about tax is invented.
-    expect(blocks).toContain("[Treatment to be decided]");
-    expect(blocks).toContain("[Bank name]");
+    // Nothing about tax or bank details is invented, and nothing bracketed is printed.
+    expect(blocks).not.toMatch(/\[[A-Za-z]/);
+    expect(blocks).not.toContain("\"Tax\"");
+    expect(blocks).toContain("confirms them on request at sales@rivetjo.com");
   });
 
   it("shows the status as a quiet chip, and red only when it is past due", () => {
@@ -48,7 +49,7 @@ describe("invoice document", () => {
     expect(body).toContain("(Invoice) Tj");
     expect(body).toContain("/Subtype /Image");
     expect(body).toContain("(PAGE 1 OF 1) Tj");
-    expect(body).toContain("billing@rivetjo.com");
+    expect(body).toContain("sales@rivetjo.com");
     expect(invoicePdfFilename("INV-2026-000184")).toBe("RIVET-invoice-INV-2026-000184.pdf");
   });
 

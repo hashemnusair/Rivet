@@ -8,9 +8,9 @@
  * and an audit event.
  */
 import { renderPdf, encodeBase64, mm, type PdfBlock } from "./pdfDocument";
-import { planFee, planSummary } from "./planCatalogue";
+import { planSummary } from "./planCatalogue";
 import { RIVET_GLYPH_JPEG, RIVET_LOCKUP_JPEG } from "./brandAssets";
-import { BRAND_CONTACT, BRAND_PLACEHOLDERS } from "./brandTokens";
+import { BRAND_CONTACT, BRAND_LEGAL, brandLegalLine } from "./brandTokens";
 import { type AgreementSection } from "./legalAgreementText";
 
 export interface AgreementPdfInput {
@@ -20,7 +20,7 @@ export interface AgreementPdfInput {
   organizationName: string;
   customer: { legalName: string; address: string; city?: string };
   signatory: { name: string; idType: "national" | "passport"; idNumberMasked: string; email: string; title?: string };
-  subscription: { plan: string; startDate: string; billingInterval?: "monthly" | "annual" };
+  subscription: { plan: string; startDate: string; billingInterval?: "monthly" | "annual"; feeLabel?: string };
   signature: { method: "drawn" | "typed"; typedName?: string; printImageDataUrl?: string };
   signedAtLocal: string;
   timezone: string;
@@ -81,7 +81,7 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
     },
     { type: "meta", text: `${input.reference} · v${versionNumber} · ${statusLabel} · ${shortLocal(input.signedAtLocal)}` },
     { type: "heading", text: "1. Parties" },
-    { type: "paragraph", text: `This agreement is made between RIVET (${BRAND_PLACEHOLDERS.legalEntity}, ${BRAND_CONTACT.city}, "RIVET") and ${input.customer.legalName} (${fullAddress(input)}, "the Customer"), represented by ${input.signatory.name}, for the Customer's use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.` },
+    { type: "paragraph", text: `This agreement is made between ${BRAND_LEGAL.legalEntity ?? "RIVET"} (${BRAND_CONTACT.city}, "RIVET") and ${input.customer.legalName} (${fullAddress(input)}, "the Customer"), represented by ${input.signatory.name}, for the Customer's use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.` },
     { type: "heading", text: "2. Details" },
     {
       type: "rows",
@@ -90,7 +90,7 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
         { label: "Representative", value: `${input.signatory.name}, ${input.signatory.title ?? "owner"} · ${input.signatory.email}` },
         { label: "Address", value: fullAddress(input) },
         { label: "Plan", value: planSummary(input.subscription.plan) },
-        { label: "Fee", value: `${planFee(input.subscription.plan, interval) ?? "As quoted by RIVET in writing"}, excluding tax [treatment to be decided]` },
+        { label: "Fee", value: `${input.subscription.feeLabel ?? "As quoted by RIVET in writing"}, excluding any applicable tax` },
         { label: "Billing interval", value: INTERVALS[interval] },
         { label: "Payment terms", value: "14 days from the invoice date" },
         { label: "Start date", value: shortDate(input.subscription.startDate) },
@@ -187,7 +187,7 @@ export function renderAgreementPdf(input: AgreementPdfInput, sections?: readonly
     documentLabel: "Subscription agreement",
     runningTitle: "Subscription agreement",
     footer: `${input.reference} · RIVET, ${BRAND_CONTACT.city}`,
-    footerPlaceholder: BRAND_PLACEHOLDERS.legalEntity,
+    footerPlaceholder: brandLegalLine() || undefined,
     lockupJpeg: RIVET_LOCKUP_JPEG,
     glyphJpeg: RIVET_GLYPH_JPEG,
   });

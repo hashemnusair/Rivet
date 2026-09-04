@@ -86,7 +86,7 @@
   chips, tables, panels, framed signatures) shared by the subscription
   agreement and the new invoice document, which is attached to the invoice
   emails. Facts RIVET has not registered, the legal entity and tax treatment,
-  appear as visible placeholders rather than inventions. On screen, the
+  are omitted until filled in (`BRAND_LEGAL` in `convex/brandTokens.ts`); nothing bracketed reaches a customer, and sales@rivetjo.com is the one address printed. On screen, the
   privacy policy, the terms, the agreement reading view and the signed record
   render on the same master page (`document-sheet.tsx`), and the legal pages
   download a PDF built from what is rendered. Gyms choose a language for

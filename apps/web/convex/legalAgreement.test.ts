@@ -64,7 +64,7 @@ describe("subscription agreement e-signature", () => {
     expect(context.text).toBe(canonicalAgreementText());
     expect(context).toMatchObject({ status: "required", canSign: true, prefill: { legalName: "Iron House Fitness", address: "Mecca Street, Amman", signatoryName: "Omar Haddad", email: "omar@ironhouse.example", plan: "Growth", startDate: "2026-10-01" } });
     // The trimmed form never asks for these, so the server does not prefill them.
-    expect(Object.keys(context.prefill).sort()).toEqual(["address", "email", "legalName", "plan", "signatoryName", "startDate"]);
+    expect(Object.keys(context.prefill).sort()).toEqual(["address", "email", "feeLabel", "legalName", "plan", "signatoryName", "startDate"]);
     const session = await owner.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } };
     expect(session.legal).toEqual({ agreementStatus: "required" });
     const managerSession = await manager.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } };

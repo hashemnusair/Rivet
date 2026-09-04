@@ -35,8 +35,10 @@ describe("agreement PDF", () => {
     expect(blocks).not.toContain("9871234567");
     expect(blocks).toContain("Signed 1 October 2026, 10:15, Asia/Amman.");
     expect(blocks).toContain("Signed, awaiting countersignature");
-    expect(blocks).toContain("Growth · up to 3 branches, 25 staff, 2,500 members");
-    expect(blocks).toContain("JOD 149.000 per month, excluding tax [treatment to be decided]");
+    expect(blocks).not.toContain("2,500 members");
+    expect(blocks).not.toMatch(/\[[A-Za-z]/);
+    expect(blocks).toContain("As quoted by RIVET in writing, excluding any applicable tax");
+    expect(JSON.stringify(agreementPdfBlocks({ ...signed, subscription: { ...signed.subscription, feeLabel: "JOD 149.000 per month" } }, undefined))).toContain("JOD 149.000 per month, excluding any applicable tax");
     expect(blocks).toContain("1 Oct 2026");
     expect(blocks).toContain("3. What this agreement covers");
     expect(blocks).toContain("12. Electronic signature");

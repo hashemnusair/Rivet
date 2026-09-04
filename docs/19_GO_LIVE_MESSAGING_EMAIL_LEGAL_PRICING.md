@@ -300,10 +300,19 @@ did not arrive, before the provider's dashboard.
 **Agreement text 1.2 (4 September 2026).** Same clauses as 1.1, numbered 3 to
 12 so the document reads as one sequence with 1 Parties and 2 Details ahead
 of them and 13 Signatures after; the one internal cross-reference moved with
-its section. 1.1 stays in code because a test gym signed it. Plan limits and
-published prices on the agreement come from `convex/planCatalogue.ts`, the
-same catalogue the platform seeds; the numbers remain provisional until the
-pricing sheet below is signed.
+its section. 1.1 stays in code because a test gym signed it. The details name
+the plan only, never limits the agreement does not promise. The fee row is
+the price RIVET publishes for that plan at the moment of signing (the
+console's catalogue if an operator has set one, else the launch price),
+frozen onto the agreement as `subscription.feeLabel` so the document keeps
+saying what was true then.
+
+**No placeholders on a customer's page.** `convex/brandTokens.ts` holds
+RIVET's registered facts as optional fields (`BRAND_LEGAL`: legal entity,
+commercial registration, tax number and treatment, bank and CliQ details).
+Each line is printed only once it is filled in; until then the documents
+name RIVET and Amman and say nothing bracketed. The one address RIVET prints
+anywhere is sales@rivetjo.com.
 
 **Agreement layout.** The PDF follows artboard P2's anatomy and flows
 without forced page breaks: 1 Parties and 2 Details (customer,

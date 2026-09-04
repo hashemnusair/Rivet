@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { AgreementTextSection, SubscriptionAgreement } from "@/lib/domain/types";
 import { DocumentRows, DocumentSection, DocumentSheet, DocumentSignature, type DocumentTone } from "./document-sheet";
-import { planFee, planSummary } from "../../../convex/planCatalogue";
+import { planSummary } from "../../../convex/planCatalogue";
+import { BRAND_LEGAL } from "../../../convex/brandTokens";
 import { shortDate } from "../../../convex/legalAgreementPdf";
 
 export const AGREEMENT_ID_TYPE_LABELS = { national: "Jordanian national ID", passport: "Passport" } as const;
@@ -28,6 +29,7 @@ export interface AgreementPreview {
   signatoryName: string;
   email: string;
   plan: string;
+  feeLabel?: string;
   startDate: string;
 }
 
@@ -50,7 +52,7 @@ export function AgreementText({ version, sections, reference, preview }: { versi
             <>
               <div className="py-6">
                 <DocumentSection number="1" title="Parties">
-                  <p>This agreement is made between RIVET ([Legal entity name · Commercial registration no.], Amman, Jordan, “RIVET”) and {preview.legalName} ({preview.address ?? "address confirmed in the next step"}, “the Customer”), represented by {preview.signatoryName}, for the Customer’s use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.</p>
+                  <p>This agreement is made between {BRAND_LEGAL.legalEntity ?? "RIVET"} (Amman, Jordan, “RIVET”) and {preview.legalName} ({preview.address ?? "address confirmed in the next step"}, “the Customer”), represented by {preview.signatoryName}, for the Customer’s use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.</p>
                 </DocumentSection>
               </div>
               <div className="py-6">
@@ -60,7 +62,7 @@ export function AgreementText({ version, sections, reference, preview }: { versi
                     { label: "Representative", value: <span>{preview.signatoryName}, owner · <span dir="ltr">{preview.email}</span></span> },
                     { label: "Address", value: preview.address ?? <span className="text-ink-3">{TO_CONFIRM}</span> },
                     { label: "Plan", value: planSummary(preview.plan) },
-                    { label: "Fee", value: `${planFee(preview.plan, "monthly") ?? "As quoted by RIVET in writing"}, excluding tax [treatment to be decided]` },
+                    { label: "Fee", value: `${preview.feeLabel ?? "As quoted by RIVET in writing"}, excluding any applicable tax` },
                     { label: "Billing interval", value: "Monthly, in advance" },
                     { label: "Payment terms", value: "14 days from the invoice date" },
                     { label: "Start date", value: <span dir="ltr">{shortDate(preview.startDate)}</span> },
@@ -117,7 +119,7 @@ export function AgreementRecord({ agreement, sections, idNumberOverride }: { agr
       <div className="divide-y divide-line">
         <div className="pb-6">
           <DocumentSection number="1" title="Parties">
-            <p>This agreement is made between RIVET ([Legal entity name · Commercial registration no.], Amman, Jordan, “RIVET”) and {customer.legalName} ({fullAddress(agreement)}, “the Customer”), represented by {signatory.name}, for the Customer’s use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.</p>
+            <p>This agreement is made between {BRAND_LEGAL.legalEntity ?? "RIVET"} (Amman, Jordan, “RIVET”) and {customer.legalName} ({fullAddress(agreement)}, “the Customer”), represented by {signatory.name}, for the Customer’s use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.</p>
           </DocumentSection>
         </div>
         <div className="py-6">
@@ -130,7 +132,7 @@ export function AgreementRecord({ agreement, sections, idNumberOverride }: { agr
               { label: "Address", value: fullAddress(agreement) },
               ...(customer.branches ? [{ label: "Branches", value: String(customer.branches) }] : []),
               { label: "Plan", value: planSummary(subscription.plan) },
-              { label: "Fee", value: `${planFee(subscription.plan, "monthly") ?? "As quoted by RIVET in writing"}, excluding tax [treatment to be decided]` },
+              { label: "Fee", value: `${subscription.feeLabel ?? "As quoted by RIVET in writing"}, excluding any applicable tax` },
               { label: "Billing interval", value: "Monthly, in advance" },
               { label: "Payment terms", value: "14 days from the invoice date" },
               { label: "Start date", value: <span dir="ltr">{shortDate(subscription.startDate)}</span> },

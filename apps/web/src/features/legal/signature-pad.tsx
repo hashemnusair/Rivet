@@ -44,11 +44,17 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
     context.strokeStyle = "#1b1a15";
   }, []);
 
+  // The canvas is created afresh each time the method switches back to
+  // drawing, so it must be sized again then, not only on first mount:
+  // an unsized canvas is a 300 x 150 bitmap stretched to fit, which puts
+  // strokes far from the pointer and blurs them.
   useEffect(() => {
+    if (value.method !== "drawn") return;
+    setHasStrokes(false);
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, [resize]);
+  }, [resize, value.method]);
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();

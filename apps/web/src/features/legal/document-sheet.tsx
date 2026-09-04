@@ -22,7 +22,7 @@ const TONE_CLASSES: Record<DocumentTone, string> = {
   muted: "bg-sunken text-ink-3",
 };
 
-export const DOCUMENT_LEGAL_PLACEHOLDER = "[Legal entity name · Commercial registration no.]";
+import { BRAND_CONTACT, brandLegalLine } from "../../../convex/brandTokens";
 
 export function DocumentChip({ label, tone }: { label: string; tone: DocumentTone }) {
   return <span className={cn("inline-flex h-[22px] items-center rounded-[4px] px-2 text-[12px] font-semibold", TONE_CLASSES[tone])}>{label}</span>;
@@ -84,9 +84,9 @@ export function DocumentSheet({
       <footer className="border-t border-line px-6 pb-6 pt-4 sm:px-14">
         <div className="flex flex-wrap items-baseline justify-between gap-2 font-mono text-[11px] text-ink-3">
           <span className="font-medium uppercase tracking-[0.06em]">{reference ?? label}</span>
-          <span>RIVET, {RIVET_CONTACT.city}</span>
+          <span>RIVET, {RIVET_CONTACT.city} · {BRAND_CONTACT.email}</span>
         </div>
-        <p className="mt-1 font-mono text-[11px] text-ink-disabled">{DOCUMENT_LEGAL_PLACEHOLDER}</p>
+        {brandLegalLine() ? <p className="mt-1 font-mono text-[11px] text-ink-3">{brandLegalLine()}</p> : null}
       </footer>
     </article>
   );

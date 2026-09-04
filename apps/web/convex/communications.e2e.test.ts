@@ -169,7 +169,10 @@ describe("communications, end to end", () => {
     expect(issuedPdf).toContain("(Omar Al-Khatib \\(owner\\)) Tj");
     expect(issuedPdf).toContain("JOD 149.000");
     expect(issuedPdf).toContain("(Total due) Tj");
-    expect(issuedPdf).toContain("[Treatment to be decided]");
+    // Nothing bracketed reaches a customer: no placeholder tax note or bank line.
+    expect(issuedPdf).not.toContain("Treatment to be decided");
+    expect(issuedPdf).not.toContain("[Bank name]");
+    expect(issuedPdf).toContain("sales@rivetjo.com");
 
     await admin.mutation(api.domain.mutate, operation("platform.invoice.past_due", { invoiceId: draft.id, reason: "Bank transfer was not received by the due date." }));
     all = await emails();

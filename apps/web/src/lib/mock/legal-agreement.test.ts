@@ -39,7 +39,7 @@ describe("mock subscription agreement parity", () => {
     expect(session.legal).toEqual({ agreementStatus: "countersigned", agreementReference: "RVT-20260815-FORGE" });
     const context = await api.getSubscriptionAgreementContext();
     expect(context).toMatchObject({ status: "countersigned", canSign: false, agreement: { reference: "RVT-20260815-FORGE", signatory: { idNumberMasked: "••••••4567" } } });
-    expect(Object.keys(context.prefill).sort()).toEqual(["address", "email", "legalName", "plan", "signatoryName", "startDate"]);
+    expect(Object.keys(context.prefill).sort()).toEqual(["address", "email", "feeLabel", "legalName", "plan", "signatoryName", "startDate"]);
     expect(context.sha256).toBe(await sha256Hex(context.text));
     api.setBehavior({ agreementUnsigned: true });
     expect((await api.getSession()).legal).toEqual({ agreementStatus: "required" });

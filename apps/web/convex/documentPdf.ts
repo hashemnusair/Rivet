@@ -5,7 +5,7 @@
  */
 import { renderPdf, type PdfBlock } from "./pdfDocument";
 import { RIVET_GLYPH_JPEG, RIVET_LOCKUP_JPEG } from "./brandAssets";
-import { BRAND_CONTACT, BRAND_PLACEHOLDERS } from "./brandTokens";
+import { BRAND_CONTACT, brandLegalLine } from "./brandTokens";
 
 export interface DocumentPdfOptions {
   /** Uppercase technical label: PRIVACY POLICY, TERMS OF SERVICE. */
@@ -25,7 +25,7 @@ export function renderDocumentPdf(options: DocumentPdfOptions, body: PdfBlock[])
     documentLabel: options.label,
     runningTitle: options.title,
     footer: `${options.reference} · RIVET, ${BRAND_CONTACT.city}`,
-    footerPlaceholder: BRAND_PLACEHOLDERS.legalEntity,
+    footerPlaceholder: brandLegalLine() || undefined,
     lockupJpeg: RIVET_LOCKUP_JPEG,
     glyphJpeg: RIVET_GLYPH_JPEG,
   });

@@ -1256,6 +1256,8 @@ export default defineSchema({
       startDate: v.string(),
       termMonths: v.optional(v.number()),
       quote: v.optional(v.string()),
+      /** The fee RIVET published for the plan at the moment of signing. */
+      feeLabel: v.optional(v.string()),
     }),
     consents: v.object({ agreement: v.boolean(), authority: v.boolean(), electronic: v.boolean(), accurate: v.boolean() }),
     signature: v.object({

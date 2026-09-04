@@ -73,11 +73,12 @@ describe("branded email", () => {
   });
 
   it("keeps the footer complete, and unsubscribes only from marketing", () => {
-    expect(footerLines({ ...base })).toHaveLength(7);
+    // Six lines until RIVET's registered entity is filled in; the seventh appears then.
+    expect(footerLines({ ...base })).toHaveLength(6);
     expect(footerLines({ ...base }).join("\n")).toContain("Privacy policy · Terms of service · Email preferences");
     expect(footerLines({ ...base, marketing: true }).join("\n")).toContain("Unsubscribe");
     expect(footerLines({ ...base }).join("\n")).not.toContain("Unsubscribe");
-    expect(footerLines({ ...base })[6]).toBe("[Legal entity name · Commercial registration no.]");
+    expect(footerLines({ ...base })[1]).toContain("sales@rivetjo.com");
   });
 
   it("sizes an attachment the way a reader reads it", () => {

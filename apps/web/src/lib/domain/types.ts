@@ -429,6 +429,8 @@ export interface SubscriptionAgreementTerms {
   startDate: ISODate;
   termMonths?: number;
   quote?: string;
+  /** The fee RIVET published for the plan when the agreement was signed. */
+  feeLabel?: string;
 }
 
 export interface SubscriptionAgreementConsents {
@@ -494,6 +496,8 @@ export interface SubscriptionAgreementPrefill {
   email: string;
   /** The plan RIVET set up on the account; shown, not chosen, at signing. */
   plan: AgreementPlan;
+  /** The fee RIVET currently publishes for that plan, as the document prints it. */
+  feeLabel?: string;
   startDate: ISODate;
 }
 

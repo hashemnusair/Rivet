@@ -30,11 +30,15 @@ export function findPlan(name: string | undefined): PlanDefinition | undefined {
 
 const dinars = (minor: number) => `JOD ${(minor / 1000).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`;
 
-/** "Growth · up to 3 branches, 25 staff, 2,500 members" */
+/** The plan as the agreement names it: the plan itself, without limits the
+ * agreement does not promise. */
 export function planSummary(name: string): string {
-  const plan = findPlan(name);
-  if (!plan) return name;
-  return `${plan.name} · up to ${plan.branches} ${plan.branches === 1 ? "branch" : "branches"}, ${plan.staff} staff, ${plan.members.toLocaleString("en-US")} members`;
+  return findPlan(name)?.name ?? name;
+}
+
+/** "JOD 149.000 per month" from a price in minor units, for the interval. */
+export function feeLabel(priceMinor: number, interval: PlanInterval = "monthly"): string {
+  return interval === "annual" ? `${dinars(Math.round(priceMinor * 12 * ANNUAL_DISCOUNT))} per year` : `${dinars(priceMinor)} per month`;
 }
 
 /** "JOD 149.000 per month" or "JOD 1,430.400 per year" */

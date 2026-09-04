@@ -41,17 +41,33 @@ export const BRAND_CONTACT = {
   website: "www.rivetjo.com",
   supportHours: "Support 09:00–21:00 Amman time, Saturday to Thursday",
   supportHoursAr: "الدعم 09:00–21:00 بتوقيت عمّان، من السبت إلى الخميس",
-  billingEmail: "billing@rivetjo.com",
+  /** The one address RIVET prints: on invoices, in footers, for questions. */
+  email: "sales@rivetjo.com",
 } as const;
 
 /**
- * Facts RIVET has not registered yet. They are shown in place, in the muted
- * ink, so a reader can see what is missing rather than reading an invention.
+ * Registered facts about RIVET as a company. Each line is printed only once
+ * it is filled in; until then the documents simply name RIVET and Amman,
+ * with nothing invented and no bracketed placeholder on a customer's page.
  */
-export const BRAND_PLACEHOLDERS = {
-  legalEntity: "[Legal entity name · Commercial registration no.]",
-  legalEntityAr: "[اسم الكيان القانوني · رقم السجل التجاري]",
-  legalEntityWithTax: "[Legal entity name · Commercial registration no. · Tax no.]",
-} as const;
+export const BRAND_LEGAL: {
+  /** e.g. "RIVET Technologies LLC" */
+  legalEntity?: string;
+  /** Commercial registration number. */
+  registrationNumber?: string;
+  /** Tax number, once registered. */
+  taxNumber?: string;
+  /** How tax is applied on invoices, once decided; omitted until then. */
+  taxNote?: string;
+  /** Bank transfer details, once opened: bank, account name, IBAN, SWIFT. */
+  bank?: { bank: string; accountName: string; iban: string; swift?: string };
+  /** CliQ alias, once registered. */
+  cliqAlias?: string;
+} = {};
+
+/** "RIVET Technologies LLC · CR 12345" when known; empty otherwise. */
+export function brandLegalLine(): string {
+  return [BRAND_LEGAL.legalEntity, BRAND_LEGAL.registrationNumber ? `CR ${BRAND_LEGAL.registrationNumber}` : undefined, BRAND_LEGAL.taxNumber ? `Tax no. ${BRAND_LEGAL.taxNumber}` : undefined].filter(Boolean).join(" · ");
+}
 
 export const BRAND_YEAR = 2026;

@@ -6,6 +6,7 @@ import { enqueueOperationalEmail } from "./operationalEmail";
 import { renderAgreementCopyEmail, type AgreementCopy } from "./legalAgreementEmail";
 import { attachmentSizeLabel } from "./emailTemplate";
 import { agreementPdfFilename, renderAgreementPdfBase64 } from "./legalAgreementPdf";
+import { feeLabel, findPlan } from "./planCatalogue";
 import {
   AGREEMENT_COPY_RECIPIENTS,
   AGREEMENT_ID_TYPES,
@@ -72,6 +73,18 @@ function validPhone(input: string): boolean {
 
 function requireField(condition: boolean, field: string, message: string, correlationId: string): void {
   if (!condition) domainError("VALIDATION_ERROR", message, { correlationId, fieldErrors: { [field]: [message] } });
+}
+
+/**
+ * The fee RIVET publishes for a plan right now: the console's catalogue when
+ * an operator has set one, else the launch price. Frozen onto the agreement
+ * at signing so the document keeps saying what was true then.
+ */
+async function publishedFee(ctx: ReadContext, plan: string, interval: "monthly" | "annual" | undefined): Promise<string | undefined> {
+  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
+  const row = rows.map((item) => value(item.data)).find((item) => String(item.name ?? "").toLowerCase() === plan.toLowerCase());
+  const priceMinor = typeof row?.priceMinor === "number" ? row.priceMinor : findPlan(plan)?.priceMinor;
+  return priceMinor === undefined ? undefined : feeLabel(priceMinor, interval ?? "monthly");
 }
 
 async function activeAgreement(ctx: ReadContext, organizationId: Id<"organizations">): Promise<AgreementRow | undefined> {
@@ -182,6 +195,7 @@ async function signingContext(ctx: ReadContext, actor: ActorContext): Promise<Da
       signatoryName: actor.user.fullName,
       email: actor.user.email,
       plan: organization.subscriptionPlan ?? application?.plan ?? "Growth",
+      feeLabel: await publishedFee(ctx, organization.subscriptionPlan ?? application?.plan ?? "Growth", (await ctx.db.get(organization._id))?.billingInterval),
       startDate,
     },
     agreement: current ? agreementView(current, organization.name) : undefined,
@@ -242,7 +256,7 @@ function agreementPdfAttachment(row: AgreementRow, organizationName: string, bil
     contentBase64: renderAgreementPdfBase64({
       ...copy,
       signatory: { ...copy.signatory, title: row.signatory.title },
-      subscription: { ...copy.subscription, billingInterval },
+      subscription: { ...copy.subscription, billingInterval, feeLabel: row.subscription.feeLabel },
       status: row.status,
       placeOfSigning: row.placeOfSigning,
       signature: { method: row.signature.method, typedName: row.signature.typedName, printImageDataUrl: row.signature.printImageDataUrl },
@@ -417,6 +431,8 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   requireField(termMonths === undefined || (Number.isSafeInteger(termMonths) && termMonths >= 1 && termMonths <= 60), "termMonths", "Term must be between 1 and 60 months.", correlationId);
   const quote = optionalTrimmed(subscription.quote);
   requireField(!quote || quote.length <= 60, "quote", "Quote number is too long.", correlationId);
+  const organizationRow = await ctx.db.get(actor.organization._id);
+  const agreedFee = await publishedFee(ctx, plan, organizationRow?.billingInterval);
 
   for (const key of ["agreement", "authority", "electronic", "accurate"] as const) {
     requireField(consents[key] === true, `consent_${key}`, "Every declaration must be accepted before signing.", correlationId);
@@ -452,7 +468,7 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     status: "signed",
     customer: { legalName, tradeName, registrationNumber, address, city, branches },
     signatory: { name: signatoryName, title: signatoryTitle, idType, idNumber, phone, email },
-    subscription: { plan, startDate, termMonths, quote },
+    subscription: { plan, startDate, termMonths, quote, feeLabel: agreedFee },
     consents: { agreement: true, authority: true, electronic: true, accurate: true },
     signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, printImageDataUrl: method === "drawn" ? printImageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
     client: { userAgent: trimmed(client.userAgent).slice(0, 300), language: trimmed(client.language).slice(0, 20), viewport: trimmed(client.viewport).slice(0, 40) },
@@ -491,8 +507,6 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     dedupeKey: `agreement-signed:${publicId}`,
   });
   const row = (await ctx.db.query("subscriptionAgreements").withIndex("by_public_id", (q) => q.eq("publicId", publicId)).unique())!;
-  // The actor carries a projection of the organization; the interval lives on the full row.
-  const organizationRow = await ctx.db.get(actor.organization._id);
   const delivery = await sendAgreementCopies(ctx, row, actor.organization.name, actor.organization.defaultLanguage ?? "en", organizationRow?.billingInterval);
   await ctx.db.patch(row._id, { emailDeliveryPublicId: delivery.publicId });
   const result = agreementView({ ...row, emailDeliveryPublicId: delivery.publicId }, actor.organization.name);

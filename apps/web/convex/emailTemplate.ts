@@ -9,7 +9,7 @@
  *
  * No Convex imports: the mock adapter and the tests render the same bytes.
  */
-import { BRAND, BRAND_CONTACT, BRAND_PLACEHOLDERS, BRAND_YEAR } from "./brandTokens";
+import { BRAND, BRAND_CONTACT, BRAND_YEAR, brandLegalLine } from "./brandTokens";
 
 export type EmailLanguage = "en" | "ar";
 /** Who is reading: a gym's own team, or one of its members. */
@@ -75,7 +75,7 @@ export function footerLines(message: BrandedEmail): string[] {
   const arabic = message.language === "ar";
   const lines = [
     `RIVET · ${arabic ? BRAND_CONTACT.cityAr : BRAND_CONTACT.city}`,
-    `${BRAND_CONTACT.phone} · ${BRAND_CONTACT.whatsapp} · ${BRAND_CONTACT.instagram} · ${BRAND_CONTACT.website}`,
+    `${BRAND_CONTACT.phone} · ${BRAND_CONTACT.whatsapp} · ${BRAND_CONTACT.instagram} · ${BRAND_CONTACT.website} · ${BRAND_CONTACT.email}`,
     arabic ? BRAND_CONTACT.supportHoursAr : BRAND_CONTACT.supportHours,
   ];
   const legal = arabic ? ["سياسة الخصوصية", "شروط الخدمة"] : ["Privacy policy", "Terms of service"];
@@ -92,7 +92,8 @@ export function footerLines(message: BrandedEmail): string[] {
         : "This is a service message about your RIVET account.",
   );
   lines.push(arabic ? `© ${BRAND_YEAR} RIVET. جميع الحقوق محفوظة.` : `© ${BRAND_YEAR} RIVET. All rights reserved.`);
-  lines.push(arabic ? BRAND_PLACEHOLDERS.legalEntityAr : BRAND_PLACEHOLDERS.legalEntity);
+  const registered = brandLegalLine();
+  if (registered) lines.push(registered);
   return lines;
 }
 
@@ -113,7 +114,7 @@ function footerHtml(message: BrandedEmail, origin: string): string {
 <div style="padding-top:8px">${links.join(" · ")}</div>
 <div style="padding-top:8px">${escapeHtml(why!)}</div>
 <div style="padding-top:8px">${escapeHtml(copyright!)}</div>
-<div style="color:${BRAND.inkDisabled}">${escapeHtml(legal!)}</div>
+${legal ? `<div style="color:${BRAND.inkMuted}">${escapeHtml(legal)}</div>` : ""}
 </td></tr></table></td></tr>`;
 }
 
