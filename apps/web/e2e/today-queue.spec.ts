@@ -15,7 +15,7 @@ test.describe("Unified Today queue", () => {
 
     const queue = page.getByRole("region", { name: "Today" });
     await expect(queue).toBeVisible();
-    await expect(queue.getByText("Do this next")).toBeVisible();
+    await expect(queue.getByText("Next priority")).toBeVisible();
 
     const layout = await page.evaluate(() => {
       const today = document.querySelector<HTMLElement>('[aria-labelledby="today-queue-title"]');
