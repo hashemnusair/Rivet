@@ -240,8 +240,13 @@ Arabic mirrors the layout without mirroring the logo. Every operational email
 goes through it, and a member-facing message colours its button with the
 gym's own accent. The one signal red is reserved for past due and suspension.
 
-**PDF** (`convex/pdfDocument.ts`). A4 at 56pt margins, Helvetica and
-Helvetica-Bold, hairlines and JPEG images. Page one carries the lockup and an
+**PDF** (`convex/pdfDocument.ts`). A4 at 56pt margins, the identity's own
+type embedded in every file: Manrope regular and semibold for text, IBM Plex
+Mono for the meta line, the technical label, references and the footer.
+The faces are WinAnsi subsets built by `scripts/build-pdf-fonts.mjs` from
+the open-licence files in `scripts/pdf-fonts/` (SIL OFL 1.1, licences
+alongside) into `convex/pdfFonts.ts`; they add about 100 KB to a file.
+Hairlines and JPEG images complete the toolkit. Page one carries the lockup and an
 uppercase technical label; later pages carry a running header with the glyph,
 the document title and the reference. Every page ends with the page number,
 the reference and the legal-entity placeholder. The renderer draws status
@@ -343,10 +348,10 @@ and held with the signed record" rather than a blank space.
 
 Two limits worth knowing:
 
-- **Latin only.** A standard PDF font cannot draw Arabic, so any Arabic in a
-  typed field, a gym's registered name for instance, appears as question
+- **Latin only.** The embedded faces carry the WinAnsi range, so any Arabic
+  in a typed field, a gym's registered name for instance, appears as question
   marks in the PDF. The app record and the email body show it correctly.
-  Arabic in the PDF needs an embedded font with shaping, which is not in this
+  Arabic in the PDF needs an Arabic face with shaping, which is not in this
   release.
 - **The masked ID travels, the full one does not.** A PDF gets forwarded, so
   it carries the same masked number the app shows. The full number stays in

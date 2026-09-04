@@ -7,11 +7,11 @@
  * no Convex imports either, so the browser builds byte-identical files for
  * the "Download PDF" action.
  *
- * Scope is deliberately small: the fourteen standard PDF fonts (no font
- * embedding), WinAnsi text, and JPEG images. That covers a Latin contract
- * with a signature. Text outside WinAnsi, Arabic included, cannot be drawn
- * with a standard font and is replaced with "?"; the app and the email body
- * still show it correctly.
+ * Scope is deliberately small: three embedded TrueType faces (Manrope
+ * regular and semibold, IBM Plex Mono), WinAnsi text, and JPEG images. That
+ * covers a Latin contract with a signature in the identity's own type. Text
+ * outside WinAnsi, Arabic included, is replaced with "?"; the app and the
+ * email body still show it correctly.
  */
 
 /** A4 in PostScript points. */
@@ -21,7 +21,7 @@ export const PDF_MARGIN = 56;
 /** Millimetres to points, for the measurements the identity system gives in mm. */
 export const mm = (value: number): number => value * 2.834645669;
 
-export type PdfFont = "regular" | "bold";
+export type PdfFont = "regular" | "bold" | "mono";
 
 export type PdfTone = "success" | "warning" | "danger" | "muted";
 
@@ -81,33 +81,10 @@ export interface PdfDocumentOptions {
   createdAt?: Date;
 }
 
-// Adobe's published widths for the standard Helvetica faces, in 1/1000 em.
-// Only the characters a Latin contract uses are listed; anything else falls
-// back to AVERAGE_WIDTH, which makes a line wrap slightly early rather than
-// overflow the margin.
-const AVERAGE_WIDTH = 556;
-const HELVETICA_WIDTHS: Readonly<Record<string, number>> = {
-  " ": 278, "!": 278, '"': 355, "#": 556, $: 556, "%": 889, "&": 667, "'": 191, "(": 333, ")": 333,
-  "*": 389, "+": 584, ",": 278, "-": 333, ".": 278, "/": 278,
-  "0": 556, "1": 556, "2": 556, "3": 556, "4": 556, "5": 556, "6": 556, "7": 556, "8": 556, "9": 556,
-  ":": 278, ";": 278, "<": 584, "=": 584, ">": 584, "?": 556, "@": 1015,
-  A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278, J: 500, K: 667, L: 556, M: 833,
-  N: 722, O: 778, P: 667, Q: 778, R: 722, S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
-  "[": 278, "\\": 278, "]": 278, "^": 469, _: 556, "`": 333,
-  a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222, j: 222, k: 500, l: 222, m: 833,
-  n: 556, o: 556, p: 556, q: 556, r: 333, s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500,
-  "{": 334, "|": 260, "}": 334, "~": 584, "·": 278, "•": 350, "–": 556, "—": 1000,
-  "‘": 222, "’": 222, "“": 333, "”": 333,
-};
-const HELVETICA_BOLD_WIDTHS: Readonly<Record<string, number>> = {
-  ...HELVETICA_WIDTHS,
-  "!": 333, '"': 474, "'": 238, "(": 333, ")": 333, ",": 278, ".": 278, "/": 278, ":": 333, ";": 333, "?": 611,
-  A: 722, B: 722, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278, J: 556, K: 722, L: 611, M: 833,
-  N: 722, O: 778, P: 667, Q: 778, R: 722, S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
-  a: 556, b: 611, c: 556, d: 611, e: 556, f: 333, g: 611, h: 611, i: 278, j: 278, k: 556, l: 278, m: 889,
-  n: 611, o: 611, p: 611, q: 611, r: 389, s: 556, t: 333, u: 611, v: 556, w: 778, x: 556, y: 556, z: 500,
-  "‘": 278, "’": 278, "“": 500, "”": 500, "•": 350,
-};
+import { PDF_FACES, type PdfFontFace } from "./pdfFonts";
+
+const FACE_KEYS: Record<PdfFont, "regular" | "bold" | "mono"> = { regular: "regular", bold: "bold", mono: "mono" };
+const FONT_RESOURCE: Record<PdfFont, string> = { regular: "F1", bold: "F2", mono: "F3" };
 
 /** WinAnsi code points for the punctuation a contract picks up from typography. */
 const WIN_ANSI_EXTRAS: Readonly<Record<string, number>> = {
@@ -115,10 +92,11 @@ const WIN_ANSI_EXTRAS: Readonly<Record<string, number>> = {
   "–": 150, "—": 151, "™": 153, " ": 32,
 };
 
+/** Measured from the embedded face, so wrapping is exact for the type used. */
 export function widthOf(text: string, font: PdfFont, size: number): number {
-  const table = font === "bold" ? HELVETICA_BOLD_WIDTHS : HELVETICA_WIDTHS;
+  const face: PdfFontFace = PDF_FACES[FACE_KEYS[font]];
   let total = 0;
-  for (const character of text) total += table[character] ?? AVERAGE_WIDTH;
+  for (const byte of encodeWinAnsi(text)) total += face.widths[byte - 32] ?? face.widths[31] ?? 500;
   return (total * size) / 1000;
 }
 
@@ -289,7 +267,7 @@ function itemsFor(block: PdfBlock): Item[] {
       return items;
     }
     case "meta":
-      return wrap(block.text, "regular", 8.5, CONTENT_WIDTH).map((text) => line(text, "regular", 8.5, 13, 0, INK_MUTED));
+      return wrap(block.text, "mono", 8.5, CONTENT_WIDTH).map((text) => line(text, "mono", 8.5, 13, 0, INK_MUTED));
     case "heading":
       return [{ kind: "space", height: 8 }, ...wrap(block.text, "bold", 11.5, CONTENT_WIDTH).map((text) => line(text, "bold", 11.5, 15))];
     case "paragraph": {
@@ -435,7 +413,7 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
   const stroke = (y: number, colour = HAIRLINE) => push(`${rgb(colour)} RG 0.7 w ${PDF_MARGIN} ${y.toFixed(2)} m ${(PDF_PAGE_WIDTH - PDF_MARGIN).toFixed(2)} ${y.toFixed(2)} l S\n`);
   const text = (value: string, x: number, y: number, font: PdfFont, size: number, colour = INK, tracking = 0) => {
     if (!value) return;
-    push(`${rgb(colour)} rg BT /${font === "bold" ? "F2" : "F1"} ${size} Tf ${tracking ? `${tracking.toFixed(2)} Tc ` : ""}1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm `);
+    push(`${rgb(colour)} rg BT /${FONT_RESOURCE[font]} ${size} Tf ${tracking ? `${tracking.toFixed(2)} Tc ` : ""}1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm `);
     content.push(...pdfString(value));
     push(` Tj ET\n${tracking ? "BT 0 Tc ET\n" : ""}`);
   };
@@ -465,8 +443,8 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
       if (lockup) image(lockup, PDF_MARGIN, cursor - height);
       if (options.documentLabel) {
         const label = options.documentLabel.toUpperCase();
-        const width = widthOf(label, "bold", 8) + label.length * 0.48;
-        text(label, PDF_PAGE_WIDTH - PDF_MARGIN - width, cursor - height + 4, "bold", 8, INK_MUTED, 0.48);
+        const width = widthOf(label, "mono", 8) + label.length * 0.48;
+        text(label, PDF_PAGE_WIDTH - PDF_MARGIN - width, cursor - height + 4, "mono", 8, INK_MUTED, 0.48);
       }
       cursor -= Math.max(height, 12) + 10;
       stroke(cursor);
@@ -479,7 +457,7 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
     if (options.runningTitle) text(options.runningTitle, PDF_MARGIN + (glyph ? glyph.drawWidth + 8 : 0), cursor - height + 3, "regular", 8.5, INK_MUTED);
     if (options.footer) {
       const reference = options.footer.split(" · ")[0]!;
-      text(reference, PDF_PAGE_WIDTH - PDF_MARGIN - widthOf(reference, "regular", 8.5), cursor - height + 3, "regular", 8.5, INK_MUTED);
+      text(reference, PDF_PAGE_WIDTH - PDF_MARGIN - widthOf(reference, "mono", 8.5), cursor - height + 3, "mono", 8.5, INK_MUTED);
     }
     cursor -= Math.max(height, 12) + 8;
     stroke(cursor);
@@ -556,9 +534,9 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
     content = [];
     stroke(FOOTER_RULE);
     const page = `PAGE ${index + 1} OF ${total}`;
-    text(page, PDF_MARGIN, FOOTER_RULE - 12, "bold", 8, INK_MUTED, 0.48);
-    if (options.footer) text(options.footer, PDF_PAGE_WIDTH - PDF_MARGIN - widthOf(options.footer, "regular", 8), FOOTER_RULE - 12, "regular", 8, INK_MUTED);
-    if (options.footerPlaceholder) text(options.footerPlaceholder, PDF_MARGIN, FOOTER_RULE - 22, "regular", 8, INK_DISABLED);
+    text(page, PDF_MARGIN, FOOTER_RULE - 12, "mono", 8, INK_MUTED, 0.48);
+    if (options.footer) text(options.footer, PDF_PAGE_WIDTH - PDF_MARGIN - widthOf(options.footer, "mono", 8), FOOTER_RULE - 12, "mono", 8, INK_MUTED);
+    if (options.footerPlaceholder) text(options.footerPlaceholder, PDF_MARGIN, FOOTER_RULE - 22, "mono", 8, INK_DISABLED);
     const drawn = content;
     content = saved;
     return drawn;
@@ -566,22 +544,31 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
 
   const objects: number[][] = [];
   const add = (body: number[]) => objects.push(body) - 1;
-  // Objects are written in order: catalog, pages, two fonts, one per image,
-  // then a page and its content stream per page. /Kids must name the page
-  // objects, so the first page lands right after the last image.
-  const pageObjectIds = pages.map((_, index) => 5 + images.length + index * 2);
+  // Objects are written in order: catalog, pages, nine font objects (three
+  // faces, each with a descriptor and its program), one per image, then a
+  // page and its content stream per page. /Kids must name the page objects,
+  // so the first page lands right after the last image.
+  const pageObjectIds = pages.map((_, index) => 12 + images.length + index * 2);
   const created = options.createdAt ?? new Date();
   const stamp = `D:${created.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}`;
 
   add(bytes("<< /Type /Catalog /Pages 2 0 R >>"));
   add(bytes(`<< /Type /Pages /Count ${pages.length} /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] >>`));
-  add(bytes("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"));
-  add(bytes("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"));
+  // Objects 3 to 11: three faces, each a font, its descriptor and its program.
+  const faces: PdfFontFace[] = [PDF_FACES.regular, PDF_FACES.bold, PDF_FACES.mono];
+  faces.forEach((face, index) => {
+    const fontId = 3 + index * 3;
+    add(bytes(`<< /Type /Font /Subtype /TrueType /BaseFont /${face.name} /FirstChar 32 /LastChar 255 /Widths [${face.widths.join(" ")}] /Encoding /WinAnsiEncoding /FontDescriptor ${fontId + 1} 0 R >>`));
+    add(bytes(`<< /Type /FontDescriptor /FontName /${face.name} /Flags ${face.flags} /FontBBox [${face.bbox.join(" ")}] /ItalicAngle 0 /Ascent ${face.ascent} /Descent ${face.descent} /CapHeight ${face.capHeight} /StemV 80 /FontFile2 ${fontId + 2} 0 R >>`));
+    const program = decodeBase64(face.base64);
+    add([...bytes(`<< /Length ${program.length} /Length1 ${program.length} >>\nstream\n`), ...program, ...bytes("\nendstream")]);
+  });
+  const IMAGE_BASE = 3 + faces.length * 3;
   for (const image of images) {
     const header = bytes(`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.data.length} >>\nstream\n`);
     add([...header, ...image.data, ...bytes("\nendstream")]);
   }
-  const resources = `<< /Font << /F1 3 0 R /F2 4 0 R >>${images.length > 0 ? ` /XObject << ${images.map((_, index) => `/Im${index} ${5 + index} 0 R`).join(" ")} >>` : ""} >>`;
+  const resources = `<< /Font << /F1 3 0 R /F2 6 0 R /F3 9 0 R >>${images.length > 0 ? ` /XObject << ${images.map((_, index) => `/Im${index} ${IMAGE_BASE + index} 0 R`).join(" ")} >>` : ""} >>`;
   pages.forEach((page, index) => {
     const stream = [...page, ...footerFor(index, pages.length)];
     add(bytes(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_PAGE_WIDTH} ${PDF_PAGE_HEIGHT}] /Resources ${resources} /Contents ${pageObjectIds[index]! + 1} 0 R >>`));

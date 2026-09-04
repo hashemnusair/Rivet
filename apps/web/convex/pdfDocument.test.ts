@@ -44,7 +44,9 @@ describe("pdf writer", () => {
     expect(body.startsWith("%PDF-1.4")).toBe(true);
     expect(body.trimEnd().endsWith("%%EOF")).toBe(true);
     expect(body).toContain("/Type /Catalog");
-    expect(body).toContain("/BaseFont /Helvetica-Bold");
+    expect(body).toContain("/BaseFont /Manrope-SemiBold");
+    expect(body).toContain("/BaseFont /IBMPlexMono-Regular");
+    expect(body).toContain("/FontFile2");
     expect(body).toContain("(RIVET subscription agreement) Tj");
     expect(body).toContain("(Iron House Fitness) Tj");
     expect(body).toContain("(PAGE 1 OF 1) Tj");

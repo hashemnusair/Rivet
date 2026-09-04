@@ -47,6 +47,7 @@ import type * as operationalEmail from "../operationalEmail.js";
 import type * as operations from "../operations.js";
 import type * as payables from "../payables.js";
 import type * as pdfDocument from "../pdfDocument.js";
+import type * as pdfFonts from "../pdfFonts.js";
 import type * as permissions from "../permissions.js";
 import type * as planCatalogue from "../planCatalogue.js";
 import type * as platformGymDetail from "../platformGymDetail.js";
@@ -115,6 +116,7 @@ declare const fullApi: ApiFromModules<{
   operations: typeof operations;
   payables: typeof payables;
   pdfDocument: typeof pdfDocument;
+  pdfFonts: typeof pdfFonts;
   permissions: typeof permissions;
   planCatalogue: typeof planCatalogue;
   platformGymDetail: typeof platformGymDetail;
