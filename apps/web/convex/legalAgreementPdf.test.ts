@@ -31,12 +31,15 @@ describe("agreement PDF", () => {
     const blocks = flatten(signed);
     expect(blocks).toContain("Iron House Fitness Co.");
     expect(blocks).toContain("Mecca Street, Amman");
-    expect(blocks).toContain("••••••4567 (masked)");
+    expect(blocks).toContain("Jordanian national ID ••••••4567");
     expect(blocks).not.toContain("9871234567");
     expect(blocks).toContain("Signed 1 October 2026, 10:15, Asia/Amman.");
     expect(blocks).toContain("Signed, awaiting countersignature");
-    expect(blocks).toContain("01. What this agreement covers");
-    expect(blocks).toContain("10. Electronic signature");
+    expect(blocks).toContain("Growth · up to 3 branches, 25 staff, 2,500 members");
+    expect(blocks).toContain("JOD 149.000 per month, excluding tax [treatment to be decided]");
+    expect(blocks).toContain("1 Oct 2026");
+    expect(blocks).toContain("3. What this agreement covers");
+    expect(blocks).toContain("12. Electronic signature");
     expect(blocks).toContain("Typed and adopted");
   });
 
@@ -46,9 +49,9 @@ describe("agreement PDF", () => {
     // Two forced breaks: before the clauses, and before the signatures.
     expect(kinds.filter((kind) => kind === "pagebreak")).toHaveLength(2);
     const headings = blocks.filter((block) => block.type === "heading").map((block) => (block as { text: string }).text);
-    expect(headings.slice(0, 2)).toEqual(["Parties", "Details"]);
-    expect(headings[2]).toBe("01. What this agreement covers");
-    expect(headings.at(-1)).toBe("Signatures");
+    expect(headings.slice(0, 2)).toEqual(["1. Parties", "2. Details"]);
+    expect(headings[2]).toBe("3. What this agreement covers");
+    expect(headings.at(-1)).toBe("13. Signatures");
     // The details carry the terms a reader looks for, and the fingerprint closes the document.
     const details = blocks.find((block) => block.type === "rows") as { rows: Array<{ label: string }> };
     expect(details.rows.map((row) => row.label)).toEqual(expect.arrayContaining(["Representative", "Fee", "Billing interval", "Payment terms", "Start date", "Term", "Governing law"]));
@@ -60,7 +63,7 @@ describe("agreement PDF", () => {
   it("names the version instead of printing text it cannot vouch for", () => {
     const blocks = JSON.stringify(agreementPdfBlocks({ ...signed, version: "0.9 · old" }, undefined));
     expect(blocks).toContain("The full text of agreement version 0.9 · old is held by RIVET");
-    expect(blocks).not.toContain("01. What this agreement covers");
+    expect(blocks).not.toContain("3. What this agreement covers");
   });
 
   it("shows the countersignature and flags a fingerprint mismatch", () => {

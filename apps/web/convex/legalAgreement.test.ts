@@ -59,7 +59,7 @@ describe("subscription agreement e-signature", () => {
     const { owner, manager } = await seeded();
     const context = await owner.query(api.domain.query, operation("legal.agreement.current")) as Context;
     expect(context.version).toBe(SUBSCRIPTION_AGREEMENT_VERSION);
-    expect(context.sections.map((section) => section.number)).toEqual(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]);
+    expect(context.sections.map((section) => section.number)).toEqual(["3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]);
     expect(context.sha256).toBe(await sha256Hex(context.text));
     expect(context.text).toBe(canonicalAgreementText());
     expect(context).toMatchObject({ status: "required", canSign: true, prefill: { legalName: "Iron House Fitness", address: "Mecca Street, Amman", signatoryName: "Omar Haddad", email: "omar@ironhouse.example", plan: "Growth", startDate: "2026-10-01" } });
@@ -123,7 +123,9 @@ describe("subscription agreement e-signature", () => {
       expect(pdf.startsWith("%PDF-1.4")).toBe(true);
       expect(pdf.trimEnd().endsWith("%%EOF")).toBe(true);
       expect(pdf).toContain("(Subscription agreement) Tj");
-      expect(pdf).toContain("4567 \\(masked\\)");
+      // The masked ID sits under the signer on the signature page; the digits are all a reader sees.
+      expect(pdf).toContain("Jordanian national ID ");
+      expect(pdf).toContain("4567) Tj");
       expect(pdf).not.toContain("9871234567");
     }
     const notices = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());

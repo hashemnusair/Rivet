@@ -117,11 +117,13 @@ export function DocumentRows({ rows }: { rows: Array<{ label: string; value: Rea
 }
 
 /** A signature block: the name line, the 85 × 32mm frame, and its caption. */
-export function DocumentSignature({ heading, name, role, imageDataUrl, typedName, alt, caption, empty }: { heading: string; name: string; role?: string; imageDataUrl?: string; typedName?: string; alt: string; caption: string; empty?: string }) {
+export function DocumentSignature({ heading, name, role, identity, imageDataUrl, typedName, alt, caption, empty }: { heading: string; name: string; role?: string; identity?: ReactNode; imageDataUrl?: string; typedName?: string; alt: string; caption: string; empty?: string }) {
   return (
     <div className="space-y-2">
       <p className="text-[14px] font-semibold text-ink">{heading}</p>
-      <p className="text-[14px] text-ink">{name}{role ? `, ${role}` : ""}</p>
+      <p className="text-[14px] text-ink">{name}</p>
+      {role ? <p className="-mt-1 text-[12.5px] text-ink-3">{role}</p> : null}
+      {identity ? <p className="-mt-1 font-mono text-[12px] text-ink-3">{identity}</p> : null}
       <div className="flex h-[121px] w-full max-w-[321px] items-center justify-center border border-line-2 bg-white" aria-label={alt}>
         {imageDataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- a signature captured as a data URL, not an optimizable asset

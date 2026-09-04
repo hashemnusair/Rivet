@@ -10477,6 +10477,15 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  listPlatformEmailDeliveries(): Promise<T.PlatformEmailDelivery[]> {
+    // The preview never sends mail, so its log shows the shape of a
+    // suppressed row and a delivered one rather than real traffic.
+    return this.respond(() => [
+      { id: "EMAIL-demo-2", kind: "subscription_agreement_copy", gym: "Forge Fitness Club", recipientEmail: "elias@rivetjo.com", subject: "Forge Fitness Club signed the RIVET subscription agreement (RVT-20260815-FORGE)", status: "suppressed", suppressionReason: "Operational email mode is off (RIVET_EMAIL_MODE)", attachments: ["RIVET-agreement-RVT-20260815-FORGE.pdf"], attempts: [], createdAt: "2026-08-15T08:20:00.000Z", updatedAt: "2026-08-15T08:20:00.000Z" },
+      { id: "EMAIL-demo-1", kind: "platform_invoice_issued", gym: "Forge Fitness Club", recipientEmail: "omar@forgefitness.jo", subject: "A RIVET invoice was issued", status: "delivered", providerId: "re_demo", attachments: ["RIVET-invoice-RV-1046.pdf"], attempts: [{ attemptedAt: "2026-07-18T09:01:00.000Z", outcome: "accepted", statusCode: 200, mode: "live", deliveredTo: "omar@forgefitness.jo" }], createdAt: "2026-07-18T09:00:00.000Z", updatedAt: "2026-07-18T09:01:00.000Z" },
+    ]);
+  }
+
   resendPlatformAgreementCopies(input: T.ResendAgreementCopiesInput): Promise<T.ResendAgreementCopiesResult> {
     return this.respond(() => {
       const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);

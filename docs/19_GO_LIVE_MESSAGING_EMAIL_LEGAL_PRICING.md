@@ -270,6 +270,20 @@ browser from the same record and renderer as the emailed attachment. The
 platform billing console has the same PDF button on every row. The invoice
 emails' "View invoice" button lands on that settings section.
 
+**Email log.** Platform → Email log lists the last hundred messages RIVET
+queued across every gym, newest first, with what happened to each: not sent
+with its suppression reason, failed with the provider's error code, redirected
+in sandbox mode, or delivered. It is the first place to look when a message
+did not arrive, before the provider's dashboard.
+
+**Agreement text 1.2 (4 September 2026).** Same clauses as 1.1, numbered 3 to
+12 so the document reads as one sequence with 1 Parties and 2 Details ahead
+of them and 13 Signatures after; the one internal cross-reference moved with
+its section. 1.1 stays in code because a test gym signed it. Plan limits and
+published prices on the agreement come from `convex/planCatalogue.ts`, the
+same catalogue the platform seeds; the numbers remain provisional until the
+pricing sheet below is signed.
+
 **Agreement layout.** The PDF follows artboard P2: page one carries the
 parties and the details (customer, representative, ID, address, plan, fee,
 billing interval, payment terms, start date, term, governing law); the

@@ -566,6 +566,22 @@ export interface AttachPrintSignatureInput {
   target: "signatory" | "countersign";
 }
 
+export interface PlatformEmailDelivery {
+  id: UUID;
+  kind: string;
+  gym: string;
+  recipientEmail?: string;
+  subject?: string;
+  status: "queued" | "leased" | "provider_accepted" | "delivered" | "retrying" | "failed" | "suppressed";
+  suppressionReason?: string;
+  lastErrorCode?: string;
+  providerId?: string;
+  attachments: string[];
+  attempts: Array<{ attemptedAt: ISODateTime; outcome: string; statusCode?: number; errorCode?: string; mode?: string; deliveredTo?: string }>;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
 export type AgreementCopyAudience = "rivet" | "all";
 
 export interface ResendAgreementCopiesInput {

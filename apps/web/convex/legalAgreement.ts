@@ -16,6 +16,7 @@ import {
   SUBSCRIPTION_AGREEMENT_SECTIONS,
   SUBSCRIPTION_AGREEMENT_VERSION,
   agreementReference,
+  agreementSectionsForVersion,
   canonicalAgreementText,
   maskIdNumber,
   sha256Hex,
@@ -240,11 +241,12 @@ function agreementPdfAttachment(row: AgreementRow, organizationName: string, bil
     contentType: "application/pdf",
     contentBase64: renderAgreementPdfBase64({
       ...copy,
+      signatory: { ...copy.signatory, title: row.signatory.title },
       subscription: { ...copy.subscription, billingInterval },
       status: row.status,
       placeOfSigning: row.placeOfSigning,
       signature: { method: row.signature.method, typedName: row.signature.typedName, printImageDataUrl: row.signature.printImageDataUrl },
-    }, SUBSCRIPTION_AGREEMENT_SECTIONS),
+    }, agreementSectionsForVersion(row.agreementVersion)),
   };
 }
 
@@ -255,9 +257,9 @@ function agreementPdfAttachment(row: AgreementRow, organizationName: string, bil
  * own dedupe keys: the original copies are deduped forever, and an email
  * suppressed while sending was off is never revisited by the worker.
  */
-async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar", includeSigner: boolean): Promise<Data> {
+async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar", includeSigner: boolean, billingInterval?: "monthly" | "annual"): Promise<Data> {
   const copy = agreementCopy(row, organizationName);
-  const attachments = [agreementPdfAttachment(row, organizationName)];
+  const attachments = [agreementPdfAttachment(row, organizationName, billingInterval)];
   const options = { siteUrl: process.env.RIVET_SITE_URL, language, attachment: { filename: attachments[0]!.filename, sizeLabel: attachmentSizeLabel(attachments[0]!.contentBase64.length) } };
   const sequence = (row.copyResendCount ?? 0) + 1;
   const deliveries: Data[] = [];
@@ -284,9 +286,9 @@ async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organi
 }
 
 /** The countersigned agreement, to the signer and to RIVET, with the PDF. */
-async function sendCompletedCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar"): Promise<void> {
+async function sendCompletedCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar", billingInterval?: "monthly" | "annual"): Promise<void> {
   const copy = agreementCopy(row, organizationName);
-  const attachment = agreementPdfAttachment(row, organizationName);
+  const attachment = agreementPdfAttachment(row, organizationName, billingInterval);
   const options = { siteUrl: process.env.RIVET_SITE_URL, language, attachment: { filename: attachment.filename, sizeLabel: attachmentSizeLabel(attachment.contentBase64.length) } };
   const sequence = row.countersignCount ?? 1;
   await enqueueOperationalEmail(ctx, {
@@ -325,9 +327,9 @@ async function sendCompletedCopies(ctx: MutationCtx, row: AgreementRow, organiza
  * through the operational email boundary, so RIVET_EMAIL_MODE decides
  * whether anything leaves the platform; the queue rows are the evidence.
  */
-async function sendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar"): Promise<Doc<"operationalEmailDeliveries">> {
+async function sendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar", billingInterval?: "monthly" | "annual"): Promise<Doc<"operationalEmailDeliveries">> {
   const copy = agreementCopy(row, organizationName);
-  const attachments = [agreementPdfAttachment(row, organizationName)];
+  const attachments = [agreementPdfAttachment(row, organizationName, billingInterval)];
   const options = { siteUrl: process.env.RIVET_SITE_URL, language, attachment: { filename: attachments[0]!.filename, sizeLabel: attachmentSizeLabel(attachments[0]!.contentBase64.length) } };
   const signerDelivery = await enqueueOperationalEmail(ctx, {
     organizationId: row.organizationId,
@@ -489,7 +491,9 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     dedupeKey: `agreement-signed:${publicId}`,
   });
   const row = (await ctx.db.query("subscriptionAgreements").withIndex("by_public_id", (q) => q.eq("publicId", publicId)).unique())!;
-  const delivery = await sendAgreementCopies(ctx, row, actor.organization.name, actor.organization.defaultLanguage ?? "en");
+  // The actor carries a projection of the organization; the interval lives on the full row.
+  const organizationRow = await ctx.db.get(actor.organization._id);
+  const delivery = await sendAgreementCopies(ctx, row, actor.organization.name, actor.organization.defaultLanguage ?? "en", organizationRow?.billingInterval);
   await ctx.db.patch(row._id, { emailDeliveryPublicId: delivery.publicId });
   const result = agreementView({ ...row, emailDeliveryPublicId: delivery.publicId }, actor.organization.name);
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "legal.agreement.sign", key: idempotencyKey, requestHash: documentSha256, result, createdAt: now, expiresAt: now + 90 * 86_400_000 });
@@ -615,7 +619,7 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
       requireField(audience === "rivet" || audience === "all", "audience", "Choose who receives the copy.", admin.correlationId);
       const organization = await ctx.db.get(row.organizationId);
       const organizationName = organization?.name ?? row.customer.legalName;
-      const result = await resendAgreementCopies(ctx, row, organizationName, organization?.defaultLanguage ?? "en", audience === "all");
+      const result = await resendAgreementCopies(ctx, row, organizationName, organization?.defaultLanguage ?? "en", audience === "all", organization?.billingInterval);
       await insertPlatformAudit(ctx, admin, {
         action: "agreement.copies_resent",
         entityPublicId: row.publicId,
@@ -666,7 +670,7 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
       // The completed agreement is the final artifact, so it goes to the
       // signer and to RIVET's own addresses alike, each keyed to this
       // countersignature so a replacement sends fresh copies.
-      await sendCompletedCopies(ctx, updated, organizationName, organization?.defaultLanguage ?? "en");
+      await sendCompletedCopies(ctx, updated, organizationName, organization?.defaultLanguage ?? "en", organization?.billingInterval);
       return agreementView(updated, organizationName);
     }
     default:

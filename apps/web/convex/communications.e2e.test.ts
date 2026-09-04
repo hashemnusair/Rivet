@@ -26,6 +26,7 @@ const DUMP = process.env.RIVET_DUMP_DIR;
 
 type Delivery = { kind: string; dedupeKey?: string; recipientEmail?: string; subject?: string; html?: string; text?: string; status: string; attachments?: Array<{ filename: string; contentType: string; contentBase64: string }> };
 type Agreement = { id: string; reference: string; status: string; countersign?: { signature?: { method: string } } };
+// The chain below also proves the numbering: clauses 3 to 12, signatures at 13.
 
 function pdfText(base64: string): string {
   return Array.from(decodeBase64(base64), (byte) => String.fromCharCode(byte)).join("");

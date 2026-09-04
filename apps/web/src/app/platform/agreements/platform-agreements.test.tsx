@@ -50,7 +50,7 @@ describe("platform agreements console", () => {
 
     await user.type(within(dialog).getByTestId("reveal-reason"), "Verifying before countersigning");
     await user.click(within(dialog).getByTestId("reveal-id"));
-    expect(await within(dialog).findByText("9871234567")).toBeInTheDocument();
+    expect(await within(dialog).findByText(/9871234567/)).toBeInTheDocument();
 
     const actorName = (await api.getSession()).user.name;
     const nameInput = within(dialog).getByTestId("countersign-name");

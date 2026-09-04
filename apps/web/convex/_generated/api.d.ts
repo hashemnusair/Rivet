@@ -48,6 +48,7 @@ import type * as operations from "../operations.js";
 import type * as payables from "../payables.js";
 import type * as pdfDocument from "../pdfDocument.js";
 import type * as permissions from "../permissions.js";
+import type * as planCatalogue from "../planCatalogue.js";
 import type * as platformGymDetail from "../platformGymDetail.js";
 import type * as platformInvoiceDocument from "../platformInvoiceDocument.js";
 import type * as platformInvoicePdf from "../platformInvoicePdf.js";
@@ -115,6 +116,7 @@ declare const fullApi: ApiFromModules<{
   payables: typeof payables;
   pdfDocument: typeof pdfDocument;
   permissions: typeof permissions;
+  planCatalogue: typeof planCatalogue;
   platformGymDetail: typeof platformGymDetail;
   platformInvoiceDocument: typeof platformInvoiceDocument;
   platformInvoicePdf: typeof platformInvoicePdf;

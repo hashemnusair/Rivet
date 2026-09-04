@@ -50,6 +50,7 @@ import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPa
 import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
 import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
+import { PLAN_CATALOGUE } from "./planCatalogue";
 import { resolveMessagingMode } from "./messagingMode";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
@@ -225,12 +226,13 @@ const DEFAULT_OPERATIONAL_POLICIES = {
 // intentionally starts without the Forge reference seed, so keep the approved
 // launch plans available until an operator has created editable catalog rows.
 // These values are also the defaults used by the application form.
-const DEFAULT_PLATFORM_PLANS: Data[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper", entitledModules: ["foundation", "revenue"] },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
-];
+const PLAN_PRESENTATION: Record<string, { tone: string; entitledModules: string[] }> = {
+  Starter: { tone: "paper", entitledModules: ["foundation", "revenue"] },
+  Growth: { tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
+  Pro: { tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  Enterprise: { tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+};
+const DEFAULT_PLATFORM_PLANS: Data[] = PLAN_CATALOGUE.map((plan) => ({ ...plan, ...PLAN_PRESENTATION[plan.name] }));
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
@@ -4951,6 +4953,36 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
     return await buildSession(ctx, actor, request.activeBranchId);
+  }
+
+  if (operation === "platform.email.deliveries") {
+    // The last hundred messages across every gym, newest first, with what
+    // happened to each: the answer to "why did nothing arrive" without a
+    // trip to the provider's dashboard.
+    await requirePlatformAdmin(ctx, request.correlationId);
+    const rows = (await ctx.db.query("operationalEmailDeliveries").order("desc").take(100));
+    const names = new Map<string, string>();
+    const out: Data[] = [];
+    for (const row of rows) {
+      const key = row.organizationId ? String(row.organizationId) : "";
+      if (key && !names.has(key)) names.set(key, (await ctx.db.get(row.organizationId!))?.name ?? "");
+      out.push({
+        id: row.publicId,
+        kind: row.kind,
+        gym: key ? names.get(key) ?? "" : "RIVET",
+        recipientEmail: row.recipientEmail,
+        subject: row.subject,
+        status: row.status,
+        suppressionReason: row.suppressionReason,
+        lastErrorCode: row.lastErrorCode ?? row.attempts.at(-1)?.errorCode,
+        providerId: row.providerId,
+        attachments: (row.attachments ?? []).map((attachment) => attachment.filename),
+        attempts: row.attempts.map((attempt) => ({ attemptedAt: utcIso(attempt.attemptedAt), outcome: attempt.outcome, statusCode: attempt.statusCode, errorCode: attempt.errorCode, mode: attempt.mode, deliveredTo: attempt.deliveredTo })),
+        createdAt: utcIso(row.createdAt),
+        updatedAt: utcIso(row.updatedAt),
+      });
+    }
+    return out;
   }
 
   if (operation === "billing.invoices.list") {

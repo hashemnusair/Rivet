@@ -93,7 +93,9 @@
   emails and documents in Settings → Organization; Settings → Subscription &
   invoices shows their RIVET invoices with the PDF, and the platform billing
   console has the same button. The agreement PDF follows the designed
-  page-one / continuation / signature-page layout.
+  page-one / continuation / signature-page layout, with the text at 1.2 so
+  the clauses number 3 to 12 between Parties, Details and Signatures. Platform
+  → Email log shows the last hundred queued messages with their outcome.
 - **Operational email go-live flag:** `RIVET_EMAIL_MODE` = off | sandbox |
   allowlist | live (default off; the legacy boolean is honoured as live only
   while the new variable is unset). Sandbox redirects to

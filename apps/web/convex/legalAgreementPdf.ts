@@ -8,6 +8,7 @@
  * and an audit event.
  */
 import { renderPdf, encodeBase64, mm, type PdfBlock } from "./pdfDocument";
+import { planFee, planSummary } from "./planCatalogue";
 import { RIVET_GLYPH_JPEG, RIVET_LOCKUP_JPEG } from "./brandAssets";
 import { BRAND_CONTACT, BRAND_PLACEHOLDERS } from "./brandTokens";
 import { type AgreementSection } from "./legalAgreementText";
@@ -18,7 +19,7 @@ export interface AgreementPdfInput {
   status: "signed" | "countersigned" | "void";
   organizationName: string;
   customer: { legalName: string; address: string; city?: string };
-  signatory: { name: string; idType: "national" | "passport"; idNumberMasked: string; email: string };
+  signatory: { name: string; idType: "national" | "passport"; idNumberMasked: string; email: string; title?: string };
   subscription: { plan: string; startDate: string; billingInterval?: "monthly" | "annual" };
   signature: { method: "drawn" | "typed"; typedName?: string; printImageDataUrl?: string };
   signedAtLocal: string;
@@ -41,16 +42,33 @@ function fullAddress(input: AgreementPdfInput): string {
 }
 
 const INTERVALS = { monthly: "Monthly, in advance", annual: "Yearly, in advance" } as const;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** "3 Sep 2026" from an ISO date; anything else is returned as it came. */
+export function shortDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return `${Number.parseInt(match[3]!, 10)} ${MONTHS[Number.parseInt(match[2]!, 10) - 1]} ${match[1]}`;
+}
+
+/** "3 Sep 2026" from a local timestamp such as "3 September 2026, 14:32". */
+function shortLocal(value: string): string {
+  const match = /^(\d{1,2}) ([A-Za-z]+) (\d{4})/.exec(value);
+  if (!match) return value;
+  return `${match[1]} ${match[2]!.slice(0, 3)} ${match[3]}`;
+}
 
 /**
- * The blocks of the document, in order. Exported so tests can read them.
- *
- * Page one carries the parties and the details; the numbered clauses follow
- * on continuation pages; the signatures and the fingerprint close the
- * document on a page of their own.
+ * The blocks of the document, in order, as the identity system lays them
+ * out: 1 Parties and 2 Details on page one; the clauses, numbered 3 to 12,
+ * from a fresh page under the running header; 13 Signatures with the
+ * fingerprint on a closing page.
  */
 export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly AgreementSection[] | undefined): PdfBlock[] {
   const countersigned = input.status === "countersigned";
+  const interval = input.subscription.billingInterval ?? "monthly";
+  const versionNumber = input.version.split(" ·")[0] ?? input.version;
+  const statusLabel = countersigned ? "Signed and countersigned" : input.status === "void" ? "Void" : "Signed";
   const blocks: PdfBlock[] = [
     {
       type: "title",
@@ -61,23 +79,22 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
           ? { label: "Signed and countersigned", tone: "success" }
           : { label: "Signed, awaiting countersignature", tone: "warning" },
     },
-    { type: "meta", text: `${input.reference} · v${input.version} · ${countersigned ? "Signed and countersigned" : input.status === "void" ? "Void" : "Signed"} · ${input.signedAtLocal}` },
-    { type: "heading", text: "Parties" },
-    { type: "paragraph", text: `This agreement is made between RIVET (${BRAND_PLACEHOLDERS.legalEntity}, ${BRAND_CONTACT.city}, "RIVET") and ${input.customer.legalName} (${fullAddress(input)}, "the Customer"), represented by ${input.signatory.name}, for the Customer's use of the RIVET platform under the plan and terms recorded below.` },
-    { type: "heading", text: "Details" },
+    { type: "meta", text: `${input.reference} · v${versionNumber} · ${statusLabel} · ${shortLocal(input.signedAtLocal)}` },
+    { type: "heading", text: "1. Parties" },
+    { type: "paragraph", text: `This agreement is made between RIVET (${BRAND_PLACEHOLDERS.legalEntity}, ${BRAND_CONTACT.city}, "RIVET") and ${input.customer.legalName} (${fullAddress(input)}, "the Customer"), represented by ${input.signatory.name}, for the Customer's use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.` },
+    { type: "heading", text: "2. Details" },
     {
       type: "rows",
       rows: [
         { label: "Customer", value: input.customer.legalName },
-        { label: "Representative", value: `${input.signatory.name} · ${input.signatory.email}` },
-        { label: ID_LABELS[input.signatory.idType], value: `${input.signatory.idNumberMasked} (masked)` },
+        { label: "Representative", value: `${input.signatory.name}, ${input.signatory.title ?? "owner"} · ${input.signatory.email}` },
         { label: "Address", value: fullAddress(input) },
-        { label: "Plan", value: input.subscription.plan },
-        { label: "Fee", value: "As quoted by RIVET in writing or, absent a quote, RIVET's published price for the plan; excluding tax [treatment to be decided]" },
-        { label: "Billing interval", value: input.subscription.billingInterval ? INTERVALS[input.subscription.billingInterval] : "Monthly or yearly, in advance, as agreed" },
+        { label: "Plan", value: planSummary(input.subscription.plan) },
+        { label: "Fee", value: `${planFee(input.subscription.plan, interval) ?? "As quoted by RIVET in writing"}, excluding tax [treatment to be decided]` },
+        { label: "Billing interval", value: INTERVALS[interval] },
         { label: "Payment terms", value: "14 days from the invoice date" },
-        { label: "Start date", value: input.subscription.startDate },
-        { label: "Term", value: "Rolling; either party may end it with 30 days' written notice" },
+        { label: "Start date", value: shortDate(input.subscription.startDate) },
+        { label: "Term", value: `Rolling ${interval === "annual" ? "yearly" : "monthly"}; either party may end it with 30 days' written notice` },
         { label: "Governing law", value: "The laws of the Hashemite Kingdom of Jordan" },
         ...(input.placeOfSigning ? [{ label: "Place of signing", value: input.placeOfSigning }] : []),
       ],
@@ -98,6 +115,7 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
     heading: string,
     name: string,
     role: string,
+    identity: string | undefined,
     mark: { method: "drawn" | "typed"; typedName?: string; printImageDataUrl?: string } | undefined,
     caption: string,
   ): PdfBlock[] => {
@@ -106,6 +124,7 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
       { type: "paragraph", text: name, size: 10 },
       { type: "paragraph", text: role, size: 9, color: "#8B887B" },
     ];
+    if (identity) out.push({ type: "paragraph", text: identity, size: 9, color: "#8B887B" });
     if (mark?.method === "drawn") {
       // The signature sits in a hairline frame at the size the identity
       // system sets, whether or not a printable image reached the server.
@@ -119,14 +138,16 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
     return out;
   };
 
+  const lastNumber = sections && sections.length > 0 ? Number.parseInt(sections[sections.length - 1]!.number, 10) + 1 : 3;
   blocks.push({ type: "pagebreak" });
-  blocks.push({ type: "heading", text: "Signatures" });
-  blocks.push({ type: "paragraph", text: "Each party confirms that it has read this agreement, including the details above, and agrees to be bound by it. Signatures are recorded electronically in RIVET together with the signer's identity and the time of signing." });
+  blocks.push({ type: "heading", text: `${Number.isFinite(lastNumber) ? lastNumber : 13}. Signatures` });
+  blocks.push({ type: "paragraph", text: "Each party confirms that it has read this agreement, including the details in section 2, and agrees to be bound by it. Signatures are recorded electronically in RIVET together with the signer's identity and the time of signing." });
   blocks.push({ type: "spacer", height: 6 });
   blocks.push(...signatureBlock(
     "For the Customer",
     input.signatory.name,
-    input.customer.legalName,
+    `${input.signatory.title ? input.signatory.title.charAt(0).toUpperCase() + input.signatory.title.slice(1) : "Owner"}, ${input.customer.legalName}`,
+    `${ID_LABELS[input.signatory.idType]} ${input.signatory.idNumberMasked}`,
     input.signature,
     `Signed ${input.signedAtLocal}, ${input.timezone}. Electronic signature under the Electronic Transactions Law No. 15 of 2015.`,
   ));
@@ -136,6 +157,7 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
       "For RIVET",
       input.countersign.byName,
       `${input.countersign.title}, RIVET`,
+      undefined,
       input.countersign.signature,
       `Countersigned ${input.countersign.atLocal}, ${input.timezone}. Electronic signature under the Electronic Transactions Law No. 15 of 2015.`,
     ));

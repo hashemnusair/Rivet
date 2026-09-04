@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { AgreementTextSection, SubscriptionAgreement } from "@/lib/domain/types";
 import { DocumentRows, DocumentSection, DocumentSheet, DocumentSignature, type DocumentTone } from "./document-sheet";
+import { planFee, planSummary } from "../../../convex/planCatalogue";
+import { shortDate } from "../../../convex/legalAgreementPdf";
 
 export const AGREEMENT_ID_TYPE_LABELS = { national: "Jordanian national ID", passport: "Passport" } as const;
 
@@ -57,34 +59,36 @@ export function agreementStatusChip(agreement: Pick<SubscriptionAgreement, "stat
 export function AgreementRecord({ agreement, sections, idNumberOverride }: { agreement: SubscriptionAgreement; sections?: AgreementTextSection[]; idNumberOverride?: string }) {
   const { customer, subscription, signatory } = agreement;
   const chip = agreementStatusChip(agreement);
-  const meta = `${agreement.reference} · v${agreement.version} · ${agreement.status === "countersigned" ? "Signed and countersigned" : agreement.status === "void" ? "Void" : "Signed"} · ${agreement.signedAtLocal}`;
+  const versionNumber = agreement.version.split(" ·")[0] ?? agreement.version;
+  const statusLabel = agreement.status === "countersigned" ? "Signed and countersigned" : agreement.status === "void" ? "Void" : "Signed";
+  const meta = `${agreement.reference} · v${versionNumber} · ${statusLabel} · ${agreement.signedAtLocal.replace(/^(\d{1,2}) ([A-Za-z]{3})[a-z]* (\d{4}).*$/, "$1 $2 $3")}`;
+  const role = signatory.title ? signatory.title.charAt(0).toUpperCase() + signatory.title.slice(1) : "Owner";
+  const lastNumber = sections && sections.length > 0 ? Number.parseInt(sections[sections.length - 1]!.number, 10) + 1 : 13;
   return (
     <DocumentSheet id="receipt-print" testId="agreement-record" label="Subscription agreement" title="Subscription agreement" chip={chip} meta={meta} reference={agreement.reference}>
       <div className="divide-y divide-line">
         <div className="pb-6">
-          <DocumentSection title="Parties">
-            <p>This agreement is made between RIVET ([Legal entity name · Commercial registration no.], Amman, Jordan, “RIVET”) and {customer.legalName} ({fullAddress(agreement)}, “the Customer”), represented by {signatory.name}, for the Customer’s use of the RIVET platform under the plan and terms recorded below.</p>
+          <DocumentSection number="1" title="Parties">
+            <p>This agreement is made between RIVET ([Legal entity name · Commercial registration no.], Amman, Jordan, “RIVET”) and {customer.legalName} ({fullAddress(agreement)}, “the Customer”), represented by {signatory.name}, for the Customer’s use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.</p>
           </DocumentSection>
         </div>
         <div className="py-6">
-          <DocumentSection title="Details">
+          <DocumentSection number="2" title="Details">
             <DocumentRows rows={[
               { label: "Customer", value: `${customer.legalName}${customer.tradeName && customer.tradeName !== customer.legalName ? ` (trading as ${customer.tradeName})` : ""}` },
               ...(customer.registrationNumber ? [{ label: "Commercial registration", value: customer.registrationNumber }] : []),
-              { label: "Representative", value: <span>{signatory.name}{signatory.title ? `, ${signatory.title}` : ""} · <span dir="ltr">{signatory.email}</span></span> },
-              { label: AGREEMENT_ID_TYPE_LABELS[signatory.idType], value: <span dir="ltr">{idNumberOverride ?? `${signatory.idNumberMasked} (masked)`}</span>, mono: true },
+              { label: "Representative", value: <span>{signatory.name}, {role.toLowerCase()} · <span dir="ltr">{signatory.email}</span></span> },
               ...(signatory.phone ? [{ label: "Phone", value: <span dir="ltr">{signatory.phone}</span> }] : []),
               { label: "Address", value: fullAddress(agreement) },
               ...(customer.branches ? [{ label: "Branches", value: String(customer.branches) }] : []),
-              { label: "Plan", value: subscription.plan },
-              { label: "Fee", value: "As quoted by RIVET in writing or, absent a quote, RIVET’s published price for the plan; excluding tax [treatment to be decided]" },
-              { label: "Billing interval", value: "Monthly or yearly, in advance, as agreed" },
+              { label: "Plan", value: planSummary(subscription.plan) },
+              { label: "Fee", value: `${planFee(subscription.plan, "monthly") ?? "As quoted by RIVET in writing"}, excluding tax [treatment to be decided]` },
+              { label: "Billing interval", value: "Monthly, in advance" },
               { label: "Payment terms", value: "14 days from the invoice date" },
-              { label: "Start date", value: <span dir="ltr">{subscription.startDate}</span> },
-              ...(subscription.termMonths ? [{ label: "Initial term", value: `${subscription.termMonths} months` }] : [{ label: "Term", value: "Rolling; either party may end it with 30 days’ written notice" }]),
+              { label: "Start date", value: <span dir="ltr">{shortDate(subscription.startDate)}</span> },
+              ...(subscription.termMonths ? [{ label: "Initial term", value: `${subscription.termMonths} months` }] : [{ label: "Term", value: "Rolling monthly; either party may end it with 30 days’ written notice" }]),
               ...(subscription.quote ? [{ label: "Quote", value: subscription.quote }] : []),
               { label: "Governing law", value: "The laws of the Hashemite Kingdom of Jordan" },
-              { label: "Signed at", value: `${agreement.signedAtLocal} (${agreement.timezone}, RIVET server time)` },
               ...(agreement.placeOfSigning ? [{ label: "Place of signing", value: agreement.placeOfSigning }] : []),
               ...(agreement.status === "void" && agreement.voidReason ? [{ label: "Voided", value: agreement.voidReason }] : []),
             ]} />
@@ -92,13 +96,14 @@ export function AgreementRecord({ agreement, sections, idNumberOverride }: { agr
         </div>
         {sections ? <div className="py-6"><Clauses sections={sections} /></div> : null}
         <div className="pt-6">
-          <DocumentSection title="Signatures">
-            <p>Each party confirms that it has read this agreement, including the details above, and agrees to be bound by it. Signatures are recorded electronically in RIVET together with the signer’s identity and the time of signing.</p>
+          <DocumentSection number={String(Number.isFinite(lastNumber) ? lastNumber : 13)} title="Signatures">
+            <p>Each party confirms that it has read this agreement, including the details in section 2, and agrees to be bound by it. Signatures are recorded electronically in RIVET together with the signer’s identity and the time of signing.</p>
             <div className="grid gap-8 pt-2 sm:grid-cols-2">
               <DocumentSignature
                 heading="For the Customer"
                 name={signatory.name}
-                role={customer.legalName}
+                role={`${role}, ${customer.legalName}`}
+                identity={<span dir="ltr">{AGREEMENT_ID_TYPE_LABELS[signatory.idType]} {idNumberOverride ?? signatory.idNumberMasked}</span>}
                 imageDataUrl={agreement.signature.method === "drawn" ? agreement.signature.imageDataUrl : undefined}
                 typedName={agreement.signature.method === "typed" ? agreement.signature.typedName : undefined}
                 alt={`Signature of ${signatory.name}`}

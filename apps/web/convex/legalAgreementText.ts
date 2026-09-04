@@ -14,8 +14,14 @@
  * block: the plan comes from the account RIVET set up, fees from RIVET's
  * written quote or published prices, and the agreement runs until ended
  * with 30 days' notice. 1.0 was never signed outside tests.
+ *
+ * 1.2 changes nothing in substance. The clauses are numbered 3 to 12 so the
+ * document reads as one sequence: 1 Parties and 2 Details in the signature
+ * block, the clauses, then 13 Signatures. The one internal cross-reference
+ * moves with its section. 1.1 stays here because a test gym signed it.
  */
-export const SUBSCRIPTION_AGREEMENT_VERSION = "1.1 · 3 September 2026";
+export const SUBSCRIPTION_AGREEMENT_VERSION = "1.2 · 4 September 2026";
+export const SUBSCRIPTION_AGREEMENT_VERSION_1_1 = "1.1 · 3 September 2026";
 
 export interface AgreementSection {
   number: string;
@@ -23,7 +29,7 @@ export interface AgreementSection {
   paragraphs: string[];
 }
 
-export const SUBSCRIPTION_AGREEMENT_SECTIONS: readonly AgreementSection[] = [
+export const SUBSCRIPTION_AGREEMENT_SECTIONS_V1_1: readonly AgreementSection[] = [
   {
     number: "01",
     heading: "What this agreement covers",
@@ -97,6 +103,22 @@ export const SUBSCRIPTION_AGREEMENT_SECTIONS: readonly AgreementSection[] = [
     ],
   },
 ];
+
+const RENUMBERED: Record<string, string> = { "01": "3", "02": "4", "03": "5", "04": "6", "05": "7", "06": "8", "07": "9", "08": "10", "09": "11", "10": "12" };
+
+/** Current text: the 1.1 clauses, numbered to follow Parties and Details. */
+export const SUBSCRIPTION_AGREEMENT_SECTIONS: readonly AgreementSection[] = SUBSCRIPTION_AGREEMENT_SECTIONS_V1_1.map((section) => ({
+  number: RENUMBERED[section.number] ?? section.number,
+  heading: section.heading,
+  paragraphs: section.paragraphs.map((paragraph) => paragraph.replaceAll("as section 06 sets out", "as section 8 sets out")),
+}));
+
+/** The clauses that were published under a given version string. */
+export function agreementSectionsForVersion(version: string): readonly AgreementSection[] | undefined {
+  if (version === SUBSCRIPTION_AGREEMENT_VERSION) return SUBSCRIPTION_AGREEMENT_SECTIONS;
+  if (version === SUBSCRIPTION_AGREEMENT_VERSION_1_1) return SUBSCRIPTION_AGREEMENT_SECTIONS_V1_1;
+  return undefined;
+}
 
 export const SUBSCRIPTION_AGREEMENT_PREAMBLE = "Subscription agreement between RIVET, Amman, the Hashemite Kingdom of Jordan (\"RIVET\"), and the Customer identified in the signature block (the gym).";
 
