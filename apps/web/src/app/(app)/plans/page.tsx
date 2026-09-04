@@ -95,7 +95,19 @@ export default function PlansPage() {
             className="border-0"
           />
         ) : (
-          <Table>
+          <>
+          <ul className="divide-y divide-line lg:hidden" aria-label="Membership plans">
+            {query.data!.items.map((plan) => (
+              <PlanCompactRow
+                key={plan.id}
+                plan={plan}
+                branchLabel={branchLabel(plan)}
+                onEdit={() => { setEditing(plan); setDialogOpen(true); }}
+                onArchive={() => archivePlan.mutate(plan)}
+              />
+            ))}
+          </ul>
+          <Table className="hidden lg:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Plan</TableHead>
@@ -168,10 +180,37 @@ export default function PlansPage() {
               ))}
             </TableBody>
           </Table>
+          </>
         )}
       </div>
 
       <PlanFormDialog open={dialogOpen} onOpenChange={setDialogOpen} plan={editing} />
     </div>
+  );
+}
+
+function PlanCompactRow({ plan, branchLabel, onEdit, onArchive }: { plan: MembershipPlan; branchLabel: string; onEdit: () => void; onArchive: () => void }) {
+  return (
+    <li className="space-y-3 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[13.5px] font-semibold text-ink">{plan.name}</p>
+          <p className="mt-0.5 font-mono text-[12px] text-ink-3">{plan.code}</p>
+        </div>
+        <MoneyText money={plan.basePrice} className="text-[13.5px] font-semibold" />
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]">
+        <div><dt className="text-ink-3">Type</dt><dd className="mt-0.5 tabular">{plan.kind === "time" ? `${plan.durationDays} days` : `${plan.visitAllowance} visits · ${plan.visitValidityDays}d validity`}</dd></div>
+        <div><dt className="text-ink-3">Access</dt><dd className="mt-0.5">{branchLabel}</dd></div>
+        <div><dt className="text-ink-3">Subscribers</dt><dd className="mt-0.5 tabular">{plan.activeSubscribers}</dd></div>
+        <div><dt className="text-ink-3">Allowances</dt><dd className="mt-0.5 tabular">{plan.freezeAllowanceDays > 0 ? `${plan.freezeAllowanceDays} freeze days` : "No freeze"}{plan.includedPtSessions > 0 ? ` · ${plan.includedPtSessions} PT` : ""}</dd></div>
+      </dl>
+      <Gate permission="settings.manage">
+        <div className="flex justify-end gap-2 border-t border-line pt-3">
+          <Button variant="secondary" size="sm" onClick={onEdit}><Pencil /> Edit</Button>
+          {plan.status === "active" ? <Button variant="ghost" size="sm" onClick={onArchive}><Archive /> Archive</Button> : null}
+        </div>
+      </Gate>
+    </li>
   );
 }

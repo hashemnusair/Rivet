@@ -116,8 +116,7 @@ export function QuickMembershipStep({
 
       <section className="panel overflow-hidden">
         <div className="border-b border-line bg-sunken/40 px-5 py-4">
-          <p className="context-label">Complete the sale</p>
-          <h2 className="mt-1 font-display text-xl font-semibold tracking-tight">Choose {memberName}&apos;s membership</h2>
+          <h2 className="font-display text-xl font-semibold tracking-tight">Choose {memberName}&apos;s membership</h2>
           <p className="mt-1 text-[13px] text-ink-3">One confirmation creates the profile, membership, balance, and receipt together.</p>
         </div>
 
@@ -194,10 +193,10 @@ export function QuickMembershipStep({
         </div>
       </section>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+      <div className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
         {error ? <p role="alert" className="me-auto max-w-md text-[13px] text-danger">{error}</p> : null}
-        <Button type="button" variant="secondary" onClick={onBack} disabled={pending}><ArrowLeft /> Back</Button>
-        <Button type="submit" loading={pending} disabled={!plan || (collectNow && methods.length === 0)} data-testid="confirm-member-sale">
+        <Button type="button" variant="secondary" className="max-sm:w-full" onClick={onBack} disabled={pending}><ArrowLeft /> Back</Button>
+        <Button type="submit" className="max-sm:w-full" loading={pending} disabled={!plan || (collectNow && methods.length === 0)} data-testid="confirm-member-sale">
           <WalletCards /> Create member &amp; membership
           {plan ? ` · ${toMajor(plan.basePrice).toFixed(3)} JOD` : ""}
         </Button>
@@ -214,23 +213,23 @@ function SaleSummary({ plan, payingNow, remaining }: { plan?: MembershipPlan; pa
       <p className="context-label">At a glance</p>
       <dl className="mt-4 space-y-3 text-[13px]">
         <SummaryRow icon={<WalletCards className="size-4" />} label="Membership" value={plan?.name ?? "Not selected"} />
-        <SummaryRow icon={<CalendarDays className="size-4" />} label="Term" value={end ? `${start} → ${end}` : "—"} mono />
+        <SummaryRow icon={<CalendarDays className="size-4" />} label="Term" value={end ? `${start} → ${end}` : "—"} tabular />
         <SummaryRow icon={<CreditCard className="size-4" />} label="Paying now" value={<MoneyText money={payingNow} />} />
         <div className="border-t border-line pt-3">
           <SummaryRow icon={<ReceiptText className="size-4" />} label="Balance after sale" value={<MoneyText money={remaining} />} warning={remaining.amount > 0} />
         </div>
       </dl>
-      <p className="mt-4 text-[11.5px] leading-relaxed text-ink-3">Nothing is saved until you confirm. A payment receipt is issued automatically when money is collected.</p>
+      <p className="mt-4 text-[12px] leading-relaxed text-ink-3">Nothing is saved until you confirm. A payment receipt is issued automatically when money is collected.</p>
     </aside>
   );
 }
 
-function SummaryRow({ icon, label, value, mono, warning }: { icon: React.ReactNode; label: string; value: React.ReactNode; mono?: boolean; warning?: boolean }) {
+function SummaryRow({ icon, label, value, tabular, warning }: { icon: React.ReactNode; label: string; value: React.ReactNode; tabular?: boolean; warning?: boolean }) {
   return (
     <div className="grid grid-cols-[20px_1fr] gap-x-2 gap-y-0.5">
       <dt className="row-span-2 mt-0.5 text-ink-3">{icon}</dt>
-      <dt className="text-[11px] uppercase tracking-[0.12em] text-ink-3">{label}</dt>
-      <dd className={`${mono ? "font-mono text-[11.5px]" : "font-medium"} ${warning ? "text-warning-deep" : "text-ink"}`}>{value}</dd>
+      <dt className="text-[12px] text-ink-3">{label}</dt>
+      <dd className={`${tabular ? "text-[12.5px] tabular" : "font-medium"} ${warning ? "text-warning-deep" : "text-ink"}`}>{value}</dd>
     </div>
   );
 }

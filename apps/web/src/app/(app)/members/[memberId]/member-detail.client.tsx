@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarClock, Dumbbell, StickyNote } from "lucide-react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Controller, useForm } from "react-hook-form";
@@ -35,10 +35,14 @@ import {
 
 export default function MemberDetailPageClient() {
   const { memberId } = useParams<{ memberId: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { session } = useApp();
   const { can } = usePermissions();
   const [noteOpen, setNoteOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
+  const requestedTab = searchParams.get("tab");
+  const activeTab = MEMBER_TABS.some((tab) => tab.value === requestedTab) ? requestedTab! : "overview";
 
   const memberQuery = useRealtimeApiQuery({ queryKey: qk.member(memberId), query: (api) => api.getMember(memberId), subscribe: (api, onValue, onError) => api.subscribeMember(memberId, onValue, onError) });
   const membershipsQuery = useApiQuery(qk.memberships({ memberId }), (api) =>
@@ -88,16 +92,23 @@ export default function MemberDetailPageClient() {
       <MemberHeader member={member} currentMembership={currentMembership} branchName={branchName} />
 
       <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
-        <Tabs defaultValue="overview">
-          {/* Wraps to a second row on narrow screens (same convention as Settings). */}
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="timeline" data-testid="tab-timeline">Timeline</TabsTrigger>
-            <TabsTrigger value="memberships">Memberships</TabsTrigger>
-            <TabsTrigger value="payments">Payments</TabsTrigger>
-            <TabsTrigger value="checkins">Check-ins</TabsTrigger>
-            <TabsTrigger value="pt"><Dumbbell className="size-3.5" /> PT</TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={(tab) => {
+          const params = new URLSearchParams(searchParams.toString());
+          if (tab === "overview") params.delete("tab");
+          else params.set("tab", tab);
+          const query = params.toString();
+          router.replace(query ? `/members/${memberId}?${query}` : `/members/${memberId}`, { scroll: false });
+        }}>
+          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            <TabsList className="min-w-max">
+              {MEMBER_TABS.map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value} data-testid={tab.value === "timeline" ? "tab-timeline" : undefined}>
+                  {tab.value === "pt" ? <Dumbbell className="size-3.5" /> : null}
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
           <TabsContent value="overview">
             <OverviewTab member={member} />
           </TabsContent>
@@ -251,7 +262,7 @@ function CreateTaskDialog({
             <Field label="Title" required error={form.formState.errors.title?.message}>
               <Input {...form.register("title")} />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Owner" required>
                 <Controller
                   control={form.control}
@@ -308,3 +319,12 @@ function CreateTaskDialog({
     </Dialog>
   );
 }
+
+const MEMBER_TABS = [
+  { value: "overview", label: "Overview" },
+  { value: "timeline", label: "Timeline" },
+  { value: "memberships", label: "Memberships" },
+  { value: "payments", label: "Payments" },
+  { value: "checkins", label: "Check-ins" },
+  { value: "pt", label: "PT" },
+] as const;

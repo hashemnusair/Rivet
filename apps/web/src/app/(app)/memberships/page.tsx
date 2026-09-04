@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { MembershipListQuery } from "@/lib/api/GymOSApi";
+import type { MembershipSummary } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
@@ -57,8 +58,8 @@ function MembershipsWorkspace() {
 
       <FreezeRequestsPanel />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-xs">
+      <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:items-center">
+        <div className="relative sm:col-span-2 lg:w-full lg:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
           <Input
             value={search}
@@ -72,7 +73,7 @@ function MembershipsWorkspace() {
           />
         </div>
         <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-40" aria-label="Status filter">
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Status filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -87,7 +88,7 @@ function MembershipsWorkspace() {
           </SelectContent>
         </Select>
         <Select value={paymentStatus} onValueChange={(v) => { setPaymentStatus(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-36" aria-label="Payment status filter">
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Payment status filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -98,7 +99,8 @@ function MembershipsWorkspace() {
             <SelectItem value="refunded">Refunded</SelectItem>
           </SelectContent>
         </Select>
-        {data ? <span className="ms-auto text-[11.5px] text-ink-3 tabular">{data.totalItems} terms</span> : null}
+        {(search || status !== "all" || paymentStatus !== "all") ? <Button variant="ghost" size="sm" className="justify-self-start lg:ms-1" onClick={() => { setSearch(""); setStatus("all"); setPaymentStatus("all"); setPage(1); }}>Clear filters</Button> : null}
+        {data ? <span className="justify-self-end text-[12px] text-ink-3 tabular lg:ms-auto">{data.totalItems} terms</span> : null}
       </div>
 
       <div className="panel overflow-hidden">
@@ -113,7 +115,11 @@ function MembershipsWorkspace() {
         ) : !data || data.items.length === 0 ? (
           <EmptyState title="No memberships match" description="Try widening the filters or the search." className="border-0" />
         ) : (
-          <Table>
+          <>
+          <ul className="divide-y divide-line lg:hidden" aria-label="Memberships">
+            {data.items.map((membership) => <MembershipCompactRow key={membership.id} membership={membership} onOpen={() => router.push(`/members/${membership.memberId}`)} />)}
+          </ul>
+          <Table className="hidden lg:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Member</TableHead>
@@ -166,11 +172,34 @@ function MembershipsWorkspace() {
               ))}
             </TableBody>
           </Table>
+          </>
         )}
       </div>
 
       {data ? <DataPagination page={data} onPage={setPage} /> : null}
     </div>
+  );
+}
+
+function MembershipCompactRow({ membership, onOpen }: { membership: MembershipSummary; onOpen: () => void }) {
+  return (
+    <li>
+      <button type="button" className="block w-full px-4 py-3.5 text-start hover:bg-sunken/60" onClick={onOpen}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-[13.5px] font-semibold text-ink">{membership.memberName}</p>
+            <p className="mt-0.5 text-[12px] text-ink-3"><span className="font-mono">{membership.memberNumber}</span> · {membership.branchName.split("— ")[1] ?? membership.branchName}</p>
+          </div>
+          <MembershipStatusChip status={membership.status} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]">
+          <div><p className="text-ink-3">Plan</p><p className="mt-0.5 font-medium text-ink">{membership.planName}</p></div>
+          <div><p className="text-ink-3">Payment</p><div className="mt-0.5"><PaymentStatusChip status={membership.paymentStatus} /></div></div>
+          <div><p className="text-ink-3">Term</p><p className="mt-0.5 tabular text-ink">{membership.startDate} → {membership.endDate}</p><DaysUntilText date={membership.endDate} className="mt-0.5 block text-[12px]" /></div>
+          <div><p className="text-ink-3">Balance</p><p className={`mt-0.5 font-medium ${membership.outstanding.amount > 0 ? "text-warning-deep" : "text-ink-3"}`}>{membership.outstanding.amount > 0 ? <MoneyText money={membership.outstanding} /> : "Settled"}</p></div>
+        </div>
+      </button>
+    </li>
   );
 }
 
@@ -197,9 +226,8 @@ function FreezeRequestsPanel() {
   if (pending.length === 0) return null;
   return (
     <section className="rounded-lg border border-warning/40 bg-warning-bg/30 p-4" aria-label="Freeze requests">
-      <p className="context-label">Member requests</p>
-      <h2 className="mt-1 text-[15px] font-semibold">{pending.length} freeze request{pending.length === 1 ? "" : "s"} waiting</h2>
-      <p className="mt-1 text-[11.5px] text-ink-3">RIVET recalculates any fee when you approve, using the gym&apos;s current policy.</p>
+      <h2 className="text-[15px] font-semibold">{pending.length} freeze request{pending.length === 1 ? "" : "s"} waiting</h2>
+      <p className="mt-1 text-[12px] text-ink-3">RIVET recalculates any fee when you approve, using the gym&apos;s current policy.</p>
       <div className="mt-3 grid gap-2">
         {pending.map((request) => (
           <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2.5">
@@ -208,7 +236,7 @@ function FreezeRequestsPanel() {
               <p className="text-ink-3">{request.days} days from {request.startDate} · “{request.reason}” · {request.expectedFeeMinor > 0 ? `fee JOD ${(request.expectedFeeMinor / 1000).toFixed(3)}` : "free under policy"}</p>
             </div>
             <div className="flex gap-1.5">
-              <Button size="sm" variant="signal" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>Approve</Button>
+              <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>Approve</Button>
               <Button size="sm" variant="secondary" onClick={() => { setDenyId(request.id); setNote(""); }}>Deny</Button>
             </div>
           </div>

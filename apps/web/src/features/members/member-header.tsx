@@ -157,19 +157,19 @@ export function MemberHeader({
             <MembershipStatusChip status={member.membershipStatus} />
             {currentMembership ? <PaymentStatusChip status={currentMembership.paymentStatus} /> : null}
             {member.status !== "active" ? (
-              <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep uppercase tracking-wide">
+              <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[12px] font-medium text-signal-deep">
                 {member.status}
               </span>
             ) : null}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-2">
             <span className="font-mono text-[12.5px]">{member.memberNumber}</span>
-            <a href={`tel:${member.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 font-mono text-[12.5px] hover:text-ink" dir="ltr">
+            <a href={`tel:${member.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-[12.5px] hover:text-ink" dir="ltr">
               <Phone className="size-3.5 text-ink-3" /> {member.phone}
             </a>
             <span>{branchName}</span>
             {member.tags.map((t) => (
-              <span key={t} className="rounded-sm bg-sunken px-1.5 py-0.5 text-[11px] text-ink-2">
+              <span key={t} className="rounded-sm bg-sunken px-1.5 py-0.5 text-[12px] text-ink-2">
                 {t}
               </span>
             ))}
@@ -189,7 +189,7 @@ export function MemberHeader({
 
         {/* On phones the actions drop to a full-width row below the identity,
             so the name/meta column is never squeezed between avatar and buttons. */}
-        <div className="flex shrink-0 flex-wrap items-center gap-2 max-sm:w-full">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 max-sm:w-full max-sm:[&>button:not([aria-label])]:flex-1">
           {canSell ? (
             usable ? (
               <Button onClick={() => setDialog("renew")} data-testid="renew-membership">

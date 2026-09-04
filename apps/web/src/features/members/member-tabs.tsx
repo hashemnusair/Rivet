@@ -6,7 +6,7 @@ import { CalendarClock, CheckCircle2, Dumbbell } from "lucide-react";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import type { MemberDetail, TimelineEventType, UUID } from "@/lib/domain/types";
+import type { CheckInSummary, MemberDetail, MembershipSummary, TimelineEventType, TransactionSummary, UUID } from "@/lib/domain/types";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { toast } from "sonner";
 import { DateText, DateTimeText, DaysUntilText, MoneyText, RelativeText } from "@/components/shared/data-display";
@@ -34,10 +34,10 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <section className="panel grid grid-cols-2 divide-x divide-line self-start">
-        <StatCell label="Check-ins · 30d" value={member.stats.checkInsLast30Days} />
-        <StatCell label="Check-ins · all time" value={member.stats.totalCheckIns} />
-        <StatCell label="Lifetime value" value={<MoneyText money={member.stats.lifetimeValue} />} border />
+      <section className="panel grid grid-cols-2 self-start [&>*:nth-child(2n)]:border-s [&>*:nth-child(n+3)]:border-t [&>*]:border-line">
+        <StatCell label="Check-ins · 30 days" value={member.stats.checkInsLast30Days} />
+        <StatCell label="All check-ins" value={member.stats.totalCheckIns} />
+        <StatCell label="Lifetime value" value={<MoneyText money={member.stats.lifetimeValue} />} />
         <StatCell
           label="Last check-in"
           value={
@@ -47,7 +47,6 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
                 : `${member.stats.daysSinceLastCheckIn}d ago`
               : "—"
           }
-          border
         />
       </section>
 
@@ -67,9 +66,9 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
   );
 }
 
-function StatCell({ label, value, border }: { label: string; value: React.ReactNode; border?: boolean }) {
+function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className={cn("px-4 py-3.5", border && "border-t border-line")}>
+    <div className="px-4 py-3.5">
       <p className="context-label">{label}</p>
       <div className="mt-1 text-[20px] font-medium tabular">{value}</div>
     </div>
@@ -146,12 +145,15 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
   if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="No memberships yet" description="Sell the first membership to start this member's commercial record." />;
+    return <EmptyState layout="section" title="No memberships yet" description="Sell the first membership to start this member's commercial record." />;
   }
 
   return (
     <div className="panel overflow-hidden">
-      <Table>
+      <ul className="divide-y divide-line lg:hidden" aria-label="Membership history">
+        {items.map((membership) => <MembershipRecordRow key={membership.id} membership={membership} />)}
+      </ul>
+      <Table className="hidden lg:table">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead>Plan</TableHead>
@@ -227,6 +229,28 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
   );
 }
 
+function MembershipRecordRow({ membership }: { membership: MembershipSummary }) {
+  return (
+    <li className="space-y-3 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[13.5px] font-semibold text-ink">{membership.planName}</p>
+          <p className="mt-0.5 text-[12px] tabular text-ink-3">{membership.startDate} → {membership.endDate} · <DaysUntilText date={membership.endDate} /></p>
+        </div>
+        <MembershipStatusChip status={membership.status} />
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]">
+        <div><dt className="text-ink-3">Price</dt><dd className="mt-0.5 font-medium"><MoneyText money={membership.salePrice} /></dd></div>
+        <div><dt className="text-ink-3">Payment</dt><dd className="mt-0.5"><PaymentStatusChip status={membership.paymentStatus} /></dd></div>
+        {membership.remainingVisits != null ? <div><dt className="text-ink-3">Visits left</dt><dd className="mt-0.5 tabular">{membership.remainingVisits} of {membership.totalVisits}</dd></div> : null}
+        <div><dt className="text-ink-3">Term</dt><dd className="mt-0.5">{membership.previousMembershipId ? "Renewal" : "First term"}</dd></div>
+      </dl>
+      {membership.outstanding.amount > 0 ? <p className="text-[12.5px] font-medium text-warning-deep"><MoneyText money={membership.outstanding} /> outstanding</p> : null}
+      {membership.activeFreeze ? <p className="text-[12px] text-ink-3">Frozen until {formatDate(membership.activeFreeze.endDate)}</p> : null}
+    </li>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Personal training
 // ---------------------------------------------------------------------------
@@ -288,12 +312,15 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
   if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="No payments yet" description="Collected payments, refunds and receipts will appear here." />;
+    return <EmptyState layout="section" title="No payments yet" description="Collected payments, refunds and receipts will appear here." />;
   }
 
   return (
     <div className="panel overflow-hidden">
-      <Table>
+      <ul className="divide-y divide-line lg:hidden" aria-label="Payment history">
+        {items.map((transaction) => <PaymentRecordRow key={transaction.id} transaction={transaction} />)}
+      </ul>
+      <Table className="hidden lg:table">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead>Receipt</TableHead>
@@ -336,6 +363,26 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
   );
 }
 
+function PaymentRecordRow({ transaction }: { transaction: TransactionSummary }) {
+  return (
+    <li className="space-y-3 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[13.5px] font-semibold capitalize text-ink">{transaction.type.replaceAll("_", " ")}</p>
+          <p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={transaction.occurredAt} /></p>
+        </div>
+        <MoneyText money={transaction.amount} className="text-[13.5px] font-semibold" />
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3 text-[12.5px] text-ink-2">
+        <TransactionStatusChip status={transaction.status} />
+        <span>{PAYMENT_METHOD_LABELS[transaction.method]}</span>
+        <span>Recorded by {transaction.collectedByName}</span>
+        <Link href={receiptHref(transaction.receiptId)} className="ms-auto font-mono text-[12px] font-medium underline decoration-line-3 underline-offset-2 hover:text-ink">{transaction.receiptNumber}</Link>
+      </div>
+    </li>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Check-ins
 // ---------------------------------------------------------------------------
@@ -349,13 +396,16 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
   if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="No check-ins recorded" description="Check-ins from the reception console will appear here." />;
+    return <EmptyState layout="section" title="No check-ins recorded" description="Check-ins from the reception console will appear here." />;
   }
 
   return (
     <div>
       <div className="panel overflow-hidden">
-        <Table>
+        <ul className="divide-y divide-line md:hidden" aria-label="Check-in history">
+          {items.map((checkIn) => <CheckInRecordRow key={checkIn.id} checkIn={checkIn} />)}
+        </ul>
+        <Table className="hidden md:table">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>When</TableHead>
@@ -387,6 +437,19 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
   );
 }
 
+function CheckInRecordRow({ checkIn }: { checkIn: CheckInSummary }) {
+  const detail = checkIn.overrideReason ?? (checkIn.reasonCodes.includes("OK") ? null : checkIn.reasonCodes.join(", ").toLowerCase().replaceAll("_", " "));
+  return (
+    <li className="space-y-2.5 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div><p className="text-[13px] font-medium text-ink">{checkIn.branchName}</p><p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={checkIn.occurredAt} /></p></div>
+        <CheckInDecisionChip decision={checkIn.decision} />
+      </div>
+      {detail ? <p className="border-s-2 border-line-2 ps-3 text-[12px] leading-relaxed text-ink-2">{detail}</p> : null}
+    </li>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------
@@ -404,6 +467,7 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
 
   const tasks = (query.data?.items ?? []).filter((t) => t.memberId === memberId);
   if (query.isLoading) return <Skeleton className="h-20 w-full" />;
+  if (query.isError) return <ErrorState layout="inline" title="Tasks unavailable" description="Retry before assuming there is nothing due." onRetry={() => query.refetch()} />;
   if (tasks.length === 0) return <p className="text-[12.5px] text-ink-3">No open tasks for this member.</p>;
 
   return (
@@ -414,13 +478,13 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
             type="button"
             aria-label={`Complete task ${t.title}`}
             onClick={() => complete.mutate(t.id)}
-            className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-line-3 text-transparent hover:border-success hover:text-success cursor-pointer"
+            className="mt-0.5 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-3 text-transparent hover:border-success hover:text-success"
           >
             <CheckCircle2 className="size-3.5" />
           </button>
           <div className="min-w-0">
             <p className="font-medium leading-snug">{t.title}</p>
-            <p className="text-[11.5px] text-ink-3">
+            <p className="text-[12px] text-ink-3">
               {t.ownerName} · <RelativeText iso={t.dueAt} />
             </p>
           </div>
@@ -435,7 +499,7 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
 // ---------------------------------------------------------------------------
 export function MemberDetailsPanel({ member, branchName, salespersonName }: { member: MemberDetail; branchName: string; salespersonName?: string }) {
   const rows: Array<[string, React.ReactNode]> = [
-    ["Phone", <span key="p" dir="ltr" className="font-mono text-[12.5px]">{member.phone}</span>],
+    ["Phone", <span key="p" dir="ltr" className="text-[12.5px]">{member.phone}</span>],
     ["Email", member.email ?? "—"],
     ["Home branch", branchName],
     ["Preferred language", member.preferredLanguage === "ar" ? "العربية" : "English"],
@@ -453,7 +517,7 @@ export function MemberDetailsPanel({ member, branchName, salespersonName }: { me
       {rows.map(([label, value]) => (
         <div key={label} className="flex items-baseline justify-between gap-3 text-[12.5px]">
           <dt className="shrink-0 text-ink-3">{label}</dt>
-          <dd className="text-end text-ink">{value}</dd>
+          <dd className="min-w-0 break-words text-end text-ink">{value}</dd>
         </div>
       ))}
       {member.sensitiveNotes ? (
