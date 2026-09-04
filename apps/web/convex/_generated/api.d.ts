@@ -66,6 +66,7 @@ import type * as renewalPolicy from "../renewalPolicy.js";
 import type * as security from "../security.js";
 import type * as seed from "../seed.js";
 import type * as subscriptionReconciliation from "../subscriptionReconciliation.js";
+import type * as subscriptionTerm from "../subscriptionTerm.js";
 import type * as telemetry from "../telemetry.js";
 import type * as users from "../users.js";
 import type * as workspaceModules from "../workspaceModules.js";
@@ -135,6 +136,7 @@ declare const fullApi: ApiFromModules<{
   security: typeof security;
   seed: typeof seed;
   subscriptionReconciliation: typeof subscriptionReconciliation;
+  subscriptionTerm: typeof subscriptionTerm;
   telemetry: typeof telemetry;
   users: typeof users;
   workspaceModules: typeof workspaceModules;

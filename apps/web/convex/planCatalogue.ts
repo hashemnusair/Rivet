@@ -30,6 +30,15 @@ export function findPlan(name: string | undefined): PlanDefinition | undefined {
 
 const dinars = (minor: number) => `JOD ${(minor / 1000).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`;
 
+/**
+ * What one term costs at this cadence, from the plan's monthly price. Every
+ * invoice, quote and projection goes through here, so the yearly saving is
+ * stated once.
+ */
+export function termPriceMinor(monthlyMinor: number, interval: PlanInterval): number {
+  return interval === "annual" ? Math.round(monthlyMinor * 12 * ANNUAL_DISCOUNT) : Math.round(monthlyMinor);
+}
+
 /** The plan as the agreement names it: the plan itself, without limits the
  * agreement does not promise. */
 export function planSummary(name: string): string {
@@ -38,12 +47,12 @@ export function planSummary(name: string): string {
 
 /** "JOD 149.000 per month" from a price in minor units, for the interval. */
 export function feeLabel(priceMinor: number, interval: PlanInterval = "monthly"): string {
-  return interval === "annual" ? `${dinars(Math.round(priceMinor * 12 * ANNUAL_DISCOUNT))} per year` : `${dinars(priceMinor)} per month`;
+  return `${dinars(termPriceMinor(priceMinor, interval))} ${interval === "annual" ? "per year" : "per month"}`;
 }
 
 /** "JOD 149.000 per month" or "JOD 1,430.400 per year" */
 export function planFee(name: string, interval: PlanInterval = "monthly"): string | undefined {
   const plan = findPlan(name);
   if (!plan) return undefined;
-  return interval === "annual" ? `${dinars(Math.round(plan.priceMinor * 12 * ANNUAL_DISCOUNT))} per year` : `${dinars(plan.priceMinor)} per month`;
+  return feeLabel(plan.priceMinor, interval);
 }

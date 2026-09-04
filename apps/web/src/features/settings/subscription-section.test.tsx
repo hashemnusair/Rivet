@@ -26,4 +26,15 @@ describe("subscription and invoices", () => {
     expect(opened).toEqual([{ url: "blob:invoice", type: "application/pdf" }]);
     expect(open).toHaveBeenCalledWith("blob:invoice", "_blank", "noopener");
   });
+
+  it("states the plan, the cadence, the fee and the day the paid term ends", async () => {
+    await renderWithApp(<SubscriptionSection />, { role: "owner" });
+    const summary = await screen.findByTestId("subscription-summary");
+    expect(within(summary).getByText("Plan")).toBeInTheDocument();
+    expect(within(summary).getByText(/per (month|year), excluding any applicable tax/)).toBeInTheDocument();
+    expect(within(summary).getByText(/Monthly|Yearly, paid once a year/)).toBeInTheDocument();
+    expect(within(summary).getByText(/Paid through|Trial ends/)).toBeInTheDocument();
+    // The change rule is stated where the owner can read it.
+    expect(within(summary).getByText(/unused days of this one are credited/)).toBeInTheDocument();
+  });
 });

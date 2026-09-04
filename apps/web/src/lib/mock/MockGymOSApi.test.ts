@@ -439,7 +439,7 @@ describe("platform subscription controls", () => {
     await expect(api.voidPlatformInvoice(invoice.id, "Duplicate invoice.")).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 
-  it("reconciles one annual cycle, enters grace, suspends after two days, and reactivates on payment", async () => {
+  it("reconciles one annual cycle, gives the agreement's payment window, suspends after it, and reactivates on payment", async () => {
     const internalApi = api as unknown as { db: MockDb };
     const boundary = Date.parse("2026-09-30T12:00:00.000Z");
     internalApi.db.organization.billingInterval = "annual";
@@ -451,8 +451,13 @@ describe("platform subscription controls", () => {
     expect(await api.reconcilePlatformSubscriptions(boundary - 3 * 86_400_000)).toMatchObject({ invoicesCreated: 0 });
     const invoice = (await api.getPlatformSnapshot()).invoices.find((item) => item.cycleKey);
     expect(invoice).toMatchObject({ billingInterval: "annual", amountMinor: 2_390_400, status: "open" });
-    await api.reconcilePlatformSubscriptions(boundary);
-    await api.reconcilePlatformSubscriptions(boundary + 2 * 86_400_000);
+    // Raised three days early and payable within fourteen days of that.
+    const dueAt = Date.parse(invoice!.dueAt!);
+    expect(dueAt).toBe(boundary - 3 * 86_400_000 + 14 * 86_400_000);
+    expect(await api.reconcilePlatformSubscriptions(boundary)).toMatchObject({ markedPastDue: 0, suspended: 0 });
+    expect(await api.reconcilePlatformSubscriptions(dueAt)).toMatchObject({ markedPastDue: 1, suspended: 0 });
+    expect(await api.reconcilePlatformSubscriptions(dueAt + 20 * 86_400_000)).toMatchObject({ suspended: 0 });
+    await api.reconcilePlatformSubscriptions(dueAt + 21 * 86_400_000);
     expect((await api.getPlatformSnapshot()).gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ subscriptionStatus: "suspended", isPublic: false });
     const paid = await api.recordPlatformInvoicePayment({ invoiceId: invoice!.id, reference: "BANK-ANNUAL", reason: "Annual transfer received." });
     expect(paid.status).toBe("paid");

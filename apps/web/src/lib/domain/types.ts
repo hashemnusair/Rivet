@@ -1324,6 +1324,8 @@ export interface Session {
     locale: string;
     phoneCountryCallingCode?: string;
     brand?: BrandKit;
+    /** What this gym pays RIVET, and when the paid term ends. */
+    subscription?: SessionSubscription;
   };
   branches: Array<{ id: UUID; name: string; code: string }>;
   activeBranchId?: UUID;
@@ -1333,6 +1335,16 @@ export interface Session {
   workspace?: WorkspaceAccess;
   /** Whether this gym still owes RIVET a signed subscription agreement. Owners are gated until they sign. */
   legal?: SessionLegalState;
+}
+
+export interface SessionSubscription {
+  plan?: "Starter" | "Growth" | "Pro" | "Enterprise";
+  status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+  billingInterval: "monthly" | "annual";
+  /** The end of the paid term, ISO. */
+  currentPeriodEndsAt?: string;
+  /** The end of the onboarding trial, ISO, while one is running. */
+  trialEndsAt?: string;
 }
 
 export type SubscriptionAgreementStatus = "required" | "signed" | "countersigned" | "not_applicable";

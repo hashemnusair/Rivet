@@ -10,6 +10,7 @@ const invoice: InvoicePdfInput = {
   periodStart: "3 Sep 2026",
   periodEnd: "2 Oct 2026",
   interval: "monthly",
+  paymentTermDays: 14,
   customer: { name: "Forge Fitness Club", address: "Abdoun, Amman, Jordan", contactName: "Omar Al-Khatib (owner)", contactEmail: "omar@forgefitness.jo" },
   lines: [{ description: "Growth plan, monthly subscription", period: "3 Sep – 2 Oct 2026", amount: "JOD 149.000" }],
   subtotal: "JOD 149.000",
@@ -59,13 +60,37 @@ describe("invoice document", () => {
     expect(invoiceDate("2026-09-03T09:00:00.000Z")).toBe("3 Sep 2026");
     expect(invoiceDate("not a date")).toBe("—");
     const projected = invoicePdfInput("INV-9", {
-      amountMinor: 129133, currency: "JOD", billingInterval: "monthly", creditDays: 4, status: "open",
+      amountMinor: 129_133, subtotalMinor: 149_000, creditMinor: 19_867, currency: "JOD", billingInterval: "monthly", creditDays: 4, status: "open",
       createdAt: "2026-09-03T09:00:00.000Z", dueAt: "2026-09-17T09:00:00.000Z",
       periodStart: "2026-09-03T09:00:00.000Z", periodEnd: "2026-10-02T09:00:00.000Z",
     }, { name: "Forge Fitness Club", plan: "Growth", contactName: "Omar Al-Khatib (owner)", contactEmail: "omar@forgefitness.jo" });
+    // The line is the term at list price; the credit is a line of its own, so
+    // the arithmetic on the page adds up.
+    expect(projected.lines[0]!.description).toBe("Growth plan, monthly subscription");
+    expect(projected.lines[0]!.amount).toBe("JOD 149.000");
+    expect(projected.subtotal).toBe("JOD 149.000");
+    expect(projected.credit).toEqual({ label: "Credit, 4 unused days of the previous term", value: "-JOD 19.867" });
     expect(projected.total).toBe("JOD 129.133");
-    expect(projected.lines[0]!.description).toContain("Growth plan, monthly subscription, after a prorated credit of 4 unused days");
     expect(projected.dueDate).toBe("17 Sep 2026");
+    expect(projected.paymentTermDays).toBe(14);
     expect(projected.payment).toBeUndefined();
+  });
+
+  it("calls a yearly subscription yearly, whichever word the row was written with", () => {
+    const stored = { amountMinor: 1_430_400, currency: "JOD", status: "open", createdAt: "2026-09-03T09:00:00.000Z", dueAt: "2026-09-17T09:00:00.000Z", periodStart: "2026-09-03T09:00:00.000Z", periodEnd: "2027-09-02T09:00:00.000Z" };
+    const customer = { name: "Forge Fitness Club", plan: "Growth" };
+    expect(invoicePdfInput("INV-A", { ...stored, billingInterval: "annual" }, customer).interval).toBe("annual");
+    expect(invoicePdfInput("INV-B", { ...stored, billingInterval: "yearly" }, customer).interval).toBe("annual");
+    expect(invoicePdfInput("INV-C", { ...stored, billingInterval: "monthly" }, customer).interval).toBe("monthly");
+    const blocks = JSON.stringify(invoicePdfBlocks(invoicePdfInput("INV-A", { ...stored, billingInterval: "annual" }, customer)));
+    expect(blocks).toContain("Yearly");
+    expect(blocks).toContain("Growth plan, yearly subscription");
+    expect(blocks).not.toContain("Monthly");
+  });
+
+  it("prints the credit between the subtotal and the total", () => {
+    const blocks = JSON.stringify(invoicePdfBlocks({ ...invoice, subtotal: "JOD 149.000", credit: { label: "Credit, 4 unused days of the previous term", value: "-JOD 19.867" }, total: "JOD 129.133" }));
+    expect(blocks).toContain("Credit, 4 unused days of the previous term");
+    expect(blocks).toContain("-JOD 19.867");
   });
 });

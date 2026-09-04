@@ -105,7 +105,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(trial.currentPeriodEndsAt).toBeUndefined();
   });
 
-  it("derives the paid term, issues interval-correct invoices, and rolls unused days into the new term", async () => {
+  it("derives a one-interval paid term, issues interval-correct invoices, and credits the unused days as money", async () => {
     const DAY_MS = 86_400_000;
     const t = convexTest(schema, modules);
     await seed(t);
@@ -126,15 +126,22 @@ describe("exported Convex platform subscription lifecycle", () => {
       reason: "Owner asked to move to annual billing.",
     })) as Record<string, unknown>;
     expect(annual).toMatchObject({ subscriptionStatus: "active", billingInterval: "annual" });
+    // The new term is one year from today, never a year on top of what was left.
     const annualEnd = Date.parse(String(annual.currentPeriodEndsAt));
-    const expectedLow = new Date(before);
-    expectedLow.setUTCMonth(expectedLow.getUTCMonth() + 12);
-    expect(annualEnd).toBeGreaterThanOrEqual(expectedLow.getTime() + 15 * DAY_MS);
-    expect(annualEnd).toBeLessThanOrEqual(expectedLow.getTime() + 17 * DAY_MS);
+    const oneYear = new Date(before);
+    oneYear.setUTCMonth(oneYear.getUTCMonth() + 12);
+    expect(annualEnd).toBeGreaterThanOrEqual(oneYear.getTime() - DAY_MS);
+    expect(annualEnd).toBeLessThanOrEqual(oneYear.getTime() + DAY_MS);
 
+    // The 16 unused monthly days come back as money off the annual invoice.
+    const annualList = Math.round(149_000 * 12 * 0.8);
     const afterAnnual = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row) => row.data as Record<string, unknown>));
     expect(afterAnnual).toHaveLength(1);
-    expect(afterAnnual[0]).toMatchObject({ status: "open", billingInterval: "annual", amountMinor: Math.round(149_000 * 12 * 0.8), creditDays: 16 });
+    expect(afterAnnual[0]).toMatchObject({ status: "open", billingInterval: "annual", subtotalMinor: annualList, creditDays: 16 });
+    const credit = Number(afterAnnual[0]?.creditMinor);
+    expect(credit).toBeGreaterThan(0);
+    expect(credit).toBeLessThan(149_000);
+    expect(afterAnnual[0]?.amountMinor).toBe(annualList - credit);
     expect(String(afterAnnual[0]?.cycleKey)).toMatch(/^change:org-sub:/);
 
     // A plan change mid-term voids the superseded unpaid invoice and issues
@@ -149,8 +156,12 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(afterDowngrade).toHaveLength(2);
     const voided = afterDowngrade.find((invoice) => invoice.status === "void");
     const open = afterDowngrade.find((invoice) => invoice.status === "open");
-    expect(voided).toMatchObject({ billingInterval: "annual", amountMinor: Math.round(149_000 * 12 * 0.8) });
-    expect(open).toMatchObject({ billingInterval: "annual", amountMinor: Math.round(79_000 * 12 * 0.8) });
+    expect(voided).toMatchObject({ billingInterval: "annual", subtotalMinor: annualList });
+    // A downgrade a day into a paid annual term credits nearly all of it, and
+    // the credit is capped at the invoice so nothing is ever billed negative.
+    expect(open).toMatchObject({ billingInterval: "annual", subtotalMinor: Math.round(79_000 * 12 * 0.8) });
+    expect(Number(open?.amountMinor)).toBeGreaterThanOrEqual(0);
+    expect(Number(open?.amountMinor)).toBeLessThanOrEqual(Math.round(79_000 * 12 * 0.8));
 
     // Reactivating a suspended tenant bills a fresh term with no credit.
     await t.withIdentity({ subject: "clerk-platform" }).mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Pause while payment is arranged." }));

@@ -401,8 +401,45 @@ until the table at the end is signed.
 | Management reporting (statements, analytics) | — | — | ✓ | ✓ |
 | Shown on the public site | ✓ | ✓ | ✓ | platform-only |
 
-Source of truth: `convex/seed.ts` (plan rows), `convex/workspaceModules.ts`
-(module availability), the public pricing helper (annual formula).
+Source of truth: `convex/planCatalogue.ts` (plan rows and the one annual
+formula, `termPriceMinor`), `convex/workspaceModules.ts` (module
+availability), `convex/subscriptionTerm.ts` (term dates and proration).
+
+### How a term is billed, and what a change costs
+
+One module, `convex/subscriptionTerm.ts`, answers every question about a term,
+and the server, the mock API and the admin preview all read it, so the figure
+an operator sees before saving is the figure that reaches the invoice.
+
+- **A term is one interval.** A monthly term is one calendar month, an annual
+  term twelve, taken from the day it starts. A term is never lengthened.
+- **A change of plan or cadence starts a new term that day.** The gym is
+  invoiced for the new term at list price.
+- **The unfinished part of the term it replaces comes back as money**, valued
+  at the rate the gym actually paid: the outgoing term's price times its
+  unused days over its whole length. The invoice prints it as a credit line
+  between the subtotal and the total. The credit never exceeds the invoice, so
+  no invoice is ever negative, and there is no stored credit balance: a
+  downgrade with more credit than the new term costs simply pays nothing.
+- **Only a paid, running term earns a credit.** An overdue term was never paid
+  for; its unpaid invoice is voided instead, and the new term is billed in
+  full.
+- **An operator who types an explicit end date** overrides the derived term,
+  and no credit is applied to it.
+
+The enforcement clock follows the signed agreement, and the constants live
+beside the rules in `convex/subscriptionTerm.ts`:
+
+| Step | When |
+|---|---|
+| Invoice raised | 3 days before the term begins |
+| Payment due | 14 days after it is raised |
+| Marked past due, with notice | the day after it is due |
+| Access may be suspended | 21 days past due (14 overdue plus 7 days' notice) |
+
+The reconciliation cron applies this only while
+`RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`. Recording a payment never moves
+a gym's paid-through date backwards.
 
 ### Decisions needed
 

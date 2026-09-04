@@ -102,7 +102,7 @@ describe("Bill a gym wizard", () => {
     await user.click(screen.getByRole("button", { name: /Review/ }));
 
     expect(screen.getByText(/An invoice for JOD 2390\.400 \(Pro · annual, saves 20%\) is issued today\./)).toBeInTheDocument();
-    expect(screen.getByText(/16 unused paid days from the current term carry over\./)).toBeInTheDocument();
+    expect(screen.getByText(/16 unused paid days of the current term are credited: JOD \d+\.\d{3} off, leaving JOD \d+\.\d{3} to pay\./)).toBeInTheDocument();
     expect(screen.getByText(/no need to wait for the current term to end/)).toBeInTheDocument();
 
     const confirm = screen.getByRole("button", { name: /Confirm & bill/ });
@@ -128,7 +128,7 @@ describe("Bill a gym wizard", () => {
 
     expect(screen.getByText(/reactivates Iron Temple/)).toBeInTheDocument();
     expect(screen.getByText(/An invoice for JOD 149\.000 \(Growth · monthly\) is issued today\./)).toBeInTheDocument();
-    expect(screen.queryByText(/carry over/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/are credited/)).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Reason for this change"), "Reactivate after payment plan agreed.");
     await user.click(screen.getByRole("button", { name: /Confirm & bill/ }));

@@ -12,6 +12,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Input, Textarea } from "@/components/ui/input";
 import type { CreatePlatformInvoiceInput, PlatformBillingInvoice, RecordPlatformInvoicePaymentInput } from "@/lib/api/GymOSApi";
 import { useApiMutation } from "@/lib/hooks/use-api";
+import { INVOICE_LEAD_DAYS, OVERDUE_BEFORE_NOTICE_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, SUSPENSION_NOTICE_DAYS } from "../../../../convex/subscriptionTerm";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { exponentFor, formatMoney } from "@/lib/utils/money";
@@ -146,10 +147,10 @@ export default function BillingPage() {
               <DialogDescription>The subscription clock runs on its own; you only confirm payments.</DialogDescription>
             </DialogHeader>
             <DialogBody className="grid gap-2">
-              <PolicyStep index="01" title="Invoice issued" detail="Three days before the term ends" />
-              <PolicyStep index="02" title="Due" detail="On the day the term ends" />
-              <PolicyStep index="03" title="Two-day grace" detail="Time to confirm a bank transfer" />
-              <PolicyStep index="04" title="Suspension" detail="Unpaid after grace closes access" />
+              <PolicyStep index="01" title="Invoice issued" detail={`${INVOICE_LEAD_DAYS} days before the term ends`} />
+              <PolicyStep index="02" title="Due" detail={`${PAYMENT_TERM_DAYS} days after it is issued, as the agreement promises`} />
+              <PolicyStep index="03" title="Past due" detail="The day after the due date, with written notice" />
+              <PolicyStep index="04" title="Suspension" detail={`${SUSPENSION_AFTER_DUE_DAYS} days past due: ${OVERDUE_BEFORE_NOTICE_DAYS} days overdue plus ${SUSPENSION_NOTICE_DAYS} days' notice`} />
               <p className="mt-2 text-[11px] leading-relaxed text-ink-3">Record the payment reference on an invoice to mark it paid and reactivate the gym. RIVET never charges cards automatically.</p>
             </DialogBody>
             <DialogFooter>
@@ -250,7 +251,7 @@ function InvoiceRow({ invoice, focused, issuing, onIssue, onPastDue, onPayment, 
   const canVoid = !["paid", "void"].includes(invoice.status);
   const paymentLabel = invoice.status === "past_due" && isAutomaticRenewal(invoice) ? "Reactivate" : "Record payment";
   const graceEnd = isAutomaticRenewal(invoice) ? graceEndAt(invoice) : undefined;
-  return <tr id={`platform-invoice-${invoice.id}`} className={cn("border-b border-line last:border-b-0", focused && "bg-info-bg/50")}><td className="px-5 py-4"><div className="font-mono text-[10.5px]">{invoice.id}</div>{isAutomaticRenewal(invoice) ? <span className="mt-1 inline-flex rounded-full bg-signal-bg px-2 py-1 text-[11px] font-medium text-signal">{isSubscriptionChange(invoice) ? "Subscription change" : "Automatic renewal"}</span> : <span className="mt-1 inline-flex rounded-full bg-sunken px-2 py-1 text-[11px] font-medium text-ink-3">Manual exception</span>}</td><td className="px-4 py-4 text-[12px] font-medium">{invoice.gym}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.issuedAt ?? invoice.date)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.dueAt)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{invoice.status === "past_due" && isAutomaticRenewal(invoice) ? <><span className="block font-medium text-danger">Grace ends {displayDate(graceEnd)}</span><span className="mt-1 block">Due + 2 days</span></> : invoice.periodEnd ? <><span className="block">Period ends {displayDate(invoice.periodEnd)}</span><span className="mt-1 block">{formatInterval(invoice.billingInterval)}</span></> : "Not recorded"}</td><td className="px-4 py-4 text-end text-[11.5px] font-semibold">{amount}</td><td className="px-4 py-4"><Status invoice={invoice} /></td><td className="px-5 py-4"><div className="flex justify-end gap-1"><Button size="sm" variant="secondary" onClick={() => openInvoicePdf(invoice, { name: invoice.gym })} aria-label={`View invoice ${invoice.id} as PDF`} data-testid="view-invoice-pdf"><FileText /> PDF</Button>{invoice.status === "draft" ? <Button size="sm" loading={issuing} onClick={onIssue}><Send /> Issue</Button> : null}{invoice.status === "open" && !isAutomaticRenewal(invoice) ? <Button size="sm" variant="secondary" onClick={onPastDue}><CircleAlert /> Past due</Button> : null}{outstanding ? <Button size="sm" onClick={onPayment}><CheckCircle2 /> {paymentLabel}</Button> : null}{canVoid ? <Button size="sm" variant="secondary" onClick={onVoid}><Ban /> Void</Button> : null}</div></td></tr>;
+  return <tr id={`platform-invoice-${invoice.id}`} className={cn("border-b border-line last:border-b-0", focused && "bg-info-bg/50")}><td className="px-5 py-4"><div className="font-mono text-[10.5px]">{invoice.id}</div>{isAutomaticRenewal(invoice) ? <span className="mt-1 inline-flex rounded-full bg-signal-bg px-2 py-1 text-[11px] font-medium text-signal">{isSubscriptionChange(invoice) ? "Subscription change" : "Automatic renewal"}</span> : <span className="mt-1 inline-flex rounded-full bg-sunken px-2 py-1 text-[11px] font-medium text-ink-3">Manual exception</span>}</td><td className="px-4 py-4 text-[12px] font-medium">{invoice.gym}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.issuedAt ?? invoice.date)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.dueAt)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{invoice.status === "past_due" && isAutomaticRenewal(invoice) ? <><span className="block font-medium text-danger">Grace ends {displayDate(graceEnd)}</span><span className="mt-1 block">Due + {SUSPENSION_AFTER_DUE_DAYS} days</span></> : invoice.periodEnd ? <><span className="block">Period ends {displayDate(invoice.periodEnd)}</span><span className="mt-1 block">{formatInterval(invoice.billingInterval)}</span></> : "Not recorded"}</td><td className="px-4 py-4 text-end text-[11.5px] font-semibold">{amount}</td><td className="px-4 py-4"><Status invoice={invoice} /></td><td className="px-5 py-4"><div className="flex justify-end gap-1"><Button size="sm" variant="secondary" onClick={() => openInvoicePdf(invoice, { name: invoice.gym })} aria-label={`View invoice ${invoice.id} as PDF`} data-testid="view-invoice-pdf"><FileText /> PDF</Button>{invoice.status === "draft" ? <Button size="sm" loading={issuing} onClick={onIssue}><Send /> Issue</Button> : null}{invoice.status === "open" && !isAutomaticRenewal(invoice) ? <Button size="sm" variant="secondary" onClick={onPastDue}><CircleAlert /> Past due</Button> : null}{outstanding ? <Button size="sm" onClick={onPayment}><CheckCircle2 /> {paymentLabel}</Button> : null}{canVoid ? <Button size="sm" variant="secondary" onClick={onVoid}><Ban /> Void</Button> : null}</div></td></tr>;
 }
 
 function Status({ invoice }: { invoice: PlatformBillingInvoice }) {
@@ -268,10 +269,11 @@ function isSubscriptionChange(invoice: PlatformBillingInvoice): boolean {
   return Boolean(invoice.cycleKey?.startsWith("change:"));
 }
 
+/** The day access may be suspended: the window the signed agreement allows. */
 function graceEndAt(invoice: PlatformBillingInvoice): string | undefined {
   if (!invoice.dueAt) return undefined;
   const dueAt = Date.parse(invoice.dueAt);
-  return Number.isFinite(dueAt) ? new Date(dueAt + 2 * 86_400_000).toISOString() : undefined;
+  return Number.isFinite(dueAt) ? new Date(dueAt + SUSPENSION_AFTER_DUE_DAYS * 86_400_000).toISOString() : undefined;
 }
 
 function formatInterval(interval?: PlatformBillingInvoice["billingInterval"]): string {

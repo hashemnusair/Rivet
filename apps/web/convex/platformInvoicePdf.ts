@@ -25,10 +25,14 @@ export interface InvoicePdfInput {
   dueDate: string;
   periodStart: string;
   periodEnd: string;
-  interval: "monthly" | "yearly";
+  interval: "monthly" | "annual";
+  /** Days between the issue date and the due date, when both are known. */
+  paymentTermDays?: number;
   customer: { name: string; address?: string; contactName?: string; contactEmail?: string };
   lines: InvoicePdfLine[];
   subtotal: string;
+  /** A deduction between the subtotal and the total, such as unused paid days. */
+  credit?: { label: string; value: string };
   total: string;
   /** Present once the payment is recorded. */
   payment?: { reference?: string; paidDate?: string; amount?: string; balance?: string };
@@ -87,10 +91,10 @@ export function invoicePdfBlocks(input: InvoicePdfInput): PdfBlock[] {
         { heading: "Issued", lines: [{ text: input.issuedDate }] },
         { heading: "Due", lines: [{ text: input.dueDate }] },
         { heading: "Billing period", lines: [{ text: period }] },
-        { heading: "Interval", lines: [{ text: input.interval === "yearly" ? "Yearly" : "Monthly" }] },
+        { heading: "Interval", lines: [{ text: input.interval === "annual" ? "Yearly" : "Monthly" }] },
       ],
     },
-    { type: "paragraph", text: "Payment terms 14 days.", size: 9, color: "#8B887B" },
+    { type: "paragraph", text: input.paymentTermDays === undefined ? "Payment is due on the date shown." : `Payment terms ${input.paymentTermDays} ${input.paymentTermDays === 1 ? "day" : "days"}.`, size: 9, color: "#8B887B" },
     { type: "spacer", height: 6 },
     {
       type: "table",
@@ -103,6 +107,7 @@ export function invoicePdfBlocks(input: InvoicePdfInput): PdfBlock[] {
       type: "totals",
       rows: [
         { label: "Subtotal", value: input.subtotal },
+        ...(input.credit ? [{ label: input.credit.label, value: input.credit.value }] : []),
         ...(BRAND_LEGAL.taxNote ? [{ label: "Tax", value: BRAND_LEGAL.taxNote }] : []),
         { label: input.payment ? "Total" : "Total due", value: input.total, strong: true },
         ...(input.payment?.amount ? [{ label: "Amount paid", value: input.payment.amount }] : []),

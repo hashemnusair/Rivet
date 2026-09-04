@@ -23,7 +23,7 @@ import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, role
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 import { buildPlatformGymDetail } from "./platformGymDetail";
-import { annualPrice } from "./subscriptionReconciliation";
+import { addCalendarMonths, DAY_MS, PAYMENT_TERM_DAYS, termChange } from "./subscriptionTerm";
 import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
@@ -50,7 +50,7 @@ import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPa
 import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
 import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
-import { PLAN_CATALOGUE } from "./planCatalogue";
+import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { resolveMessagingMode } from "./messagingMode";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
@@ -560,16 +560,6 @@ type BillingInterval = "monthly" | "annual";
 
 function billingInterval(value: unknown): BillingInterval {
   return value === "annual" ? "annual" : "monthly";
-}
-
-/** Add calendar months without allowing Jan 31 to spill into March. */
-function addCalendarMonths(timestamp: number, months: number): number {
-  const source = new Date(timestamp);
-  const day = source.getUTCDate();
-  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  target.setUTCDate(Math.min(day, lastDay));
-  return target.getTime();
 }
 
 function platformSubscriptionStatusForOrganization(status: Organization["status"]): "trial" | "active" | "overdue" | "suspended" | "cancelled" {
@@ -1538,6 +1528,15 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
       timezone: actor.organization.timezone,
       locale: actor.organization.locale ?? "en-JO",
       brand,
+      // What the gym pays RIVET, so Settings can state the term without a
+      // second round trip.
+      subscription: {
+        plan: actor.organization.subscriptionPlan,
+        status: actor.organization.status,
+        billingInterval: actor.organization.billingInterval ?? "monthly",
+        currentPeriodEndsAt: actor.organization.currentPeriodEndsAt === undefined ? undefined : utcIso(actor.organization.currentPeriodEndsAt),
+        trialEndsAt: actor.organization.trialEndsAt === undefined ? undefined : utcIso(actor.organization.trialEndsAt),
+      },
     },
     branches: branches.map((branch) => ({ id: publicBranchId(branch), name: branch.name, code: branch.code })),
     activeBranchId: selected ? publicBranchId(selected) : undefined,
@@ -5247,6 +5246,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         currency: optionalString(invoice.currency),
         cycleKey: optionalString(invoice.cycleKey),
         billingInterval: invoice.billingInterval === "annual" || invoice.billingInterval === "monthly" ? invoice.billingInterval : undefined,
+        subtotalMinor: typeof invoice.subtotalMinor === "number" ? invoice.subtotalMinor : undefined,
+        creditMinor: typeof invoice.creditMinor === "number" ? invoice.creditMinor : undefined,
+        creditDays: typeof invoice.creditDays === "number" ? invoice.creditDays : undefined,
         status: optionalString(invoice.status),
         date: optionalString(invoice.date),
         issuedAt: optionalString(invoice.issuedAt),
@@ -5349,7 +5351,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       // with the ledger it summarizes.
       const configuredPrice = configuredPlan ? data(configuredPlan).priceMinor : undefined;
       if (typeof configuredPrice === "number" && Number.isSafeInteger(configuredPrice) && configuredPrice >= 0) {
-        recurringAmountMinor = billingInterval(organization.billingInterval) === "annual" ? annualPrice(configuredPrice) : configuredPrice;
+        recurringAmountMinor = termPriceMinor(configuredPrice, billingInterval(organization.billingInterval));
       }
       invoices = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
         .map((row) => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
@@ -8389,18 +8391,27 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     // A material change that lands on an active subscription starts a new paid
     // term today: the server derives the boundary and issues the invoice, so
-    // monthly and annual changes always bill through the same path. Unused
-    // paid days on the outgoing term roll into the new one as a day credit.
+    // monthly and annual changes always bill through the same path. The new
+    // term is one interval long, and the unfinished part of the paid term it
+    // replaces comes back as money off that invoice.
     const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
-    const DAY_MS = 86_400_000;
-    const creditDays = startsNewPaidTerm
-      && (previousSubscriptionStatus === "active" || previousSubscriptionStatus === "overdue")
-      && storedPeriodEndsAt !== undefined && storedPeriodEndsAt > nowMs
-      ? Math.ceil((storedPeriodEndsAt - nowMs) / DAY_MS)
-      : 0;
-    const computedPeriodEndsAt = startsNewPaidTerm
-      ? addCalendarMonths(nowMs, interval === "annual" ? 12 : 1) + creditDays * DAY_MS
+    const catalog = await platformPlans(ctx);
+    const monthlyCatalogPrice = (name: string | undefined) => numberValue(catalog.find((candidate) => stringValue(candidate.name) === name)?.priceMinor);
+    const outgoingMonthlyPrice = monthlyCatalogPrice(organization?.subscriptionPlan);
+    const change = startsNewPaidTerm
+      ? termChange({
+          now: nowMs,
+          interval,
+          monthlyPriceMinor: monthlyCatalogPrice(nextPlan),
+          // Only a paid, running term is worth anything back. An overdue term
+          // was never paid for, so it earns no credit; its unpaid invoice is
+          // voided below instead.
+          ...(previousSubscriptionStatus === "active" && storedPeriodEndsAt !== undefined && outgoingMonthlyPrice > 0
+            ? { outgoing: { periodEndsAt: storedPeriodEndsAt, monthlyPriceMinor: outgoingMonthlyPrice, interval: existingInterval } }
+            : {}),
+        })
       : undefined;
+    const computedPeriodEndsAt = change?.periodEndsAt;
     const nextSubscriptionStartedAt = storedSubscriptionStartedAt
       ?? ((nextStatus === "trial" || nextStatus === "active") ? nowMs : undefined);
     const nextTrialEndsAt = nextStatus === "trial"
@@ -8444,7 +8455,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const previousModulePlan = workspacePlan(organization?.subscriptionPlan);
     let updatedOrganization: Organization | null = organization;
     let updatedEntitlement: Doc<"organizationEntitlements"> | null = entitlementBefore;
-    let issuedTermInvoice: { invoiceId: string; amountMinor: number; creditDays: number; periodEnd: string } | undefined;
+    let issuedTermInvoice: { invoiceId: string; amountMinor: number; creditMinor: number; creditDays: number; periodEnd: string } | undefined;
     if (organization) {
       const modulePlan = workspacePlan(nextPlan);
       if (!modulePlan) domainError("CONFIGURATION_ERROR", "This organization has no configured workspace entitlement plan.", { correlationId: admin.correlationId });
@@ -8462,7 +8473,6 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       });
       updatedOrganization = await ctx.db.get(organization._id);
       if (!updatedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
-      const catalog = await platformPlans(ctx);
       const catalogPlan = catalog.find((candidate) => stringValue(candidate.name) === modulePlan);
       const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
       const entitlementUpdatedAt = Date.now();
@@ -8507,7 +8517,6 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         // subscription invoices cover a term this change supersedes, so they
         // are voided instead of double-billing the tenant. Manually created
         // invoices (no cycle key) are never touched.
-        const appliedCreditDays = periodBoundaryChanged ? 0 : creditDays;
         const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
         for (const row of invoiceRows) {
           const invoice = data(row.data);
@@ -8526,11 +8535,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             after: { status: "void" },
           });
         }
-        const catalogPrice = numberValue(catalog.find((candidate) => stringValue(candidate.name) === modulePlan)?.priceMinor);
+        const catalogPrice = monthlyCatalogPrice(modulePlan);
         if (!Number.isSafeInteger(catalogPrice) || catalogPrice <= 0) {
           domainError("CONFIGURATION_ERROR", "The plan catalog has no valid price for this plan, so the term invoice cannot be issued.", { correlationId: admin.correlationId });
         }
-        const amountMinor = interval === "annual" ? annualPrice(catalogPrice) : catalogPrice;
+        // An admin-chosen end date replaces the derived term, so the credit
+        // that belongs to the derived term is not applied to it.
+        const termInvoice = periodBoundaryChanged || !change
+          ? { subtotalMinor: termPriceMinor(catalogPrice, interval), creditMinor: 0, creditDays: 0, amountMinor: termPriceMinor(catalogPrice, interval) }
+          : change;
+        const amountMinor = termInvoice.amountMinor;
         const invoiceId = `INV-${newPublicId()}`;
         const periodEndIso = new Date(nextCurrentPeriodEndsAt).toISOString();
         await ctx.db.insert("domainRecords", {
@@ -8548,18 +8562,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             currency: JOD,
             date: now,
             issuedAt: now,
-            dueAt: now,
+            dueAt: new Date(nowMs + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
             periodStart: now,
             periodEnd: periodEndIso,
             cycleKey: `change:${targetOrganizationId}:${nowMs}`,
             billingInterval: interval,
-            ...(appliedCreditDays > 0 ? { creditDays: appliedCreditDays } : {}),
+            ...(termInvoice.creditMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
             status: "open",
             createdAt: now,
             updatedAt: now,
           },
         });
-        issuedTermInvoice = { invoiceId, amountMinor, creditDays: appliedCreditDays, periodEnd: periodEndIso };
+        issuedTermInvoice = { invoiceId, amountMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays, periodEnd: periodEndIso };
         const billedRecipient = await platformGymOwnerRecipient(ctx, gymId);
         if (billedRecipient && billedRecipient.organization._id === organization._id) {
           const issued = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "platformInvoice").eq("publicId", invoiceId)).unique();
@@ -8869,12 +8883,15 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (listing && organization && listing.organizationId === organization._id && organization.status !== "cancelled" && periodEndTimestamp !== undefined) {
         const billing = billingInterval(current.billingInterval ?? organization.billingInterval);
         const startedAt = organization.subscriptionStartedAt ?? validTimestamp(stringValue(current.periodStart)) ?? Date.now();
+        // Paying a late or superseded invoice must never shorten a term the
+        // gym has already paid past, so the boundary only ever moves forward.
+        const nextBoundary = Math.max(periodEndTimestamp, organization.currentPeriodEndsAt ?? 0);
         await ctx.db.patch(organization._id, {
           status: "active",
           billingInterval: billing,
           subscriptionStartedAt: startedAt,
           trialEndsAt: undefined,
-          currentPeriodEndsAt: periodEndTimestamp,
+          currentPeriodEndsAt: nextBoundary,
           cancelledAt: undefined,
           subscriptionStatusReason: reason,
           updatedAt: Date.now(),
@@ -8887,7 +8904,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             isPublic: true,
             subscriptionStartedAt: utcIso(startedAt),
             trialEndsAt: undefined,
-            currentPeriodEndsAt: utcIso(periodEndTimestamp),
+            currentPeriodEndsAt: utcIso(nextBoundary),
             cancelledAt: undefined,
             subscriptionStatusReason: reason,
             lastActiveAt: now,

@@ -1,6 +1,5 @@
 import type { BillingInterval } from "@/lib/api/GymOSApi";
-
-const DAY_MS = 86_400_000;
+import { termChange } from "../../../convex/subscriptionTerm";
 
 export type SubscriptionBillingInput = {
   /** The tenant's persisted subscription status before this change. */
@@ -11,54 +10,75 @@ export type SubscriptionBillingInput = {
   billingInterval: BillingInterval;
   /** Monthly catalog price in minor units for the selected plan. */
   priceMinor?: number;
+  /** The plan the tenant is leaving, when it differs from the new one. */
+  currentPlanPriceMinor?: number;
+  /** The cadence the outgoing term was billed at. */
+  currentBillingInterval?: BillingInterval;
   now?: number;
 };
 
 export type SubscriptionBillingProjection = {
-  /** Invoice amount in minor units; undefined while the catalog is loading. */
+  /** What the gym owes today; undefined while the catalog is loading. */
   amountMinor?: number;
-  /** Unused paid days from the outgoing active term rolled into the new one. */
+  /** The new term at list price. */
+  subtotalMinor?: number;
+  /** What the unfinished part of the outgoing term is worth. */
+  creditMinor: number;
+  /** Unused paid days behind that credit. */
   creditDays: number;
-  /** Approximate end of the new paid term. */
+  /** The end of the new paid term. */
   newPeriodEnd: Date;
 };
 
 /**
  * Mirrors the server's billing rules so admin surfaces can show the exact
  * consequence before saving: a material change landing on an active
- * subscription starts a new term today, issues its invoice at
- * interval-correct pricing, and rolls unused paid days forward.
+ * subscription starts a fresh term of one interval today, and the unfinished
+ * part of the term it replaces comes back as money off that invoice.
  */
 export function projectSubscriptionBilling(input: SubscriptionBillingInput): SubscriptionBillingProjection {
   const now = input.now ?? Date.now();
-  const amountMinor = input.priceMinor === undefined
-    ? undefined
-    : input.billingInterval === "annual"
-      ? Math.round(input.priceMinor * 12 * 0.8)
-      : input.priceMinor;
   const storedPeriodEnd = input.currentPeriodEndsAt === undefined ? undefined : Date.parse(input.currentPeriodEndsAt);
-  const creditDays = (input.currentStatus === "active" || input.currentStatus === "overdue")
-    && storedPeriodEnd !== undefined && Number.isFinite(storedPeriodEnd) && storedPeriodEnd > now
-    ? Math.ceil((storedPeriodEnd - now) / DAY_MS)
-    : 0;
-  const end = new Date(now);
-  end.setUTCMonth(end.getUTCMonth() + (input.billingInterval === "annual" ? 12 : 1));
-  return { amountMinor, creditDays, newPeriodEnd: new Date(end.getTime() + creditDays * DAY_MS) };
+  const outgoingPrice = input.currentPlanPriceMinor ?? input.priceMinor;
+  const change = termChange({
+    now,
+    interval: input.billingInterval,
+    monthlyPriceMinor: input.priceMinor ?? 0,
+    // Only a paid, running term is worth anything back.
+    ...(input.currentStatus === "active" && storedPeriodEnd !== undefined && Number.isFinite(storedPeriodEnd) && outgoingPrice
+      ? { outgoing: { periodEndsAt: storedPeriodEnd, monthlyPriceMinor: outgoingPrice, interval: input.currentBillingInterval ?? input.billingInterval } }
+      : {}),
+  });
+  return {
+    amountMinor: input.priceMinor === undefined ? undefined : change.amountMinor,
+    subtotalMinor: input.priceMinor === undefined ? undefined : change.subtotalMinor,
+    creditMinor: input.priceMinor === undefined ? 0 : change.creditMinor,
+    creditDays: input.priceMinor === undefined ? 0 : change.creditDays,
+    newPeriodEnd: new Date(change.periodEndsAt),
+  };
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** "27 Sep 2026", spelled the way the invoice and the agreement spell it. */
 export function formatBillingDate(date: Date): string {
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
+
+const dinars = (minor: number) => `JOD ${(minor / 1_000).toFixed(3)}`;
 
 /** Plain-language consequence lines for a change that lands on an active subscription. */
 export function subscriptionBillingLines(input: SubscriptionBillingInput): string[] {
   const projection = projectSubscriptionBilling(input);
+  const cadence = input.billingInterval === "annual" ? "annual, saves 20%" : "monthly";
   return [
-    projection.amountMinor === undefined
+    projection.subtotalMinor === undefined
       ? `${input.billingInterval === "annual" ? "An annual" : "A monthly"} invoice for the new ${input.plan} term is issued today.`
-      : `An invoice for JOD ${(projection.amountMinor / 1_000).toFixed(3)} (${input.plan} · ${input.billingInterval === "annual" ? "annual, saves 20%" : "monthly"}) is issued today.`,
-    ...(projection.creditDays > 0 ? [`${projection.creditDays} unused paid ${projection.creditDays === 1 ? "day" : "days"} from the current term ${projection.creditDays === 1 ? "carries" : "carry"} over.`] : []),
-    `The new term runs until about ${formatBillingDate(projection.newPeriodEnd)}.`,
+      : `An invoice for ${dinars(projection.subtotalMinor)} (${input.plan} · ${cadence}) is issued today.`,
+    ...(projection.creditMinor > 0
+      ? [`${projection.creditDays} unused paid ${projection.creditDays === 1 ? "day" : "days"} of the current term ${projection.creditDays === 1 ? "is" : "are"} credited: ${dinars(projection.creditMinor)} off, leaving ${dinars(projection.amountMinor ?? 0)} to pay.`]
+      : []),
+    `The new term runs until ${formatBillingDate(projection.newPeriodEnd)}.`,
     "Any older unpaid subscription invoice is voided so nothing is billed twice.",
   ];
 }

@@ -3,13 +3,11 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { enqueueOperationalEmail } from "./operationalEmail";
+import { termPriceMinor } from "./planCatalogue";
+import { DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termEnd, type BillingInterval } from "./subscriptionTerm";
 
-type BillingInterval = "monthly" | "annual";
 type PlatformPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
-const DAY_MS = 86_400_000;
-const INVOICE_LEAD_DAYS = 3;
-const PAYMENT_GRACE_DAYS = 2;
 const DEFAULT_PLAN_PRICES: Record<PlatformPlan, number> = {
   Starter: 79_000,
   Growth: 149_000,
@@ -35,6 +33,8 @@ function subscriptionBoundary(organization: Doc<"organizations">): number | unde
 
 type ReconciliationDecision = {
   boundary: number;
+  /** The day payment is due: the day the invoice is raised plus the payment term. */
+  dueAt: number;
   cycleKey: string;
   invoiceRow?: Doc<"domainRecords">;
   shouldCreate: boolean;
@@ -65,14 +65,20 @@ async function reconciliationDecision(
     : undefined;
   const currentStatus = invoice ? String(invoice.status) : undefined;
   const shouldCreate = !invoiceRow && now >= boundary - INVOICE_LEAD_DAYS * DAY_MS;
-  const shouldMarkPastDue = now >= boundary && (shouldCreate || currentStatus === "draft" || currentStatus === "open");
+  // The agreement gives the gym 14 days to pay from the day the invoice is
+  // raised, so the due date, not the term boundary, is what the clock counts
+  // from. An invoice this run is about to create is dated now.
+  const dueAt = invoice === undefined
+    ? now + PAYMENT_TERM_DAYS * DAY_MS
+    : Date.parse(String(invoice.dueAt ?? "")) || boundary;
+  const shouldMarkPastDue = !shouldCreate && now >= dueAt && (currentStatus === "draft" || currentStatus === "open");
   const effectiveStatus = shouldMarkPastDue ? "past_due" : currentStatus;
-  const shouldSuspend = now >= boundary + PAYMENT_GRACE_DAYS * DAY_MS
-    && (shouldCreate || Boolean(invoiceRow))
+  const shouldSuspend = Boolean(invoiceRow)
+    && now >= dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS
     && !["paid", "void"].includes(String(effectiveStatus))
     && organization.status !== "suspended"
     && organization.status !== "cancelled";
-  return { boundary, cycleKey, invoiceRow, shouldCreate, shouldMarkPastDue, shouldSuspend };
+  return { boundary, cycleKey, invoiceRow, dueAt, shouldCreate, shouldMarkPastDue, shouldSuspend };
 }
 
 type SystemAuditInput = {
@@ -121,19 +127,6 @@ function planOf(value: unknown): PlatformPlan | undefined {
   return value === "Starter" || value === "Growth" || value === "Pro" || value === "Enterprise" ? value : undefined;
 }
 
-function addCalendarMonths(timestamp: number, months: number): number {
-  const source = new Date(timestamp);
-  const day = source.getUTCDate();
-  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  target.setUTCDate(Math.min(day, lastDay));
-  return target.getTime();
-}
-
-function addInterval(timestamp: number, interval: BillingInterval): number {
-  return addCalendarMonths(timestamp, interval === "annual" ? 12 : 1);
-}
-
 function iso(timestamp: number): string {
   return new Date(timestamp).toISOString();
 }
@@ -150,11 +143,6 @@ function planPrice(data: Record<string, unknown>, plans: Map<string, number>): n
   const plan = planOf(data.subscriptionPlan);
   if (!plan) return 0;
   return plans.get(plan) ?? DEFAULT_PLAN_PRICES[plan];
-}
-
-/** One shared annual formula: twelve months with the published 20% saving. */
-export function annualPrice(monthlyMinor: number): number {
-  return Math.round(monthlyMinor * 12 * 0.8);
 }
 
 async function ownerRecipient(ctx: MutationCtx, organizationId: Id<"organizations">): Promise<{ reference: string; email?: string } | null> {
@@ -193,9 +181,9 @@ async function queuePlatformEmail(ctx: MutationCtx, input: {
 async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organizations">, now: number, planPrices: Map<string, number>): Promise<{ invoiceCreated: boolean; markedPastDue: boolean; suspended: boolean }> {
   const decision = await reconciliationDecision(ctx, organization, now);
   if (!decision) return { invoiceCreated: false, markedPastDue: false, suspended: false };
-  const { boundary, cycleKey } = decision;
+  const { boundary, cycleKey, dueAt } = decision;
   const interval = intervalOf(organization.billingInterval);
-  const periodEnd = addInterval(boundary, interval);
+  const periodEnd = termEnd(boundary, interval);
   const orgPublicId = publicId(organization);
   const listing = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "marketplaceGym")).first();
   const listingData = listing && listing.data && typeof listing.data === "object" && !Array.isArray(listing.data) ? listing.data as Record<string, unknown> : {};
@@ -204,7 +192,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   const recipient = await ownerRecipient(ctx, organization._id);
   if (decision.shouldCreate && !invoiceRow) {
     const plan = planPrice({ subscriptionPlan: organization.subscriptionPlan }, planPrices);
-    const amountMinor = interval === "annual" ? annualPrice(plan) : plan;
+    const amountMinor = termPriceMinor(plan, interval);
     const invoiceId = `INV-${crypto.randomUUID()}`;
     const createdAt = Date.now();
     const invoice = {
@@ -216,7 +204,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
       currency: "JOD",
       date: iso(now),
       issuedAt: iso(now),
-      dueAt: iso(boundary),
+      dueAt: iso(dueAt),
       periodStart: iso(boundary),
       periodEnd: iso(periodEnd),
       cycleKey,
@@ -235,7 +223,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
       entityPublicId: invoiceId,
       entityLabel: invoiceId,
       summary: `Automated invoice ${invoiceId} created for ${organization.name}.`,
-      reason: `Invoice generated automatically three days before the ${interval} subscription boundary.`,
+      reason: `Invoice generated automatically ${INVOICE_LEAD_DAYS} days before the ${interval} subscription boundary, payable within ${PAYMENT_TERM_DAYS} days.`,
       cycleKey,
       phase: "invoice_created",
       before: { invoiceStatus: null, cycleKey },
@@ -249,7 +237,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   // exception. Preserve that decision and never recreate the same cycle.
   if (String(invoice.status) === "void") return { invoiceCreated, markedPastDue: false, suspended: false };
   let markedPastDue = false;
-  if (now >= boundary && ["draft", "open"].includes(String(invoice.status))) {
+  if (now >= dueAt && ["draft", "open"].includes(String(invoice.status))) {
     const updatedAt = Date.now();
     const previousOrganizationStatus = organization.status;
     const previousSubscriptionStatus = listingData.subscriptionStatus;
@@ -278,7 +266,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
     });
   }
   const status = markedPastDue ? "past_due" : String(invoice.status);
-  const graceExpired = now >= boundary + PAYMENT_GRACE_DAYS * DAY_MS;
+  const graceExpired = now >= dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS;
   if (!graceExpired || status === "paid") return { invoiceCreated, markedPastDue, suspended: false };
   const latest = await ctx.db.get(invoiceRow._id);
   const latestData = latest && latest.data && typeof latest.data === "object" && !Array.isArray(latest.data) ? latest.data as Record<string, unknown> : invoice;
@@ -286,7 +274,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   const updatedAt = Date.now();
   const previousOrganizationStatus = organization.status;
   const previousSubscriptionStatus = listingData.subscriptionStatus;
-  const suspensionReason = `Subscription invoice ${invoiceRow.publicId} remained unpaid after the ${PAYMENT_GRACE_DAYS}-day grace period.`;
+  const suspensionReason = `Subscription invoice ${invoiceRow.publicId} remained unpaid ${SUSPENSION_AFTER_DUE_DAYS} days past its due date, after written notice.`;
   await ctx.db.patch(organization._id, { status: "suspended", subscriptionStatusReason: suspensionReason, updatedAt });
   if (listing) {
     await ctx.db.patch(listing._id, { data: { ...listingData, subscriptionStatus: "suspended", isPublic: false, subscriptionStatusReason: suspensionReason }, updatedAt });

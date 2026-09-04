@@ -65,7 +65,7 @@ describe("Gym subscriptions section", () => {
     expect(screen.queryByText("Legacy Row")).not.toBeInTheDocument();
     const activeRow = screen.getByRole("row", { name: /Forge Fitness/ });
     expect(activeRow).toHaveTextContent("Pro · monthly");
-    expect(activeRow).toHaveTextContent("15 Sept 2026");
+    expect(activeRow).toHaveTextContent("15 Sep 2026");
 
     await user.click(within(activeRow).getByRole("button", { name: /Change plan/ }));
     expect(onBill).toHaveBeenCalledWith("gym-active");

@@ -58,8 +58,8 @@ describe("subscription reconciliation lifecycle", () => {
       processed: 1,
       eligible: 1,
       invoicesToCreate: 1,
-      invoicesToMarkPastDue: 1,
-      organizationsToSuspend: 1,
+      invoicesToMarkPastDue: 0,
+      organizationsToSuspend: 0,
       earliestBoundary: boundary,
       latestBoundary: boundary,
     });
@@ -77,7 +77,7 @@ describe("subscription reconciliation lifecycle", () => {
     expect(state.emails).toHaveLength(0);
   });
 
-  it("creates one monthly trial invoice at T-3, marks it due, grants grace, then suspends and hides", async () => {
+  it("raises the invoice three days early, gives the agreement's 14 days to pay, then notice, then suspends", async () => {
     const t = convexTest(schema, modules);
     const boundary = Date.parse("2026-08-31T12:00:00.000Z");
     await seed(t, { interval: "monthly", status: "trial", boundary });
@@ -90,16 +90,24 @@ describe("subscription reconciliation lifecycle", () => {
     expect(reminderAudits).toEqual([expect.objectContaining({ action: "subscription.invoice.created", actorPublicId: "system:subscription-reconciliation", correlationId: expect.stringContaining("invoice_created") })]);
     expect(reminderAudits[0]).not.toHaveProperty("actorUserId");
     const invoice = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).unique())!);
-    expect(invoice.data).toMatchObject({ status: "open", billingInterval: "monthly", cycleKey: expect.stringContaining("monthly"), dueAt: new Date(boundary).toISOString() });
+    // Raised three days before the term, payable within fourteen days of that.
+    const dueAt = boundary - 3 * 86_400_000 + 14 * 86_400_000;
+    expect(invoice.data).toMatchObject({ status: "open", billingInterval: "monthly", cycleKey: expect.stringContaining("monthly"), dueAt: new Date(dueAt).toISOString() });
 
-    const due = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary });
+    // The term boundary alone is not a default: the gym still has its 14 days.
+    const boundaryRun = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary });
+    expect(boundaryRun).toMatchObject({ markedPastDue: 0, suspended: 0 });
+    expect((await t.run(async (ctx) => await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-reconcile")).unique()))?.status).toBe("trial");
+
+    const due = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: dueAt });
     expect(due).toMatchObject({ markedPastDue: 1, suspended: 0 });
     expect((await t.run(async (ctx) => await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-reconcile")).unique()))?.status).toBe("past_due");
-    const grace = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary + 86_400_000 });
-    expect(grace).toMatchObject({ suspended: 0 });
-    const suspended = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary + 2 * 86_400_000 });
+    // Fourteen days overdue plus seven days' notice before access is cut.
+    const notice = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: dueAt + 20 * 86_400_000 });
+    expect(notice).toMatchObject({ suspended: 0 });
+    const suspended = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: dueAt + 21 * 86_400_000 });
     expect(suspended).toMatchObject({ suspended: 1 });
-    const repeatSuspended = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary + 2 * 86_400_000 });
+    const repeatSuspended = await t.mutation(internal.subscriptionReconciliation.reconcile, { now: dueAt + 21 * 86_400_000 });
     expect(repeatSuspended).toMatchObject({ suspended: 0 });
     const state = await t.run(async (ctx) => ({
       organization: await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-reconcile")).unique(),
@@ -130,7 +138,6 @@ describe("subscription reconciliation lifecycle", () => {
     await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary - 3 * 86_400_000 });
     const invoice = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).unique())!);
     expect(invoice.data).toMatchObject({ amountMinor: 2_390_400, billingInterval: "annual", status: "open" });
-    await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary });
     const admin = t.withIdentity({ subject: "clerk-admin-reconcile" });
     await admin.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: invoice.publicId, reference: "BANK-ANNUAL-1", reason: "Annual transfer received." }));
     const state = await t.run(async (ctx) => ({

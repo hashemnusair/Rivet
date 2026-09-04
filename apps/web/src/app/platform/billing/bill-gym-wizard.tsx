@@ -10,6 +10,7 @@ import type { MarketplaceGym } from "@/lib/public/experience-data";
 import { useApiMutation } from "@/lib/hooks/use-api";
 import { cn } from "@/lib/utils/cn";
 import { formatBillingDate, subscriptionBillingLines } from "@/lib/platform/subscription-billing";
+import { termPriceMinor } from "../../../../convex/planCatalogue";
 
 type PlanName = "Starter" | "Growth" | "Pro" | "Enterprise";
 type Step = "gym" | "plan" | "review";
@@ -53,6 +54,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
   const selectedPlan = plan ?? gym?.rivetPlan;
   const currentCadence = gym?.billingInterval ?? "monthly";
   const planPrice = plans.find((item) => item.name === selectedPlan)?.priceMinor;
+  const currentPlanPrice = plans.find((item) => item.name === gym?.rivetPlan)?.priceMinor;
   const alreadyExact = Boolean(gym && gym.subscriptionStatus === "active" && selectedPlan === gym.rivetPlan && cadence === currentCadence);
   const needsActivation = Boolean(gym && gym.subscriptionStatus !== "active");
 
@@ -164,7 +166,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
               </div>
               <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Billing cadence">
                 {(["monthly", "annual"] as const).map((interval) => {
-                  const amount = planPrice === undefined ? undefined : interval === "annual" ? Math.round(planPrice * 12 * 0.8) : planPrice;
+                  const amount = planPrice === undefined ? undefined : termPriceMinor(planPrice, interval);
                   return (
                     <button key={interval} type="button" role="radio" aria-checked={cadence === interval} onClick={() => setCadence(interval)} className={cn("grid gap-1 border px-4 py-3 text-start transition-colors", cadence === interval ? "border-ink bg-sunken" : "border-line hover:bg-sunken/60")}>
                       <span className="text-[13px] font-semibold">{interval === "annual" ? "Annual · saves 20%" : "Monthly"}</span>
@@ -183,13 +185,13 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
                   ? <>Saving <span className="font-semibold">reactivates {gym.name}</span> on {selectedPlan} · {cadence}, starting a fresh paid term today.</>
                   : alreadyExact
                     ? <>{gym.name} is already active on exactly this plan and billing — there is nothing to bill.</>
-                    : <>Saving changes <span className="font-semibold">{gym.name}</span> to {selectedPlan} · {cadence}. Unused paid days carry over, so there is no need to wait for the current term to end.</>}
+                    : <>Saving changes <span className="font-semibold">{gym.name}</span> to {selectedPlan} · {cadence}. Unused paid days are credited against the new invoice, so there is no need to wait for the current term to end.</>}
               </p>
               {!alreadyExact ? (
                 <div className="border border-signal/40 bg-signal-bg/60 px-4 py-3 text-[11.5px] leading-relaxed" role="note" aria-label="Billing preview">
                   <p className="flex items-start gap-2 font-semibold"><Receipt className="mt-0.5 size-3.5 shrink-0" aria-hidden />What happens when you save</p>
                   <ul className="mt-2 grid gap-1 text-ink-2">
-                    {subscriptionBillingLines({ currentStatus: gym.subscriptionStatus, currentPeriodEndsAt: gym.currentPeriodEndsAt, plan: selectedPlan, billingInterval: cadence, priceMinor: planPrice }).map((line) => <li key={line}>{line}</li>)}
+                    {subscriptionBillingLines({ currentStatus: gym.subscriptionStatus, currentPeriodEndsAt: gym.currentPeriodEndsAt, plan: selectedPlan, billingInterval: cadence, priceMinor: planPrice, currentPlanPriceMinor: currentPlanPrice, currentBillingInterval: currentCadence }).map((line) => <li key={line}>{line}</li>)}
                   </ul>
                 </div>
               ) : null}

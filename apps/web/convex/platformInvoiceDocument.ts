@@ -9,6 +9,10 @@ import { invoicePdfFilename, renderInvoicePdfBase64, type InvoicePdfInput, type 
 
 export interface StoredInvoice {
   amountMinor?: unknown;
+  /** The term at list price, before any credit. Defaults to the amount. */
+  subtotalMinor?: unknown;
+  /** What the unfinished part of the replaced term was worth. */
+  creditMinor?: unknown;
   currency?: unknown;
   dueAt?: unknown;
   periodStart?: unknown;
@@ -57,16 +61,33 @@ function statusOf(value: unknown): InvoicePdfStatus {
   return (["draft", "open", "paid", "past_due", "failed", "void"] as const).includes(status as InvoicePdfStatus) ? status as InvoicePdfStatus : "open";
 }
 
+/** The stored cadence, whatever vocabulary the row was written in. */
+function intervalOf(value: unknown): "monthly" | "annual" {
+  return value === "annual" || value === "yearly" ? "annual" : "monthly";
+}
+
+/** Whole days between two stored timestamps, when both are readable. */
+function daysApart(from: unknown, to: unknown): number | undefined {
+  const start = typeof from === "string" ? Date.parse(from) : typeof from === "number" ? from : Number.NaN;
+  const end = typeof to === "string" ? Date.parse(to) : typeof to === "number" ? to : Number.NaN;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return undefined;
+  return Math.round((end - start) / 86_400_000);
+}
+
 export function invoicePdfInput(number: string, invoice: StoredInvoice, customer: InvoiceCustomer): InvoicePdfInput {
   const currency = typeof invoice.currency === "string" ? invoice.currency : "JOD";
   const amountMinor = typeof invoice.amountMinor === "number" ? invoice.amountMinor : 0;
-  const interval = invoice.billingInterval === "yearly" ? "yearly" as const : "monthly" as const;
+  const creditMinor = typeof invoice.creditMinor === "number" && invoice.creditMinor > 0 ? invoice.creditMinor : 0;
+  const subtotalMinor = typeof invoice.subtotalMinor === "number" && invoice.subtotalMinor > 0 ? invoice.subtotalMinor : amountMinor + creditMinor;
+  const interval = intervalOf(invoice.billingInterval);
   const creditDays = typeof invoice.creditDays === "number" ? invoice.creditDays : 0;
   const amount = invoiceMoney(amountMinor, currency);
   const periodStart = invoiceDate(invoice.periodStart);
   const periodEnd = invoiceDate(invoice.periodEnd);
   const plan = customer.plan ? `${customer.plan} plan` : "RIVET platform subscription";
   const status = statusOf(invoice.status);
+  const issuedValue = invoice.createdAt ?? invoice.periodStart;
+  const paymentTermDays = daysApart(issuedValue, invoice.dueAt);
   return {
     number,
     status,
@@ -75,13 +96,22 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
     periodStart,
     periodEnd,
     interval,
+    ...(paymentTermDays === undefined ? {} : { paymentTermDays }),
     customer: { name: customer.name, address: customer.address, contactName: customer.contactName, contactEmail: customer.contactEmail },
     lines: [{
-      description: `${plan}, ${interval === "yearly" ? "yearly" : "monthly"} subscription${creditDays > 0 ? `, after a prorated credit of ${creditDays} unused ${creditDays === 1 ? "day" : "days"} from the previous term` : ""}`,
+      description: `${plan}, ${interval === "annual" ? "yearly" : "monthly"} subscription`,
       period: `${periodStart} – ${periodEnd}`,
-      amount,
+      amount: invoiceMoney(subtotalMinor, currency),
     }],
-    subtotal: amount,
+    subtotal: invoiceMoney(subtotalMinor, currency),
+    ...(creditMinor > 0
+      ? {
+          credit: {
+            label: creditDays > 0 ? `Credit, ${creditDays} unused ${creditDays === 1 ? "day" : "days"} of the previous term` : "Credit from the previous term",
+            value: `-${invoiceMoney(creditMinor, currency)}`,
+          },
+        }
+      : {}),
     total: amount,
     payment: status === "paid"
       ? {

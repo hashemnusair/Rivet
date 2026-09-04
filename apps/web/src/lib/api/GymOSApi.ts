@@ -380,7 +380,11 @@ export interface PlatformBillingInvoice {
   /** Deterministic subscription cycle key; prevents duplicate automation invoices. */
   cycleKey?: string;
   billingInterval?: BillingInterval;
-  /** Unused paid days from the outgoing term rolled into this invoice's period. */
+  /** The term at list price, before any credit is applied. */
+  subtotalMinor?: number;
+  /** What the unfinished part of a replaced term was worth, deducted from the amount. */
+  creditMinor?: number;
+  /** Unused paid days behind that credit. */
   creditDays?: number;
   paymentReference?: string;
   paidAt?: string;

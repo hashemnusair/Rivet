@@ -355,11 +355,16 @@ function itemsFor(block: PdfBlock): Item[] {
       return block.rows.map((row) => {
         const size = row.strong ? 20 : 10;
         const font: PdfFont = row.strong ? "bold" : "regular";
+        const labelSize = row.strong ? 10 : 9;
+        const valueStart = CONTENT_WIDTH - widthOf(row.value, font, size);
+        // A long label, such as a credit that names the days behind it, starts
+        // further left rather than running into the amount.
+        const labelIndent = Math.max(0, Math.min(indent, valueStart - widthOf(row.label, "bold", labelSize) - 12));
         return {
           kind: "line" as const,
           segments: [
-            { text: row.label, font: "bold" as PdfFont, size: row.strong ? 10 : 9, indent, color: INK_MUTED },
-            { text: row.value, font, size, indent: CONTENT_WIDTH - widthOf(row.value, font, size), color: row.muted ? INK_DISABLED : undefined },
+            { text: row.label, font: "bold" as PdfFont, size: labelSize, indent: labelIndent, color: INK_MUTED },
+            { text: row.value, font, size, indent: valueStart, color: row.muted ? INK_DISABLED : undefined },
           ],
           baseline: size,
           height: size * 1.6,

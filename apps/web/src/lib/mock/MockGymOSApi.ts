@@ -67,7 +67,8 @@ import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/c
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
-import { feeLabel, findPlan } from "../../../convex/planCatalogue";
+import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
+import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
 import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
@@ -550,18 +551,6 @@ function platformStatusForOrganization(status: T.Organization["status"]): Market
   return status === "past_due" ? "overdue" : status;
 }
 
-function addCalendarMonths(timestamp: number, months: number): number {
-  const source = new Date(timestamp);
-  const day = source.getUTCDate();
-  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  target.setUTCDate(Math.min(day, lastDay));
-  return target.getTime();
-}
-
-function addBillingInterval(timestamp: number, interval: "monthly" | "annual"): number {
-  return addCalendarMonths(timestamp, interval === "annual" ? 12 : 1);
-}
 
 function validSubscriptionTimestamp(value: unknown): number | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
@@ -2308,13 +2297,13 @@ export class MockGymOSApi implements GymOSApi {
     const boundary = Date.parse(boundaryValue);
     if (!Number.isFinite(boundary)) return { processed: 1, invoicesCreated: 0, markedPastDue: 0, suspended: 0 };
     const billingInterval = organization.billingInterval ?? gym.billingInterval ?? "monthly";
-    const periodEnd = addBillingInterval(boundary, billingInterval);
+    const periodEnd = termEnd(boundary, billingInterval);
     const cycleKey = `subscription:${organization.id}:${billingInterval}:${boundary}`;
     let invoice = this.platformInvoices.find((item) => item.cycleKey === cycleKey);
     let invoicesCreated = 0;
-    if (now >= boundary - 3 * 86_400_000 && !invoice) {
+    if (now >= boundary - INVOICE_LEAD_DAYS * DAY_MS && !invoice) {
       const plan = this.platformPlans.find((item) => item.name === organization.subscriptionPlan)?.priceMinor ?? 0;
-      const amountMinor = billingInterval === "annual" ? Math.round(plan * 12 * 0.8) : plan;
+      const amountMinor = termPriceMinor(plan, billingInterval);
       invoice = {
         id: `INV-${crypto.randomUUID()}`,
         gymId: gym.id,
@@ -2324,7 +2313,7 @@ export class MockGymOSApi implements GymOSApi {
         currency: "JOD",
         date: new Date(now).toISOString(),
         issuedAt: new Date(now).toISOString(),
-        dueAt: new Date(boundary).toISOString(),
+        dueAt: new Date(now + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
         periodStart: new Date(boundary).toISOString(),
         periodEnd: new Date(periodEnd).toISOString(),
         cycleKey,
@@ -2337,8 +2326,11 @@ export class MockGymOSApi implements GymOSApi {
     }
     if (!invoice) return { processed: 1, invoicesCreated, markedPastDue: 0, suspended: 0 };
     if (invoice.status === "void") return { processed: 1, invoicesCreated, markedPastDue: 0, suspended: 0 };
+    // Parity with Convex: the agreement's payment term, not the term
+    // boundary, is what decides when an invoice falls past due.
+    const dueAt = Date.parse(invoice.dueAt ?? "") || boundary;
     let markedPastDue = 0;
-    if (now >= boundary && ["draft", "open"].includes(invoice.status)) {
+    if (now >= dueAt && ["draft", "open"].includes(invoice.status)) {
       invoice.status = "past_due";
       invoice.pastDueAt = new Date(now).toISOString();
       organization.status = "past_due";
@@ -2348,9 +2340,9 @@ export class MockGymOSApi implements GymOSApi {
       this.operationalEmailKinds.push("platform_invoice_past_due");
       markedPastDue = 1;
     }
-    if (now < boundary + 2 * 86_400_000 || ["paid", "void"].includes(invoice.status)) return { processed: 1, invoicesCreated, markedPastDue, suspended: 0 };
+    if (now < dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS || ["paid", "void"].includes(invoice.status)) return { processed: 1, invoicesCreated, markedPastDue, suspended: 0 };
     organization.status = "suspended";
-    organization.subscriptionStatusReason = `Subscription invoice ${invoice.id} remained unpaid after the 2-day grace period.`;
+    organization.subscriptionStatusReason = `Subscription invoice ${invoice.id} remained unpaid ${SUSPENSION_AFTER_DUE_DAYS} days past its due date, after written notice.`;
     gym.subscriptionStatus = "suspended";
     gym.isPublic = false;
     gym.subscriptionStatusReason = organization.subscriptionStatusReason;
@@ -2469,7 +2461,7 @@ export class MockGymOSApi implements GymOSApi {
           // Mirror the Convex derivation: the catalog price with the shared
           // annual formula, and the platform invoices scoped to this gym.
           recurringAmount: organization && plan
-            ? available({ amount: (organization.billingInterval ?? gym.billingInterval ?? "monthly") === "annual" ? Math.round(plan.priceMinor * 12 * 0.8) : plan.priceMinor, currency: organization.currency ?? "JOD" })
+            ? available({ amount: termPriceMinor(plan.priceMinor, organization.billingInterval ?? gym.billingInterval ?? "monthly"), currency: organization.currency ?? "JOD" })
             : organization ? notConfigured() : notAvailable(),
           renewalDate: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
           paymentMethod: notConfigured(),
@@ -2851,15 +2843,20 @@ export class MockGymOSApi implements GymOSApi {
       // subscription starts a new server-derived paid term today, rolls the
       // unused paid days forward, and issues the term invoice below.
       const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
-      const DAY_MS = 86_400_000;
-      const creditDays = startsNewPaidTerm
-        && (currentStatus === "active" || currentStatus === "overdue")
-        && Number.isFinite(storedCurrentPeriodEndsAt) && storedCurrentPeriodEndsAt! > nowTimestamp
-        ? Math.ceil((storedCurrentPeriodEndsAt! - nowTimestamp) / DAY_MS)
-        : 0;
-      const computedPeriodEndsAt = startsNewPaidTerm
-        ? addCalendarMonths(nowTimestamp, billingInterval === "annual" ? 12 : 1) + creditDays * DAY_MS
+      const outgoingMonthlyPrice = this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0;
+      const change = startsNewPaidTerm
+        ? termChange({
+            now: nowTimestamp,
+            interval: billingInterval,
+            monthlyPriceMinor: this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0,
+            // Only a paid, running term is worth anything back; an overdue
+            // term was never paid for, so its invoice is voided instead.
+            ...(currentStatus === "active" && Number.isFinite(storedCurrentPeriodEndsAt) && outgoingMonthlyPrice > 0
+              ? { outgoing: { periodEndsAt: storedCurrentPeriodEndsAt!, monthlyPriceMinor: outgoingMonthlyPrice, interval: existingBillingInterval } }
+              : {}),
+          })
         : undefined;
+      const computedPeriodEndsAt = change?.periodEndsAt;
       const nextSubscriptionStartedAt = Number.isFinite(storedSubscriptionStartedAt) ? storedSubscriptionStartedAt : PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? nowTimestamp : undefined;
       const nextTrialEndsAt = nextStatus === "trial" ? (Number.isFinite(storedTrialEndsAt) ? storedTrialEndsAt : nextSubscriptionStartedAt === undefined ? undefined : addCalendarMonths(nextSubscriptionStartedAt, 1)) : storedTrialEndsAt;
       if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "A trial must end in the future; its end date is derived from onboarding.");
@@ -2934,7 +2931,6 @@ export class MockGymOSApi implements GymOSApi {
       if (startsNewPaidTerm && nextCurrentPeriodEndsAt !== undefined) {
         // Parity with Convex: unpaid subscription-cycle invoices are
         // superseded by the new term; manual invoices (no cycle key) stay.
-        const appliedCreditDays = periodBoundaryChanged ? 0 : creditDays;
         const nowIso = new Date(nowTimestamp).toISOString();
         for (const invoice of this.platformInvoices) {
           if (invoice.gymId === gym.id && invoice.cycleKey && ["draft", "open", "past_due", "failed"].includes(invoice.status)) {
@@ -2943,7 +2939,12 @@ export class MockGymOSApi implements GymOSApi {
           }
         }
         const priceMinor = this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0;
-        const amountMinor = billingInterval === "annual" ? Math.round(priceMinor * 12 * 0.8) : priceMinor;
+        // An admin-chosen end date replaces the derived term, so the credit
+        // that belongs to the derived term is not applied to it.
+        const termInvoice = periodBoundaryChanged || !change
+          ? { subtotalMinor: termPriceMinor(priceMinor, billingInterval), creditMinor: 0, creditDays: 0, amountMinor: termPriceMinor(priceMinor, billingInterval) }
+          : change;
+        const amountMinor = termInvoice.amountMinor;
         issuedTermInvoiceId = `INV-${crypto.randomUUID()}`;
         this.platformInvoices.unshift({
           id: issuedTermInvoiceId,
@@ -2954,12 +2955,12 @@ export class MockGymOSApi implements GymOSApi {
           currency: "JOD",
           date: nowIso,
           issuedAt: nowIso,
-          dueAt: nowIso,
+          dueAt: new Date(nowTimestamp + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
           periodStart: nowIso,
           periodEnd: new Date(nextCurrentPeriodEndsAt).toISOString(),
           cycleKey: `change:${organization.id}:${nowTimestamp}`,
           billingInterval,
-          ...(appliedCreditDays > 0 ? { creditDays: appliedCreditDays } : {}),
+          ...(termInvoice.creditMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
           status: "open",
         });
       }
@@ -4182,7 +4183,22 @@ export class MockGymOSApi implements GymOSApi {
     }
     return {
       user: { id: user.id, name: user.name, email: user.email },
-      organization: { id: org.id, name: org.name, currency: org.currency, timezone: org.timezone, locale: org.locale, phoneCountryCallingCode: org.phoneCountryCallingCode, brand: this.db.brand },
+      organization: {
+        id: org.id,
+        name: org.name,
+        currency: org.currency,
+        timezone: org.timezone,
+        locale: org.locale,
+        phoneCountryCallingCode: org.phoneCountryCallingCode,
+        brand: this.db.brand,
+        subscription: {
+          plan: org.subscriptionPlan,
+          status: org.status,
+          billingInterval: org.billingInterval ?? "monthly",
+          currentPeriodEndsAt: org.currentPeriodEndsAt,
+          trialEndsAt: org.trialEndsAt,
+        },
+      },
       branches: visibleBranches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
       activeBranchId: activeBranchId ?? (user.branchScope === "selected" && visibleBranches.length === 1 ? visibleBranches[0]!.id : undefined),
       roles: [user.role],
