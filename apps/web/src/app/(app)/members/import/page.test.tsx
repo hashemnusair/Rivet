@@ -51,7 +51,8 @@ describe("member import", () => {
 
     await user.click(screen.getByRole("button", { name: "Paste CSV instead" }));
     const editor = screen.getByRole("textbox", { name: "Member CSV content" });
-    await user.type(editor, "full_name,phone,gender\nMira Nasser,0798123456,female");
+    await user.click(editor);
+    await user.paste("full_name,phone,gender\nMira Nasser,0798123456,female");
 
     expect(editor).toHaveValue("full_name,phone,gender\nMira Nasser,0798123456,female");
     expect(screen.getByRole("button", { name: "Check members" })).toBeEnabled();
