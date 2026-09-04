@@ -8568,7 +8568,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             cycleKey: `change:${targetOrganizationId}:${nowMs}`,
             billingInterval: interval,
             ...(termInvoice.creditMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
-            status: "open",
+            // A credit large enough to cover the whole term leaves nothing to
+            // collect, so the invoice is settled rather than left to chase.
+            ...(amountMinor === 0
+              ? { status: "paid", paidAt: now, paymentReference: "Settled by the credit from the previous term" }
+              : { status: "open" }),
             createdAt: now,
             updatedAt: now,
           },

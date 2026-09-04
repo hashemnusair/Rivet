@@ -157,11 +157,13 @@ describe("exported Convex platform subscription lifecycle", () => {
     const voided = afterDowngrade.find((invoice) => invoice.status === "void");
     const open = afterDowngrade.find((invoice) => invoice.status === "open");
     expect(voided).toMatchObject({ billingInterval: "annual", subtotalMinor: annualList });
-    // A downgrade a day into a paid annual term credits nearly all of it, and
-    // the credit is capped at the invoice so nothing is ever billed negative.
-    expect(open).toMatchObject({ billingInterval: "annual", subtotalMinor: Math.round(79_000 * 12 * 0.8) });
-    expect(Number(open?.amountMinor)).toBeGreaterThanOrEqual(0);
-    expect(Number(open?.amountMinor)).toBeLessThanOrEqual(Math.round(79_000 * 12 * 0.8));
+    // A downgrade a day into a paid annual term is worth more in credit than
+    // the cheaper term costs, so the credit is capped and the term is settled
+    // rather than billed at a negative amount or left open for nothing.
+    const settled = afterDowngrade.find((invoice) => invoice.status === "paid");
+    expect(open).toBeUndefined();
+    expect(settled).toMatchObject({ billingInterval: "annual", subtotalMinor: Math.round(79_000 * 12 * 0.8), amountMinor: 0, paymentReference: "Settled by the credit from the previous term" });
+    expect(settled?.creditMinor).toBe(Math.round(79_000 * 12 * 0.8));
 
     // Reactivating a suspended tenant bills a fresh term with no credit.
     await t.withIdentity({ subject: "clerk-platform" }).mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Pause while payment is arranged." }));

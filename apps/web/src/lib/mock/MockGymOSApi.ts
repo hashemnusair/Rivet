@@ -2957,7 +2957,10 @@ export class MockGymOSApi implements GymOSApi {
           cycleKey: `change:${organization.id}:${nowTimestamp}`,
           billingInterval,
           ...(termInvoice.creditMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
-          status: "open",
+          // Parity with Convex: a credit that covers the term settles it.
+          ...(amountMinor === 0
+            ? { status: "paid" as const, paidAt: nowIso, paymentReference: "Settled by the credit from the previous term" }
+            : { status: "open" as const }),
         });
       }
 
