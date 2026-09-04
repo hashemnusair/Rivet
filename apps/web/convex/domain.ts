@@ -4953,6 +4953,17 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return await buildSession(ctx, actor, request.activeBranchId);
   }
 
+  if (operation === "billing.invoices.list") {
+    // A gym reads only its own platform invoices, newest first, in the
+    // same shape the platform console uses.
+    const actor = await requireActor(ctx, request);
+    const rows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "platformInvoice")).collect();
+    return rows
+      .map((row): Data => ({ id: row.publicId, gym: actor.organization.name, ...data(row.data) }))
+      .filter((invoice) => invoice.status !== "draft")
+      .sort((left, right) => String(right.issuedAt ?? right.createdAt ?? "").localeCompare(String(left.issuedAt ?? left.createdAt ?? "")));
+  }
+
   if (operation === "legal.agreement.current" || operation === "platform.agreements.list" || operation === "platform.agreement.get") {
     return await legalAgreementQuery(ctx, operation, input, request);
   }

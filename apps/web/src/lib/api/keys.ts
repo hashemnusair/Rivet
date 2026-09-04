@@ -41,6 +41,7 @@ export const qk = {
   operations: (params?: unknown) => ["operations", params] as const,
   payables: (params?: unknown) => ["payables", params] as const,
   legalAgreement: ["legal", "agreement"] as const,
+  myPlatformInvoices: ["billing", "invoices"] as const,
   platformAgreements: ["platform", "agreements"] as const,
   platformAgreement: (id: string) => ["platform", "agreements", "detail", id] as const,
   supplierPayments: (params?: unknown) => ["supplierPayments", params] as const,

@@ -10337,6 +10337,10 @@ export class MockGymOSApi implements GymOSApi {
     return { id: row.id, reference: row.reference, version: row.version, status: row.status, organizationId: row.organizationId, organizationName: row.organizationName, plan: row.subscription.plan, startDate: row.subscription.startDate, termMonths: row.subscription.termMonths, signatoryName: row.signatory.name, signedAt: row.signedAt, countersignedAt: row.countersign?.at, hashMatch: row.hashMatch };
   }
 
+  listMyPlatformInvoices(): Promise<PlatformBillingInvoice[]> {
+    return this.respond(() => this.platformInvoices.filter((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "draft").map((invoice) => ({ ...invoice })));
+  }
+
   getSubscriptionAgreementContext(): Promise<T.SubscriptionAgreementContext> {
     return this.respond(async () => {
       const user = this.actor();

@@ -33,6 +33,43 @@ export interface AgreementCopyOptions {
 
 const ID_LABELS = { national: "Jordanian national ID", passport: "Passport" } as const;
 
+/**
+ * Everything a gym reads in this message, in both languages. RIVET's own
+ * copy is always English; the signer's copy follows the gym's language.
+ */
+const COPY = {
+  en: {
+    idLabels: ID_LABELS,
+    rows: { reference: "Reference", version: "Agreement version", gym: "Gym", address: "Address", plan: "Plan", startDate: "Contract start date", signedBy: "Signed by", signedAt: "Signed at", fingerprint: "Document fingerprint", countersignedBy: "Countersigned by", check: "Fingerprint check" },
+    serverTime: (at: string, zone: string) => `${at} (${zone}, RIVET server time)`,
+    mismatch: "The signer's browser produced a different fingerprint from RIVET's copy; flagged for review.",
+    mismatchChip: "Fingerprint mismatch",
+    subjectSigned: (reference: string) => `Your signed RIVET subscription agreement ${reference}`,
+    subjectCountersigned: (reference: string) => `RIVET countersigned your subscription agreement ${reference}`,
+    headlineSigned: "Your subscription agreement is signed",
+    headlineCountersigned: "RIVET countersigned your subscription agreement",
+    bodySigned: "Thank you for signing your RIVET subscription agreement. Your copy is attached. RIVET will countersign and send you the completed agreement.",
+    bodyCountersigned: "RIVET has countersigned your subscription agreement. The completed agreement is attached, and the same record is in RIVET under Settings, Agreement.",
+    button: "View the agreement",
+    note: "The ID number is shown masked in every copy. Electronic signature under the Electronic Transactions Law No. 15 of 2015.",
+  },
+  ar: {
+    idLabels: { national: "الرقم الوطني الأردني", passport: "جواز السفر" },
+    rows: { reference: "المرجع", version: "إصدار الاتفاقية", gym: "النادي", address: "العنوان", plan: "الباقة", startDate: "تاريخ بدء العقد", signedBy: "وقّعها", signedAt: "وقت التوقيع", fingerprint: "بصمة المستند", countersignedBy: "وقّعت عن RIVET", check: "التحقق من البصمة" },
+    serverTime: (at: string, zone: string) => `${at} (${zone}، توقيت خادم RIVET)`,
+    mismatch: "أنتج متصفح الموقّع بصمة مختلفة عن نسخة RIVET؛ تم وضع علامة للمراجعة.",
+    mismatchChip: "اختلاف في البصمة",
+    subjectSigned: (reference: string) => `اتفاقية اشتراك RIVET الموقّعة ${reference}`,
+    subjectCountersigned: (reference: string) => `وقّعت RIVET اتفاقية اشتراككم ${reference}`,
+    headlineSigned: "تم توقيع اتفاقية الاشتراك",
+    headlineCountersigned: "وقّعت RIVET اتفاقية اشتراككم",
+    bodySigned: "شكرًا لتوقيع اتفاقية اشتراك RIVET. نسختكم مرفقة. ستوقّع RIVET بدورها وترسل لكم الاتفاقية المكتملة.",
+    bodyCountersigned: "وقّعت RIVET اتفاقية الاشتراك الخاصة بكم. الاتفاقية المكتملة مرفقة، والسجل نفسه متاح داخل RIVET ضمن الإعدادات، الاتفاقية.",
+    button: "عرض الاتفاقية",
+    note: "يظهر رقم الهوية مخفيًا في كل نسخة. توقيع إلكتروني بموجب قانون المعاملات الإلكترونية رقم 15 لسنة 2015.",
+  },
+} as const;
+
 export { escapeHtml } from "./emailTemplate";
 
 function fullAddress(copy: AgreementCopy): string {
@@ -40,60 +77,62 @@ function fullAddress(copy: AgreementCopy): string {
   return city && !address.toLowerCase().includes(city.toLowerCase()) ? `${address}, ${city}` : address;
 }
 
-function rows(copy: AgreementCopy): EmailRow[] {
+function rows(copy: AgreementCopy, language: "en" | "ar"): EmailRow[] {
+  const t = COPY[language];
   const list: EmailRow[] = [
-    { label: "Reference", value: copy.reference, mono: true },
-    { label: "Agreement version", value: copy.version },
-    { label: "Gym", value: copy.customer.legalName },
-    { label: "Address", value: fullAddress(copy) },
-    { label: "Plan", value: copy.subscription.plan },
-    { label: "Contract start date", value: copy.subscription.startDate },
-    { label: "Signed by", value: copy.signatory.name },
-    { label: ID_LABELS[copy.signatory.idType], value: copy.signatory.idNumberMasked },
-    { label: "Signed at", value: `${copy.signedAtLocal} (${copy.timezone}, RIVET server time)` },
-    { label: "Document fingerprint", value: copy.documentSha256, mono: true },
+    { label: t.rows.reference, value: copy.reference, mono: true },
+    { label: t.rows.version, value: copy.version },
+    { label: t.rows.gym, value: copy.customer.legalName },
+    { label: t.rows.address, value: fullAddress(copy) },
+    { label: t.rows.plan, value: copy.subscription.plan },
+    { label: t.rows.startDate, value: copy.subscription.startDate },
+    { label: t.rows.signedBy, value: copy.signatory.name },
+    { label: t.idLabels[copy.signatory.idType], value: copy.signatory.idNumberMasked },
+    { label: t.rows.signedAt, value: t.serverTime(copy.signedAtLocal, copy.timezone) },
+    { label: t.rows.fingerprint, value: copy.documentSha256, mono: true },
   ];
-  if (copy.countersign) list.push({ label: "Countersigned by", value: `${copy.countersign.byName}, ${copy.countersign.title}, ${copy.countersign.atLocal}` });
-  if (!copy.hashMatch) list.push({ label: "Fingerprint check", value: "The signer's browser produced a different fingerprint from RIVET's copy; flagged for review." });
+  if (copy.countersign) list.push({ label: t.rows.countersignedBy, value: `${copy.countersign.byName}, ${copy.countersign.title}, ${copy.countersign.atLocal}` });
+  if (!copy.hashMatch) list.push({ label: t.rows.check, value: t.mismatch });
   return list;
 }
 
-function subjectFor(copy: AgreementCopy, audience: AgreementCopyAudience): string {
-  if (copy.countersign) return audience === "signer" ? `RIVET countersigned your subscription agreement ${copy.reference}` : `${copy.organizationName} · agreement ${copy.reference} countersigned`;
-  return audience === "signer" ? `Your signed RIVET subscription agreement ${copy.reference}` : `${copy.organizationName} signed the RIVET subscription agreement (${copy.reference})`;
+function subjectFor(copy: AgreementCopy, audience: AgreementCopyAudience, language: "en" | "ar"): string {
+  if (audience === "rivet") return copy.countersign ? `${copy.organizationName} · agreement ${copy.reference} countersigned` : `${copy.organizationName} signed the RIVET subscription agreement (${copy.reference})`;
+  return copy.countersign ? COPY[language].subjectCountersigned(copy.reference) : COPY[language].subjectSigned(copy.reference);
 }
 
-function headlineFor(copy: AgreementCopy, audience: AgreementCopyAudience): string {
-  if (copy.countersign) return audience === "signer" ? "RIVET countersigned your subscription agreement" : `${copy.organizationName}'s agreement is countersigned`;
-  return audience === "signer" ? "Your subscription agreement is signed" : `${copy.organizationName} signed its subscription agreement`;
+function headlineFor(copy: AgreementCopy, audience: AgreementCopyAudience, language: "en" | "ar"): string {
+  if (audience === "rivet") return copy.countersign ? `${copy.organizationName}'s agreement is countersigned` : `${copy.organizationName} signed its subscription agreement`;
+  return copy.countersign ? COPY[language].headlineCountersigned : COPY[language].headlineSigned;
 }
 
-function paragraphsFor(copy: AgreementCopy, audience: AgreementCopyAudience): string[] {
+function paragraphsFor(copy: AgreementCopy, audience: AgreementCopyAudience, language: "en" | "ar"): string[] {
   if (audience === "rivet") {
     return copy.countersign
       ? [`The subscription agreement with ${copy.organizationName} is now countersigned. This is RIVET's copy of the record.`]
       : [`${copy.signatory.name} signed the RIVET subscription agreement on behalf of ${copy.organizationName}. Countersign it from Platform, Agreements.`];
   }
-  return copy.countersign
-    ? ["RIVET has countersigned your subscription agreement. The completed agreement is attached, and the same record is in RIVET under Settings, Agreement."]
-    : ["Thank you for signing your RIVET subscription agreement. Your copy is attached. RIVET will countersign and send you the completed agreement."];
+  return [copy.countersign ? COPY[language].bodyCountersigned : COPY[language].bodySigned];
 }
 
 /** Subject, plain text and HTML for one recipient audience. */
 export function renderAgreementCopyEmail(copy: AgreementCopy, audience: AgreementCopyAudience, options: AgreementCopyOptions = {}): RenderedEmail {
-  const subject = subjectFor(copy, audience);
+  // RIVET's own copy is internal and stays English whatever the gym prefers.
+  const language = audience === "rivet" ? "en" : options.language ?? "en";
+  const t = COPY[language];
+  const subject = subjectFor(copy, audience, language);
   const path = audience === "rivet" ? "/platform/agreements" : "/settings?section=agreement";
   const siteUrl = (options.siteUrl ?? "https://www.rivetjo.com").replace(/\/$/, "");
   return renderBrandedEmail(subject, {
-    language: options.language ?? "en",
+    language,
     audience: "gym",
-    headline: headlineFor(copy, audience),
-    paragraphs: paragraphsFor(copy, audience),
-    rows: rows(copy),
-    button: { label: audience === "rivet" ? "Open in the console" : "View the agreement", href: `${siteUrl}${path}` },
+    headline: headlineFor(copy, audience, language),
+    paragraphs: paragraphsFor(copy, audience, language),
+    rows: rows(copy, language),
+    button: { label: audience === "rivet" ? "Open in the console" : t.button, href: `${siteUrl}${path}` },
     attachment: options.attachment,
-    note: "The ID number is shown masked in every copy. Electronic signature under the Electronic Transactions Law No. 15 of 2015.",
-    status: copy.hashMatch ? undefined : { label: "Fingerprint mismatch", tone: "warning" },
+    note: t.note,
+    status: copy.hashMatch ? undefined : { label: t.mismatchChip, tone: "warning" },
     siteUrl,
   });
 }

@@ -255,8 +255,10 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
   const existing = await ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", input.dedupeKey)).unique();
   if (existing) return existing;
   const now = Date.now();
-  const language = input.language ?? "en";
   const organization = input.organizationId ? await ctx.db.get(input.organizationId) : null;
+  // Member-facing mail names the member's language explicitly; anything
+  // else addressed to a gym follows the language the gym chose in settings.
+  const language: Language = input.language ?? (organization?.defaultLanguage === "ar" ? "ar" : "en");
   const brand = organization ? resolveBrandColor(organization.brandPaletteKey, organization.brandPrimaryColor) : undefined;
   const content = fallbackContent(input.kind, language, { gymName: organization?.name, accent: brand?.primaryColor, siteUrl: process.env.RIVET_SITE_URL }, input.attachments);
   const recipientEmail = cleanEmail(input.recipientEmail);

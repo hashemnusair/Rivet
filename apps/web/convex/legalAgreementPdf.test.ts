@@ -33,11 +33,28 @@ describe("agreement PDF", () => {
     expect(blocks).toContain("Mecca Street, Amman");
     expect(blocks).toContain("••••••4567 (masked)");
     expect(blocks).not.toContain("9871234567");
-    expect(blocks).toContain("1 October 2026, 10:15 (Asia/Amman, RIVET server time)");
+    expect(blocks).toContain("Signed 1 October 2026, 10:15, Asia/Amman.");
     expect(blocks).toContain("Signed, awaiting countersignature");
     expect(blocks).toContain("01. What this agreement covers");
     expect(blocks).toContain("10. Electronic signature");
     expect(blocks).toContain("Typed and adopted");
+  });
+
+  it("lays the document out as page one, continuation pages and a signature page", () => {
+    const blocks = agreementPdfBlocks(signed, SUBSCRIPTION_AGREEMENT_SECTIONS);
+    const kinds = blocks.map((block) => block.type);
+    // Two forced breaks: before the clauses, and before the signatures.
+    expect(kinds.filter((kind) => kind === "pagebreak")).toHaveLength(2);
+    const headings = blocks.filter((block) => block.type === "heading").map((block) => (block as { text: string }).text);
+    expect(headings.slice(0, 2)).toEqual(["Parties", "Details"]);
+    expect(headings[2]).toBe("01. What this agreement covers");
+    expect(headings.at(-1)).toBe("Signatures");
+    // The details carry the terms a reader looks for, and the fingerprint closes the document.
+    const details = blocks.find((block) => block.type === "rows") as { rows: Array<{ label: string }> };
+    expect(details.rows.map((row) => row.label)).toEqual(expect.arrayContaining(["Representative", "Fee", "Billing interval", "Payment terms", "Start date", "Term", "Governing law"]));
+    const last = blocks.at(-1) as { type: string; rows: Array<{ label: string }> };
+    expect(last.type).toBe("rows");
+    expect(last.rows[0]!.label).toBe("Document fingerprint (SHA-256)");
   });
 
   it("names the version instead of printing text it cannot vouch for", () => {
@@ -50,8 +67,8 @@ describe("agreement PDF", () => {
     const blocks = flatten({ ...signed, status: "countersigned", hashMatch: false, countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00" } });
     expect(blocks).toContain("Signed and countersigned");
     expect(blocks).toContain("For RIVET");
-    expect(blocks).toContain("Elias Hreish, Co-founder");
-    expect(blocks).toContain("Countersigned 2 October 2026, 09:00.");
+    expect(blocks).toContain("Co-founder, RIVET");
+    expect(blocks).toContain("Countersigned 2 October 2026, 09:00, Asia/Amman.");
     expect(blocks).toContain("flagged for review");
   });
 
@@ -64,11 +81,11 @@ describe("agreement PDF", () => {
       countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00", signature: { method: "drawn", printImageDataUrl: jpeg } },
     });
     expect(blocks).toContain("For the Customer");
-    expect(blocks).toContain("Omar Haddad, Iron House Fitness Co.");
+    expect(blocks).toContain("Iron House Fitness Co.");
     expect(blocks).toContain("For RIVET");
-    expect(blocks).toContain("Elias Hreish, Co-founder");
+    expect(blocks).toContain("Co-founder, RIVET");
     // Both signatures sit in a framed area at the size the identity sets.
-    const frames = JSON.parse(blocks).flatMap((block: { blocks?: Array<{ type: string }> }) => block.blocks ?? []).filter((block: { type: string }) => block.type === "frame");
+    const frames = JSON.parse(blocks).filter((block: { type: string }) => block.type === "frame");
     expect(frames).toHaveLength(2);
   });
 

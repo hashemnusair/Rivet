@@ -233,13 +233,14 @@ function readSignature(input: Data, expectedName: string, correlationId: string,
 }
 
 /** The signed agreement as a PDF, named by its reference. */
-function agreementPdfAttachment(row: AgreementRow, organizationName: string): { filename: string; contentType: string; contentBase64: string } {
+function agreementPdfAttachment(row: AgreementRow, organizationName: string, billingInterval?: "monthly" | "annual"): { filename: string; contentType: string; contentBase64: string } {
   const copy = agreementCopy(row, organizationName);
   return {
     filename: agreementPdfFilename(row.reference),
     contentType: "application/pdf",
     contentBase64: renderAgreementPdfBase64({
       ...copy,
+      subscription: { ...copy.subscription, billingInterval },
       status: row.status,
       placeOfSigning: row.placeOfSigning,
       signature: { method: row.signature.method, typedName: row.signature.typedName, printImageDataUrl: row.signature.printImageDataUrl },
@@ -257,7 +258,7 @@ function agreementPdfAttachment(row: AgreementRow, organizationName: string): { 
 async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar", includeSigner: boolean): Promise<Data> {
   const copy = agreementCopy(row, organizationName);
   const attachments = [agreementPdfAttachment(row, organizationName)];
-  const options = { siteUrl: process.env.RIVET_SITE_URL, attachment: { filename: attachments[0]!.filename, sizeLabel: attachmentSizeLabel(attachments[0]!.contentBase64.length) } };
+  const options = { siteUrl: process.env.RIVET_SITE_URL, language, attachment: { filename: attachments[0]!.filename, sizeLabel: attachmentSizeLabel(attachments[0]!.contentBase64.length) } };
   const sequence = (row.copyResendCount ?? 0) + 1;
   const deliveries: Data[] = [];
   const queue = async (recipient: string, audience: "signer" | "rivet") => {
@@ -286,7 +287,7 @@ async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organi
 async function sendCompletedCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar"): Promise<void> {
   const copy = agreementCopy(row, organizationName);
   const attachment = agreementPdfAttachment(row, organizationName);
-  const options = { siteUrl: process.env.RIVET_SITE_URL, attachment: { filename: attachment.filename, sizeLabel: attachmentSizeLabel(attachment.contentBase64.length) } };
+  const options = { siteUrl: process.env.RIVET_SITE_URL, language, attachment: { filename: attachment.filename, sizeLabel: attachmentSizeLabel(attachment.contentBase64.length) } };
   const sequence = row.countersignCount ?? 1;
   await enqueueOperationalEmail(ctx, {
     organizationId: row.organizationId,
@@ -327,7 +328,7 @@ async function sendCompletedCopies(ctx: MutationCtx, row: AgreementRow, organiza
 async function sendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar"): Promise<Doc<"operationalEmailDeliveries">> {
   const copy = agreementCopy(row, organizationName);
   const attachments = [agreementPdfAttachment(row, organizationName)];
-  const options = { siteUrl: process.env.RIVET_SITE_URL, attachment: { filename: attachments[0]!.filename, sizeLabel: attachmentSizeLabel(attachments[0]!.contentBase64.length) } };
+  const options = { siteUrl: process.env.RIVET_SITE_URL, language, attachment: { filename: attachments[0]!.filename, sizeLabel: attachmentSizeLabel(attachments[0]!.contentBase64.length) } };
   const signerDelivery = await enqueueOperationalEmail(ctx, {
     organizationId: row.organizationId,
     kind: "subscription_agreement_signed",

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { AgreementSection } from "@/features/settings/agreement-section";
+import { SubscriptionSection } from "@/features/settings/subscription-section";
 import { Search } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Gate, PageHeader } from "@/components/shared/chrome";
@@ -51,6 +52,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
       { id: "branches", label: "Branches", keywords: "locations address codes", component: BranchesSection },
       { id: "spaces", label: "Gym spaces", keywords: "zones areas rooms floors studios", component: GymSpacesSection },
       { id: "agreement", label: "Agreement", keywords: "legal contract subscription agreement signature signed terms privacy", component: AgreementSection },
+      { id: "subscription", label: "Subscription & invoices", keywords: "billing invoice invoices pdf plan rivet fees paid past due receipt", component: SubscriptionSection },
     ],
   },
   {

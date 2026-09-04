@@ -232,7 +232,8 @@ describe("subscription agreement e-signature", () => {
     // The completed copy carries a PDF that shows both signatures.
     const completed = emails.find((row) => row.kind === "subscription_agreement_countersigned")!;
     const pdf = Array.from(decodeBase64(completed.attachments![0]!.contentBase64), (byte) => String.fromCharCode(byte)).join("");
-    expect(pdf).toContain("(Elias Hreish, Co-founder) Tj");
+    expect(pdf).toContain("(Elias Hreish) Tj");
+    expect(pdf).toContain("(Co-founder, RIVET) Tj");
     expect(pdf).toContain("(Countersigned ");
     expect(pdf).toContain("(Signed and countersigned) Tj");
   });

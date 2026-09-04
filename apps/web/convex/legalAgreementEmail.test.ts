@@ -44,6 +44,19 @@ describe("agreement copy email", () => {
     expect(countersigned.text).toContain("Countersigned by: Elias Hreish, Co-founder, 2 October 2026, 09:00");
   });
 
+  it("speaks Arabic to a gym that chose it, and English to RIVET regardless", () => {
+    const arabic = renderAgreementCopyEmail({ ...copy, countersign: { byName: "Elias Hreish", title: "Co-founder", atLocal: "2 October 2026, 09:00" } }, "signer", { language: "ar" });
+    expect(arabic.subject).toBe("وقّعت RIVET اتفاقية اشتراككم RVT-20261001-ABCDE");
+    expect(arabic.html).toContain('dir="rtl"');
+    expect(arabic.html).toContain("عرض الاتفاقية");
+    expect(arabic.text).toContain("المرجع: RVT-20261001-ABCDE");
+    expect(arabic.text).toContain("الرقم الوطني الأردني: ••••••4567");
+    expect(arabic.text).toContain("© 2026 RIVET. جميع الحقوق محفوظة.");
+    const rivet = renderAgreementCopyEmail(copy, "rivet", { language: "ar" });
+    expect(rivet.html).toContain('dir="ltr"');
+    expect(rivet.subject).toContain("signed the RIVET subscription agreement");
+  });
+
   it("carries the complete footer, with no unsubscribe on a service message", () => {
     const rendered = renderAgreementCopyEmail(copy, "signer", { siteUrl: "https://www.rivetjo.com" });
     const lines = footerLines({ language: "en", audience: "gym", headline: "", paragraphs: [] });

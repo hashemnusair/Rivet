@@ -27,6 +27,13 @@ async function input(overrides: Record<string, unknown> = {}) {
 }
 
 describe("mock subscription agreement parity", () => {
+  it("lists only the demo gym's own invoices, drafts excluded", async () => {
+    const invoices = await api.listMyPlatformInvoices();
+    expect(invoices.map((invoice) => invoice.id)).toEqual(["RV-1046"]);
+    expect(invoices.every((invoice) => invoice.gymId === "forge-fitness")).toBe(true);
+  });
+
+
   it("seeds a countersigned agreement for the demo gym and can simulate an unsigned gym", async () => {
     const session = await api.getSession();
     expect(session.legal).toEqual({ agreementStatus: "countersigned", agreementReference: "RVT-20260815-FORGE" });

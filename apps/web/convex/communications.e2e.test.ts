@@ -112,7 +112,8 @@ describe("communications, end to end", () => {
     for (const row of completedCopies) expect(row.attachments?.[0]?.filename).toBe(`RIVET-agreement-${first.reference}.pdf`);
     const completedPdf = pdfText(completed.attachments![0]!.contentBase64);
     expect(completedPdf).toContain("(Signed and countersigned) Tj");
-    expect(completedPdf).toContain("(Elias Hreish, Co-founder) Tj");
+    expect(completedPdf).toContain("(Elias Hreish) Tj");
+    expect(completedPdf).toContain("(Co-founder, RIVET) Tj");
     // Two signature frames, each with an embedded image: the customer's and RIVET's.
     expect([...completedPdf.matchAll(/\/Subtype \/Image/g)].length).toBeGreaterThanOrEqual(4);
 
@@ -148,7 +149,7 @@ describe("communications, end to end", () => {
   });
 
   it("issues, chases and settles an invoice, each notice branded and carrying the invoice PDF", async () => {
-    const { t, admin } = await seeded();
+    const { t, admin, owner } = await seeded();
     const emails = async () => await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect()) as Delivery[];
     const draft = await admin.mutation(api.domain.mutate, operation("platform.invoice.create", { gymId: "forge-gym", amountMinor: 149_000, currency: "JOD", periodStart: "2026-09-03", periodEnd: "2026-10-02", dueAt: "2026-09-17" })) as { id: string };
 
@@ -176,6 +177,10 @@ describe("communications, end to end", () => {
     // The one signal red: a single chip in the email, a single chip on the PDF.
     expect([...(pastDue.html ?? "").matchAll(/#AD1B22/g)]).toHaveLength(1);
     expect(pdfText(pastDue.attachments![0]!.contentBase64)).toContain("(Past due) Tj");
+
+    // The gym sees its own invoices, drafts excluded, and nobody else's.
+    const mine = await owner.query(api.domain.query, operation("billing.invoices.list")) as Array<{ id: string; status: string; gym: string }>;
+    expect(mine).toEqual([expect.objectContaining({ id: draft.id, status: "past_due", gym: "Forge Fitness Club" })]);
 
     await admin.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: draft.id, reference: "CLIQ-8F2K19", reason: "CliQ transfer verified." }));
     all = await emails();

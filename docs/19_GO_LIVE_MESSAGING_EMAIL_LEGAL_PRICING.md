@@ -256,6 +256,27 @@ footer. The legal pages carry a Download PDF action that reads the rendered
 page back into the PDF renderer (`src/features/legal/document-pdf.ts`,
 `convex/documentPdf.ts`), so the file says exactly what the page says.
 
+**Language.** Settings → Organization has "Language for emails and
+documents". Every email addressed to the gym, invoices and the copies of its
+agreement included, follows it; member-facing mail follows the member's own
+language. PDFs stay English: the renderer has only the standard Helvetica
+faces, and Arabic needs an embedded font with shaping that is not in this
+release. The agreement email is fully translated (`convex/legalAgreementEmail.ts`);
+RIVET's own internal copy stays English whatever the gym chose.
+
+**Invoices in the app.** Settings → Subscription & invoices lists the gym's
+own RIVET invoices with a View button that opens the invoice PDF, built in the
+browser from the same record and renderer as the emailed attachment. The
+platform billing console has the same PDF button on every row. The invoice
+emails' "View invoice" button lands on that settings section.
+
+**Agreement layout.** The PDF follows artboard P2: page one carries the
+parties and the details (customer, representative, ID, address, plan, fee,
+billing interval, payment terms, start date, term, governing law); the
+numbered clauses start on a new page under the running header; the
+signatures and the SHA-256 fingerprint close the document on a page of their
+own. The on-screen record follows the same order.
+
 **Invoice** (`convex/platformInvoicePdf.ts`). The same furniture with an
 `INVOICE` label: parties, a four-across meta grid, the line items, totals
 with the total due at 20pt, and a how-to-pay panel whose bank and CliQ

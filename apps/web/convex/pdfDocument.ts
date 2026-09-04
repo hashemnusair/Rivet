@@ -56,6 +56,8 @@ export type PdfBlock =
   | { type: "frame"; width: number; height: number; jpegDataUrl?: string; caption?: string }
   | { type: "rule"; strong?: boolean }
   | { type: "spacer"; height: number }
+  /** Start the next block on a new page. */
+  | { type: "pagebreak" }
   | { type: "image"; jpegDataUrl: string; maxWidth: number; maxHeight: number }
   /** Blocks that must not be split across a page break, such as a signature. */
   | { type: "keep"; blocks: PdfBlock[] };
@@ -211,7 +213,8 @@ type Item =
   | { kind: "space"; height: number }
   | { kind: "image"; image: DrawnImage; height: number }
   | { kind: "frame"; width: number; height: number; image?: DrawnImage }
-  | { kind: "panel"; items: Item[]; height: number };
+  | { kind: "panel"; items: Item[]; height: number }
+  | { kind: "pagebreak"; height: number };
 
 const CONTENT_WIDTH = PDF_PAGE_WIDTH - PDF_MARGIN * 2;
 /** 52mm, as the identity system sets the label column. */
@@ -400,6 +403,8 @@ function itemsFor(block: PdfBlock): Item[] {
       return [{ kind: "rule", height: 12, strong: block.strong }];
     case "spacer":
       return [{ kind: "space", height: block.height }];
+    case "pagebreak":
+      return [{ kind: "pagebreak", height: 0 }];
     case "image": {
       const image = layoutImage(block.jpegDataUrl, block.maxWidth, block.maxHeight);
       return image ? [{ kind: "image", image, height: image.drawHeight + 6 }] : [];
@@ -508,6 +513,11 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
       box(PDF_MARGIN + indent, cursor, item.width, item.height, undefined, HAIRLINE_STRONG);
       if (item.image) image(item.image, PDF_MARGIN + indent + (item.width - item.image.drawWidth) / 2, cursor + (item.height - item.image.drawHeight) / 2);
       cursor -= 8;
+      return;
+    }
+    if (item.kind === "pagebreak") {
+      // A break at the top of a fresh page is a no-op, never a blank page.
+      if (cursor < PDF_PAGE_HEIGHT - PDF_MARGIN * 2) { pages.push(content); startPage(pages.length); }
       return;
     }
     if (item.kind === "panel") {

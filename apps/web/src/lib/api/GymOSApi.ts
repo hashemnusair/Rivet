@@ -894,6 +894,8 @@ export interface GymOSApi {
   /** Reviews and publishes the tenant's saved public-page draft. */
   publishPlatformGymProfile(input: { gymId: string; reason: string }): Promise<{ id: string; publishedVersion: number }>;
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan>;
+  /** The gym's own platform invoices, newest first; drafts are not shown. */
+  listMyPlatformInvoices(): Promise<PlatformBillingInvoice[]>;
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice>;
   issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
   markPlatformInvoicePastDue(invoiceId: string, reason: string): Promise<PlatformBillingInvoice>;

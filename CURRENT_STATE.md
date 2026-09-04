@@ -89,7 +89,11 @@
   appear as visible placeholders rather than inventions. On screen, the
   privacy policy, the terms, the agreement reading view and the signed record
   render on the same master page (`document-sheet.tsx`), and the legal pages
-  download a PDF built from what is rendered.
+  download a PDF built from what is rendered. Gyms choose a language for
+  emails and documents in Settings → Organization; Settings → Subscription &
+  invoices shows their RIVET invoices with the PDF, and the platform billing
+  console has the same button. The agreement PDF follows the designed
+  page-one / continuation / signature-page layout.
 - **Operational email go-live flag:** `RIVET_EMAIL_MODE` = off | sandbox |
   allowlist | live (default off; the legacy boolean is honoured as live only
   while the new variable is unset). Sandbox redirects to
