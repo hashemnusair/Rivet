@@ -234,9 +234,13 @@ with the lockup at 112px, an optional gym name for member-facing mail, one
 headline, one or two paragraphs, an optional summary card of label/value
 rows, exactly one primary button, an attachment chip when a PDF rides along,
 and a sunken footer carrying RIVET's contact block, the legal links, why the
-message was received, the copyright and the legal-entity placeholder. Dark
-mode swaps to the night palette and the reversed marks through a media query;
-Arabic mirrors the layout without mirroring the logo. Every operational email
+message was received, the copyright and, once registered, RIVET's legal line. The
+message is light in every client: no dark palette is shipped, the
+colour-scheme declarations refuse inversion where a client honours them,
+and Outlook's recolouring is overridden back to paper, white and ink. On a
+phone the gutters tighten, each summary row stacks label over value, and
+the button goes full width. Arabic mirrors the layout without mirroring the
+logo. Every operational email
 goes through it, and a member-facing message colours its button with the
 gym's own accent. The one signal red is reserved for past due and suspension.
 

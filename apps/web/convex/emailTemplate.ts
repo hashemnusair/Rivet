@@ -106,7 +106,7 @@ function footerHtml(message: BrandedEmail, origin: string): string {
   if (message.audience === "gym") links.push(link(arabic ? "تفضيلات البريد" : "Email preferences", "/settings?section=email"));
   return `<tr><td class="rv-footer" style="background:${BRAND.sunken};border-top:1px solid ${BRAND.line};padding:24px 32px">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
-<td valign="top" width="32" style="padding-${arabic ? "left" : "right"}:12px"><img src="${origin}/brand/rivet-glyph.png" width="14" alt="" class="rv-logo-light" style="height:20px;width:auto;display:block;border:0"><img src="${origin}/brand/rivet-glyph-rev.png" width="14" alt="" class="rv-logo-dark" style="height:20px;width:auto;display:none;border:0"></td>
+<td valign="top" width="32" style="padding-${arabic ? "left" : "right"}:12px"><img src="${origin}/brand/rivet-glyph.png" width="14" alt="" style="height:20px;width:auto;display:block;border:0"></td>
 <td valign="top" class="rv-muted" style="font-family:${font};font-size:12px;line-height:1.6;color:${BRAND.inkMuted}">
 <div>${escapeHtml(contact!)}</div>
 <div>${escapeHtml(channels!)}</div>
@@ -128,8 +128,8 @@ function rowsHtml(rows: EmailRow[], arabic: boolean): string {
       ? `font-family:${MONO};font-size:13px;`
       : `font-family:${font};font-size:15px;${row.strong ? "font-weight:600;" : ""}`;
     return `<tr>
-<td class="rv-muted" align="${start}" style="${border}padding:12px 16px;font-family:${font};font-size:13px;color:${BRAND.inkMuted};">${escapeHtml(row.label)}</td>
-<td class="rv-ink" align="${end}" style="${border}padding:12px 16px;${valueStyle}color:${BRAND.ink};word-break:break-word">${escapeHtml(row.value)}</td>
+<td class="rv-muted rv-label" align="${start}" style="${border}padding:12px 16px;font-family:${font};font-size:13px;color:${BRAND.inkMuted};">${escapeHtml(row.label)}</td>
+<td class="rv-ink rv-value" align="${end}" style="${border}padding:12px 16px;${valueStyle}color:${BRAND.ink};word-break:break-word">${escapeHtml(row.value)}</td>
 </tr>`;
   });
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-card" style="border:1px solid ${BRAND.line};border-radius:8px;background:${BRAND.surface}">${cells.join("")}</table>`;
@@ -145,7 +145,7 @@ function buttonHtml(button: { label: string; href: string }, accent: string | un
 
 function attachmentHtml(attachment: { filename: string; sizeLabel: string }, arabic: boolean): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="rv-chip" style="background:${BRAND.paper};border-radius:4px;padding:8px 12px;font-family:${MONO};font-size:13px;color:${BRAND.ink}">
-<span style="display:inline-block;width:11px;height:14px;border:1.5px solid ${BRAND.ink};border-radius:2px;vertical-align:-2px;margin-${arabic ? "left" : "right"}:10px"></span>${escapeHtml(attachment.filename)}
+<span style="display:inline-block;width:11px;height:14px;border:1.5px solid ${BRAND.ink};border-radius:2px;vertical-align:-2px;margin-${arabic ? "left" : "right"}:10px"></span><span class="rv-filename">${escapeHtml(attachment.filename)}</span>
 <span class="rv-muted" style="font-family:${arabic ? SANS_AR : SANS};font-size:12px;color:${BRAND.inkMuted};padding-${arabic ? "right" : "left"}:8px;white-space:nowrap">${escapeHtml(attachment.sizeLabel)}</span>
 </td></tr></table>`;
 }
@@ -155,26 +155,43 @@ function statusHtml(status: { label: string; tone: EmailStatusTone }, arabic: bo
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:${colours.background};border-radius:4px;padding:4px 8px;font-family:${arabic ? SANS_AR : SANS};font-size:12px;font-weight:600;color:${colours.ink}">${escapeHtml(status.label)}</td></tr></table>`;
 }
 
-const DARK_MODE_CSS = `
-:root{color-scheme:light dark;supported-color-schemes:light dark}
-@media (prefers-color-scheme:dark){
-.rv-body{background:${BRAND.night}!important}
-.rv-frame{background:${BRAND.nightRaised}!important;border-color:${BRAND.nightLine}!important}
-.rv-header{background:${BRAND.night}!important;border-color:${BRAND.nightLine}!important}
-.rv-panel{background:${BRAND.nightRaised}!important}
-.rv-footer{background:${BRAND.night}!important;border-color:${BRAND.nightLine}!important}
-.rv-ink,.rv-headline{color:${BRAND.nightInk}!important}
-.rv-secondary,.rv-muted,.rv-muted a{color:${BRAND.nightInkSecondary}!important}
-.rv-card{background:${BRAND.nightRaised}!important;border-color:${BRAND.nightLine}!important}
-.rv-card td{border-color:${BRAND.nightLine}!important}
-.rv-chip{background:${BRAND.nightRaised}!important;color:${BRAND.nightInk}!important}
-.rv-button,.rv-button a{background:${BRAND.nightInk}!important;color:${BRAND.night}!important}
-.rv-logo-light{display:none!important}
-.rv-logo-dark{display:block!important}
-}
+/**
+ * The message is light in every client. Dark-mode inversion is refused
+ * where a client offers a way to refuse it: the colour-scheme declarations
+ * for Apple Mail and iOS, and the data-ogsc/data-ogsb overrides Outlook
+ * applies when it recolours a message. Every colour is also set inline, so
+ * a client that ignores the stylesheet still shows paper, white and ink.
+ *
+ * The phone rules keep one column with tighter gutters, stack each summary
+ * row so long values read top to bottom, and make the button full width.
+ */
+const STYLE_CSS = `
+:root{color-scheme:light only;supported-color-schemes:light}
+body{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
+[data-ogsc] .rv-body,[data-ogsb] .rv-body{background:${BRAND.sunken}!important}
+[data-ogsc] .rv-frame,[data-ogsb] .rv-frame{background:${BRAND.surface}!important;border-color:${BRAND.lineStrong}!important}
+[data-ogsc] .rv-header,[data-ogsb] .rv-header{background:${BRAND.paper}!important}
+[data-ogsc] .rv-footer,[data-ogsb] .rv-footer{background:${BRAND.sunken}!important}
+[data-ogsc] .rv-card,[data-ogsb] .rv-card{background:${BRAND.surface}!important;border-color:${BRAND.line}!important}
+[data-ogsc] .rv-chip,[data-ogsb] .rv-chip{background:${BRAND.paper}!important;color:${BRAND.ink}!important}
+[data-ogsc] .rv-ink,[data-ogsc] .rv-headline,[data-ogsb] .rv-ink,[data-ogsb] .rv-headline{color:${BRAND.ink}!important}
+[data-ogsc] .rv-secondary,[data-ogsb] .rv-secondary{color:${BRAND.inkSecondary}!important}
+[data-ogsc] .rv-muted,[data-ogsc] .rv-muted a,[data-ogsb] .rv-muted,[data-ogsb] .rv-muted a{color:${BRAND.inkMuted}!important}
+[data-ogsc] .rv-button,[data-ogsb] .rv-button{background:${BRAND.ink}!important}
+[data-ogsc] .rv-button-link,[data-ogsb] .rv-button-link{color:${BRAND.paper}!important}
 @media only screen and (max-width:480px){
+.rv-outer{padding:8px 0!important}
+.rv-frame{border-left:0!important;border-right:0!important}
 .rv-pad{padding-left:20px!important;padding-right:20px!important}
-.rv-button,.rv-button a{width:100%!important;text-align:center!important}
+.rv-header{padding:24px 20px!important}
+.rv-footer{padding:20px!important}
+.rv-headline{font-size:20px!important}
+.rv-card td{display:block!important;width:100%!important;box-sizing:border-box!important;text-align:start!important;padding:10px 14px!important}
+.rv-card td.rv-label{padding-bottom:2px!important;border-bottom:0!important;font-size:12px!important}
+.rv-card td.rv-value{padding-top:0!important}
+.rv-button,.rv-button a{display:block!important;width:100%!important;text-align:center!important;box-sizing:border-box!important}
+.rv-chip{display:block!important}
+.rv-chip .rv-filename{word-break:break-all!important}
 }`;
 
 /** Subject plus both bodies for one message. */
@@ -199,14 +216,13 @@ export function renderBrandedEmail(subject: string, message: BrandedEmail): Rend
   const body = blocks.map((block) => `<tr><td style="padding-bottom:20px">${block}</td></tr>`).join("");
 
   const html = `<!doctype html>
-<html dir="${direction}" lang="${message.language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title><style>${DARK_MODE_CSS}</style></head>
-<body class="rv-body" style="margin:0;padding:0;background:${BRAND.sunken}">
+<html dir="${direction}" lang="${message.language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${escapeHtml(subject)}</title><style>${STYLE_CSS}</style></head>
+<body class="rv-body" style="margin:0;padding:0;background:${BRAND.sunken};color:${BRAND.ink}">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(message.paragraphs[0] ?? subject)}</div>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-body" style="background:${BRAND.sunken}"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-body" style="background:${BRAND.sunken}"><tr><td align="center" class="rv-outer" style="padding:24px 12px">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="rv-frame" style="width:600px;max-width:100%;background:${BRAND.surface};border:1px solid ${BRAND.lineStrong}" dir="${direction}">
 <tr><td class="rv-header rv-pad" align="${start}" style="background:${BRAND.paper};border-bottom:1px solid ${BRAND.line};padding:32px">
-<img src="${origin}/brand/rivet-lockup.png" width="112" alt="RIVET" class="rv-logo-light" style="width:112px;height:auto;display:block;border:0">
-<img src="${origin}/brand/rivet-lockup-rev.png" width="112" alt="RIVET" class="rv-logo-dark" style="width:112px;height:auto;display:none;border:0">
+<img src="${origin}/brand/rivet-lockup.png" width="112" alt="RIVET" style="width:112px;height:auto;display:block;border:0">
 ${message.gymName ? `<div class="rv-muted" style="font-family:${font};font-size:13px;color:${BRAND.inkMuted};padding-top:12px">${escapeHtml(message.gymName)}</div>` : ""}
 </td></tr>
 <tr><td class="rv-pad" align="${start}" style="padding:32px 32px 12px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${body}</table></td></tr>

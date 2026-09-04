@@ -19,7 +19,6 @@ describe("branded email", () => {
     });
     expect(html).toContain('width="600"');
     expect(html).toContain("/brand/rivet-lockup.png");
-    expect(html).toContain("/brand/rivet-lockup-rev.png");
     expect(html).toContain("#F5F4EF");
     expect(html).toContain("A RIVET invoice was issued");
     expect(html).toContain("INV-2026-000184");
@@ -65,11 +64,26 @@ describe("branded email", () => {
     expect(arabic.text).toContain("الدعم 09:00–21:00 بتوقيت عمّان، من السبت إلى الخميس");
   });
 
-  it("renders dark mode from the same markup", () => {
+  it("is light in every client and never carries a dark palette", () => {
     const { html } = renderBrandedEmail("s", base);
-    expect(html).toContain("prefers-color-scheme:dark");
-    expect(html).toContain("#15140F");
-    expect(html).toContain(".rv-logo-dark{display:block!important}");
+    expect(html).not.toContain("prefers-color-scheme");
+    expect(html).not.toContain("#15140F");
+    expect(html).not.toContain("rivet-lockup-rev");
+    expect(html).toContain('<meta name="color-scheme" content="light">');
+    expect(html).toContain("color-scheme:light only");
+    // Outlook's recolouring is overridden back to paper, white and ink.
+    expect(html).toContain("[data-ogsc] .rv-frame");
+    expect(html).toContain(`[data-ogsc] .rv-button-link,[data-ogsb] .rv-button-link{color:${"#F5F4EF"}!important}`);
+  });
+
+  it("reads on a phone: tighter gutters, stacked rows, a full-width button", () => {
+    const { html } = renderBrandedEmail("s", { ...base, rows: [{ label: "Amount", value: "JOD 129.133", strong: true }], button: { label: "View invoice", href: "https://www.rivetjo.com" } });
+    expect(html).toContain('<meta name="viewport" content="width=device-width,initial-scale=1">');
+    expect(html).toContain("@media only screen and (max-width:480px)");
+    expect(html).toContain(".rv-card td{display:block!important;width:100%!important");
+    expect(html).toContain(".rv-button,.rv-button a{display:block!important;width:100%!important");
+    expect(html).toContain('class="rv-muted rv-label"');
+    expect(html).toContain('class="rv-ink rv-value"');
   });
 
   it("keeps the footer complete, and unsubscribes only from marketing", () => {
