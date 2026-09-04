@@ -97,6 +97,31 @@ describe("branded email", () => {
     expect(html).not.toContain("background:#FFFFFF;border:1px solid");
   });
 
+  it("paints the writing as well as the panel, so the ink cannot be lightened alone", () => {
+    const { html } = renderBrandedEmail("s", {
+      ...base,
+      siteUrl: "https://www.rivetjo.com",
+      rows: [{ label: "Amount", value: "JOD 129.133", strong: true }],
+      button: { label: "View invoice", href: "https://www.rivetjo.com" },
+      attachment: { filename: "invoice.pdf", sizeLabel: "84 KB" },
+      note: "If something looks wrong, contact support.",
+    });
+    const painted = (fragment: string) => {
+      const index = html.indexOf(fragment);
+      expect(index, `${fragment} is in the message`).toBeGreaterThan(-1);
+      const element = html.slice(index, html.indexOf(">", index));
+      expect(element, `${fragment} carries its own paint`).toContain("background-image:url(https://www.rivetjo.com/brand/email-");
+    };
+    // Each of these is a colour Gmail would otherwise lighten on a panel it
+    // has been made to leave alone, which is what puts pale text on white.
+    painted('class="rv-headline"');
+    painted('class="rv-secondary"');
+    painted('class="rv-muted rv-label"');
+    painted('class="rv-ink rv-value"');
+    painted('class="rv-button-link"');
+    painted('class="rv-filename"');
+  });
+
   it("reads on a phone: tighter gutters, stacked rows, a full-width button", () => {
     const { html } = renderBrandedEmail("s", { ...base, rows: [{ label: "Amount", value: "JOD 129.133", strong: true }], button: { label: "View invoice", href: "https://www.rivetjo.com" } });
     expect(html).toContain('<meta name="viewport" content="width=device-width,initial-scale=1">');

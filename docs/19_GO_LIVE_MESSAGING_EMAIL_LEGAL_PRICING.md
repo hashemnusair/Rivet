@@ -241,7 +241,10 @@ and Outlook's recolouring is overridden back to paper, white and ink.
 Gmail offers a sender no such switch, so every surface also carries a
 one-pixel background image of its own colour, served from
 `/brand/email-*.png`; Gmail's inverter leaves an element with a
-background image alone. A reader with images off still sees the colour,
+background image alone. The paint goes on the elements holding text as well
+as the panels behind them: painting only the panels keeps the background and
+loses the writing, because Gmail lightens the ink on a panel it has been made
+to leave alone. A reader with images off still sees the colour,
 which is set inline and as a `bgcolor` as well. On a
 phone the gutters tighten, each summary row stacks label over value, and
 the button goes full width. Arabic mirrors the layout without mirroring the
