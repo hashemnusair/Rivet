@@ -980,7 +980,7 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Deprecated alias: `true` means `live` only while `RIVET_EMAIL_MODE` is unset | — |
 | `RIVET_EMAIL_MODE` | Absent (`off`) | `sandbox` if email is exercised | `allowlist` until go-live, then `live` | Authoritative email go-live flag: `off`, `sandbox`, `allowlist`, `live`; unrecognised values mean `off` | `sandbox` |
 | `RIVET_EMAIL_SANDBOX_TO` | — | Catch-all inbox | — | Required in `sandbox` mode; every email is redirected here | Catch-all inbox |
-| `RIVET_EMAIL_ALLOWLIST` | — | — | Comma list of addresses or `@domain`s | In `allowlist` mode the list plus every active team member of a subscribed gym (trial, active or past due) receive gym-facing mail; member-facing mail and everyone else are suppressed with a reason | — |
+| `RIVET_EMAIL_ALLOWLIST` | — | — | Comma list of addresses or `@domain`s | In `allowlist` mode the list plus everything that belongs to a subscribed gym (trial, active or past due) is sent: gym-facing mail to its active team, member-facing mail to the addresses its records hold; everyone else is suppressed with a reason | — |
 | `RIVET_MESSAGING_MODE` | Absent (`off`) | — | `allowlist` until go-live, then `live` | WhatsApp/SMS go-live flag: `off`, `sandbox`, `allowlist`, `live`; a gym must also switch external delivery on | `sandbox` |
 | `RIVET_MESSAGING_PROVIDER` | — | — | `twilio` | Only supported provider | `twilio` |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | — | — | Production account | Provider credentials | Test account |

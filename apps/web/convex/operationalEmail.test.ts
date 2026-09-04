@@ -202,7 +202,7 @@ describe("operational email go-live modes", () => {
     delete process.env.RIVET_EMAIL_ALLOWLIST;
   });
 
-  it("in allowlist mode, sends gym-facing mail to a subscribed gym's team without a list entry, and holds member mail back", async () => {
+  it("in allowlist mode, serves a subscribed gym's team and members without a list entry, and holds everything else back", async () => {
     process.env.RIVET_EMAIL_MODE = "allowlist";
     process.env.RESEND_API_KEY = "re_test_key";
     process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
@@ -218,17 +218,26 @@ describe("operational email go-live modes", () => {
       const other = await ctx.db.insert("users", { publicId: "u-other", authSubject: "clerk-suspended-owner", email: "other.owner@gmail.com", fullName: "Other Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
       await ctx.db.insert("organizationMemberships", { organizationId: active, userId: owner, role: "owner", branchIds: [], branchScope: "all", active: true, createdAt: now, updatedAt: now });
       await ctx.db.insert("organizationMemberships", { organizationId: suspended, userId: other, role: "owner", branchIds: [], branchScope: "all", active: true, createdAt: now, updatedAt: now });
+      // The active gym has switched member service email on.
+      await ctx.db.insert("operationalEmailSettings", { organizationId: active, enabledKinds: ["pt_booking_confirmation"], ownerConfirmedAt: now, ownerConfirmedByUserId: owner, reason: "Pilot", createdAt: now, updatedAt: now, updatedByUserId: owner });
+      // Member-facing, to a member of the active gym: served, no list entry.
+      await enqueueOperationalEmail(ctx, { organizationId: active, kind: "pt_booking_confirmation", templateVersion: "v1", recipientReference: "member-1", recipientEmail: "samira.member@gmail.com", dedupeKey: "trust-4", subject: "Your PT session is booked" });
+      // Member-facing, to a member of the suspended gym: held back.
+      await ctx.db.insert("operationalEmailSettings", { organizationId: suspended, enabledKinds: ["pt_booking_confirmation"], ownerConfirmedAt: now, ownerConfirmedByUserId: other, reason: "Pilot", createdAt: now, updatedAt: now, updatedByUserId: other });
+      await enqueueOperationalEmail(ctx, { organizationId: suspended, kind: "pt_booking_confirmation", templateVersion: "v1", recipientReference: "member-2", recipientEmail: "lapsed.member@gmail.com", dedupeKey: "trust-5", subject: "Your PT session is booked" });
       // Gym-facing, to the active gym's owner: trusted.
       await enqueueOperationalEmail(ctx, { organizationId: active, kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "inv-a", recipientEmail: "hashem.owner@gmail.com", dedupeKey: "trust-1", subject: "Invoice issued" });
       // Gym-facing, to the suspended gym's owner: not subscribed, held back.
       await enqueueOperationalEmail(ctx, { organizationId: suspended, kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "inv-b", recipientEmail: "other.owner@gmail.com", dedupeKey: "trust-2", subject: "Invoice issued" });
-      // Member-facing, to the same trusted address: the audience, not the person, decides.
+      // Gym-facing, to an address that is not on the active gym's team: held back.
       await enqueueOperationalEmail(ctx, { organizationId: active, kind: "subscription_agreement_copy", templateVersion: "v1", recipientReference: "copy", recipientEmail: "someone.else@gmail.com", dedupeKey: "trust-3", subject: "Copy" });
     });
-    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 3, disabled: false });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 5, disabled: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const rows = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
     expect(rows.find((row) => row.recipientEmail === "hashem.owner@gmail.com")).toMatchObject({ status: "provider_accepted" });
+    expect(rows.find((row) => row.recipientEmail === "samira.member@gmail.com")).toMatchObject({ status: "provider_accepted" });
+    expect(rows.find((row) => row.recipientEmail === "lapsed.member@gmail.com")).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/subscribed gym/) });
     expect(rows.find((row) => row.recipientEmail === "other.owner@gmail.com")).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/subscribed gym/) });
     expect(rows.find((row) => row.recipientEmail === "someone.else@gmail.com")).toMatchObject({ status: "suppressed" });
     delete process.env.RIVET_EMAIL_MODE;

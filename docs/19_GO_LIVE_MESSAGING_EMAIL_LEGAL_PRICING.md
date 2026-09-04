@@ -270,13 +270,18 @@ browser from the same record and renderer as the emailed attachment. The
 platform billing console has the same PDF button on every row. The invoice
 emails' "View invoice" button lands on that settings section.
 
-**Who receives mail in allowlist mode.** A subscribed gym's team, meaning
-any active user of an organization in trial, active or past-due status,
-receives every message addressed to the gym (invoices, agreements, support,
-subscription notices) without a list entry. `RIVET_EMAIL_ALLOWLIST` still
-governs everything else, member-facing mail above all, until the mode is
-switched to `live`. The worker decides this per message when it leases it,
-and a suppression names both conditions in its reason.
+**Who receives mail in allowlist mode.** Everything that belongs to a
+subscribed gym, meaning an organization in trial, active or past-due
+status: mail addressed to the gym goes to any active member of its team
+(invoices, agreements, support, subscription notices), and mail addressed to
+a member goes to the address the gym's own records hold for that person (PT
+bookings, receipts, renewal and expiry reminders, trial updates). No list
+entry is needed. `RIVET_EMAIL_ALLOWLIST` still governs everyone else, and
+`live` mode removes the distinction. The worker decides per message when it
+leases it, and a suppression names both conditions in its reason. Member
+service mail also passes the gym's own switch: the owner confirms which
+member email types are on under Settings → Operational email, and an
+unconfirmed gym's member mail is held with that reason.
 
 **Email log.** Platform → Email log lists the last hundred messages RIVET
 queued across every gym, newest first, with what happened to each: not sent

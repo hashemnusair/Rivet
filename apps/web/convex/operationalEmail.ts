@@ -356,16 +356,20 @@ export const enqueue = internalMutation({
 });
 
 /**
- * Whether the recipient is on the team of a subscribed gym and the message
- * is addressed to the gym. Such mail goes out in allowlist mode without a
- * list entry; member-facing mail never qualifies.
+ * Whether the message belongs to a subscribed gym: one in trial, active or
+ * past-due status. Mail addressed to the gym must go to an active member of
+ * its team; mail addressed to a member goes to whatever address the gym's own
+ * records hold for that person. Such mail goes out in allowlist mode without
+ * a list entry, so a subscribed gym and its members are served from day one
+ * while nothing else is.
  */
-async function recipientIsGymTeam(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
+async function belongsToSubscribedGym(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
   const email = delivery.recipientEmail?.trim().toLowerCase();
   if (!email || !delivery.organizationId) return false;
-  if ((KIND_AUDIENCE[delivery.kind]?.audience ?? "gym") !== "gym") return false;
   const organization = await ctx.db.get(delivery.organizationId);
   if (!organization || !["trial", "active", "past_due"].includes(organization.status)) return false;
+  const audience = KIND_AUDIENCE[delivery.kind]?.audience ?? "gym";
+  if (audience === "member") return true;
   const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).first();
   if (!user || user.status === "deactivated") return false;
   const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", delivery.organizationId!)).collect();
@@ -404,7 +408,7 @@ export const leaseDue = internalMutation({
       }
       const leaseToken = crypto.randomUUID();
       await ctx.db.patch(delivery._id, { status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
-      const trusted = await recipientIsGymTeam(ctx, delivery);
+      const trusted = await belongsToSubscribedGym(ctx, delivery);
       leased.push({ ...delivery, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now, trusted } as Delivery);
     }
     return leased;
