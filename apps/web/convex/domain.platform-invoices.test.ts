@@ -140,6 +140,33 @@ describe("exported Convex platform invoice boundaries", () => {
     expect(persisted.notifications).toEqual([expect.objectContaining({ kind: "platform_invoice_past_due", dedupeKey: `platform-invoice-past-due:${draft.id}` })]);
   });
 
+  it("never moves a gym's paid-through date backwards when a stale invoice is paid", async () => {
+    const t = convexTest(schema, modules);
+    await seedPlatformInvoiceFixtures(t);
+    const platform = t.withIdentity({ subject: "clerk-platform-invoice" });
+    const paidThrough = Date.parse("2027-06-30T12:00:00.000Z");
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-invoice")).unique();
+      await ctx.db.patch(organization!._id, { currentPeriodEndsAt: paidThrough, billingInterval: "annual" });
+    });
+
+    // An old term's invoice, settled late, covers a period already behind the
+    // gym: paying it must not take back the year it has paid for.
+    const draft = await platform.mutation(api.domain.mutate, operation("platform.invoice.create", {
+      gymId: "invoice-gym",
+      amountMinor: 149_000,
+      currency: "JOD",
+      periodStart: "2026-08-01",
+      periodEnd: "2026-08-31",
+      dueAt: "2026-09-07",
+    })) as { id: string };
+    await platform.mutation(api.domain.mutate, operation("platform.invoice.issue", { invoiceId: draft.id }));
+    await platform.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: draft.id, reference: "BANK-LATE", reason: "Late transfer for an old term." }));
+
+    const organization = await t.run(async (ctx) => await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-invoice")).unique());
+    expect(organization).toMatchObject({ status: "active", currentPeriodEndsAt: paidThrough });
+  });
+
   it("requires a reason to void and leaves the immutable invoice record present", async () => {
     const t = convexTest(schema, modules);
     await seedPlatformInvoiceFixtures(t);

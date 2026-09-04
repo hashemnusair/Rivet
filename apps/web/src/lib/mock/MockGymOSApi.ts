@@ -3190,11 +3190,15 @@ export class MockGymOSApi implements GymOSApi {
         const periodEnd = Date.parse(invoice.periodEnd);
         if (Number.isFinite(periodEnd) && this.db.organization.status !== "cancelled") {
           const startedAt = this.db.organization.subscriptionStartedAt ?? invoice.periodStart ?? nowISO();
+          // Parity with Convex: paying a late or superseded invoice never
+          // shortens a term the gym has already paid past.
+          const stored = Date.parse(this.db.organization.currentPeriodEndsAt ?? "");
+          const nextBoundary = Math.max(periodEnd, Number.isFinite(stored) ? stored : 0);
           this.db.organization.status = "active";
           this.db.organization.billingInterval = invoice.billingInterval ?? this.db.organization.billingInterval ?? "monthly";
           this.db.organization.subscriptionStartedAt = startedAt;
           this.db.organization.trialEndsAt = undefined;
-          this.db.organization.currentPeriodEndsAt = new Date(periodEnd).toISOString();
+          this.db.organization.currentPeriodEndsAt = new Date(nextBoundary).toISOString();
           this.db.organization.cancelledAt = undefined;
           this.db.organization.subscriptionStatusReason = input.reason.trim();
           gym.subscriptionStatus = "active";
