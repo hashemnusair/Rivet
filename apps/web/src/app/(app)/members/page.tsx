@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { qk } from "@/lib/api/keys";
 import type { MemberListQuery } from "@/lib/api/GymOSApi";
+import type { MemberSummary } from "@/lib/domain/types";
 import type { BulkOperationKind } from "@/lib/domain/qol";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
@@ -110,7 +111,40 @@ function MembersPageInner() {
 
     {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><Tags /> Bulk action</Button><button type="button" className="text-[11.5px] underline underline-offset-4" onClick={() => setSelected(new Set())}>Clear selection</button></div> : null}
 
-    <div className="panel overflow-hidden">{members.isLoading ? <div className="p-4"><TableSkeleton rows={10} cols={columns.length + 2} /></div> : members.isError ? <div className="p-4"><ErrorState layout="section" onRetry={() => members.refetch()} /></div> : !members.data?.items.length ? <EmptyState layout="section" title="No members match" description={debounced ? `Nothing found for “${debounced}”. Check the spelling or filters.` : "Try widening the filters."} className="m-4" /> : <Table><TableHeader><TableRow className="hover:bg-transparent"><TableHead className="w-10"><Checkbox checked={allPageSelected} onCheckedChange={togglePage} aria-label="Select all members on this page" /></TableHead><TableHead>Member</TableHead>{visible("phone") ? <TableHead>Phone</TableHead> : null}{visible("branch") ? <TableHead>Branch</TableHead> : null}{visible("plan") ? <TableHead>Plan</TableHead> : null}{visible("status") ? <TableHead>Status</TableHead> : null}{visible("expiry") ? <TableHead>Expiry</TableHead> : null}{visible("balance") ? <TableHead className="text-end">Balance</TableHead> : null}{visible("last_check_in") ? <TableHead>Last check-in</TableHead> : null}</TableRow></TableHeader><TableBody>{members.data.items.map((member) => <TableRow key={member.id} interactive onClick={() => router.push(`/members/${member.id}`)} data-testid="member-row"><TableCell onClick={(event) => event.stopPropagation()}><Checkbox checked={selected.has(member.id)} onCheckedChange={(checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(member.id); else next.delete(member.id); return next; })} aria-label={`Select ${member.fullName}`} /></TableCell><TableCell><div className="flex items-center gap-2.5"><Monogram name={member.fullName} size="sm" /><div className="min-w-0"><p className="truncate font-medium text-ink">{member.fullName}</p><p className="font-mono text-[11px] text-ink-3">{member.memberNumber}</p></div></div></TableCell>{visible("phone") ? <TableCell className="whitespace-nowrap font-mono text-[12px] text-ink-2" dir="ltr">{member.phone}</TableCell> : null}{visible("branch") ? <TableCell className="text-ink-2">{branchName(member.homeBranchId)}</TableCell> : null}{visible("plan") ? <TableCell className="text-ink-2">{member.currentPlanName ?? "—"}</TableCell> : null}{visible("status") ? <TableCell>{member.status === "archived" ? <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep">Archived</span> : <MembershipStatusChip status={member.membershipStatus} />}</TableCell> : null}{visible("expiry") ? <TableCell className="whitespace-nowrap">{member.membershipEndDate ? <span className="flex items-baseline gap-1.5"><span className="text-[12px] tabular">{member.membershipEndDate}</span><DaysUntilText date={member.membershipEndDate} className="text-[11px]" /></span> : "—"}</TableCell> : null}{visible("balance") ? <TableCell className="text-end">{member.outstanding.amount > 0 ? <MoneyText money={member.outstanding} className="font-medium text-warning-deep" /> : <span className="text-[12px] tabular text-ink-4">0.000</span>}</TableCell> : null}{visible("last_check_in") ? <TableCell className="whitespace-nowrap text-[12px] text-ink-3"><RelativeText iso={member.lastCheckInAt} /></TableCell> : null}</TableRow>)}</TableBody></Table>}</div>
+    <div className="panel overflow-hidden">
+      {members.isLoading ? (
+        <div className="p-4"><TableSkeleton rows={10} cols={columns.length + 2} /></div>
+      ) : members.isError ? (
+        <div className="p-4"><ErrorState layout="section" onRetry={() => members.refetch()} /></div>
+      ) : !members.data?.items.length ? (
+        <EmptyState layout="section" title="No members match" description={debounced ? `Nothing found for “${debounced}”. Check the spelling or filters.` : "Try widening the filters."} className="m-4" />
+      ) : (
+        <>
+          <ul className="divide-y divide-line xl:hidden" aria-label="Members">
+            {members.data.items.map((member) => (
+              <MemberCompactRow
+                key={member.id}
+                member={member}
+                branch={branchName(member.homeBranchId)}
+                visible={visible}
+                selected={selected.has(member.id)}
+                onSelected={(checked) => setSelected((current) => {
+                  const next = new Set(current);
+                  if (checked) next.add(member.id); else next.delete(member.id);
+                  return next;
+                })}
+              />
+            ))}
+          </ul>
+          <div className="hidden xl:block">
+            <Table>
+              <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="w-10"><Checkbox checked={allPageSelected} onCheckedChange={togglePage} aria-label="Select all members on this page" /></TableHead><TableHead>Member</TableHead>{visible("phone") ? <TableHead>Phone</TableHead> : null}{visible("branch") ? <TableHead>Branch</TableHead> : null}{visible("plan") ? <TableHead>Plan</TableHead> : null}{visible("status") ? <TableHead>Status</TableHead> : null}{visible("expiry") ? <TableHead>Expiry</TableHead> : null}{visible("balance") ? <TableHead className="text-end">Balance</TableHead> : null}{visible("last_check_in") ? <TableHead>Last check-in</TableHead> : null}</TableRow></TableHeader>
+              <TableBody>{members.data.items.map((member) => <TableRow key={member.id} interactive onClick={() => router.push(`/members/${member.id}`)} data-testid="member-row"><TableCell onClick={(event) => event.stopPropagation()}><Checkbox checked={selected.has(member.id)} onCheckedChange={(checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(member.id); else next.delete(member.id); return next; })} aria-label={`Select ${member.fullName}`} /></TableCell><TableCell><div className="flex items-center gap-2.5"><Monogram name={member.fullName} size="sm" /><div className="min-w-0"><p className="truncate font-medium text-ink">{member.fullName}</p><p className="font-mono text-[11px] text-ink-3">{member.memberNumber}</p></div></div></TableCell>{visible("phone") ? <TableCell className="whitespace-nowrap font-mono text-[12px] text-ink-2" dir="ltr">{member.phone}</TableCell> : null}{visible("branch") ? <TableCell className="text-ink-2">{branchName(member.homeBranchId)}</TableCell> : null}{visible("plan") ? <TableCell className="text-ink-2">{member.currentPlanName ?? "—"}</TableCell> : null}{visible("status") ? <TableCell>{member.status === "archived" ? <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep">Archived</span> : <MembershipStatusChip status={member.membershipStatus} />}</TableCell> : null}{visible("expiry") ? <TableCell className="whitespace-nowrap">{member.membershipEndDate ? <span className="flex items-baseline gap-1.5"><span className="text-[12px] tabular">{member.membershipEndDate}</span><DaysUntilText date={member.membershipEndDate} className="text-[11px]" /></span> : "—"}</TableCell> : null}{visible("balance") ? <TableCell className="text-end">{member.outstanding.amount > 0 ? <MoneyText money={member.outstanding} className="font-medium text-warning-deep" /> : <span className="text-[12px] tabular text-ink-4">0.000</span>}</TableCell> : null}{visible("last_check_in") ? <TableCell className="whitespace-nowrap text-[12px] text-ink-3"><RelativeText iso={member.lastCheckInAt} /></TableCell> : null}</TableRow>)}</TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+    </div>
     {members.data ? <DataPagination page={members.data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} /> : null}
 
     <Dialog open={columnsOpen} onOpenChange={setColumnsOpen}><DialogContent><DialogHeader><DialogTitle>Choose table columns</DialogTitle><DialogDescription>These choices can be included in a saved view.</DialogDescription></DialogHeader><DialogBody className="grid gap-2 sm:grid-cols-2">{ALL_COLUMNS.map((column) => <label key={column.key} className="flex items-center gap-2 rounded-md border border-line px-3 py-2 text-[12.5px]"><Checkbox checked={columns.includes(column.key)} onCheckedChange={(checked) => setColumns((current) => checked ? [...new Set([...current, column.key])] : current.length > 1 ? current.filter((item) => item !== column.key) : current)} />{column.label}</label>)}</DialogBody><DialogFooter><Button onClick={() => { replaceParams({ columns: columns.join(",") }); setColumnsOpen(false); }}>Apply columns</Button></DialogFooter></DialogContent></Dialog>
@@ -120,3 +154,37 @@ function MembersPageInner() {
 }
 
 export default function MembersPage() { return <Suspense><MembersPageInner /></Suspense>; }
+
+function MemberCompactRow({ member, branch, visible, selected, onSelected }: {
+  member: MemberSummary;
+  branch: string;
+  visible: (column: MemberColumn) => boolean;
+  selected: boolean;
+  onSelected: (checked: boolean) => void;
+}) {
+  const facts: Array<{ label: string; value: React.ReactNode }> = [];
+  if (visible("plan")) facts.push({ label: "Plan", value: member.currentPlanName ?? "No active plan" });
+  if (visible("expiry")) facts.push({ label: "Expiry", value: member.membershipEndDate ? <span className="flex flex-wrap items-baseline gap-1.5"><span className="tabular">{member.membershipEndDate}</span><DaysUntilText date={member.membershipEndDate} /></span> : "—" });
+  if (visible("balance")) facts.push({ label: "Balance", value: member.outstanding.amount > 0 ? <MoneyText money={member.outstanding} className="font-medium text-warning-deep" /> : <span className="tabular text-ink-3">0.000</span> });
+  if (visible("last_check_in")) facts.push({ label: "Last check-in", value: <RelativeText iso={member.lastCheckInAt} /> });
+
+  return (
+    <li className="px-4 py-3.5" data-testid="member-card">
+      <div className="flex items-start gap-3">
+        <Checkbox className="mt-1" checked={selected} onCheckedChange={onSelected} aria-label={`Select ${member.fullName}`} />
+        <Monogram name={member.fullName} size="sm" className="mt-0.5 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+            <div className="min-w-0">
+              <Link href={`/members/${member.id}`} className="block min-h-6 truncate text-[14px] font-semibold text-ink underline-offset-4 hover:underline focus-visible:underline">{member.fullName}</Link>
+              <p className="font-mono text-[11px] text-ink-3">{member.memberNumber}</p>
+            </div>
+            {visible("status") ? member.status === "archived" ? <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep">Archived</span> : <MembershipStatusChip status={member.membershipStatus} /> : null}
+          </div>
+          {(visible("phone") || visible("branch")) ? <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12.5px] text-ink-2">{visible("phone") ? <span dir="ltr">{member.phone}</span> : null}{visible("branch") ? <span>{branch}</span> : null}</p> : null}
+          {facts.length ? <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 sm:grid-cols-4">{facts.map((fact) => <div key={fact.label} className="min-w-0"><dt className="text-[12px] text-ink-3">{fact.label}</dt><dd className="mt-0.5 truncate text-[12.5px] text-ink-2">{fact.value}</dd></div>)}</dl> : null}
+        </div>
+      </div>
+    </li>
+  );
+}

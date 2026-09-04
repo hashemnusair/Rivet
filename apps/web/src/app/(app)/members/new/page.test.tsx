@@ -33,6 +33,30 @@ afterEach(() => {
 });
 
 describe("new member duplicate pre-check", () => {
+  it("blocks both save paths until a matching identity is reviewed", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<NewMemberPage />, { branchId: BRANCH_ABD });
+    const existing = (await api.listMembers({ branchId: BRANCH_ABD, pageSize: 20 })).items.find((member) => member.phone);
+    if (!existing) throw new Error("No seeded member with a phone number");
+    const createMember = vi.spyOn(api, "createMember");
+
+    await user.type(screen.getByTestId("member-name"), "Another Member");
+    const phone = screen.getByTestId("member-phone");
+    await user.type(phone, existing.phone);
+    await act(async () => {
+      phone.blur();
+      await Promise.resolve();
+    });
+    expect(await screen.findByText(/possible duplicate/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Gender" }));
+    await user.click(await screen.findByRole("option", { name: "Female" }));
+
+    await user.click(screen.getByTestId("save-member"));
+
+    expect(await screen.findByText(/confirm these results belong to a different person/i)).toBeInTheDocument();
+    expect(createMember).not.toHaveBeenCalled();
+  });
+
   it("reports a failed check and makes retry or explicit override available", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<NewMemberPage />, { branchId: BRANCH_ABD });

@@ -48,11 +48,11 @@ The root marketing page has its own visual system. Authentication, onboarding, o
 
 ## Pass 1: Daily front-desk work
 
-**Status:** Not started
-**Baseline SHA:** To record
+**Status:** In progress
+**Baseline SHA:** `f16d36d`
 **Finish SHA:** To record
 **Preview:** To record
-**Human approval:** Pending
+**Human approval:** Production baseline reviewed by Hashem on 4 September 2026; implementation preview pending
 
 ### Pass 1A: Shift command path
 

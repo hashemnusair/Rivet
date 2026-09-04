@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ReceiptText, UserRound, WalletCards } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ReceiptText, UserRound, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -12,7 +12,7 @@ import { isApiError } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import type { CreateMemberInput, CreateMemberMembershipSaleInput, CreateMemberMembershipSaleResult, DuplicateMatch, LeadSource, MemberSummary } from "@/lib/domain/types";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
+import { PageHeader } from "@/components/shared/chrome";
 import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -109,7 +109,9 @@ export default function NewMemberPage() {
       if (request !== duplicateCheckRequest.current) return;
       setDuplicateCheckError("RIVET could not check for an existing member. Retry before saving, or explicitly continue without the pre-check.");
     } finally {
-      if (request === duplicateCheckRequest.current) setCheckingDupes(false);
+      if (request === duplicateCheckRequest.current) {
+        setCheckingDupes(false);
+      }
     }
   };
 
@@ -126,12 +128,25 @@ export default function NewMemberPage() {
   const phoneField = form.register("phone");
   const emailField = form.register("email");
 
+  const duplicateCheckAllowsProgress = (action: "saving" | "continuing") => {
+    if (checkingDupes) {
+      setErrorMsg(`Wait for the duplicate check to finish before ${action}.`);
+      return false;
+    }
+    if (duplicateCheckError && !duplicateCheckOverride) {
+      setErrorMsg(`Retry the duplicate check or choose “Continue without pre-check” before ${action}.`);
+      return false;
+    }
+    if (duplicates.length > 0 && confirmedDuplicateMemberIds.length !== duplicates.length) {
+      setErrorMsg("Open the matching member, or confirm these results belong to a different person before continuing.");
+      return false;
+    }
+    return true;
+  };
+
   const submitMember = async (values: FormValues) => {
     setErrorMsg(null);
-    if (duplicateCheckError && !duplicateCheckOverride) {
-      setErrorMsg("Retry the duplicate check or choose “Continue without pre-check” before saving.");
-      return;
-    }
+    if (!duplicateCheckAllowsProgress("saving")) return;
     try {
       const selectedBranchId = visibleBranchId(session?.branches, values.homeBranchId);
       if (!selectedBranchId) {
@@ -149,14 +164,7 @@ export default function NewMemberPage() {
 
   const startSale = (values: FormValues) => {
     setErrorMsg(null);
-    if (duplicateCheckError && !duplicateCheckOverride) {
-      setErrorMsg("Retry the duplicate check or choose “Continue without pre-check” before continuing.");
-      return;
-    }
-    if (duplicates.length > 0 && confirmedDuplicateMemberIds.length !== duplicates.length) {
-      setErrorMsg("Open the matching member, or confirm these results belong to a different person before continuing.");
-      return;
-    }
+    if (!duplicateCheckAllowsProgress("continuing")) return;
     const selectedBranchId = visibleBranchId(session?.branches, values.homeBranchId);
     if (!selectedBranchId) {
       form.setError("homeBranchId", { message: "Choose a visible branch" });
@@ -190,17 +198,9 @@ export default function NewMemberPage() {
         <DialogTitle className="sr-only">{completed ? "Sale complete" : saleDraft ? "Choose membership and payment" : "Add member"}</DialogTitle>
         <DialogDescription className="sr-only">Create a member profile and optionally complete their first membership sale.</DialogDescription>
         <div className="space-y-5 p-5">
-      <Breadcrumbs items={[{ label: "Members", href: "/members" }, { label: "New member" }]} />
       <PageHeader
         title={completed ? "Member ready" : saleDraft ? "Finish membership sale" : "Add member"}
-        description={completed ? "The profile, membership, balance, and receipt are all in place." : saleDraft ? "Review the money story once, then confirm everything together." : "Save a profile on its own, or complete the first membership and payment in one guided flow."}
-        actions={
-          <Button asChild variant="secondary">
-            <Link href="/members">
-              <ArrowLeft /> Back to members
-            </Link>
-          </Button>
-        }
+        description={completed ? "The profile, membership, balance, and receipt are all in place." : saleDraft ? "Choose the plan, record what is paid now, and confirm the sale once." : "Enter the essentials now. Add more detail only when it is useful."}
       />
 
       {completed ? (
@@ -222,7 +222,7 @@ export default function NewMemberPage() {
       ) : (
       <>
       {duplicates.length > 0 ? (
-        <div className="flex items-start gap-3 rounded-lg border border-warning/50 bg-warning-bg/60 p-4" role="alert">
+        <div className="flex flex-col items-start gap-3 rounded-lg border border-warning/50 bg-warning-bg/60 p-4 sm:flex-row" role="alert">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning-deep" aria-hidden />
           <div className="flex-1">
             <p className="text-[13.5px] font-semibold text-warning-deep">Possible duplicate — same phone or email exists</p>
@@ -236,7 +236,7 @@ export default function NewMemberPage() {
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-[12px] text-ink-3">You can still save — but confirm this is really a different person.</p>
+            <p className="mt-2 text-[12px] text-ink-3">Open the existing profile first. Continue only if this is genuinely a different person.</p>
           </div>
           <Button variant="secondary" size="sm" onClick={() => setConfirmedDuplicateMemberIds(duplicates.map((duplicate) => duplicate.memberId))} disabled={confirmedDuplicateMemberIds.length === duplicates.length}>
             {confirmedDuplicateMemberIds.length === duplicates.length ? "Confirmed different person" : "This is a different person"}
@@ -314,14 +314,14 @@ export default function NewMemberPage() {
         <details className="group panel overflow-hidden" open={!activeBranchId || undefined}>
           <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-5 text-[13px] font-medium text-ink-2">
             <span>
-              Add membership context, emergency contact or notes
-              <span className="ms-2 font-normal text-ink-3">Optional · branch and language already selected</span>
+              Add more details
+              <span className="ms-2 font-normal text-ink-3">Branch, referral, emergency contact, and notes</span>
             </span>
             <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden />
           </summary>
           <div className="space-y-5 border-t border-line p-5">
           <section>
-          <h2 className="mb-4 font-display text-[15px] font-semibold">Membership context</h2>
+          <h2 className="mb-4 font-display text-[15px] font-semibold">Gym details</h2>
           <FieldGrid className="gap-4 sm:grid-cols-2">
             <Field label="Home branch" required error={form.formState.errors.homeBranchId?.message}>
               <Controller
@@ -417,7 +417,7 @@ export default function NewMemberPage() {
           <label className="mt-4 flex items-center justify-between gap-3 cursor-pointer">
             <span>
               <span className="block text-[13px] font-medium">Marketing messages</span>
-              <span className="block text-[12px] text-ink-3">RIVET starts this preference on, but records it as a system default—not member consent. Marketing remains suppressed until staff or the member confirms it. Service messages are separate.</span>
+              <span className="block text-[12px] text-ink-3">The gym default is on. Marketing stays paused until the member or an authorized employee confirms consent.</span>
             </span>
             <Controller
               control={form.control}
@@ -434,11 +434,11 @@ export default function NewMemberPage() {
           <Button asChild variant="secondary">
             <Link href="/members">Cancel</Link>
           </Button>
-          <Button type="submit" variant={can("memberships.sell") ? "secondary" : "primary"} loading={createMember.isPending} data-testid="save-member">
+          <Button type="submit" variant={can("memberships.sell") ? "secondary" : "primary"} loading={createMember.isPending} disabled={checkingDupes} data-testid="save-member">
             Create member
           </Button>
           {can("memberships.sell") ? (
-            <Button type="button" loading={createMember.isPending} onClick={form.handleSubmit(startSale)} data-testid="save-member-and-sell">
+            <Button type="button" disabled={checkingDupes} onClick={form.handleSubmit(startSale)} data-testid="save-member-and-sell">
               <WalletCards /> Create &amp; sell membership
             </Button>
           ) : null}
@@ -503,7 +503,7 @@ function CompletionFact({ icon, label, value, warning }: { icon: React.ReactNode
   return (
     <div className="flex gap-3 bg-paper px-5 py-4">
       <span className="mt-0.5 text-ink-3">{icon}</span>
-      <div><p className="text-[11px] uppercase tracking-[0.12em] text-ink-3">{label}</p><p className={`mt-1 text-[13px] font-medium ${warning ? "text-warning-deep" : "text-ink"}`}>{value}</p></div>
+      <div><p className="text-[12px] text-ink-3">{label}</p><p className={`mt-1 text-[13px] font-medium ${warning ? "text-warning-deep" : "text-ink"}`}>{value}</p></div>
     </div>
   );
 }
