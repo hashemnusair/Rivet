@@ -305,12 +305,14 @@ published prices on the agreement come from `convex/planCatalogue.ts`, the
 same catalogue the platform seeds; the numbers remain provisional until the
 pricing sheet below is signed.
 
-**Agreement layout.** The PDF follows artboard P2: page one carries the
-parties and the details (customer, representative, ID, address, plan, fee,
-billing interval, payment terms, start date, term, governing law); the
-numbered clauses start on a new page under the running header; the
-signatures and the SHA-256 fingerprint close the document on a page of their
-own. The on-screen record follows the same order.
+**Agreement layout.** The PDF follows artboard P2's anatomy and flows
+without forced page breaks: 1 Parties and 2 Details (customer,
+representative, address, plan with limits, fee, billing interval, payment
+terms, start date, term, governing law), then the clauses 3 to 12 straight
+after with a hairline between sections, then 13 Signatures with the masked
+ID and the SHA-256 fingerprint, kept together on one page but taking the
+next free space. Every page fills. The on-screen record follows the same
+order.
 
 **Invoice** (`convex/platformInvoicePdf.ts`). The same furniture with an
 `INVOICE` label: parties, a four-across meta grid, the line items, totals

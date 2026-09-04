@@ -59,10 +59,10 @@ function shortLocal(value: string): string {
 }
 
 /**
- * The blocks of the document, in order, as the identity system lays them
- * out: 1 Parties and 2 Details on page one; the clauses, numbered 3 to 12,
- * from a fresh page under the running header; 13 Signatures with the
- * fingerprint on a closing page.
+ * The blocks of the document, in order: 1 Parties and 2 Details, then the
+ * clauses numbered 3 to 12 straight after them with a hairline between
+ * sections, then 13 Signatures with the fingerprint, kept together on one
+ * page. Nothing forces a page break, so every page fills.
  */
 export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly AgreementSection[] | undefined): PdfBlock[] {
   const countersigned = input.status === "countersigned";
@@ -102,8 +102,10 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
   ];
 
   if (sections && sections.length > 0) {
-    blocks.push({ type: "pagebreak" });
+    // The clauses follow the details directly, a hairline between sections,
+    // so the page fills and nothing is pushed out of sight.
     for (const section of sections) {
+      blocks.push({ type: "rule" });
       blocks.push({ type: "heading", text: `${section.number}. ${section.heading}` });
       for (const paragraph of section.paragraphs) blocks.push({ type: "paragraph", text: paragraph });
     }
@@ -139,11 +141,14 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
   };
 
   const lastNumber = sections && sections.length > 0 ? Number.parseInt(sections[sections.length - 1]!.number, 10) + 1 : 3;
-  blocks.push({ type: "pagebreak" });
-  blocks.push({ type: "heading", text: `${Number.isFinite(lastNumber) ? lastNumber : 13}. Signatures` });
-  blocks.push({ type: "paragraph", text: "Each party confirms that it has read this agreement, including the details in section 2, and agrees to be bound by it. Signatures are recorded electronically in RIVET together with the signer's identity and the time of signing." });
-  blocks.push({ type: "spacer", height: 6 });
-  blocks.push(...signatureBlock(
+  // The signatures stay together on one page, but take the next free space
+  // rather than a page of their own.
+  const signatures: PdfBlock[] = [];
+  signatures.push({ type: "rule" });
+  signatures.push({ type: "heading", text: `${Number.isFinite(lastNumber) ? lastNumber : 13}. Signatures` });
+  signatures.push({ type: "paragraph", text: "Each party confirms that it has read this agreement, including the details in section 2, and agrees to be bound by it. Signatures are recorded electronically in RIVET together with the signer's identity and the time of signing." });
+  signatures.push({ type: "spacer", height: 6 });
+  signatures.push(...signatureBlock(
     "For the Customer",
     input.signatory.name,
     `${input.signatory.title ? input.signatory.title.charAt(0).toUpperCase() + input.signatory.title.slice(1) : "Owner"}, ${input.customer.legalName}`,
@@ -151,9 +156,9 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
     input.signature,
     `Signed ${input.signedAtLocal}, ${input.timezone}. Electronic signature under the Electronic Transactions Law No. 15 of 2015.`,
   ));
-  blocks.push({ type: "spacer", height: 12 });
+  signatures.push({ type: "spacer", height: 12 });
   if (input.countersign) {
-    blocks.push(...signatureBlock(
+    signatures.push(...signatureBlock(
       "For RIVET",
       input.countersign.byName,
       `${input.countersign.title}, RIVET`,
@@ -162,14 +167,15 @@ export function agreementPdfBlocks(input: AgreementPdfInput, sections: readonly 
       `Countersigned ${input.countersign.atLocal}, ${input.timezone}. Electronic signature under the Electronic Transactions Law No. 15 of 2015.`,
     ));
   } else {
-    blocks.push({ type: "paragraph", text: "For RIVET", font: "bold", size: 10 });
-    blocks.push({ type: "paragraph", text: "RIVET will countersign and send the completed agreement.", size: 9, color: "#8B887B" });
+    signatures.push({ type: "paragraph", text: "For RIVET", font: "bold", size: 10 });
+    signatures.push({ type: "paragraph", text: "RIVET will countersign and send the completed agreement.", size: 9, color: "#8B887B" });
   }
-  blocks.push({ type: "spacer", height: 12 });
-  blocks.push({ type: "rows", rows: [
+  signatures.push({ type: "spacer", height: 12 });
+  signatures.push({ type: "rows", rows: [
     { label: "Document fingerprint (SHA-256)", value: input.documentSha256 },
     ...(input.hashMatch ? [] : [{ label: "Fingerprint check", value: "The signer's browser produced a different fingerprint from RIVET's copy; flagged for review." }]),
   ] });
+  blocks.push({ type: "keep", blocks: signatures });
   return blocks;
 }
 

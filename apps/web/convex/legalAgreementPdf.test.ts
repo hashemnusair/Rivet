@@ -43,19 +43,23 @@ describe("agreement PDF", () => {
     expect(blocks).toContain("Typed and adopted");
   });
 
-  it("lays the document out as page one, continuation pages and a signature page", () => {
+  it("flows the document without forced breaks, a hairline between sections, signatures kept together", () => {
     const blocks = agreementPdfBlocks(signed, SUBSCRIPTION_AGREEMENT_SECTIONS);
     const kinds = blocks.map((block) => block.type);
-    // Two forced breaks: before the clauses, and before the signatures.
-    expect(kinds.filter((kind) => kind === "pagebreak")).toHaveLength(2);
-    const headings = blocks.filter((block) => block.type === "heading").map((block) => (block as { text: string }).text);
+    expect(kinds.filter((kind) => kind === "pagebreak")).toHaveLength(0);
+    // One hairline ahead of each clause, and the signatures travel as one group.
+    expect(kinds.filter((kind) => kind === "rule")).toHaveLength(SUBSCRIPTION_AGREEMENT_SECTIONS.length);
+    const keep = blocks.at(-1) as { type: string; blocks: Array<{ type: string; text?: string }> };
+    expect(keep.type).toBe("keep");
+    expect(keep.blocks.some((block) => block.type === "heading" && block.text === "13. Signatures")).toBe(true);
+    const headings = [...blocks, ...keep.blocks].filter((block) => block.type === "heading").map((block) => (block as { text: string }).text);
     expect(headings.slice(0, 2)).toEqual(["1. Parties", "2. Details"]);
     expect(headings[2]).toBe("3. What this agreement covers");
     expect(headings.at(-1)).toBe("13. Signatures");
     // The details carry the terms a reader looks for, and the fingerprint closes the document.
     const details = blocks.find((block) => block.type === "rows") as { rows: Array<{ label: string }> };
     expect(details.rows.map((row) => row.label)).toEqual(expect.arrayContaining(["Representative", "Fee", "Billing interval", "Payment terms", "Start date", "Term", "Governing law"]));
-    const last = blocks.at(-1) as { type: string; rows: Array<{ label: string }> };
+    const last = keep.blocks.at(-1) as { type: string; rows: Array<{ label: string }> };
     expect(last.type).toBe("rows");
     expect(last.rows[0]!.label).toBe("Document fingerprint (SHA-256)");
   });
@@ -88,7 +92,7 @@ describe("agreement PDF", () => {
     expect(blocks).toContain("For RIVET");
     expect(blocks).toContain("Co-founder, RIVET");
     // Both signatures sit in a framed area at the size the identity sets.
-    const frames = JSON.parse(blocks).filter((block: { type: string }) => block.type === "frame");
+    const frames = JSON.parse(blocks).flatMap((block: { type: string; blocks?: Array<{ type: string }> }) => block.blocks ?? [block]).filter((block: { type: string }) => block.type === "frame");
     expect(frames).toHaveLength(2);
   });
 
