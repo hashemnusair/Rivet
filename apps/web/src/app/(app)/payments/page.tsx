@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { TransactionListQuery } from "@/lib/api/GymOSApi";
+import type { TransactionSummary } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
@@ -95,13 +96,13 @@ function TransactionsPageInner() {
 
       <FinanceNav />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-xs">
+      <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:items-center">
+        <div className="relative sm:col-span-3 lg:w-full lg:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search transactions" />
         </div>
         <Select value={method} onValueChange={(value) => replaceParams({ method: value === "all" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-40" aria-label="Method filter">
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Method filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -112,7 +113,7 @@ function TransactionsPageInner() {
           </SelectContent>
         </Select>
         <Select value={type} onValueChange={(value) => replaceParams({ type: value === "all" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-36" aria-label="Type filter">
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Type filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -122,7 +123,7 @@ function TransactionsPageInner() {
           </SelectContent>
         </Select>
         <Select value={range} onValueChange={(value) => replaceParams({ range: value === "30" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-36" aria-label="Date range">
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Date range">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -133,12 +134,12 @@ function TransactionsPageInner() {
           </SelectContent>
         </Select>
         {data ? (
-          <span className="ms-auto text-[12px] text-ink-3 tabular">
+          <span className="text-[12px] text-ink-3 tabular sm:col-span-2 lg:ms-auto lg:whitespace-nowrap">
             {data.totalItems} records · page net <MoneyText money={money(pageTotal)} />
           </span>
         ) : null}
         {["q", "method", "type", "range"].some((key) => params.has(key)) ? (
-          <Button variant="ghost" size="sm" onClick={() => { setSearch(""); replaceParams({ q: undefined, method: undefined, type: undefined, range: undefined }); }}>
+          <Button variant="ghost" size="sm" className="justify-self-end" onClick={() => { setSearch(""); replaceParams({ q: undefined, method: undefined, type: undefined, range: undefined }); }}>
             <FilterX /> Clear filters
           </Button>
         ) : null}
@@ -156,7 +157,11 @@ function TransactionsPageInner() {
         ) : !data || data.items.length === 0 ? (
           <EmptyState title="No transactions match" description="Try a wider date range or clear the filters." className="border-0" />
         ) : (
-          <Table>
+          <>
+          <ul className="divide-y divide-line lg:hidden" aria-label="Transactions">
+            {data.items.map((transaction) => <TransactionCompactRow key={transaction.id} transaction={transaction} />)}
+          </ul>
+          <Table className="hidden lg:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Receipt</TableHead>
@@ -208,6 +213,7 @@ function TransactionsPageInner() {
               })}
             </TableBody>
           </Table>
+          </>
         )}
       </div>
 
@@ -215,6 +221,28 @@ function TransactionsPageInner() {
 
       <CollectPaymentMemberPicker open={collectOpen} onOpenChange={(open) => replaceParams({ collect: open ? "1" : undefined })} />
     </div>
+  );
+}
+
+function TransactionCompactRow({ transaction }: { transaction: TransactionSummary }) {
+  const memberId = "memberId" in transaction ? transaction.memberId : transaction.customer?.memberId;
+  return (
+    <li className="space-y-3 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {memberId ? <Link href={`/members/${memberId}`} className="truncate text-[13.5px] font-semibold text-ink hover:underline">{transaction.memberName}</Link> : <p className="truncate text-[13.5px] font-semibold text-ink">{transaction.memberName}</p>}
+          <p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={transaction.occurredAt} /> · {transaction.branchName.split("— ")[1] ?? transaction.branchName}</p>
+        </div>
+        <MoneyText money={transaction.amount} className="shrink-0 text-[13.5px] font-semibold" />
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3 text-[12.5px] text-ink-2">
+        <TransactionStatusChip status={transaction.status} />
+        <span className="capitalize">{transaction.type.replaceAll("_", " ")}</span>
+        <span>{PAYMENT_METHOD_LABELS[transaction.method]}</span>
+        <span>By {transaction.collectedByName}</span>
+        <Link href={receiptHref(transaction.receiptId)} className="ms-auto font-mono text-[12px] font-medium underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">{transaction.receiptNumber}</Link>
+      </div>
+    </li>
   );
 }
 

@@ -111,7 +111,7 @@ export default function ShiftsPage() {
         title="Shifts & cash"
         description="Open the drawer, collect all day, close with a count — variances get reviewed, not ignored."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {branchPicker}
             <Gate permission="reconciliation.open_shift">
               {!currentShift ? (
@@ -143,7 +143,6 @@ export default function ShiftsPage() {
           {currentShift ? (
             <Gate permission="reconciliation.close_shift">
               <Button
-                variant="signal"
                 size="sm"
                 onClick={() => setCloseShiftTarget(currentShift)}
                 disabled={!shiftTotalsReady}
@@ -164,7 +163,7 @@ export default function ShiftsPage() {
             <ErrorState layout="section" title="Drawer status unavailable" description="RIVET could not confirm whether this branch has an open shift. No shift action is available until the status reloads." onRetry={() => currentShiftQuery.refetch()} />
           </div>
         ) : currentShift ? (
-          <div className="grid grid-cols-2 divide-x divide-line sm:grid-cols-5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 [&>*:nth-child(2n)]:border-s [&>*:nth-child(n+3)]:border-t [&>*]:border-line sm:[&>*:not(:first-child)]:border-s sm:[&>*:nth-child(n+3)]:border-t-0">
             <Cell label="Opened" value={formatDateTime(currentShift.openedAt)} sub={currentShift.openedByName} />
             <Cell label="Float" value={<MoneyText money={currentShift.openingFloat} />} />
             {totalsQuery.isLoading ? (
@@ -210,7 +209,15 @@ export default function ShiftsPage() {
             </div>
           ) : recon ? (
             <div className="grid gap-0 lg:grid-cols-[1fr_260px]">
-              <Table containerClassName="">
+              <div className="divide-y divide-line md:hidden">
+                {recon.totalsByMethod.length === 0 ? <p className="px-4 py-8 text-center text-[13px] text-ink-3">No payments recorded on this date.</p> : recon.totalsByMethod.map((row) => (
+                  <article key={row.method} className="space-y-3 px-4 py-3.5">
+                    <div className="flex items-center justify-between gap-3"><h3 className="text-[13.5px] font-semibold">{PAYMENT_METHOD_LABELS[row.method]}</h3><p className="font-medium"><MoneyText money={row.net} /></p></div>
+                    <dl className="grid grid-cols-3 gap-3 border-t border-line pt-3 text-[12px]"><div><dt className="text-ink-3">Collected</dt><dd className="mt-0.5"><MoneyText money={row.payments} /></dd></div><div><dt className="text-ink-3">Refunded</dt><dd className="mt-0.5">{row.refunds.amount > 0 ? <MoneyText money={money(-row.refunds.amount)} /> : "—"}</dd></div><div><dt className="text-ink-3">Payments</dt><dd className="mt-0.5 tabular">{row.count}</dd></div></dl>
+                  </article>
+                ))}
+              </div>
+              <Table containerClassName="" className="hidden md:table">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Method</TableHead>
@@ -273,7 +280,18 @@ export default function ShiftsPage() {
         ) : (historyQuery.data?.items.length ?? 0) === 0 ? (
           <EmptyState compact title="No shifts yet" className="border-0" />
         ) : (
-          <Table>
+          <>
+          <ul className="divide-y divide-line lg:hidden" aria-label="Shift history">
+            {historyQuery.data!.items.map((shift) => {
+              const historyStatus = cashShiftHistoryStatus(shift);
+              return <li key={shift.id} className="space-y-3 px-4 py-3.5">
+                <div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold"><span className="tabular">{formatDateTime(shift.openedAt)}</span></p><p className="mt-0.5 text-[12px] text-ink-3">Opened by {shift.openedByName}</p></div>{shift.status === "open" ? <Badge variant="success" dot>Open</Badge> : historyStatus === "variance_pending" ? <Badge variant="warning">Variance pending</Badge> : historyStatus === "variance_approved" ? <Badge variant="neutral">Variance approved</Badge> : historyStatus === "variance_rejected" ? <Badge variant="signal">Variance rejected</Badge> : <Badge variant="outline">Balanced</Badge>}</div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]"><div><dt className="text-ink-3">Opening float</dt><dd className="mt-0.5"><MoneyText money={shift.openingFloat} /></dd></div><div><dt className="text-ink-3">Expected</dt><dd className="mt-0.5">{shift.expectedCash ? <MoneyText money={shift.expectedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">Counted</dt><dd className="mt-0.5">{shift.countedCash ? <MoneyText money={shift.countedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">Variance</dt><dd className={cn("mt-0.5", shift.variance && shift.variance.amount !== 0 && "font-semibold text-warning-deep")}>{shift.variance ? <MoneyText money={shift.variance} signed /> : "—"}</dd></div></dl>
+                {canReviewCashVariance(shift) ? <Gate permission="reconciliation.approve_variance"><div className="flex justify-end gap-2 border-t border-line pt-3"><Button variant="secondary" size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "rejected" })}><X /> Reject</Button><Button size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "approved" })}><Check /> Approve</Button></div></Gate> : shift.varianceExplanation ? <p className="border-s-2 border-line-2 ps-3 text-[12px] text-ink-3">{shift.varianceExplanation}</p> : null}
+              </li>;
+            })}
+          </ul>
+          <Table className="hidden lg:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Date</TableHead>
@@ -337,7 +355,7 @@ export default function ShiftsPage() {
                           </Button>
                         </span>
                       ) : s.varianceExplanation ? (
-                        <span className="block max-w-44 truncate text-[11px] text-ink-3" title={s.varianceExplanation}>
+                        <span className="block max-w-44 truncate text-[12px] text-ink-3" title={s.varianceExplanation}>
                           {s.varianceExplanation}
                         </span>
                       ) : null}
@@ -348,6 +366,7 @@ export default function ShiftsPage() {
               })}
             </TableBody>
           </Table>
+          </>
         )}
         {historyQuery.data ? (
           <div className="px-4 pb-2">

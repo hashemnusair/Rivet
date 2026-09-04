@@ -83,7 +83,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
             <ArrowLeft /> Payments
           </Link>
         </Button>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           {isRetailSale ? (
             <Button asChild variant="secondary" size="sm">
               <Link href="/checkout">New sale</Link>
@@ -117,7 +117,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
       <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
         {/* The receipt document */}
-        <div id="receipt-print" className="panel mx-auto w-full max-w-md px-8 py-8 font-mono text-[12.5px]">
+        <div id="receipt-print" className="panel mx-auto w-full max-w-md px-5 py-6 font-mono text-[12.5px] sm:px-8 sm:py-8">
           <div className="flex flex-col items-center border-b border-dashed border-line-3 pb-4 text-center">
             <Image src="/brand/rivet-glyph.png" alt="" width={19} height={30} className="mb-2" />
             <h1 className="font-display text-[17px] font-semibold tracking-tight">{detail.organization.name}</h1>
@@ -214,7 +214,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         {/* Side panel */}
         <aside className="no-print space-y-4 self-start">
           <section className="panel p-4">
-            <h3 className="context-label mb-2.5">Status</h3>
+            <h3 className="mb-2.5 text-[13px] font-semibold">Status</h3>
             <TransactionStatusChip status={payment.status} />
             {paymentRecord?.refundedAmount && paymentRecord.refundedAmount.amount > 0 ? (
               <p className="mt-2 text-[12.5px] text-ink-2">
@@ -234,7 +234,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
           {detail.relatedPayments?.length > 0 ? (
             <section className="panel p-4">
-              <h3 className="context-label mb-2.5">Linked records</h3>
+              <h3 className="mb-2.5 text-[13px] font-semibold">Linked records</h3>
               <ul className="space-y-2">
                 {detail.relatedPayments.map((p) => (
                   <li key={p.id} className="flex items-center justify-between text-[12.5px]">
@@ -252,7 +252,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           ) : null}
 
           <section className="panel p-4 text-[12.5px] text-ink-2">
-            <h3 className="context-label mb-2.5">Rules</h3>
+            <h3 className="mb-2.5 text-[13px] font-semibold">Receipt rules</h3>
             <ul className="list-disc space-y-1.5 ps-4">
               <li>Voids are same-day only and fully reverse the payment.</li>
               <li>Refunds create a linked negative receipt; they never rewrite history.</li>
