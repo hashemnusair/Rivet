@@ -3,17 +3,13 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { enqueueOperationalEmail } from "./operationalEmail";
-import { termPriceMinor } from "./planCatalogue";
+import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termEnd, type BillingInterval } from "./subscriptionTerm";
 
 type PlatformPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
-const DEFAULT_PLAN_PRICES: Record<PlatformPlan, number> = {
-  Starter: 79_000,
-  Growth: 149_000,
-  Pro: 249_000,
-  Enterprise: 500_000,
-};
+/** The published prices, should a deployment's catalog row be missing. */
+const DEFAULT_PLAN_PRICES: Record<PlatformPlan, number> = Object.fromEntries(PLAN_CATALOGUE.map((plan) => [plan.name, plan.priceMinor])) as Record<PlatformPlan, number>;
 const SYSTEM_AUDIT_ACTOR_PUBLIC_ID = "system:subscription-reconciliation";
 const SYSTEM_AUDIT_ACTOR_NAME = "RIVET billing automation";
 const RECONCILIATION_ENABLED_ENV = "RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED";

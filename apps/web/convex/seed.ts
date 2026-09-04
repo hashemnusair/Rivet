@@ -3,6 +3,7 @@ import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { organizationRole } from "./schema";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSION_CATALOG_VERSION, rolePermissions } from "./permissions";
+import { planCatalogueWithTone } from "./planCatalogue";
 import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
 
 function addCalendarMonths(timestamp: number, months: number): number {
@@ -297,12 +298,7 @@ export const seedDemoTenant = internalMutation({
       { id: "SUP-216", gymId: "district-strength", gym: "District Strength", subject: "Member import formatting", age: "3h", priority: "normal", status: "waiting" },
       { id: "SUP-214", gymId: "her-house", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
     ]) await upsertDomain("supportCase", supportCase.id, supportCase);
-    for (const plan of [
-      { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-      { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-      { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-      { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
-    ]) await upsertDomain("platformPlan", plan.name, plan);
+    for (const plan of planCatalogueWithTone()) await upsertDomain("platformPlan", plan.name, { ...plan });
     for (const [key, nextValue] of [["member:ABD", 2300], ["member:SWF", 1900]] as const) {
       const existing = await ctx.db.query("sequenceCounters").withIndex("by_organization_key", (q) => q.eq("organizationId", organizationId).eq("key", key)).unique();
       if (existing) await ctx.db.patch(existing._id, { nextValue: Math.max(existing.nextValue, nextValue), updatedAt: now });

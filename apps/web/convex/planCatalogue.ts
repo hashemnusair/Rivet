@@ -22,6 +22,22 @@ export const PLAN_CATALOGUE: readonly PlanDefinition[] = [
 /** A year is twelve months billed once, at 20% off. */
 export const ANNUAL_DISCOUNT = 0.8;
 
+/** How each plan is drawn on a pricing card. Presentation, not pricing. */
+export const PLAN_TONE: Readonly<Record<PlanDefinition["name"], "paper" | "signal" | "night">> = {
+  Starter: "paper",
+  Growth: "signal",
+  Pro: "night",
+  Enterprise: "night",
+};
+
+/**
+ * The catalogue as a pricing table, with each plan's tone attached. Every
+ * surface that lists plans builds on this, so a price is changed in one file.
+ */
+export function planCatalogueWithTone(): Array<PlanDefinition & { tone: "paper" | "signal" | "night" }> {
+  return PLAN_CATALOGUE.map((plan) => ({ ...plan, tone: PLAN_TONE[plan.name] }));
+}
+
 export type PlanInterval = "monthly" | "annual";
 
 export function findPlan(name: string | undefined): PlanDefinition | undefined {

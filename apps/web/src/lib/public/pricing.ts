@@ -1,6 +1,7 @@
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import { entitledModulesForPlanSelection, WORKSPACE_MODULE_CATALOG } from "@/lib/domain/workspace-modules";
 import type { WorkspaceModuleKey } from "@/lib/domain/types";
+import { planCatalogueWithTone, termPriceMinor } from "../../../convex/planCatalogue";
 
 /** The two billing cadences shown on public pricing and gym applications. */
 export type BillingInterval = "monthly" | "annual";
@@ -24,12 +25,17 @@ export interface PublicPricingPlan {
  * places in the product's money contract), so annual totals never depend on
  * floating-point formatting in a component.
  */
-export const DEFAULT_PUBLIC_PRICING_PLANS: readonly PublicPricingPlan[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper", entitledModules: ["foundation", "revenue"] },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
-];
+const PUBLIC_PLAN_MODULES: Readonly<Record<PublicPricingPlanName, WorkspaceModuleKey[]>> = {
+  Starter: ["foundation", "revenue"],
+  Growth: ["foundation", "revenue", "operations"],
+  Pro: ["foundation", "revenue", "operations", "finance", "reporting"],
+  Enterprise: ["foundation", "revenue", "operations", "finance", "reporting"],
+};
+
+export const DEFAULT_PUBLIC_PRICING_PLANS: readonly PublicPricingPlan[] = planCatalogueWithTone().map((plan) => ({
+  ...plan,
+  entitledModules: PUBLIC_PLAN_MODULES[plan.name],
+}));
 
 const PLAN_NAMES = new Set<PublicPricingPlanName>(DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => plan.name));
 
@@ -49,7 +55,8 @@ export interface PlanPrice {
 export function calculatePlanPrice(plan: Pick<PublicPricingPlan, "priceMinor">, interval: BillingInterval): PlanPrice {
   const monthlyMinor = Math.max(0, Math.round(plan.priceMinor));
   const undiscountedAnnualMinor = monthlyMinor * 12;
-  const annualTotalMinor = Math.round(undiscountedAnnualMinor * (1 - ANNUAL_DISCOUNT_PERCENT / 100));
+  // The same formula the invoice and the agreement quote.
+  const annualTotalMinor = termPriceMinor(monthlyMinor, "annual");
   return {
     interval,
     monthlyMinor,

@@ -59,6 +59,7 @@ import {
   validateWorkspaceModuleSelection,
   WORKSPACE_MODULE_CATALOG_VERSION,
 } from "@/lib/domain/workspace-modules";
+import { DEFAULT_PUBLIC_PRICING_PLANS } from "@/lib/public/pricing";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
@@ -469,12 +470,7 @@ const MOCK_SUPPORT_CASES: PlatformSupportCase[] = [
   { id: "SUP-214", gymId: "her-house", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
 ];
 
-const MOCK_SAAS_PLANS: PlatformSaasPlan[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper", entitledModules: ["foundation", "revenue"] },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
-];
+const MOCK_SAAS_PLANS: PlatformSaasPlan[] = DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => ({ ...plan }));
 
 const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
   {

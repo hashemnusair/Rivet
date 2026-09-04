@@ -1,5 +1,6 @@
-export type PlatformQueueSeverity = "danger" | "warning" | "info";
+import { termPriceMinor } from "./planCatalogue";
 
+export type PlatformQueueSeverity = "danger" | "warning" | "info";
 export interface PlatformOverviewInput {
   now?: number;
   gyms: Array<{ id: string; organizationId?: string; subscriptionStatus: string; trialEndsAt?: string; provisioned?: boolean }>;
@@ -139,7 +140,7 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
     // Annual tenants pay twelve months with the published 20% saving, so
     // their effective monthly revenue is the discounted rate — not the
     // headline monthly price.
-    return total + (organization.billingInterval === "annual" ? Math.round(monthlyPrice * 0.8) : monthlyPrice);
+    return total + (organization.billingInterval === "annual" ? Math.round(termPriceMinor(monthlyPrice, "annual") / 12) : monthlyPrice);
   }, 0);
   const paidInvoices = eligibleInvoices.filter(({ invoice }) => invoice.status === "paid");
   const overdueInvoices = eligibleInvoices.filter(({ invoice }) => ["failed", "past_due", "overdue"].includes(invoice.status ?? ""));

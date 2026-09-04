@@ -1,5 +1,6 @@
 import type { Money, PlanKind, TrialBookingStatus, TrialScheduleDay, UUID, WeekdayKey } from "@/lib/domain/types";
 import { BRANCH_ABD, BRANCH_SWF } from "@/lib/mock/seed";
+import { planCatalogueWithTone } from "../../../convex/planCatalogue";
 
 export interface MarketplaceBranch {
   id: string;
@@ -486,12 +487,7 @@ export const INITIAL_TRIAL_BOOKINGS: TrialBooking[] = [
   },
 ];
 
-export const SAAS_PLANS = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
-] as const;
+export const SAAS_PLANS = planCatalogueWithTone();
 
 export function gymById(id: string) {
   return MARKETPLACE_GYMS.find((gym) => gym.id === id);
