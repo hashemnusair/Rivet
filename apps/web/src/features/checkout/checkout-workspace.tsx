@@ -8,7 +8,6 @@ import { qk } from "@/lib/api/keys";
 import { isApiError } from "@/lib/api/errors";
 import type { InventoryBalance, OrganizationSettings, WorkspaceAccess } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { usePermissions } from "@/lib/providers/app-providers";
 import { toMajor } from "@/lib/utils/money";
 import { PageHeader } from "@/components/shared/chrome";
@@ -47,7 +46,6 @@ export function CheckoutWorkspace() {
   const submitting = useRef(false);
   const resetSale = () => { setCart({}); setCustomer({ kind: "walk_in" }); setReference(""); setValidationError(undefined); setServerError(undefined); setSheetOpen(false); };
   const { branches, concreteBranchId, chooseBranch, branchChanging, branchSelectionError, session } = useCheckoutBranch(resetSale);
-  const productDebounced = useDebouncedValue(productSearch, 150);
   const currency = session?.organization.currency ?? "JOD";
   const branchName = branches.find((branch) => branch.id === concreteBranchId)?.name;
   const preselectedProductId = searchParams.get("productId");
@@ -184,7 +182,7 @@ export function CheckoutWorkspace() {
           ? <DesktopCart lines={cartLines} inventory={inventory} currency={currency} total={total} onQuantity={updateQuantity} onRemove={removeLine}>{salePanel}</DesktopCart>
           : <MobileCart lines={cartLines} inventory={inventory} currency={currency} total={total} open={sheetOpen} onOpenChange={setSheetOpen} onQuantity={updateQuantity} onRemove={removeLine}>{salePanel}</MobileCart>}
       </div>
-      <p className="text-[11px] text-ink-3">{productDebounced ? `Showing items matching “${productDebounced}”. ` : ""}One protected transaction creates the receipt and decreases available stock; a retried request reuses the same sale key so nothing is sold twice.</p>
+      <p className="text-[12px] text-ink-3">The receipt and stock update together. If a connection fails during payment, retrying the same sale will not sell the items twice.</p>
     </div>
   );
 }

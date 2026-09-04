@@ -70,7 +70,7 @@ export function TodayQueue({
             </span>
             <h2 id="today-queue-title" className="text-[15px] font-semibold tracking-[-0.01em]">Today</h2>
           </div>
-          <p className="mt-2 max-w-[56ch] text-[11.5px] leading-relaxed text-ink-3">
+          <p className="mt-2 max-w-[56ch] text-[12.5px] leading-relaxed text-ink-3">
             Start at the top. RIVET has already put the work in order.
           </p>
         </div>
@@ -94,7 +94,7 @@ export function TodayQueue({
         <div className="px-5 py-12 text-center">
           <CheckCircle2 className="mx-auto size-5 text-success" aria-hidden />
           <p className="mt-3 text-[13px] font-semibold">You&apos;re clear for now</p>
-          <p className="mx-auto mt-1 max-w-[42ch] text-[11.5px] leading-relaxed text-ink-3">
+          <p className="mx-auto mt-1 max-w-[42ch] text-[12.5px] leading-relaxed text-ink-3">
             New follow-ups, balances, entry problems, and approvals will appear here automatically.
           </p>
         </div>
@@ -158,14 +158,14 @@ function TodayQueueRow({
       <Icon className={cn("size-4", urgent ? "text-danger" : item.priority === "high" ? "text-warning-deep" : "text-ink-3")} aria-hidden />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {first ? <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-signal-deep">Do this next</span> : null}
-          <span className="text-[12px] text-ink-3">{meta.label}</span>
+          {first ? <span className="text-[12.5px] font-semibold text-signal-deep">Next priority</span> : null}
+          <span className="text-[12.5px] text-ink-3">{meta.label}</span>
           {item.branchName ? <span className="truncate text-[12px] text-ink-4">{item.branchName}</span> : null}
         </div>
-        <Link href={item.href} className="mt-0.5 block truncate text-[13px] font-semibold text-ink outline-none hover:underline focus-visible:underline focus-visible:decoration-2 focus-visible:underline-offset-4">
+        <Link href={item.href} className="mt-0.5 block break-words text-[13.5px] font-semibold text-ink outline-none hover:underline focus-visible:underline focus-visible:decoration-2 focus-visible:underline-offset-4 sm:truncate">
           {item.title}
         </Link>
-        <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] text-ink-3">
+        <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 text-[12px] text-ink-3">
           <span className="truncate">{item.detail}</span>
           {item.amount ? <MoneyText money={item.amount} signed={item.kind === "cash_variance"} className="font-medium text-ink-2" /> : null}
           {eventAt ? <span className={cn("shrink-0", urgent && "font-medium text-danger")}><RelativeText iso={eventAt} /></span> : null}

@@ -1,5 +1,6 @@
 "use client";
 
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronUp, Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import type { InventoryBalance, Money } from "@/lib/domain/types";
@@ -90,20 +91,27 @@ export function MobileCart({ lines, total, open, onOpenChange, children, ...prop
           <span className="flex items-center gap-1 tabular" dir="ltr">{toMajor(total).toFixed(3)} {total.currency} <ChevronUp /></span>
         </Button>
       </div>
-      {open ? (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-night/45" role="dialog" aria-modal="true" aria-label="Current sale" data-testid="mobile-cart-sheet">
-          <button type="button" className="flex-1 cursor-default" aria-label="Close sale panel" onClick={() => onOpenChange(false)} />
-          <div className="max-h-[88vh] overflow-y-auto rounded-t-2xl bg-surface pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-dialog">
+      <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 data-[state=open]:animate-fade-in" />
+          <DialogPrimitive.Content
+            className="fixed inset-x-0 bottom-0 z-50 max-h-[88dvh] overflow-y-auto rounded-t-lg bg-surface pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-dialog outline-none data-[state=open]:animate-fade-up"
+            data-testid="mobile-cart-sheet"
+            aria-describedby="mobile-cart-description"
+          >
             <header className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface px-4 py-3">
-              <h2 className="text-[15px] font-semibold">Current sale</h2>
-              <Button type="button" variant="ghost" size="icon" onClick={() => onOpenChange(false)} aria-label="Close"><X /></Button>
+              <DialogPrimitive.Title className="text-[15px] font-semibold">Current sale</DialogPrimitive.Title>
+              <DialogPrimitive.Close asChild>
+                <Button type="button" variant="ghost" size="icon" aria-label="Close current sale"><X /></Button>
+              </DialogPrimitive.Close>
             </header>
+            <DialogPrimitive.Description id="mobile-cart-description" className="sr-only">Review the items, optionally attach a member, choose payment, and complete this sale.</DialogPrimitive.Description>
             <CartLines lines={lines} {...props} />
             <CartTotals total={total} itemCount={itemCount} />
             <div className="space-y-4 p-4">{children}</div>
-          </div>
-        </div>
-      ) : null}
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
     </>
   );
 }

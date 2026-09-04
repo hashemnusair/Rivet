@@ -225,7 +225,7 @@ function KpiCell({
           {children}
         </div>
       )}
-      {context ? <div className="mt-1 text-[11.5px] text-ink-3">{context}</div> : null}
+      {context ? <div className="mt-1 text-[12px] text-ink-3">{context}</div> : null}
     </div>
   );
 }

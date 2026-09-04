@@ -62,7 +62,7 @@ describe("Today queue", () => {
     await renderWithApp(<TodayQueue data={queue} initialVisible={2} />);
 
     expect(screen.getByRole("heading", { name: "Today" })).toBeInTheDocument();
-    expect(screen.getByText("Do this next")).toBeInTheDocument();
+    expect(screen.getByText("Next priority")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Collect: Collect from Ahmad Khalil" })).toHaveAttribute(
       "href",
       "/members/member-1?action=collect",
