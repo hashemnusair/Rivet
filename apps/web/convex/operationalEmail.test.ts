@@ -202,6 +202,39 @@ describe("operational email go-live modes", () => {
     delete process.env.RIVET_EMAIL_ALLOWLIST;
   });
 
+  it("in allowlist mode, sends gym-facing mail to a subscribed gym's team without a list entry, and holds member mail back", async () => {
+    process.env.RIVET_EMAIL_MODE = "allowlist";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_EMAIL_ALLOWLIST = "@rivetjo.com";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-trusted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const active = await ctx.db.insert("organizations", { publicId: "org-active", name: "Active Gym", slug: "active-gym", status: "active", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
+      const suspended = await ctx.db.insert("organizations", { publicId: "org-suspended", name: "Suspended Gym", slug: "suspended-gym", status: "suspended", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
+      const owner = await ctx.db.insert("users", { publicId: "u-owner", authSubject: "clerk-trusted-owner", email: "hashem.owner@gmail.com", fullName: "Gym Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      const other = await ctx.db.insert("users", { publicId: "u-other", authSubject: "clerk-suspended-owner", email: "other.owner@gmail.com", fullName: "Other Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: active, userId: owner, role: "owner", branchIds: [], branchScope: "all", active: true, createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: suspended, userId: other, role: "owner", branchIds: [], branchScope: "all", active: true, createdAt: now, updatedAt: now });
+      // Gym-facing, to the active gym's owner: trusted.
+      await enqueueOperationalEmail(ctx, { organizationId: active, kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "inv-a", recipientEmail: "hashem.owner@gmail.com", dedupeKey: "trust-1", subject: "Invoice issued" });
+      // Gym-facing, to the suspended gym's owner: not subscribed, held back.
+      await enqueueOperationalEmail(ctx, { organizationId: suspended, kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "inv-b", recipientEmail: "other.owner@gmail.com", dedupeKey: "trust-2", subject: "Invoice issued" });
+      // Member-facing, to the same trusted address: the audience, not the person, decides.
+      await enqueueOperationalEmail(ctx, { organizationId: active, kind: "subscription_agreement_copy", templateVersion: "v1", recipientReference: "copy", recipientEmail: "someone.else@gmail.com", dedupeKey: "trust-3", subject: "Copy" });
+    });
+    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 3, disabled: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const rows = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
+    expect(rows.find((row) => row.recipientEmail === "hashem.owner@gmail.com")).toMatchObject({ status: "provider_accepted" });
+    expect(rows.find((row) => row.recipientEmail === "other.owner@gmail.com")).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/subscribed gym/) });
+    expect(rows.find((row) => row.recipientEmail === "someone.else@gmail.com")).toMatchObject({ status: "suppressed" });
+    delete process.env.RIVET_EMAIL_MODE;
+    delete process.env.RIVET_EMAIL_ALLOWLIST;
+  });
+
   it("keeps everything suppressed when the mode is off even if the provider is configured", async () => {
     process.env.RIVET_EMAIL_MODE = "off";
     process.env.RESEND_API_KEY = "re_test_key";

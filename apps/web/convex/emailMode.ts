@@ -64,8 +64,17 @@ export type EmailRoute =
   | { decision: "redirect"; to: string; originalRecipient: string }
   | { decision: "drop"; reason: string };
 
-/** Decide where one queued email goes under the current mode. */
-export function routeEmail(input: { mode: EmailMode; kind: string; recipient: string; sandboxTo?: string; allowlist?: readonly string[] }): EmailRoute {
+/**
+ * Decide where one queued email goes under the current mode.
+ *
+ * In allowlist mode a recipient is sent to when they are on the list, or
+ * when the worker has established that they are on the team of a subscribed
+ * gym and the message is addressed to the gym (`trusted`). Subscribed gyms
+ * therefore get their invoices, agreements and support replies without
+ * anyone editing an environment variable, while member-facing mail waits
+ * for the list or for live mode.
+ */
+export function routeEmail(input: { mode: EmailMode; kind: string; recipient: string; sandboxTo?: string; allowlist?: readonly string[]; trusted?: boolean }): EmailRoute {
   const recipient = input.recipient.trim().toLowerCase();
   switch (input.mode) {
     case "live":
@@ -76,8 +85,8 @@ export function routeEmail(input: { mode: EmailMode; kind: string; recipient: st
       return { decision: "redirect", to: sandboxTo, originalRecipient: recipient };
     }
     case "allowlist":
-      if (ALLOWLIST_EXEMPT_KINDS.has(input.kind) || recipientAllowed(recipient, input.allowlist ?? [])) return { decision: "send", to: recipient };
-      return { decision: "drop", reason: "Recipient is not on RIVET_EMAIL_ALLOWLIST (allowlist mode)" };
+      if (input.trusted || ALLOWLIST_EXEMPT_KINDS.has(input.kind) || recipientAllowed(recipient, input.allowlist ?? [])) return { decision: "send", to: recipient };
+      return { decision: "drop", reason: "Recipient is not on RIVET_EMAIL_ALLOWLIST and not on a subscribed gym's team (allowlist mode)" };
     default:
       return { decision: "drop", reason: "Email mode is off" };
   }

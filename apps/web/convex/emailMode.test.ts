@@ -34,3 +34,11 @@ describe("operational email go-live flag", () => {
     expect(sandboxSubject("Your receipt", "a@b.jo")).toBe("[sandbox → a@b.jo] Your receipt");
   });
 });
+
+describe("allowlist trust", () => {
+  it("sends to a subscribed gym's team member without a list entry, and only then", () => {
+    expect(routeEmail({ mode: "allowlist", kind: "platform_invoice_issued", recipient: "owner@gmail.com", allowlist: ["@rivetjo.com"], trusted: true })).toEqual({ decision: "send", to: "owner@gmail.com" });
+    expect(routeEmail({ mode: "allowlist", kind: "platform_invoice_issued", recipient: "owner@gmail.com", allowlist: ["@rivetjo.com"], trusted: false })).toMatchObject({ decision: "drop", reason: expect.stringMatching(/subscribed gym/) });
+    expect(routeEmail({ mode: "live", kind: "platform_invoice_issued", recipient: "owner@gmail.com", trusted: false })).toEqual({ decision: "send", to: "owner@gmail.com" });
+  });
+});

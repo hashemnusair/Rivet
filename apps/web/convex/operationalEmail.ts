@@ -355,6 +355,23 @@ export const enqueue = internalMutation({
   },
 });
 
+/**
+ * Whether the recipient is on the team of a subscribed gym and the message
+ * is addressed to the gym. Such mail goes out in allowlist mode without a
+ * list entry; member-facing mail never qualifies.
+ */
+async function recipientIsGymTeam(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
+  const email = delivery.recipientEmail?.trim().toLowerCase();
+  if (!email || !delivery.organizationId) return false;
+  if ((KIND_AUDIENCE[delivery.kind]?.audience ?? "gym") !== "gym") return false;
+  const organization = await ctx.db.get(delivery.organizationId);
+  if (!organization || !["trial", "active", "past_due"].includes(organization.status)) return false;
+  const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).first();
+  if (!user || user.status === "deactivated") return false;
+  const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", delivery.organizationId!)).collect();
+  return memberships.some((membership) => membership.active && String(membership.userId) === String(user._id));
+}
+
 async function kindEnabled(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
   if (MANDATORY_PLATFORM_KINDS.has(delivery.kind)) return true;
   if (!delivery.organizationId) {
@@ -387,7 +404,8 @@ export const leaseDue = internalMutation({
       }
       const leaseToken = crypto.randomUUID();
       await ctx.db.patch(delivery._id, { status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
-      leased.push({ ...delivery, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
+      const trusted = await recipientIsGymTeam(ctx, delivery);
+      leased.push({ ...delivery, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now, trusted } as Delivery);
     }
     return leased;
   },
@@ -508,7 +526,7 @@ export const processDue = internalAction({
       // The mode decides where the message may go. Sandbox never reaches the
       // real inbox; allowlist drops with a reason the gym can read; both are
       // recorded on the attempt so an audit shows exactly what happened.
-      const route = routeEmail({ mode, kind: delivery.kind, recipient: delivery.recipientEmail, sandboxTo, allowlist });
+      const route = routeEmail({ mode, kind: delivery.kind, recipient: delivery.recipientEmail, sandboxTo, allowlist, trusted: (delivery as Delivery & { trusted?: boolean }).trusted === true });
       if (route.decision === "drop") {
         await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted: false, retryable: false, mode, suppressionReason: route.reason });
         processed += 1;
