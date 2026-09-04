@@ -470,7 +470,14 @@ const MOCK_SUPPORT_CASES: PlatformSupportCase[] = [
   { id: "SUP-214", gymId: "her-house", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
 ];
 
-const MOCK_SAAS_PLANS: PlatformSaasPlan[] = DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => ({ ...plan }));
+/**
+ * The published plans. This file sits inside an import cycle with the public
+ * data modules, so the list is built on first use rather than while the module
+ * is still evaluating.
+ */
+function mockSaasPlans(): PlatformSaasPlan[] {
+  return DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => ({ ...plan }));
+}
 
 const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
   {
@@ -774,7 +781,7 @@ export class MockGymOSApi implements GymOSApi {
     this.accountingAccounts = MOCK_ACCOUNT_DEFINITIONS.map((definition) => mockAccount(this.db.organization.id, definition));
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
     this.platformGyms = initialPlatformGyms(this.db.organization);
-    this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.platformPlans = mockSaasPlans();
     this.classCoaches = this.seedClassCoaches();
     this.classSessions = this.seedClassSessions();
     this.classOccurrences = [];
@@ -3411,7 +3418,7 @@ export class MockGymOSApi implements GymOSApi {
     this.provisionedTenants.clear();
     this.archivedGymIds.clear();
     this.platformAuditEvents = [];
-    this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.platformPlans = mockSaasPlans();
     this.classCoaches = this.seedClassCoaches();
     this.classSessions = this.seedClassSessions();
     this.classOccurrences = [];

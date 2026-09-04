@@ -1,7 +1,7 @@
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import { entitledModulesForPlanSelection, WORKSPACE_MODULE_CATALOG } from "@/lib/domain/workspace-modules";
 import type { WorkspaceModuleKey } from "@/lib/domain/types";
-import { planCatalogueWithTone, termPriceMinor } from "../../../convex/planCatalogue";
+import { termPriceMinor } from "../../../convex/planCatalogue";
 
 /** The two billing cadences shown on public pricing and gym applications. */
 export type BillingInterval = "monthly" | "annual";
@@ -25,17 +25,18 @@ export interface PublicPricingPlan {
  * places in the product's money contract), so annual totals never depend on
  * floating-point formatting in a component.
  */
-const PUBLIC_PLAN_MODULES: Readonly<Record<PublicPricingPlanName, WorkspaceModuleKey[]>> = {
-  Starter: ["foundation", "revenue"],
-  Growth: ["foundation", "revenue", "operations"],
-  Pro: ["foundation", "revenue", "operations", "finance", "reporting"],
-  Enterprise: ["foundation", "revenue", "operations", "finance", "reporting"],
-};
-
-export const DEFAULT_PUBLIC_PRICING_PLANS: readonly PublicPricingPlan[] = planCatalogueWithTone().map((plan) => ({
-  ...plan,
-  entitledModules: PUBLIC_PLAN_MODULES[plan.name],
-}));
+/**
+ * Public launch pricing, written out rather than derived. This module is
+ * reached through the mock's import cycle, where a call into another module
+ * at evaluation time is not yet safe. A test holds it to `PLAN_CATALOGUE`,
+ * which stays the one place a price is changed.
+ */
+export const DEFAULT_PUBLIC_PRICING_PLANS: readonly PublicPricingPlan[] = [
+  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper", entitledModules: ["foundation", "revenue"] },
+  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
+  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+];
 
 const PLAN_NAMES = new Set<PublicPricingPlanName>(DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => plan.name));
 
