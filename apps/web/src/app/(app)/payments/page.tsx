@@ -1,8 +1,9 @@
 "use client";
 
-import { Plus, Search } from "lucide-react";
+import { FilterX, Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { TransactionListQuery } from "@/lib/api/GymOSApi";
 import { useApiQuery } from "@/lib/hooks/use-api";
@@ -23,16 +24,32 @@ import { FinanceNav } from "@/features/finance/finance-nav";
 import { money } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 
-export default function TransactionsPage() {
+function TransactionsPageInner() {
   const { session } = useApp();
   const { can } = usePermissions();
-  const [search, setSearch] = useState("");
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const [search, setSearch] = useState(params.get("q") ?? "");
   const debounced = useDebouncedValue(search, 250);
-  const [method, setMethod] = useState("all");
-  const [type, setType] = useState("all");
-  const [range, setRange] = useState("30");
-  const [page, setPage] = useState(1);
-  const [collectOpen, setCollectOpen] = useState(false);
+  const method = params.get("method") ?? "all";
+  const type = params.get("type") ?? "all";
+  const range = params.get("range") ?? "30";
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const collectOpen = params.get("collect") === "1";
+
+  const replaceParams = (changes: Record<string, string | undefined>) => {
+    const next = new URLSearchParams(params.toString());
+    Object.entries(changes).forEach(([key, value]) => { if (value) next.set(key, value); else next.delete(key); });
+    if (!("page" in changes) && !("collect" in changes)) next.delete("page");
+    router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
+  };
+
+  useEffect(() => {
+    if ((params.get("q") ?? "") !== debounced) replaceParams({ q: debounced || undefined });
+    // Only settled search text drives this URL write.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debounced]);
 
   const query: TransactionListQuery = useMemo(
     () => ({
@@ -70,7 +87,7 @@ export default function TransactionsPage() {
         title="Payments"
         description="Every payment, refund and void — the immutable money trail."
         actions={
-          <Button onClick={() => setCollectOpen(true)}>
+          <Button onClick={() => replaceParams({ collect: "1" })}>
             <Plus /> Collect payment
           </Button>
         }
@@ -81,9 +98,9 @@ export default function TransactionsPage() {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Member or receipt #…" className="ps-8" aria-label="Search transactions" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search transactions" />
         </div>
-        <Select value={method} onValueChange={(v) => { setMethod(v); setPage(1); }}>
+        <Select value={method} onValueChange={(value) => replaceParams({ method: value === "all" ? undefined : value })}>
           <SelectTrigger sizeVariant="sm" className="w-40" aria-label="Method filter">
             <SelectValue />
           </SelectTrigger>
@@ -94,7 +111,7 @@ export default function TransactionsPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={type} onValueChange={(v) => { setType(v); setPage(1); }}>
+        <Select value={type} onValueChange={(value) => replaceParams({ type: value === "all" ? undefined : value })}>
           <SelectTrigger sizeVariant="sm" className="w-36" aria-label="Type filter">
             <SelectValue />
           </SelectTrigger>
@@ -104,7 +121,7 @@ export default function TransactionsPage() {
             <SelectItem value="refund">Refunds</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={range} onValueChange={(v) => { setRange(v); setPage(1); }}>
+        <Select value={range} onValueChange={(value) => replaceParams({ range: value === "30" ? undefined : value })}>
           <SelectTrigger sizeVariant="sm" className="w-36" aria-label="Date range">
             <SelectValue />
           </SelectTrigger>
@@ -116,9 +133,14 @@ export default function TransactionsPage() {
           </SelectContent>
         </Select>
         {data ? (
-          <span className="ms-auto text-[11.5px] text-ink-3 tabular">
+          <span className="ms-auto text-[12px] text-ink-3 tabular">
             {data.totalItems} records · page net <MoneyText money={money(pageTotal)} />
           </span>
+        ) : null}
+        {["q", "method", "type", "range"].some((key) => params.has(key)) ? (
+          <Button variant="ghost" size="sm" onClick={() => { setSearch(""); replaceParams({ q: undefined, method: undefined, type: undefined, range: undefined }); }}>
+            <FilterX /> Clear filters
+          </Button>
         ) : null}
       </div>
 
@@ -189,9 +211,13 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {data ? <DataPagination page={data} onPage={setPage} /> : null}
+      {data ? <DataPagination page={data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} /> : null}
 
-      <CollectPaymentMemberPicker open={collectOpen} onOpenChange={setCollectOpen} />
+      <CollectPaymentMemberPicker open={collectOpen} onOpenChange={(open) => replaceParams({ collect: open ? "1" : undefined })} />
     </div>
   );
+}
+
+export default function TransactionsPage() {
+  return <Suspense><TransactionsPageInner /></Suspense>;
 }

@@ -9,6 +9,7 @@ import {
   CornerDownLeft,
   Lock,
   RotateCcw,
+  RefreshCw,
   ScanLine,
   Search,
   ShieldAlert,
@@ -188,11 +189,15 @@ export default function ReceptionPage() {
         shift={shift?.shift ?? null}
         expected={shift ? { amount: shift.shift.openingFloat.amount + shift.totals.cashPayments.amount - shift.totals.cashRefunds.amount, currency } : null}
         cashTaken={shift?.totals.cashPayments ?? null}
+        loading={shiftQuery.isLoading && shift === undefined}
+        error={shiftQuery.isError}
+        stale={shiftQuery.isBackgroundError || shiftQuery.streamState === "fallback"}
         currency={currency}
         canOpen={can("reconciliation.open_shift")}
         canClose={can("reconciliation.close_shift")}
         onOpen={() => setDialog("openShift")}
         onClose={() => setDialog("closeShift")}
+        onRetry={() => void shiftQuery.refetch()}
       />
 
       <div className="grid flex-1 gap-px bg-night-line lg:grid-cols-[1fr_330px]">
@@ -248,13 +253,17 @@ export default function ReceptionPage() {
 
           {/* Verdict */}
           <div className="mt-5 flex-1">
-            {!shown ? (
+            {!lookupActive && !result ? (
               <IdleState />
-            ) : previewQuery.isLoading && !result ? (
+            ) : previewQuery.isLoading && !result && !preview ? (
               <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label="Looking up member">
                 <div className="h-4 w-40 animate-pulse rounded-sm bg-night-3" />
                 <div className="mt-3 h-10 w-64 animate-pulse rounded-sm bg-night-3" />
               </div>
+            ) : previewQuery.isError && !result && !preview ? (
+              <LookupErrorState onRetry={() => void previewQuery.refetch()} />
+            ) : !shown ? (
+              <IdleState />
             ) : !member ? (
               <NoMatchState message={preview?.message ?? "No match."} query={debounced} canCreate={can("members.write")} />
             ) : (
@@ -503,21 +512,46 @@ function ShiftStrip({
   shift,
   expected,
   cashTaken,
+  loading,
+  error,
+  stale,
   currency,
   canOpen,
   canClose,
   onOpen,
   onClose,
+  onRetry,
 }: {
   shift: { id: string; openedByName: string; openedAt: string; openingFloat: { amount: number; currency: string } } | null;
   expected: { amount: number; currency: string } | null;
   cashTaken: { amount: number; currency: string } | null;
+  loading: boolean;
+  error: boolean;
+  stale: boolean;
   currency: string;
   canOpen: boolean;
   canClose: boolean;
   onOpen: () => void;
   onClose: () => void;
+  onRetry: () => void;
 }) {
+  if (loading) {
+    return (
+      <div className="flex min-h-11 items-center gap-3 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8" role="status">
+        <span className="size-2 animate-pulse rounded-full bg-night-ink-3" aria-hidden />
+        <p className="text-[12.5px] text-night-ink-2">Checking the cash drawer…</p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b border-warning/30 bg-warning/10 px-5 py-2.5 lg:px-8" role="alert">
+        <AlertTriangle className="size-3.5 text-warning" aria-hidden />
+        <p className="min-w-0 flex-1 text-[12.5px] text-night-ink-2"><span className="font-medium text-night-ink">Drawer status unavailable.</span> Cash collection stays disabled until RIVET can verify the shift.</p>
+        <Button size="xs" variant="night-outline" onClick={onRetry}><RefreshCw /> Try again</Button>
+      </div>
+    );
+  }
   if (!shift) {
     return (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8">
@@ -554,6 +588,7 @@ function ShiftStrip({
         </span>
       ) : null}
       <div className="ms-auto flex items-center gap-2">
+        {stale ? <span className="text-[11.5px] text-warning">Reconnecting…</span> : null}
         <Button asChild size="xs" variant="night-ghost">
           <Link href="/payments/shifts">Shift history</Link>
         </Button>
@@ -579,6 +614,17 @@ function IdleState() {
       <p className="mt-1 max-w-sm text-[12.5px] text-night-ink-3">
         Scan their code or start typing. Three characters is enough to match a name, phone or member number.
       </p>
+    </div>
+  );
+}
+
+function LookupErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rounded-lg border border-warning/35 bg-night-2 px-6 py-8 text-center" role="alert">
+      <AlertTriangle className="mx-auto size-5 text-warning" aria-hidden />
+      <p className="mt-3 font-display text-[16px] font-medium text-night-ink">Member lookup is unavailable</p>
+      <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-night-ink-3">No check-in was recorded. Check the connection, then retry the same search.</p>
+      <Button type="button" size="sm" variant="night-outline" className="mt-4" onClick={onRetry}><RefreshCw /> Try again</Button>
     </div>
   );
 }

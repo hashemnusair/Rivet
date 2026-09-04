@@ -39,7 +39,7 @@ export default function ShiftsPage() {
   const effectiveBranch = canPickBranch
     ? visibleBranchId(session?.branches, branchId)
     : visibleBranchId(session?.branches, session?.activeBranchId);
-  const [date, setDate] = useState(todayISODate());
+  const [date, setDate] = useState(() => todayISODate(session?.organization.timezone));
   const [page, setPage] = useState(1);
   const [openShiftOpen, setOpenShiftOpen] = useState(false);
   const [closeShiftTarget, setCloseShiftTarget] = useState<CashShift | null>(null);
@@ -74,6 +74,7 @@ export default function ShiftsPage() {
   const currentShift = currentShiftQuery.data;
   const totals = totalsQuery.data?.totals;
   const recon = reconQuery.data;
+  const shiftTotalsReady = Boolean(totalsQuery.data && totals);
 
   const branchPicker = canPickBranch ? (
     <Select value={effectiveBranch ?? ""} onValueChange={setBranchId}>
@@ -141,7 +142,14 @@ export default function ShiftsPage() {
           </h2>
           {currentShift ? (
             <Gate permission="reconciliation.close_shift">
-              <Button variant="signal" size="sm" onClick={() => setCloseShiftTarget(currentShift)} data-testid="close-shift">
+              <Button
+                variant="signal"
+                size="sm"
+                onClick={() => setCloseShiftTarget(currentShift)}
+                disabled={!shiftTotalsReady}
+                title={!shiftTotalsReady ? "Wait until RIVET verifies the live drawer total" : undefined}
+                data-testid="close-shift"
+              >
                 Close shift…
               </Button>
             </Gate>
@@ -151,13 +159,25 @@ export default function ShiftsPage() {
           <div className="p-4">
             <Skeleton className="h-16 w-full" />
           </div>
+        ) : currentShiftQuery.isError ? (
+          <div className="p-4">
+            <ErrorState layout="section" title="Drawer status unavailable" description="RIVET could not confirm whether this branch has an open shift. No shift action is available until the status reloads." onRetry={() => currentShiftQuery.refetch()} />
+          </div>
         ) : currentShift ? (
           <div className="grid grid-cols-2 divide-x divide-line sm:grid-cols-5">
             <Cell label="Opened" value={formatDateTime(currentShift.openedAt)} sub={currentShift.openedByName} />
             <Cell label="Float" value={<MoneyText money={currentShift.openingFloat} />} />
-            <Cell label="Cash in" value={<MoneyText money={totals?.cashPayments ?? money(0)} />} />
-            <Cell label="Expected in drawer" value={<MoneyText money={money(currentShift.openingFloat.amount + (totals?.cashPayments.amount ?? 0) - (totals?.cashRefunds.amount ?? 0) - (totals?.supplierCashPayments.amount ?? 0) + (totals?.supplierCashReversals.amount ?? 0))} />} strong />
-            <Cell label="Payments" value={<span className="tabular">{totals?.paymentCount ?? 0}</span>} sub={`${totals?.refundCount ?? 0} refunds`} />
+            {totalsQuery.isLoading ? (
+              <ShiftTotalsLoading />
+            ) : totalsQuery.isError || !totals ? (
+              <ShiftTotalsError onRetry={() => totalsQuery.refetch()} />
+            ) : (
+              <>
+                <Cell label="Cash in" value={<MoneyText money={totals.cashPayments} />} />
+                <Cell label="Expected in drawer" value={<MoneyText money={money(currentShift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount - totals.supplierCashPayments.amount + totals.supplierCashReversals.amount)} />} strong />
+                <Cell label="Payments" value={<span className="tabular">{totals.paymentCount}</span>} sub={`${totals.refundCount} refunds`} />
+              </>
+            )}
           </div>
         ) : (
           <p className="px-4 py-6 text-[13px] text-ink-3">
@@ -248,6 +268,8 @@ export default function ShiftsPage() {
           <div className="p-4">
             <TableSkeleton rows={6} cols={6} />
           </div>
+        ) : historyQuery.isError ? (
+          <div className="p-4"><ErrorState layout="section" title="Shift history unavailable" onRetry={() => historyQuery.refetch()} /></div>
         ) : (historyQuery.data?.items.length ?? 0) === 0 ? (
           <EmptyState compact title="No shifts yet" className="border-0" />
         ) : (
@@ -393,7 +415,28 @@ function Cell({ label, value, sub, strong }: { label: string; value: React.React
     <div className="px-4 py-3.5">
       <p className="context-label">{label}</p>
       <div className={cn("mt-1 text-[16px] tabular", strong && "font-semibold")}>{value}</div>
-      {sub ? <p className="mt-0.5 text-[11px] text-ink-3">{sub}</p> : null}
+      {sub ? <p className="mt-0.5 text-[12px] text-ink-3">{sub}</p> : null}
+    </div>
+  );
+}
+
+function ShiftTotalsLoading() {
+  return (
+    <div className="col-span-2 flex min-h-20 items-center gap-3 border-t border-line px-4 py-3 sm:col-span-3 sm:border-t-0" role="status">
+      <Skeleton className="h-9 w-full max-w-xs" />
+      <span className="text-[12px] text-ink-3">Calculating the live drawer total…</span>
+    </div>
+  );
+}
+
+function ShiftTotalsError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="col-span-2 flex min-h-20 flex-wrap items-center gap-3 border-t border-warning/30 bg-warning-bg px-4 py-3 sm:col-span-3 sm:border-t-0" role="alert">
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-warning-deep">Live drawer total unavailable</p>
+        <p className="mt-0.5 text-[12px] text-ink-2">Closing stays disabled until the expected cash amount is verified.</p>
+      </div>
+      <Button type="button" variant="secondary" size="sm" onClick={onRetry}>Try again</Button>
     </div>
   );
 }

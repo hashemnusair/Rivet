@@ -1,8 +1,8 @@
 "use client";
 
-import { Bell, CheckCheck, Circle, CircleCheck } from "lucide-react";
+import { Bell, CheckCheck, Circle, CircleCheck, RefreshCw, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -11,27 +11,54 @@ import type { OperationalNotification } from "@/lib/api/GymOSApi";
 
 export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark" }) {
   const router = useRouter();
-  const [notifications, setNotifications] = useState<OperationalNotification[]>([]);
   const [open, setOpen] = useState(false);
+  const [notifications, setNotifications] = useState<OperationalNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const notificationsRef = useRef<OperationalNotification[]>([]);
   const unread = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
+
+  const replaceNotifications = (next: OperationalNotification[]) => {
+    notificationsRef.current = next;
+    setNotifications(next);
+  };
+
+  const updateNotifications = (update: (current: OperationalNotification[]) => OperationalNotification[]) => {
+    replaceNotifications(update(notificationsRef.current));
+  };
 
   useEffect(() => {
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
-    const onError = () => { if (!cancelled) setLoading(false); };
-    void getApi().subscribeNotifications((next) => {
+    if (notificationsRef.current.length === 0) setLoading(true);
+    setError(false);
+
+    const onValue = (next: OperationalNotification[]) => {
       if (cancelled) return;
-      setNotifications(next);
+      replaceNotifications(next);
       setLoading(false);
-    }, onError).then((disposer) => { if (cancelled) disposer(); else unsubscribe = disposer; }).catch(onError);
+      setError(false);
+    };
+    const onError = () => {
+      if (cancelled) return;
+      setLoading(false);
+      setError(true);
+    };
+
+    void getApi().listNotifications()
+      .then(onValue)
+      .then(() => getApi().subscribeNotifications(onValue, onError))
+      .then((disposer) => { if (cancelled) disposer(); else unsubscribe = disposer; })
+      .catch(onError);
+
     return () => { cancelled = true; unsubscribe?.(); };
-  }, []);
+  }, [retryAttempt]);
 
   const openNotification = async (notification: OperationalNotification) => {
     setOpen(false);
     if (!notification.readAt) {
-      setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item));
+      updateNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item));
       try { await getApi().setNotificationRead(notification.id, true); } catch { /* The live query restores the authoritative state. */ }
     }
     router.push(notification.href);
@@ -39,18 +66,77 @@ export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark"
 
   const markAllRead = async () => {
     const readAt = new Date().toISOString();
-    setNotifications((current) => current.map((notification) => ({ ...notification, readAt: notification.readAt ?? readAt })));
+    updateNotifications((current) => current.map((notification) => ({ ...notification, readAt: notification.readAt ?? readAt })));
     try { await getApi().markAllNotificationsRead(); } catch { toast.error("Notifications could not be marked read."); }
   };
 
   const toggleRead = async (notification: OperationalNotification) => {
     const read = !notification.readAt;
     const readAt = read ? new Date().toISOString() : undefined;
-    setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt } : item));
+    updateNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt } : item));
     try { await getApi().setNotificationRead(notification.id, read); } catch { toast.error("Notification status could not be changed."); }
   };
 
-  return <Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><Button variant={tone === "dark" ? "night-ghost" : "ghost"} size="icon-sm" className="relative" aria-label={unread ? `${unread} unread notifications` : "Notifications"}><Bell />{unread ? <span className="absolute -end-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-signal px-1 font-mono text-[10.5px] text-white">{unread > 99 ? "99+" : unread}</span> : null}</Button></PopoverTrigger><PopoverContent align="end" className="w-[min(380px,calc(100vw-2rem))] p-0"><div className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="text-[13px] font-semibold">Notifications</p><p className="mt-0.5 text-[10.5px] text-ink-3">{unread ? `${unread} unread` : "You are up to date"}</p></div><Button variant="ghost" size="xs" disabled={!unread} onClick={() => void markAllRead()}><CheckCheck /> Mark all read</Button></div><div className="max-h-[420px] overflow-y-auto">{loading ? <p className="px-4 py-8 text-center text-[11px] text-ink-3">Loading notifications…</p> : notifications.length === 0 ? <div className="px-6 py-10 text-center"><Bell className="mx-auto size-5 text-ink-3" /><p className="mt-3 text-[12px] font-medium">No notifications yet</p><p className="mt-1 text-[10.5px] text-ink-3">Operational updates addressed to you will appear here.</p></div> : notifications.map((notification) => <div key={notification.id} className="flex border-b border-line last:border-b-0 hover:bg-sunken"><button type="button" onClick={() => void openNotification(notification)} className="flex min-w-0 flex-1 gap-3 px-4 py-3 text-start"><span className={notification.readAt ? "mt-1.5 size-2 shrink-0 rounded-full bg-line-2" : "mt-1.5 size-2 shrink-0 rounded-full bg-signal"} /><span className="min-w-0 flex-1"><span className="block text-[11.5px] font-semibold">{notification.title}</span><span className="mt-1 block text-[10.5px] leading-relaxed text-ink-2">{notification.body}</span><span className="mt-1.5 block font-mono text-[10.5px] text-ink-3">{relativeTime(notification.createdAt)}</span></span></button><button type="button" onClick={() => void toggleRead(notification)} className="m-2 self-start rounded p-1.5 text-ink-3 hover:bg-surface hover:text-ink" aria-label={notification.readAt ? `Mark ${notification.title} unread` : `Mark ${notification.title} read`} title={notification.readAt ? "Mark unread" : "Mark read"}>{notification.readAt ? <Circle className="size-3.5" /> : <CircleCheck className="size-3.5" />}</button></div>)}</div></PopoverContent></Popover>;
+  const liveUpdatesPaused = error && notifications.length > 0;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant={tone === "dark" ? "night-ghost" : "ghost"} size="icon-sm" className="relative" aria-label={unread ? `${unread} unread notifications` : "Notifications"}>
+          <Bell />
+          {unread ? <span className="absolute -end-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-signal px-1 font-mono text-[10.5px] text-white">{unread > 99 ? "99+" : unread}</span> : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[min(380px,calc(100vw-2rem))] p-0">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <div>
+            <p className="text-[14px] font-semibold">Notifications</p>
+            <p className="mt-0.5 text-[12px] text-ink-3">{unread ? `${unread} unread` : "You are up to date"}</p>
+          </div>
+          <Button variant="ghost" size="xs" disabled={!unread} onClick={() => void markAllRead()}><CheckCheck /> Mark all read</Button>
+        </div>
+        {liveUpdatesPaused && notifications.length > 0 ? (
+          <div className="flex items-center gap-2 border-b border-warning/25 bg-warning-bg px-4 py-2 text-[12px] text-warning-deep" role="status">
+            <WifiOff className="size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1">Showing the latest saved notifications. Live updates are reconnecting.</span>
+            <Button variant="ghost" size="xs" onClick={() => setRetryAttempt((current) => current + 1)}><RefreshCw /> Retry</Button>
+          </div>
+        ) : null}
+        <div className="max-h-[420px] overflow-y-auto">
+          {loading && notifications.length === 0 ? (
+            <p className="px-4 py-8 text-center text-[12px] text-ink-3" role="status">Loading notifications…</p>
+          ) : error && notifications.length === 0 ? (
+            <div className="px-6 py-9 text-center" role="alert">
+              <WifiOff className="mx-auto size-5 text-warning-deep" />
+              <p className="mt-3 text-[13px] font-semibold">Notifications are unavailable</p>
+              <p className="mx-auto mt-1 max-w-[30ch] text-[12px] leading-relaxed text-ink-3">Your work is safe. Check the connection and try loading this list again.</p>
+              <Button variant="secondary" size="sm" className="mt-4" onClick={() => setRetryAttempt((current) => current + 1)}><RefreshCw /> Try again</Button>
+            </div>
+          ) : notifications.length === 0 ? (
+            <div className="px-6 py-10 text-center">
+              <Bell className="mx-auto size-5 text-ink-3" />
+              <p className="mt-3 text-[13px] font-medium">No notifications yet</p>
+              <p className="mx-auto mt-1 max-w-[30ch] text-[12px] leading-relaxed text-ink-3">Operational updates addressed to you will appear here.</p>
+            </div>
+          ) : notifications.map((notification) => (
+            <div key={notification.id} className="flex border-b border-line last:border-b-0 hover:bg-sunken">
+              <button type="button" onClick={() => void openNotification(notification)} className="flex min-w-0 flex-1 gap-3 px-4 py-3 text-start">
+                <span className={notification.readAt ? "mt-1.5 size-2 shrink-0 rounded-full bg-line-2" : "mt-1.5 size-2 shrink-0 rounded-full bg-signal"} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold">{notification.title}</span>
+                  <span className="mt-1 block text-[12px] leading-relaxed text-ink-2">{notification.body}</span>
+                  <span className="mt-1.5 block font-mono text-[10.5px] text-ink-3">{relativeTime(notification.createdAt)}</span>
+                </span>
+              </button>
+              <button type="button" onClick={() => void toggleRead(notification)} className="m-2 self-start rounded p-2 text-ink-3 hover:bg-surface hover:text-ink" aria-label={notification.readAt ? `Mark ${notification.title} unread` : `Mark ${notification.title} read`} title={notification.readAt ? "Mark unread" : "Mark read"}>
+                {notification.readAt ? <Circle className="size-3.5" /> : <CircleCheck className="size-3.5" />}
+              </button>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function relativeTime(value: string) {
