@@ -141,8 +141,11 @@ what the platform actually records.
    is required and the app shell opens a modal over the workspace that
    cannot be closed (no close button, Escape and outside clicks are
    ignored). Staff are never blocked; they see the workspace as usual.
-2. **Step 1, read.** The modal shows the versioned agreement text with a
-   reading progress bar. "I have read and agree" stays disabled until the
+2. **Step 1, read.** The modal shows the whole document in order on the
+   document sheet: 1 Parties and 2 Details filled from what RIVET already
+   holds, with the address and the ID marked as confirmed in the next step,
+   then the clauses 3 to 12, then 13 Signatures; a reading progress bar
+   tracks the scroll. "I have read and agree" stays disabled until the
    end of the text has been scrolled into view.
 3. **Step 2, details.** Only what the agreement needs, prefilled from the
    account where RIVET already knows it: registered name of the gym or

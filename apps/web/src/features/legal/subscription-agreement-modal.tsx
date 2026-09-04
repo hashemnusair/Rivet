@@ -246,7 +246,7 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
       {step === "read" ? (
         <>
           <div ref={scrollRef} onScroll={measure} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6" data-testid="agreement-scroll" tabIndex={0}>
-            <AgreementText version={context.version} sections={context.sections} />
+            <AgreementText version={context.version} sections={context.sections} preview={context.prefill} />
             <p className="mt-6 border-t border-dashed border-line-3 pt-4 text-center font-mono text-[11px] uppercase tracking-[0.12em] text-ink-3" data-testid="agreement-end">End of agreement</p>
           </div>
           <Footer>

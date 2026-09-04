@@ -40,6 +40,14 @@ describe("subscription agreement modal", () => {
 
     const modal = await screen.findByTestId("agreement-modal");
     expect(within(modal).getByTestId("agreement-text")).toHaveTextContent("Electronic signature");
+    // The reader sees the whole document in order: the signature block first,
+    // with what the next step will confirm, then the clauses, then signatures.
+    const text = within(modal).getByTestId("agreement-text");
+    expect(text).toHaveTextContent("1. Parties");
+    expect(text).toHaveTextContent("2. Details");
+    expect(text).toHaveTextContent("Forge Fitness Club");
+    expect(text).toHaveTextContent("3. What this agreement covers");
+    expect(text).toHaveTextContent("13. Signatures");
     expect(within(modal).queryByRole("button", { name: "Close dialog" })).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.getByTestId("agreement-modal")).toBeInTheDocument();

@@ -21,17 +21,65 @@ function Clauses({ sections }: { sections: AgreementTextSection[] }) {
   );
 }
 
+/** What the reader will confirm in the next step, shown in its place. */
+export interface AgreementPreview {
+  legalName: string;
+  address?: string;
+  signatoryName: string;
+  email: string;
+  plan: string;
+  startDate: string;
+}
+
+const TO_CONFIRM = "Confirmed in the next step";
+
 /**
- * The agreement as the owner reads it before signing: the document sheet
- * with the preamble and the clauses, and nothing to fill in yet.
+ * The agreement as the owner reads it before signing: the whole document in
+ * order. Sections 1 and 2 are the signature block, so they show the details
+ * RIVET already holds and mark what the next step will confirm; the clauses
+ * follow; the signatures close it.
  */
-export function AgreementText({ version, sections, reference }: { version: string; sections: AgreementTextSection[]; reference?: string }) {
+export function AgreementText({ version, sections, reference, preview }: { version: string; sections: AgreementTextSection[]; reference?: string; preview?: AgreementPreview }) {
+  const lastNumber = sections.length > 0 ? Number.parseInt(sections[sections.length - 1]!.number, 10) + 1 : 13;
   return (
     <div data-testid="agreement-text">
       <DocumentSheet label="Subscription agreement" title="Subscription agreement" meta={`${reference ? `${reference} · ` : ""}v${version} · For signature`} reference={reference ?? `v${version.split(" ·")[0] ?? version}`} frame={false}>
         <p className="text-[14px] leading-[1.55] text-ink-2">{PREAMBLE}</p>
         <div className="mt-2 divide-y divide-line">
+          {preview ? (
+            <>
+              <div className="py-6">
+                <DocumentSection number="1" title="Parties">
+                  <p>This agreement is made between RIVET ([Legal entity name · Commercial registration no.], Amman, Jordan, “RIVET”) and {preview.legalName} ({preview.address ?? "address confirmed in the next step"}, “the Customer”), represented by {preview.signatoryName}, for the Customer’s use of the RIVET platform under the plan and terms recorded below. It takes effect on the start date and replaces any earlier agreement between the parties for the same service.</p>
+                </DocumentSection>
+              </div>
+              <div className="py-6">
+                <DocumentSection number="2" title="Details">
+                  <DocumentRows rows={[
+                    { label: "Customer", value: preview.legalName },
+                    { label: "Representative", value: <span>{preview.signatoryName}, owner · <span dir="ltr">{preview.email}</span></span> },
+                    { label: "Address", value: preview.address ?? <span className="text-ink-3">{TO_CONFIRM}</span> },
+                    { label: "Plan", value: planSummary(preview.plan) },
+                    { label: "Fee", value: `${planFee(preview.plan, "monthly") ?? "As quoted by RIVET in writing"}, excluding tax [treatment to be decided]` },
+                    { label: "Billing interval", value: "Monthly, in advance" },
+                    { label: "Payment terms", value: "14 days from the invoice date" },
+                    { label: "Start date", value: <span dir="ltr">{shortDate(preview.startDate)}</span> },
+                    { label: "Term", value: "Rolling monthly; either party may end it with 30 days’ written notice" },
+                    { label: "Governing law", value: "The laws of the Hashemite Kingdom of Jordan" },
+                  ]} />
+                  <p className="text-[12.5px] text-ink-3">Your ID number is recorded in the next step and appears masked beside your signature.</p>
+                </DocumentSection>
+              </div>
+            </>
+          ) : null}
           <div className="py-6"><Clauses sections={sections} /></div>
+          {preview ? (
+            <div className="pt-6">
+              <DocumentSection number={String(Number.isFinite(lastNumber) ? lastNumber : 13)} title="Signatures">
+                <p>Each party confirms that it has read this agreement, including the details in section 2, and agrees to be bound by it. Signatures are recorded electronically in RIVET together with the signer’s identity and the time of signing. You sign in the final step; RIVET countersigns afterwards.</p>
+              </DocumentSection>
+            </div>
+          ) : null}
         </div>
         <p className="mt-4 text-[12px] text-ink-3">This agreement incorporates the <Link href="/terms" target="_blank" rel="noreferrer" className="underline underline-offset-4">Terms of service</Link> and the <Link href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-4">Privacy policy</Link> as published on the date of signing.</p>
       </DocumentSheet>
