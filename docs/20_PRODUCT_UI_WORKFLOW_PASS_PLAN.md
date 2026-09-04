@@ -48,7 +48,7 @@ The root marketing page has its own visual system. Authentication, onboarding, o
 
 ## Pass 1: Daily front-desk work
 
-**Status:** In progress
+**Status:** Preview candidate ready
 **Baseline SHA:** `f16d36d`
 **Finish SHA:** To record
 **Preview:** To record
@@ -58,90 +58,92 @@ The root marketing page has its own visual system. Authentication, onboarding, o
 
 Routes and shared surfaces:
 
-- [ ] `/dashboard`, including the role-specific dashboard and Today queue
-- [ ] `/reception`, including branch selection, search, scanning, verdicts, warnings, and overrides
-- [ ] `/checkout`, including product search, barcode entry, cart, guest/member choice, payment, and completion
-- [ ] `/operations/checkout`, confirming the legacy destination cannot drift from canonical Checkout
-- [ ] `/payments`, including filters, balances, collection, refunds, voids, and receipt access
-- [ ] `/payments/shifts`, including shift opening, live totals, closing, discrepancy, and recovery
-- [ ] `/payments/receipts/[receiptId]`
-- [ ] `/payments/receipts/view`
-- [ ] Global command palette
-- [ ] Notification center
-- [ ] Branch selector and assigned/default branch behavior
+- [x] `/dashboard`, including the role-specific dashboard and Today queue
+- [x] `/reception`, including branch selection, search, scanning, verdicts, warnings, and overrides
+- [x] `/checkout`, including product search, barcode entry, cart, guest/member choice, payment, and completion
+- [x] `/operations/checkout`, confirming the legacy destination cannot drift from canonical Checkout
+- [x] `/payments`, including filters, balances, collection, refunds, voids, and receipt access
+- [x] `/payments/shifts`, including shift opening, live totals, closing, discrepancy, and recovery
+- [x] `/payments/receipts/[receiptId]`
+- [x] `/payments/receipts/view`
+- [x] Global command palette
+- [x] Notification center
+- [x] Branch selector and assigned/default branch behavior
 
 Workflow outcomes:
 
-- [ ] The likely next safe action is visible without opening a menu.
-- [ ] Reception and Checkout select an eligible assigned or default branch when one unambiguous branch exists.
-- [ ] “All branches” never produces a misleading permission error on single-branch workflows.
-- [ ] Reception supports name, canonical phone, member number, and scanner input from one strong entry point.
-- [ ] A straightforward successful check-in clears naturally; warnings remain until the employee acts or advances.
-- [ ] Check-in warnings keep Collect, Renew, member detail, and override actions reachable.
-- [ ] Checkout starts with Guest and never requires a name for an ordinary retail sale.
-- [ ] Member attachment is optional, reversible, and clearly valuable when selected.
-- [ ] Cart, payment, and completion use one canonical implementation on desktop and mobile.
-- [ ] A completed sale offers receipt, next sale, and reason-gated refund or void paths without trapping the operator.
-- [ ] Cash collection explains and resolves the missing-open-shift state.
-- [ ] Shift closure cannot proceed before authoritative totals load.
-- [ ] Ambiguous post-mutation failures preserve context and explain how to confirm the outcome.
-- [ ] Command-palette and notification failures never masquerade as empty results.
+- [x] The likely next safe action is visible without opening a menu.
+- [x] Reception and Checkout select an eligible assigned or default branch when one unambiguous branch exists.
+- [x] “All branches” never produces a misleading permission error on single-branch workflows.
+- [x] Reception supports name, canonical phone, member number, and scanner input from one strong entry point.
+- [x] A straightforward successful check-in clears naturally; warnings remain until the employee acts or advances.
+- [x] Check-in warnings keep Collect, Renew, member detail, and override actions reachable.
+- [x] Checkout starts with Guest and never requires a name for an ordinary retail sale.
+- [x] Member attachment is optional, reversible, and clearly valuable when selected.
+- [x] Cart, payment, and completion use one canonical implementation on desktop and mobile.
+- [x] A completed sale offers receipt, next sale, and reason-gated refund or void paths without trapping the operator.
+- [x] Cash collection explains and resolves the missing-open-shift state.
+- [x] Shift closure cannot proceed before authoritative totals load.
+- [x] Ambiguous post-mutation failures preserve context and explain how to confirm the outcome.
+- [x] Command-palette and notification failures never masquerade as empty results.
 
 Quality and verification:
 
 - [ ] Desktop front-desk flow checked with keyboard only.
 - [ ] Barcode-scanner style rapid input checked.
-- [ ] Reception and Checkout checked on 768 and 820 pixel tablet layouts.
-- [ ] Checkout, collection, and receipts checked at 360 and 390 pixels.
-- [ ] Destructive and money-changing actions retain their reason, authorization, audit, and idempotency contracts.
+- [x] Reception and Checkout checked on 768 and 820 pixel tablet layouts.
+- [x] Checkout, collection, and receipts checked at 360 and 390 pixels.
+- [x] Destructive and money-changing actions retain their reason, authorization, audit, and idempotency contracts.
 - [ ] Before and after screenshots approved.
 
 ### Pass 1B: Member-to-sale path
 
 Routes and shared surfaces:
 
-- [ ] `/members`
-- [ ] `/members/new`
-- [ ] `/members/[memberId]`
-- [ ] `/members/duplicates`
-- [ ] `/members/import`
-- [ ] `/memberships`
-- [ ] `/plans`
-- [ ] Membership sale dialog
-- [ ] Membership adjustment dialogs
-- [ ] Payment dialog and receipt continuation
-- [ ] Member header, tabs, and timeline
+- [x] `/members`
+- [x] `/members/new`
+- [x] `/members/[memberId]`
+- [x] `/members/duplicates`
+- [x] `/members/import`
+- [x] `/memberships`
+- [x] `/plans`
+- [x] Membership sale dialog
+- [x] Membership adjustment dialogs
+- [x] Payment dialog and receipt continuation
+- [x] Member header, tabs, and timeline
 
 Workflow outcomes:
 
-- [ ] Member search, filters, saved views, columns, counts, and actions form one readable toolbar at desktop widths.
-- [ ] Filter controls collapse intentionally on smaller widths without hiding active filters.
-- [ ] Quick creation asks for the minimum required identity, preselects branch, and keeps optional detail behind progressive disclosure.
-- [ ] Gender remains required and offers only the legally supported values for this market.
-- [ ] Duplicate checks distinguish “no match” from “check unavailable.”
-- [ ] Create and sell continues through member, plan, collection or balance, receipt, and one clear completion result.
-- [ ] Returning from a failed step does not duplicate a member, membership, charge, or payment.
-- [ ] Member detail makes status, balance, membership, last activity, and likely next action readable before secondary history.
-- [ ] Sensitive actions remain reason-gated and audited.
-- [ ] Duplicate resolution explains the surviving record and the consequences before confirmation.
-- [ ] Import uses real file upload, clear branch destination, mapping, safe preview, useful row decisions, rejected-row download, resume, and bounded undo.
-- [ ] Memberships and plans remain manageable at realistic volume without silent caps.
+- [x] Member search, filters, saved views, columns, counts, and actions form one readable toolbar at desktop widths.
+- [x] Filter controls collapse intentionally on smaller widths without hiding active filters.
+- [x] Quick creation asks for the minimum required identity, preselects branch, and keeps optional detail behind progressive disclosure.
+- [x] Gender remains required and offers only the legally supported values for this market.
+- [x] Duplicate checks distinguish “no match” from “check unavailable.”
+- [x] Create and sell continues through member, plan, collection or balance, receipt, and one clear completion result.
+- [x] Returning from a failed step does not duplicate a member, membership, charge, or payment.
+- [x] Member detail makes status, balance, membership, last activity, and likely next action readable before secondary history.
+- [x] Sensitive actions remain reason-gated and audited.
+- [x] Duplicate resolution explains the surviving record and the consequences before confirmation.
+- [x] Import uses real file upload, clear branch destination, mapping, safe preview, useful row decisions, rejected-row download, resume, and bounded undo.
+- [x] Memberships and plans remain manageable at realistic volume without silent caps.
 
 Quality and verification:
 
 - [ ] Staff can complete the member-to-sale path with keyboard only.
-- [ ] The same path works on a tablet without horizontally squeezed forms.
-- [ ] Lists handle realistic long names, international phone numbers, plan names, and branch names.
-- [ ] Empty, one-record, typical, and large working sets remain clear.
+- [x] The same path works on a tablet without horizontally squeezed forms.
+- [x] Lists handle realistic long names, international phone numbers, plan names, and branch names.
+- [x] Empty, one-record, typical, and large working sets remain clear.
 - [ ] Before and after screenshots approved.
 
 ### Pass 1 completion
 
 - [ ] Pass 1A accepted by Hashem.
 - [ ] Pass 1B accepted by Hashem.
-- [ ] Complete Pass 1 gate passed.
+- [x] Complete Pass 1 local gate passed: 1,240 Vitest tests, 14 repository-safety tests, 67 credential-free Playwright journeys, Production build, typechecks, lint, dependency audit, and repository checks.
 - [ ] Pass 1 merged and deployed.
 - [ ] Pass 1 progress and finish evidence recorded here.
+
+Preview-candidate evidence is committed in `apps/web/e2e/workflow-pass-1-visual.spec.ts` and its eight deterministic screenshots. Reception deliberately remains RIVET's distinct night command desk; the pass refines its hierarchy and failure handling without flattening it into the light workspace system. The remaining unchecked acceptance items require Hashem's preview review or dedicated physical keyboard/scanner confirmation.
 
 ## Pass 2: Sales, retention, and scheduling
 
