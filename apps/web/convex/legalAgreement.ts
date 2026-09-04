@@ -282,6 +282,43 @@ async function resendAgreementCopies(ctx: MutationCtx, row: AgreementRow, organi
   return { sequence, deliveries };
 }
 
+/** The countersigned agreement, to the signer and to RIVET, with the PDF. */
+async function sendCompletedCopies(ctx: MutationCtx, row: AgreementRow, organizationName: string, language: "en" | "ar"): Promise<void> {
+  const copy = agreementCopy(row, organizationName);
+  const attachment = agreementPdfAttachment(row, organizationName);
+  const options = { siteUrl: process.env.RIVET_SITE_URL, attachment: { filename: attachment.filename, sizeLabel: attachmentSizeLabel(attachment.contentBase64.length) } };
+  const sequence = row.countersignCount ?? 1;
+  await enqueueOperationalEmail(ctx, {
+    organizationId: row.organizationId,
+    kind: "subscription_agreement_countersigned",
+    templateVersion: row.agreementVersion,
+    language,
+    recipientReference: `agreement:${row.publicId}`,
+    recipientEmail: row.signatory.email,
+    relatedEntityType: "subscription_agreement",
+    relatedEntityPublicId: row.publicId,
+    dedupeKey: `agreement-countersigned:${row.publicId}:${sequence}`,
+    attachments: [attachment],
+    ...renderAgreementCopyEmail(copy, "signer", options),
+  });
+  const rivetCopy = renderAgreementCopyEmail(copy, "rivet", options);
+  for (const recipient of AGREEMENT_COPY_RECIPIENTS) {
+    await enqueueOperationalEmail(ctx, {
+      organizationId: row.organizationId,
+      kind: "subscription_agreement_copy",
+      templateVersion: row.agreementVersion,
+      language: "en",
+      recipientReference: `agreement:${row.publicId}:rivet`,
+      recipientEmail: recipient,
+      relatedEntityType: "subscription_agreement",
+      relatedEntityPublicId: row.publicId,
+      dedupeKey: `agreement-countersigned-copy:${row.publicId}:${sequence}:${recipient}`,
+      attachments: [attachment],
+      ...rivetCopy,
+    });
+  }
+}
+
 /**
  * One copy to the signer and one to each founder address. All of them go
  * through the operational email boundary, so RIVET_EMAIL_MODE decides
@@ -625,21 +662,10 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
         after: { title, hashMatch: row.hashMatch, method: mark.method, attempt: (row.countersignCount ?? 0) + 1 },
       });
       const updated = (await ctx.db.get(row._id))!;
-      const completedAttachment = agreementPdfAttachment(updated, organizationName);
-      const rendered = renderAgreementCopyEmail(agreementCopy(updated, organizationName), "signer", { siteUrl: process.env.RIVET_SITE_URL, attachment: { filename: completedAttachment.filename, sizeLabel: attachmentSizeLabel(completedAttachment.contentBase64.length) } });
-      await enqueueOperationalEmail(ctx, {
-        organizationId: row.organizationId,
-        kind: "subscription_agreement_countersigned",
-        templateVersion: row.agreementVersion,
-        language: organization?.defaultLanguage ?? "en",
-        recipientReference: `agreement:${row.publicId}`,
-        recipientEmail: row.signatory.email,
-        relatedEntityType: "subscription_agreement",
-        relatedEntityPublicId: row.publicId,
-        dedupeKey: `agreement-countersigned:${row.publicId}:${(row.countersignCount ?? 0) + 1}`,
-        attachments: [completedAttachment],
-        ...rendered,
-      });
+      // The completed agreement is the final artifact, so it goes to the
+      // signer and to RIVET's own addresses alike, each keyed to this
+      // countersignature so a replacement sends fresh copies.
+      await sendCompletedCopies(ctx, updated, organizationName, organization?.defaultLanguage ?? "en");
       return agreementView(updated, organizationName);
     }
     default:

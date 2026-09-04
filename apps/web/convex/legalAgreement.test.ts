@@ -225,6 +225,10 @@ describe("subscription agreement e-signature", () => {
     expect((await owner.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } }).legal.agreementStatus).toBe("countersigned");
     const emails = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
     expect(emails.map((row) => row.kind)).toEqual(expect.arrayContaining(["subscription_agreement_signed", "subscription_agreement_countersigned"]));
+    // Countersigning, and replacing the countersignature, each send the
+    // completed copy to the signer and to both founders under fresh keys.
+    const completedRows = emails.filter((row) => row.dedupeKey.startsWith("agreement-countersigned"));
+    expect(completedRows.map((row) => row.recipientEmail).sort()).toEqual(["elias@rivetjo.com", "elias@rivetjo.com", "hashem@rivetjo.com", "hashem@rivetjo.com", "omar@ironhouse.example", "omar@ironhouse.example"]);
     // The completed copy carries a PDF that shows both signatures.
     const completed = emails.find((row) => row.kind === "subscription_agreement_countersigned")!;
     const pdf = Array.from(decodeBase64(completed.attachments![0]!.contentBase64), (byte) => String.fromCharCode(byte)).join("");

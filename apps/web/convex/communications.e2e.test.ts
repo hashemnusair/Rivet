@@ -24,7 +24,7 @@ const JPEG_BYTES = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x
 const JPEG = `data:image/jpeg;base64,${Buffer.from(JPEG_BYTES).toString("base64")}`;
 const DUMP = process.env.RIVET_DUMP_DIR;
 
-type Delivery = { kind: string; recipientEmail?: string; subject?: string; html?: string; text?: string; status: string; attachments?: Array<{ filename: string; contentType: string; contentBase64: string }> };
+type Delivery = { kind: string; dedupeKey?: string; recipientEmail?: string; subject?: string; html?: string; text?: string; status: string; attachments?: Array<{ filename: string; contentType: string; contentBase64: string }> };
 type Agreement = { id: string; reference: string; status: string; countersign?: { signature?: { method: string } } };
 
 function pdfText(base64: string): string {
@@ -106,6 +106,10 @@ describe("communications, end to end", () => {
     all = await emails();
     const completed = all.find((row) => row.kind === "subscription_agreement_countersigned")!;
     expectBranded(completed, "02-countersigned");
+    // RIVET's own addresses get the completed agreement too, not only the signer.
+    const completedCopies = all.filter((row) => row.dedupeKey?.startsWith("agreement-countersigned-copy:"));
+    expect(completedCopies.map((row) => row.recipientEmail).sort()).toEqual(["elias@rivetjo.com", "hashem@rivetjo.com"]);
+    for (const row of completedCopies) expect(row.attachments?.[0]?.filename).toBe(`RIVET-agreement-${first.reference}.pdf`);
     const completedPdf = pdfText(completed.attachments![0]!.contentBase64);
     expect(completedPdf).toContain("(Signed and countersigned) Tj");
     expect(completedPdf).toContain("(Elias Hreish, Co-founder) Tj");

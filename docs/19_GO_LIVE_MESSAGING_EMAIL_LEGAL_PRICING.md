@@ -171,8 +171,12 @@ what the platform actually records.
    platform; the queue rows, attachment bytes included, are the evidence
    either way. The confirmation screen names all three addresses and offers
    the same PDF as a download, then "Continue to RIVET" closes the modal.
-7. RIVET countersigns from Platform → Agreements by typing the admin's own
-   name; the signatory gets the countersigned copy by email. The same dialog
+7. RIVET countersigns from Platform → Agreements by hand; the completed
+   agreement, with the PDF, goes to the signatory and to `elias@rivetjo.com`
+   and `hashem@rivetjo.com`, each under a key tied to that countersignature
+   so replacing the signature sends fresh copies. In allowlist mode the
+   signatory's own copy is dropped unless their address is listed; the
+   founders' copies are the ones that prove the chain. The same dialog
    has **Send the copies again**, which re-renders the email and the PDF from
    the record as it stands and queues fresh delivery rows: RIVET's addresses
    always, the signatory only when the box is ticked. Use it when the first
