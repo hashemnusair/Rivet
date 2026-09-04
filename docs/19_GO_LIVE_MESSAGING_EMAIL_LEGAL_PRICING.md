@@ -237,7 +237,12 @@ and a sunken footer carrying RIVET's contact block, the legal links, why the
 message was received, the copyright and, once registered, RIVET's legal line. The
 message is light in every client: no dark palette is shipped, the
 colour-scheme declarations refuse inversion where a client honours them,
-and Outlook's recolouring is overridden back to paper, white and ink. On a
+and Outlook's recolouring is overridden back to paper, white and ink.
+Gmail offers a sender no such switch, so every surface also carries a
+one-pixel background image of its own colour, served from
+`/brand/email-*.png`; Gmail's inverter leaves an element with a
+background image alone. A reader with images off still sees the colour,
+which is set inline and as a `bgcolor` as well. On a
 phone the gutters tighten, each summary row stacks label over value, and
 the button goes full width. Arabic mirrors the layout without mirroring the
 logo. Every operational email
