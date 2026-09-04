@@ -91,8 +91,8 @@ export default function MemberDetailPageClient() {
 
       <MemberHeader member={member} currentMembership={currentMembership} branchName={branchName} />
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
-        <Tabs value={activeTab} onValueChange={(tab) => {
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <Tabs className="min-w-0" value={activeTab} onValueChange={(tab) => {
           const params = new URLSearchParams(searchParams.toString());
           if (tab === "overview") params.delete("tab");
           else params.set("tab", tab);

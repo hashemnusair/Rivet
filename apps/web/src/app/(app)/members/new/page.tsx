@@ -197,7 +197,7 @@ export default function NewMemberPage() {
       <DialogContent className="max-w-3xl p-0">
         <DialogTitle className="sr-only">{completed ? "Sale complete" : saleDraft ? "Choose membership and payment" : "Add member"}</DialogTitle>
         <DialogDescription className="sr-only">Create a member profile and optionally complete their first membership sale.</DialogDescription>
-        <div className="space-y-5 p-5">
+        <div className="min-w-0 space-y-5 p-5">
       <PageHeader
         title={completed ? "Member ready" : saleDraft ? "Finish membership sale" : "Add member"}
         description={completed ? "The profile, membership, balance, and receipt are all in place." : saleDraft ? "Choose the plan, record what is paid now, and confirm the sale once." : "Enter the essentials now. Add more detail only when it is useful."}
@@ -246,9 +246,9 @@ export default function NewMemberPage() {
 
       <form
         onSubmit={form.handleSubmit((values) => submitMember(values))}
-        className="space-y-5"
+        className="min-w-0 space-y-5"
       >
-        <section className="panel p-5">
+        <section className="panel min-w-0 p-5">
           <h2 className="mb-4 font-display text-[15px] font-semibold">Identity</h2>
           <FieldGrid className="gap-4 sm:grid-cols-2">
             <Field label="Full name" required error={form.formState.errors.fullName?.message}>
@@ -429,16 +429,16 @@ export default function NewMemberPage() {
           </div>
         </details>
 
-        <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
+        <div className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           {errorMsg ? <p role="alert" className="me-auto text-[13px] text-danger">{errorMsg}</p> : null}
-          <Button asChild variant="secondary">
+          <Button asChild variant="secondary" className="max-sm:w-full">
             <Link href="/members">Cancel</Link>
           </Button>
-          <Button type="submit" variant={can("memberships.sell") ? "secondary" : "primary"} loading={createMember.isPending} disabled={checkingDupes} data-testid="save-member">
+          <Button type="submit" className="max-sm:w-full" variant={can("memberships.sell") ? "secondary" : "primary"} loading={createMember.isPending} disabled={checkingDupes} data-testid="save-member">
             Create member
           </Button>
           {can("memberships.sell") ? (
-            <Button type="button" disabled={checkingDupes} onClick={form.handleSubmit(startSale)} data-testid="save-member-and-sell">
+            <Button type="button" className="max-sm:w-full" disabled={checkingDupes} onClick={form.handleSubmit(startSale)} data-testid="save-member-and-sell">
               <WalletCards /> Create &amp; sell membership
             </Button>
           ) : null}

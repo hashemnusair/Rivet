@@ -32,7 +32,7 @@ export function PageHeader({
         </h1>
         {description ? <p className="mt-1 max-w-2xl text-[13.5px] text-ink-2">{description}</p> : null}
       </div>
-      {actions ? <div className="flex items-center gap-2 shrink-0">{actions}</div> : null}
+      {actions ? <div className="flex max-w-full flex-wrap items-center justify-end gap-2">{actions}</div> : null}
     </div>
   );
 }
