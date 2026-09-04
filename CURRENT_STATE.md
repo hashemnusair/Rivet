@@ -1,5 +1,15 @@
 # GymOS / RIVET current implementation state
 
+## Product workflow UI refinement tracker — 4 September 2026
+
+- `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` is the living, tickable plan for
+  the seven workflow-focused UI passes and their final route/state/role/device
+  closure audit. Each pass records its baseline, implementation scope,
+  verification, preview, owner approval and final SHA. The tracker starts
+  unchecked; the approved product system in `DESIGN.md` remains the visual
+  authority. No Pass 1 interface changes were included with this planning
+  slice.
+
 ## Product UI system refinement — 3 September 2026
 
 - **The approved RIVET product identity is now implemented across the app.**
