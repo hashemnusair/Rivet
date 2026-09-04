@@ -140,7 +140,7 @@ describe("BillingPage", () => {
     expect(screen.getByRole("button", { name: "Create draft" })).toBeDisabled();
   });
 
-  it("foregrounds automatic renewal states and shows the two-day grace deadline", async () => {
+  it("foregrounds automatic renewal states and shows the agreement's own deadlines", async () => {
     state.snapshot = snapshot([
       invoice({ id: "AUTO-OPEN", cycleKey: "subscription:gym-1:monthly:1788264000000", billingInterval: "monthly", issuedAt: "2026-08-29T12:00:00.000Z", dueAt: "2026-09-01T12:00:00.000Z", periodEnd: "2026-10-01T12:00:00.000Z", status: "open" }),
       invoice({ id: "AUTO-GRACE", cycleKey: "subscription:gym-1:monthly:1788264000000:grace", billingInterval: "monthly", issuedAt: "2026-08-29T12:00:00.000Z", dueAt: "2026-09-01T12:00:00.000Z", periodEnd: "2026-10-01T12:00:00.000Z", status: "past_due" }),
@@ -150,12 +150,14 @@ describe("BillingPage", () => {
 
     expect(screen.getByText("Subscription invoices")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Bill a gym/ })).toBeEnabled();
-    expect(screen.getByText("Issued T−3 and due at term end")).toBeInTheDocument();
+    expect(screen.getByText("Issued 3 days early, payable within 14")).toBeInTheDocument();
+    expect(screen.getByText("Access may close 21 days after the due date")).toBeInTheDocument();
     expect(screen.getByText("In grace / past due")).toBeInTheDocument();
     expect(screen.getAllByText("Automatic renewal", { selector: "span" })).toHaveLength(3);
     expect(screen.getByRole("row", { name: /AUTO-OPEN/ })).toHaveTextContent("Upcoming");
     expect(screen.getByRole("row", { name: /AUTO-GRACE/ })).toHaveTextContent("In grace");
     expect(screen.getByRole("row", { name: /AUTO-GRACE/ })).toHaveTextContent("Grace ends");
+    expect(screen.getByRole("row", { name: /AUTO-GRACE/ })).toHaveTextContent("Due + 21 days");
     expect(screen.getByRole("row", { name: /AUTO-PAID/ })).toHaveTextContent("Paid");
     expect(screen.queryByText("Manual invoices")).not.toBeInTheDocument();
   });

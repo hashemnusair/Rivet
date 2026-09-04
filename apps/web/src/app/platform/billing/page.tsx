@@ -168,8 +168,8 @@ export default function BillingPage() {
         <section className="mt-5" aria-labelledby="renewal-summary-heading">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><p className="context-label">Automatic renewals</p><h2 id="renewal-summary-heading" className="mt-1 text-[17px] font-semibold">Subscription invoice states</h2></div><p className="text-[12px] text-ink-3">From the renewal clock and subscription changes.</p></div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <LifecycleCard label="Upcoming / open" count={renewalSummary.upcoming.length} amount={renewalSummary.amountFor(renewalSummary.upcoming)} detail="Issued T−3 and due at term end" />
-            <LifecycleCard label="In grace / past due" count={renewalSummary.inGrace.length} amount={renewalSummary.amountFor(renewalSummary.inGrace)} detail="Grace ends two days after due" warning={renewalSummary.inGrace.length > 0} />
+            <LifecycleCard label="Upcoming / open" count={renewalSummary.upcoming.length} amount={renewalSummary.amountFor(renewalSummary.upcoming)} detail={`Issued ${INVOICE_LEAD_DAYS} days early, payable within ${PAYMENT_TERM_DAYS}`} />
+            <LifecycleCard label="In grace / past due" count={renewalSummary.inGrace.length} amount={renewalSummary.amountFor(renewalSummary.inGrace)} detail={`Access may close ${SUSPENSION_AFTER_DUE_DAYS} days after the due date`} warning={renewalSummary.inGrace.length > 0} />
             <LifecycleCard label="Paid renewals" count={renewalSummary.paid.length} amount={renewalSummary.amountFor(renewalSummary.paid)} detail="Payment reference recorded" success={renewalSummary.paid.length > 0} />
           </div>
         </section>
