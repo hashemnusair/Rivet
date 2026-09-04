@@ -160,7 +160,14 @@ RIVET is an operating system for busy gym teams, not a decorative dashboard. Its
 
 The product is compact without being cramped. It uses familiar controls, visible labels, restrained geometry, and one obvious next action. Personality comes from the RIVET mark, the warm neutral palette, excellent typography, and precise interaction details—not from ornamental cards, gradients, oversized illustrations, or repetitive label formulas.
 
-This document governs the authenticated gym workspace, member portal, platform console, authentication, onboarding, offers, and public product surfaces. It deliberately excludes the marketing and landing-page visual system. The implemented reference lives in the preview-only [`/dev/design-system`](apps/web/src/app/dev/design-system/design-system-gallery.tsx) gallery. The identity and application boards are [`rivet-product-identity-system.png`](docs/brand/rivet-product-identity-system.png) and [`rivet-product-application-system.png`](docs/brand/rivet-product-application-system.png).
+This document governs the authenticated gym workspace, member portal, platform console, authentication, onboarding, offers, and public product surfaces. It deliberately excludes the marketing and landing-page visual system. The implemented reference lives in the preview-only [`/dev/design-system`](apps/web/src/app/dev/design-system/design-system-gallery.tsx) gallery.
+
+The product identity set lives in [`docs/brand`](docs/brand):
+
+- [`rivet-product-identity-system.png`](docs/brand/rivet-product-identity-system.png) records the exact palette, typography, geometry, components, and usage rules.
+- [`rivet-product-application-system.png`](docs/brand/rivet-product-application-system.png) shows the system across owner, reception, member, tenant, and financial contexts.
+- [`rivet-master-brand-kit.png`](docs/brand/rivet-master-brand-kit.png) is the exact, deterministic master overview generated from product assets and representative interface captures.
+- [`rivet-imagegen-brand-kit.png`](docs/brand/rivet-imagegen-brand-kit.png) is the art-directed presentation board for founder, partner, and brand communication. This document and the deterministic boards remain authoritative when presentation detail and implementation rules differ.
 
 **Key characteristics:**
 

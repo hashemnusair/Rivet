@@ -18,6 +18,7 @@ const paths = {
   member: join(webDir, "e2e", "__screenshots__", "member-finance-phone.png"),
   outputIdentity: join(rootDir, "docs", "brand", "rivet-product-identity-system.png"),
   outputApplication: join(rootDir, "docs", "brand", "rivet-product-application-system.png"),
+  outputMaster: join(rootDir, "docs", "brand", "rivet-master-brand-kit.png"),
 };
 
 function asDataUrl(buffer) {
@@ -345,6 +346,182 @@ const applicationCss = `
   .application-footer { height:140px;display:flex;align-items:center;justify-content:space-between;padding:0 110px;color:var(--board-night-ink-2);font-size:18px;letter-spacing:.02em}.application-footer span:last-child{font-family:var(--font-product-mono),"IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.1em;font-size:15px}
 `;
 
+const masterHtml = ({ owner, reception, member }) => `
+  <main class="board master-board">
+    <header class="master-head">
+      <div class="master-brand">
+        <img src="/brand/rivet-lockup-rev.png" alt="RIVET" />
+        <span>Master brand kit</span>
+      </div>
+      <div class="master-head-note">A quiet operations ledger for gyms.</div>
+      <span class="board-index">03 / Identity in operation</span>
+    </header>
+
+    <section class="master-grid">
+      <article class="master-cover master-panel">
+        <div class="master-cover-top">
+          <img src="/brand/rivet-lockup.png" alt="RIVET" />
+          <span>Amman · 2026</span>
+        </div>
+        <h1>The quiet<br />operations ledger.</h1>
+        <p>Built for daily repetition.<br />Exact where it matters.</p>
+        <div class="cover-rule"><i></i><span>Revenue</span><span>Accountability</span><span>Retention</span></div>
+      </article>
+
+      <article class="master-mark master-panel master-panel-night">
+        <span class="master-label master-label-night">The rivet</span>
+        <div class="mark-field">
+          <i class="mark-axis mark-axis-x"></i><i class="mark-axis mark-axis-y"></i>
+          <img src="/brand/rivet-glyph-rev.png" alt="RIVET glyph" />
+        </div>
+        <div class="mark-scale">
+          <img src="/brand/rivet-glyph-rev.png" alt="" />
+          <img src="/brand/rivet-glyph-rev.png" alt="" />
+          <img src="/brand/rivet-glyph-rev.png" alt="" />
+          <code>96 / 48 / 24</code>
+        </div>
+      </article>
+
+      <article class="master-palette master-panel">
+        <span class="master-label">Operating palette</span>
+        <div class="master-swatches">
+          <div class="master-swatch swatch-master-paper"><b>Ledger paper</b><code>#F5F4EF</code></div>
+          <div class="master-swatch swatch-master-ink"><b>Ledger ink</b><code>#1B1A15</code></div>
+          <div class="master-swatch swatch-master-signal"><b>Signal</b><code>#D9232B</code></div>
+          <div class="master-swatch swatch-master-success"><b>Posted</b><code>#176E44</code></div>
+        </div>
+        <p>Warm at rest. Red appears once.</p>
+      </article>
+
+      <article class="master-product master-panel">
+        <div class="master-product-head">
+          <div><span class="master-label">Owner workspace</span><b>Live operations at a glance</b></div>
+          <code>Desktop / 1440</code>
+        </div>
+        <div class="owner-window"><img src="${owner}" alt="Synthetic RIVET owner workspace" /></div>
+        <div class="reception-window">
+          <div><span>Reception</span><code>Night focus</code></div>
+          <img src="${reception}" alt="Synthetic RIVET reception workspace" />
+        </div>
+      </article>
+
+      <article class="master-type master-panel">
+        <span class="master-label">Human language</span>
+        <div class="master-aa">Aa</div>
+        <h2>Manrope</h2>
+        <p>Clear at a glance.<br />Comfortable all day.</p>
+        <div class="master-type-rule"></div>
+        <span class="master-label">Machine records</span>
+        <h3>IBM Plex Mono</h3>
+        <code>RV-001042<br />JOD 85.000<br />MAIN-1038</code>
+      </article>
+
+      <article class="master-application master-panel">
+        <span class="master-label">Member mobile</span>
+        <div class="master-phone"><img src="${member}" alt="Synthetic RIVET member finance screen" /></div>
+        <div class="master-receipt">
+          <div class="receipt-top"><img src="/brand/rivet-glyph.png" alt="" /><span>Posted</span></div>
+          <code>RV-001042</code>
+          <p>Samira Haddad</p>
+          <strong>JOD 85.000</strong>
+          <small>Cash · Main branch<br />03 Sep 2026 · 16:42</small>
+        </div>
+      </article>
+
+      <footer class="master-principles master-panel master-panel-night">
+        <div><b>Warm paper.</b><span>Long shifts stay calm.</span></div>
+        <div><b>Strong ink.</b><span>Records stay clear.</span></div>
+        <div><b>One signal.</b><span>Priority remains rare.</span></div>
+        <div><b>Clear next action.</b><span>No hunting.</span></div>
+        <div class="master-signoff"><img src="/brand/rivet-lockup-rev.png" alt="RIVET" /><code>PRODUCT SYSTEM / AMMAN / 2026</code></div>
+      </footer>
+    </section>
+  </main>
+`;
+
+const masterCss = `
+  ${sharedCss}
+  .master-board { padding: 58px 70px 64px; background: var(--board-night); color: var(--board-night-ink); }
+  .master-head { height: 168px; display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; border-bottom: 1px solid #343127; }
+  .master-brand { display: flex; align-items: center; gap: 38px; }
+  .master-brand img { width: 350px; height: auto; }
+  .master-brand span { color: var(--board-night-ink-2); font-size: 22px; }
+  .master-head-note { justify-self: center; font-size: 30px; font-weight: 500; letter-spacing: -.015em; }
+  .master-head > .board-index { justify-self: end; color: var(--board-night-ink-2); font-size: 17px; }
+  .master-grid { height: 2070px; padding-top: 22px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: repeat(10, minmax(0, 1fr)); gap: 18px; }
+  .master-panel { position: relative; min-width: 0; overflow: hidden; background: var(--board-paper); color: var(--board-ink); border: 1px solid var(--board-line-2); }
+  .master-panel-night { background: var(--board-night-2); color: var(--board-night-ink); border-color: #343127; }
+  .master-label { display: block; color: var(--board-ink-2); font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+  .master-label-night { color: var(--board-night-ink-2); }
+
+  .master-cover { grid-column: 1 / 7; grid-row: 1 / 5; padding: 46px 54px 48px; background: var(--board-surface); }
+  .master-cover-top { display: flex; justify-content: space-between; align-items: center; padding-bottom: 34px; border-bottom: 1px solid var(--board-line); }
+  .master-cover-top img { width: 390px; height: auto; }
+  .master-cover-top span { color: var(--board-ink-3); font-family: var(--font-product-mono), "IBM Plex Mono", monospace; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; }
+  .master-cover h1 { margin: 56px 0 0; font-size: 118px; line-height: .95; letter-spacing: -.055em; font-weight: 610; }
+  .master-cover > p { margin: 42px 0 0; color: var(--board-ink-2); font-size: 30px; line-height: 1.34; letter-spacing: -.02em; }
+  .cover-rule { position: absolute; left: 54px; right: 54px; bottom: 40px; display: flex; align-items: center; gap: 30px; color: var(--board-ink-3); font-size: 17px; }
+  .cover-rule i { width: 9px; height: 9px; background: var(--board-signal); border-radius: 50%; }
+  .cover-rule span { padding-right: 30px; border-right: 1px solid var(--board-line-2); }
+  .cover-rule span:last-child { border-right: 0; }
+
+  .master-mark { grid-column: 7 / 10; grid-row: 1 / 4; padding: 36px; }
+  .mark-field { position: relative; height: 360px; margin-top: 28px; display: grid; place-items: center; border: 1px solid #343127; }
+  .mark-field::before, .mark-field::after { content:""; position:absolute; width:12px; height:12px; border:1px solid #5b5748; }
+  .mark-field::before { left:18px; top:18px; border-right:0; border-bottom:0; }
+  .mark-field::after { right:18px; bottom:18px; border-left:0; border-top:0; }
+  .mark-field > img { width: 198px; height: 198px; object-fit: contain; z-index: 2; }
+  .mark-axis { position: absolute; display: block; background: #343127; }
+  .mark-axis-x { left: 24px; right: 24px; top: 50%; height: 1px; }
+  .mark-axis-y { top: 24px; bottom: 24px; left: 50%; width: 1px; }
+  .mark-scale { height: 92px; display: flex; align-items: end; gap: 22px; padding-top: 28px; }
+  .mark-scale img:nth-child(1) { width: 64px; height: 64px; }.mark-scale img:nth-child(2) { width: 42px; height: 42px; }.mark-scale img:nth-child(3) { width: 24px; height: 24px; }
+  .mark-scale img { object-fit: contain; }
+  .mark-scale code { margin-left: auto; color: var(--board-night-ink-2); font-family: var(--font-product-mono), "IBM Plex Mono", monospace; font-size: 14px; }
+
+  .master-palette { grid-column: 10 / 13; grid-row: 1 / 4; padding: 36px; }
+  .master-swatches { height: 410px; margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--board-line-2); }
+  .master-swatch { display: flex; flex-direction: column; justify-content: space-between; padding: 24px; border-right: 1px solid rgb(27 26 21 / .12); border-bottom: 1px solid rgb(27 26 21 / .12); }
+  .master-swatch:nth-child(2n) { border-right: 0; }.master-swatch:nth-last-child(-n+2) { border-bottom: 0; }
+  .master-swatch b { font-size: 18px; font-weight: 650; }.master-swatch code { font-family: var(--font-product-mono), "IBM Plex Mono", monospace; font-size: 14px; }
+  .swatch-master-paper { background: #f5f4ef; }.swatch-master-ink { background: #1b1a15; color: #f2f0e6; }.swatch-master-signal { background:#d9232b;color:#fff; }.swatch-master-success { background:#176e44;color:#fff; }
+  .master-palette > p { margin: 24px 0 0; color: var(--board-ink-2); font-size: 17px; }
+
+  .master-product { grid-column: 7 / 13; grid-row: 4 / 9; padding: 32px; background: var(--board-sunken); }
+  .master-product-head { height: 66px; display: flex; justify-content: space-between; align-items: start; }
+  .master-product-head > div { display: grid; gap: 5px; }.master-product-head b { font-size: 24px; font-weight: 620; }
+  .master-product-head > code { color: var(--board-ink-3); font-family: var(--font-product-mono), "IBM Plex Mono", monospace; font-size: 14px; }
+  .owner-window { height: 660px; overflow: hidden; border: 1px solid var(--board-line-2); background: white; box-shadow: 0 16px 34px rgb(27 26 21 / .11); }
+  .owner-window img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: top left; }
+  .reception-window { position: absolute; left: 142px; right: 32px; bottom: 32px; height: 235px; overflow: hidden; border: 7px solid var(--board-night); background: var(--board-night); box-shadow: 0 16px 34px rgb(27 26 21 / .18); }
+  .reception-window > div { height: 42px; display: flex; justify-content: space-between; align-items: center; padding: 0 18px; color: var(--board-night-ink); font-size: 16px; }
+  .reception-window code { color: var(--board-night-ink-2); font-family: var(--font-product-mono), "IBM Plex Mono", monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .reception-window img { width: 100%; height: 193px; display: block; object-fit: cover; object-position: top center; }
+
+  .master-type { grid-column: 1 / 4; grid-row: 5 / 9; padding: 38px 42px; }
+  .master-aa { margin-top: 24px; font-size: 184px; line-height: .9; letter-spacing: -.075em; font-weight: 610; }
+  .master-type h2 { margin: 22px 0 0; font-size: 47px; letter-spacing: -.04em; }
+  .master-type > p { margin: 15px 0 0; color: var(--board-ink-2); font-size: 21px; line-height: 1.4; }
+  .master-type-rule { margin: 38px 0 32px; border-top: 1px solid var(--board-line); }
+  .master-type h3 { margin: 21px 0 18px; font-size: 25px; }
+  .master-type > code { color: var(--board-ink-2); font-family: var(--font-product-mono), "IBM Plex Mono", monospace; font-size: 19px; line-height: 1.65; }
+
+  .master-application { grid-column: 4 / 7; grid-row: 5 / 9; padding: 34px; background: var(--board-sunken); }
+  .master-phone { width: 255px; height: 554px; margin: 26px auto 0; padding: 7px; border-radius: 28px; background: var(--board-night); box-shadow: 0 16px 34px rgb(27 26 21 / .18); }
+  .master-phone img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: top; border-radius: 22px; }
+  .master-receipt { position: absolute; left: 34px; right: 34px; bottom: 32px; height: 240px; padding: 20px 22px; background: var(--board-surface); border: 1px solid var(--board-line-2); box-shadow: 0 13px 28px rgb(27 26 21 / .12); transform: rotate(-1.5deg); }
+  .receipt-top { display: flex; align-items: center; justify-content: space-between; padding-bottom: 13px; border-bottom: 1px solid var(--board-line); }
+  .receipt-top img { width: 27px; height: 27px; object-fit: contain; }.receipt-top span { padding: 4px 8px; border-radius: 4px; color: #0f5232; background: var(--board-success-soft); font-size: 12px; font-weight: 650; }
+  .master-receipt > code { display:block;margin-top:12px;color:var(--board-ink-3);font-family:var(--font-product-mono),"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.08em}.master-receipt>p{margin:10px 0 0;font-size:17px;font-weight:650}.master-receipt>strong{position:absolute;right:22px;top:78px;font-size:25px;font-variant-numeric:tabular-nums}.master-receipt>small{position:absolute;left:22px;bottom:18px;color:var(--board-ink-3);font-size:11px;line-height:1.5}
+
+  .master-principles { grid-column: 1 / 13; grid-row: 9 / 11; display: grid; grid-template-columns: repeat(4, 1fr) 1.3fr; }
+  .master-principles > div { display: grid; align-content: center; gap: 11px; padding: 34px 38px; border-right: 1px solid #343127; }
+  .master-principles > div:last-child { border-right: 0; }
+  .master-principles b { font-size: 29px; letter-spacing: -.025em; }.master-principles span { color: var(--board-night-ink-2); font-size: 17px; }
+  .master-signoff { justify-items: end; }
+  .master-signoff img { width: 285px; height: auto; }.master-signoff code { color: var(--board-night-ink-2); font-family: var(--font-product-mono), "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .12em; }
+`;
+
 const server = spawn("pnpm", ["exec", "next", "dev", "--webpack", "-p", String(port)], {
   cwd: webDir,
   env: {
@@ -398,6 +575,7 @@ try {
     readFile(paths.member).then(asDataUrl),
   ]);
   await renderBoard(applicationHtml({ owner, reception, member }), applicationCss, paths.outputApplication);
+  await renderBoard(masterHtml({ owner, reception, member }), masterCss, paths.outputMaster);
 } catch (error) {
   console.error(serverOutput);
   throw error;
@@ -406,4 +584,4 @@ try {
   server.kill("SIGTERM");
 }
 
-console.log("Rendered 3840×2400 RIVET product brand boards.");
+console.log("Rendered three 3840×2400 RIVET product brand boards.");
