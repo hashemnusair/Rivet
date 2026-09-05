@@ -292,11 +292,11 @@ Release: `main` fast-forwarded to `affb49b` on 5 September 2026 after a final fe
 
 ## Pass 5: Owner, finance, and oversight
 
-**Status:** In review
+**Status:** Approved, releasing
 **Baseline SHA:** `5356870`
-**Finish SHA:** Implementation tip `4777d83`; final SHA recorded at closure
+**Finish SHA:** Implementation tip `4777d83`; released SHA recorded at closure
 **Preview:** https://rivet-edeeusvew-nusairhashem04-gmailcoms-projects.vercel.app (Vercel deployment `dpl_43osRv5uKfvFk1zZ8HBw7uvjL4np`, GitHub deployment 6283660228, built from review branch `review/ui-workflow-pass-5` at `e979991`, protected, synthetic mock data)
-**Human approval:** Pending
+**Human approval:** Approved by Hashem on 5 September 2026 ("merge to main", no correction batch)
 
 Routes and shared surfaces:
 
