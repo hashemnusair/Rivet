@@ -172,10 +172,11 @@ export default function LeadDetailPageClient() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
         <div className="space-y-4 self-start">
+          {plansQuery.isError || plansQuery.isBackgroundError ? <ErrorState layout="inline" title="Membership plans could not be loaded" onRetry={() => plansQuery.refetch()} /> : null}
           <section className="panel p-4" data-testid="trial-workflow">
             <div className="flex items-start justify-between gap-3">
               <div>
-                
+
                 <h2 className="mt-1 font-display text-[16px] font-semibold">Trial</h2>
               </div>
               {trialStatus ? <Badge variant={trialDone ? "success" : trialStatus === "no_show" || trialStatus === "cancelled" ? "signal" : "warning"}>{trialStatus.replaceAll("_", " ")}</Badge> : null}
@@ -214,7 +215,7 @@ export default function LeadDetailPageClient() {
                         <Field label="Date" required><Input type="date" min={todayISODate()} value={trialDate} onChange={(event) => setTrialDate(event.target.value)} /></Field>
                         <Field label="Time" required><Input type="time" min={trialWindow?.enabled ? trialWindow.opensAt : undefined} max={trialWindow?.enabled ? trialWindow.closesAt : undefined} disabled={!trialWindow?.enabled} value={trialTime} onChange={(event) => setTrialTime(event.target.value)} /></Field>
                       </div>
-                      {settingsQuery.isError ? <ErrorState layout="section" title="Trial hours could not be loaded" onRetry={() => settingsQuery.refetch()} /> : settingsQuery.isLoading ? <p className="text-[12px] text-ink-3">Loading the branch trial hours…</p> : trialWindow?.enabled ? <p className="text-[12px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] text-ink-2">Trials are closed or not configured for this day. Choose another date or ask an owner or manager to update Trial scheduling in Settings.</p>}
+                      {(settingsQuery.isError || settingsQuery.isBackgroundError) ? <ErrorState layout="section" title="Trial hours could not be loaded" onRetry={() => settingsQuery.refetch()} /> : settingsQuery.isLoading ? <p className="text-[12px] text-ink-3">Loading the branch trial hours…</p> : trialWindow?.enabled ? <p className="text-[12px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] text-ink-2">Trials are closed or not configured for this day. Choose another date or ask an owner or manager to update Trial scheduling in Settings.</p>}
                     </DialogBody>
                     <DialogFooter><Button variant="secondary" onClick={() => setScheduleOpen(false)}>Cancel</Button><Button disabled={!trialDate || !trialTime || !trialWindow?.enabled || trialTime < trialWindow.opensAt || trialTime > trialWindow.closesAt} loading={scheduleTrial.isPending} onClick={() => scheduleTrial.mutate()}><CalendarClock /> Schedule trial</Button></DialogFooter>
                   </DialogContent>
@@ -225,7 +226,7 @@ export default function LeadDetailPageClient() {
 
           {trialDone && !saleDone && !saleFailed ? (
             <section className="panel p-4" data-testid="membership-sale-step">
-              
+
               <h2 className="mt-1 font-display text-[16px] font-semibold">Was a membership sold?</h2>
               <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">A successful sale creates the member and membership together. There is no separate conversion step.</p>
               <div className="mt-4 flex flex-wrap gap-2">

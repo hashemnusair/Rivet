@@ -362,12 +362,12 @@ function LeadCard({
   return (
     <article
       aria-label={`${lead.fullName}, ${columnLabel(column)}`}
-      draggable
+      draggable={!embedded}
       onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/lead-id", lead.id); }}
       className={cn("group bg-surface", !embedded && "rounded-md border border-line transition-colors hover:border-line-3")}
     >
       <div className="flex items-start gap-2 p-2.5 active:cursor-grabbing">
-        <GripVertical className="mt-0.5 hidden size-4 shrink-0 cursor-grab text-ink-4 [@media(pointer:fine)]:block" aria-hidden />
+        {!embedded ? <GripVertical className="mt-0.5 hidden size-4 shrink-0 cursor-grab text-ink-4 [@media(pointer:fine)]:block" aria-hidden /> : null}
         <div className="min-w-0 flex-1">
           <Link href={`/crm/leads/${lead.id}`} className="block break-words text-[13.5px] font-medium hover:underline" aria-label={`Open ${lead.fullName}`}>
             {lead.fullName}
@@ -397,7 +397,7 @@ function LeadCard({
           </button>
         ) : null}
         {actionable ? (
-          <button data-touch-target type="button" className="ms-auto min-h-8 rounded-sm px-2 text-[12px] font-medium text-danger hover:bg-danger-bg" onClick={onNotSold} aria-label={`Mark ${lead.fullName} not sold`}>
+          <button data-touch-target type="button" className="ms-auto min-h-8 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={onNotSold} aria-label={`Mark ${lead.fullName} not sold`}>
             Not sold…
           </button>
         ) : (
@@ -455,7 +455,7 @@ function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange
                     {pipelineColumn(lead) !== "sold" && pipelineColumn(lead) !== "not_sold" ? (
                       <>
                         {pipelineColumn(lead) !== "no_answer" ? <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>No answer</button> : null}
-                        <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-danger hover:bg-danger-bg" onClick={() => onNotSold(lead)}>Not sold…</button>
+                        <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNotSold(lead)}>Not sold…</button>
                       </>
                     ) : null}
                     <Link data-touch-target href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">Open</Link>

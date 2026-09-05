@@ -82,7 +82,7 @@ export function EditLeadContactDialog({
               <Input autoFocus {...form.register("fullName")} />
             </Field>
             <Field label="Phone" required error={form.formState.errors.phone?.message}>
-              <Input dir="ltr" {...form.register("phone")} />
+              <Input type="tel" autoComplete="tel" dir="ltr" {...form.register("phone")} />
             </Field>
             <Field label="Email" hint="Optional — leave blank to remove it." error={form.formState.errors.email?.message}>
               <Input type="email" autoComplete="email" {...form.register("email")} />

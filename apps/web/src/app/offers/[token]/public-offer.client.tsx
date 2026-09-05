@@ -26,7 +26,7 @@ export default function PublicOfferClient({ token }: { token: string }) {
   const [response, setResponse] = useState<PublicOffer>();
   const [mode, setMode] = useState<ResponseMode>();
   const [reason, setReason] = useState("");
-  const offer = response ?? offerQuery.data;
+  const offer = response?.token === token ? response : offerQuery.data;
 
   const respond = useApiMutation(
     (api, outcome: OfferOutcome) => api.respondToPublicOffer(token, { outcome, reason: reason.trim() || undefined }),
@@ -51,7 +51,7 @@ export default function PublicOfferClient({ token }: { token: string }) {
 
   return (
     <OfferFrame>
-      {offerQuery.isError ? <div className="mx-auto mb-4 max-w-2xl"><ErrorState layout="inline" title="Offer could not refresh" onRetry={() => offerQuery.refetch()} /></div> : null}
+      {offerQuery.isBackgroundError ? <div className="mx-auto mb-4 max-w-2xl"><ErrorState layout="inline" title="Offer could not refresh" onRetry={() => offerQuery.refetch()} /></div> : null}
       <article className="mx-auto w-full max-w-2xl overflow-hidden rounded-lg border border-line bg-surface" style={brandStyle}>
         <header className="border-b border-line bg-surface px-6 py-6 text-ink sm:px-9">
           <div className="flex items-center justify-between gap-4">
@@ -75,7 +75,7 @@ export default function PublicOfferClient({ token }: { token: string }) {
               <div className="mt-6 border-y border-line py-6">
                 <p className="context-label">Membership</p>
                 <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
-                  <h2 className="text-[26px] font-semibold tracking-tight">{offer.planName}</h2>
+                  <h2 className="break-words text-[26px] font-semibold tracking-tight">{offer.planName}</h2>
                   <p className="text-[22px] font-semibold tabular">{formatMoney(offer.price)}</p>
                 </div>
                 {offer.expiresAt ? <p className="mt-3 inline-flex items-center gap-1.5 text-[12px] text-ink-3"><Clock3 className="size-3.5" /> Respond by {formatDateTime(offer.expiresAt)}</p> : null}
@@ -112,5 +112,6 @@ function OfferFrame({ children }: { children: React.ReactNode }) {
 }
 
 function StatusCard({ icon: Icon, context, title, description, compact = false }: { icon: typeof Check; context: string; title: string; description: string; compact?: boolean }) {
-  return <section className={compact ? "py-3" : "mx-auto max-w-xl rounded-lg border border-line bg-surface p-7 sm:p-9"}><span className="flex size-10 items-center justify-center rounded-md bg-sunken text-ink"><Icon className="size-5" /></span><p className="context-label mt-5">{context}</p><h2 className="mt-2 text-[20px] font-semibold tracking-tight">{title}</h2><p className="mt-3 text-[13.5px] leading-relaxed text-ink-2">{description}</p></section>;
+  const Heading = compact ? "h2" : "h1";
+  return <section className={compact ? "py-3" : "mx-auto max-w-xl rounded-lg border border-line bg-surface p-7 sm:p-9"}><span className="flex size-10 items-center justify-center rounded-md bg-sunken text-ink"><Icon className="size-5" /></span><p className="context-label mt-5">{context}</p><Heading className="mt-2 text-[20px] font-semibold tracking-tight">{title}</Heading><p className="mt-3 text-[13.5px] leading-relaxed text-ink-2">{description}</p></section>;
 }
