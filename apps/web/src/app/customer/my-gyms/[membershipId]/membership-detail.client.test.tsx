@@ -23,6 +23,8 @@ vi.mock("@/lib/api/client", () => ({
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  usePathname: () => "/customer/my-gyms/membership-lina-forge",
 }));
 
 vi.mock("@/lib/api/ConvexGymOSApi", () => ({
