@@ -107,7 +107,7 @@ export function StockPurchasingWorkspace() {
   const branches = session?.branches ?? [];
   const sell = canCheckout && branchId ? (productId: string) => router.push(`/checkout?branchId=${encodeURIComponent(branchId)}&productId=${encodeURIComponent(productId)}`) : undefined;
   const branchQuery = branchId ? `?branch=${encodeURIComponent(branchId)}` : "";
-  const tabClass = "mb-0 gap-1.5 rounded px-3 py-2 text-[12.5px] data-[state=active]:border-transparent data-[state=active]:bg-sunken";
+  const tabClass = "min-h-11 gap-1.5 px-2 py-3 text-[13.5px] font-semibold text-ink-2 sm:px-4";
 
   return (
     <div className="space-y-4" data-testid="operations-command-center">
@@ -123,7 +123,7 @@ export function StockPurchasingWorkspace() {
         if (branchId) next.set("branch", branchId);
         router.replace(`/operations?${next}`, { scroll: false });
       }}>
-        <TabsList aria-label="Stock and purchasing" className="flex h-auto w-fit max-w-full flex-wrap rounded-md border border-line bg-surface p-1">
+        <TabsList aria-label="Stock and purchasing" className="flex h-auto w-full flex-wrap gap-x-2 gap-y-0 border-b border-line-3">
           <TabsTrigger value="inventory" className={tabClass}><Boxes className="size-3.5" /> Inventory</TabsTrigger>
           <TabsTrigger value="orders" className={tabClass}><ShoppingCart className="size-3.5" /> Purchase orders</TabsTrigger>
           <TabsTrigger value="suppliers" className={tabClass}><Store className="size-3.5" /> Suppliers</TabsTrigger>

@@ -306,7 +306,7 @@ Tables use 13px rows, 11.5px readable headings, hairline separation, tabular num
 
 Primary and Settings navigation use a single active cue: a quiet tonal background plus stronger label/icon contrast and weight. Do not use colored vertical rails, simultaneous parent/child highlights, or tenant accent as routine navigation decoration.
 
-Contained tabs, such as Stock & purchasing, use a tonal selected item inside one quiet outer frame. Standard content tabs may use the shared hairline underline pattern when they are not enclosed in a segmented container. Tab state must be keyboard accessible and URL-backed when it represents a shareable product view.
+Contained tabs use a tonal selected item inside one quiet outer frame. Standard content tabs use the shared hairline underline pattern when they are not enclosed in a segmented container. Stock & purchasing uses an open, full-width tab strip with semibold labels and an ink underline, following Hashem’s Pass 3 review. Its tabs wrap on narrow screens so every section remains visible. Tab state must be keyboard accessible and URL-backed when it represents a shareable product view.
 
 ### Feedback states
 

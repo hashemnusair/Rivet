@@ -3,7 +3,7 @@
 import { isApiError } from "@/lib/api/errors";
 
 import { Check, CheckCircle2, ChevronRight, Cog, Pencil, Plus, ShieldAlert, Wrench } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { EquipmentAsset, EquipmentIssue, EquipmentRecommendation, EquipmentWorkOrder, UpsertEquipmentAssetInput, UpsertEquipmentWorkOrderInput } from "@/lib/domain/types";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
@@ -34,6 +34,7 @@ export function EquipmentAssetForm({ currency, zones, branchId, asset, activeBlo
     serviceInterval: asset?.expectedServiceIntervalDays ? String(asset.expectedServiceIntervalDays) : "",
     usefulLife: asset?.expectedUsefulLifeMonths ? String(asset.expectedUsefulLifeMonths) : "",
   }));
+  const formId = useId();
   const editing = Boolean(asset);
   const statusOptions: EquipmentAsset["status"][] = !asset
     ? ["active"]
@@ -43,8 +44,8 @@ export function EquipmentAssetForm({ currency, zones, branchId, asset, activeBlo
         ? ["maintenance", "active", "retired", "replaced"]
         : [asset.status];
   return (
-    <FormPanel title={editing ? "Edit machine" : "Add machine"} description="Keep a clear record of each machine, its location, and its current status." onCancel={onCancel}>
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
+    <FormPanel title={editing ? "Edit machine" : "Add machine"} description="Keep a clear record of each machine, its location, and its current status." onCancel={onCancel} submitAction={<Button type="submit" form={formId} loading={pending} disabled={!branchId}><Cog /> {editing ? "Save machine" : "Add machine"}</Button>}>
+      <form id={formId} className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
         event.preventDefault();
         if (!branchId) return;
         onSubmit({
@@ -76,7 +77,6 @@ export function EquipmentAssetForm({ currency, zones, branchId, asset, activeBlo
         <Field label="Warranty ends"><Input type="date" dir="ltr" value={form.warrantyEndDate} onChange={(event) => setForm((current) => ({ ...current, warrantyEndDate: event.target.value }))} /></Field>
         <Field label="Service interval" hint="Days between planned checks"><Input type="number" min="1" step="1" dir="ltr" value={form.serviceInterval} onChange={(event) => setForm((current) => ({ ...current, serviceInterval: event.target.value }))} placeholder="90" /></Field>
         <Field label="Expected useful life" hint="Months"><Input type="number" min="1" step="1" dir="ltr" value={form.usefulLife} onChange={(event) => setForm((current) => ({ ...current, usefulLife: event.target.value }))} placeholder="84" /></Field>
-        <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId}><Cog /> {editing ? "Save machine" : "Add machine"}</Button></div>
       </form>
     </FormPanel>
   );

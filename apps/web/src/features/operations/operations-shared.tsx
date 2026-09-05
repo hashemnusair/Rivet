@@ -64,7 +64,7 @@ export const WORK_ORDER_STATUS_LABELS: Record<EquipmentWorkOrder["status"], stri
   cancelled: "Cancelled",
 };
 
-export function FormPanel({ title, description, onCancel, children }: { title: string; description?: string; onCancel: () => void; children: React.ReactNode }) {
+export function FormPanel({ title, description, onCancel, children, submitAction }: { title: string; description?: string; onCancel: () => void; children: React.ReactNode; submitAction?: React.ReactNode }) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <DialogContent className="max-w-2xl">
@@ -75,6 +75,7 @@ export function FormPanel({ title, description, onCancel, children }: { title: s
         <DialogBody>{children}</DialogBody>
         <DialogFooter>
           <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          {submitAction}
         </DialogFooter>
       </DialogContent>
     </Dialog>
