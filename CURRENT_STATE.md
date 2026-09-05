@@ -1,5 +1,11 @@
 # GymOS / RIVET current implementation state
 
+## Pass 3 approved release — 5 September 2026
+
+- Hashem approved Pass 3, including the final horizontal-scroll correction, and explicitly authorized pushing to main. The approved Preview is `dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg`, source `b413d08`.
+- GitHub was fetched before release; main was clean and contained all remote commits. GitHub Actions and matching Vercel Production verification are pending the approved push.
+- Hashem reports that a partner agent is working on Pass 4 in parallel. That work is separate; this release does not claim, overwrite or complete any Pass 4 work.
+
 ## Pass 3 horizontal-scroll regression fix — 5 September 2026
 
 - Hashem reported severe flickering and a disappearing page when horizontally scrolling Stock & purchasing tabs after selecting the in-app browser’s iPhone 15 Pro preset. Earlier geometry and tab-selection checks missed continuous gestures and frame-rate behavior.
