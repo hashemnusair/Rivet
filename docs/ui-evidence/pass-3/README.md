@@ -1,6 +1,6 @@
 # Pass 3 review evidence
 
-Baseline: `6b190d5`, fetched and synced from `origin/main` before work. Hashem authorized Pass 3 on 5 September 2026. Work is directly on main. Implementation finish is `ce264d3`. Review, the consolidated owner correction batch, push, Actions and Production verification remain pending. Pass 4 has not started.
+Baseline: `6b190d5`, fetched and synced from `origin/main` before work. Hashem authorized Pass 3 on 5 September 2026. Work is directly on main. Initial implementation finish is `ce264d3`; the owner correction batch is `3ff4cd8`. Final approval, push, Actions and Production verification remain pending. Pass 4 has not started.
 
 ## Workflow changes
 
@@ -52,3 +52,13 @@ The required 360, 390, 768, 820, 1280 and 1440px layouts are covered by `apps/we
 From the repository root: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `PLAYWRIGHT_PORT=3102 pnpm test:e2e`, `pnpm audit --prod`, and `git diff --check`. The pass uses an isolated `.next-playwright/pass3` development cache on port 3102. No other operator’s development server or landing-page files were changed.
 
 Read `AGENTS.md`, `DESIGN.md`, `CURRENT_STATE.md` and `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` first. `FRONTEND_HANDOFF.md` remains frozen.
+
+## Owner correction batch
+
+Hashem requested that Cancel sit immediately left of Add machine at every viewport, and that the Stock & purchasing sections look like navigation tabs. Commit `3ff4cd8` implements both. The machine form uses its native form ID to submit from the footer, retaining browser validation. The navigation uses the existing open-tab underline pattern with larger semibold labels and a full-width divider. All sections remain visible on phones. `DESIGN.md` records the owner-requested direction change.
+
+All 15 operations component tests, app typecheck, canonical lint and the secret-output audit passed. A six-width browser check verified inline footer geometry, Cancel before Add machine, empty required-field validation, cancellation, arrow-key tab switching and no page overflow. Corrected captures are in `corrections/`. The full initial pass gate above remains the baseline; the correction batch receives focused checks rather than claiming a second full suite run.
+
+The 390px and 1440px visual references and stock tab/branch/filter browser journey were verified. Capture runs encountered the previously recorded local startup stalls; the final 1440px rerun passed. No authentication change is claimed.
+
+Corrected Preview [open for review](https://rivet-dakpc272d-nusairhashem04-gmailcoms-projects.vercel.app/login/gym) is READY: `dpl_3GVNGnN9Wr11t2QQKEyRBR35BCE4`, source `3ff4cd8`. The six-width footer and keyboard-tab checks passed on this hosted Preview with no browser errors. `corrections/hosted-verification.json` records the results; the four correction screenshots were captured from that deployment. Final owner approval and push remain pending.

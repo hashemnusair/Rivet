@@ -1,5 +1,12 @@
 # GymOS / RIVET current implementation state
 
+## Pass 3 owner review corrections — 5 September 2026
+
+- Hashem requested two corrections: align Cancel with Add machine, including on mobile, and make Stock & purchasing sections read as navigation tabs.
+- Correction commit `3ff4cd8` moves the machine form submit action into the shared footer immediately after Cancel. Native form association preserves required-field validation and submission. The same form handles adding and editing machines.
+- Stock & purchasing now uses an open, full-width tab strip with semibold labels and an ink underline. Tabs remain visible on narrow screens and retain URL state and keyboard navigation. `DESIGN.md` records this owner-directed adjustment.
+- All six supported widths passed footer alignment, required-field validation, cancellation, arrow-key tab navigation and page-overflow checks. All 15 operations component tests, app typecheck and canonical lint passed. The corrected Preview is READY at `https://rivet-dakpc272d-nusairhashem04-gmailcoms-projects.vercel.app` (`dpl_3GVNGnN9Wr11t2QQKEyRBR35BCE4`, source `3ff4cd8`). The same six-width checks passed on the hosted Preview with no browser errors. Phone/desktop references were refreshed. Approval and release remain pending; Pass 4 is untouched.
+
 ## Branch operations UI pass — 5 September 2026
 
 - Hashem authorized Pass 3. Work started on main from fetched `origin/main` at `6b190d5`, with a clean worktree.
