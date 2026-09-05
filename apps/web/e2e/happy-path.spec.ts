@@ -482,7 +482,7 @@ test.describe("CRM lead capture", () => {
     await expect(view.getByRole("button", { name: "Board" })).toHaveAttribute("aria-pressed", "true");
     await view.getByRole("button", { name: "List" }).click();
     await expect(view.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
-    const leadLink = page.locator('a[href^="/crm/leads/"]').first();
+    const leadLink = page.locator('a[href^="/crm/leads/"]:visible').first();
     await expect(leadLink).toBeVisible();
     await leadLink.click();
     await expect(page).toHaveURL(/\/crm\/leads\//);

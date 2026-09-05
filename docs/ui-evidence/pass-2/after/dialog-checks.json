@@ -1,0 +1,27 @@
+[
+  {
+    "surface": "new-lead",
+    "reducedHeight520": true,
+    "overflow": false
+  },
+  {
+    "surface": "new-class",
+    "reducedHeight520": true,
+    "overflow": false
+  },
+  {
+    "surface": "pt-package",
+    "reducedHeight520": true,
+    "overflow": false
+  },
+  {
+    "surface": "pt-trainer",
+    "reducedHeight520": true,
+    "overflow": false
+  },
+  {
+    "surface": "pt-availability",
+    "reducedHeight520": true,
+    "overflow": false
+  }
+]

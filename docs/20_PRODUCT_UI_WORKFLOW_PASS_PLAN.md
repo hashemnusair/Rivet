@@ -147,46 +147,49 @@ Review evidence is committed in `apps/web/e2e/workflow-pass-1-visual.spec.ts` an
 
 ## Pass 2: Sales, retention, and scheduling
 
-**Status:** In progress; green light received from Hashem on 5 September 2026
+**Status:** Ready for Hashem’s preview review; local verification passed
 **Baseline SHA:** `b06292a`
-**Finish SHA:** To record
-**Preview:** To record
+**Implementation SHA:** `021a85f`
+**Finish SHA:** Pending approval and release
+**Preview:** [https://rivet-5mcu0tj9t-nusairhashem04-gmailcoms-projects.vercel.app](https://rivet-5mcu0tj9t-nusairhashem04-gmailcoms-projects.vercel.app/login/gym) · `dpl_GdhT5j7xRJV1Tn6v7Z3iujyYuFcW` · READY
 **Human approval:** Pending
 
 Routes and shared surfaces:
 
-- [ ] `/crm/pipeline`
-- [ ] `/crm/leads/[leadId]`
-- [ ] `/crm/queues`
-- [ ] `/offers/[token]`
-- [ ] `/memberships`
-- [ ] `/plans`
-- [ ] `/classes`
-- [ ] `/pt`
-- [ ] Lead creation and contact editing
-- [ ] Call, WhatsApp, contact, trial, offer, loss, and conversion controls
-- [ ] At-risk and win-back queues
-- [ ] Class schedule, occurrence, roster, waitlist, attendance, cancellation, and coach substitution
-- [ ] PT trainer, package, availability, booking, payment, outcome, cancellation, and payout views
+- [x] `/crm/pipeline`
+- [x] `/crm/leads/[leadId]`
+- [x] `/crm/queues`
+- [x] `/offers/[token]`
+- [x] `/memberships`
+- [x] `/plans`
+- [x] `/classes`
+- [x] `/pt`
+- [x] Lead creation and contact editing
+- [x] Call, WhatsApp, contact, trial, offer, loss, and conversion controls
+- [x] At-risk and win-back queues
+- [x] Class schedule, occurrence, roster, waitlist, attendance, cancellation, and coach substitution
+- [x] PT trainer, package, availability, booking, payment, outcome, cancellation, and payout views
 
 Workflow outcomes:
 
-- [ ] Explicit lead actions are primary; drag and drop remains an optional desktop shortcut.
-- [ ] Terminal outcomes ask for a short useful reason.
+- [x] Explicit lead actions are primary; drag and drop remains an optional desktop shortcut.
+- [x] Terminal outcomes ask for a short useful reason.
 - [ ] The lead timeline, board stage, queues, offers, trials, and conversion status agree.
-- [ ] Follow-up urgency, owner, last contact, next action, and snooze state are easy to scan.
-- [ ] At-risk rows state the exact reason and provide Call, WhatsApp, contacted, follow-up, snooze, and member actions.
-- [ ] Class schedules communicate date, time, coach, audience, capacity, booked, waitlisted, and attendance state without opening every class.
-- [ ] Staff roster and attendance work cleanly on touchscreens and cannot create accidental no-shows.
-- [ ] PT scheduling separates availability, booking, outcome, credit, and payment without making staff understand internal state machines.
+- [x] Follow-up urgency, owner, last contact, next action, and snooze state are easy to scan.
+- [x] At-risk rows state the exact reason and provide Call, WhatsApp, contacted, follow-up, snooze, and member actions.
+- [x] Class schedules communicate date, time, coach, audience, capacity, booked, waitlisted, and attendance state without opening every class.
+- [x] Staff roster and attendance work cleanly on touchscreens and cannot create accidental no-shows.
+- [x] PT scheduling separates availability, booking, outcome, credit, and payment without making staff understand internal state machines.
 - [ ] All flows handle realistic volume and preserve server-owned rules.
 
 Completion:
 
 - [ ] Before and after evidence approved.
-- [ ] Full pass gate passed.
+- [x] Local technical gate passed (1,249 unit tests, 14 safety tests, 80 browser journeys verified, 14 explicit staging skips; both typechecks, build, lint, audit, detector and diff checks). Human review/release gates remain open.
 - [ ] Pass merged and deployed.
 - [ ] Finish evidence recorded here.
+
+Implementation and review evidence: [`docs/ui-evidence/pass-2/README.md`](ui-evidence/pass-2/README.md). All listed surfaces were inspected; a checked inspection does not mark human acceptance or release complete. Existing dated-class cancellation and PT payout views are not implemented product surfaces; auditor is retired. The mock trainer workspace has a documented permission mismatch with Convex, so trainer UI and server scoping are verified separately. Legacy stage-only trial records and bounded plan pickers remain explicit review limitations; no domain/data repair was folded into visual work. The final two workflow checks remain open for disposition during review. Pass 3 remains untouched.
 
 ## Pass 3: Branch operations
 

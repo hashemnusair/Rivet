@@ -1,5 +1,13 @@
 # GymOS / RIVET current implementation state
 
+## Sales, retention and scheduling UI pass — 5 September 2026
+
+- **Pass 2 is implemented locally on main, pending review and release.** Hashem gave the green light after Pass 1. Work began from fetched `origin/main` at `b06292a`. Coherent implementation commits are `dbbae4d`, `59320ed` and `021a85f`; none has been pushed. Pass 3 has not started.
+- **The primary paths are clearer.** Leads have explicit actions and readable mobile records; retention has compact reason filters, real pagination and shareable member/filter context. Classes starts with a dated agenda and requires review before attendance finalization. PT starts from member lookup and retains separate availability, credit, outcome and payment controls. Offer, trial, roster and PT recovery states preserve useful context.
+- **Product boundaries are preserved.** Reception, marketing, partner work, authorization rules, schemas, financial contracts and Production data are untouched. Existing class cancellation/payout omissions, legacy stage-only trial history and the mock trainer workspace limitation are documented instead of silently inventing behavior.
+- **Local and hosted preview checks passed.** Both typechecks, the Production build, 1,249 unit tests, 14 repository-safety tests, canonical zero-warning lint, dependency audit, one detector scan and diff checks passed. All 80 credential-free browser journeys were verified (two failures resolved by a visible-link selector correction and a targeted rerun); 14 staging tests remain explicitly credential-gated. Preview deployment `dpl_GdhT5j7xRJV1Tn6v7Z3iujyYuFcW` is READY at `https://rivet-5mcu0tj9t-nusairhashem04-gmailcoms-projects.vercel.app`; authenticated 390px route checks passed for Leads, Retention, Classes and PT. Hashem’s preview approval, one consolidated correction batch, push, GitHub Actions and Vercel Production checks remain outstanding.
+- Read `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` and `docs/ui-evidence/pass-2/README.md` first for the exact route/state/role/device evidence and deliberate limits. `FRONTEND_HANDOFF.md` remains frozen.
+
 ## Daily front-desk workflow UI pass — 5 September 2026
 
 - **Pass 1 is approved, integrated and live.** Hashem approved both the shift-command and member-to-sale portions after reviewing the mock-data Vercel Preview. The eight coherent commits were fast-forwarded to `main` without squashing at implementation finish `797ae99`; the separate landing-page worktree remained untouched.
