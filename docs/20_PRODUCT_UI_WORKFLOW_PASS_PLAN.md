@@ -11,7 +11,7 @@ The work is a refinement of the implemented product. It must preserve authorizat
 - [x] Pass 1: Daily front-desk work
 - [x] Pass 2: Sales, retention, and scheduling
 - [x] Pass 3: Branch operations
-- [ ] Pass 4: Member mobile experience
+- [x] Pass 4: Member mobile experience
 - [ ] Pass 5: Owner, finance, and oversight
 - [ ] Pass 6: Settings
 - [ ] Pass 7: Platform, authentication, and public product states
@@ -243,7 +243,7 @@ Release verification: all 1,259 unit/component tests and 14 repository-safety te
 
 ## Pass 4: Member mobile experience
 
-**Status:** Approved by Hashem; pushed to main, release verification recorded below
+**Status:** Complete; approved by Hashem, pushed to main and live
 **Baseline SHA:** `6b190d5`, integrated onto the Pass 3 closure `9caab72` before review
 **Implementation SHA:** `816205a`
 **Finish SHA:** `332973a`
@@ -281,12 +281,14 @@ Workflow outcomes:
 
 Completion:
 
-- [ ] Before and after evidence approved.
-- [ ] Full pass gate passed.
-- [ ] Pass merged and deployed.
-- [ ] Finish evidence recorded here.
+- [x] Before and after evidence approved.
+- [x] Full pass gate passed.
+- [x] Pass merged and deployed.
+- [x] Finish evidence recorded here.
 
 Implementation and review evidence: [`docs/ui-evidence/pass-4/README.md`](ui-evidence/pass-4/README.md). The seeded preview member has no gym payment records, so the populated payments list and receipt are verified with component fixtures rather than in the Preview; the Impeccable skill is not installed in this environment, so an equivalent banned-pattern scan was run and is recorded instead of ticking that gate.
+
+Release: `main` fast-forwarded to `affb49b` on 5 September 2026 after a final fetch found no partner advancement. GitHub Actions [run `33970837435`](https://github.com/hashemnusair/Rivet/actions/runs/33970837435) passed every job for that SHA, and Vercel Production deployment `dpl_CJiusik3bL597A2akbXgKzgE4eaa` is READY for it; `www.rivetjo.com`, `app.rivetjo.com/login/member` and `dashboard.rivetjo.com/login/gym` returned HTTP 200, the root domain redirected (308) to www, `/dev/design-system` returned 404 and the new `/customer/signup` redirect answered 307 to the canonical signup. No Convex deploy was needed: this pass changed no `apps/web/convex/**` file.
 
 ## Pass 5: Owner, finance, and oversight
 

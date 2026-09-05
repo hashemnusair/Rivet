@@ -58,3 +58,8 @@ Run from the repository root: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm l
 ## Release verification
 
 Hashem reviewed the Preview and approved the pass on 5 September 2026 ("merge to main") with no correction batch. The approved implementation finishes at `332973a` (the four pass commits rebased onto the Pass 3 closure, plus the inspected Linux references). Push, GitHub Actions and Vercel Production verification for the exact pushed SHA are recorded below once complete.
+
+- Pushed: `main` fast-forwarded to `affb49b` after a final fetch found no partner advancement; the review branch `review/ui-workflow-pass-4` and the temporary `tmp/pass-4-linux-refs` branch were deleted.
+- GitHub Actions: [run 33970837435](https://github.com/hashemnusair/Rivet/actions/runs/33970837435) passed every job for `affb49b`.
+- Vercel Production: `dpl_CJiusik3bL597A2akbXgKzgE4eaa` READY for the exact pushed commit; `www.rivetjo.com`, `app.rivetjo.com/login/member` and `dashboard.rivetjo.com/login/gym` returned HTTP 200, the root domain redirected (308) to www, `/dev/design-system` returned 404 and the new `/customer/signup` redirect answered 307 to the canonical signup.
+- Convex: no deploy needed; no `apps/web/convex/**` file changed in this pass.
