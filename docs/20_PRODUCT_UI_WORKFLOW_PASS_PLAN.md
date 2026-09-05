@@ -193,9 +193,9 @@ Implementation and review evidence: [`docs/ui-evidence/pass-2/README.md`](ui-evi
 
 ## Pass 3: Branch operations
 
-**Status:** Approved by Hashem; push and release verification in progress. Authorized by Hashem on 5 September 2026
+**Status:** Approved by Hashem, pushed and live; CI screenshot-reference corrections in progress. Authorized by Hashem on 5 September 2026
 **Baseline SHA:** `6b190d5` (fetched and synced before work)
-**Implementation finish SHA:** `b413d08` (approved implementation; release finish pending)
+**Implementation finish SHA:** `b413d08` (approved implementation; integration push `9caab72`, release gate pending)
 **Preview:** [Protected mock-data Preview](https://rivet-hf42gg007-nusairhashem04-gmailcoms-projects.vercel.app) · `dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg` · READY · source `b413d08`
 **Human approval:** Approved by Hashem on 5 September 2026
 

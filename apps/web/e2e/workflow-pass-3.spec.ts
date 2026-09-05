@@ -39,7 +39,10 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
       await fits(page);
       if (width === 390 || width === 1440) {
         await page.evaluate(() => document.fonts.ready);
-        await expect(page).toHaveScreenshot(`pass-3-${name}-${width}.png`, { animations: "disabled", maxDiffPixelRatio: 0.04 });
+        // Native font metrics change description/toolbar wrapping on these
+        // narrow pages. Keep inspected Linux references at the same tolerance.
+        const platform = (name === "orders" || name === "maintenance") && width === 390 && process.platform === "linux" ? "-linux" : "";
+        await expect(page).toHaveScreenshot(`pass-3-${name}-${width}${platform}.png`, { animations: "disabled", maxDiffPixelRatio: 0.04 });
       }
     }
     expect(errors).toEqual([]);

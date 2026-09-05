@@ -3,7 +3,8 @@
 ## Pass 3 approved release — 5 September 2026
 
 - Hashem approved Pass 3, including the final horizontal-scroll correction, and explicitly authorized pushing to main. The approved Preview is `dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg`, source `b413d08`.
-- GitHub was fetched before release; main was clean and contained all remote commits. GitHub Actions and matching Vercel Production verification are pending the approved push.
+- Approved integration `9caab72` was pushed after fetching GitHub. Matching Vercel Production `dpl_FHgUZdBzhxs39p55Cu4NMpwxXG6S` is READY. Marketing and both login entry points returned HTTP 200; the Production design gallery returned 404.
+- Actions run `33961660539` passed typechecks, lint, 1,259 unit/component tests, 14 repository-safety tests, the build, dependency audit and actual Convex code generation. Its browser job found stale retention crop references and platform-dependent mobile wrapping references; the scroll regression passed. Release closure awaits the corrected browser gate. These are test-reference corrections, with no application-code changes.
 - Hashem reports that a partner agent is working on Pass 4 in parallel. That work is separate; this release does not claim, overwrite or complete any Pass 4 work.
 
 ## Pass 3 horizontal-scroll regression fix — 5 September 2026
