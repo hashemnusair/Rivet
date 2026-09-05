@@ -243,40 +243,41 @@ Release verification: all 1,259 unit/component tests and 14 repository-safety te
 
 ## Pass 4: Member mobile experience
 
-**Status:** In progress in parallel by the partner agent, as reported by Hashem on 5 September 2026
-**Baseline SHA:** To record
-**Finish SHA:** To record
-**Preview:** To record
+**Status:** Implemented; awaiting Hashem's Preview review
+**Baseline SHA:** `6b190d5`, integrated onto the Pass 3 closure `9caab72` before review
+**Implementation SHA:** `816205a`
+**Finish SHA:** To record after approval
+**Preview:** [https://rivet-11pgc2j6x-nusairhashem04-gmailcoms-projects.vercel.app](https://rivet-11pgc2j6x-nusairhashem04-gmailcoms-projects.vercel.app/login/member) · `dpl_4NuGxbM5wLQAK1mEmRC2yKRz1MKh`
 **Human approval:** Pending
 
 Routes and shared surfaces:
 
-- [ ] `/customer/login`
-- [ ] `/customer/signup`
-- [ ] `/customer/getting-started`
-- [ ] `/customer/my-gyms`
-- [ ] `/customer/my-gyms/[membershipId]`
-- [ ] `/customer/finance`
-- [ ] `/customer/receipts/[receiptId]`
-- [ ] `/customer/discover`
-- [ ] `/customer/gyms/[gymId]`
-- [ ] `/customer/profile`
-- [ ] `/login/member`
-- [ ] `/login/member/create`
-- [ ] `/offline`
-- [ ] Member bottom navigation and PWA behavior
-- [ ] Membership, classes, waitlist, referrals, freeze requests, payments, receipts, export, and communication preferences
+- [x] `/customer/login`
+- [x] `/customer/signup`
+- [x] `/customer/getting-started`
+- [x] `/customer/my-gyms`
+- [x] `/customer/my-gyms/[membershipId]`
+- [x] `/customer/finance`
+- [x] `/customer/receipts/[receiptId]`
+- [x] `/customer/discover`
+- [x] `/customer/gyms/[gymId]`
+- [x] `/customer/profile`
+- [x] `/login/member`
+- [x] `/login/member/create`
+- [x] `/offline`
+- [x] Member bottom navigation and PWA behavior
+- [x] Membership, classes, waitlist, referrals, freeze requests, payments, receipts, export, and communication preferences
 
 Workflow outcomes:
 
-- [ ] Every member task works comfortably with one hand at 360 and 390 pixels.
-- [ ] Safe areas, browser chrome, keyboards, and bottom navigation never cover actions.
-- [ ] There are no compressed desktop tables or horizontally squeezed toolbars.
-- [ ] Membership, money, booking, waitlist, referral, and freeze states use plain member language.
-- [ ] Downloads open in useful mobile formats with human-readable content.
-- [ ] Browser scrolling remains native and natural.
-- [ ] Retry and reconnect behavior preserve useful loaded data.
-- [ ] No action depends on hover, drag, or a hidden gesture.
+- [x] Every member task works comfortably with one hand at 360 and 390 pixels.
+- [x] Safe areas, browser chrome, keyboards, and bottom navigation never cover actions.
+- [x] There are no compressed desktop tables or horizontally squeezed toolbars.
+- [x] Membership, money, booking, waitlist, referral, and freeze states use plain member language.
+- [x] Downloads open in useful mobile formats with human-readable content.
+- [x] Browser scrolling remains native and natural.
+- [x] Retry and reconnect behavior preserve useful loaded data.
+- [x] No action depends on hover, drag, or a hidden gesture.
 
 Completion:
 
@@ -284,6 +285,8 @@ Completion:
 - [ ] Full pass gate passed.
 - [ ] Pass merged and deployed.
 - [ ] Finish evidence recorded here.
+
+Implementation and review evidence: [`docs/ui-evidence/pass-4/README.md`](ui-evidence/pass-4/README.md). The seeded preview member has no gym payment records, so the populated payments list and receipt are verified with component fixtures rather than in the Preview; the Impeccable skill is not installed in this environment, so an equivalent banned-pattern scan was run and is recorded instead of ticking that gate.
 
 ## Pass 5: Owner, finance, and oversight
 
