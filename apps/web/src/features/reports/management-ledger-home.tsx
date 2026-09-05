@@ -49,7 +49,7 @@ export function ManagementLedgerHome() {
       <PageHeader title="Management ledger" description="Choose a statement to review the gym’s financial position." />
       <div className={canManageControls ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "grid gap-4 sm:grid-cols-3"} aria-label="Financial statements">
         {STATEMENT_CARDS.map((card) => (
-          <Link key={card.kind} href={scopedStatementHref(card.href, fromDate, toDate, branchFilter)} data-testid={`statement-card-${card.kind}`} className="group flex min-h-48 flex-col rounded-lg border border-line bg-surface p-5 shadow-card transition-colors hover:border-ink-3 hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink">
+          <Link key={card.kind} href={scopedStatementHref(card.href, fromDate, toDate, branchFilter)} data-testid={`statement-card-${card.kind}`} className="group panel flex min-h-44 flex-col p-5 transition-colors hover:border-ink-3 hover:bg-sunken/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink">
             <span className="flex size-10 items-center justify-center rounded-md bg-sunken text-ink-2 transition-colors group-hover:bg-ink group-hover:text-paper"><card.icon className="size-5" aria-hidden /></span>
             <h2 className="mt-5 text-[17px] font-semibold">{card.title}</h2>
             <p className="mt-2 max-w-[26rem] text-[12.5px] leading-relaxed text-ink-3">{card.description}</p>
@@ -57,7 +57,7 @@ export function ManagementLedgerHome() {
           </Link>
         ))}
         {canManageControls ? (
-          <Link href="/finance/controls" aria-label="Ledger controls" data-testid="ledger-card-controls" className="group flex min-h-48 flex-col rounded-lg border border-line bg-surface p-5 shadow-card transition-colors hover:border-ink-3 hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink">
+          <Link href="/finance/controls" aria-label="Ledger controls" data-testid="ledger-card-controls" className="group panel flex min-h-44 flex-col p-5 transition-colors hover:border-ink-3 hover:bg-sunken/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink">
             <span className="flex size-10 items-center justify-center rounded-md bg-sunken text-ink-2 transition-colors group-hover:bg-ink group-hover:text-paper"><SlidersHorizontal className="size-5" aria-hidden /></span>
             <h2 className="mt-5 text-[17px] font-semibold">Ledger controls</h2>
             <p className="mt-2 max-w-[26rem] text-[12.5px] leading-relaxed text-ink-3">Refresh the queue, post or exclude facts, and run the month-end clicks that keep the statements current.</p>
@@ -66,7 +66,7 @@ export function ManagementLedgerHome() {
         ) : null}
       </div>
       <LedgerTutorial />
-      <p className="text-[11.5px] text-ink-3">Figures come from posted management-ledger entries for the selected branch and period. Each statement explains any incomplete source coverage.</p>
+      <p className="text-[12px] text-ink-3">Figures come from posted management-ledger entries for the selected branch and period. Each statement explains any incomplete source coverage.</p>
     </div>
   );
 }

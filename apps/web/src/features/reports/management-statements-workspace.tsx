@@ -39,8 +39,14 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScopePills } from "./report-scope";
 
 export type ManagementStatementKind = "income" | "balance" | "cashflow";
+
+/** Journal entries live in Ledger controls; the link keeps the statement's branch scope. */
+export function scopedJournalsHref(branchFilter: string): string {
+  return branchFilter === "all" ? "/finance/controls?tab=journals" : `/finance/controls?tab=journals&branchId=${encodeURIComponent(branchFilter)}`;
+}
 
 const STATUS_LABELS: Record<string, string> = {
   available: "Available",
@@ -94,7 +100,7 @@ function SectionLines({ section, emptyLabel = "No posted lines in this scope." }
         <div key={line.accountId} className="flex items-center justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-[13px] font-medium">{line.accountName}</p>
-            <p className="font-mono text-[10.5px] text-ink-3" dir="ltr">{line.accountCode} · {line.entryIds.length} journal {line.entryIds.length === 1 ? "entry" : "entries"}</p>
+            <p className="text-[12px] text-ink-3" dir="ltr"><span className="font-mono text-[11px]">{line.accountCode}</span> · {line.entryIds.length} journal {line.entryIds.length === 1 ? "entry" : "entries"}</p>
           </div>
           <MoneyText money={line.amount} />
         </div>
@@ -103,11 +109,17 @@ function SectionLines({ section, emptyLabel = "No posted lines in this scope." }
   );
 }
 
-function StatementSectionCard({ title, section, tone }: { title: string; section: ManagementStatementSection; tone?: "positive" | "negative" }) {
+/** Sends the reader to the posted entries behind a section, in the same branch scope. */
+function JournalsLink({ href, label = "View journal entries" }: { href?: string; label?: string }) {
+  if (!href) return null;
+  return <Link href={href} className="text-[12px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">{label}</Link>;
+}
+
+function StatementSectionCard({ title, section, tone, journalsHref }: { title: string; section: ManagementStatementSection; tone?: "positive" | "negative"; journalsHref?: string }) {
   return (
     <section className="panel overflow-hidden" aria-label={title}>
       <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <h3 className="text-[14px] font-semibold">{title}</h3>
+        <div className="min-w-0"><h3 className="text-[14px] font-semibold">{title}</h3>{section.lines.length > 0 ? <JournalsLink href={journalsHref} /> : null}</div>
         <MoneyText money={section.total} className={tone === "positive" ? "text-success-deep" : tone === "negative" ? "text-warning-deep" : undefined} />
       </header>
       <SectionLines section={section} />
@@ -120,7 +132,7 @@ function SummaryCard({ label, value, context, tone = "default" }: { label: strin
     <section className="panel p-4">
       <p className="context-label">{label}</p>
       <div className={cn("mt-1.5 text-[21px] font-semibold leading-tight tabular", tone === "positive" && "text-success-deep", tone === "warning" && "text-warning-deep", tone === "danger" && "text-danger")} dir="ltr">{value}</div>
-      {context ? <p className="mt-1.5 text-[11.5px] text-ink-3">{context}</p> : null}
+      {context ? <p className="mt-1.5 text-[12px] text-ink-3">{context}</p> : null}
     </section>
   );
 }
@@ -168,7 +180,7 @@ function ReportQuality({ report, warnings, kind, controlsHref }: { report?: Mana
   const needsAttention = report.queueCoverage !== "proven" || visibleWarnings.length > 0;
   return (
     <section className="space-y-2" aria-label="Statement quality and scope">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
         {/* A balance sheet is a cumulative position, not period activity. */}
         <span dir="ltr">{kind === "balance" ? `As of ${formatDate(report.toDate)}` : `${formatDate(report.fromDate)} – ${formatDate(report.toDate)}`}</span>
         <span aria-hidden>·</span>
@@ -178,13 +190,13 @@ function ReportQuality({ report, warnings, kind, controlsHref }: { report?: Mana
         {report.queueCoverage !== "proven" ? <Badge variant="warning">Data coverage: {STATUS_LABELS[report.queueCoverage] ?? statusLabel(report.queueCoverage)}</Badge> : null}
         {!needsAttention ? <span className="inline-flex items-center gap-1 text-success-deep"><CheckCircle2 className="size-3.5" aria-hidden /> All sources accounted for</span> : null}
       </div>
-      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul>{controlsHref ? <p className="mt-2"><Link href={controlsHref} className="font-medium underline underline-offset-2">Resolve in Ledger controls</Link></p> : null}</div></div></section> : report.queueCoverage !== "proven" && controlsHref ? <p className="text-[11.5px] text-ink-3">Hit <Link href={controlsHref} className="font-medium text-ink-2 underline underline-offset-2">Refresh queue in Ledger controls</Link> to re-prove coverage.</p> : null}
-      <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[11.5px] text-ink-3"><CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden /><p>{report.disclaimer}</p></div>
+      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul>{controlsHref ? <p className="mt-2"><Link href={controlsHref} className="font-medium underline underline-offset-2">Resolve in Ledger controls</Link></p> : null}</div></div></section> : report.queueCoverage !== "proven" && controlsHref ? <p className="text-[12px] text-ink-3">Hit <Link href={controlsHref} className="font-medium text-ink-2 underline underline-offset-2">Refresh queue in Ledger controls</Link> to re-prove coverage.</p> : null}
+      <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3"><CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden /><p>{report.disclaimer}</p></div>
     </section>
   );
 }
 
-function IncomeStatementView({ report }: { report: IncomeStatement }) {
+function IncomeStatementView({ report, journalsHref }: { report: IncomeStatement; journalsHref?: string }) {
   return (
     <div className="space-y-4" data-testid="income-statement">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -193,23 +205,23 @@ function IncomeStatementView({ report }: { report: IncomeStatement }) {
         <SummaryCard label="Net income" value={<MoneyText money={report.netIncome} />} tone={report.netIncome.amount >= 0 ? "positive" : "danger"} context="Revenue and other income, less cost of sales, operating expenses, and other expenses." />
       </div>
       {report.membershipRevenueRecognition !== "not_available" ? (
-        <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[11.5px] text-ink-3">
+        <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3">
           <CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p><span className="font-medium text-ink-2">Why fils can appear:</span> memberships sold under the retired deferred policy are earned by service day, so their monthly amounts can carry fils — those months always add back to the exact sale price. Memberships sold under the current policy post their full whole price as revenue on the day of sale.</p>
         </div>
       ) : null}
       <div className="grid gap-4 lg:grid-cols-2">
-        <StatementSectionCard title="Revenue" section={report.revenue} tone="positive" />
-        <StatementSectionCard title="Cost of sales" section={report.costOfSales} tone="negative" />
-        <StatementSectionCard title="Operating expenses" section={report.operatingExpenses} tone="negative" />
-        <StatementSectionCard title="Other income" section={report.otherIncome} tone="positive" />
-        <StatementSectionCard title="Other expenses" section={report.otherExpenses} tone="negative" />
+        <StatementSectionCard journalsHref={journalsHref} title="Revenue" section={report.revenue} tone="positive" />
+        <StatementSectionCard journalsHref={journalsHref} title="Cost of sales" section={report.costOfSales} tone="negative" />
+        <StatementSectionCard journalsHref={journalsHref} title="Operating expenses" section={report.operatingExpenses} tone="negative" />
+        <StatementSectionCard journalsHref={journalsHref} title="Other income" section={report.otherIncome} tone="positive" />
+        <StatementSectionCard journalsHref={journalsHref} title="Other expenses" section={report.otherExpenses} tone="negative" />
       </div>
     </div>
   );
 }
 
-function BalanceSheetView({ report }: { report: BalanceSheet }) {
+function BalanceSheetView({ report, journalsHref }: { report: BalanceSheet; journalsHref?: string }) {
   // Canonical field with a deploy-skew fallback to the deprecated alias.
   const cumulativeEarnings = report.cumulativeEarnings ?? report.currentEarnings;
   return (
@@ -224,22 +236,22 @@ function BalanceSheetView({ report }: { report: BalanceSheet }) {
         <p className="mt-1 text-[12px]">Assets = liabilities + equity + cumulative earnings · difference <span dir="ltr" className="font-medium"><MoneyText money={report.difference} /></span></p>
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
-        <StatementSectionCard title="Current assets" section={report.assets.current} />
-        <StatementSectionCard title="Non-current assets" section={report.assets.noncurrent} />
-        <StatementSectionCard title="Current liabilities" section={report.liabilities.current} />
-        <StatementSectionCard title="Non-current liabilities" section={report.liabilities.noncurrent} />
-        <StatementSectionCard title="Equity" section={report.equity} />
+        <StatementSectionCard journalsHref={journalsHref} title="Current assets" section={report.assets.current} />
+        <StatementSectionCard journalsHref={journalsHref} title="Non-current assets" section={report.assets.noncurrent} />
+        <StatementSectionCard journalsHref={journalsHref} title="Current liabilities" section={report.liabilities.current} />
+        <StatementSectionCard journalsHref={journalsHref} title="Non-current liabilities" section={report.liabilities.noncurrent} />
+        <StatementSectionCard journalsHref={journalsHref} title="Equity" section={report.equity} />
         <SummaryCard label="Cumulative earnings" value={<MoneyText money={cumulativeEarnings} />} context="Revenue less costs accumulated from ledger inception through the as-of date; closes the equation because no period-end earnings roll-up exists yet." />
       </div>
     </div>
   );
 }
 
-function CashflowSectionCard({ section }: { section: CashflowSection }) {
-  return <section className="panel overflow-hidden" aria-label={`${section.category} cashflow`}><header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3"><h3 className="text-[14px] font-semibold capitalize">{section.category} activities</h3><MoneyText money={section.netChange} signed /></header><SectionLines section={{ lines: section.lines, total: section.netChange }} emptyLabel={`No ${section.category} cash movements in this scope.`} /></section>;
+function CashflowSectionCard({ section, journalsHref }: { section: CashflowSection; journalsHref?: string }) {
+  return <section className="panel overflow-hidden" aria-label={`${section.category} cashflow`}><header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><h3 className="text-[14px] font-semibold capitalize">{section.category} activities</h3>{section.lines.length > 0 ? <JournalsLink href={journalsHref} /> : null}</div><MoneyText money={section.netChange} signed /></header><SectionLines section={{ lines: section.lines, total: section.netChange }} emptyLabel={`No ${section.category} cash movements in this scope.`} /></section>;
 }
 
-function CashflowView({ report }: { report: CashflowStatement }) {
+function CashflowView({ report, journalsHref }: { report: CashflowStatement; journalsHref?: string }) {
   const reconciliation = report.reconciliation;
   const reconciliationProven = report.reconciliationStatus === "proven";
   return (
@@ -249,9 +261,9 @@ function CashflowView({ report }: { report: CashflowStatement }) {
         <SummaryCard label="Net change" value={<MoneyText money={report.netChange} signed />} tone={report.netChange.amount >= 0 ? "positive" : "danger"} context="Cash in minus cash out during this period." />
         <SummaryCard label="Closing cash" value={<MoneyText money={report.closingCash} />} tone={report.balanced ? "positive" : "warning"} context="Drawer plus clearing at the end of the period." />
       </div>
-      <section className={cn("rounded-md border px-4 py-3", reconciliationProven ? "border-success/40 bg-success-bg text-success-deep" : "border-warning/40 bg-warning-bg text-warning-deep")} role="status" aria-label="Cashflow reconciliation"><div className="flex flex-wrap items-center gap-2">{reconciliationProven ? <CheckCircle2 className="size-4" aria-hidden /> : <AlertTriangle className="size-4" aria-hidden />}<p className="font-medium">{reconciliationProven ? "Cashflow reconciles" : "Cashflow reconciliation needs review"}</p><ReportStatusBadge status={report.reconciliationStatus} /></div><p className="mt-1 text-[12px]">Opening cash + net change = expected closing cash <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.expectedClosingCash} /></span> · independent as-of cash <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.asOfCash} /></span> · difference <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.difference} /></span></p>{reconciliation.note ? <p className="mt-1 text-[11px]">{reconciliation.note}</p> : null}</section>
-      <div className="grid gap-4 lg:grid-cols-3"><CashflowSectionCard section={report.operating} /><CashflowSectionCard section={report.investing} /><CashflowSectionCard section={report.financing} /></div>
-      <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[11.5px] text-ink-3"><Banknote className="mt-0.5 size-4 shrink-0" aria-hidden /><p><span className="font-medium text-ink-2">Classification policy:</span> {report.classificationPolicy.description} <span dir="ltr">({report.classificationPolicy.code} v{report.classificationPolicy.version})</span></p></div>
+      <section className={cn("rounded-md border px-4 py-3", reconciliationProven ? "border-success/40 bg-success-bg text-success-deep" : "border-warning/40 bg-warning-bg text-warning-deep")} role="status" aria-label="Cashflow reconciliation"><div className="flex flex-wrap items-center gap-2">{reconciliationProven ? <CheckCircle2 className="size-4" aria-hidden /> : <AlertTriangle className="size-4" aria-hidden />}<p className="font-medium">{reconciliationProven ? "Cashflow reconciles" : "Cashflow reconciliation needs review"}</p><ReportStatusBadge status={report.reconciliationStatus} /></div><p className="mt-1 text-[12px]">Opening cash + net change = expected closing cash <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.expectedClosingCash} /></span> · independent as-of cash <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.asOfCash} /></span> · difference <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.difference} /></span></p>{reconciliation.note ? <p className="mt-1 text-[12px]">{reconciliation.note}</p> : null}</section>
+      <div className="grid gap-4 lg:grid-cols-3"><CashflowSectionCard section={report.operating} journalsHref={journalsHref} /><CashflowSectionCard section={report.investing} journalsHref={journalsHref} /><CashflowSectionCard section={report.financing} journalsHref={journalsHref} /></div>
+      <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3"><Banknote className="mt-0.5 size-4 shrink-0" aria-hidden /><p><span className="font-medium text-ink-2">Classification policy:</span> {report.classificationPolicy.description} <span dir="ltr">({report.classificationPolicy.code} v{report.classificationPolicy.version})</span></p></div>
     </div>
   );
 }
@@ -323,30 +335,17 @@ function StatementScopeFilters({
   const presets = rangePresets();
   return (
     <section className="panel flex flex-col gap-3 p-4" aria-label="Statement scope filters">
-      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Quick date ranges">
-        {presets.map((preset) => {
-          const active = preset.from === fromDate && preset.to === toDate;
-          return (
-            <button
-              key={preset.key}
-              type="button"
-              onClick={() => onRangeChange(preset.from, preset.to)}
-              aria-pressed={active}
-              className={cn(
-                "rounded-full border px-3 py-1 text-[12px] transition-colors",
-                active ? "border-ink bg-ink text-paper" : "border-line-2 text-ink-2 hover:border-ink-3 hover:text-ink",
-              )}
-            >
-              {preset.label}
-            </button>
-          );
-        })}
-      </div>
+      <ScopePills
+        label="Quick date ranges"
+        value={presets.find((preset) => preset.from === fromDate && preset.to === toDate)?.key}
+        items={presets.map((preset) => ({ value: preset.key, label: preset.label }))}
+        onChange={(key) => { const preset = presets.find((item) => item.key === key); if (preset) onRangeChange(preset.from, preset.to); }}
+      />
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <Field label="From date" className="w-full sm:w-44"><Input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} dir="ltr" /></Field>
         <Field label="To date" className="w-full sm:w-44"><Input type="date" value={toDate} onChange={(event) => onToDateChange(event.target.value)} dir="ltr" /></Field>
         <Field label="Branch scope" className="w-full sm:w-64"><Select value={branchFilter} onValueChange={onBranchChange}><SelectTrigger aria-label="Statement branch scope"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
-        <div className="flex items-center gap-2 text-[11.5px] text-ink-3 sm:ms-auto"><CalendarDays className="size-4" aria-hidden /><span>{branchFilter === "all" ? "Consolidated accessible scope" : branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
+        <div className="flex items-center gap-2 text-[12px] text-ink-3 sm:ms-auto"><CalendarDays className="size-4" aria-hidden /><span>{branchFilter === "all" ? "Consolidated accessible scope" : branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
       </div>
       {!validRange ? <p className="basis-full text-[12px] text-danger" role="alert">Choose a from date on or before the to date.</p> : null}
     </section>
@@ -450,7 +449,9 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
   }, [currentHref, desiredHref, hasScopeParams, pathname, router, searchParams, session]);
 
   const report = statementQuery.data;
-  const reportView = report ? kind === "income" ? <IncomeStatementView report={report as IncomeStatement} /> : kind === "balance" ? <BalanceSheetView report={report as BalanceSheet} /> : <CashflowView report={report as CashflowStatement} /> : null;
+  // Journal entries sit behind Ledger controls, which only posting roles reach.
+  const journalsHref = readOnly ? undefined : scopedJournalsHref(effectiveBranchFilter);
+  const reportView = report ? kind === "income" ? <IncomeStatementView report={report as IncomeStatement} journalsHref={journalsHref} /> : kind === "balance" ? <BalanceSheetView report={report as BalanceSheet} journalsHref={journalsHref} /> : <CashflowView report={report as CashflowStatement} journalsHref={journalsHref} /> : null;
   const reportWarnings = statementWarnings(report, kind);
 
   if (sessionLoading && !session) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
@@ -462,7 +463,9 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
 
   return (
     <div className="space-y-5" data-testid="management-statements-workspace" data-kind={kind}>
-      <PageHeader sectionLabel="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Link href="/finance/controls" className="rounded-md px-2.5 py-1.5 text-[12px] text-ink-2 underline-offset-2 hover:bg-sunken hover:text-ink hover:underline">Ledger controls</Link> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
+      {/* Same back link as Ledger controls, so the three statements and the controls read as one place. */}
+      <Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 text-[12px] text-ink-2 underline-offset-2 hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link>
+      <PageHeader sectionLabel="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Button asChild variant="secondary"><Link href={effectiveBranchFilter === "all" ? "/finance/controls" : `/finance/controls?branchId=${encodeURIComponent(effectiveBranchFilter)}`}>Ledger controls</Link></Button> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
       <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} onRangeChange={(from, to) => { setFromDate(from); setToDate(to); }} />
       <ReportQuality report={report} warnings={reportWarnings} kind={kind} controlsHref={!readOnly ? "/finance/controls" : undefined} />
       {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Reload</button></div> : null}

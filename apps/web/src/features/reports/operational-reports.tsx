@@ -1,25 +1,23 @@
 "use client";
 
-import { Download, RefreshCw } from "lucide-react";
+import { Download, FileBarChart } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/misc";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ErrorState, EmptyState } from "@/components/ui/states";
 import { MoneyText } from "@/components/shared/data-display";
-import { FileBarChart } from "lucide-react";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
 import { useApp } from "@/lib/providers/app-providers";
-import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
+import { formatDate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 import { buildCsvDocument, buildSectionedCsvDocument, formatMinorUnits, type CsvMetadataItem } from "@/lib/exports/csv";
 import { downloadTextFile } from "@/lib/exports/download";
 import type { ClassUtilizationReport, PeakHoursReport, RetentionReport, RenewalForecastReport, CollectionsReport, CrmFunnelReport, ControlTrendsReport } from "@/lib/domain/types";
+import { ReportScopeBar, reportScopeFrom, type ReportScope } from "./report-scope";
 
 export type OperationalReportKind = "peak-hours" | "classes" | "retention" | "renewals" | "collections" | "crm" | "controls";
 
@@ -31,6 +29,17 @@ export const OPERATIONAL_REPORT_LABELS: Record<OperationalReportKind, string> = 
   collections: "Collections",
   crm: "CRM",
   controls: "Controls",
+};
+
+/** The operating question each report exists to answer. Shown as the page description. */
+export const OPERATIONAL_REPORT_QUESTIONS: Record<OperationalReportKind, string> = {
+  "peak-hours": "When is the floor busiest, and when is it empty?",
+  classes: "Which classes fill, and where are seats and members going to waste?",
+  retention: "Do the members who join actually stay?",
+  renewals: "What expires in the next 30 days, and what is it worth?",
+  collections: "Did we collect what we charged, and what is still owed?",
+  crm: "How fast do we answer new leads, and do they buy?",
+  controls: "Who is refunding, voiding, discounting and overriding, and why?",
 };
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -45,15 +54,16 @@ function downloadCsv(fileName: string, title: string, rows: string[][], metadata
   });
 }
 
-/** Read-only analytics views under Reports. All math happens on the server. */
-export function OperationalReports({ view }: { view: OperationalReportKind }) {
+/**
+ * Read-only analytics views under Reports. All math happens on the server;
+ * the scope (branch, window) belongs to the page URL so every report shares
+ * one scope bar and one set of filters.
+ */
+export function OperationalReports({ view, scope, branches, onScopeChange }: { view: OperationalReportKind; scope: ReportScope; branches: ReadonlyArray<{ id: string; name: string }>; onScopeChange: (patch: Partial<ReportScope>) => void }) {
   const { session } = useApp();
-  // Preselect the safe context: the actor's active branch when one is chosen.
-  const [branchId, setBranchId] = useState<string>(session?.activeBranchId ?? "all");
-  const [rangeDays, setRangeDays] = useState<7 | 30 | 90>(30);
-  const [to, setTo] = useState(todayISODate());
-  const from = addDays(to, -(rangeDays - 1));
-  const branchInput = branchId === "all" ? undefined : branchId;
+  const from = reportScopeFrom(scope);
+  const to = scope.to;
+  const branchInput = scope.branchId === "all" ? undefined : scope.branchId;
   const params = { branchId: branchInput, from, to };
 
   const peakQuery = useApiQuery(qk.analytics("peak-hours", params), (api) => api.getPeakHoursReport({ branchId: branchInput, from, to }), { enabled: view === "peak-hours" });
@@ -65,44 +75,24 @@ export function OperationalReports({ view }: { view: OperationalReportKind }) {
   const controlsQuery = useApiQuery(qk.analytics("controls", params), (api) => api.getControlTrendsReport({ branchId: branchInput, from, to }), { enabled: view === "controls" });
 
   const active = { "peak-hours": peakQuery, classes: classesQuery, retention: retentionQuery, renewals: renewalsQuery, collections: collectionsQuery, crm: crmQuery, controls: controlsQuery }[view];
+  const currency = session?.organization.currency ?? "JOD";
 
   return (
     <div className="space-y-4">
-      <section className="panel flex flex-wrap items-end gap-3 p-4">
-        {session && session.branches.length > 1 ? (
-          <label className="grid gap-1 text-[11px] text-ink-3">Branch
-            <Select value={branchId} onValueChange={setBranchId}>
-              <SelectTrigger sizeVariant="sm" className="w-44" aria-label="Branch filter"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All my branches</SelectItem>
-                {session.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </label>
-        ) : null}
-        {RANGED[view] ? (
-          <>
-            <div className="flex gap-1.5">
-              {([7, 30, 90] as const).map((value) => <Button key={value} size="sm" variant={rangeDays === value ? "primary" : "secondary"} onClick={() => setRangeDays(value)}>{value} days</Button>)}
-            </div>
-            <label className="grid gap-1 text-[11px] text-ink-3">End date<Input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-9 w-40" /></label>
-            <p className="text-[11px] text-ink-3">{formatDate(from)} — {formatDate(to)} · gym local time</p>
-          </>
-        ) : null}
-        <Button variant="ghost" size="sm" className="ms-auto" onClick={() => void active.refetch()}><RefreshCw /> Refresh</Button>
-      </section>
+      <ReportScopeBar branches={branches} scope={scope} onChange={onScopeChange} ranged={RANGED[view]} onRefresh={() => void active.refetch()} refreshing={active.isFetching} note={RANGED[view] ? undefined : "as of today"} />
 
+      {active.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale report data">Showing the last loaded report; the latest refresh failed. <button type="button" className="font-medium underline" onClick={() => void active.refetch()}>Try again</button></div> : null}
       {active.isLoading ? <Skeleton className="h-72 w-full" /> : null}
-      {active.error ? <ErrorState onRetry={() => void active.refetch()} /> : null}
+      {active.isError ? <ErrorState onRetry={() => void active.refetch()} /> : null}
 
-      {!active.isLoading && !active.error ? (
+      {!active.isLoading && !active.isError ? (
         view === "peak-hours" && peakQuery.data ? <PeakHoursView report={peakQuery.data} from={from} to={to} />
         : view === "classes" && classesQuery.data ? <ClassesView report={classesQuery.data} from={from} to={to} />
         : view === "retention" && retentionQuery.data ? <RetentionView report={retentionQuery.data} />
-        : view === "renewals" && renewalsQuery.data ? <RenewalsView report={renewalsQuery.data} currency={session?.organization.currency ?? "JOD"} />
-        : view === "collections" && collectionsQuery.data ? <CollectionsView report={collectionsQuery.data} from={from} to={to} currency={session?.organization.currency ?? "JOD"} />
+        : view === "renewals" && renewalsQuery.data ? <RenewalsView report={renewalsQuery.data} currency={currency} />
+        : view === "collections" && collectionsQuery.data ? <CollectionsView report={collectionsQuery.data} from={from} to={to} currency={currency} />
         : view === "crm" && crmQuery.data ? <CrmView report={crmQuery.data} from={from} to={to} />
-        : view === "controls" && controlsQuery.data ? <ControlsView report={controlsQuery.data} from={from} to={to} currency={session?.organization.currency ?? "JOD"} />
+        : view === "controls" && controlsQuery.data ? <ControlsView report={controlsQuery.data} from={from} to={to} currency={currency} />
         : null
       ) : null}
     </div>
@@ -163,7 +153,7 @@ function ReportHeader({ title, definition, onExport, exportDisabled }: { title: 
     <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
       <div className="min-w-0 flex-1">
         <h2 className="text-[16px] font-semibold">{title}</h2>
-        <p className="mt-1 max-w-3xl text-[11.5px] leading-4 text-ink-3">{definition}</p>
+        <p className="mt-1 max-w-3xl text-[12px] leading-4 text-ink-3">{definition}</p>
       </div>
       <Button variant="secondary" size="sm" onClick={onExport} disabled={exportDisabled}><Download /> CSV</Button>
     </header>
@@ -206,10 +196,10 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
             <div className="min-w-[640px]">
               <div className="grid" style={{ gridTemplateColumns: `88px repeat(${hours.length}, 1fr)` }} aria-hidden>
                 <div />
-                {hours.map((hour) => <div key={hour} className="pb-1 text-center font-mono text-[10.5px] text-ink-3">{String(hour).padStart(2, "0")}</div>)}
+                {hours.map((hour) => <div key={hour} className="pb-1 text-center font-mono text-[11px] text-ink-3">{String(hour).padStart(2, "0")}</div>)}
                 {WEEKDAYS.map((label, weekday) => (
                   <div key={label} className="contents">
-                    <div className="pe-2 py-0.5 text-[11px] text-ink-2">{label}</div>
+                    <div className="pe-2 py-0.5 text-[12px] text-ink-2">{label}</div>
                     {hours.map((hour) => {
                       const count = byCell.get(`${weekday}:${hour}`) ?? 0;
                       return <div key={hour} className="m-px flex h-7 items-center justify-center rounded-sm text-[12px] font-medium" style={{ backgroundColor: count > 0 ? `color-mix(in oklab, var(--tenant-brand-primary) ${Math.max(12, Math.round((count / max) * 100))}%, transparent)` : "var(--color-sunken)", color: count > 0 && count / max > 0.55 ? "var(--color-paper)" : undefined }}>{count > 0 ? count : ""}</div>;
@@ -301,7 +291,7 @@ function RenewalsView({ report, currency }: { report: RenewalForecastReport; cur
               <div key={bucket.label} className="bg-surface px-4 py-3.5">
                 <p className="context-label">{bucket.label}</p>
                 <p className="mt-1 text-[20px] tabular">{bucket.count}</p>
-                <p className="text-[11.5px] text-ink-3"><MoneyText money={money(bucket.valueMinor)} /> expected</p>
+                <p className="text-[12px] text-ink-3"><MoneyText money={money(bucket.valueMinor)} /> expected</p>
               </div>
             ))}
           </div>
@@ -447,7 +437,7 @@ function ControlsView({ report, from, to, currency }: { report: ControlTrendsRep
             <TableBody>
               {report.recent.map((event) => (
                 <TableRow key={event.id}>
-                  <TableCell className="whitespace-nowrap text-[11.5px]">{formatDate(event.occurredAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-[12px]">{formatDate(event.occurredAt)}</TableCell>
                   <TableCell className="font-mono text-[11px]">{event.action}</TableCell>
                   <TableCell className="max-w-72 truncate text-[12px]" title={event.summary}>{event.summary}</TableCell>
                   <TableCell className="text-[12px]">{event.actorName}</TableCell>
