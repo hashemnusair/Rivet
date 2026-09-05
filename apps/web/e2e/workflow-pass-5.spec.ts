@@ -160,7 +160,7 @@ test("statements and ledger controls share one scope and trace to the journals",
   await page.getByRole("option", { name: /Abdoun/ }).click();
   await expect(page).toHaveURL(/branchId=/);
   // Ledger controls opens in the same branch, and its tab is part of the URL.
-  await page.getByRole("link", { name: "Ledger controls" }).click();
+  await page.getByRole("link", { name: "Ledger controls", exact: true }).click();
   await expect(page).toHaveURL(/\/finance\/controls\?branchId=/);
   await expect(page.getByRole("heading", { level: 1, name: "Management ledger" })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole("combobox", { name: "Ledger branch scope" })).toContainText("Abdoun");
