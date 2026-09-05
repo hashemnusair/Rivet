@@ -14,7 +14,7 @@ test.describe("staged member portal", () => {
 
     try {
       await member.goto("/customer/my-gyms", { waitUntil: "domcontentloaded" });
-      await expect(member.getByText("Member home", { exact: true })).toBeVisible();
+      await expect(member.getByRole("heading", { name: /^Hi,/ })).toBeVisible();
       await expect(member.getByRole("heading", { name: "Entry QR" })).toHaveCount(0);
 
       await member.getByRole("link", { name: /Forge Fitness Club/ }).first().click();
@@ -29,8 +29,9 @@ test.describe("staged member portal", () => {
       await qrDialog.getByRole("button", { name: "Close" }).click();
       await expect(qrDialog).toBeHidden();
 
-      await member.getByRole("link", { name: "Dashboard", exact: true }).click();
-      await member.getByRole("link", { name: "Profile", exact: true }).click();
+      await member.getByRole("link", { name: "Home", exact: true }).first().click();
+      await member.getByRole("button", { name: "Open account menu" }).first().click();
+      await member.getByRole("menuitem", { name: "Profile" }).click();
       await expect(member).toHaveURL(/\/customer\/profile$/);
       const marketing = member.getByRole("switch", { name: "Receive marketing updates" });
       const marketingBefore = await marketing.isChecked();

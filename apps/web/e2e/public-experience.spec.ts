@@ -65,7 +65,7 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("button", { name: /Continue as Yousef/i }).click();
     await expect(page).toHaveURL(/\/customer\/discover/);
 
-    await page.getByRole("link", { name: /View & book/i }).first().click();
+    await page.getByRole("link", { name: /View gym/i }).first().click();
     await expect(page).toHaveURL(/\/customer\/gyms\/forge-fitness/);
     // Trial requests are scheduled: choosing a branch unlocks that branch's
     // bookable window and pre-fills the opening time.
