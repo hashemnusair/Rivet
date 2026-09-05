@@ -2,7 +2,7 @@
 
 Baseline: `5356870` (fetched and verified against `origin/main` after the Pass 4 closure). Implementation commits: `d19edca` (reports, finance hub, statements, ledger controls), `8f86c9e` (audit, exports, automations, support, manager metrics) and `4777d83` (browser suite, references and captures). This pass is presented for Hashem's Preview review; `main` has not been pushed.
 
-Preview: recorded in the tracker once the review branch deployment is READY. Sign in as Omar Al-Khatib (owner) for every finance and oversight surface, or Layla Haddad (manager) for the operations dashboard and the shifts oversight view.
+[Open the protected Vercel Preview](https://rivet-edeeusvew-nusairhashem04-gmailcoms-projects.vercel.app/login/gym). Deployment `dpl_43osRv5uKfvFk1zZ8HBw7uvjL4np` (GitHub deployment 6283660228) targets Preview and was built by the Vercel Git integration from the pushed review branch `review/ui-workflow-pass-5` at `e979991`, with synthetic mock data and the existing deployment protection. Hosted checks could not be run from this session (the protected host resets non-browser connections and the in-app browser refuses the domain), so the hosted check is Hashem's own review; the equivalent local checks are recorded below. Sign in as Omar Al-Khatib (owner) for every finance and oversight surface, or Layla Haddad (manager) for the operations dashboard and the shifts oversight view.
 
 ## Verification
 
