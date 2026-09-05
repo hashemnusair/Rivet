@@ -487,12 +487,12 @@ export function CustomerSignupClient() {
           {existingAccount ? <p className="text-[12px] text-ink-2">Already have an account? <Link href={signInHref(context.returnTo)} className="font-semibold underline underline-offset-4">Sign in</Link>.</p> : null}
           <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!signUp || !authLoaded}>Create account <ArrowRight /></Button>
           <div id="clerk-captcha" role="group" aria-label="Security verification" />
-          <p className="text-center text-[11.5px] leading-relaxed text-ink-3">We will email you a verification code. Your password is handled by Clerk and never stored by RIVET.</p>
+          <p className="text-center text-[12.5px] leading-relaxed text-ink-3">We will email you a verification code. Your password is handled by Clerk and never stored by RIVET.</p>
         </form>
       ) : null}
 
       {step === "verify-email" ? (
-        <div className="mt-7 rounded-xl border border-line-2 bg-surface px-5 py-6 shadow-[0_18px_50px_rgba(21,20,15,0.06)] sm:px-7">
+        <div className="mt-7 rounded-lg border border-line-2 bg-surface px-5 py-6 sm:px-7">
           <div className="text-center">
             <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-sunken text-ink"><MailCheck className="size-5" /></span>
             <h2 className="mt-4 font-display text-[21px] font-semibold tracking-tight">Check your {verificationKind === "email" ? "email" : "phone"}</h2>

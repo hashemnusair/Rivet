@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Download, MonitorSmartphone, ShieldCheck, Trash2 } from "lucide-react";
+import { Bell, Check, Download, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -70,7 +70,50 @@ export function MemberInstallAndNotifications() {
     }
   };
 
-  return <section id="install" className="panel mt-5 p-4"><div className="flex items-start gap-3"><span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-signal-bg text-signal-deep"><MonitorSmartphone /></span><div><h2 className="text-[14px] font-semibold">Install and notifications</h2><p className="mt-1 text-[12px] text-ink-2">Install the member app for fast access. Notifications always require browser consent and can be revoked per device.</p></div></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-line p-3"><p className="text-[12.5px] font-semibold">Home-screen app</p><p className="mt-1 text-[11.5px] text-ink-3">{installed ? "RIVET is running as an installed app." : canInstall ? "Your browser is ready to install RIVET." : "Use your browser’s Add to Home Screen command if no install button appears."}</p><Button className="mt-3" size="sm" variant="secondary" disabled={!canInstall || installed} onClick={() => void install()}><Download /> {installed ? "Installed" : "Install RIVET"}</Button></div><div className="rounded-lg border border-line p-3"><p className="text-[12.5px] font-semibold">Reminder notifications</p><p className="mt-1 text-[11.5px] text-ink-3">{!vapidKey ? "Push delivery is not configured yet. Nothing will be requested from your browser." : permission === "denied" ? "Your browser has blocked notifications for RIVET." : "Enable reminders only on devices you control."}</p><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={!vapidKey || permission === "denied" || save.isPending} onClick={() => void enablePush()}><Bell /> Enable</Button>{(subscriptions.data ?? []).map((item) => <Button key={item.id} size="sm" variant="ghost" loading={revoke.isPending} onClick={() => revoke.mutate(item.id)}><Trash2 /> {item.label}</Button>)}</div></div></div><p className="mt-3 flex gap-2 text-[11px] text-ink-3"><ShieldCheck className="size-3.5 shrink-0" />The service worker caches only the public offline screen and brand assets. It never caches member records, receipts, or entry passes.</p></section>;
+  const deviceCount = subscriptions.data?.length ?? 0;
+  const notificationsCopy = !vapidKey
+    ? "Push delivery is not set up yet. Nothing will be requested from your browser."
+    : permission === "denied"
+      ? "Your browser has blocked notifications for RIVET. Allow them in the browser settings to turn reminders on."
+      : deviceCount > 0
+        ? `Reminders are on for ${deviceCount} device${deviceCount === 1 ? "" : "s"}. Turn one off at any time.`
+        : "Turn on reminders only on devices you control.";
+
+  return (
+    <section id="install" className="panel mt-4 scroll-mt-24 p-4 sm:p-5" aria-labelledby="install-title">
+      <h2 id="install-title" className="text-[15px] font-semibold">Install and notifications</h2>
+      <p className="mt-1 text-[13px] text-ink-2">Add RIVET to your home screen for one-tap access. Notifications always ask your browser first and can be turned off per device.</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-md border border-line p-4">
+          <h3 className="text-[13.5px] font-semibold">Home-screen app</h3>
+          <p className="mt-1 text-[12.5px] text-ink-2">{installed ? "RIVET is running as an installed app." : canInstall ? "Your browser is ready to install RIVET." : "Use your browser\u2019s Add to Home Screen command. Some browsers never show an install button."}</p>
+          {installed ? (
+            <p className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-success-deep" role="status"><Check className="size-4" aria-hidden /> Installed</p>
+          ) : canInstall ? (
+            <Button className="mt-3" size="sm" variant="secondary" onClick={() => void install()}><Download /> Install RIVET</Button>
+          ) : null}
+        </div>
+        <div className="rounded-md border border-line p-4">
+          <h3 className="text-[13.5px] font-semibold">Reminder notifications</h3>
+          <p className="mt-1 text-[12.5px] text-ink-2">{notificationsCopy}</p>
+          {vapidKey && permission !== "denied" ? (
+            <Button className="mt-3" size="sm" variant="secondary" loading={save.isPending} onClick={() => void enablePush()}><Bell /> Enable on this device</Button>
+          ) : null}
+          {deviceCount > 0 ? (
+            <ul className="mt-3 divide-y divide-line border-t border-line" aria-label="Devices with reminders">
+              {(subscriptions.data ?? []).map((item) => (
+                <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-[12.5px]">
+                  <span className="min-w-0 truncate text-ink">{item.label}</span>
+                  <Button size="sm" variant="ghost" loading={revoke.isPending} onClick={() => revoke.mutate(item.id)}><Trash2 /> Turn off</Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </div>
+      <p className="mt-3 flex gap-2 text-[12px] leading-relaxed text-ink-3"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />The app shell caches only the public offline screen and brand assets. It never caches member records, receipts or entry passes.</p>
+    </section>
+  );
 }
 
 function decodeVapidKey(value: string): Uint8Array<ArrayBuffer> { const padding = "=".repeat((4 - value.length % 4) % 4); const raw = atob((value + padding).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(raw, (character) => character.charCodeAt(0)); }

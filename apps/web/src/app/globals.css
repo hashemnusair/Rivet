@@ -354,6 +354,16 @@
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
+/*
+  While a text field has focus on a phone, the on-screen keyboard owns the
+  bottom of the screen. Hiding the dock keeps it from floating over the field
+  or the button beneath it; it returns as soon as the field loses focus. The
+  page reserve stays, so nothing shifts under the member's thumb.
+*/
+.member-app-shell:has(input:not([type="checkbox"]):not([type="radio"]):focus, textarea:focus, select:focus) .member-bottom-nav {
+  display: none;
+}
+
 @utility tabular {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";

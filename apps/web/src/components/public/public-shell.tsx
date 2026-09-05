@@ -244,10 +244,47 @@ function FooterColumn({ title, links }: { title: string; links: Array<[string, s
 // Member shell — the signed-in member area and the gym marketplace
 // ---------------------------------------------------------------------------
 const MEMBER_NAV = [
-  { href: "/customer/my-gyms", label: "Home", icon: Home, requiresAuth: true },
-  { href: "/customer/finance", label: "Payments", icon: ReceiptText, requiresAuth: true },
-  { href: "/customer/discover", label: "Explore gyms", icon: Search, requiresAuth: false },
+  { href: "/customer/my-gyms", label: "Home", shortLabel: "Home", icon: Home, requiresAuth: true },
+  { href: "/customer/finance", label: "Payments", shortLabel: "Payments", icon: ReceiptText, requiresAuth: true },
+  { href: "/customer/discover", label: "Explore gyms", shortLabel: "Explore", icon: Search, requiresAuth: false },
 ];
+
+const PROTECTED_MEMBER_PREFIXES = ["/customer/my-gyms", "/customer/finance", "/customer/receipts", "/customer/profile", "/customer/getting-started"];
+
+function isProtectedMemberRoute(pathname: string) {
+  return PROTECTED_MEMBER_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+/**
+ * One account menu for the desktop header and the phone dock. Everything the
+ * navigation already offers stays out of it, so the menu is only what a member
+ * cannot reach elsewhere: profile, the guide, communication choices, sign out.
+ */
+function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: string; email: string; onSignOut: () => void; touch?: boolean }) {
+  const itemClass = touch ? "min-h-11 py-2.5 text-[13.5px]" : undefined;
+  return (
+    <>
+      <DropdownMenuLabel>
+        <span className="block text-[13px] font-semibold text-ink">{name}</span>
+        <span className="mt-0.5 block truncate text-[12px] font-normal text-ink-3">{email}</span>
+      </DropdownMenuLabel>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem asChild className={itemClass}>
+        <Link href="/customer/profile"><UserRound /> Profile</Link>
+      </DropdownMenuItem>
+      <DropdownMenuItem asChild className={itemClass}>
+        <Link href="/customer/getting-started"><GraduationCap /> Getting started</Link>
+      </DropdownMenuItem>
+      <DropdownMenuItem asChild className={itemClass}>
+        <Link href="/customer/profile#communication"><MessageSquare /> Communication settings</Link>
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem className={itemClass} onClick={onSignOut}>
+        <LogOut /> Sign out
+      </DropdownMenuItem>
+    </>
+  );
+}
 
 export function CustomerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -260,7 +297,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const [signingOut, setSigningOut] = useState(false);
   const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
 
-  const protectedMemberRoute = pathname === "/customer/my-gyms" || pathname.startsWith("/customer/my-gyms/") || pathname.startsWith("/customer/finance") || pathname.startsWith("/customer/receipts/") || pathname === "/customer/profile" || pathname === "/customer/getting-started";
+  const protectedMemberRoute = isProtectedMemberRoute(pathname);
   const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
   const mockGymRole = DEMO_AUTH_BYPASS ? session?.roles[0] : undefined;
   const elevatedDestination = protectedMemberRoute
@@ -300,10 +337,12 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
   if (elevatedDestination) return <AuthTransition title="Opening your workspace" detail="Taking you to the right RIVET area…" />;
 
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
   return (
     <div className={cn("flex min-h-dvh flex-col bg-paper", customerSignedIn && "member-app-shell sm:pb-0")}>
       {customerSignedIn ? <MemberPwaManager /> : null}
-      <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-md">
+      <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
           <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
             <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={29} priority />
@@ -316,7 +355,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
           <nav className="hidden items-center gap-1 sm:flex" aria-label="Member navigation">
             {nav.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = isActive(item.href);
               return (
                 <Link
                   key={item.href}
@@ -350,31 +389,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuLabel>
-                      <span className="block text-[12.5px] font-semibold text-ink">{customer.name}</span>
-                      <span className="mt-0.5 block truncate text-[12px] font-normal text-ink-3">{customer.email}</span>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link href="/customer/profile">
-                        <UserRound /> Profile
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/customer/finance">
-                        <ReceiptText /> Payments and receipts
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild><Link href="/customer/getting-started"><GraduationCap /> Getting started</Link></DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/customer/my-gyms#communication">
-                        <MessageSquare /> Communication settings
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => void handleSignOut()}>
-                      <LogOut /> Sign out
-                    </DropdownMenuItem>
+                    <AccountMenuItems name={customer.name} email={customer.email} onSignOut={() => void handleSignOut()} />
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -413,65 +428,45 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
       {customerSignedIn && customer ? (
         <nav
-          className="member-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 backdrop-blur-md sm:hidden"
+          className="member-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 backdrop-blur-sm sm:hidden"
           aria-label="Member navigation"
         >
           <div className="mx-auto grid h-16 max-w-md grid-cols-4 px-3">
             {nav.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = isActive(item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-1 text-[12px] font-medium transition-colors",
+                    "flex flex-col items-center justify-center gap-1 rounded-md text-[12px] font-medium transition-colors",
                     active ? "text-ink" : "text-ink-3",
                   )}
                   aria-current={active ? "page" : undefined}
                 >
-                  <span className={cn("flex size-8 items-center justify-center rounded-md", active && "bg-sunken")}>
-                    <item.icon className="size-[17px]" aria-hidden />
+                  <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", active && "bg-sunken")}>
+                    <item.icon className="size-[18px]" aria-hidden />
                   </span>
-                  <span>{item.label === "Explore gyms" ? "Explore" : item.label}</span>
+                  <span>{item.shortLabel}</span>
                 </Link>
               );
             })}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="flex flex-col items-center justify-center gap-1 text-[12px] font-medium text-ink-3" aria-label="Open account menu">
-                  <span className="flex size-8 items-center justify-center rounded-md">
-                    <UserRound className="size-[17px]" aria-hidden />
+                <button
+                  type="button"
+                  className={cn("flex flex-col items-center justify-center gap-1 rounded-md text-[12px] font-medium transition-colors", isActive("/customer/profile") || isActive("/customer/getting-started") ? "text-ink" : "text-ink-3")}
+                  aria-label="Open account menu"
+                >
+                  <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", (isActive("/customer/profile") || isActive("/customer/getting-started")) && "bg-sunken")}>
+                    <UserRound className="size-[18px]" aria-hidden />
                   </span>
                   <span>Account</span>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-64">
-                <DropdownMenuLabel>
-                  <span className="block text-[12.5px] font-semibold text-ink">{customer.name}</span>
-                  <span className="mt-0.5 block truncate text-[12px] font-normal text-ink-3">{customer.email}</span>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/customer/profile">
-                    <UserRound /> Profile
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/customer/finance">
-                    <ReceiptText /> Payments and receipts
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild><Link href="/customer/getting-started"><GraduationCap /> Getting started</Link></DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/customer/my-gyms#communication">
-                    <MessageSquare /> Communication settings
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => void handleSignOut()}>
-                  <LogOut /> Sign out
-                </DropdownMenuItem>
+              <DropdownMenuContent align="end" side="top" sideOffset={10} className="w-64">
+                <AccountMenuItems name={customer.name} email={customer.email} onSignOut={() => void handleSignOut()} touch />
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
