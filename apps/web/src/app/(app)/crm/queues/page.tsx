@@ -1,5 +1,7 @@
 "use client";
 
+import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+
 import { Activity, ArrowUpRight, CalendarClock, PhoneCall, RefreshCw, RotateCcw, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -55,9 +57,9 @@ function RetentionWorkspace() {
   const setView = (next: string) => update({ view: next, page: undefined, member: undefined });
   return <div className="space-y-4">
     <PageHeader title="Retention" description="Follow up with members who stopped visiting or need to renew." />
-    <div className="inline-flex rounded-md border border-line-2 bg-surface p-1" role="group" aria-label="Retention workspace">
-      <button type="button" aria-pressed={view === "at-risk"} onClick={() => setView("at-risk")} className={cn("flex min-h-10 items-center gap-2 rounded-sm px-3.5 text-[12.5px] font-medium transition-colors", view === "at-risk" ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}><Activity className="size-3.5" /> At risk</button>
-      <button type="button" aria-pressed={view === "renewals"} onClick={() => setView("renewals")} className={cn("flex min-h-10 items-center gap-2 rounded-sm px-3.5 text-[12.5px] font-medium transition-colors", view === "renewals" ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}><CalendarClock className="size-3.5" /> Renewals</button>
+    <div className={tabListClassName} role="group" aria-label="Retention workspace">
+      <button type="button" aria-pressed={view === "at-risk"} onClick={() => setView("at-risk")} className={tabTriggerClassName}><Activity className="size-3.5" /> At risk</button>
+      <button type="button" aria-pressed={view === "renewals"} onClick={() => setView("renewals")} className={tabTriggerClassName}><CalendarClock className="size-3.5" /> Renewals</button>
     </div>
     {view === "at-risk" ? <AtRiskQueuePage /> : <RenewalQueuePage />}
   </div>;

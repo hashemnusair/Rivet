@@ -99,8 +99,8 @@ export default function MemberDetailPageClient() {
           const query = params.toString();
           router.replace(query ? `/members/${memberId}?${query}` : `/members/${memberId}`, { scroll: false });
         }}>
-          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-            <TabsList className="min-w-max">
+          <div className="min-w-0">
+            <TabsList aria-label="Member sections">
               {MEMBER_TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value} data-testid={tab.value === "timeline" ? "tab-timeline" : undefined}>
                   {tab.value === "pt" ? <Dumbbell className="size-3.5" /> : null}

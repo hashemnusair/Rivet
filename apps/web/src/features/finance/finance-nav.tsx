@@ -1,9 +1,10 @@
 "use client";
 
+import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+
 import { ArrowLeftRight, Banknote } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils/cn";
 import { useApp } from "@/lib/providers/app-providers";
 import type { Session, WorkspaceModuleKey } from "@/lib/domain/types";
 
@@ -43,7 +44,7 @@ export function FinanceNav() {
   const links = FINANCE_LINKS.filter((item) => financeLinkIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
 
   return (
-    <nav aria-label="Finance views" className="flex flex-wrap items-center gap-1 border-b border-line pb-2">
+    <nav aria-label="Finance views" className={tabListClassName}>
       {links.map((item) => {
         const active = financeLinkIsActive(item.href, pathname);
         return (
@@ -51,10 +52,7 @@ export function FinanceNav() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] transition-colors",
-              active ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken hover:text-ink",
-            )}
+            className={tabTriggerClassName}
           >
             <item.icon className="size-3.5" aria-hidden />
             {item.label}

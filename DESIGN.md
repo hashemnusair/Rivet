@@ -306,7 +306,7 @@ Tables use 13px rows, 11.5px readable headings, hairline separation, tabular num
 
 Primary and Settings navigation use a single active cue: a quiet tonal background plus stronger label/icon contrast and weight. Do not use colored vertical rails, simultaneous parent/child highlights, or tenant accent as routine navigation decoration.
 
-Contained tabs use a tonal selected item inside one quiet outer frame. Standard content tabs use the shared hairline underline pattern when they are not enclosed in a segmented container. Stock & purchasing uses an open, full-width tab strip with semibold labels and an ink underline, following Hashem’s Pass 3 review. Its tabs wrap on narrow screens so every section remains visible. Tab state must be keyboard accessible and URL-backed when it represents a shareable product view.
+In-page section navigation shares one open, full-width tab strip: 13.5px semibold labels, secondary ink for inactive sections, and an ink underline for the selected section. Use the shared Tabs components or their exported visual classes for route links and existing section controls. Keep one horizontally scrollable row on narrow screens; do not wrap tabs into multiple rows. The selected shared tab scrolls into view without moving the page vertically. Place section tabs immediately after the page heading and before branch/action toolbars where possible. Stock & purchasing uses matching 44px controls, with a full-width branch selector above two equal-width actions on phones. Status filters, billing choices, Board/List switches, guided steps and Settings’ vertical navigation retain their distinct roles. Tab state must be keyboard accessible and URL-backed when it represents a shareable product view.
 
 ### Feedback states
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+
 import { Check, ImagePlus, Plus, Printer, Trash2, UserPlus, Users, X, Pencil } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -323,8 +325,8 @@ function ClassesWorkspace() {
         </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <div className="inline-flex rounded-md border border-line bg-surface p-1" role="group" aria-label="Class view">
-          {([['agenda', 'Upcoming classes'], ['timetable', 'Weekly timetable']] as const).map(([value, label]) => <Button key={value} variant="ghost" aria-pressed={view === value} className={cn(view === value && "bg-sunken text-ink")} onClick={() => updateView({ view: value })}>{label}</Button>)}
+        <div className={tabListClassName} role="group" aria-label="Class view">
+          {([['agenda', 'Upcoming classes'], ['timetable', 'Weekly timetable']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={view === value} className={tabTriggerClassName} onClick={() => updateView({ view: value })}>{label}</button>)}
         </div>
       {view === "agenda" ? <div className="flex flex-wrap items-center gap-2"><Button variant="secondary" size="sm" aria-label="Previous seven days" onClick={() => updateView({ from: addDays(weekStart, -7) })}>Previous</Button><span className="text-[12px] tabular-nums">{formatDate(weekStart)} – {formatDate(weekEnd)}</span><Button variant="secondary" size="sm" aria-label="Next seven days" onClick={() => updateView({ from: addDays(weekStart, 7) })}>Next</Button><Button variant="ghost" size="sm" onClick={() => updateView({ from: todayISODate(session?.organization.timezone) })}>Today</Button></div> : <p className="text-[12px] text-ink-2">Repeats weekly · {branchName}</p>}
       </div>

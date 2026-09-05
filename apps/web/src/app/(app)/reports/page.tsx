@@ -1,5 +1,7 @@
 "use client";
 
+import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+
 import { Download, FileBarChart, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { PageHeader, Gate } from "@/components/shared/chrome";
@@ -132,14 +134,14 @@ export default function ReportsPage() {
       />
 
       <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner or manager access is required for financial reporting." />}>
-        <nav aria-label="Report views" className="flex flex-wrap items-center gap-1 border-b border-line pb-2">
+        <nav aria-label="Report views" className={tabListClassName}>
           {(["overview", "peak-hours", "classes", "retention", "renewals", "collections", "crm", "controls"] as const).map((kind) => (
             <button
               key={kind}
               type="button"
               aria-current={view === kind ? "page" : undefined}
               onClick={() => setView(kind)}
-              className={`cursor-pointer rounded-md px-2.5 py-1.5 text-[12px] transition-colors ${view === kind ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken hover:text-ink"}`}
+              className={tabTriggerClassName}
             >
               {kind === "overview" ? "Overview" : OPERATIONAL_REPORT_LABELS[kind]}
             </button>

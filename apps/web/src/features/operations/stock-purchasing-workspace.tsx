@@ -107,14 +107,10 @@ export function StockPurchasingWorkspace() {
   const branches = session?.branches ?? [];
   const sell = canCheckout && branchId ? (productId: string) => router.push(`/checkout?branchId=${encodeURIComponent(branchId)}&productId=${encodeURIComponent(productId)}`) : undefined;
   const branchQuery = branchId ? `?branch=${encodeURIComponent(branchId)}` : "";
-  const tabClass = "min-h-11 gap-1.5 px-2 py-3 text-[13.5px] font-semibold text-ink-2 sm:px-4";
 
   return (
     <div className="space-y-4" data-testid="operations-command-center">
-      <PageHeader title="Stock & purchasing" description={branchId ? `Stock, orders, suppliers, payables, and machines at ${branchLabel}.` : "Compare stock across branches. Select a branch to edit stock, order, pay suppliers, or manage machines."} actions={<div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-2"><label htmlFor="operations-branch" className="sr-only">Operations branch</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
-            const next = new URLSearchParams(searchParams.toString());
-            if (value === "all") next.delete("branch"); else next.set("branch", value);
-            router.replace(`/operations?${next}`, { scroll: false }); }}><SelectTrigger id="operations-branch" aria-label="Operations branch" className="min-w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>{canCheckout ? <Button asChild size="sm"><Link href={branchId ? `/checkout?branchId=${encodeURIComponent(branchId)}` : "/checkout"}><ShoppingCart /> Checkout</Link></Button> : null}<Button asChild size="sm" variant="secondary"><Link href={`/maintenance${branchQuery}`}><ClipboardCheck /> Maintenance</Link></Button></div>} />
+      <PageHeader title="Stock & purchasing" description={branchId ? `Stock, orders, suppliers, payables, and machines at ${branchLabel}.` : "Compare stock across branches. Select a branch to edit stock, order, pay suppliers, or manage machines."} />
       {inventoryError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some operational data could not refresh. <button type="button" className="font-medium underline" onClick={() => { retryInventory(); retryEquipment(); }}>Retry</button></div> : null}
       <Tabs value={tab} onValueChange={(value) => {
         setTab(value as StockTab);
@@ -123,13 +119,17 @@ export function StockPurchasingWorkspace() {
         if (branchId) next.set("branch", branchId);
         router.replace(`/operations?${next}`, { scroll: false });
       }}>
-        <TabsList aria-label="Stock and purchasing" className="flex h-auto w-full flex-wrap gap-x-2 gap-y-0 border-b border-line-3">
-          <TabsTrigger value="inventory" className={tabClass}><Boxes className="size-3.5" /> Inventory</TabsTrigger>
-          <TabsTrigger value="orders" className={tabClass}><ShoppingCart className="size-3.5" /> Purchase orders</TabsTrigger>
-          <TabsTrigger value="suppliers" className={tabClass}><Store className="size-3.5" /> Suppliers</TabsTrigger>
-          {canReadPayables ? <TabsTrigger value="payables" className={tabClass}><WalletCards className="size-3.5" /> Payables</TabsTrigger> : null}
-          <TabsTrigger value="equipment" className={tabClass}><Wrench className="size-3.5" /> Equipment</TabsTrigger>
+        <TabsList aria-label="Stock and purchasing">
+          <TabsTrigger value="inventory"><Boxes className="size-3.5" /> Inventory</TabsTrigger>
+          <TabsTrigger value="orders"><ShoppingCart className="size-3.5" /> Purchase orders</TabsTrigger>
+          <TabsTrigger value="suppliers"><Store className="size-3.5" /> Suppliers</TabsTrigger>
+          {canReadPayables ? <TabsTrigger value="payables"><WalletCards className="size-3.5" /> Payables</TabsTrigger> : null}
+          <TabsTrigger value="equipment"><Wrench className="size-3.5" /> Equipment</TabsTrigger>
         </TabsList>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center"><div className="col-span-2 min-w-0 sm:w-64"><label htmlFor="operations-branch" className="sr-only">Operations branch</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
+            const next = new URLSearchParams(searchParams.toString());
+            if (value === "all") next.delete("branch"); else next.set("branch", value);
+            router.replace(`/operations?${next}`, { scroll: false }); }}><SelectTrigger id="operations-branch" aria-label="Operations branch" className="h-11 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>{canCheckout ? <Button asChild className="h-11"><Link href={branchId ? `/checkout?branchId=${encodeURIComponent(branchId)}` : "/checkout"}><ShoppingCart /> Checkout</Link></Button> : null}<Button asChild className="h-11" variant="secondary"><Link href={`/maintenance${branchQuery}`}><ClipboardCheck /> Maintenance</Link></Button></div>
         <TabsContent value="inventory"><InventoryTab branchId={branchId} branchLabel={branchLabel} branches={branches} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} onSell={sell} /></TabsContent>
         <TabsContent value="orders"><PurchaseOrdersTab branchId={branchId} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} orders={orders} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} highlightOrderId={highlightOrderId} /></TabsContent>
         <TabsContent value="suppliers"><SuppliersTab branchId={branchId} branches={branches} writeEnabled={writeEnabled} suppliers={suppliers} loading={supplierQuery.isLoading} error={supplierQuery.error} onRetry={() => void supplierQuery.refetch()} mutations={mutations} /></TabsContent>

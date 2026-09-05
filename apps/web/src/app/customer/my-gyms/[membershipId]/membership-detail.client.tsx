@@ -1,5 +1,7 @@
 "use client";
 
+import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock3, Copy, CreditCard, Dumbbell, Gift, MapPin, MessageCircle, Phone, QrCode, ScanLine, Share2, Ticket, UserRoundCheck, Users } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -111,10 +113,10 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
         <Button onClick={() => void openQr()}><QrCode /> Show entry QR</Button>
       </div>
 
-      <div className="mt-5 flex w-fit rounded-lg border border-line bg-surface p-1" role="tablist" aria-label={`${gym.name} account sections`}>
-        <button type="button" role="tab" aria-selected={tab === "membership"} onClick={() => setTab("membership")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "membership" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>Membership details</button>
-        <button type="button" role="tab" aria-selected={tab === "classes"} onClick={() => setTab("classes")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "classes" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}><CalendarDays className="size-3.5" /> Classes</button>
-        <button type="button" role="tab" aria-selected={tab === "pt"} onClick={() => setTab("pt")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] font-medium", tab === "pt" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}><Dumbbell className="size-3.5" /> PT</button>
+      <div className={cn("mt-5", tabListClassName)} role="tablist" aria-label={`${gym.name} account sections`}>
+        <button type="button" role="tab" aria-selected={tab === "membership"} onClick={() => setTab("membership")} className={tabTriggerClassName}>Membership details</button>
+        <button type="button" role="tab" aria-selected={tab === "classes"} onClick={() => setTab("classes")} className={tabTriggerClassName}><CalendarDays className="size-3.5" /> Classes</button>
+        <button type="button" role="tab" aria-selected={tab === "pt"} onClick={() => setTab("pt")} className={tabTriggerClassName}><Dumbbell className="size-3.5" /> PT</button>
       </div>
 
       {tab === "membership" ? <div className="mt-5 space-y-5">
@@ -184,9 +186,9 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   return <div className="mt-5 space-y-5" role="tabpanel" aria-label="Classes">
     {value.profileCorrectionRequired ? <div className="rounded-lg border border-warning/30 bg-warning-bg px-5 py-3 text-[12.5px] text-warning-deep">Choose female or male in <Link href="/customer/profile" className="font-semibold underline underline-offset-4">your profile</Link> before booking. RIVET never guesses for audience-restricted classes.</div> : null}
 
-    <div className="flex w-fit rounded-lg border border-line bg-surface p-1" role="tablist" aria-label="Classes views">
-      <button type="button" role="tab" aria-selected={panelView === "week"} onClick={() => setPanelView("week")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", panelView === "week" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>This week</button>
-      <button type="button" role="tab" aria-selected={panelView === "history"} onClick={() => setPanelView("history")} className={cn("rounded-md px-3 py-2 text-[12.5px] font-medium", panelView === "history" ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}>My history{attendedCount ? <span className="ms-1.5 font-mono text-[10.5px] font-normal opacity-70">{attendedCount}</span> : null}</button>
+    <div className={tabListClassName} role="tablist" aria-label="Classes views">
+      <button type="button" role="tab" aria-selected={panelView === "week"} onClick={() => setPanelView("week")} className={tabTriggerClassName}>This week</button>
+      <button type="button" role="tab" aria-selected={panelView === "history"} onClick={() => setPanelView("history")} className={tabTriggerClassName}>My history{attendedCount ? <span className="ms-1.5 font-mono text-[10.5px] font-normal opacity-70">{attendedCount}</span> : null}</button>
     </div>
 
     {panelView === "week" ? <section aria-label="This week's classes" className="animate-fade-up">
