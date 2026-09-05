@@ -37,6 +37,15 @@ async function selectBranch(user: ReturnType<typeof userEvent.setup>, branchName
 }
 
 describe("OperationsCommandCenter", () => {
+  it("keeps the selected purchasing tab in the URL", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />);
+    await screen.findByTestId("operations-command-center");
+    await user.click(screen.getByRole("tab", { name: "Purchase orders" }));
+    expect(router.replace).toHaveBeenCalledWith("/operations?tab=orders", { scroll: false });
+    expect(screen.getByRole("tab", { name: "Purchase orders" })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("starts with a clear branch comparison view and compact inventory actions", async () => {
     await renderWithApp(<OperationsCommandCenter />);
 
