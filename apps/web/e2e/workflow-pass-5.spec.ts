@@ -75,7 +75,8 @@ const OWNER_ROUTES: Route[] = [
 
 for (const width of [360, 390, 768, 820, 1280, 1440]) {
   test(`owner and manager oversight surfaces remain usable at ${width}px`, async ({ page }) => {
-    test.setTimeout(180_000);
+    // Fourteen full-page visits; CI's cold dev server needs the headroom.
+    test.setTimeout(240_000);
     const shoot = width === 390 || width === 1440;
     await page.setViewportSize({ width, height: width < 600 ? 844 : 1000 });
     await fixClock(page);
