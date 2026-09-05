@@ -112,7 +112,8 @@ describe("follow-up workspace layout", () => {
 
     expect(screen.getByText("No visit in 18 days")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /At Risk Member/ }));
-    expect(screen.getByRole("heading", { name: "At Risk Member" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /At Risk Member/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open member record: At Risk Member" })).toHaveAttribute("href", "/members/member-risk");
     expect(screen.getByRole("link", { name: "Call" })).toHaveAttribute("href", "tel:+962790000099");
     expect(screen.getByTestId("whatsapp-handoff")).toBeInTheDocument();
   });

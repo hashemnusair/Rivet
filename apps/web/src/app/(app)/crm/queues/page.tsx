@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, CalendarClock, PhoneCall, RefreshCw, RotateCcw, Search, UserPlus, X } from "lucide-react";
+import { Activity, ArrowUpRight, CalendarClock, PhoneCall, RefreshCw, RotateCcw, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -133,7 +133,24 @@ function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: 
     : item.reasons.some((reason) => reason.kind === "expiring")
       ? `Hi ${item.member.fullName.split(/\s+/)[0]}, your membership is ending soon. Reply here and we will make renewal easy for you.`
       : `Hi ${item.member.fullName.split(/\s+/)[0]}, we have not seen you at the gym lately. Is everything okay? Reply here if we can help.`;
-  return <aside ref={ref} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16"><header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><h3 className="break-words font-display text-[16px] font-semibold">{item.member.fullName}</h3><p className="text-[12px] text-ink-3" dir="ltr">{item.member.phone}</p></div><button type="button" onClick={onClose} aria-label="Close member panel" className="flex size-11 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-sunken hover:text-ink"><X className="size-4" /></button></header><div className="space-y-4 px-4 py-3.5"><div className="space-y-2">{item.reasons.map((reason) => <div key={reason.kind} className="border-b border-line pb-2 last:border-0"><p className="text-[12.5px] font-medium">{reason.label}</p><p className="mt-0.5 text-[12px] capitalize text-ink-3">{reason.kind === "expired" ? "Win-back opportunity" : `${reason.kind} membership signal`}</p></div>)}</div><dl className="space-y-1.5 border-t border-line pt-3 text-[12px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Membership ends">{formatDate(item.membership.endDate)}</ContextRow>{item.lastVisitAt ? <ContextRow label="Last visit"><RelativeText iso={item.lastVisitAt} /></ContextRow> : <ContextRow label="Last visit">No recorded visit</ContextRow>}{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}</dl><div className="border-t border-line pt-3"><div className="mt-3 grid grid-cols-2 gap-2"><Button asChild variant="secondary" size="sm"><a href={`tel:${item.member.phone}`}><PhoneCall /> Call</a></Button><WhatsAppHandoff subject="member" subjectId={item.member.id} recipientName={item.member.fullName} phone={item.member.phone} initialMessage={initialMessage} onLogged={onClose} className="w-full" /><LogContactDialog subject="member" memberId={item.member.id} onLogged={onClose} /><SnoozeRiskDialog item={item} onSnoozed={onClose} /></div></div><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${item.member.id}`}>Open member record</Link></Button></div></aside>;
+  return <aside ref={ref} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="at-risk-panel">
+    <FollowUpHeader member={item.member} onClose={onClose} />
+    <div className="space-y-4 px-4 py-4">
+      <div className="space-y-1">{item.reasons.map((reason) => <p key={reason.kind} className="text-[13px] font-medium">{reason.label}</p>)}</div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]">
+        <ContextRow label="Plan">{item.membership.planName}</ContextRow>
+        <ContextRow label="Membership ends">{formatDate(item.membership.endDate)}</ContextRow>
+        <ContextRow label="Last visit">{item.lastVisitAt ? <RelativeText iso={item.lastVisitAt} /> : "No recorded visit"}</ContextRow>
+        {item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}
+      </dl>
+    </div>
+    <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3" aria-label="Follow-up actions">
+      <Button asChild variant="secondary" size="sm"><a href={`tel:${item.member.phone}`}><PhoneCall /> Call</a></Button>
+      <WhatsAppHandoff subject="member" subjectId={item.member.id} recipientName={item.member.fullName} phone={item.member.phone} initialMessage={initialMessage} onLogged={onClose} />
+      <LogContactDialog subject="member" memberId={item.member.id} onLogged={onClose} />
+      <SnoozeRiskDialog item={item} onSnoozed={onClose} />
+    </footer>
+  </aside>;
 }
 
 function SnoozeRiskDialog({ item, onSnoozed }: { item: AtRiskMemberItem; onSnoozed: () => void }) {
@@ -253,8 +270,13 @@ function RenewalQueuePage() {
         </section>
 
         {selectedItem ? <aside ref={panelRef} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="follow-up-panel">
-        <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><p className="context-label">{bucket === "expiring" ? "Expiring membership" : "Expired membership"}</p><h3 className="break-words font-display text-[16px] font-semibold">{selectedItem.member.fullName}</h3><p className="text-[12px] text-ink-3" dir="ltr">{selectedItem.member.phone}</p></div><button type="button" onClick={() => setSelectedId(undefined)} aria-label="Close follow-up panel" className="flex size-11 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-sunken hover:text-ink"><X className="size-4" /></button></header>
-        <div className="space-y-4 px-4 py-3.5"><RenewalContext item={selectedItem} /><div className="border-t border-line pt-3.5"><div><p className="context-label">Contact</p><p className="mt-1 text-[12px] text-ink-3">Call or open a ready-to-edit WhatsApp follow-up.</p></div><div className="mt-3 grid grid-cols-2 gap-2"><LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} /><WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} className="w-full" /></div></div><div className="border-t border-line pt-3"><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${selectedItem.member.id}`}>Open member record</Link></Button></div></div>
+        <FollowUpHeader member={selectedItem.member} onClose={() => setSelectedId(undefined)} />
+        <div className="px-4 py-4"><RenewalContext item={selectedItem} /></div>
+        <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3" aria-label="Follow-up actions">
+          <Button asChild variant="secondary" size="sm"><a href={`tel:${selectedItem.member.phone}`}><PhoneCall /> Call</a></Button>
+          <WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} />
+          <LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} />
+        </footer>
         </aside> : null}
       </div>
     </div>;
@@ -269,7 +291,19 @@ function EmptyQueue({ text, description, onReset }: { text: string; description:
 }
 
 function RenewalContext({ item }: { item: RenewalQueueItem }) {
-  return <dl className="space-y-1.5 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends"><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact"><RelativeText iso={item.lastContactAt} /> {item.lastContactOutcome ? `· ${item.lastContactOutcome.replace(/_/g, " ")}` : ""}</ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
+  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends"><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact"><RelativeText iso={item.lastContactAt} /> {item.lastContactOutcome ? `· ${item.lastContactOutcome.replace(/_/g, " ")}` : ""}</ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
 }
 
-function ContextRow({ label, children }: { label: string; children: React.ReactNode }) { return <div className="flex items-center justify-between gap-3"><dt className="text-ink-3">{label}</dt><dd className="text-end">{children}</dd></div>; }
+function FollowUpHeader({ member, onClose }: { member: { id: string; fullName: string; phone: string }; onClose: () => void }) {
+  return <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
+    <div className="min-w-0">
+      <h3 className="text-[16px] font-semibold"><Link href={`/members/${member.id}`} aria-label={`Open member record: ${member.fullName}`} className="inline-flex min-h-9 items-center gap-2 hover:underline underline-offset-4"><span className="break-words">{member.fullName}</span><ArrowUpRight className="size-4 shrink-0 text-ink-3" aria-hidden /></Link></h3>
+      <p className="text-[12px] text-ink-3" dir="ltr">{member.phone}</p>
+    </div>
+    <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close follow-up panel"><X /></Button>
+  </header>;
+}
+
+function ContextRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return <><dt className="text-ink-3">{label}</dt><dd className="min-w-0 break-words text-ink-2">{children}</dd></>;
+}
