@@ -50,10 +50,11 @@ The browser suite checks 360, 390, 768, 820, 1280 and 1440px. Twenty determinist
 - Pass 4 suite: 12 journeys pass deterministically on the integrated tree against the 20 committed references (a second run without snapshot updates). The design-system visual suite passes with the regenerated member finance reference; the other Pass 1 references are byte-identical to `main`.
 - Production dependency audit: no known vulnerabilities.
 - `git diff --check`: passed.
+- Linux references: Linux Chromium renders the ten 390px captures beyond the 4% ceiling (the sign-in capture differed by 6% in Actions run 33964187792 for the review commit), so each 390px capture keeps an inspected Linux reference at the same tolerance, generated on GitHub's Ubuntu runner (run 33970182948, corrected in run 33970396433 after the framework badge was excluded) and verified there: run 33970396433 passed all 12 Pass 4 journeys on Linux. The 1440px captures matched on both platforms. The temporary capture workflow lived only on the throwaway branch `tmp/pass-4-linux-refs`, which is deleted after release.
 - Equivalent banned-pattern scan (the Impeccable skill is not installed here): the changed member targets carry no `transition-all`, gradient, glass, resting shadow, oversized radius, hover-only motion, marketing utility, colored rail or sub-12px human copy; the remaining hits are pre-existing marketing tokens in `globals.css`, the shared sign-in footer treatment and the gym mark's monogram.
 
 Run from the repository root: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `pnpm audit --prod`, and `git diff --check`. Use an unused `PLAYWRIGHT_PORT` if another operator already owns 3100.
 
 ## Release verification
 
-To record after Hashem's approval and the push.
+Hashem reviewed the Preview and approved the pass on 5 September 2026 ("merge to main") with no correction batch. The approved implementation finishes at `332973a` (the four pass commits rebased onto the Pass 3 closure, plus the inspected Linux references). Push, GitHub Actions and Vercel Production verification for the exact pushed SHA are recorded below once complete.

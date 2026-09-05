@@ -243,12 +243,12 @@ Release verification: all 1,259 unit/component tests and 14 repository-safety te
 
 ## Pass 4: Member mobile experience
 
-**Status:** Implemented; awaiting Hashem's Preview review
+**Status:** Approved by Hashem; pushed to main, release verification recorded below
 **Baseline SHA:** `6b190d5`, integrated onto the Pass 3 closure `9caab72` before review
 **Implementation SHA:** `816205a`
-**Finish SHA:** To record after approval
+**Finish SHA:** `332973a`
 **Preview:** [https://rivet-11pgc2j6x-nusairhashem04-gmailcoms-projects.vercel.app](https://rivet-11pgc2j6x-nusairhashem04-gmailcoms-projects.vercel.app/login/member) · `dpl_4NuGxbM5wLQAK1mEmRC2yKRz1MKh`
-**Human approval:** Pending
+**Human approval:** Approved by Hashem on 5 September 2026 ("merge to main") with no correction batch requested
 
 Routes and shared surfaces:
 
