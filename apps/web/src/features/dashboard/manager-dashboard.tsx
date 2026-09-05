@@ -34,4 +34,4 @@ export function ManagerDashboard() {
   </div>;
 }
 
-function Metric({ label, children, loading, warning }: { label: string; children: React.ReactNode; loading: boolean; warning?: boolean }) { return <div className="px-4 py-3.5"><ContextLabel>{label}</ContextLabel>{loading ? <Skeleton className="mt-2 h-6 w-14" /> : <p className={warning ? "mt-1 text-[22px] font-medium text-warning" : "mt-1 text-[22px] font-medium"}>{children}</p>}</div>; }
+function Metric({ label, children, loading, warning }: { label: string; children: React.ReactNode; loading: boolean; warning?: boolean }) { return <div className="px-4 py-3.5"><ContextLabel>{label}</ContextLabel>{loading ? <Skeleton className="mt-2 h-6 w-14" /> : <p className={warning ? "mt-1 text-[22px] font-medium tabular text-warning-deep" : "mt-1 text-[22px] font-medium tabular"}>{children}</p>}</div>; }

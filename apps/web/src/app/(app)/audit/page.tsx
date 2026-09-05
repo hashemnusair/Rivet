@@ -1,8 +1,8 @@
 "use client";
 
 import { ChevronDown, Search } from "lucide-react";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { AuditQuery } from "@/lib/api/GymOSApi";
 import { useApiQuery } from "@/lib/hooks/use-api";
@@ -36,14 +36,29 @@ const CATEGORY_LABELS: Record<AuditCategory, string> = {
 };
 
 function AuditPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [search, setSearch] = useState("");
+  // Every filter is readable from the URL so an audit question can be shared
+  // or reopened exactly as it was asked.
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const [category, setCategory] = useState(searchParams.get("category") ?? "all");
   const [approval, setApproval] = useState(searchParams.get("approval") ?? "all");
-  const [actorId, setActorId] = useState("all");
-  const [page, setPage] = useState(1);
+  const [actorId, setActorId] = useState(searchParams.get("actor") ?? "all");
+  const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page")) || 1));
   const [expanded, setExpanded] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(search, 250);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (debouncedSearch) next.set("q", debouncedSearch);
+    if (category !== "all") next.set("category", category);
+    if (actorId !== "all") next.set("actor", actorId);
+    if (approval !== "all") next.set("approval", approval);
+    if (page > 1) next.set("page", String(page));
+    const query = next.toString();
+    if (query !== searchParams.toString()) router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [actorId, approval, category, debouncedSearch, page, pathname, router, searchParams]);
 
   const usersQuery = useApiQuery(qk.users({ all: true }), (api) => api.listUsers({ pageSize: 100 }));
 
@@ -74,13 +89,13 @@ function AuditPageInner() {
         description="Every sensitive action: who, what, when, why — with before and after. Append-only by design."
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-xs">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center" role="search" aria-label="Audit filters">
+        <div className="relative col-span-2 w-full sm:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
           <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search summary, actor, entity…" className="ps-8" aria-label="Search audit log" />
         </div>
         <Select value={category} onValueChange={(v) => { setCategory(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-44" aria-label="Category filter">
+          <SelectTrigger className="w-full sm:w-44" aria-label="Category filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -91,7 +106,7 @@ function AuditPageInner() {
           </SelectContent>
         </Select>
         <Select value={actorId} onValueChange={(v) => { setActorId(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-44" aria-label="Actor filter">
+          <SelectTrigger className="w-full sm:w-44" aria-label="Actor filter">
             <SelectValue placeholder="Anyone" />
           </SelectTrigger>
           <SelectContent>
@@ -102,11 +117,11 @@ function AuditPageInner() {
           </SelectContent>
         </Select>
         <Select value={approval} onValueChange={(value) => { setApproval(value); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-40" aria-label="Approval filter">
+          <SelectTrigger className="w-full sm:w-44" aria-label="Approval filter">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Any state</SelectItem>
+            <SelectItem value="all">Any approval state</SelectItem>
             <SelectItem value="pending">Pending approval</SelectItem>
             <SelectItem value="approved">Approved</SelectItem>
             <SelectItem value="rejected">Rejected</SelectItem>
@@ -154,7 +169,7 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
         aria-expanded={expanded}
         className="flex w-full items-start gap-3 px-4 py-3 text-start transition-colors hover:bg-sunken/40 cursor-pointer"
       >
-        <span className="mt-0.5 shrink-0 text-[11px] text-ink-3 tabular whitespace-nowrap">
+        <span className="mt-0.5 shrink-0 text-[12px] text-ink-3 tabular whitespace-nowrap">
           <DateTimeText iso={event.occurredAt} />
         </span>
         <span className="min-w-0 flex-1">
@@ -189,7 +204,7 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
               <DiffPanel label="After" values={event.after} highlight />
             ) : null}
           </div>
-          <p className="mt-3 font-mono text-[10.5px] text-ink-4">correlation {event.correlationId}</p>
+          <p className="mt-3 text-[12px] text-ink-3">Correlation <span className="font-mono text-[11px]">{event.correlationId}</span></p>
         </div>
       ) : null}
     </li>
