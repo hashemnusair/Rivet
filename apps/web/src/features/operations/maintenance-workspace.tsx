@@ -2,7 +2,7 @@
 
 import { Boxes, ClipboardCheck } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
@@ -10,7 +10,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { PageHeader } from "@/components/shared/chrome";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ForbiddenState, StatePanel } from "@/components/ui/states";
+import { ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
 import { FacilityTaskWorkspace } from "./facility-task-workspace";
 
 /**
@@ -21,6 +21,7 @@ export function MaintenanceWorkspace() {
   const { session, setBranch } = useApp();
   const { can } = usePermissions();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const branchId = session?.activeBranchId;
   const branches = session?.branches ?? [];
   const branchLabel = branchId ? branches.find((branch) => branch.id === branchId)?.name ?? branchId : "All branches";
@@ -37,8 +38,12 @@ export function MaintenanceWorkspace() {
 
   return (
     <div className="space-y-4" data-testid="maintenance-workspace">
-      <PageHeader title="Maintenance" description={branchId ? `Cleaning, inspections, and incidents at ${branchLabel.toLowerCase()}, organised by gym space.` : "Choose a branch to see its cleaning, inspection, and incident work."} actions={<div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-2"><label htmlFor="maintenance-branch" className="sr-only">Maintenance branch</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value); }}><SelectTrigger id="maintenance-branch" aria-label="Maintenance branch" className="h-8 min-w-44 border-0 bg-transparent px-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div><Button asChild variant="secondary" size="sm"><Link href={branchId ? `/operations?branch=${encodeURIComponent(branchId)}` : "/operations"}><Boxes /> Stock & purchasing</Link></Button></div>} />
-      {branchId ? <FacilityTaskWorkspace branchId={branchId} zones={zonesQuery.data ?? []} writeEnabled={writeEnabled} /> : <StatePanel icon={ClipboardCheck} title="Choose a branch first" description="Maintenance is tracked separately for each branch. Choose a branch above to see cleaning, inspection, and incident tasks by gym space." className="mt-2" />}
+      <PageHeader title="Maintenance" description={branchId ? `Cleaning, inspections, and incidents at ${branchLabel}, organised by gym space.` : "Choose a branch to see its cleaning, inspection, and incident work."} actions={<div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-2"><label htmlFor="maintenance-branch" className="sr-only">Maintenance branch</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
+            const next = new URLSearchParams(searchParams.toString());
+            if (value === "all") next.delete("branch"); else next.set("branch", value);
+            next.delete("zone"); next.delete("action");
+            router.replace(`/maintenance?${next}`, { scroll: false }); }}><SelectTrigger id="maintenance-branch" aria-label="Maintenance branch" className="min-w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div><Button asChild variant="secondary" size="sm"><Link href={branchId ? `/operations?branch=${encodeURIComponent(branchId)}` : "/operations"}><Boxes /> Stock & purchasing</Link></Button></div>} />
+      {branchId && zonesQuery.isError ? <QueryErrorState error={zonesQuery.error} onRetry={() => void zonesQuery.refetch()} /> : branchId && zonesQuery.isLoading ? <div className="panel h-40 animate-pulse" aria-label="Loading gym spaces" /> : branchId ? <FacilityTaskWorkspace key={branchId} branchId={branchId} zones={zonesQuery.data ?? []} writeEnabled={writeEnabled} /> : <StatePanel icon={ClipboardCheck} title="Choose a branch first" description="Maintenance is tracked separately for each branch. Choose a branch above to see cleaning, inspection, and incident tasks by gym space." className="mt-2" />}
     </div>
   );
 }

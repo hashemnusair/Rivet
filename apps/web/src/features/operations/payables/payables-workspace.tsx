@@ -1,8 +1,10 @@
 "use client";
 
+import { isApiError } from "@/lib/api/errors";
+
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, History, Receipt, Search as SearchIcon, WalletCards } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
@@ -14,7 +16,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { downloadTextFile } from "@/lib/exports/download";
 import { getApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils/cn";
-import { PageHeader, Stat } from "@/components/shared/chrome";
+import { PageHeader } from "@/components/shared/chrome";
 import { DateText, MoneyText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,6 +67,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
   const { session } = useApp();
   const { can } = usePermissions();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const currency = session?.organization.currency ?? "JOD";
   const timeZone = session?.organization.timezone ?? "Asia/Amman";
@@ -72,15 +75,27 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
   const canRead = can("operations.manage") || can("reports.financial.read");
   const writeEnabled = can("operations.manage");
 
-  const [branchId, setBranchId] = useState<string>(() => embeddedBranchId ?? session?.activeBranchId ?? ALL);
+  const [branchId, setBranchId] = useState<string>(() => embeddedBranchId ?? searchParams.get("branch") ?? session?.activeBranchId ?? ALL);
   const [supplierId, setSupplierId] = useState<string>(() => searchParams.get("supplier") ?? ALL);
-  const [status, setStatus] = useState<PayableStatusFilter>("open");
-  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<PayableStatusFilter>(() => STATUS_FILTERS.find((entry) => entry.value === searchParams.get("status"))?.value ?? "open");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [cursors, setCursors] = useState<string[]>([]);
   const [payDialog, setPayDialog] = useState<{ supplierId?: string; payable?: Payable } | null>(() => (searchParams.get("pay") ? { supplierId: searchParams.get("supplier") ?? undefined } : null));
   const [history, setHistory] = useState<{ payableId?: string; supplierId?: string; title: string; description?: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const debouncedSearch = useDebouncedValue(search.trim(), 250);
+  const updateFilter = (key: string, value: string) => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (value) next.set(key, value); else next.delete(key);
+    router.replace(`${pathname}?${next}`, { scroll: false });
+  };
+  const filterQuery = searchParams.toString();
+  useEffect(() => {
+    const current = new URLSearchParams(filterQuery);
+    setSupplierId(current.get("supplier") ?? ALL);
+    setStatus(STATUS_FILTERS.find((entry) => entry.value === current.get("status"))?.value ?? "open");
+    setSearch(current.get("search") ?? "");
+  }, [filterQuery]);
 
   useEffect(() => { if (embedded) setBranchId(embeddedBranchId ?? ALL); }, [embedded, embeddedBranchId]);
   useEffect(() => { setCursors([]); }, [branchId, supplierId, status, debouncedSearch]);
@@ -128,48 +143,49 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
   };
 
   const toolbar = (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-end gap-3">
       <div className="relative">
         <SearchIcon className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-        <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Supplier, order, or reference…" className="h-9 w-48 ps-8 sm:w-60" aria-label="Search payables" />
+        <Input value={search} onChange={(event) => setSearch(event.target.value)} onBlur={() => updateFilter("search", search)} placeholder="Supplier, order, or reference…" className="h-9 w-60 max-w-full ps-8" aria-label="Search payables" />
       </div>
       {!embedded ? (
-        <Select value={branchId} onValueChange={setBranchId}>
+        <Select value={branchId} onValueChange={(value) => { setBranchId(value); updateFilter("branch", value); }}>
           <SelectTrigger aria-label="Payables branch" className="h-9 w-40"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value={ALL}>All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
         </Select>
       ) : null}
-      <Select value={supplierId} onValueChange={setSupplierId}>
+      <Select value={supplierId} onValueChange={(value) => { setSupplierId(value); updateFilter("supplier", value); }}>
         <SelectTrigger aria-label="Payables supplier" className="h-9 w-44"><SelectValue /></SelectTrigger>
         <SelectContent><SelectItem value={ALL}>All suppliers</SelectItem>{suppliers.map((supplier) => <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>)}</SelectContent>
       </Select>
-      <Select value={status} onValueChange={(value) => setStatus(value as PayableStatusFilter)}>
-        <SelectTrigger aria-label="Payables status" className="h-9 w-44"><SelectValue /></SelectTrigger>
+      <Select value={status} onValueChange={(value) => { setStatus(value as PayableStatusFilter); updateFilter("status", value); }}>
+        <SelectTrigger aria-label="Payables status" className="h-9 w-64 max-w-full"><SelectValue /></SelectTrigger>
         <SelectContent>{STATUS_FILTERS.map((entry) => <SelectItem key={entry.value} value={entry.value}>{entry.label}</SelectItem>)}</SelectContent>
       </Select>
-      <Button variant="secondary" size="sm" onClick={() => void exportCsv()} loading={exporting} disabled={!page}><Download /> Export CSV</Button>
-      {writeEnabled ? <Button size="sm" onClick={() => setPayDialog({ supplierId: supplierId === ALL ? undefined : supplierId })} data-testid="open-record-supplier-payment"><WalletCards /> Record payment</Button> : null}
+
     </div>
   );
 
   return (
     <div className="space-y-4" data-testid="payables-workspace">
-      {embedded ? <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-[15px] font-semibold">Payables</h2><p className="text-[12px] text-ink-3">What the gym still owes suppliers, oldest first.</p></div>{toolbar}</div>
-        : <PageHeader sectionLabel="Stock & purchasing" title="Payables" description="What the gym still owes suppliers, oldest first. Record a payment when money goes out; the ledger posts it separately." actions={toolbar} />}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        {embedded ? <div><h2 className="text-[15px] font-semibold">Payables</h2><p className="text-[12px] text-ink-2">What the gym still owes suppliers, oldest first.</p></div> : <PageHeader title="Payables" description="Review supplier balances and record money paid out." />}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={() => void exportCsv()} loading={exporting} disabled={!page}><Download /> Export CSV</Button>
+          {writeEnabled ? <Button size="sm" onClick={() => setPayDialog({ supplierId: supplierId === ALL ? undefined : supplierId })} data-testid="open-record-supplier-payment"><WalletCards /> Record payment</Button> : null}
+        </div>
+      </div>
+      {toolbar}
 
       {payablesQuery.isLoading ? <div className="grid gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
-        : payablesQuery.isError ? <QueryErrorState error={payablesQuery.error} onRetry={() => void payablesQuery.refetch()} forbiddenDescription="Your role can’t read supplier payables for this workspace." />
+        : payablesQuery.isError && (!page || (isApiError(payablesQuery.error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(payablesQuery.error.code))) ? <QueryErrorState error={payablesQuery.error} onRetry={() => void payablesQuery.refetch()} forbiddenDescription="Your role can’t read supplier payables for this workspace." />
           : page ? (
             <>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <section className="panel p-4"><Stat label="Outstanding" value={<MoneyText money={page.totals.outstanding} />} context={`${page.totals.openCount} open ${page.totals.openCount === 1 ? "payable" : "payables"} · ${branchLabel.toLowerCase()}`} /></section>
-                <section className="panel p-4"><Stat label="Oldest open balance" value={oldestOpen ? <DateText iso={oldestOpen} /> : "—"} context={oldestOpen ? "Aged from the receiving date; RIVET does not invent due dates." : "Nothing is waiting to be paid."} /></section>
-                <section className="panel p-4">
-                  <p className="context-label">Aging</p>
-                  <dl className="mt-2 grid grid-cols-4 gap-1 text-[11.5px]">
-                    {page.aging.map((bucket) => <div key={bucket.bucket}><dt className="text-ink-3">{bucket.bucket} days</dt><dd className={cn("mt-0.5 font-medium tabular", bucket.bucket === "90+" && bucket.count > 0 && "text-danger")}><MoneyText money={bucket.outstanding} hideCurrency /></dd></div>)}
-                  </dl>
-                </section>
+              {payablesQuery.isError ? <p role="status" className="text-[12px] text-warning-deep">Balances could not refresh. Showing the last loaded records. <Button variant="ghost" size="sm" onClick={() => void payablesQuery.refetch()}>Retry</Button></p> : null}
+              <div className="panel grid divide-y divide-line sm:grid-cols-3 sm:divide-y-0">
+                <section className="p-4"><p className="context-label">Outstanding</p><p className="mt-1 text-xl font-semibold tabular-nums"><MoneyText money={page.totals.outstanding} /></p><p className="mt-1 text-[12px] text-ink-2">{page.totals.openCount} open {page.totals.openCount === 1 ? "payable" : "payables"} · {branchLabel}</p></section>
+                <section className="p-4"><p className="context-label">Oldest open balance</p><p className="mt-1 text-[14px] font-medium">{oldestOpen ? <DateText iso={oldestOpen} /> : "Nothing waiting to be paid"}</p><p className="mt-1 text-[12px] text-ink-2">Age is measured from receipt of the order.</p></section>
+                <section className="p-4"><p className="context-label">Aging</p><dl className="mt-2 grid grid-cols-4 gap-2 text-[12px]">{page.aging.map((bucket) => <div key={bucket.bucket}><dt className="text-ink-3">{bucket.bucket} days</dt><dd className={cn("mt-0.5 font-medium tabular-nums", bucket.bucket === "90+" && bucket.count > 0 && "text-danger")}><MoneyText money={bucket.outstanding} hideCurrency /></dd></div>)}</dl></section>
               </div>
 
               {page.supplierTotals.length > 1 ? (
@@ -178,7 +194,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
                   <ul className="divide-y divide-line">
                     {page.supplierTotals.map((row) => (
                       <li key={row.supplierId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px]">
-                        <button type="button" className="min-w-0 text-start font-medium hover:underline" onClick={() => setSupplierId(row.supplierId)}>{row.supplierName}</button>
+                        <button type="button" className="min-w-0 text-start font-medium hover:underline" onClick={() => { setSupplierId(row.supplierId); updateFilter("supplier", row.supplierId); }}>{row.supplierName}</button>
                         <span className="flex items-center gap-3 text-[12px] text-ink-2"><span>{row.openCount} open{row.oldestReceivedAt ? <> · oldest <DateText iso={row.oldestReceivedAt} /></> : null}</span><MoneyText money={row.outstanding} className="font-semibold text-ink" />{writeEnabled ? <Button size="xs" variant="secondary" onClick={() => setPayDialog({ supplierId: row.supplierId })}>Pay</Button> : null}</span>
                       </li>
                     ))}
@@ -190,7 +206,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
                 <div className="overflow-x-auto">
                   <table className="w-full text-start" data-testid="payables-table">
                     <caption className="sr-only">Supplier payables</caption>
-                    <thead className="border-b border-line bg-sunken/40 text-[11px] uppercase tracking-wide text-ink-3">
+                    <thead className="border-b border-line bg-sunken/40 text-[12px] uppercase tracking-wide text-ink-3">
                       <tr>
                         <th className="px-4 py-2.5 font-medium">Supplier</th>
                         <th className="px-4 py-2.5 font-medium">What was received</th>
@@ -207,9 +223,9 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
                         <tr><td colSpan={8}><EmptyState compact title={status === "open" ? "Nothing to pay" : "No matching payables"} description={status === "open" ? "Received supplier orders appear here until they are paid. Private purchases and equipment costs are listed below for reconciliation." : "Try another status, supplier, or search."} className="m-4" /></td></tr>
                       ) : page.items.map((payable) => (
                         <tr key={payable.id} className="text-[12.5px]" data-testid="payable-row">
-                          <td className="px-4 py-3"><span className="font-medium">{payable.supplierName}</span><span className="block text-[11px] text-ink-3">{payable.branchName}</span></td>
-                          <td className="max-w-[280px] px-4 py-3"><Link href={payable.href} className="block truncate hover:underline">{payable.sourceLabel}</Link>{payable.externalReference ? <span className="block font-mono text-[11px] text-ink-3">{payable.externalReference}</span> : null}</td>
-                          <td className="whitespace-nowrap px-4 py-3"><DateText iso={payable.receivedAt} /><span className={cn("block text-[11px]", ageTone(payable.ageDays))}>{payable.ageDays} {payable.ageDays === 1 ? "day" : "days"}{payable.dueDate ? <> · due <DateText iso={payable.dueDate} /></> : null}</span></td>
+                          <td className="px-4 py-3"><span className="font-medium">{payable.supplierName}</span><span className="block text-[12px] text-ink-3">{payable.branchName}</span></td>
+                          <td className="max-w-[280px] px-4 py-3"><Link href={payable.href} className="block truncate hover:underline">{payable.sourceLabel}</Link>{payable.externalReference ? <span className="block font-mono text-[12px] text-ink-3">{payable.externalReference}</span> : null}</td>
+                          <td className="whitespace-nowrap px-4 py-3"><DateText iso={payable.receivedAt} /><span className={cn("block text-[12px]", ageTone(payable.ageDays))}>{payable.ageDays} {payable.ageDays === 1 ? "day" : "days"}{payable.dueDate ? <> · due <DateText iso={payable.dueDate} /></> : null}</span></td>
                           <td className="px-4 py-3 text-end tabular" dir="ltr"><MoneyText money={payable.original} hideCurrency /></td>
                           <td className="px-4 py-3 text-end tabular" dir="ltr"><MoneyText money={payable.paid} hideCurrency /></td>
                           <td className="px-4 py-3 text-end font-semibold tabular" dir="ltr"><MoneyText money={payable.remaining} hideCurrency /></td>
@@ -244,7 +260,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
             <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><AlertTriangle className="size-3.5 text-ink-2" aria-hidden /></span>
             <div>
               <h3 className="text-[13px] font-semibold">Costs without a supplier account</h3>
-              <p className="text-[11.5px] text-ink-3">Private purchases, equipment, repairs, and supplies also owe money, but RIVET cannot tell who to pay. They are listed here for reconciliation and never assigned to a supplier automatically.</p>
+              <p className="text-[12px] text-ink-3">Private purchases, equipment, repairs, and supplies also owe money, but RIVET cannot tell who to pay. They are listed here for reconciliation and never assigned to a supplier automatically.</p>
             </div>
           </div>
           {reconciliationQuery.data ? <span className="text-[12px] text-ink-2">{reconciliationQuery.data.count} {reconciliationQuery.data.count === 1 ? "item" : "items"} · <MoneyText money={reconciliationQuery.data.total} /></span> : null}
@@ -258,18 +274,18 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
                     <li key={item.id} className="grid gap-1 px-4 py-2.5 text-[12.5px] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                       <div className="min-w-0">
                         <Link href={item.href} className="font-medium hover:underline">{item.sourceLabel}</Link>
-                        <p className="text-[11.5px] text-ink-3">{item.branchName} · <DateText iso={item.recordedAt} />{item.vendorHint ? ` · ${item.vendorHint}` : ""}</p>
-                        <p className="text-[11.5px] text-ink-2">{item.reason}</p>
+                        <p className="text-[12px] text-ink-3">{item.branchName} · <DateText iso={item.recordedAt} />{item.vendorHint ? ` · ${item.vendorHint}` : ""}</p>
+                        <p className="text-[12px] text-ink-2">{item.reason}</p>
                       </div>
                       <div className="flex items-center gap-2 sm:justify-end"><MoneyText money={item.amount} className="font-semibold" /><LedgerStatusBadge status={item.ledgerPostingStatus} /></div>
                     </li>
                   ))}
-                  {reconciliationQuery.data!.truncated ? <li className="px-4 py-2 text-[11.5px] text-ink-3">Showing the newest {reconciliationQuery.data!.items.length}; choose one branch to see the rest.</li> : null}
+                  {reconciliationQuery.data!.truncated ? <li className="px-4 py-2 text-[12px] text-ink-3">Showing the newest {reconciliationQuery.data!.items.length}; choose one branch to see the rest.</li> : null}
                 </ul>
               )}
       </section>
 
-      {!embedded ? <p className="text-[11.5px] text-ink-3"><Receipt className="me-1 inline size-3.5" aria-hidden />Supplier payment confirmations open from each payment’s history. They are remittance records for the supplier, not customer receipts.</p> : null}
+      {!embedded ? <p className="text-[12px] text-ink-3"><Receipt className="me-1 inline size-3.5" aria-hidden />Supplier payment confirmations open from each payment’s history. They are remittance records for the supplier, not customer receipts.</p> : null}
 
       <RecordSupplierPaymentDialog
         open={Boolean(payDialog)}

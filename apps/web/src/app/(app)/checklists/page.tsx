@@ -1,6 +1,10 @@
 "use client";
 
+import { isApiError } from "@/lib/api/errors";
+
 import { Check, CircleAlert, ClipboardCheck, Moon, Sun, Wrench } from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { PageHeader } from "@/components/shared/chrome";
 import { Button } from "@/components/ui/button";
@@ -9,7 +13,7 @@ import { Textarea } from "@/components/ui/input";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/misc";
-import { ErrorState, EmptyState } from "@/components/ui/states";
+import { ErrorState, EmptyState, QueryErrorState } from "@/components/ui/states";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -32,8 +36,13 @@ export default function ChecklistsPage() {
   const { session } = useApp();
   const { can } = usePermissions();
   const branches = session?.branches ?? [];
+  const params = useSearchParams();
+  const router = useRouter();
+  const requestedBranch = params.get("branch");
   const [branchChoice, setBranchChoice] = useState<string | undefined>();
-  const branchId = branchChoice ?? session?.activeBranchId ?? branches[0]?.id;
+  const branchId = branchChoice ?? branches.find((branch) => branch.id === requestedBranch)?.id ?? session?.activeBranchId ?? branches[0]?.id;
+  const branchName = branches.find((branch) => branch.id === branchId)?.name;
+  const chooseBranch = (id: string) => { setBranchChoice(id); router.replace(`/checklists?branch=${encodeURIComponent(id)}`, { scroll: false }); setProblem(undefined); setEscalate(undefined); };
 
   const dayQuery = useApiQuery(qk.checklistDay(branchId ?? ""), (api) => api.getChecklistDay({ branchId: branchId! }), { enabled: Boolean(branchId) });
   const invalidate = useInvalidate();
@@ -52,24 +61,26 @@ export default function ChecklistsPage() {
         title="Daily checklist"
         description="Tick each item as it's done. Anything that fails gets a reason, so nothing is quietly skipped."
         actions={branches.length > 1 ? (
-          <Select value={branchId ?? ""} onValueChange={setBranchChoice}>
+          <Select value={branchId ?? ""} onValueChange={chooseBranch}>
             <SelectTrigger sizeVariant="sm" className="w-44" aria-label="Branch"><SelectValue /></SelectTrigger>
             <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
           </Select>
-        ) : undefined}
+        ) : <span className="text-[13px] text-ink-2">{branchName}</span>}
       />
 
       {!branchId ? <EmptyState icon={ClipboardCheck} title="Join a branch first" description="Checklists are branch-specific." /> :
         dayQuery.isLoading ? <div className="space-y-3"><Skeleton className="h-40 w-full" /><Skeleton className="h-40 w-full" /></div> :
-        dayQuery.error ? <ErrorState onRetry={() => void dayQuery.refetch()} /> :
+        dayQuery.error && (!day || (isApiError(dayQuery.error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(dayQuery.error.code))) ? <ErrorState onRetry={() => void dayQuery.refetch()} /> :
         !day || day.runs.length === 0 ? (
           <EmptyState icon={ClipboardCheck} title="No checklists for this branch yet" description={canEscalate ? "Create the opening and closing walkthroughs under Settings → Daily checklists." : "Ask a manager to set up the daily walkthroughs."} />
         ) : (
           <div className="space-y-5">
-            {day.runs.map((run) => (
+            {dayQuery.error ? <p role="status" className="text-[12px] text-warning-deep">The checklist could not refresh. Showing the last loaded run. <Button size="sm" variant="ghost" onClick={() => void dayQuery.refetch()}>Retry</Button></p> : null}
+            {[...day.runs].sort((a, b) => Number(b.items.some((item) => item.status === "failed")) - Number(a.items.some((item) => item.status === "failed"))).map((run) => (
               <RunCard
                 key={`${run.templateId}:${run.localDate}`}
                 run={run}
+                branchId={branchId}
                 busy={setItem.isPending}
                 onComplete={(item) => setItem.mutate({ templateId: run.templateId, itemId: item.itemId, status: "completed" })}
                 onProblem={(item) => setProblem({ run, item, mode: "problem" })}
@@ -86,8 +97,9 @@ export default function ChecklistsPage() {
   );
 }
 
-function RunCard({ run, busy, onComplete, onProblem, onCorrect, onEscalate }: {
+function RunCard({ run, branchId, busy, onComplete, onProblem, onCorrect, onEscalate }: {
   run: ChecklistRun;
+  branchId: string;
   busy: boolean;
   onComplete: (item: ChecklistRunItem) => void;
   onProblem: (item: ChecklistRunItem) => void;
@@ -95,16 +107,17 @@ function RunCard({ run, busy, onComplete, onProblem, onCorrect, onEscalate }: {
   onEscalate?: (item: ChecklistRunItem) => void;
 }) {
   const Icon = run.type === "opening" ? Sun : Moon;
+  const failedCount = run.items.filter((item) => item.status === "failed").length;
   return (
     <section className="panel overflow-hidden" aria-label={`${run.name} checklist`}>
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
         <span className="flex size-8 items-center justify-center rounded-md bg-sunken"><Icon className="size-4 text-ink-2" aria-hidden /></span>
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-semibold">{run.name}</h2>
-          <p className="text-[11.5px] text-ink-3">{run.type === "opening" ? "Opening" : "Closing"} · due {run.dueTime}</p>
+          <p className="text-[12px] text-ink-3">{run.type === "opening" ? "Opening" : "Closing"} · due {run.dueTime}</p>
         </div>
-        {run.complete ? <Badge variant="success">All done</Badge> : run.overdue ? <Badge variant="warning">Overdue</Badge> : null}
-        <span className="font-mono text-[11.5px] text-ink-3">{run.progress.done}/{run.progress.total}</span>
+        {failedCount > 0 ? <Badge variant="danger">{failedCount} failed</Badge> : run.complete ? <Badge variant="success">Required items recorded</Badge> : run.overdue ? <Badge variant="warning">Overdue</Badge> : null}
+        <span className="tabular-nums text-[12px] text-ink-3">{run.progress.done}/{run.progress.total}</span>
       </header>
       <ul className="divide-y divide-line">
         {run.items.map((item) => {
@@ -128,8 +141,8 @@ function RunCard({ run, busy, onComplete, onProblem, onCorrect, onEscalate }: {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className={cn("block text-[13.5px]", item.status === "completed" && "text-ink-3 line-through decoration-line-3")}>{item.label}{!item.required ? <span className="ms-2 text-[12px] text-ink-3">optional</span> : null}</span>
-                  {item.instructions && !done ? <span className="block text-[11.5px] text-ink-3">{item.instructions}</span> : null}
-                  {done && item.actorName && item.at ? <span className="block text-[11px] text-ink-3">{item.status === "completed" ? "Done" : item.status === "failed" ? "Failed" : "Skipped"} by {item.actorName} at {formatTime(item.at)}{item.reason ? ` — ${item.reason}` : ""}</span> : null}
+                  {item.instructions && !done ? <span className="block text-[12px] text-ink-3">{item.instructions}</span> : null}
+                  {done && item.actorName && item.at ? <span className="block text-[12px] text-ink-3">{item.status === "completed" ? "Done" : item.status === "failed" ? "Failed" : "Skipped"} by {item.actorName} at {formatTime(item.at)}{item.reason ? ` — ${item.reason}` : ""}</span> : null}
                 </span>
               </button>
               {!done ? (
@@ -137,7 +150,7 @@ function RunCard({ run, busy, onComplete, onProblem, onCorrect, onEscalate }: {
               ) : item.status === "failed" && !item.facilityTaskId && item.offerMaintenance && onEscalate ? (
                 <Button variant="secondary" size="sm" onClick={() => onEscalate(item)}><Wrench /> Create maintenance task</Button>
               ) : item.facilityTaskId ? (
-                <Badge variant="outline">Maintenance task created</Badge>
+                <Button asChild variant="secondary" size="sm"><Link href={`/maintenance?branch=${encodeURIComponent(branchId)}&task=${encodeURIComponent(item.facilityTaskId)}`}><Wrench /> Open maintenance task</Link></Button>
               ) : null}
             </li>
           );
@@ -185,7 +198,7 @@ function ProblemDialog({ state, onClose, onDone }: { state?: ProblemDialogState;
                 </SelectContent>
               </Select>
             )}
-            <label className="grid gap-1 text-[11px] text-ink-3">{needsReason ? "Why? (required)" : "Why? (optional)"}
+            <label className="grid gap-1 text-[12px] text-ink-3">{needsReason ? "Why? (required)" : "Why? (optional)"}
               <Textarea value={reason} onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setReason(event.target.value)} placeholder={correcting ? "What changed?" : "What did you find?"} />
             </label>
           </DialogBody>
@@ -220,12 +233,13 @@ function EscalateDialog({ state, branchId, onClose, onDone }: { state?: Escalate
         <DialogHeader><DialogTitle>Create maintenance task</DialogTitle></DialogHeader>
         {state ? (
           <DialogBody className="space-y-3">
-            <p className="text-[13px]">A facility task goes to Operations for <span className="font-medium">{state.item.label}</span>{state.item.reason ? <> — “{state.item.reason}”</> : null}.</p>
+            <p className="text-[12px] text-ink-2">The task starts unassigned. Your recorded reason is included in its details.</p>
+            <p className="text-[13px]">A task will appear in Maintenance for <span className="font-medium">{state.item.label}</span>{state.item.reason ? <> — “{state.item.reason}”</> : null}.</p>
             {!state.item.zoneId ? (
-              zones.length === 0 && !zonesQuery.isLoading ? (
+              zonesQuery.isError ? <QueryErrorState error={zonesQuery.error} onRetry={() => void zonesQuery.refetch()} /> : zones.length === 0 && !zonesQuery.isLoading ? (
                 <p className="text-[12px] text-warning-deep">This branch has no gym spaces yet. Add one under Settings → Gym spaces first.</p>
               ) : (
-                <label className="grid gap-1 text-[11px] text-ink-3">Gym space
+                <label className="grid gap-1 text-[12px] text-ink-3">Gym space
                   <Select value={zoneId} onValueChange={setZoneId}>
                     <SelectTrigger aria-label="Gym space"><SelectValue placeholder="Choose a space" /></SelectTrigger>
                     <SelectContent>{zones.map((zone: Zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}</SelectContent>

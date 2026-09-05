@@ -1,5 +1,7 @@
 "use client";
 
+import { isApiError } from "@/lib/api/errors";
+
 import { Check, CheckCircle2, ChevronRight, Cog, Pencil, Plus, ShieldAlert, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { EquipmentAsset, EquipmentIssue, EquipmentRecommendation, EquipmentWorkOrder, UpsertEquipmentAssetInput, UpsertEquipmentWorkOrderInput } from "@/lib/domain/types";
@@ -160,7 +162,7 @@ export function EquipmentTab({ branchId, currency, writeEnabled, zones, assets, 
 
   if (!branchId) return <StatePanel icon={Wrench} title="Choose a branch first" description="Equipment belongs to one branch at a time. Choose a branch above to view and update its machines." className="mt-2" />;
   if (loading) return <LoadingGrid />;
-  if (error && assets.length === 0) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read machine records for this workspace." />;
+  if (error && (assets.length === 0 || (isApiError(error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(error.code)))) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read machine records for this workspace." />;
 
   const updateAssetStatus = (asset: EquipmentAsset, status: EquipmentAsset["status"]) => mutations.asset.mutate({ id: asset.id, branchId: asset.branchId, zoneId: asset.zoneId, code: asset.code, name: asset.name, manufacturer: asset.manufacturer, model: asset.model, serialNumber: asset.serialNumber, purchaseDate: asset.purchaseDate, installationDate: asset.installationDate, purchaseCost: asset.purchaseCost, warrantyEndDate: asset.warrantyEndDate, status, expectedServiceIntervalDays: asset.expectedServiceIntervalDays, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths });
   const updateWorkOrder = (order: EquipmentWorkOrder, status: EquipmentWorkOrder["status"]) => mutations.workOrder.mutate({ id: order.id, branchId: order.branchId, assetId: order.assetId, issueId: order.issueId, status, description: order.description, assigneeId: order.assigneeId, vendorName: order.vendorName, partsCost: order.partsCost, laborCost: order.laborCost, replacementEstimate: order.replacementEstimate });

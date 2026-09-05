@@ -54,7 +54,7 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
         <Button asChild variant="ghost" size="sm"><Link href="/operations/payables"><ArrowLeft /> Payables</Link></Button>
         <div className="flex flex-wrap items-center gap-2">
-          <Button asChild variant="secondary" size="sm"><Link href={`/operations/payables?pay=1&supplier=${encodeURIComponent(detail.supplierId)}`}><WalletCards /> Record another</Link></Button>
+          {writeEnabled ? <Button asChild variant="secondary" size="sm"><Link href={`/operations/payables?pay=1&supplier=${encodeURIComponent(detail.supplierId)}`}><WalletCards /> Record another</Link></Button> : null}
           {writeEnabled && !reversed ? <Button variant="danger" size="sm" onClick={() => setReverseOpen(true)} data-testid="reverse-supplier-payment"><Undo2 /> Reverse…</Button> : null}
           <Button variant="secondary" size="sm" onClick={download}><Download /> Download</Button>
           <Button size="sm" onClick={() => window.print()}><Printer /> Print</Button>
@@ -62,7 +62,7 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
-        <article id="receipt-print" className="panel mx-auto w-full max-w-xl px-8 py-8 text-[13px]">
+        <article id="receipt-print" className="panel mx-auto w-full max-w-xl px-4 py-5 text-[13px] sm:px-8 sm:py-8">
           <header className="border-b border-dashed border-line-3 pb-4">
             <p className="context-label">Supplier payment confirmation</p>
             <h1 className="mt-1 font-display text-[20px] font-semibold tracking-tight">{detail.organization.name}</h1>

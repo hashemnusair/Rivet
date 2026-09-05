@@ -1,5 +1,7 @@
 "use client";
 
+import { isApiError } from "@/lib/api/errors";
+
 import { AlertTriangle, ArrowRightLeft, Boxes, PackagePlus, Pencil, Plus, Search as SearchIcon, ShoppingBag, Trash2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -97,7 +99,7 @@ export function InventoryTab({ branchId, branchLabel, branches, currency, writeE
     return map;
   }, [branchId, inventory]);
   if (loading) return <LoadingGrid />;
-  if (error && products.length === 0) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read inventory for this workspace." />;
+  if (error && (products.length === 0 || (isApiError(error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(error.code)))) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read inventory for this workspace." />;
   const closeProductForm = () => { setProductForm(false); setEditingProduct(undefined); };
   return (
     <div className="space-y-4" data-testid="operations-inventory">

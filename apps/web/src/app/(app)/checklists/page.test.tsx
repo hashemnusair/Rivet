@@ -41,6 +41,12 @@ describe("daily checklist staff flow", () => {
     await user.click(save);
 
     await waitFor(() => expect(within(opening).getByText(/Failed by .* — Shower drain is blocked\./)).toBeInTheDocument());
-    expect(within(opening).getByRole("button", { name: /Create maintenance task/ })).toBeInTheDocument();
+    expect(within(opening).getByText("1 failed")).toBeInTheDocument();
+    await user.click(within(opening).getByRole("button", { name: /Create maintenance task/ }));
+    const escalation = await screen.findByRole("dialog", { name: "Create maintenance task" });
+    expect(within(escalation).getByText(/starts unassigned/)).toBeInTheDocument();
+    await user.click(within(escalation).getByRole("button", { name: "Create task" }));
+    const taskLink = await within(opening).findByRole("link", { name: "Open maintenance task" });
+    expect(taskLink).toHaveAttribute("href", expect.stringMatching(/^\/maintenance\?branch=.+&task=.+/));
   });
 });

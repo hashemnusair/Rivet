@@ -1,5 +1,7 @@
 "use client";
 
+import { isApiError } from "@/lib/api/errors";
+
 import { Archive, Check, PackagePlus, Pencil, Plus, ShoppingCart, Store, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -74,7 +76,7 @@ export function PurchaseOrdersTab({ branchId, currency, writeEnabled, products, 
   }, [highlightOrderId, orders]);
   const visible = useMemo(() => orders.filter((order) => filter === "all" || (filter === "open" ? ["draft", "approved", "partially_received"].includes(order.status) : ["received", "cancelled"].includes(order.status))), [filter, orders]);
   if (loading) return <LoadingGrid />;
-  if (error && orders.length === 0) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read purchase orders for this workspace." />;
+  if (error && (orders.length === 0 || (isApiError(error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(error.code)))) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read purchase orders for this workspace." />;
   return (
     <div className="space-y-4" data-testid="operations-orders">
       {!writeEnabled ? <ReadOnlyNotice /> : null}
@@ -94,7 +96,7 @@ export function SuppliersTab({ branchId, branches, writeEnabled, suppliers, load
   const [archiveTarget, setArchiveTarget] = useState<Supplier>();
   const closeSupplierForm = () => { setSupplierForm(false); setEditingSupplier(undefined); };
   if (loading) return <LoadingGrid />;
-  if (error && suppliers.length === 0) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read suppliers for this workspace." />;
+  if (error && (suppliers.length === 0 || (isApiError(error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(error.code)))) return <QueryErrorState error={error} onRetry={onRetry} forbiddenDescription="Your role can’t read suppliers for this workspace." />;
   return (
     <div className="space-y-4" data-testid="operations-suppliers">
       {!writeEnabled ? <ReadOnlyNotice /> : null}
