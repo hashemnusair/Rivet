@@ -1,6 +1,6 @@
 # Pass 2 review evidence
 
-Baseline: `b06292a` (fetched and verified against `origin/main`). Implementation commits: `dbbae4d`, `59320ed`, `021a85f`. Hashem reviewed the first preview and requested two corrections. The consolidated correction batch is implemented at `352d501`; Hashem approved the pass and authorized the push on 5 September 2026. Actions and Production verification remain pending.
+Baseline: `b06292a` (fetched and verified against `origin/main`). Implementation commits: `dbbae4d`, `59320ed`, `021a85f`. Hashem reviewed the first preview and requested two corrections. The consolidated correction batch is implemented at `352d501`; Hashem approved the pass and authorized the push on 5 September 2026. The pass is pushed at `4204613`. Matching Vercel Production is READY and every GitHub Actions job passed.
 
 [Open the protected Vercel Preview](https://rivet-hgn62dl9h-nusairhashem04-gmailcoms-projects.vercel.app/login/gym). Deployment `dpl_4tYNU78PJx1tRcRFxw5AgBhA6JJm` is READY, targets Preview, and was built from committed source `352d501`. Authenticated hosted checks opened Leads, Retention, Classes and PT with HTTP 200 at 390px and no horizontal overflow. It uses synthetic mock data. Existing Vercel deployment protection remains enabled.
 
@@ -57,3 +57,10 @@ The browser suite checks 360, 390, 768, 820, 1280 and 1440px. Twelve determinist
 - Corrected hosted Preview: READY at source `352d501`; four authenticated phone route checks passed (HTTP 200, correct headings, no page overflow), including absence of Leads saved-view controls and the linked retention member heading.
 
 Run from the repository root: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `pnpm audit --prod`, and `git diff --check`. Use an unused `PLAYWRIGHT_PORT` if another operator already owns 3100.
+
+## Release verification
+
+- Approved integration commit: `4204613` on `main`; fetched before the push and preserved all remote commits.
+- Vercel Production: `dpl_3XKWcQPh9c596AAuMeG1LfZ1Uikv`, READY, exact Git commit `42046132241f9a95d89b909d2a2d246293734014`. Marketing, app and staff sign-in returned HTTP 200; `/dev/design-system` returned 404 in Production.
+- GitHub Actions: [run 33954966139](https://github.com/hashemnusair/Rivet/actions/runs/33954966139), all jobs passed (static gate, generated-code check, credential-free browser suite).
+- Pass 3 has not started and requires Hashem’s separate confirmation. No Convex deploy or Production data mutation was performed.

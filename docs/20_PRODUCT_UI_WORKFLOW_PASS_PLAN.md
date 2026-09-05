@@ -9,7 +9,7 @@ The work is a refinement of the implemented product. It must preserve authorizat
 ## Progress
 
 - [x] Pass 1: Daily front-desk work
-- [ ] Pass 2: Sales, retention, and scheduling
+- [x] Pass 2: Sales, retention, and scheduling
 - [ ] Pass 3: Branch operations
 - [ ] Pass 4: Member mobile experience
 - [ ] Pass 5: Owner, finance, and oversight
@@ -147,10 +147,10 @@ Review evidence is committed in `apps/web/e2e/workflow-pass-1-visual.spec.ts` an
 
 ## Pass 2: Sales, retention, and scheduling
 
-**Status:** Approved by Hashem; release verification in progress
+**Status:** Complete; approved visual refinement with the deliberate limits recorded below
 **Baseline SHA:** `b06292a`
 **Implementation SHA:** `352d501` (including the consolidated correction batch)
-**Finish SHA:** Pending release verification
+**Finish SHA:** `4204613` (approved implementation and correction evidence)
 **Preview:** [https://rivet-hgn62dl9h-nusairhashem04-gmailcoms-projects.vercel.app](https://rivet-hgn62dl9h-nusairhashem04-gmailcoms-projects.vercel.app/login/gym) · `dpl_4tYNU78PJx1tRcRFxw5AgBhA6JJm` · READY
 **Human approval:** Approved by Hashem on 5 September 2026 after requesting the two Leads/retention corrections; push explicitly authorized.
 
@@ -185,11 +185,11 @@ Workflow outcomes:
 Completion:
 
 - [x] Before and after evidence approved; one consolidated correction batch applied.
-- [x] Local technical gate passed (1,249 unit tests, 14 safety tests, 80 browser journeys verified, 14 explicit staging skips; both typechecks, build, lint, audit, detector and diff checks). Human review is complete; release checks remain open.
-- [ ] Pass merged and deployed.
-- [ ] Finish evidence recorded here.
+- [x] Local technical gate passed (1,249 unit tests, 14 safety tests, 80 browser journeys verified, 14 explicit staging skips; both typechecks, build, lint, audit, detector and diff checks). Human review and release checks passed.
+- [x] Pass committed directly to main and deployed; Actions [run `33954966139`](https://github.com/hashemnusair/Rivet/actions/runs/33954966139) passed, and matching Vercel Production `dpl_3XKWcQPh9c596AAuMeG1LfZ1Uikv` is READY.
+- [x] Finish evidence recorded here, in `CURRENT_STATE.md` and in the linked review evidence.
 
-Implementation and review evidence: [`docs/ui-evidence/pass-2/README.md`](ui-evidence/pass-2/README.md). All listed surfaces were inspected; a checked inspection does not mark human acceptance or release complete. Existing dated-class cancellation and PT payout views are not implemented product surfaces; auditor is retired. The mock trainer workspace has a documented permission mismatch with Convex, so trainer UI and server scoping are verified separately. Legacy stage-only trial records and bounded plan pickers remain explicit review limitations; no domain/data repair was folded into visual work. The two absolute workflow checks remain unchecked because legacy trial records and bounded plan pickers are existing limitations, not fully resolved outcomes. These limits remain recorded with the approved visual pass; no domain/data repair was requested. Pass 3 remains untouched and requires Hashem’s separate confirmation.
+Implementation and review evidence: [`docs/ui-evidence/pass-2/README.md`](ui-evidence/pass-2/README.md). All listed surfaces were inspected; Hashem approved the pass and explicitly authorized release after requesting the two corrections. Existing dated-class cancellation and PT payout views are not implemented product surfaces; auditor is retired. The mock trainer workspace has a documented permission mismatch with Convex, so trainer UI and server scoping are verified separately. Legacy stage-only trial records and bounded plan pickers remain explicit review limitations; no domain/data repair was folded into visual work. The two absolute workflow checks remain unchecked because legacy trial records and bounded plan pickers are existing limitations, not fully resolved outcomes. These limits remain recorded with the approved visual pass; no domain/data repair was requested. Pass 3 remains untouched and requires Hashem’s separate confirmation.
 
 ## Pass 3: Branch operations
 
