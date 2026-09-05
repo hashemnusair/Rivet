@@ -107,7 +107,7 @@ export function SuppliersTab({ branchId, branches, writeEnabled, suppliers, load
             {suppliers.map((supplier) => (
               <div key={supplier.id} className="flex flex-wrap items-center gap-3 p-4" data-testid="supplier-row">
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken"><Store className="size-4 text-ink-2" aria-hidden /></div>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 basis-3/4 sm:basis-0">
                   <p className="break-words text-[13.5px] font-medium">{supplier.name}</p>
                   <p className="mt-0.5 break-words text-[12px] text-ink-3">{supplier.contactName ?? "No contact"} · {supplier.email ?? supplier.phone ?? "No contact channel"}{supplier.terms ? ` · ${supplier.terms}` : ""}</p>
                   <div className="mt-1 flex flex-wrap gap-1">{supplier.branchIds.map((id) => <Badge key={id} variant="neutral">{branches.find((branch) => branch.id === id)?.name ?? id}</Badge>)}</div>

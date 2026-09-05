@@ -81,15 +81,15 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
           </dl>
 
           <section className="border-b border-dashed border-line-3 py-4">
-            <h2 className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Applied to</h2>
+            <h2 className="text-[12px] font-semibold text-ink-3">Applied to</h2>
             <table className="mt-2 w-full text-[12.5px]">
-              <thead className="text-start text-[11px] uppercase tracking-wide text-ink-3"><tr><th className="py-1 text-start font-medium">Payable</th><th className="py-1 text-end font-medium">Applied</th><th className="py-1 text-end font-medium">Still owed</th></tr></thead>
+              <thead className="text-start text-[12px] text-ink-3"><tr><th className="py-1 text-start font-medium">Payable</th><th className="py-1 text-end font-medium">Applied</th><th className="py-1 text-end font-medium">Still owed</th></tr></thead>
               <tbody>
                 {detail.allocations.map((allocation) => {
                   const payable = detail.payables.find((candidate) => candidate.payableId === allocation.payableId);
                   return (
                     <tr key={allocation.payableId} className="border-t border-line-2">
-                      <td className="py-2 pe-2 align-top">{allocation.sourceLabel}{payable ? <span className="block text-[11px] text-ink-3">{PAYABLE_STATUS_LABELS[payable.status]} · total {toMajor(payable.original).toFixed(3)}</span> : null}</td>
+                      <td className="py-2 pe-2 align-top">{allocation.sourceLabel}{payable ? <span className="block text-[12px] text-ink-3">{PAYABLE_STATUS_LABELS[payable.status]} · total {toMajor(payable.original).toFixed(3)}</span> : null}</td>
                       <td className="py-2 text-end align-top tabular" dir="ltr">{toMajor(allocation.amount).toFixed(3)}</td>
                       <td className="py-2 text-end align-top tabular" dir="ltr">{payable ? toMajor(payable.remaining).toFixed(3) : "—"}</td>
                     </tr>
@@ -100,7 +100,7 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
             <div className="mt-3 flex justify-between border-t border-line-2 pt-2 text-[13px]"><span className="text-ink-2">{detail.supplierName} still owed after this payment</span><MoneyText money={detail.supplierRemaining} className="font-semibold" /></div>
           </section>
 
-          <footer className="space-y-1 pt-4 text-[11.5px] text-ink-2">
+          <footer className="space-y-1 pt-4 text-[12px] text-ink-2">
             <p>Operational record: {reversed ? "reversed" : "recorded"} in RIVET. Ledger: {ledgerStatusLabel(detail.ledgerPostingStatus).toLowerCase()}{detail.reversal ? `; reversal ${ledgerStatusLabel(detail.reversal.ledgerPostingStatus).toLowerCase()}` : ""}.</p>
             <p>Amounts in {currency}. This is a supplier remittance record, not a customer receipt.</p>
           </footer>

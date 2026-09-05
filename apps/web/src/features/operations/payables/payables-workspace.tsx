@@ -206,7 +206,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
                 <div className="overflow-x-auto">
                   <table className="w-full text-start" data-testid="payables-table">
                     <caption className="sr-only">Supplier payables</caption>
-                    <thead className="border-b border-line bg-sunken/40 text-[12px] uppercase tracking-wide text-ink-3">
+                    <thead className="border-b border-line bg-sunken/40 text-[12px] text-ink-3">
                       <tr>
                         <th className="px-4 py-2.5 font-medium">Supplier</th>
                         <th className="px-4 py-2.5 font-medium">What was received</th>
