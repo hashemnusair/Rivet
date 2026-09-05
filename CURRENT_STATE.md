@@ -1,5 +1,12 @@
 # GymOS / RIVET current implementation state
 
+## Pass 3 horizontal-scroll regression fix — 5 September 2026
+
+- Hashem reported severe flickering and a disappearing page when horizontally scrolling Stock & purchasing tabs after selecting the in-app browser’s iPhone 15 Pro preset. Earlier geometry and tab-selection checks missed continuous gestures and frame-rate behavior.
+- Reproduction found the root overscroll handler intercepted the small vertical component of a horizontal gesture. Its Euler spring diverged at a 30fps frame interval, producing page translations on the order of `10^23px`. Pointer mode was sampled only at mount, so switching a loaded desktop page to phone emulation could retain desktop handling.
+- Fix `b413d08` uses an exact critically damped spring solution with bounded movement, excludes horizontal wheel input, leaves touch gestures native and immediately responds to pointer-mode changes. This corrects scroll presentation only; domain, authorization and financial behavior remain unchanged.
+- Nine regression tests passed across 120/60/30fps and long frame delays, horizontal input, native touch and mode changes. The new browser journey passed slow-frame recovery, desktop-to-touch emulation, repeated swipes, stable selection, subsequent tab activation and branch-picker use. The existing desktop/mobile overscroll journey passed on retry after the known initial-navigation race. Typecheck and canonical lint passed. Corrected Preview is READY at `https://rivet-hf42gg007-nusairhashem04-gmailcoms-projects.vercel.app` (`dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg`, source `b413d08`). The same slow-frame/emulation-switch/native-swipe regression passed on the hosted build in 8.7 seconds. The Production build passed. Approval and push remain pending.
+
 ## Pass 3 navigation consistency follow-up — 5 September 2026
 
 - Hashem liked the underline tab direction and explicitly extended it to in-page section navigation across the app. He also requested consistent Stock & purchasing control sizing and a better mobile tab arrangement.

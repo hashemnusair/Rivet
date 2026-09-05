@@ -193,10 +193,10 @@ Implementation and review evidence: [`docs/ui-evidence/pass-2/README.md`](ui-evi
 
 ## Pass 3: Branch operations
 
-**Status:** Owner-requested cross-page navigation follow-up verified; awaiting final approval. Authorized by Hashem on 5 September 2026
+**Status:** Horizontal-scroll regression fixed and verified locally and on Preview; awaiting final approval. Authorized by Hashem on 5 September 2026
 **Baseline SHA:** `6b190d5` (fetched and synced before work)
-**Implementation finish SHA:** `fd46c0c` (local; approval and release finish pending)
-**Preview:** [Protected mock-data Preview](https://rivet-4f7coe2a4-nusairhashem04-gmailcoms-projects.vercel.app) · `dpl_6wfmabQzysYNsg8mpgQMm1zrRMg6` · READY · source `fd46c0c`
+**Implementation finish SHA:** `b413d08` (local; approval and release finish pending)
+**Preview:** [Protected mock-data Preview](https://rivet-hf42gg007-nusairhashem04-gmailcoms-projects.vercel.app) · `dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg` · READY · source `b413d08`
 **Human approval:** Pending
 
 Routes and shared surfaces:
@@ -236,6 +236,8 @@ Completion:
 Implementation commits: `bfc8521`, `ad82397`, `89ab1a4`, `36ccc33` and `ce264d3`. Review evidence: [`docs/ui-evidence/pass-3/README.md`](ui-evidence/pass-3/README.md). Checked routes record inspection and implementation, not human approval or release. The combined overdue-purchasing and ownership/evidence outcomes remain unchecked: purchase orders have no promised-delivery date, and checklist escalation has no assignee or attachment input. These existing contract limits are documented rather than invented for visual completion. The full browser gate verified 91 credential-free journeys (two existing journeys needed a retry), with 14 explicit staging-credential skips. Hosted 390px checks passed for all seven primary surfaces and payment confirmation. Hashem reviewed the first Preview and requested aligned machine form actions and stronger tab navigation. The consolidated correction batch is `3ff4cd8`; final approval and the GitHub/Production release remain pending. Pass 4 remains untouched.
 
 Hashem’s subsequent review extended the underline style to in-page section navigation across the app and requested one-row mobile tabs with consistently sized Stock & purchasing controls. `fd46c0c` implements that shared consistency follow-up. Member-record, financial, scheduling and member-portal navigation changes are recorded under this explicit extension; later workflow passes have not started. The earlier wrapping-tab layout is superseded. Hosted staff/member checks and all six toolbar widths passed. The follow-up passed typecheck, lint, 31 focused component tests and ten targeted browser journeys, including four retries for known local navigation/startup flakiness. Final approval and release remain pending.
+
+Horizontal scrolling regression: Hashem’s iPhone 15 Pro in-app emulation report exposed an unstable root overscroll spring and mount-only pointer detection. Fix `b413d08` isolates horizontal/touch gestures, reacts to pointer changes and replaces unstable integration with a bounded exact spring solution. Nine regression tests and a slow-frame/emulation-switch/swipe browser journey pass. The exact regression also passed on READY Preview `b413d08`. Earlier static geometry checks were insufficient for this failure; final approval remains pending.
 
 ## Pass 4: Member mobile experience
 

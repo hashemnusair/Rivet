@@ -1,0 +1,26 @@
+{
+  "source": "fd46c0c",
+  "target": "protected mock Preview",
+  "pointerMode": "damped",
+  "gesture": {
+    "deltaX": 160,
+    "deltaY": -3
+  },
+  "controlledFrameIntervalMs": 33.333333333333336,
+  "observedMaximumAbsolutePageOffsetPx": 2.30112e+23,
+  "sampleOffsetsPx": [
+    0.135,
+    0.0975,
+    0.0722805,
+    0.0199166,
+    0.0558159,
+    -0.0459848,
+    0.117924,
+    -0.194743,
+    -2.06919e+22,
+    3.77864e+22,
+    -6.90033e+22,
+    1.2601e+23,
+    -2.30112e+23
+  ]
+}
