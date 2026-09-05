@@ -8,7 +8,7 @@ const DAMPING = 0.045;
 // momentum is still arriving. Timer-debounced CSS transitions felt delayed on
 // macOS because every inertial wheel event postponed the start of the return.
 const SPRING_STIFFNESS = 1000;
-const SPRING_DAMPING = 2 * Math.sqrt(SPRING_STIFFNESS);
+const SPRING_FREQUENCY = Math.sqrt(SPRING_STIFFNESS);
 const REST_POSITION_PX = 0.04;
 const REST_VELOCITY_PX_PER_SECOND = 0.8;
 
@@ -44,23 +44,14 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
     if (!shell) return;
 
     const coarsePointer = window.matchMedia("(pointer: coarse)");
-    if (coarsePointer.matches) {
-      shell.dataset.overscrollMode = "native";
-      return () => {
-        delete shell.dataset.overscrollMode;
-      };
-    }
-
-    shell.dataset.overscrollMode = "damped";
-
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let offset = 0;
     let velocity = 0;
     let animationFrame: number | undefined;
     let previousFrameTime: number | undefined;
-    let lastTouchY: number | undefined;
 
     const clearVisualOffset = () => {
+      if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
       offset = 0;
       velocity = 0;
       previousFrameTime = undefined;
@@ -70,19 +61,23 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
     };
 
     const stepSpring = (frameTime: number) => {
-      if (reducedMotion.matches) {
+      if (coarsePointer.matches || reducedMotion.matches) {
         clearVisualOffset();
         return;
       }
 
       const elapsedSeconds = previousFrameTime === undefined
         ? 1 / 60
-        : Math.min((frameTime - previousFrameTime) / 1000, 1 / 30);
+        : Math.max(0, (frameTime - previousFrameTime) / 1000);
       previousFrameTime = frameTime;
 
-      const acceleration = -SPRING_STIFFNESS * offset - SPRING_DAMPING * velocity;
-      velocity += acceleration * elapsedSeconds;
-      offset += velocity * elapsedSeconds;
+      // Solve the critically damped spring exactly. Euler integration with
+      // a 1/30s frame step diverges and can translate the entire page away.
+      const decay = Math.exp(-SPRING_FREQUENCY * elapsedSeconds);
+      const coefficient = velocity + SPRING_FREQUENCY * offset;
+      const nextOffset = (offset + coefficient * elapsedSeconds) * decay;
+      velocity = (velocity - SPRING_FREQUENCY * coefficient * elapsedSeconds) * decay;
+      offset = Math.max(-MAX_PULL_PX, Math.min(MAX_PULL_PX, nextOffset));
 
       if (Math.abs(offset) <= REST_POSITION_PX && Math.abs(velocity) <= REST_VELOCITY_PX_PER_SECOND) {
         clearVisualOffset();
@@ -99,7 +94,7 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
       animationFrame = window.requestAnimationFrame(stepSpring);
     };
 
-    const dampBoundaryDelta = (deltaY: number, event: WheelEvent | TouchEvent): boolean => {
+    const dampBoundaryDelta = (deltaY: number, event: WheelEvent): boolean => {
       if (deltaY === 0 || nestedScrollerCanConsume(event.target, deltaY)) return false;
       const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       const atTop = window.scrollY <= 1;
@@ -116,38 +111,26 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
     };
 
     const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey) return;
+      // A desktop browser can switch to touch emulation without remounting
+      // this shell. Never intercept touch-mode or horizontal trackpad input.
+      if (coarsePointer.matches || event.ctrlKey || event.defaultPrevented || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
       dampBoundaryDelta(normalizedWheelDelta(event), event);
     };
-    const onTouchStart = (event: TouchEvent) => {
-      lastTouchY = event.touches[0]?.clientY;
-    };
-    const onTouchMove = (event: TouchEvent) => {
-      const currentY = event.touches[0]?.clientY;
-      if (currentY === undefined || lastTouchY === undefined) return;
-      const deltaY = lastTouchY - currentY;
-      lastTouchY = currentY;
-      dampBoundaryDelta(deltaY, event);
-    };
-    const onTouchEnd = () => {
-      lastTouchY = undefined;
-      if (offset !== 0) ensureSpringRunning();
+    const syncPointerMode = () => {
+      clearVisualOffset();
+      shell.dataset.overscrollMode = coarsePointer.matches ? "native" : "damped";
     };
 
+    syncPointerMode();
+    coarsePointer.addEventListener("change", syncPointerMode);
     window.addEventListener("wheel", onWheel, { passive: false });
-    window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onTouchEnd, { passive: true });
-    window.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    // Touch gestures always belong to the browser, including horizontal
+    // swipes and pull-to-refresh on devices that also expose a fine pointer.
     return () => {
-      if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
       clearVisualOffset();
       delete shell.dataset.overscrollMode;
+      coarsePointer.removeEventListener("change", syncPointerMode);
       window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
-      window.removeEventListener("touchcancel", onTouchEnd);
     };
   }, [enabled, shellRef]);
 }
