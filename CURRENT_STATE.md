@@ -1,5 +1,12 @@
 # GymOS / RIVET current implementation state
 
+## Pass 3 navigation consistency follow-up — 5 September 2026
+
+- Hashem liked the underline tab direction and explicitly extended it to in-page section navigation across the app. He also requested consistent Stock & purchasing control sizing and a better mobile tab arrangement.
+- Implementation `fd46c0c` moves Stock & purchasing tabs directly below the heading and ahead of the branch/action toolbar. Tabs stay on one scrollable row. The branch selector and actions are 44px high; phone actions have equal widths beneath the branch selector.
+- Shared tab components now own the semibold/ink-underline treatment and reveal the selected tab within the horizontal strip. The same visual classes cover Payments/Shifts, Reports, Retention, Classes, and member-account/class-history sections. Member records, ledger controls and the design gallery inherit the shared component update. Filters, billing choices, Board/List switches, guided steps, Settings’ vertical navigation and marketing keep their distinct patterns.
+- App typecheck, canonical lint and 31 focused component tests passed. Six-width browser checks passed for single-row geometry, selected-tab visibility, equal control heights, navigation order, keyboard tab switching, form validation and footer alignment. Updated Preview is READY at `https://rivet-4f7coe2a4-nusairhashem04-gmailcoms-projects.vercel.app` (`dpl_6wfmabQzysYNsg8mpgQMm1zrRMg6`, source `fd46c0c`). Hosted staff/member navigation checks and the six-width toolbar checks passed without page errors. Ten targeted browser journeys were verified, including four retries for the previously recorded local startup/navigation flakiness. This is an owner-authorized shared navigation extension, not the start of Pass 4 workflow work. Final approval and push remain pending.
+
 ## Pass 3 owner review corrections — 5 September 2026
 
 - Hashem requested two corrections: align Cancel with Add machine, including on mobile, and make Stock & purchasing sections read as navigation tabs.

@@ -1,6 +1,6 @@
 # Pass 3 review evidence
 
-Baseline: `6b190d5`, fetched and synced from `origin/main` before work. Hashem authorized Pass 3 on 5 September 2026. Work is directly on main. Initial implementation finish is `ce264d3`; the owner correction batch is `3ff4cd8`. Final approval, push, Actions and Production verification remain pending. Pass 4 has not started.
+Baseline: `6b190d5`, fetched and synced from `origin/main` before work. Hashem authorized Pass 3 on 5 September 2026. Work is directly on main. Initial implementation finish is `ce264d3`; the first owner correction batch is `3ff4cd8`, and the requested cross-page tab follow-up is `fd46c0c`. Final approval, push, Actions and Production verification remain pending. Pass 4 has not started.
 
 ## Workflow changes
 
@@ -62,3 +62,11 @@ All 15 operations component tests, app typecheck, canonical lint and the secret-
 The 390px and 1440px visual references and stock tab/branch/filter browser journey were verified. Capture runs encountered the previously recorded local startup stalls; the final 1440px rerun passed. No authentication change is claimed.
 
 Corrected Preview [open for review](https://rivet-dakpc272d-nusairhashem04-gmailcoms-projects.vercel.app/login/gym) is READY: `dpl_3GVNGnN9Wr11t2QQKEyRBR35BCE4`, source `3ff4cd8`. The six-width footer and keyboard-tab checks passed on this hosted Preview with no browser errors. `corrections/hosted-verification.json` records the results; the four correction screenshots were captured from that deployment. Final owner approval and push remain pending.
+
+## Shared navigation follow-up
+
+Hashem explicitly extended the approved underline tab direction to the app’s in-page section navigation and requested a better toolbar/mobile arrangement. Commit `fd46c0c` places Stock & purchasing tabs immediately below the heading, before a toolbar of matching 44px controls. On phones the branch selector occupies a full row and Checkout/Maintenance share the next row equally. Tabs use one horizontally scrollable row, with selected shared tabs revealed on initial load, selection changes and window resize. This supersedes the previous wrapping rule.
+
+The audit covered shared tabs in Stock & purchasing, member records, ledger controls and the design gallery, plus custom navigation in Payments/Shifts, Reports, Retention, Classes, member accounts and member class history. Shared exported style classes keep route links and existing section controls visually consistent without changing their domain handlers. Settings’ vertical navigation, status/timeline filters, Board/List display switches, billing choices, guided tutorial/wizard steps and the separate marketing system retain their distinct roles. The member-portal touch is explicitly authorized shared navigation work; Pass 4 workflow work remains pending.
+
+Verification: app typecheck, canonical lint/secret-output audit and 31 focused tests passed. Local browser geometry checks passed at 360, 390, 768, 820, 1280 and 1440px for one-row tabs, selected-tab visibility, tab placement, matching control heights, keyboard tab switching, machine form validation/cancellation and inline footer actions. Hosted six-width geometry and staff/member navigation checks passed on [Preview `https://rivet-4f7coe2a4-nusairhashem04-gmailcoms-projects.vercel.app`](https://rivet-4f7coe2a4-nusairhashem04-gmailcoms-projects.vercel.app/login/gym), deployment `dpl_6wfmabQzysYNsg8mpgQMm1zrRMg6`, source `fd46c0c`. Loaded-page captures and JSON results are in `tab-consistency/`. Ten targeted browser journeys were verified: six passed directly and four passed after retrying the previously documented local startup/navigation stalls. The refreshed references cover affected Pass 1–3 screens; unrelated captures were preserved. The initial full pass gate remains the baseline; these are focused checks of the follow-up.
