@@ -292,38 +292,38 @@ Release: `main` fast-forwarded to `affb49b` on 5 September 2026 after a final fe
 
 ## Pass 5: Owner, finance, and oversight
 
-**Status:** Not started
-**Baseline SHA:** To record
-**Finish SHA:** To record
-**Preview:** To record
+**Status:** In review
+**Baseline SHA:** `5356870`
+**Finish SHA:** Implementation tip `4777d83`; final SHA recorded at closure
+**Preview:** To record once the review branch deployment is READY
 **Human approval:** Pending
 
 Routes and shared surfaces:
 
-- [ ] Owner and manager variants of `/dashboard`
-- [ ] `/reports`
-- [ ] `/reports/statements`
-- [ ] `/finance`
-- [ ] `/finance/income-statement`
-- [ ] `/finance/balance-sheet`
-- [ ] `/finance/cash-flow`
-- [ ] `/finance/controls`
-- [ ] Owner oversight variants of `/payments` and `/payments/shifts`
-- [ ] `/audit`
-- [ ] `/exports`
-- [ ] `/automations`
-- [ ] `/automations/[ruleId]`
-- [ ] `/support`
+- [x] Owner and manager variants of `/dashboard`
+- [x] `/reports`
+- [x] `/reports/statements`
+- [x] `/finance`
+- [x] `/finance/income-statement`
+- [x] `/finance/balance-sheet`
+- [x] `/finance/cash-flow`
+- [x] `/finance/controls`
+- [x] Owner oversight variants of `/payments` and `/payments/shifts`
+- [x] `/audit`
+- [x] `/exports`
+- [x] `/automations`
+- [x] `/automations/[ruleId]`
+- [x] `/support`
 
 Workflow outcomes:
 
-- [ ] Exceptions, unresolved money, risks, and approvals appear before healthy totals.
-- [ ] Reports answer a clear operating question instead of presenting disconnected charts.
-- [ ] Accounting language remains accurate and is explained in gym-owner terms.
-- [ ] Every summary traces to its source records.
-- [ ] Money, dates, comparisons, filters, and exports use one consistent presentation.
-- [ ] Dense tables remain readable without becoming oversized card lists.
-- [ ] Audit and automation states distinguish pending, failed, paused, stale, and completed work.
+- [x] Exceptions, unresolved money, risks, and approvals appear before healthy totals.
+- [x] Reports answer a clear operating question instead of presenting disconnected charts.
+- [x] Accounting language remains accurate and is explained in gym-owner terms.
+- [x] Every summary traces to its source records.
+- [x] Money, dates, comparisons, filters, and exports use one consistent presentation.
+- [x] Dense tables remain readable without becoming oversized card lists.
+- [x] Audit and automation states distinguish pending, failed, paused, stale, and completed work.
 
 Completion:
 
