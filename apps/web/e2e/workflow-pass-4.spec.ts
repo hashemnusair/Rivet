@@ -28,9 +28,16 @@ async function fits(page: Page) {
   await expect(page.locator("nextjs-portal").getByText(/Runtime Error/)).toHaveCount(0);
 }
 
-async function capture(page: Page, name: string) {
+// Linux Chromium rasterizes the text-dense 390px pages differently enough
+// from macOS to cross the shared 4% ceiling, so those captures keep inspected
+// Linux references at the same tolerance, as the Pass 3 phone captures do.
+function reference(name: string, width: number) {
+  return width === 390 && process.platform === "linux" ? name.replace(/\.png$/, "-linux.png") : name;
+}
+
+async function capture(page: Page, name: string, width: number) {
   await page.evaluate(() => document.fonts.ready);
-  await expect(page).toHaveScreenshot(name, { animations: "disabled", caret: "hide", maxDiffPixelRatio: 0.04 });
+  await expect(page).toHaveScreenshot(reference(name, width), { animations: "disabled", caret: "hide", maxDiffPixelRatio: 0.04 });
 }
 
 for (const width of [360, 390, 768, 820, 1280, 1440]) {
@@ -39,6 +46,9 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
     const shoot = width === 390 || width === 1440;
     await page.setViewportSize({ width, height: width < 600 ? 844 : 1000 });
     await fixClock(page);
+    // The signed-out captures come before sign-in; keep the framework badge out
+    // of every reference, not only the member routes.
+    await page.request.post("/__nextjs_disable_dev_indicator");
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
 
@@ -46,7 +56,7 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
     await page.goto("/login/member");
     await expect(page.getByRole("heading", { name: "Gym member" })).toBeVisible();
     await fits(page);
-    if (shoot) await capture(page, `pass-4-login-member-${width}.png`);
+    if (shoot) await capture(page, `pass-4-login-member-${width}.png`, width);
     await page.goto("/login/member/create");
     await expect(page.getByRole("heading", { name: "Create a member account" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Open member preview" })).toBeVisible();
@@ -82,19 +92,19 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
         await expect(page.getByLabel("Full name")).toHaveValue("Lina Haddad");
       }
       await fits(page);
-      if (shoot) await capture(page, `pass-4-${slug}-${width}.png`);
+      if (shoot) await capture(page, `pass-4-${slug}-${width}.png`, width);
       if (slug === "membership") {
         await page.getByRole("button", { name: "Show entry QR" }).click();
         const dialog = page.getByRole("dialog", { name: "Entry QR" });
         await expect(dialog.getByLabel("Membership entry QR code")).toBeVisible();
         await expect(dialog.getByText(/Expires at/)).toBeVisible();
-        if (shoot) await expect(dialog).toHaveScreenshot(`pass-4-entry-qr-${width}.png`, { animations: "disabled", maxDiffPixelRatio: 0.04 });
+        if (shoot) await expect(dialog).toHaveScreenshot(reference(`pass-4-entry-qr-${width}.png`, width), { animations: "disabled", maxDiffPixelRatio: 0.04 });
         await dialog.getByRole("button", { name: "Close dialog" }).click();
         await expect(dialog).toBeHidden();
         await page.getByRole("tab", { name: "Classes" }).click();
         await expect(page.getByRole("tablist", { name: "Classes views" })).toBeVisible();
         await fits(page);
-        if (shoot) await capture(page, `pass-4-membership-classes-${width}.png`);
+        if (shoot) await capture(page, `pass-4-membership-classes-${width}.png`, width);
         await page.getByRole("tab", { name: "PT" }).click();
         await expect(page.getByRole("tabpanel", { name: "Personal training" })).toBeVisible();
         await fits(page);
