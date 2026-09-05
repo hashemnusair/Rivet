@@ -1,114 +1,160 @@
 "use client";
 
-import { ArrowRight, Dumbbell, MapPin, Search, SlidersHorizontal, Users } from "lucide-react";
+import { ArrowRight, Search, SearchX } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { Reveal } from "@/components/marketing/reveal";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
+import { GymMark } from "@/components/public/gym-mark";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import { EmptyState } from "@/components/ui/states";
+import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import type { MarketplaceGym } from "@/lib/public/experience-data";
+import { cn } from "@/lib/utils/cn";
+import { formatMoney, money } from "@/lib/utils/money";
+
+const ALL = "All gyms";
 
 export default function DiscoverGymsPage() {
-  const gyms = useMarketplaceGyms();
-  const customer = useCustomerPersona();
-  const { customerMemberships, customerBookings, experienceError, experienceStatus, retryExperience } = useExperience();
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All gyms");
+  return (
+    <Suspense fallback={<main className="px-4 py-16 text-center text-[13px] text-ink-3" role="status">Loading gyms…</main>}>
+      <DiscoverGyms />
+    </Suspense>
+  );
+}
 
-  const categories = ["All gyms", ...Array.from(new Set(gyms.map((gym) => gym.category)))];
+function DiscoverGyms() {
+  const gyms = useMarketplaceGyms();
+  const { experienceError, experienceStatus, retryExperience } = useExperience();
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const category = params.get("category") ?? ALL;
+  const [search, setSearch] = useState(params.get("q") ?? "");
+  const debouncedSearch = useDebouncedValue(search, 250);
+
+  const setParams = (changes: Record<string, string | undefined>) => {
+    const next = new URLSearchParams(params.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    const value = next.toString();
+    router.replace(value ? `${pathname}?${value}` : pathname, { scroll: false });
+  };
+
+  // The search text is shareable, but only once typing settles.
+  useEffect(() => {
+    if ((params.get("q") ?? "") !== debouncedSearch) setParams({ q: debouncedSearch || undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
+  const categories = [ALL, ...Array.from(new Set(gyms.map((gym) => gym.category)))];
   const filtered = useMemo(() => gyms.filter((gym) => {
-    const matchesSearch = `${gym.name} ${gym.areas.join(" ")} ${gym.category}`.toLowerCase().includes(search.toLowerCase());
-    return matchesSearch && (category === "All gyms" || gym.category === category);
+    const haystack = `${gym.name} ${gym.areas.join(" ")} ${gym.city} ${gym.category}`.toLowerCase();
+    return haystack.includes(search.trim().toLowerCase()) && (category === ALL || gym.category === category);
   }), [category, gyms, search]);
+  const clear = () => {
+    setSearch("");
+    router.replace(pathname, { scroll: false });
+  };
 
   return (
-    <main>
-      <section className="border-b border-line bg-surface px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-[1280px] flex-wrap items-end justify-between gap-5">
-          <div>
-            <p className="context-label">RIVET network · Amman</p>
-            <h1 className="mt-2 font-display text-[28px] font-semibold tracking-tight">Find a gym</h1>
-            <p className="mt-1.5 max-w-xl text-[13.5px] text-ink-2">Compare gyms running on RIVET, pick a branch, and book a free trial that lands on the gym&rsquo;s follow-up queue.</p>
-          </div>
-          {/* Signing in lives in the header. Repeating it here (and again in the
-              footer) gave one page three ways to do the same thing. */}
-          {customer && (customerMemberships.length > 0 || customerBookings.length > 0) ? (
-            <Button asChild variant="secondary"><Link href="/customer/my-gyms">My dashboard <ArrowRight /></Link></Button>
-          ) : null}
-        </div>
-      </section>
+    <main className="mx-auto max-w-[1080px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+      <header>
+        <p className="text-[12px] font-medium text-ink-3">Gyms on RIVET · Amman</p>
+        <h1 className="mt-1 font-display text-[26px] font-semibold leading-tight tracking-tight">Find a gym</h1>
+        <p className="mt-1 max-w-xl text-[13.5px] text-ink-2">Compare gyms, pick a branch and book a free trial. The gym confirms your visit.</p>
+      </header>
 
-      <section className="px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-[1280px]">
-          {experienceStatus !== "ready" || gyms.length === 0 ? (
-            <ExperienceDataState
-              status={experienceStatus}
-              error={experienceError}
-              onRetry={retryExperience}
-              emptyTitle="No RIVET gyms are live yet"
-              emptyDescription="Gyms appear here after RIVET approves and publishes their workspace. Run a gym? Send an application and our team will follow up."
-              emptyAction={
-                <Button asChild variant="primary" size="sm">
-                  <Link href="/signup">Send a gym application <ArrowRight /></Link>
-                </Button>
-              }
-            />
-          ) : <>
-          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-            <label className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by gym, area, or training style" className="h-11 ps-10" /></label>
-            <div className="flex flex-wrap gap-2">
-              {categories.slice(0, 4).map((item) => <Button key={item} type="button" variant={category === item ? "primary" : "secondary"} onClick={() => setCategory(item)}>{item === "All gyms" ? <SlidersHorizontal /> : null}{item}</Button>)}
+      {experienceStatus !== "ready" || gyms.length === 0 ? (
+        <div className="mt-6">
+          <ExperienceDataState
+            status={experienceStatus}
+            error={experienceError}
+            onRetry={retryExperience}
+            emptyTitle="No RIVET gyms are live yet"
+            emptyDescription="Gyms appear here after RIVET approves and publishes their workspace. Run a gym? Send an application and our team will follow up."
+            emptyAction={<Button asChild variant="secondary" size="sm"><Link href="/signup">Send a gym application <ArrowRight /></Link></Button>}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="mt-5">
+            <div className="relative">
+              <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} type="search" inputMode="search" placeholder="Search by gym, area or training style" aria-label="Search gyms" className="h-11 ps-9 sm:h-10" />
+            </div>
+            <div className={cn("mt-3", tabListClassName)} role="group" aria-label="Gym category">
+              {categories.map((item) => (
+                <button key={item} type="button" aria-pressed={category === item} className={tabTriggerClassName} onClick={() => setParams({ category: item === ALL ? undefined : item })}>
+                  {item}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((gym, index) => (
-              <Reveal key={gym.id} delay={index * 70}>
-                <article className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-[border-color,box-shadow] duration-150 hover:border-line-3 hover:shadow-pop">
-                  <div className="relative h-28 overflow-hidden bg-cover bg-center px-5 py-4 text-white" style={{ backgroundColor: gym.accent, backgroundImage: gym.cover?.url ? `linear-gradient(rgb(0 0 0 / .45), rgb(0 0 0 / .45)), url(${gym.cover.url})` : undefined }}>
-                    <div className="absolute inset-0 opacity-20 marketing-grid" />
-                    <div className="relative flex items-start justify-between">
-                      <span className="flex items-center gap-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.18em]"><span className="size-8 rounded-full border border-white/50 bg-cover bg-center" role="img" aria-label={`${gym.name} logo`} style={{ backgroundColor: gym.accent, backgroundImage: gym.logo?.url ? `url(${gym.logo.url})` : undefined }} />{gym.shortName}</span>
-                      {gym.featured ? (
-                        <span className="rounded-sm border border-white/40 px-2 py-1 text-[11px] font-medium">Featured</span>
-                      ) : null}
-                    </div>
-                    <Dumbbell className="absolute -bottom-3 end-3 size-20 opacity-20 transition-transform duration-500 group-hover:scale-110" strokeWidth={1.2} />
-                  </div>
-
-                  <div className="flex flex-1 flex-col p-5">
-                    <p className="context-label">{gym.category}</p>
-                    <h2 className="mt-1.5 text-[21px] font-semibold tracking-tight">{gym.name}</h2>
-                    <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-2">{gym.tagline}</p>
-
-                    <div className="mt-4 grid grid-cols-3 gap-2 border-y border-line py-3 text-[11px] text-ink-3">
-                      <span className="flex items-center gap-1.5"><Dumbbell className="size-3.5" /> {gym.trainers?.length ?? 0} PT</span>
-                      <span className="flex items-center gap-1.5"><Users className="size-3.5" /> {gym.memberCount.toLocaleString()}</span>
-                      <span className="flex items-center gap-1.5"><MapPin className="size-3.5" /> {gym.areas[0]}</span>
-                    </div>
-
-                    <div className="mt-auto flex items-end justify-between gap-4 pt-4">
-                      <div>
-                        <p className="context-label">From</p>
-                        <p className="mt-1 text-[18px] font-semibold">
-                          {gym.fromPriceMinor > 0 ? <>JD {gym.fromPriceMinor / 1000}<span className="text-[11px] font-normal text-ink-3"> / month</span></> : <span className="text-[14px]">Contact gym</span>}
-                        </p>
-                      </div>
-                      <Button asChild variant="signal">
-                        <Link href={`/customer/gyms/${gym.id}`}>View &amp; book <ArrowRight /></Link>
-                      </Button>
-                    </div>
-                  </div>
-                </article>
-              </Reveal>
-            ))}
-          </div>
-
-          {filtered.length === 0 ? <div className="mt-8 border border-dashed border-line-3 p-12 text-center"><Dumbbell className="mx-auto size-7 text-ink-3" /><h2 className="mt-4 text-[18px] font-semibold">No gyms match that search</h2><p className="mt-2 text-[13px] text-ink-3">Try another area or clear the category filter.</p></div> : null}
-          </>}
-        </div>
-      </section>
+          {filtered.length ? (
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {filtered.map((gym) => <GymCard key={gym.id} gym={gym} />)}
+            </div>
+          ) : (
+            <EmptyState layout="section" className="mt-5" icon={SearchX} title="No gyms match" description="Try another area or training style, or clear the search." action={<Button variant="secondary" size="sm" onClick={clear}>Clear search</Button>} />
+          )}
+        </>
+      )}
     </main>
+  );
+}
+
+function GymCard({ gym }: { gym: MarketplaceGym }) {
+  const href = `/customer/gyms/${gym.id}`;
+  const cover = gym.cover?.url;
+  return (
+    <article className="panel flex h-full flex-col overflow-hidden" aria-labelledby={`gym-${gym.id}-title`}>
+      {cover ? <div className="h-32 bg-cover bg-center" role="img" aria-label={`${gym.name} cover image`} style={{ backgroundImage: `url(${cover})` }} /> : null}
+      <div className="flex flex-1 flex-col p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <GymMark name={gym.name} shortName={gym.shortName} logoUrl={gym.logo?.url} accent={gym.accent} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h2 id={`gym-${gym.id}-title`} className="text-[17px] font-semibold leading-tight">
+                <Link href={href} className="rounded-xs hover:underline">{gym.name}</Link>
+              </h2>
+              {gym.featured ? <Badge variant="neutral">Featured</Badge> : null}
+            </div>
+            <p className="mt-0.5 text-[12.5px] text-ink-3">{gym.category} · {gym.areas.join(", ") || gym.city}</p>
+          </div>
+        </div>
+        <p className="mt-3 line-clamp-2 text-[13.5px] leading-relaxed text-ink-2">{gym.tagline}</p>
+        <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3 text-[12px]">
+          <CardFact label="Branches" value={String(gym.branchCount)} />
+          <CardFact label="Members" value={gym.memberCount.toLocaleString()} />
+          <CardFact label="PT trainers" value={String(gym.trainers?.length ?? 0)} />
+        </dl>
+        <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+          <div>
+            <p className="text-[12px] text-ink-3">From</p>
+            <p className={cn("mt-0.5 font-semibold tabular text-ink", gym.fromPriceMinor > 0 ? "text-[16px]" : "text-[13.5px]")}>
+              {gym.fromPriceMinor > 0 ? <>{formatMoney(money(gym.fromPriceMinor))}<span className="text-[12px] font-normal text-ink-3"> / month</span></> : "Ask the gym"}
+            </p>
+          </div>
+          <Button asChild size="sm" variant="secondary"><Link href={href}>View gym <ArrowRight /></Link></Button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CardFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-ink-3">{label}</dt>
+      <dd className="mt-0.5 font-medium tabular text-ink">{value}</dd>
+    </div>
   );
 }
