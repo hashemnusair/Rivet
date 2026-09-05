@@ -163,7 +163,7 @@ export function FacilityTaskWorkspace({ branchId, zones, writeEnabled }: { branc
     <div className="space-y-4" data-testid="operations-facilities">
       {tasksQuery.isError ? <div role="status" className="text-[12px] text-warning-deep">Maintenance could not refresh. Showing the last loaded tasks. <Button size="sm" variant="ghost" onClick={() => void tasksQuery.refetch()}>Retry</Button></div> : null}
       <div className="flex flex-wrap gap-x-6 gap-y-2 border-b border-line pb-3 text-[13.5px]" aria-label="Maintenance summary">
-        <span><strong className="tabular-nums">{activeTasks.length}</strong> open tasks</span>
+        <span><strong className="tabular-nums">{activeTasks.length}</strong> open {activeTasks.length === 1 ? "task" : "tasks"}</span>
         <span className={criticalCount > 0 ? "text-danger" : "text-ink-2"}><strong className="tabular-nums">{criticalCount}</strong> critical</span>
         <span className="text-ink-2"><strong className="tabular-nums">{inProgressCount}</strong> in progress</span>
       </div>
