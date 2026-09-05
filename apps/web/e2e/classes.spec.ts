@@ -14,9 +14,8 @@ test.describe("class calendar roles", () => {
 
     await expect(page.getByRole("heading", { name: "Classes", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "New class" })).toHaveCount(0);
-    // Reception clicks the calendar chip straight into the dated roster; the
-    // manager menu never opens for this role.
-    await page.getByRole("button", { name: /Morning HIIT, Sunday/ }).click();
+    // Reception opens the dated roster directly from the agenda.
+    await page.getByTestId("class-agenda-row").filter({ hasText: "Morning HIIT" }).getByRole("button", { name: "Who booked" }).click();
     await expect(page.getByRole("menu")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: /Who booked/ })).toBeVisible();
     // Desk tools are tucked behind a disclosure so the roster stays a clean list.

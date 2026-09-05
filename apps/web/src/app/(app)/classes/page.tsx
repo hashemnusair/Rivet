@@ -1,13 +1,14 @@
 "use client";
 
-import { CalendarCheck2, Check, ImagePlus, Plus, Printer, Trash2, UserPlus, Users, X, Pencil, Eye } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Check, ImagePlus, Plus, Printer, Trash2, UserPlus, Users, X, Pencil } from "lucide-react";
+import { Suspense, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
-import { ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
 import type { ClassAudience, ClassCoach, ClassOccurrence, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
@@ -85,24 +86,38 @@ type EditorState = {
   isNew: boolean;
 };
 
-type MenuState = { sessionId: string; x: number; y: number };
 
-export default function ClassesPage() {
+
+export default function ClassesPage() { return <Suspense><ClassesWorkspace /></Suspense>; }
+
+function ClassesWorkspace() {
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const view = params.get("view") === "timetable" ? "timetable" : "agenda";
+  const updateView = (changes: Record<string, string>) => {
+    const next = new URLSearchParams(params.toString());
+    Object.entries(changes).forEach(([key, value]) => next.set(key, value));
+    router.replace(`${pathname}?${next}`, { scroll: false });
+  };
   const { session } = useApp();
   const permissions = usePermissions();
   const canManage = permissions.can("operations.manage");
   const canRoster = permissions.can("members.write") || permissions.can("pt.book_for_member");
   const invalidate = useInvalidate();
   const branches = session?.branches ?? [];
-  const [branchChoice, setBranchChoice] = useState<string>();
-  const branchId = branchChoice ?? session?.activeBranchId ?? branches[0]?.id;
+  const requestedBranch = params.get("branch");
+  const branchId = branches.find((branch) => branch.id === requestedBranch)?.id ?? session?.activeBranchId ?? branches[0]?.id;
+  const setBranchChoice = (branch: string) => updateView({ branch });
 
   const sessionsQuery = useApiQuery(qk.classSessions(branchId ?? "none"), (api) => api.listClassSessions({ branchId: branchId! }), { enabled: Boolean(branchId) });
   const coachesQuery = useApiQuery(["classCoaches"] as const, (api) => api.listClassCoaches());
   const coaches: ClassCoach[] = coachesQuery.data ?? [];
   // The dated-occurrence window feeds roster management and "Open next dated
   // class"; the calendar is the only visible surface.
-  const weekStart = todayISODate();
+  const requestedDate = params.get("from");
+  const validDate = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && Number.isFinite(Date.parse(requestedDate)) && new Date(requestedDate).toISOString().slice(0, 10) === requestedDate;
+  const weekStart = validDate ? requestedDate : todayISODate(session?.organization.timezone);
   const weekEnd = addDays(weekStart, 6);
   const occurrencesQuery = useApiQuery(qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, undefined), (api) => api.listClassOccurrences({ branchId: branchId!, fromDate: weekStart, toDate: weekEnd }), { enabled: Boolean(branchId) });
   const calendarBoundsQuery = useApiQuery(qk.classCalendarBounds, (api) => api.getClassCalendarBounds());
@@ -113,7 +128,7 @@ export default function ClassesPage() {
   const [overrideReason, setOverrideReason] = useState("");
   const [substituteCoachId, setSubstituteCoachId] = useState("");
   const [substituteReason, setSubstituteReason] = useState("");
-  const [menu, setMenu] = useState<MenuState>();
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [detailsId, setDetailsId] = useState<string>();
   const [deleteTarget, setDeleteTarget] = useState<ClassSession>();
   const [deleteReason, setDeleteReason] = useState("");
@@ -140,16 +155,8 @@ export default function ClassesPage() {
   }, [occurrencesQuery.data]);
   const bookedLabel = (session: ClassSession): string => {
     const next = nextOccurrenceByTemplate.get(session.id);
-    return next ? `${next.bookedCount}/${next.capacity}` : `0/${session.capacity}`;
+    return next ? `${next.bookedCount}/${next.capacity}` : occurrencesQuery.isError ? "Bookings unavailable" : occurrencesQuery.isLoading ? "Loading bookings" : "No upcoming date";
   };
-
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(undefined);
-    window.addEventListener("click", close);
-    window.addEventListener("keydown", close);
-    return () => { window.removeEventListener("click", close); window.removeEventListener("keydown", close); };
-  }, [menu]);
 
   const refresh = async () => { await invalidate([qk.classSessions(branchId ?? "none"), qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, undefined)]); };
 
@@ -192,7 +199,7 @@ export default function ClassesPage() {
   }, { onSuccess: async () => { setMemberSearch(""); setOverrideReason(""); await refresh(); } });
   const removeOccurrenceAttendee = useApiMutation((api, bookingId: string) => api.removeClassOccurrenceAttendee({ occurrenceId: manageOccurrenceId!, bookingId, reason: "Removed from the dated roster by staff" }), { onSuccess: refresh });
   const setOccurrenceAttendance = useApiMutation((api, input: { bookingId: string; attended: boolean }) => api.setClassOccurrenceAttendance({ occurrenceId: manageOccurrenceId!, ...input }), { onSuccess: refresh });
-  const finalizeOccurrence = useApiMutation((api) => api.finalizeClassOccurrenceAttendance({ occurrenceId: manageOccurrenceId! }), { onSuccess: refresh, successMessage: "Attendance finalized. Unmarked bookings were recorded using the gym's no-show policy." });
+  const finalizeOccurrence = useApiMutation((api) => api.finalizeClassOccurrenceAttendance({ occurrenceId: manageOccurrenceId! }), { onSuccess: async () => { setFinalizeOpen(false); await refresh(); }, successMessage: "Attendance finalized. Unmarked bookings were recorded using the gym's no-show policy." });
   const substituteCoach = useApiMutation((api) => api.substituteClassOccurrenceCoach({ occurrenceId: manageOccurrenceId!, coachId: substituteCoachId, reason: substituteReason.trim() }), {
     onSuccess: async () => { setSubstituteCoachId(""); setSubstituteReason(""); await refresh(); },
     successMessage: "Coach substitution recorded for this class only.",
@@ -214,7 +221,6 @@ export default function ClassesPage() {
 
   const openEdit = (target: ClassSession) => {
     setManageId(undefined);
-    setMenu(undefined);
     setEditor({ sessionId: target.id, branchId: target.branchId, name: target.name, coachId: target.coachId ?? "", dayOfWeek: target.dayOfWeek, startMinute: target.startMinute, durationMinutes: target.durationMinutes, capacity: target.capacity, audience: target.audience, notes: target.notes ?? "", imageAssetId: target.imageAssetId, imageUrl: target.imageUrl, uploading: false, isNew: false });
   };
 
@@ -283,7 +289,7 @@ export default function ClassesPage() {
       <div className="print:hidden">
         <PageHeader
           title="Classes"
-          description="One fixed weekly timetable. Click a class for details and rosters; press an open slot to add one."
+          description="See the next classes, manage bookings, and record who attended."
           actions={<div className="flex flex-wrap items-center gap-2">
             {branches.length > 1 ? (
               <select aria-label="Branch" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={branchId ?? ""} onChange={(event) => setBranchChoice(event.target.value)}>
@@ -292,7 +298,7 @@ export default function ClassesPage() {
             ) : null}
             {canManage ? <Button variant="secondary" onClick={() => setCoachesOpen(true)}><Users /> Coaches</Button> : null}
             <Button variant="secondary" onClick={printSchedule} disabled={!sessionsQuery.data}><Printer /> Print</Button>
-            {canManage ? <Button variant="signal" onClick={() => openCreate(0, 18 * 60)} disabled={!branchId}><Plus /> New class</Button> : null}
+            {canManage ? <Button variant="primary" onClick={() => openCreate(0, 18 * 60)} disabled={!branchId}><Plus /> New class</Button> : null}
           </div>}
         />
       </div>
@@ -316,12 +322,28 @@ export default function ClassesPage() {
           </div>
         </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <div className="inline-flex rounded-md border border-line bg-surface p-1" role="group" aria-label="Class view">
+          {([['agenda', 'Upcoming classes'], ['timetable', 'Weekly timetable']] as const).map(([value, label]) => <Button key={value} variant="ghost" aria-pressed={view === value} className={cn(view === value && "bg-sunken text-ink")} onClick={() => updateView({ view: value })}>{label}</Button>)}
+        </div>
+      {view === "agenda" ? <div className="flex flex-wrap items-center gap-2"><Button variant="secondary" size="sm" aria-label="Previous seven days" onClick={() => updateView({ from: addDays(weekStart, -7) })}>Previous</Button><span className="text-[12px] tabular-nums">{formatDate(weekStart)} – {formatDate(weekEnd)}</span><Button variant="secondary" size="sm" aria-label="Next seven days" onClick={() => updateView({ from: addDays(weekStart, 7) })}>Next</Button><Button variant="ghost" size="sm" onClick={() => updateView({ from: todayISODate(session?.organization.timezone) })}>Today</Button></div> : <p className="text-[12px] text-ink-2">Repeats weekly · {branchName}</p>}
+      </div>
+      {sessionsQuery.isBackgroundError ? <ErrorState layout="inline" title="Timetable could not refresh" onRetry={() => sessionsQuery.refetch()} /> : null}
+      {view === "agenda" ? <section className="panel overflow-hidden print:hidden" aria-label="Upcoming classes">
+        {occurrencesQuery.isBackgroundError ? <ErrorState layout="inline" title="Classes could not refresh" onRetry={() => occurrencesQuery.refetch()} /> : null}
+        {!branchId ? <EmptyState layout="section" title="No branch available" description="Ask your manager to assign a branch before opening its classes." className="m-4" /> : occurrencesQuery.isLoading && !occurrencesQuery.data ? <div className="space-y-3 p-4"><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></div> : occurrencesQuery.isError && !occurrencesQuery.data ? <ErrorState layout="section" title="Classes could not be loaded" onRetry={() => occurrencesQuery.refetch()} className="m-4" /> : !occurrencesQuery.data?.length ? <EmptyState layout="section" title="No classes in these seven days" description="Choose another week or check the weekly timetable." className="m-4" /> : <ul className="divide-y divide-line">{occurrencesQuery.data.map((occurrence) => <li key={occurrence.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[132px_minmax(0,1fr)] xl:grid-cols-[132px_minmax(0,1fr)_auto]" data-testid="class-agenda-row">
+          <div className="text-[13px]"><p className="font-semibold">{formatDate(occurrence.date)}</p><p className="mt-1 tabular-nums text-ink-2">{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit", timeZone: session?.organization.timezone }).format(new Date(occurrence.startsAt))}</p></div>
+          <div className="min-w-0"><h2 className="text-[15px] font-semibold break-words">{occurrence.name}</h2><p className="mt-1 text-[13px] text-ink-2">{occurrence.coachName ?? "Coach not assigned"} · {AUDIENCE_LABEL[occurrence.audience]}</p><p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-2"><span>{occurrence.bookedCount}/{occurrence.capacity} booked</span><span>{occurrence.waitlistCount} waiting</span><span>{occurrence.status === "cancelled" ? "Cancelled" : occurrence.attendanceFinalizedAt ? "Attendance finalized" : "Attendance open"}</span></p></div>
+          <div className="flex flex-wrap items-center gap-2 sm:col-start-2 xl:col-start-auto">{occurrence.status !== "cancelled" && canRoster ? <Button variant="secondary" onClick={() => { setManageOccurrenceId(occurrence.id); setMemberSearch(""); }}>Who booked</Button> : null}<Button variant="ghost" onClick={() => setDetailsId(occurrence.templateId)}>Class details</Button></div>
+        </li>)}</ul>}
+      </section> : null}
+      <div className={cn(view === "agenda" && "hidden print:block")}>
         {!branchId ? <p className="mt-8 border border-line bg-surface px-5 py-8 text-center text-[12.5px] text-ink-3">Join a branch to manage classes.</p> : sessionsQuery.isLoading ? <Skeleton className="mt-6 h-[480px] w-full" /> : sessionsQuery.isError ? (
           <div className="mt-6 rounded-lg border border-line bg-surface p-5"><ErrorState title="Classes could not be loaded" description="The timetable is unavailable right now. Your existing schedule has not changed." onRetry={() => sessionsQuery.refetch()} /></div>
         ) : (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface shadow-sm" data-print-schedule>
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-line px-4 py-2.5 text-[11.5px] text-ink-2" aria-label="Audience color legend">
-              <span className="text-[12px] uppercase tracking-wide text-ink-3">Classes for</span>
+          <div className="mt-4 overflow-x-auto rounded-lg border border-line bg-surface" data-print-schedule>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-line px-4 py-2.5 text-[12px] text-ink-2" aria-label="Audience color legend">
+              <span className="text-[12px] text-ink-3">Classes for</span>
               {(["mixed", "women", "men"] as const).map((audience) => (
                 <span key={audience} className="inline-flex items-center gap-1.5 font-medium">
                   <span aria-hidden className="size-2.5 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[audience] }} />
@@ -335,7 +357,7 @@ export default function ClassesPage() {
                 <div className="relative border-b border-line">
                   <div className="grid h-full" style={{ gridTemplateColumns: `repeat(${visibleHours}, 1fr)` }}>
                     {Array.from({ length: visibleHours }, (_, index) => (
-                      <div key={index} className="py-2.5 ps-1.5 text-start font-mono text-[10.5px] font-medium text-ink-2">{hourLabel(firstHour + index)}</div>
+                      <div key={index} className="py-2.5 ps-1.5 text-start text-[12px] font-medium text-ink-2">{hourLabel(firstHour + index)}</div>
                     ))}
                   </div>
                 </div>
@@ -345,7 +367,7 @@ export default function ClassesPage() {
                   const isToday = new Date().getDay() === day;
                   return (
                     <div key={label} className="contents">
-                      <div className={cn("flex items-center gap-1.5 border-b border-line/70 px-3 text-[11.5px]", isToday ? "font-semibold" : "font-medium text-ink-2")}>
+                      <div className={cn("flex items-center gap-1.5 border-b border-line/70 px-3 text-[12px]", isToday ? "font-semibold" : "font-medium text-ink-2")}>
                         {isToday ? <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: "var(--tenant-brand-primary)" }} /> : null}
                         {label}
                       </div>
@@ -353,8 +375,8 @@ export default function ClassesPage() {
                         className={cn("relative border-b border-line/70", canManage && "cursor-cell", isToday && "bg-sunken/40")}
                         style={{ minHeight: `${Math.max(64, lanes * 58 + 10)}px` }}
                         onClick={rowClick(day)}
-                        role={canManage ? "button" : undefined}
-                        aria-label={canManage ? `Add a class on ${label}` : undefined}
+
+
                       >
                         <div className="pointer-events-none absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${visibleHours}, 1fr)` }}>
                           {Array.from({ length: visibleHours }, (_, index) => <div key={index} className="border-s border-line/25 first:border-s-0" />)}
@@ -366,15 +388,15 @@ export default function ClassesPage() {
                             <button
                               key={item.id}
                               type="button"
-                              onClick={(event) => { event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); else openNextOccurrence(item.id); }}
-                              onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (canManage) setMenu({ sessionId: item.id, x: event.clientX, y: event.clientY }); }}
-                              className="group absolute cursor-pointer overflow-hidden rounded-md border border-line-2 bg-paper ps-2.5 pe-2 py-1.5 text-start text-[12px] leading-tight shadow-sm transition-[border-color,box-shadow] duration-150 hover:border-line-3 hover:shadow-md"
+                              onClick={(event) => { event.stopPropagation(); if (canManage) setDetailsId(item.id); else openNextOccurrence(item.id); }}
+                              onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (canManage) setDetailsId(item.id); }}
+                              className="group absolute cursor-pointer overflow-hidden rounded-md border border-line-2 bg-paper ps-2.5 pe-2 py-1.5 text-start text-[12px] leading-tight transition-colors duration-150 hover:border-line-3"
                               style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(3.5, Math.min(width, 100 - left))}%`, top: `${5 + item.lane * 58}px`, height: "54px" }}
                               aria-label={`${item.name}, ${DAYS[item.dayOfWeek]} ${rangeLabel(item)}`}
                               title={`${item.name} — ${rangeLabel(item)} · ${bookedLabel(item)} booked${item.coachName ? ` · ${item.coachName}` : ""}`}
                             >
-                              <span aria-hidden data-chip-accent className="absolute inset-y-0 start-0 w-[3px]" style={{ backgroundColor: AUDIENCE_ACCENT[item.audience] }} />
-                              <span className="line-clamp-2 block text-[11px] font-semibold leading-[1.2]">{item.name}</span>
+                              <span aria-hidden data-chip-accent className="absolute top-1.5 end-1 size-1.5 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[item.audience] }} />
+                              <span className="line-clamp-2 block text-[12px] font-semibold leading-[1.2]">{item.name}</span>
                               <span className="mt-0.5 block truncate text-[12px] text-ink-3" dir="ltr">{rangeLabel(item)}</span>
                             </button>
                           );
@@ -388,24 +410,7 @@ export default function ClassesPage() {
           </div>
         )}
 
-        {menu ? (
-          <div className="fixed z-50 w-52 overflow-hidden rounded-lg border border-line bg-surface shadow-dialog" style={{ left: Math.min(menu.x, typeof window === "undefined" ? menu.x : window.innerWidth - 224), top: menu.y }} role="menu">
-            {(() => {
-              const target = sessionsQuery.data?.find((item) => item.id === menu.sessionId);
-              if (!target) return null;
-              return (
-                <>
-                  <p className="border-b border-line px-3 py-2 text-[11px] font-semibold">{target.name}</p>
-                  <div className="p-1">
-                    <button type="button" role="menuitem" className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-start text-[12.5px] transition-colors hover:bg-sunken" onClick={() => { setMenu(undefined); setDetailsId(target.id); }}><Eye className="size-3.5 text-ink-3" aria-hidden /> View event details</button>
-                    <button type="button" role="menuitem" className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-start text-[12.5px] transition-colors hover:bg-sunken" onClick={() => { setMenu(undefined); openNextOccurrence(target.id); }}><CalendarCheck2 className="size-3.5 text-ink-3" aria-hidden /> Who booked</button>
-                    <button type="button" role="menuitem" className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-start text-[12.5px] text-danger transition-colors hover:bg-danger-bg" onClick={() => { setMenu(undefined); setDeleteTarget(target); setDeleteReason(""); }}><Trash2 className="size-3.5" aria-hidden /> Remove from schedule</button>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        ) : null}
+      </div>
 
         <Dialog open={Boolean(editor)} onOpenChange={(open) => { if (!open && !save.isPending) setEditor(undefined); }}>
           <DialogContent className="max-w-xl">
@@ -417,7 +422,7 @@ export default function ClassesPage() {
               <DialogBody className="grid gap-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="grid gap-1.5 text-[12px] font-medium">Class name<Input value={editor.name} maxLength={80} autoFocus onChange={(event) => setEditor({ ...editor, name: event.target.value })} placeholder="Morning HIIT" /></label>
-                  <label className="grid gap-1.5 text-[12px] font-medium">Coach<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.coachId} disabled={coachesQuery.isError} onChange={(event) => setEditor({ ...editor, coachId: event.target.value })}><option value="">{coachesQuery.isError ? "Coaches unavailable" : "No coach assigned"}</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select>{coachesQuery.isError ? <span className="text-[11px] font-normal text-danger">The coach directory could not be loaded. Save without a coach or retry the page.</span> : null}</label>
+                  <label className="grid gap-1.5 text-[12px] font-medium">Coach<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.coachId} disabled={coachesQuery.isError} onChange={(event) => setEditor({ ...editor, coachId: event.target.value })}><option value="">{coachesQuery.isError ? "Coaches unavailable" : "No coach assigned"}</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select>{coachesQuery.isError ? <span className="text-[12px] font-normal text-danger">The coach directory could not be loaded. Save without a coach or retry the page.</span> : null}</label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Day<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.dayOfWeek} onChange={(event) => setEditor({ ...editor, dayOfWeek: Number(event.target.value) })}>{DAYS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Starts<Input type="time" value={minuteLabel(editor.startMinute)} onChange={(event) => { const [hour, minute] = event.target.value.split(":").map(Number); if (Number.isFinite(hour) && Number.isFinite(minute)) setEditor({ ...editor, startMinute: hour! * 60 + minute! }); }} /></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Duration<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.durationMinutes} onChange={(event) => setEditor({ ...editor, durationMinutes: Number(event.target.value) })}>{DURATIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}</select></label>
@@ -426,7 +431,7 @@ export default function ClassesPage() {
                   <label className="grid gap-1.5 text-[12px] font-medium">Photo (optional)
                     <div className="flex items-center gap-2">
                       {editor.imageUrl ? <span className="size-10 shrink-0 rounded-sm border border-line bg-cover bg-center" role="img" aria-label="Class photo" style={{ backgroundImage: `url(${editor.imageUrl})` }} /> : <ImagePlus className="size-5 text-ink-3" aria-hidden />}
-                      <input type="file" accept="image/jpeg,image/png,image/webp" disabled={editor.uploading} className="w-full text-[11px] file:me-2 file:rounded-sm file:border file:border-line file:bg-surface file:px-2 file:py-1" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage(file); }} />
+                      <input type="file" accept="image/jpeg,image/png,image/webp" disabled={editor.uploading} className="w-full text-[12px] file:me-2 file:rounded-sm file:border file:border-line file:bg-surface file:px-2 file:py-1" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage(file); }} />
                     </div>
                   </label>
                 </div>
@@ -436,7 +441,7 @@ export default function ClassesPage() {
             ) : null}
             <DialogFooter>
               <Button variant="secondary" onClick={() => setEditor(undefined)} disabled={save.isPending}>Cancel</Button>
-              <Button variant="signal" loading={save.isPending} disabled={!editor?.name.trim() || editor?.uploading || !Number.isSafeInteger(editor.capacity) || editor.capacity < 1 || editor.capacity > 200 || editor.startMinute + editor.durationMinutes > 1440} onClick={() => save.mutate()}><Check /> Save class</Button>
+              <Button variant="primary" loading={save.isPending} disabled={!editor?.name.trim() || editor?.uploading || !Number.isSafeInteger(editor.capacity) || editor.capacity < 1 || editor.capacity > 200 || editor.startMinute + editor.durationMinutes > 1440} onClick={() => save.mutate()}><Check /> Save class</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -467,7 +472,7 @@ export default function ClassesPage() {
               {coachesQuery.isLoading ? <Skeleton className="h-28 w-full" /> : coachesQuery.isError ? (
                 <ErrorState title="Coaches could not be loaded" description="The directory is unavailable right now. No coach records have changed." onRetry={() => coachesQuery.refetch()} />
               ) : <div className="divide-y divide-line rounded-md border border-line">
-                {coaches.length === 0 ? <p className="px-3 py-4 text-center text-[11.5px] text-ink-3">No coaches yet — add the first one below.</p> : coaches.map((coach) => (
+                {coaches.length === 0 ? <p className="px-3 py-4 text-center text-[12px] text-ink-3">No coaches yet — add the first one below.</p> : coaches.map((coach) => (
                   <div key={coach.id} className="flex items-center justify-between gap-2 px-3 py-2">
                     <div className="min-w-0 text-[12.5px]"><p className="truncate font-semibold">{coach.name}</p><p className="truncate text-[12px] text-ink-3">{[coach.specialty, coach.phone].filter(Boolean).join(" · ") || "—"}</p></div>
                     <Button variant="ghost" size="sm" aria-label={`Remove ${coach.name}`} loading={removeCoach.isPending} onClick={() => removeCoach.mutate(coach.id)}><X /></Button>
@@ -490,15 +495,19 @@ export default function ClassesPage() {
                 {/* The roster IS the page: one big list of everyone booked.
                     Desk tools stay one tap away but never crowd the names. */}
                 <section>
-                  <div className="divide-y divide-line rounded-md border border-line">{managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).length ? managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).map((entry) => <div key={entry.bookingId} className="flex items-center justify-between gap-3 px-4 py-3"><label className="flex min-w-0 items-center gap-3 text-[14px]"><input type="checkbox" checked={entry.status === "attended"} disabled={!canRoster || Boolean(managedOccurrence.attendanceFinalizedAt) || entry.status === "waitlisted" || entry.status === "no_show"} onChange={(event) => setOccurrenceAttendance.mutate({ bookingId: entry.bookingId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} /><span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span>{entry.noShowCount ? <span className="block text-[12px] text-warning-deep">{entry.noShowCount} recorded no-show{entry.noShowCount === 1 ? "" : "s"}</span> : null}</span>{entry.fromWaitlist ? <span className="rounded-sm bg-success-bg px-1.5 py-0.5 text-[12px] text-success-deep">promoted</span> : null}</label><div className="flex items-center gap-2"><span className="rounded-sm bg-sunken px-2 py-0.5 text-[12px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>{canRoster && !managedOccurrence.attendanceFinalizedAt && ["booked", "waitlisted"].includes(entry.status) ? <Button variant="ghost" size="sm" aria-label={`Remove ${entry.name}`} onClick={() => removeOccurrenceAttendee.mutate(entry.bookingId)}><X /></Button> : null}</div></div>) : <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">No one has booked this date yet.</p>}</div>
+                  <div className="divide-y divide-line rounded-md border border-line">{managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).length ? managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).map((entry) => <div key={entry.bookingId} className="flex items-center justify-between gap-3 px-4 py-3"><label className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-[14px]"><input type="checkbox" checked={entry.status === "attended"} className="size-5 shrink-0" disabled={setOccurrenceAttendance.isPending || !canRoster || Boolean(managedOccurrence.attendanceFinalizedAt) || entry.status === "waitlisted" || entry.status === "no_show"} onChange={(event) => setOccurrenceAttendance.mutate({ bookingId: entry.bookingId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} /><span className="min-w-0"><span className="block break-words font-medium">{entry.name}</span>{entry.noShowCount ? <span className="block text-[12px] text-warning-deep">{entry.noShowCount} recorded no-show{entry.noShowCount === 1 ? "" : "s"}</span> : null}</span>{entry.fromWaitlist ? <span className="rounded-sm bg-success-bg px-1.5 py-0.5 text-[12px] text-success-deep">promoted</span> : null}</label><div className="flex items-center gap-2"><span className="rounded-sm bg-sunken px-2 py-0.5 text-[12px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>{canRoster && !managedOccurrence.attendanceFinalizedAt && ["booked", "waitlisted"].includes(entry.status) ? <Button variant="ghost" size="sm" aria-label={`Remove ${entry.name}`} onClick={() => removeOccurrenceAttendee.mutate(entry.bookingId)}><X /></Button> : null}</div></div>) : <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">No one has booked this date yet.</p>}</div>
                   <p className="mt-1.5 text-[12px] text-ink-3">{managedOccurrence.attendanceFinalizedAt ? `Attendance finalized ${formatDateTime(managedOccurrence.attendanceFinalizedAt)}.` : "Tick who showed up; attendance stays editable until finalized."}</p>
                 </section>
-                {canRoster && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Add a member at the desk</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to dated class" />{memberLookup.isLoading ? <p className="mt-2 text-[11px] text-ink-3">Searching…</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[11px] text-danger"><span>Search unavailable</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div> : memberResults.length ? <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="font-mono text-[10.5px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[11px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Override reason, only if needed" aria-label="Roster override reason" /></div><p className="mt-2 text-[10.5px] text-ink-3">RIVET asks for a reason only when capacity or the class audience would otherwise block the addition.</p></div></details> : null}
-                {canManage && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Substitute the coach for this date</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-2"><select aria-label="Substitute coach" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={substituteCoachId} onChange={(event) => setSubstituteCoachId(event.target.value)}><option value="">Choose substitute</option>{coaches.filter((coach) => coach.id !== managedOccurrence.coachId).map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select><Input value={substituteReason} onChange={(event) => setSubstituteReason(event.target.value)} placeholder="Why is the coach changing?" /></div><div className="mt-2 flex justify-end"><Button size="sm" variant="secondary" loading={substituteCoach.isPending} disabled={!substituteCoachId || !substituteReason.trim()} onClick={() => substituteCoach.mutate()}>Record substitute</Button></div></div></details> : null}
+                {canRoster && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Add a member at the desk</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to dated class" />{memberLookup.isLoading ? <p className="mt-2 text-[12px] text-ink-3">Searching…</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger"><span>Search unavailable</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div> : memberResults.length ? <div className="mt-2 w-full divide-y divide-line rounded-md border border-line bg-surface">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" disabled={addOccurrenceAttendee.isPending} onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="text-[12px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[12px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Override reason, only if needed" aria-label="Roster override reason" /></div><p className="mt-2 text-[12px] text-ink-3">RIVET asks for a reason only when capacity or the class audience would otherwise block the addition.</p></div></details> : null}
+                {canManage && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Substitute the coach for this date</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-2"><select aria-label="Substitute coach" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={substituteCoachId} onChange={(event) => setSubstituteCoachId(event.target.value)}><option value="">Choose substitute</option>{coaches.filter((coach) => coach.id !== managedOccurrence.coachId).map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select><Input aria-label="Substitution reason" value={substituteReason} onChange={(event) => setSubstituteReason(event.target.value)} placeholder="Why is the coach changing?" /></div><div className="mt-2 flex justify-end"><Button size="sm" variant="secondary" loading={substituteCoach.isPending} disabled={!substituteCoachId || !substituteReason.trim()} onClick={() => substituteCoach.mutate()}>Record substitute</Button></div></div></details> : null}
               </DialogBody>
-              <DialogFooter><Button variant="secondary" onClick={() => setManageOccurrenceId(undefined)}>Close</Button>{canRoster && !managedOccurrence.attendanceFinalizedAt ? <Button variant="signal" loading={finalizeOccurrence.isPending} disabled={Date.parse(managedOccurrence.endsAt) > Date.now()} onClick={() => finalizeOccurrence.mutate()}><Check /> Finalize attendance</Button> : null}</DialogFooter>
+              <DialogFooter><Button variant="secondary" onClick={() => setManageOccurrenceId(undefined)}>Close</Button>{canManage && !managedOccurrence.attendanceFinalizedAt ? <Button variant="primary" loading={finalizeOccurrence.isPending} disabled={Date.parse(managedOccurrence.endsAt) > Date.now()} onClick={() => setFinalizeOpen(true)}><Check /> Finalize attendance</Button> : null}</DialogFooter>
             </> : null}
           </DialogContent>
+        </Dialog>
+
+        <Dialog open={finalizeOpen} onOpenChange={setFinalizeOpen}>
+          <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Finalize attendance?</DialogTitle><DialogDescription>Unmarked confirmed bookings will be recorded as no-shows. Check the roster before continuing. Attendance cannot be edited after finalization.</DialogDescription></DialogHeader><DialogFooter><Button variant="secondary" onClick={() => setFinalizeOpen(false)}>Review roster</Button><Button loading={finalizeOccurrence.isPending} onClick={() => finalizeOccurrence.mutate()}>Confirm attendance</Button></DialogFooter></DialogContent>
         </Dialog>
 
         <Dialog open={Boolean(detailsId)} onOpenChange={(open) => { if (!open) setDetailsId(undefined); }}>
@@ -519,15 +528,15 @@ export default function ClassesPage() {
                   <DialogBody className="grid gap-3">
                     {target.imageUrl ? <div className="h-32 rounded-md border border-line bg-cover bg-center" role="img" aria-label={target.imageAltText ?? `${target.name} photo`} style={{ backgroundImage: `url(${target.imageUrl})` }} /> : null}
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[12.5px]">
-                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Day</dt><dd className="mt-0.5 font-medium">{DAYS[target.dayOfWeek]}</dd></div>
-                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Time</dt><dd className="mt-0.5 font-medium">{rangeLabel(target)}</dd></div>
-                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Duration</dt><dd className="mt-0.5 font-medium">{target.durationMinutes} minutes</dd></div>
-                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Coach</dt><dd className="mt-0.5 font-medium">{target.coachName ?? "Not assigned"}</dd></div>
-                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Who is it for?</dt><dd className="mt-0.5 flex items-center gap-1.5 font-medium"><span aria-hidden className="inline-block size-2 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[target.audience] }} />{AUDIENCE_LABEL[target.audience]}</dd></div>
-                      <div><dt className="text-[12px] uppercase tracking-wide text-ink-3">Booked{nextOccurrence ? ` · ${formatDate(nextOccurrence.date)}` : ""}</dt><dd className="mt-0.5 font-medium">{nextOccurrence ? `${nextOccurrence.bookedCount}/${nextOccurrence.capacity}` : `0/${target.capacity}`}{nextOccurrence?.waitlistCount ? <span className="ms-1 text-[12px] font-normal text-warning-deep">+{nextOccurrence.waitlistCount} waiting</span> : null}</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">Day</dt><dd className="mt-0.5 font-medium">{DAYS[target.dayOfWeek]}</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">Time</dt><dd className="mt-0.5 font-medium">{rangeLabel(target)}</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">Duration</dt><dd className="mt-0.5 font-medium">{target.durationMinutes} minutes</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">Coach</dt><dd className="mt-0.5 font-medium">{target.coachName ?? "Not assigned"}</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">Who is it for?</dt><dd className="mt-0.5 flex items-center gap-1.5 font-medium"><span aria-hidden className="inline-block size-2 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[target.audience] }} />{AUDIENCE_LABEL[target.audience]}</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">Booked{nextOccurrence ? ` · ${formatDate(nextOccurrence.date)}` : ""}</dt><dd className="mt-0.5 font-medium">{bookedLabel(target)}{nextOccurrence?.waitlistCount ? <span className="ms-1 text-[12px] font-normal text-warning-deep">+{nextOccurrence.waitlistCount} waiting</span> : null}</dd></div>
                     </dl>
                     <div>
-                      <p className="text-[12px] uppercase tracking-wide text-ink-3">Who booked{nextOccurrence ? ` — ${formatDate(nextOccurrence.date)}` : ""}</p>
+                      <p className="text-[12px] text-ink-3">Who booked{nextOccurrence ? ` — ${formatDate(nextOccurrence.date)}` : ""}</p>
                       {attendees.length > 0 ? (
                         <ul className="mt-1.5 divide-y divide-line rounded-md border border-line">
                           {attendees.map((entry) => (
@@ -541,12 +550,12 @@ export default function ClassesPage() {
                         <p className="mt-1.5 text-[12px] text-ink-3">{nextOccurrence ? "No one has booked this date yet." : "No dated class is available in this seven-day view."}</p>
                       )}
                     </div>
-                    {target.notes ? <div><p className="text-[12px] uppercase tracking-wide text-ink-3">Notes</p><p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink-2">{target.notes}</p></div> : null}
+                    {target.notes ? <div><p className="text-[12px] text-ink-3">Notes</p><p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink-2">{target.notes}</p></div> : null}
                   </DialogBody>
                   <DialogFooter>
                     {canManage ? <Button variant="secondary" onClick={() => { setDetailsId(undefined); openEdit(target); }} aria-label={`Edit ${target.name}`}><Pencil /> Edit</Button> : null}
                     <Button variant="ghost" onClick={() => setDetailsId(undefined)}>Close</Button>
-                    <Button onClick={() => { setDetailsId(undefined); openNextOccurrence(target.id); }}>Who booked</Button>
+                    {canRoster ? <Button disabled={occurrencesQuery.isLoading || occurrencesQuery.isError || !nextOccurrence} onClick={() => { setDetailsId(undefined); openNextOccurrence(target.id); }}>Who booked</Button> : null}{canManage ? <Button variant="danger" onClick={() => { setDetailsId(undefined); setDeleteTarget(target); setDeleteReason(""); }}>Remove from schedule</Button> : null}
                   </DialogFooter>
                 </>
               );
@@ -569,7 +578,7 @@ export default function ClassesPage() {
                   <div>
                     <p className="context-label">Who is in</p>
                     <div className="mt-2 divide-y divide-line rounded-md border border-line">
-                      {managed.roster.length === 0 ? <p className="px-3 py-4 text-center text-[11.5px] text-ink-3">No one is in this class yet.</p> : managed.roster.map((entry) => (
+                      {managed.roster.length === 0 ? <p className="px-3 py-4 text-center text-[12px] text-ink-3">No one is in this class yet.</p> : managed.roster.map((entry) => (
                         <div key={entry.memberId} className="flex items-center justify-between gap-2 px-3 py-2">
                           <label className="flex min-w-0 items-center gap-2.5 text-[12.5px]">
                             <input type="checkbox" checked={entry.attended} disabled={!canRoster} onChange={(event) => setAttendance.mutate({ memberId: entry.memberId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} />
@@ -584,10 +593,10 @@ export default function ClassesPage() {
                         <label className="grid gap-1.5 text-[12px] font-medium">Add member
                           <Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search by name or phone…" />
                         </label>
-                        {memberLookup.isLoading ? <p className="mt-2 text-[11.5px] text-ink-3" role="status">Searching members…</p> : memberLookup.isError ? (
-                          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[11.5px] text-danger" role="alert"><span>Member search is unavailable.</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div>
+                        {memberLookup.isLoading ? <p className="mt-2 text-[12px] text-ink-3" role="status">Searching members…</p> : memberLookup.isError ? (
+                          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger" role="alert"><span>Member search is unavailable.</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div>
                         ) : memberResults.length > 0 ? (
-                          <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">
+                          <div className="mt-2 w-full divide-y divide-line rounded-md border border-line bg-surface">
                             {memberResults.map((member) => (
                               <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => addAttendee.mutate(member.id)}>
                                 <span className="truncate">{member.fullName}</span>
@@ -595,14 +604,14 @@ export default function ClassesPage() {
                               </button>
                             ))}
                           </div>
-                        ) : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[11.5px] text-ink-3">No members match this search.</p> : null}
+                        ) : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[12px] text-ink-3">No members match this search.</p> : null}
                       </div>
                     ) : null}
                   </div>
                 </DialogBody>
                 <DialogFooter>
                   <Button variant="secondary" onClick={() => setManageId(undefined)}>Close</Button>
-                  {canManage ? <Button variant="signal" onClick={() => openEdit(managed)}>Edit class</Button> : null}
+                  {canManage ? <Button variant="primary" onClick={() => openEdit(managed)}>Edit class</Button> : null}
                 </DialogFooter>
               </>
             ) : null}
