@@ -55,6 +55,14 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
         await page.evaluate(() => document.fonts.ready);
         await expect(page).toHaveScreenshot(`pass-2-${ready!.toLowerCase().replaceAll(" ", "-")}-${width}.png`, { animations: "disabled", maxDiffPixelRatio: 0.04 });
       }
+      if (ready === "Retention" && (width === 390 || width === 1440)) {
+        await page.locator('section[aria-labelledby="risk-results-title"] li button').first().click();
+        const detail = page.getByTestId("at-risk-panel");
+        await expect(detail.getByRole("link", { name: /Open member record/ })).toBeVisible();
+        await detail.scrollIntoViewIfNeeded();
+        await expect(detail).toHaveScreenshot(`pass-2-retention-detail-${width}.png`, { animations: "disabled", maxDiffPixelRatio: 0.04 });
+        await fits(page);
+      }
       if (ready === "Leads") {
         await page.locator('a[href^="/crm/leads/"]:visible').first().click();
         await expect(page.getByTestId("trial-workflow")).toBeVisible();
@@ -88,7 +96,7 @@ test("retention preserves filters, pagination and member context on refresh", as
   await expect(page.getByRole("button", { name: "Expired", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("touch lead actions retain loss reasons and explicit saved view", async ({ browser }) => {
+test("touch lead actions retain loss reasons and Board/List preference", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
   await enter(page, "Sales");

@@ -1,8 +1,14 @@
 # Pass 2 review evidence
 
-Baseline: `b06292a` (fetched and verified against `origin/main`). Implementation commits: `dbbae4d`, `59320ed`, `021a85f`. Human review, correction batch, main push, Actions and Production verification remain pending.
+Baseline: `b06292a` (fetched and verified against `origin/main`). Implementation commits: `dbbae4d`, `59320ed`, `021a85f`. Hashem reviewed the first preview and requested two corrections. The consolidated correction batch is implemented at `352d501`; Hashem approved the pass and authorized the push on 5 September 2026. Actions and Production verification remain pending.
 
-[Open the protected Vercel Preview](https://rivet-5mcu0tj9t-nusairhashem04-gmailcoms-projects.vercel.app/login/gym). Deployment `dpl_GdhT5j7xRJV1Tn6v7Z3iujyYuFcW` is READY, targets Preview, and was built from committed source `021a85f`. Authenticated hosted checks opened Leads, Retention, Classes and PT with HTTP 200 at 390px and no horizontal overflow. It uses synthetic mock data. Existing Vercel deployment protection remains enabled.
+[Open the protected Vercel Preview](https://rivet-hgn62dl9h-nusairhashem04-gmailcoms-projects.vercel.app/login/gym). Deployment `dpl_4tYNU78PJx1tRcRFxw5AgBhA6JJm` is READY, targets Preview, and was built from committed source `352d501`. Authenticated hosted checks opened Leads, Retention, Classes and PT with HTTP 200 at 390px and no horizontal overflow. It uses synthetic mock data. Existing Vercel deployment protection remains enabled.
+
+## Hashem’s consolidated correction batch
+
+- Removed Saved views and Save from Leads. The only state they stored here was search text and Board/List, so they added controls without a useful filtering workflow. Search and Board/List remain URL-backed; saved-view controls on other surfaces and existing stored preferences are untouched.
+- Flattened both retention detail panels into a linked member heading, a readable facts grid and a compact wrapping action row. The member-name link replaces the stretched Open member record button. Call, WhatsApp, Log contact and Snooze retain their existing actions. Removed redundant “membership signal” copy and kept each exact risk reason.
+- Added selected-member screenshot coverage at 390px and 1440px, alongside the six existing width checks. Focused queue/pipeline component tests, lint, build and typecheck passed. The corrected preview uses the same mock data and existing Vercel protection.
 
 ## Workflow changes
 
@@ -25,7 +31,7 @@ Baseline: `b06292a` (fetched and verified against `origin/main`). Implementation
 | `/pt` and member PT tab | Before and after desktop/phone; six widths; member lookup journey; trainer UI component tests; existing Convex and credit/outcome tests | Owner/manager/trainer UI; empty, pending, scoped access, availability, booking, payment, cancellation, outcomes and stale recovery |
 | Shared forms | `after/` captures and `dialog-checks.json`; existing focused form tests | New lead, class editor, trainer profile, package and availability at 390px; footer reachable at 360×520, no page overflow |
 
-The browser suite checks 360, 390, 768, 820, 1280 and 1440px. Ten deterministic after references live in `apps/web/e2e/__screenshots__/pass-2-*.png`, exercised by `workflow-pass-2.spec.ts`. The thirteen baseline captures in `before/` predate implementation. Dialog screenshots use synthetic preview data. Reduced-height checks approximate keyboard space; they are not claims of testing a physical iOS/Android keyboard. Keyboard Enter, named controls, focus treatment, touch targets and contained timetable scrolling were reviewed. Existing shared offline/realtime and reduced-motion tests remain part of the full gate.
+The browser suite checks 360, 390, 768, 820, 1280 and 1440px. Twelve deterministic after references live in `apps/web/e2e/__screenshots__/pass-2-*.png`, exercised by `workflow-pass-2.spec.ts`. The thirteen baseline captures in `before/` predate implementation. Dialog screenshots use synthetic preview data. Reduced-height checks approximate keyboard space; they are not claims of testing a physical iOS/Android keyboard. Keyboard Enter, named controls, focus treatment, touch targets and contained timetable scrolling were reviewed. Existing shared offline/realtime and reduced-motion tests remain part of the full gate.
 
 ## Deliberate limits
 
@@ -47,6 +53,7 @@ The browser suite checks 360, 390, 768, 820, 1280 and 1440px. Ten deterministic 
 - Impeccable detector: run once across changed UI targets; `[]` findings.
 - `git diff --check`: passed.
 - Full Playwright: 80 credential-free journeys verified; 14 staging/credential-gated skips. The full run initially had 78 passes and two failures: a hidden responsive lead link selected by an old test, and a transient member-preview sign-in in the existing visual suite. The selector now targets the visible link; both failed journeys passed in the targeted rerun. No approved Pass 1 screenshot was replaced.
-- Hosted Preview: READY; four authenticated phone route checks passed (HTTP 200, correct headings, no page overflow).
+- Correction browser gate: all 13 journeys verified across six widths. The first run passed 12 and encountered a local Next.js JSON parse error on `/plans` at 1280px; the targeted 1280px rerun passed. The 390px capture was regenerated and its journey also passed. No product code change was needed for that development-server error.
+- Corrected hosted Preview: READY at source `352d501`; four authenticated phone route checks passed (HTTP 200, correct headings, no page overflow), including absence of Leads saved-view controls and the linked retention member heading.
 
 Run from the repository root: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `pnpm audit --prod`, and `git diff --check`. Use an unused `PLAYWRIGHT_PORT` if another operator already owns 3100.
