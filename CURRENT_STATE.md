@@ -1,5 +1,12 @@
 # GymOS / RIVET current implementation state
 
+## Branch operations UI pass — 5 September 2026
+
+- Hashem authorized Pass 3. Work started on main from fetched `origin/main` at `6b190d5`, with a clean worktree.
+- Implementation commits `bfc8521`, `ad82397`, `89ab1a4`, `36ccc33` and `ce264d3` refine stock, purchasing, suppliers, payables and payment confirmations, equipment, maintenance and checklists. Branch/filter links survive refresh; phone stock records and equipment actions are readable; checklist failures link directly to maintenance. Baseline captures are under `docs/ui-evidence/pass-3/before`.
+- The tracker now checks inspected routes and verified workflow outcomes. The existing lack of purchasing delivery dates and checklist assignment/attachments remains explicitly unchecked. Local verification passed: 1,250 unit tests, 14 repository-safety tests, both typechecks, canonical lint, dependency audit, Production build and detector. The full browser run verified 91 credential-free journeys (two existing tests needed a retry); 14 staging journeys remain credential-gated. Review Preview `dpl_DRjtRqumgNudQwXFapVFa1FE7b9g` is READY from `ce264d3` at `https://rivet-bk0xgsk9u-nusairhashem04-gmailcoms-projects.vercel.app`; authenticated hosted checks passed for all seven primary surfaces plus supplier payment confirmation, with no browser errors or page overflow. Pass 3 is ready for Hashem’s review; no push, Production release or approval is claimed. Pass 4 remains untouched.
+
+
 ## Pass 2 owner review corrections — 5 September 2026
 
 - Hashem reviewed the first Preview and identified redundant Leads saved-view controls and stretched retention actions. The single consolidated correction batch is committed at `352d501`.

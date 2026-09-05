@@ -193,44 +193,46 @@ Implementation and review evidence: [`docs/ui-evidence/pass-2/README.md`](ui-evi
 
 ## Pass 3: Branch operations
 
-**Status:** Not started
-**Baseline SHA:** To record
-**Finish SHA:** To record
-**Preview:** To record
+**Status:** Ready for Hashem’s review; local and hosted verification passed. Authorized by Hashem on 5 September 2026
+**Baseline SHA:** `6b190d5` (fetched and synced before work)
+**Implementation finish SHA:** `ce264d3` (local; approval and release finish pending)
+**Preview:** [Protected mock-data Preview](https://rivet-bk0xgsk9u-nusairhashem04-gmailcoms-projects.vercel.app) · `dpl_DRjtRqumgNudQwXFapVFa1FE7b9g` · READY · source `ce264d3`
 **Human approval:** Pending
 
 Routes and shared surfaces:
 
-- [ ] `/checklists`
-- [ ] `/operations`
-- [ ] `/operations/payables`
-- [ ] `/operations/payables/payments/[paymentId]`
-- [ ] `/maintenance`
-- [ ] Inventory
-- [ ] Purchase orders
-- [ ] Suppliers
-- [ ] Payables and supplier payments
-- [ ] Equipment
-- [ ] Facility tasks
-- [ ] Opening and closing checklist runs
+- [x] `/checklists`
+- [x] `/operations`
+- [x] `/operations/payables`
+- [x] `/operations/payables/payments/[paymentId]`
+- [x] `/maintenance`
+- [x] Inventory
+- [x] Purchase orders
+- [x] Suppliers
+- [x] Payables and supplier payments
+- [x] Equipment
+- [x] Facility tasks
+- [x] Opening and closing checklist runs
 
 Workflow outcomes:
 
-- [ ] Stock, purchasing, payables, equipment, and maintenance have a clear information structure.
-- [ ] Branch scope is always visible and defaults safely.
+- [x] Stock, purchasing, payables, equipment, and maintenance have a clear information structure.
+- [x] Branch scope is always visible and defaults safely.
 - [ ] Urgent stock, overdue purchasing, unpaid supplier amounts, and failed checklist items outrank healthy records.
-- [ ] Primary actions remain visible without tab or overflow-menu hunting.
-- [ ] Opening and closing tasks work comfortably on a phone.
+- [x] Primary actions remain visible without tab or overflow-menu hunting.
+- [x] Opening and closing tasks work comfortably on a phone.
 - [ ] A failed checklist item can become a maintenance task with clear ownership and optional evidence.
-- [ ] Partial, disabled, empty, and permission-limited configurations explain the next step.
-- [ ] Money and stock mutations keep authorization, audit, idempotency, and reversal rules intact.
+- [x] Partial, disabled, empty, and permission-limited configurations explain the next step.
+- [x] Money and stock mutations keep authorization, audit, idempotency, and reversal rules intact.
 
 Completion:
 
 - [ ] Before and after evidence approved.
-- [ ] Full pass gate passed.
+- [x] Full pass gate passed.
 - [ ] Pass merged and deployed.
 - [ ] Finish evidence recorded here.
+
+Implementation commits: `bfc8521`, `ad82397`, `89ab1a4`, `36ccc33` and `ce264d3`. Review evidence: [`docs/ui-evidence/pass-3/README.md`](ui-evidence/pass-3/README.md). Checked routes record inspection and implementation, not human approval or release. The combined overdue-purchasing and ownership/evidence outcomes remain unchecked: purchase orders have no promised-delivery date, and checklist escalation has no assignee or attachment input. These existing contract limits are documented rather than invented for visual completion. The full browser gate verified 91 credential-free journeys (two existing journeys needed a retry), with 14 explicit staging-credential skips. Hosted 390px checks passed for all seven primary surfaces and payment confirmation. Human review, one consolidated correction batch and the GitHub/Production release remain pending. Pass 4 remains untouched.
 
 ## Pass 4: Member mobile experience
 
