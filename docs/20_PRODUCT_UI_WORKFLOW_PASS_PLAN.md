@@ -292,9 +292,9 @@ Release: `main` fast-forwarded to `affb49b` on 5 September 2026 after a final fe
 
 ## Pass 5: Owner, finance, and oversight
 
-**Status:** Approved, releasing
+**Status:** Complete
 **Baseline SHA:** `5356870`
-**Finish SHA:** Implementation tip `4777d83`; released SHA recorded at closure
+**Finish SHA:** `5a42e45` (implementation tip `4777d83`; `5286414`, `678d847` and `5a42e45` added CI headroom, inspected Linux references and an exact locator after the first release run)
 **Preview:** https://rivet-edeeusvew-nusairhashem04-gmailcoms-projects.vercel.app (Vercel deployment `dpl_43osRv5uKfvFk1zZ8HBw7uvjL4np`, GitHub deployment 6283660228, built from review branch `review/ui-workflow-pass-5` at `e979991`, protected, synthetic mock data)
 **Human approval:** Approved by Hashem on 5 September 2026 ("merge to main", no correction batch)
 
@@ -327,10 +327,12 @@ Workflow outcomes:
 
 Completion:
 
-- [ ] Before and after evidence approved.
-- [ ] Full pass gate passed.
-- [ ] Pass merged and deployed.
-- [ ] Finish evidence recorded here.
+- [x] Before and after evidence approved.
+- [x] Full pass gate passed.
+- [x] Pass merged and deployed.
+- [x] Finish evidence recorded here.
+
+Release: `main` was fast-forwarded from `5356870` to `e3f583d` on 5 September 2026 after Hashem's approval, with no partner advancement to integrate. The first release run ([33980911846](https://github.com/hashemnusair/Rivet/actions/runs/33980911846)) passed typecheck, lint, tests, build and the Convex check but failed the credential-free browser job because the Pass 5 phone captures had no Linux references yet; `678d847` added fourteen inspected `-linux.png` references generated and verified on the CI runner, and `5a42e45` made the statements journey's Ledger controls locator exact. Actions [run 33984317062](https://github.com/hashemnusair/Rivet/actions/runs/33984317062) passed every job for `5a42e45`, and Vercel Production `dpl_Bb4TAfwrL9rvJWXwav9NdGSdxAp8` (GitHub deployment 6284388820) is READY: www, app and dashboard login return 200, the root domain redirects with 308, and the Production design gallery returns 404. The review and throwaway branches are deleted.
 
 ## Pass 6: Settings
 
