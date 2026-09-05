@@ -10,7 +10,7 @@ The work is a refinement of the implemented product. It must preserve authorizat
 
 - [x] Pass 1: Daily front-desk work
 - [x] Pass 2: Sales, retention, and scheduling
-- [ ] Pass 3: Branch operations
+- [x] Pass 3: Branch operations
 - [ ] Pass 4: Member mobile experience
 - [ ] Pass 5: Owner, finance, and oversight
 - [ ] Pass 6: Settings
@@ -193,9 +193,9 @@ Implementation and review evidence: [`docs/ui-evidence/pass-2/README.md`](ui-evi
 
 ## Pass 3: Branch operations
 
-**Status:** Approved by Hashem, pushed and live; CI screenshot-reference corrections in progress. Authorized by Hashem on 5 September 2026
+**Status:** Complete — approved by Hashem, pushed to main and live. Authorized and approved on 5 September 2026
 **Baseline SHA:** `6b190d5` (fetched and synced before work)
-**Implementation finish SHA:** `b413d08` (approved implementation; integration push `9caab72`, release gate pending)
+**Finish SHA:** `21788af` (approved implementation `b413d08`, integration push `9caab72`, verified visual-reference correction `21788af`)
 **Preview:** [Protected mock-data Preview](https://rivet-hf42gg007-nusairhashem04-gmailcoms-projects.vercel.app) · `dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg` · READY · source `b413d08`
 **Human approval:** Approved by Hashem on 5 September 2026
 
@@ -230,14 +230,16 @@ Completion:
 - [x] Before and after evidence approved.
 - [x] One consolidated owner correction batch applied.
 - [x] Full pass gate passed.
-- [ ] Pass merged and deployed.
-- [ ] Finish evidence recorded here.
+- [x] Pass committed directly to main and deployed; Actions [run `33963797469`](https://github.com/hashemnusair/Rivet/actions/runs/33963797469) passed every job, and matching Vercel Production `dpl_CxpUz1qqaPueS3TLL1MjphuXseoS` is READY.
+- [x] Finish evidence recorded here, in `CURRENT_STATE.md` and in the linked review evidence.
 
-Implementation commits: `bfc8521`, `ad82397`, `89ab1a4`, `36ccc33` and `ce264d3`. Review evidence: [`docs/ui-evidence/pass-3/README.md`](ui-evidence/pass-3/README.md). Checked routes record inspection and implementation, not human approval or release. The combined overdue-purchasing and ownership/evidence outcomes remain unchecked: purchase orders have no promised-delivery date, and checklist escalation has no assignee or attachment input. These existing contract limits are documented rather than invented for visual completion. The full browser gate verified 91 credential-free journeys (two existing journeys needed a retry), with 14 explicit staging-credential skips. Hosted 390px checks passed for all seven primary surfaces and payment confirmation. Hashem reviewed the first Preview and requested aligned machine form actions and stronger tab navigation. The consolidated correction batch is `3ff4cd8`; final approval is recorded above and GitHub/Production release verification is pending. Hashem reports Pass 4 is being handled in parallel by a partner agent.
+Implementation commits: `bfc8521`, `ad82397`, `89ab1a4`, `36ccc33` and `ce264d3`. Review evidence: [`docs/ui-evidence/pass-3/README.md`](ui-evidence/pass-3/README.md). All listed surfaces were inspected; Hashem approved the final corrected result and authorized release. The combined overdue-purchasing and ownership/evidence outcomes remain unchecked: purchase orders have no promised-delivery date, and checklist escalation has no assignee or attachment input. These existing contract limits are documented rather than invented for visual completion. The initial full browser gate verified 91 credential-free journeys (two existing journeys needed a retry), with 14 explicit staging-credential skips. Hosted 390px checks passed for all seven primary surfaces and payment confirmation. Hashem reviewed the first Preview and requested aligned machine form actions and stronger tab navigation. The consolidated correction batch is `3ff4cd8`; final approval and successful GitHub/Production release verification are recorded above. Hashem reports Pass 4 is being handled in parallel by a partner agent.
 
-Hashem’s subsequent review extended the underline style to in-page section navigation across the app and requested one-row mobile tabs with consistently sized Stock & purchasing controls. `fd46c0c` implements that shared consistency follow-up. Member-record, financial, scheduling and member-portal navigation changes are recorded under this explicit extension; Pass 4 is now proceeding separately under the partner agent. The earlier wrapping-tab layout is superseded. Hosted staff/member checks and all six toolbar widths passed. The follow-up passed typecheck, lint, 31 focused component tests and ten targeted browser journeys, including four retries for known local navigation/startup flakiness. Final approval is recorded above; release verification is pending.
+Hashem’s subsequent review extended the underline style to in-page section navigation across the app and requested one-row mobile tabs with consistently sized Stock & purchasing controls. `fd46c0c` implements that shared consistency follow-up. Member-record, financial, scheduling and member-portal navigation changes are recorded under this explicit extension; Pass 4 is now proceeding separately under the partner agent. The earlier wrapping-tab layout is superseded. Hosted staff/member checks and all six toolbar widths passed. The follow-up passed typecheck, lint, 31 focused component tests and ten targeted browser journeys, including four retries for known local navigation/startup flakiness. Final approval and successful release verification are recorded above.
 
-Horizontal scrolling regression: Hashem’s iPhone 15 Pro in-app emulation report exposed an unstable root overscroll spring and mount-only pointer detection. Fix `b413d08` isolates horizontal/touch gestures, reacts to pointer changes and replaces unstable integration with a bounded exact spring solution. Nine regression tests and a slow-frame/emulation-switch/swipe browser journey pass. The exact regression also passed on READY Preview `b413d08`. Earlier static geometry checks were insufficient for this failure; Hashem approved the corrected result; release verification is pending.
+Horizontal scrolling regression: Hashem’s iPhone 15 Pro in-app emulation report exposed an unstable root overscroll spring and mount-only pointer detection. Fix `b413d08` isolates horizontal/touch gestures, reacts to pointer changes and replaces unstable integration with a bounded exact spring solution. Nine regression tests and a slow-frame/emulation-switch/swipe browser journey pass. The exact regression also passed on READY Preview `b413d08`. Earlier static geometry checks were insufficient for this failure; Hashem approved the corrected result; the final release gate passed.
+
+Release verification: all 1,259 unit/component tests and 14 repository-safety tests passed, together with typechecks, canonical lint, build, audit and actual Convex code generation. CI verified all 92 credential-free browser journeys (the existing standalone member navigation journey passed on retry); 14 staging-only journeys remained explicitly credential-gated. Stale retention crop references and two Linux-specific mobile wrapping references were inspected and corrected without changing application code or screenshot tolerance. Marketing returned HTTP 200 after its canonical redirect, both login entry points returned 200, and the Production design gallery returned 404. The two existing workflow-contract limitations above remain honestly unchecked.
 
 ## Pass 4: Member mobile experience
 

@@ -2,10 +2,11 @@
 
 ## Pass 3 approved release — 5 September 2026
 
-- Hashem approved Pass 3, including the final horizontal-scroll correction, and explicitly authorized pushing to main. The approved Preview is `dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg`, source `b413d08`.
-- Approved integration `9caab72` was pushed after fetching GitHub. Matching Vercel Production `dpl_FHgUZdBzhxs39p55Cu4NMpwxXG6S` is READY. Marketing and both login entry points returned HTTP 200; the Production design gallery returned 404.
-- Actions run `33961660539` passed typechecks, lint, 1,259 unit/component tests, 14 repository-safety tests, the build, dependency audit and actual Convex code generation. Its browser job found stale retention crop references and platform-dependent mobile wrapping references; the scroll regression passed. Release closure awaits the corrected browser gate. These are test-reference corrections, with no application-code changes.
-- Hashem reports that a partner agent is working on Pass 4 in parallel. That work is separate; this release does not claim, overwrite or complete any Pass 4 work.
+- **Pass 3 is approved, pushed and live at integration finish `21788af`.** Hashem approved the final result, including the horizontal-scroll correction, and explicitly authorized release. Approved Preview: `dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg`, source `b413d08`; initial integration push: `9caab72`.
+- Actions [run `33963797469`](https://github.com/hashemnusair/Rivet/actions/runs/33963797469) passed every job for `21788af`: typechecks, lint, 1,259 unit/component tests, 14 repository-safety tests, build, audit, actual Convex code generation and all 92 credential-free browser journeys. One existing standalone member-navigation journey passed on retry; 14 staging-only journeys remain explicitly credential-gated.
+- Matching Vercel Production `dpl_CxpUz1qqaPueS3TLL1MjphuXseoS` is READY. Marketing returned HTTP 200 after its canonical redirect; both login entry points returned 200, and the Production design gallery returned 404. No Production data was changed.
+- The first CI run exposed stale retention screenshot crops and platform-dependent mobile wrapping references. They were inspected on macOS and Linux and corrected at `21788af`; application code and screenshot tolerances stayed unchanged. Exact evidence and the existing purchasing delivery-date / checklist-assignment limitations are recorded in `docs/ui-evidence/pass-3/README.md` and `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md`. Pass 3 completion is checked; the two unsupported workflow-contract outcomes remain unchecked.
+- Hashem reports that a partner agent is working on Pass 4 in parallel. GitHub was fetched before each push and again before closure; `origin/review/ui-workflow-pass-4` is present and untouched. This release does not claim or complete that separate work.
 
 ## Pass 3 horizontal-scroll regression fix — 5 September 2026
 
