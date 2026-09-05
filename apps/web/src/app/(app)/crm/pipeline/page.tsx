@@ -18,7 +18,7 @@ import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
-import { ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { NewLeadDialog } from "@/features/crm/new-lead-dialog";
@@ -75,7 +75,7 @@ function PipelinePageInner() {
   // HTML5 drag-and-drop doesn't work on touchscreens — default small touch
   // devices to the list view (the board remains one tap away).
   useEffect(() => {
-    if (window.matchMedia("(pointer: coarse)").matches && window.innerWidth < 1024) {
+    if (!new URLSearchParams(window.location.search).has("view") && window.matchMedia("(pointer: coarse)").matches && window.innerWidth < 1024) {
       setView("list");
     }
   }, []);
@@ -92,13 +92,21 @@ function PipelinePageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
 
+  const urlState = searchParams.toString();
+  useEffect(() => {
+    const next = new URLSearchParams(urlState);
+    setSearch(next.get("q") ?? "");
+    setPage(Math.max(1, Number(next.get("page")) || 1));
+    if (next.has("view")) setView(next.get("view") === "list" ? "list" : "board");
+  }, [urlState]);
+
   const query = useMemo(
     () => ({ branchId: session?.activeBranchId, search: debounced || undefined, page, pageSize: 100, sort: "nextFollowUpAt" as const }),
     [session?.activeBranchId, debounced, page],
   );
   const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: PIPELINE_LEAD_STAGES }), [query]);
   const leadQueryKey = useMemo(() => qk.leads(leadQuery), [leadQuery]);
-  const { data, isLoading, isError, refetch } = useRealtimeApiQuery({
+  const { data, isLoading, isError, isBackgroundError, refetch } = useRealtimeApiQuery({
     queryKey: leadQueryKey,
     query: (api) => api.listLeads(leadQuery),
     subscribe: (api, onValue, onError) => api.subscribeLeads(leadQuery, onValue, onError),
@@ -196,15 +204,15 @@ function PipelinePageInner() {
     <div className="flex h-full flex-col space-y-4">
       <PageHeader
         title="Leads"
-        description="Drag leads between trial, sale outcomes, and unanswered contact work."
+        description="Contact a lead, follow up on a trial, or finish a membership sale."
         actions={
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-line-2 p-0.5" role="group" aria-label="Lead view">
               <button
                 type="button"
-                onClick={() => { setView("board"); replaceParams({ view: undefined }); }}
+                onClick={() => { setView("board"); replaceParams({ view: "board" }); }}
                 aria-pressed={view === "board"}
-                className={cn("rounded-sm px-2.5 py-1 text-[12px] cursor-pointer", view === "board" ? "bg-ink text-paper" : "text-ink-2")}
+                className={cn("min-h-9 rounded-sm px-3 py-1 text-[13px] cursor-pointer", view === "board" ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}
               >
                 Board
               </button>
@@ -212,7 +220,7 @@ function PipelinePageInner() {
                 type="button"
                 onClick={() => { setView("list"); replaceParams({ view: "list" }); }}
                 aria-pressed={view === "list"}
-                className={cn("rounded-sm px-2.5 py-1 text-[12px] cursor-pointer", view === "list" ? "bg-ink text-paper" : "text-ink-2")}
+                className={cn("min-h-9 rounded-sm px-3 py-1 text-[13px] cursor-pointer", view === "list" ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}
               >
                 <LayoutList className="inline size-3.5 align-[-2px]" /> List
               </button>
@@ -226,18 +234,19 @@ function PipelinePageInner() {
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="w-full max-w-xs"><Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Filter by name or phone…" aria-label="Filter leads" /></div>
-        <SavedViewControls surface="leads" state={{ q: debounced || undefined, view }} hasExplicitState={searchParams.has("q") || searchParams.has("view")} onApply={(state) => { const nextView = state.view === "list" ? "list" : "board"; setSearch(typeof state.q === "string" ? state.q : ""); setView(nextView); replaceParams({ q: typeof state.q === "string" ? state.q : undefined, view: nextView === "list" ? "list" : undefined }); }} />
+        <SavedViewControls surface="leads" state={{ q: debounced || undefined, view }} hasExplicitState={searchParams.has("q") || searchParams.has("view")} onApply={(state) => { const nextView = state.view === "list" ? "list" : "board"; setSearch(typeof state.q === "string" ? state.q : ""); setView(nextView); replaceParams({ q: typeof state.q === "string" ? state.q : undefined, view: nextView }); }} />
       </div>
 
-      {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> Bulk action</Button><button type="button" className="text-[11.5px] underline underline-offset-4" onClick={() => setSelected(new Set())}>Clear selection</button></div> : null}
+      {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> Bulk action</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>Clear selection</button></div> : null}
 
-      {isLoading ? (
+      {isBackgroundError ? <ErrorState layout="inline" title="Leads could not refresh" onRetry={() => refetch()} /> : null}
+      {isLoading && !data ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {PIPELINE_COLUMNS.map(({ column }) => (
             <Skeleton key={column} className="h-64 w-full" />
           ))}
         </div>
-      ) : isError ? (
+      ) : isError && !data ? (
         <ErrorState onRetry={() => refetch()} />
       ) : view === "list" ? (
         <LeadListView
@@ -248,7 +257,7 @@ function PipelinePageInner() {
           onSelectedChange={setSelected}
         />
       ) : (
-        <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-4" data-testid="pipeline-board">
+        <div className="flex min-w-0 gap-3 overflow-x-auto pb-4" data-testid="pipeline-board">
           {PIPELINE_COLUMNS.map(({ column, label, hint }) => {
             const stageLeads = byStage.get(column) ?? [];
             const stageValue = stageLeads.reduce((s, l) => s + (l.expectedValue?.amount ?? 0), 0);
@@ -259,13 +268,13 @@ function PipelinePageInner() {
                 onDragOver={(event) => { event.preventDefault(); setDragOverColumn(column); }}
                 onDragLeave={() => setDragOverColumn((current) => current === column ? undefined : current)}
                 onDrop={(event) => { event.preventDefault(); const leadId = event.dataTransfer.getData("text/lead-id"); if (leadId) dropLead(leadId, column); }}
-                className={cn("flex w-64 shrink-0 flex-col rounded-lg border bg-sunken/40 transition-colors", dragOverColumn === column ? "border-signal bg-signal-bg/20" : "border-line")}
+                className={cn("flex w-64 shrink-0 flex-col rounded-lg border bg-paper transition-colors", dragOverColumn === column ? "border-signal bg-signal-bg/20" : "border-line")}
               >
                 <header className="px-3 pb-2 pt-3">
                   <div className="flex items-baseline justify-between">
-                    <h2 className="text-[12.5px] font-semibold">{label} <span className="ms-1 text-[11px] font-normal text-ink-3 tabular">{stageLeads.length}</span></h2>
+                    <h2 className="text-[12.5px] font-semibold">{label} <span className="ms-1 text-[12px] font-normal text-ink-3 tabular">{stageLeads.length}</span></h2>
                   {stageValue > 0 ? (
-                    <MoneyText money={{ amount: stageValue, currency: "JOD" }} compact className="text-[11px] text-ink-3" />
+                    <MoneyText money={{ amount: stageValue, currency: "JOD" }} compact className="text-[12px] text-ink-3" />
                   ) : null}
                   </div>
                   <p className="mt-0.5 text-[12px] text-ink-3">{hint}</p>
@@ -281,7 +290,7 @@ function PipelinePageInner() {
                     />
                   ))}
                   {stageLeads.length === 0 ? (
-                    <p className="rounded-md border border-dashed border-line-2 px-3 py-4 text-center text-[11.5px] text-ink-4">
+                    <p className="rounded-md border border-dashed border-line-2 px-3 py-4 text-center text-[12px] text-ink-4">
                       No leads
                     </p>
                   ) : null}
@@ -292,6 +301,7 @@ function PipelinePageInner() {
         </div>
       )}
 
+      {data && data.totalPages > 1 && view === "board" ? <p className="text-[12px] text-ink-2">Column counts and expected values cover this page of leads.</p> : null}
       {data ? <DataPagination page={data} onPage={(next) => { setPage(next); replaceParams({ page: next === 1 ? undefined : String(next) }); }} className="border-t border-line pt-3" /> : null}
 
       <NewLeadDialog open={newOpen} onOpenChange={setNewOpen} />
@@ -340,11 +350,13 @@ function LeadCard({
   column,
   onNoAnswer,
   onNotSold,
+  embedded = false,
 }: {
   lead: LeadSummary;
   column: PipelineColumn;
   onNoAnswer: () => void;
   onNotSold: () => void;
+  embedded?: boolean;
 }) {
   const actionable = column !== "sold" && column !== "not_sold";
   return (
@@ -352,43 +364,44 @@ function LeadCard({
       aria-label={`${lead.fullName}, ${columnLabel(column)}`}
       draggable
       onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/lead-id", lead.id); }}
-      className="group rounded-md border border-line bg-surface transition-colors hover:border-line-3"
+      className={cn("group bg-surface", !embedded && "rounded-md border border-line transition-colors hover:border-line-3")}
     >
-      <div className="flex cursor-grab items-start gap-2 p-2.5 active:cursor-grabbing">
-        <GripVertical className="mt-0.5 size-4 shrink-0 text-ink-4" aria-hidden />
+      <div className="flex items-start gap-2 p-2.5 active:cursor-grabbing">
+        <GripVertical className="mt-0.5 hidden size-4 shrink-0 cursor-grab text-ink-4 [@media(pointer:fine)]:block" aria-hidden />
         <div className="min-w-0 flex-1">
-          <Link href={`/crm/leads/${lead.id}`} className="block truncate text-[13px] font-medium hover:underline" aria-label={`Open ${lead.fullName}`}>
+          <Link href={`/crm/leads/${lead.id}`} className="block break-words text-[13.5px] font-medium hover:underline" aria-label={`Open ${lead.fullName}`}>
             {lead.fullName}
           </Link>
-          <p className="font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</p>
+          <p className="text-[12px] text-ink-3" dir="ltr">{lead.phone}</p>
         </div>
-        <Monogram name={lead.ownerName ?? "?"} size="xs" />
+        <span title={lead.ownerName ?? "Unassigned"}><Monogram name={lead.ownerName ?? "?"} size="xs" /></span>
       </div>
-      <div className="flex items-center justify-between gap-2 px-2.5 pb-2 text-[11px]">
-        <span className="text-ink-3">{LEAD_SOURCE_LABELS[lead.source]}</span>
+      <div className="flex items-center justify-between gap-2 px-2.5 pb-2 text-[12px]">
+        <span className="text-ink-2">{lead.ownerName ?? "Unassigned"}</span>
         {lead.expectedValue ? <MoneyText money={lead.expectedValue} className="text-ink-2" /> : null}
       </div>
+      {lead.lastContactAt ? <p className="px-2.5 pb-2 text-[12px] text-ink-2">Last contact <RelativeText iso={lead.lastContactAt} /></p> : <p className="px-2.5 pb-2 text-[12px] text-ink-2">Not contacted yet</p>}
       {lead.nextFollowUpAt ? (
-        <p className={cn("mx-2.5 border-t border-line/70 py-1.5 text-[11px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
+        <p className={cn("mx-2.5 border-t border-line/70 py-1.5 text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
           {lead.overdue ? "Follow-up overdue — " : "Follow up "}
           <RelativeText iso={lead.nextFollowUpAt} />
         </p>
       ) : null}
-      <div className="flex items-center gap-1 border-t border-line px-2 py-1.5">
-        <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-8 items-center gap-1 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">
+      <div className="flex flex-wrap items-center gap-1 border-t border-line px-2 py-1.5">
+        <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-8 items-center gap-1 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">
           <PhoneCall className="size-3.5" aria-hidden /> Call
         </a>
         {actionable && column !== "no_answer" ? (
-          <button data-touch-target type="button" className="min-h-8 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink" onClick={onNoAnswer} aria-label={`No answer for ${lead.fullName}`}>
+          <button data-touch-target type="button" className="min-h-8 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink" onClick={onNoAnswer} aria-label={`No answer for ${lead.fullName}`}>
             No answer
           </button>
         ) : null}
         {actionable ? (
-          <button data-touch-target type="button" className="ms-auto min-h-8 rounded-sm px-2 text-[11.5px] font-medium text-danger hover:bg-danger-bg" onClick={onNotSold} aria-label={`Mark ${lead.fullName} not sold`}>
+          <button data-touch-target type="button" className="ms-auto min-h-8 rounded-sm px-2 text-[12px] font-medium text-danger hover:bg-danger-bg" onClick={onNotSold} aria-label={`Mark ${lead.fullName} not sold`}>
             Not sold…
           </button>
         ) : (
-          <Link data-touch-target href={`/crm/leads/${lead.id}`} className="ms-auto inline-flex min-h-8 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">View</Link>
+          <Link data-touch-target href={`/crm/leads/${lead.id}`} className="ms-auto inline-flex min-h-8 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">View</Link>
         )}
       </div>
     </article>
@@ -397,17 +410,23 @@ function LeadCard({
 
 function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange }: { leads: LeadSummary[]; onNoAnswer: (lead: LeadSummary) => void; onNotSold: (lead: LeadSummary) => void; selected: Set<string>; onSelectedChange: (selected: Set<string>) => void }) {
   if (leads.length === 0) {
-    return <p className="py-10 text-center text-[13px] text-ink-3">No leads right now.</p>;
+    return <EmptyState layout="section" title="No leads match this view" description="Try another name or phone number, or create a lead to start a new conversation." />;
   }
   return (
     <div className="panel overflow-hidden">
-      <div className="overflow-x-auto">
+      <ul className="divide-y divide-line xl:hidden" aria-label="Lead records">
+        {leads.map((lead) => <li key={lead.id} className="p-4" data-testid="lead-compact-row">
+          <div className="mb-3 flex items-center justify-between gap-3"><Checkbox checked={selected.has(lead.id)} onCheckedChange={(checked) => { const next = new Set(selected); if (checked) next.add(lead.id); else next.delete(lead.id); onSelectedChange(next); }} aria-label={`Select ${lead.fullName}`} /><span className="text-[12px] text-ink-2">{columnLabel(pipelineColumn(lead))}</span></div>
+          <LeadCard embedded lead={lead} column={pipelineColumn(lead)} onNoAnswer={() => onNoAnswer(lead)} onNotSold={() => onNotSold(lead)} />
+        </li>)}
+      </ul>
+      <div className="hidden overflow-x-auto xl:block">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-line">
               <th className="w-10 px-3 py-2 text-start"><Checkbox checked={leads.length > 0 && leads.every((lead) => selected.has(lead.id))} onCheckedChange={(checked) => { const next = new Set(selected); leads.forEach((lead) => { if (checked) next.add(lead.id); else next.delete(lead.id); }); onSelectedChange(next); }} aria-label="Select all leads on this page" /></th>
               {["Lead", "Stage", "Owner", "Source", "Expected", "Next follow-up", "Actions"].map((h) => (
-                <th key={h} className="whitespace-nowrap px-3 py-2 text-start text-[11.5px] font-medium text-ink-3">
+                <th key={h} className="whitespace-nowrap px-3 py-2 text-start text-[12px] font-medium text-ink-3">
                   {h}
                 </th>
               ))}
@@ -421,7 +440,7 @@ function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange
                   <Link href={`/crm/leads/${lead.id}`} className="font-medium hover:underline underline-offset-2">
                     {lead.fullName}
                   </Link>
-                  <span className="block whitespace-nowrap font-mono text-[11px] text-ink-3" dir="ltr">{lead.phone}</span>
+                  <span className="block whitespace-nowrap text-[12px] text-ink-3" dir="ltr">{lead.phone}</span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{columnLabel(pipelineColumn(lead))}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{lead.ownerName ?? "—"}</td>
@@ -432,14 +451,14 @@ function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange
                 </td>
                 <td className="whitespace-nowrap px-3 py-1.5">
                   <div className="flex items-center justify-end gap-1">
-                    <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken">Call</a>
+                    <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">Call</a>
                     {pipelineColumn(lead) !== "sold" && pipelineColumn(lead) !== "not_sold" ? (
                       <>
-                        {pipelineColumn(lead) !== "no_answer" ? <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>No answer</button> : null}
-                        <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[11.5px] font-medium text-danger hover:bg-danger-bg" onClick={() => onNotSold(lead)}>Not sold…</button>
+                        {pipelineColumn(lead) !== "no_answer" ? <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>No answer</button> : null}
+                        <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-danger hover:bg-danger-bg" onClick={() => onNotSold(lead)}>Not sold…</button>
                       </>
                     ) : null}
-                    <Link data-touch-target href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[11.5px] font-medium text-ink-2 hover:bg-sunken">Open</Link>
+                    <Link data-touch-target href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">Open</Link>
                   </div>
                 </td>
               </tr>

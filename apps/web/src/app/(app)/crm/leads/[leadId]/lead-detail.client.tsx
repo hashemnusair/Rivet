@@ -110,7 +110,7 @@ export default function LeadDetailPageClient() {
   if (leadQuery.isLoading) {
     return <div className="space-y-4"><Skeleton className="h-6 w-56" /><Skeleton className="h-28 w-full" /><Skeleton className="h-80 w-full" /></div>;
   }
-  if (leadQuery.isError) {
+  if (leadQuery.isError && !leadQuery.data) {
     return isApiError(leadQuery.error) && leadQuery.error.code === "NOT_FOUND"
       ? <NotFoundState title="Lead not found" />
       : <ErrorState onRetry={() => leadQuery.refetch()} />;
@@ -132,17 +132,18 @@ export default function LeadDetailPageClient() {
 
   return (
     <div className="space-y-4">
+      {leadQuery.isBackgroundError ? <ErrorState layout="inline" title="Lead could not refresh" onRetry={() => leadQuery.refetch()} /> : null}
       <Breadcrumbs items={[{ label: "Leads", href: "/crm/pipeline" }, { label: lead.fullName }]} />
 
       <header className="panel px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="font-display text-[24px] font-semibold leading-none tracking-tight">{lead.fullName}</h1>
+              <h1 className="font-display text-[26px] font-semibold leading-tight break-words tracking-tight">{lead.fullName}</h1>
               <LeadStageChip stage={lead.stage} />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-2">
-              <a href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 font-mono text-[12.5px] hover:text-ink" dir="ltr"><Phone className="size-3.5 text-ink-3" /> {lead.phone}</a>
+              <a href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-[13px] hover:text-ink" dir="ltr"><Phone className="size-3.5 text-ink-3" /> {lead.phone}</a>
               <span>{lead.branchName}</span>
               <span>{LEAD_SOURCE_LABELS[lead.source]}</span>
             </div>
@@ -169,12 +170,12 @@ export default function LeadDetailPageClient() {
         </ol>
       </header>
 
-      <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
         <div className="space-y-4 self-start">
           <section className="panel p-4" data-testid="trial-workflow">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">Step 1</p>
+                
                 <h2 className="mt-1 font-display text-[16px] font-semibold">Trial</h2>
               </div>
               {trialStatus ? <Badge variant={trialDone ? "success" : trialStatus === "no_show" || trialStatus === "cancelled" ? "signal" : "warning"}>{trialStatus.replaceAll("_", " ")}</Badge> : null}
@@ -187,7 +188,7 @@ export default function LeadDetailPageClient() {
                 {trialStatus === "requested" ? (
                   <Button className="mt-4 w-full" loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}><CalendarClock /> Confirm trial</Button>
                 ) : trialStatus === "confirmed" ? (
-                  <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  <div className="mt-4 flex flex-wrap gap-2">
                     <Button onClick={() => setTrialOutcome("completed")}><CheckCircle2 /> Completed</Button>
                     <Button variant="secondary" onClick={() => setTrialOutcome("no_show")}><UserX /> No-show</Button>
                     <Button variant="ghost" onClick={() => setTrialOutcome("cancelled")}>Cancelled</Button>
@@ -213,7 +214,7 @@ export default function LeadDetailPageClient() {
                         <Field label="Date" required><Input type="date" min={todayISODate()} value={trialDate} onChange={(event) => setTrialDate(event.target.value)} /></Field>
                         <Field label="Time" required><Input type="time" min={trialWindow?.enabled ? trialWindow.opensAt : undefined} max={trialWindow?.enabled ? trialWindow.closesAt : undefined} disabled={!trialWindow?.enabled} value={trialTime} onChange={(event) => setTrialTime(event.target.value)} /></Field>
                       </div>
-                      {settingsQuery.isLoading ? <p className="text-[11.5px] text-ink-3">Loading the branch trial hours…</p> : trialWindow?.enabled ? <p className="text-[11.5px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[11.5px] text-ink-2">Trials are closed or not configured for this day. Choose another date or ask an owner or manager to update Trial scheduling in Settings.</p>}
+                      {settingsQuery.isError ? <ErrorState layout="section" title="Trial hours could not be loaded" onRetry={() => settingsQuery.refetch()} /> : settingsQuery.isLoading ? <p className="text-[12px] text-ink-3">Loading the branch trial hours…</p> : trialWindow?.enabled ? <p className="text-[12px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] text-ink-2">Trials are closed or not configured for this day. Choose another date or ask an owner or manager to update Trial scheduling in Settings.</p>}
                     </DialogBody>
                     <DialogFooter><Button variant="secondary" onClick={() => setScheduleOpen(false)}>Cancel</Button><Button disabled={!trialDate || !trialTime || !trialWindow?.enabled || trialTime < trialWindow.opensAt || trialTime > trialWindow.closesAt} loading={scheduleTrial.isPending} onClick={() => scheduleTrial.mutate()}><CalendarClock /> Schedule trial</Button></DialogFooter>
                   </DialogContent>
@@ -224,10 +225,10 @@ export default function LeadDetailPageClient() {
 
           {trialDone && !saleDone && !saleFailed ? (
             <section className="panel p-4" data-testid="membership-sale-step">
-              <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3">Step 2</p>
+              
               <h2 className="mt-1 font-display text-[16px] font-semibold">Was a membership sold?</h2>
               <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">A successful sale creates the member and membership together. There is no separate conversion step.</p>
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Button data-testid="sell-membership" onClick={() => setSaleOpen(true)}><CreditCard /> Membership sold</Button>
                 <Button variant="secondary" onClick={() => setNotSuccessfulOpen(true)}>Not sold</Button>
               </div>
@@ -248,7 +249,7 @@ export default function LeadDetailPageClient() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="font-display text-[14px] font-semibold">Follow-up note</h2>
-                  <p className="mt-1 text-[11.5px] text-ink-3">Keep the lead timeline concise while you log the interaction.</p>
+                  <p className="mt-1 text-[12px] text-ink-3">Keep the lead timeline concise while you log the interaction.</p>
                 </div>
                 <LogContactDialog subject="lead" leadId={lead.id} currentStage={lead.stage} />
               </div>
@@ -319,12 +320,12 @@ export default function LeadDetailPageClient() {
 
 function SimpleStep({ number, title, detail, state }: { number: number; title: string; detail: string; state: "done" | "current" | "waiting" | "stopped" }) {
   return (
-    <li className={`rounded-md border px-3 py-2.5 ${state === "current" ? "border-ink bg-sunken" : state === "done" ? "border-success/35 bg-success-bg/40" : state === "stopped" ? "border-signal/25 bg-signal-bg/30" : "border-line"}`} aria-current={state === "current" ? "step" : undefined}>
+    <li className={`border-t px-3 py-2.5 ${state === "current" ? "border-ink bg-sunken" : state === "done" ? "border-success/35 bg-success-bg/40" : state === "stopped" ? "border-signal/25 bg-signal-bg/30" : "border-line"}`} aria-current={state === "current" ? "step" : undefined}>
       <div className="flex items-center gap-2">
         <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border text-[10.5px] font-mono ${state === "done" ? "border-success bg-success text-white" : state === "current" ? "border-ink bg-ink text-paper" : "border-line-3 text-ink-3"}`}>{state === "done" ? <Check className="size-3" /> : number}</span>
         <span className="text-[12.5px] font-medium">{title}</span>
       </div>
-      <p className="mt-1 ps-7 text-[11px] text-ink-3">{detail}</p>
+      <p className="mt-1 ps-7 text-[12px] text-ink-3">{detail}</p>
     </li>
   );
 }
@@ -448,7 +449,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
           <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken/40 px-3 py-3">
             <div>
               <p className="text-[13px] font-medium">Marketing messages</p>
-              <p className="text-[11.5px] text-ink-3">On by default, but recorded as a system preference—not explicit consent—until staff changes it. Marketing sends remain suppressed while consent is unknown.</p>
+              <p className="text-[12px] text-ink-3">On by default, but recorded as a system preference—not explicit consent—until staff changes it. Marketing sends remain suppressed while consent is unknown.</p>
             </div>
             <Switch
               checked={marketingOptIn}
@@ -479,7 +480,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
                 <Field label="Duration (days)" required><Input type="number" min={1} max={730} value={customDurationDays} onChange={(event) => setCustomDurationDays(event.target.value)} /></Field>
                 <Field label="PT sessions"><Input type="number" min={0} max={100} value={customPtSessions} onChange={(event) => setCustomPtSessions(event.target.value)} /></Field>
               </div>
-              <p className="text-[11.5px] leading-relaxed text-ink-3">This custom membership is saved as an active plan for this branch, so it can be reused later.</p>
+              <p className="text-[12px] leading-relaxed text-ink-3">This custom membership is saved as an active plan for this branch, so it can be reused later.</p>
             </div>
           )}
 

@@ -59,9 +59,9 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
     <section className="panel p-4" data-testid="offer-work-panel">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="context-label">Optional sales tool</p>
+          
           <h2 className="mt-1 font-display text-[15px] font-semibold">Membership offers</h2>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Send a branded link the lead can accept or decline without creating an account.</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink-3">Send a branded link the lead can accept or decline without creating an account.</p>
         </div>
         <Button type="button" size="sm" onClick={() => setOpen(true)} disabled={!activePlans.length}><Plus /> New offer</Button>
       </div>
@@ -111,22 +111,26 @@ function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
 
   const copy = async () => {
     if (!url) return;
-    await navigator.clipboard.writeText(url);
-    toast.success("Offer link copied.");
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Offer link copied.");
+    } catch {
+      toast.error("Could not copy the link. Open the offer and copy its address.");
+    }
   };
 
   const variant = offer.status === "accepted" ? "success" : offer.status === "declined" || offer.status === "expired" ? "neutral" : offer.status === "sent" ? "warning" : "outline";
   return (
-    <div className="rounded-md border border-line bg-sunken/40 px-3 py-3">
+    <div className="border-t border-line py-3">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0"><p className="truncate text-[12.5px] font-semibold">{offer.planName}</p><p className="mt-0.5 text-[11px] text-ink-3">{formatMoney(offer.price)}{offer.expiresAt ? <> · expires {formatDateTime(offer.expiresAt)}</> : null}</p></div>
+        <div className="min-w-0"><p className="truncate text-[12.5px] font-semibold">{offer.planName}</p><p className="mt-0.5 text-[12px] text-ink-3">{formatMoney(offer.price)}{offer.expiresAt ? <> · expires {formatDateTime(offer.expiresAt)}</> : null}</p></div>
         <Badge variant={variant}>{offer.status}</Badge>
       </div>
-      {path ? <p className="mt-2 truncate font-mono text-[10.5px] text-ink-4">{path}</p> : <p className="mt-2 text-[11px] text-warning-deep">Legacy offer — create a new offer to get a public link.</p>}
-      {path && offer.status === "draft" ? <div className="mt-3 grid gap-2 sm:grid-cols-3"><Button type="button" variant="ghost" size="sm" onClick={() => void copy()}><Copy /> Copy link</Button><WhatsAppHandoff subject="lead" subjectId={props.leadId} recipientName={props.leadName} phone={props.phone} organizationName={props.organizationName} defaultCountryCallingCode={props.defaultCountryCallingCode} initialMessage={`Hi ${props.leadName.split(/\s+/)[0]}, ${props.organizationName} prepared a membership offer for you: ${url}`} buttonLabel="Open WhatsApp" className="w-full" /><Button type="button" size="sm" loading={confirmSent.isPending} onClick={() => confirmSent.mutate()}><Check /> Confirm sent</Button></div> : null}
-      {offer.status === "sent" ? <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-warning-deep"><Clock3 className="size-3.5" /> Waiting for the recipient&apos;s response.</p> : null}
-      {offer.status === "accepted" ? <p className="mt-3 text-[11.5px] font-medium text-success-deep">Accepted. Complete the membership sale when payment and dates are agreed.</p> : null}
-      {offer.status === "declined" && offer.responseReason ? <p className="mt-3 text-[11.5px] text-ink-2">Reason: {offer.responseReason}</p> : null}
+      {path ? <a href={path} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-9 items-center text-[12px] font-medium underline underline-offset-4">Open offer</a> : <p className="mt-2 text-[12px] text-warning-deep">Legacy offer — create a new offer to get a public link.</p>}
+      {path && offer.status === "draft" ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => void copy()}><Copy /> Copy link</Button><WhatsAppHandoff subject="lead" subjectId={props.leadId} recipientName={props.leadName} phone={props.phone} organizationName={props.organizationName} defaultCountryCallingCode={props.defaultCountryCallingCode} initialMessage={`Hi ${props.leadName.split(/\s+/)[0]}, ${props.organizationName} prepared a membership offer for you: ${url}`} buttonLabel="Open WhatsApp" className="" /><Button type="button" size="sm" loading={confirmSent.isPending} onClick={() => confirmSent.mutate()}><Check /> Confirm sent</Button></div> : null}
+      {offer.status === "sent" ? <p className="mt-3 flex items-center gap-1.5 text-[12px] text-warning-deep"><Clock3 className="size-3.5" /> Waiting for the recipient&apos;s response.</p> : null}
+      {offer.status === "accepted" ? <p className="mt-3 text-[12px] font-medium text-success-deep">Accepted. Complete the membership sale when payment and dates are agreed.</p> : null}
+      {offer.status === "declined" && offer.responseReason ? <p className="mt-3 text-[12px] text-ink-2">Reason: {offer.responseReason}</p> : null}
     </div>
   );
 }

@@ -147,8 +147,8 @@ Review evidence is committed in `apps/web/e2e/workflow-pass-1-visual.spec.ts` an
 
 ## Pass 2: Sales, retention, and scheduling
 
-**Status:** Not started
-**Baseline SHA:** To record
+**Status:** In progress; green light received from Hashem on 5 September 2026
+**Baseline SHA:** `b06292a`
 **Finish SHA:** To record
 **Preview:** To record
 **Human approval:** Pending

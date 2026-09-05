@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
+import { ErrorState } from "@/components/ui/states";
+import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import type { OfferOutcome, PublicOffer } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
@@ -38,7 +40,8 @@ export default function PublicOfferClient({ token }: { token: string }) {
   );
 
   if (offerQuery.isLoading) return <OfferFrame><div className="mx-auto w-full max-w-xl space-y-4"><Skeleton className="h-8 w-56" /><Skeleton className="h-72 w-full" /></div></OfferFrame>;
-  if (offerQuery.isError || !offer) return <OfferFrame><StatusCard icon={X} context="Offer unavailable" title="This link cannot be opened." description="It may be incomplete, withdrawn, or no longer available. Ask the gym to send you a fresh offer." /></OfferFrame>;
+  if (offerQuery.isError && !(isApiError(offerQuery.error) && offerQuery.error.code === "NOT_FOUND") && !offer) return <OfferFrame><div className="mx-auto max-w-2xl"><ErrorState title="Offer could not be loaded" description="Check your connection and try again. Your response has not changed." onRetry={() => offerQuery.refetch()} /></div></OfferFrame>;
+  if (!offer) return <OfferFrame><StatusCard icon={X} context="Offer unavailable" title="This link cannot be opened." description="It may be incomplete, withdrawn, or no longer available. Ask the gym to send you a fresh offer." /></OfferFrame>;
 
   const brandStyle = {
     "--offer-primary": offer.brand.tokens.primary,
@@ -48,12 +51,13 @@ export default function PublicOfferClient({ token }: { token: string }) {
 
   return (
     <OfferFrame>
-      <article className="mx-auto w-full max-w-2xl overflow-hidden border border-ink bg-surface shadow-pop" style={brandStyle}>
-        <header className="border-b border-ink bg-[var(--offer-primary)] px-6 py-7 text-[var(--offer-primary-foreground)] sm:px-9">
+      {offerQuery.isError ? <div className="mx-auto mb-4 max-w-2xl"><ErrorState layout="inline" title="Offer could not refresh" onRetry={() => offerQuery.refetch()} /></div> : null}
+      <article className="mx-auto w-full max-w-2xl overflow-hidden rounded-lg border border-line bg-surface" style={brandStyle}>
+        <header className="border-b border-line bg-surface px-6 py-6 text-ink sm:px-9">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[12px] font-medium opacity-75">Membership offer</p>
-              <h1 className="mt-2 truncate text-[23px] font-semibold tracking-tight sm:text-[28px]">{offer.organizationName}</h1>
+              <h1 className="mt-2 break-words text-[26px] font-semibold tracking-tight">{offer.organizationName}</h1>
             </div>
             {offer.brand.logoUrl ? <Image src={offer.brand.logoUrl} alt={offer.brand.logoAltText ?? `${offer.organizationName} logo`} width={56} height={56} className="size-14 rounded-md border border-current/20 bg-white object-contain p-1" /> : <span className="flex size-14 items-center justify-center rounded-md border border-current/25 font-mono text-[11px] font-semibold uppercase">{offer.organizationName.slice(0, 3)}</span>}
           </div>
@@ -72,7 +76,7 @@ export default function PublicOfferClient({ token }: { token: string }) {
                 <p className="context-label">Membership</p>
                 <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
                   <h2 className="text-[26px] font-semibold tracking-tight">{offer.planName}</h2>
-                  <p className="font-mono text-[20px] font-semibold tabular">{formatMoney(offer.price)}</p>
+                  <p className="text-[22px] font-semibold tabular">{formatMoney(offer.price)}</p>
                 </div>
                 {offer.expiresAt ? <p className="mt-3 inline-flex items-center gap-1.5 text-[12px] text-ink-3"><Clock3 className="size-3.5" /> Respond by {formatDateTime(offer.expiresAt)}</p> : null}
               </div>
@@ -80,7 +84,7 @@ export default function PublicOfferClient({ token }: { token: string }) {
                 <Button type="button" className="bg-[var(--offer-primary)] text-[var(--offer-primary-foreground)] hover:opacity-90" onClick={() => setMode("accepted")}><Check /> Accept offer</Button>
                 <Button type="button" variant="secondary" onClick={() => setMode("declined")}><X /> Decline</Button>
               </div>
-              <p className="mt-4 flex items-start gap-2 text-[11.5px] leading-relaxed text-ink-3"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" /> Your response is recorded for the gym. Accepting does not charge you or activate a membership; the gym completes that with you.</p>
+              <p className="mt-4 flex items-start gap-2 text-[12px] leading-relaxed text-ink-3"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" /> Your response is recorded for the gym. Accepting does not charge you or activate a membership; the gym completes that with you.</p>
             </>
           ) : null}
         </div>
@@ -108,5 +112,5 @@ function OfferFrame({ children }: { children: React.ReactNode }) {
 }
 
 function StatusCard({ icon: Icon, context, title, description, compact = false }: { icon: typeof Check; context: string; title: string; description: string; compact?: boolean }) {
-  return <section className={compact ? "py-3" : "mx-auto max-w-xl border border-line bg-surface p-7 shadow-pop sm:p-9"}><span className="flex size-10 items-center justify-center rounded-md bg-sunken text-ink"><Icon className="size-5" /></span><p className="context-label mt-5">{context}</p><h1 className="mt-2 text-[24px] font-semibold tracking-tight">{title}</h1><p className="mt-3 text-[13.5px] leading-relaxed text-ink-2">{description}</p></section>;
+  return <section className={compact ? "py-3" : "mx-auto max-w-xl rounded-lg border border-line bg-surface p-7 sm:p-9"}><span className="flex size-10 items-center justify-center rounded-md bg-sunken text-ink"><Icon className="size-5" /></span><p className="context-label mt-5">{context}</p><h2 className="mt-2 text-[20px] font-semibold tracking-tight">{title}</h2><p className="mt-3 text-[13.5px] leading-relaxed text-ink-2">{description}</p></section>;
 }

@@ -117,7 +117,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>New lead</DialogTitle>
-          <DialogDescription>Capture it now — the 24h first-contact automation starts counting immediately.</DialogDescription>
+          <DialogDescription>Add their name and phone, then choose the next follow-up.</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => {
           const selectedBranchId = visibleBranchId(session?.branches, v.branchId);
@@ -128,12 +128,12 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           mutation.mutate({ ...v, branchId: selectedBranchId });
         })}>
           <DialogBody className="space-y-4">
-            <FieldGrid alignFrom="base" className="grid-cols-2">
+            <FieldGrid className="sm:grid-cols-2">
               <Field label="Full name" required error={form.formState.errors.fullName?.message}>
                 <Input autoFocus {...form.register("fullName")} />
               </Field>
               <Field label="Phone" required error={form.formState.errors.phone?.message}>
-                <Input dir="ltr" placeholder="+962 7…" {...form.register("phone")} />
+                <Input type="tel" autoComplete="tel" dir="ltr" placeholder="+962 7…" {...form.register("phone")} />
               </Field>
             </FieldGrid>
             <details className="group rounded-md border border-line bg-sunken/25" open={!activeBranchId || undefined}>
@@ -148,7 +148,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <Field label="Email" htmlFor="lead-email" hint="Optional — used for follow-up and identity matching." error={form.formState.errors.email?.message}>
                   <Input id="lead-email" type="email" autoComplete="email" placeholder="prospect@example.com" {...form.register("email")} />
                 </Field>
-                <FieldGrid alignFrom="base" className="grid-cols-2">
+                <FieldGrid className="sm:grid-cols-2">
                   <Field label="Branch" required error={form.formState.errors.branchId?.message}>
                     <Controller
                       control={form.control}

@@ -44,6 +44,19 @@ const state = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("next/navigation", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const subscribe = (callback: () => void) => {
+    window.addEventListener("test:navigation", callback);
+    return () => window.removeEventListener("test:navigation", callback);
+  };
+  return {
+    usePathname: () => "/crm/queues",
+    useSearchParams: () => new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
+    useRouter: () => ({ replace: (url: string) => { window.history.replaceState({}, "", url); window.dispatchEvent(new Event("test:navigation")); } }),
+  };
+});
+
 vi.mock("@/lib/providers/app-providers", () => ({
   useApp: () => ({ session: { activeBranchId: "branch-1" } }),
 }));
@@ -74,6 +87,7 @@ vi.mock("@/features/crm/whatsapp-handoff", () => ({
 
 describe("follow-up workspace layout", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/crm/queues");
     state.queryKey = undefined;
     state.refetch.mockReset();
   });
@@ -116,9 +130,10 @@ describe("follow-up workspace layout", () => {
       days: 45,
       fromDate: undefined,
       toDate: undefined,
-      pageSize: 100,
+      page: 1, pageSize: 25,
     }));
     expect(screen.getByRole("button", { name: "Expired" })).toHaveAttribute("aria-pressed", "true");
+    expect(window.location.search).toContain("bucket=expired");
   });
 
   it("exposes the selected member row as a pressed control", async () => {
@@ -130,6 +145,7 @@ describe("follow-up workspace layout", () => {
     expect(row).toHaveAttribute("aria-pressed", "false");
     await user.click(row);
     expect(row).toHaveAttribute("aria-pressed", "true");
+    expect(window.location.search).toContain("member=membership-1");
     expect(screen.getByTestId("follow-up-panel")).toBeInTheDocument();
     expect(screen.getByTestId("log-contact-dialog")).toBeInTheDocument();
   });
