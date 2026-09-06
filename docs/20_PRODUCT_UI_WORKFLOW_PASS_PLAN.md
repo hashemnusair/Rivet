@@ -336,41 +336,41 @@ Release: `main` was fast-forwarded from `5356870` to `e3f583d` on 5 September 20
 
 ## Pass 6: Settings
 
-**Status:** Not started
-**Baseline SHA:** To record
+**Status:** In review — implemented on `main` locally, awaiting Hashem's Preview review
+**Baseline SHA:** `b86f146` (fetched and verified against `origin/main` after the Pass 5 closure)
 **Finish SHA:** To record
 **Preview:** To record
 **Human approval:** Pending
 
 Sections:
 
-- [ ] Organization
-- [ ] Brand Kit
-- [ ] Public profile
-- [ ] Branches
-- [ ] Gym spaces
-- [ ] Agreement
-- [ ] Subscription & invoices
-- [ ] Users
-- [ ] Roles & permissions
-- [ ] Payments
-- [ ] Receipts & tax
-- [ ] Notifications
-- [ ] Operational email
-- [ ] Operational rules
-- [ ] Hours & trials
-- [ ] Daily checklists
+- [x] Organization
+- [x] Brand Kit
+- [x] Public profile
+- [x] Branches
+- [x] Gym spaces
+- [x] Agreement
+- [x] Subscription & invoices
+- [x] Users
+- [x] Roles & permissions
+- [x] Payments
+- [x] Receipts & tax
+- [x] Notifications
+- [x] Operational email
+- [x] Operational rules
+- [x] Hours & trials
+- [x] Daily checklists
 
 Workflow outcomes:
 
-- [ ] The Settings heading and local rail stay stable while content scrolls.
-- [ ] Search, URL state, Back, and refresh preserve the selected section.
-- [ ] Every editable section has predictable dirty, save, saving, success, failure, discard, and navigation-protection behavior.
-- [ ] Labels, fields, units, helper text, and validation align consistently.
-- [ ] Toggles clearly control the settings beneath them.
-- [ ] Permission and agreement tables remain usable on narrow screens and with keyboard navigation.
-- [ ] Subscription, invoice, email, and legal states use consistent record treatment.
-- [ ] Settings work on phones without cramped multi-column fields.
+- [x] The Settings heading and local rail stay stable while content scrolls.
+- [x] Search, URL state, Back, and refresh preserve the selected section.
+- [x] Every editable section has predictable dirty, save, saving, success, failure, discard, and navigation-protection behavior.
+- [x] Labels, fields, units, helper text, and validation align consistently.
+- [x] Toggles clearly control the settings beneath them.
+- [x] Permission and agreement tables remain usable on narrow screens and with keyboard navigation.
+- [x] Subscription, invoice, email, and legal states use consistent record treatment.
+- [x] Settings work on phones without cramped multi-column fields.
 
 Completion:
 
@@ -378,6 +378,8 @@ Completion:
 - [ ] Full pass gate passed.
 - [ ] Pass merged and deployed.
 - [ ] Finish evidence recorded here.
+
+Implementation and review evidence: [`docs/ui-evidence/pass-6/README.md`](ui-evidence/pass-6/README.md). All sixteen sections were inspected at 360, 390, 768, 820, 1280 and 1440px. Every editable section now uses the shared save bar (Public profile, Payments and Notifications joined it; the quiet-hour fields no longer write on every keystroke), section headings match the rail and phone picker, the rail is arrow-key operable, a deep link to a section the role cannot save shows a permission state, and Branches, Gym spaces, Users, Invoices and the permission matrix have phone layouts. The seeded manager cannot open Settings, so the partially permitted case is a component test; the Payments section saves methods and each role's limit as separate server calls and reports a partial failure per part; the credential-gated staging owner-settings journey already used selectors that predate the Settings rail split and is flagged rather than rewritten blind. The Impeccable skill is unavailable here, so an equivalent banned-pattern scan ran over the changed targets and the detector checkbox stays unticked.
 
 ## Pass 7: Platform, authentication, and public product states
 
