@@ -25,6 +25,8 @@ vi.mock("@/lib/api/client", () => ({
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
+  usePathname: () => "/platform/applications",
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }));
 
 function application(overrides: Partial<PlatformGymApplication> = {}): PlatformGymApplication {
@@ -83,7 +85,7 @@ describe("PlatformApplicationsPage", () => {
     render(<PlatformApplicationsPage />);
 
     expect(await screen.findByRole("heading", { name: "Mosaic Women's Fitness" })).toBeInTheDocument();
-    expect(screen.getAllByText("approved", { selector: "span" })).toHaveLength(2);
+    expect(screen.getAllByText("Approved", { selector: "span" })).toHaveLength(2);
   });
 
   it("follows application query changes without leaving the route", async () => {

@@ -4,12 +4,18 @@ import { openInvoicePdf } from "@/features/billing/invoice-pdf";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowDownToLine, Ban, CalendarClock, CheckCircle2, CircleAlert, CreditCard, FilePlus2, FileText, Landmark, Receipt, Send, ShieldCheck } from "lucide-react";
+import { ArrowDownToLine, Ban, CalendarClock, CheckCircle2, CircleAlert, FilePlus2, FileText, Receipt, Send } from "lucide-react";
+import { PageHeader, Stat } from "@/components/shared/chrome";
+import { PlatformPage, PlatformPanel, PlatformPanelHeader } from "@/components/platform/platform-page";
+import { InvoiceStatusBadge } from "@/components/platform/platform-status";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BillGymWizard } from "./bill-gym-wizard";
 import { GymSubscriptions } from "./gym-subscriptions";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { CreatePlatformInvoiceInput, PlatformBillingInvoice, RecordPlatformInvoicePaymentInput } from "@/lib/api/GymOSApi";
 import { useApiMutation } from "@/lib/hooks/use-api";
 import { INVOICE_LEAD_DAYS, OVERDUE_BEFORE_NOTICE_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, SUSPENSION_NOTICE_DAYS } from "../../../../convex/subscriptionTerm";
@@ -125,80 +131,93 @@ export default function BillingPage() {
   });
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <div className="mx-auto max-w-[1480px]">
-        <div className="flex flex-wrap items-end justify-between gap-5">
-          <div><p className="context-label">Payments control</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Billing & invoices</h1><p className="mt-2 text-[12.5px] text-ink-2">Subscriptions, invoices, and collections in one place.</p></div>
-          <div className="flex flex-wrap gap-2">
+    <PlatformPage>
+      <PageHeader
+        title="Billing & invoices"
+        description="Subscriptions, invoices and collections for every gym. RIVET never charges a card; you confirm bank or reference payments here."
+        actions={
+          <>
             <Button variant="secondary" onClick={() => setPolicyOpen(true)}><CalendarClock /> Renewal policy</Button>
             <Button variant="secondary" onClick={() => downloadInvoices(invoices)} disabled={invoices.length === 0}><ArrowDownToLine /> Export ledger</Button>
             <Button variant="signal" onClick={() => { setBillWizardGymId(undefined); setBillWizardOpen(true); }} disabled={!platformSnapshot}><Receipt /> Bill a gym</Button>
-          </div>
+          </>
+        }
+      />
+
+      <BillGymWizard open={billWizardOpen} onOpenChange={(open) => { setBillWizardOpen(open); if (!open) setBillWizardGymId(undefined); }} gyms={platformSnapshot?.gyms ?? []} plans={platformSnapshot?.plans ?? []} initialGymId={billWizardGymId} />
+
+      {invoiceTotals.overdue.amount ? (
+        <div className="mt-5 flex items-start gap-3 rounded-md border border-danger/30 bg-danger-bg px-4 py-3" role="status">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
+          <div className="text-[12.5px]"><p className="font-semibold text-danger">Past-due invoices require manual review</p><p className="mt-0.5 text-ink-2">{formatMoney(invoiceTotals.overdue)} is marked overdue in the platform ledger. No automated retry has been attempted; record the payment reference or void the invoice below.</p></div>
         </div>
+      ) : null}
 
-        <BillGymWizard open={billWizardOpen} onOpenChange={(open) => { setBillWizardOpen(open); if (!open) setBillWizardGymId(undefined); }} gyms={platformSnapshot?.gyms ?? []} plans={platformSnapshot?.plans ?? []} initialGymId={billWizardGymId} />
+      <section className="mt-5 grid gap-3 sm:grid-cols-3" aria-label="Billing totals">
+        <PlatformPanel className="p-4"><Stat label="Outstanding" value={platformSnapshot ? formatMoney(invoiceTotals.outstanding) : "—"} context="Open and past-due invoices" tone={invoiceTotals.outstanding.amount ? "warning" : undefined} /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label="Collected" value={platformSnapshot ? formatMoney(invoiceTotals.collected) : "—"} context="Paid invoice records" /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label="Automatic charging" value="Not configured" context="Bank or reference payment confirmation only" /></PlatformPanel>
+      </section>
 
-        <GymSubscriptions gyms={platformSnapshot?.gyms ?? []} onBill={(gymId) => { setBillWizardGymId(gymId); setBillWizardOpen(true); }} />
+      <GymSubscriptions gyms={platformSnapshot?.gyms ?? []} onBill={(gymId) => { setBillWizardGymId(gymId); setBillWizardOpen(true); }} />
 
-        <Dialog open={policyOpen} onOpenChange={setPolicyOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>How renewals work</DialogTitle>
-              <DialogDescription>The subscription clock runs on its own; you only confirm payments.</DialogDescription>
-            </DialogHeader>
-            <DialogBody className="grid gap-2">
-              <PolicyStep index="01" title="Invoice issued" detail={`${INVOICE_LEAD_DAYS} days before the term ends`} />
-              <PolicyStep index="02" title="Due" detail={`${PAYMENT_TERM_DAYS} days after it is issued, as the agreement promises`} />
-              <PolicyStep index="03" title="Past due" detail="The day after the due date, with written notice" />
-              <PolicyStep index="04" title="Suspension" detail={`${SUSPENSION_AFTER_DUE_DAYS} days past due: ${OVERDUE_BEFORE_NOTICE_DAYS} days overdue plus ${SUSPENSION_NOTICE_DAYS} days' notice`} />
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">Record the payment reference on an invoice to mark it paid and reactivate the gym. RIVET never charges cards automatically.</p>
-            </DialogBody>
-            <DialogFooter>
-              <Button variant="secondary" onClick={() => setPolicyOpen(false)}>Close</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      <Dialog open={policyOpen} onOpenChange={setPolicyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>How renewals work</DialogTitle>
+            <DialogDescription>The subscription clock runs on its own; you only confirm payments.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="grid gap-2">
+            <PolicyStep index="01" title="Invoice issued" detail={`${INVOICE_LEAD_DAYS} days before the term ends`} />
+            <PolicyStep index="02" title="Due" detail={`${PAYMENT_TERM_DAYS} days after it is issued, as the agreement promises`} />
+            <PolicyStep index="03" title="Past due" detail="The day after the due date, with written notice" />
+            <PolicyStep index="04" title="Suspension" detail={`${SUSPENSION_AFTER_DUE_DAYS} days past due: ${OVERDUE_BEFORE_NOTICE_DAYS} days overdue plus ${SUSPENSION_NOTICE_DAYS} days' notice`} />
+            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">Record the payment reference on an invoice to mark it paid and reactivate the gym. RIVET never charges cards automatically.</p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setPolicyOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        <section className="mt-7 grid gap-3 sm:grid-cols-3">
-          <Card icon={<CreditCard />} label="Collected" value={platformSnapshot ? formatMoney(invoiceTotals.collected) : "—"} detail="Paid invoice records" />
-          <Card icon={<CircleAlert />} label="Outstanding" value={platformSnapshot ? formatMoney(invoiceTotals.outstanding) : "—"} detail="Open and past-due invoices" warning={Boolean(invoiceTotals.outstanding.amount)} />
-          <Card icon={<Landmark />} label="Automatic charging" value="Not configured" detail="Bank/reference payment confirmation only" />
-        </section>
+      <section className="mt-5" aria-labelledby="renewal-summary-heading">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><h2 id="renewal-summary-heading" className="text-[15px] font-semibold">Subscription invoice states</h2><p className="text-[12.5px] text-ink-3">From the renewal clock and subscription changes.</p></div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <LifecycleCard label="Upcoming / open" count={renewalSummary.upcoming.length} amount={renewalSummary.amountFor(renewalSummary.upcoming)} detail={`Issued ${INVOICE_LEAD_DAYS} days early, payable within ${PAYMENT_TERM_DAYS}`} />
+          <LifecycleCard label="In grace / past due" count={renewalSummary.inGrace.length} amount={renewalSummary.amountFor(renewalSummary.inGrace)} detail={`Access may close ${SUSPENSION_AFTER_DUE_DAYS} days after the due date`} tone={renewalSummary.inGrace.length > 0 ? "warning" : undefined} />
+          <LifecycleCard label="Paid renewals" count={renewalSummary.paid.length} amount={renewalSummary.amountFor(renewalSummary.paid)} detail="Payment reference recorded" tone={renewalSummary.paid.length > 0 ? "success" : undefined} />
+        </div>
+      </section>
 
-        <section className="mt-5" aria-labelledby="renewal-summary-heading">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><p className="context-label">Automatic renewals</p><h2 id="renewal-summary-heading" className="mt-1 text-[17px] font-semibold">Subscription invoice states</h2></div><p className="text-[12px] text-ink-3">From the renewal clock and subscription changes.</p></div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <LifecycleCard label="Upcoming / open" count={renewalSummary.upcoming.length} amount={renewalSummary.amountFor(renewalSummary.upcoming)} detail={`Issued ${INVOICE_LEAD_DAYS} days early, payable within ${PAYMENT_TERM_DAYS}`} />
-            <LifecycleCard label="In grace / past due" count={renewalSummary.inGrace.length} amount={renewalSummary.amountFor(renewalSummary.inGrace)} detail={`Access may close ${SUSPENSION_AFTER_DUE_DAYS} days after the due date`} warning={renewalSummary.inGrace.length > 0} />
-            <LifecycleCard label="Paid renewals" count={renewalSummary.paid.length} amount={renewalSummary.amountFor(renewalSummary.paid)} detail="Payment reference recorded" success={renewalSummary.paid.length > 0} />
-          </div>
-        </section>
+      <PlatformPanel className="mt-5 overflow-hidden" aria-labelledby="subscription-invoices-heading">
+        <PlatformPanelHeader id="subscription-invoices-heading" title="Subscription invoices" description="Renewals and change invoices, newest workflow first." />
+        {!platformSnapshot ? <p className="px-5 py-10 text-center text-[12.5px] text-ink-3" role="status">Loading the persisted invoice ledger…</p> : automatedInvoices.length === 0 ? <p className="px-5 py-10 text-center text-[12.5px] text-ink-3">No subscription invoices are currently recorded.</p> : <InvoiceTable invoices={automatedInvoices} focusedInvoiceId={focusedInvoiceId} issueInvoice={issueInvoice} setAction={setAction} />}
+      </PlatformPanel>
 
-        {invoiceTotals.overdue.amount ? (
-          <section className="mt-5 flex items-start gap-3 border border-danger/30 bg-danger-bg p-5">
-            <CircleAlert className="mt-0.5 size-5 text-danger" />
-            <div><h2 className="text-[13px] font-semibold">Past-due invoices require manual review</h2><p className="mt-1 text-[12px] text-ink-2">{formatMoney(invoiceTotals.overdue)} is marked overdue in the platform ledger. No automated retry has been attempted.</p></div>
-          </section>
-        ) : null}
-
-        <section className="mt-5 border border-line bg-surface">
-          <div className="border-b border-line px-5 py-4"><p className="context-label">Invoice ledger</p><h2 className="mt-1 text-[17px] font-semibold">Subscription invoices</h2><p className="mt-1 text-[12px] text-ink-3">Renewals and change invoices, newest workflow first.</p></div>
-          {!platformSnapshot ? <p className="px-5 py-10 text-center text-[12px] text-ink-3" role="status">Loading the persisted invoice ledger…</p> : automatedInvoices.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-ink-3">No subscription invoices are currently recorded.</p> : <InvoiceTable invoices={automatedInvoices} focusedInvoiceId={focusedInvoiceId} issueInvoice={issueInvoice} setAction={setAction} />}
-        </section>
-
-        {platformSnapshot && manualInvoices.length ? <details className="mt-4 border border-line bg-surface" open={manualInvoices.some((invoice) => invoice.id === focusedInvoiceId)}>
-          <summary className="cursor-pointer list-none px-5 py-4 text-[12px] font-medium marker:hidden"><span className="context-label">Exception workflow</span><span className="mt-1 block text-[15px] font-semibold">Manual invoices <span className="font-mono text-[10.5px] text-ink-3">({manualInvoices.length})</span></span><span className="mt-1 block text-[10.5px] text-ink-3">One-off charges outside the renewal clock.</span></summary>
+      {platformSnapshot && manualInvoices.length ? (
+        <details className="mt-4 rounded-lg border border-line bg-surface" open={manualInvoices.some((invoice) => invoice.id === focusedInvoiceId)}>
+          <summary className="cursor-pointer list-none px-4 py-3.5 marker:hidden sm:px-5 [&::-webkit-details-marker]:hidden">
+            <span className="block text-[15px] font-semibold">Manual invoices <span className="text-ink-3">({manualInvoices.length})</span></span>
+            <span className="mt-0.5 block text-[12.5px] text-ink-3">One-off charges outside the renewal clock. Select to show or hide them.</span>
+          </summary>
           <div className="border-t border-line"><InvoiceTable invoices={manualInvoices} focusedInvoiceId={focusedInvoiceId} issueInvoice={issueInvoice} setAction={setAction} /></div>
-        </details> : null}
+        </details>
+      ) : null}
 
-        {platformSnapshot ? <section className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dashed border-line-2 bg-sunken px-5 py-4" aria-label="Manual invoice exception workflow"><div><p className="text-[11.5px] font-semibold">Need a one-off ledger exception?</p><p className="mt-1 text-[12px] text-ink-3">Create a manual invoice only when a charge is outside the automated subscription cycle.</p></div><Button variant="secondary" onClick={() => setCreateOpen(true)}><FilePlus2 /> Create exception invoice</Button></section> : null}
-      </div>
+      {platformSnapshot ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3.5 sm:px-5" aria-label="Manual invoice exception workflow">
+          <div><p className="text-[13px] font-semibold">Need a one-off ledger exception?</p><p className="mt-0.5 text-[12.5px] text-ink-3">Create a manual invoice only when a charge is outside the automated subscription cycle.</p></div>
+          <Button variant="secondary" onClick={() => setCreateOpen(true)}><FilePlus2 /> Create exception invoice</Button>
+        </div>
+      ) : null}
 
       <CreateInvoiceDialog open={createOpen} onOpenChange={setCreateOpen} gyms={platformSnapshot?.gyms ?? []} onCreated={replaceInvoice} />
       <InvoiceActionDialog action={action} onOpenChange={(open) => { if (!open) setAction(undefined); }} onPastDue={(input) => markPastDue.mutate(input)} onPayment={(input) => recordPayment.mutate(input)} onVoid={(input) => voidInvoice.mutate(input)} saving={markPastDue.isPending || recordPayment.isPending || voidInvoice.isPending} />
-    </div>
+    </PlatformPage>
   );
 }
+
+const selectClass = "h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px] text-ink transition-colors hover:border-line-3 focus:border-[var(--tenant-brand-primary)]";
 
 function CreateInvoiceDialog({ open, onOpenChange, gyms, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; gyms: Array<{ id: string; name: string }>; onCreated: (invoice: PlatformBillingInvoice) => void }) {
   const [gymId, setGymId] = useState("");
@@ -218,20 +237,50 @@ function CreateInvoiceDialog({ open, onOpenChange, gyms, onCreated }: { open: bo
   const amountError = amount.trim() ? parsedAmount.error : undefined;
   const validPeriod = !periodStart || !periodEnd || periodEnd >= periodStart;
   const valid = Boolean(gymId && validAmount && dueAt && periodStart && periodEnd && validPeriod);
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Create a platform invoice</DialogTitle><DialogDescription>This creates a draft in the manual ledger. It does not charge a card or contact the gym.</DialogDescription></DialogHeader><DialogBody className="grid gap-4"><Field label="Gym"><select className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" value={gymId} onChange={(event) => setGymId(event.target.value)}><option value="">Choose a provisioned gym</option>{gyms.map((gym) => <option key={gym.id} value={gym.id}>{gym.name}</option>)}</select></Field><Field label="Amount (JOD)"><Input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="149.000" aria-invalid={Boolean(amountError)} aria-describedby={amountError ? "platform-invoice-amount-error" : undefined} />{amountError ? <span id="platform-invoice-amount-error" className="text-[12px] font-normal text-danger" role="alert">{amountError}</span> : null}</Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Period start"><Input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></Field><Field label="Period end"><Input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></Field></div>{!validPeriod ? <p className="-mt-2 text-[12px] text-danger" role="alert">Period end must be on or after the period start.</p> : null}<Field label="Due date"><Input type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={create.isPending} disabled={!valid} onClick={() => create.mutate({ gymId, amountMinor: parsedAmount.amountMinor ?? 0, currency: "JOD", dueAt, periodStart, periodEnd })}>Create draft</Button></DialogFooter></DialogContent></Dialog>;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Create a platform invoice</DialogTitle><DialogDescription>This creates a draft in the manual ledger. It does not charge a card or contact the gym.</DialogDescription></DialogHeader>
+        <DialogBody className="grid gap-4">
+          <Field label="Gym" htmlFor="platform-invoice-gym"><select id="platform-invoice-gym" className={selectClass} value={gymId} onChange={(event) => setGymId(event.target.value)}><option value="">Choose a provisioned gym</option>{gyms.map((gym) => <option key={gym.id} value={gym.id}>{gym.name}</option>)}</select></Field>
+          <Field label="Amount (JOD)" htmlFor="platform-invoice-amount" error={amountError}><Input id="platform-invoice-amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="149.000" aria-invalid={Boolean(amountError)} /></Field>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Period start" htmlFor="platform-invoice-period-start"><Input id="platform-invoice-period-start" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></Field><Field label="Period end" htmlFor="platform-invoice-period-end" error={validPeriod ? undefined : "Period end must be on or after the period start."}><Input id="platform-invoice-period-end" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} aria-invalid={!validPeriod} /></Field></div>
+          <Field label="Due date" htmlFor="platform-invoice-due"><Input id="platform-invoice-due" type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></Field>
+        </DialogBody>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={create.isPending} disabled={!valid} onClick={() => create.mutate({ gymId, amountMinor: parsedAmount.amountMinor ?? 0, currency: "JOD", dueAt, periodStart, periodEnd })}>Create draft</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function PolicyStep({ index, title, detail }: { index: string; title: string; detail: string }) {
-  return <div className="flex items-start gap-2 border border-line bg-sunken p-3"><ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-signal" /><span><span className="font-mono text-[10.5px] text-ink-3">{index}</span><span className="ml-2 font-medium">{title}</span><span className="mt-1 block text-ink-3">{detail}</span></span></div>;
+  return <div className="flex items-start gap-3 rounded-md border border-line bg-sunken/60 p-3 text-[12.5px]"><span className="font-mono text-[11px] text-ink-3">{index}</span><span><span className="font-medium text-ink">{title}</span><span className="mt-0.5 block text-ink-3">{detail}</span></span></div>;
 }
 
-function LifecycleCard({ label, count, amount, detail, warning = false, success = false }: { label: string; count: number; amount: { amount: number; currency: string }; detail: string; warning?: boolean; success?: boolean }) {
-  const valueClass = warning ? "text-warning" : success ? "text-success" : "";
-  return <div className="border border-line bg-surface p-5"><p className="context-label">{label}</p><div className="mt-2 flex items-baseline justify-between gap-3"><p className={cn("text-[25px] font-semibold tabular", valueClass)}>{count}</p><p className="text-[12px] font-medium tabular">{formatMoney(amount)}</p></div><p className="mt-1 text-[12px] text-ink-3">{detail}</p></div>;
+function LifecycleCard({ label, count, amount, detail, tone }: { label: string; count: number; amount: { amount: number; currency: string }; detail: string; tone?: "warning" | "success" }) {
+  return <PlatformPanel className="p-4"><Stat label={label} value={<span className="flex items-baseline justify-between gap-3"><span>{count}</span><span className="text-[13px] font-medium tabular text-ink-2">{formatMoney(amount)}</span></span>} context={detail} tone={tone} /></PlatformPanel>;
 }
 
 function InvoiceTable({ invoices, focusedInvoiceId, issueInvoice, setAction }: { invoices: PlatformBillingInvoice[]; focusedInvoiceId?: string; issueInvoice: { isPending: boolean; variables?: string; mutate: (invoiceId: string) => void }; setAction: (action: InvoiceAction) => void }) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[980px]"><thead><tr className="border-b border-line bg-sunken text-[11.5px] font-medium text-ink-3"><th className="px-5 py-3 text-start">Invoice</th><th className="px-4 py-3 text-start">Gym</th><th className="px-4 py-3 text-start">Issued</th><th className="px-4 py-3 text-start">Due</th><th className="px-4 py-3 text-start">Grace / period</th><th className="px-4 py-3 text-end">Amount</th><th className="px-4 py-3 text-start">Status</th><th className="px-5 py-3 text-end">Actions</th></tr></thead><tbody>{invoices.map((invoice) => <InvoiceRow key={invoice.id} invoice={invoice} focused={focusedInvoiceId === invoice.id} issuing={issueInvoice.isPending && issueInvoice.variables === invoice.id} onIssue={() => issueInvoice.mutate(invoice.id)} onPastDue={() => setAction({ invoice, kind: "past_due" })} onPayment={() => setAction({ invoice, kind: "payment" })} onVoid={() => setAction({ invoice, kind: "void" })} />)}</tbody></table></div>;
+  return (
+    <Table className="min-w-[960px]">
+      <TableHeader>
+        <TableRow>
+          <TableHead className="ps-4 sm:ps-5">Invoice</TableHead>
+          <TableHead>Gym</TableHead>
+          <TableHead>Issued</TableHead>
+          <TableHead>Due</TableHead>
+          <TableHead>Grace / period</TableHead>
+          <TableHead className="text-end">Amount</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="pe-4 text-end sm:pe-5">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {invoices.map((invoice) => <InvoiceRow key={invoice.id} invoice={invoice} focused={focusedInvoiceId === invoice.id} issuing={issueInvoice.isPending && issueInvoice.variables === invoice.id} onIssue={() => issueInvoice.mutate(invoice.id)} onPastDue={() => setAction({ invoice, kind: "past_due" })} onPayment={() => setAction({ invoice, kind: "payment" })} onVoid={() => setAction({ invoice, kind: "void" })} />)}
+      </TableBody>
+    </Table>
+  );
 }
 
 function InvoiceActionDialog({ action, onOpenChange, onPastDue, onPayment, onVoid, saving }: { action?: InvoiceAction; onOpenChange: (open: boolean) => void; onPastDue: (input: { invoiceId: string; reason: string }) => void; onPayment: (input: RecordPlatformInvoicePaymentInput) => void; onVoid: (input: { invoiceId: string; reason: string }) => void; saving: boolean }) {
@@ -242,22 +291,45 @@ function InvoiceActionDialog({ action, onOpenChange, onPastDue, onPayment, onVoi
   const title = action?.kind === "payment" ? reactivating ? "Record bank payment & reactivate" : "Record an offline payment" : action?.kind === "past_due" ? "Mark invoice past due" : "Void invoice";
   const description = action?.kind === "payment" ? reactivating ? "Confirm a verified bank transfer or payment reference. This marks the renewal paid and reactivates the gym for its next period. RIVET does not charge a provider." : "Confirm money received outside RIVET with a bank transfer or receipt reference. No provider charge will be created." : action?.kind === "past_due" ? "This records an overdue ledger state and notifies the gym team. The automated subscription clock will suspend the gym after the two-day grace period if payment is not recorded." : "Voiding preserves the invoice and its immutable audit history.";
   const submitLabel = action?.kind === "payment" ? reactivating ? "Reactivate gym" : "Record payment" : action?.kind === "past_due" ? "Mark past due" : "Void invoice";
-  return <Dialog open={Boolean(action)} onOpenChange={onOpenChange}><DialogContent key={key}><DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader><DialogBody className="grid gap-4">{action?.kind === "payment" ? <Field label="Payment reference"><Input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Bank transfer or receipt reference" /></Field> : null}<Field label="Reason"><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the audit trail" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={saving} disabled={!action || !reason.trim() || (action.kind === "payment" && !reference.trim())} variant={action?.kind === "void" ? "danger" : "primary"} onClick={() => { if (!action) return; if (action.kind === "payment") onPayment({ invoiceId: action.invoice.id, reference: reference.trim(), reason: reason.trim() }); else if (action.kind === "past_due") onPastDue({ invoiceId: action.invoice.id, reason: reason.trim() }); else onVoid({ invoiceId: action.invoice.id, reason: reason.trim() }); }}>{submitLabel}</Button></DialogFooter></DialogContent></Dialog>;
+  return (
+    <Dialog open={Boolean(action)} onOpenChange={onOpenChange}>
+      <DialogContent key={key}>
+        <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
+        <DialogBody className="grid gap-4">
+          {action?.kind === "payment" ? <Field label="Payment reference" htmlFor="platform-invoice-reference"><Input id="platform-invoice-reference" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Bank transfer or receipt reference" /></Field> : null}
+          <Field label="Reason" htmlFor="platform-invoice-reason"><Textarea id="platform-invoice-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the audit trail" /></Field>
+        </DialogBody>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={saving} disabled={!action || !reason.trim() || (action.kind === "payment" && !reference.trim())} variant={action?.kind === "void" ? "danger" : "primary"} onClick={() => { if (!action) return; if (action.kind === "payment") onPayment({ invoiceId: action.invoice.id, reference: reference.trim(), reason: reason.trim() }); else if (action.kind === "past_due") onPastDue({ invoiceId: action.invoice.id, reason: reason.trim() }); else onVoid({ invoiceId: action.invoice.id, reason: reason.trim() }); }}>{submitLabel}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function InvoiceRow({ invoice, focused, issuing, onIssue, onPastDue, onPayment, onVoid }: { invoice: PlatformBillingInvoice; focused: boolean; issuing: boolean; onIssue: () => void; onPastDue: () => void; onPayment: () => void; onVoid: () => void }) {
   const amount = invoice.amountMinor !== undefined ? formatMoney({ amount: invoice.amountMinor, currency: invoice.currency ?? "JOD" }) : invoice.amount;
   const outstanding = ["open", "past_due", "failed"].includes(invoice.status);
   const canVoid = !["paid", "void"].includes(invoice.status);
-  const paymentLabel = invoice.status === "past_due" && isAutomaticRenewal(invoice) ? "Reactivate" : "Record payment";
-  const graceEnd = isAutomaticRenewal(invoice) ? graceEndAt(invoice) : undefined;
-  return <tr id={`platform-invoice-${invoice.id}`} className={cn("border-b border-line last:border-b-0", focused && "bg-info-bg/50")}><td className="px-5 py-4"><div className="font-mono text-[10.5px]">{invoice.id}</div>{isAutomaticRenewal(invoice) ? <span className="mt-1 inline-flex rounded-full bg-signal-bg px-2 py-1 text-[11px] font-medium text-signal">{isSubscriptionChange(invoice) ? "Subscription change" : "Automatic renewal"}</span> : <span className="mt-1 inline-flex rounded-full bg-sunken px-2 py-1 text-[11px] font-medium text-ink-3">Manual exception</span>}</td><td className="px-4 py-4 text-[12px] font-medium">{invoice.gym}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.issuedAt ?? invoice.date)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{displayDate(invoice.dueAt)}</td><td className="px-4 py-4 text-[10.5px] text-ink-3">{invoice.status === "past_due" && isAutomaticRenewal(invoice) ? <><span className="block font-medium text-danger">Grace ends {displayDate(graceEnd)}</span><span className="mt-1 block">Due + {SUSPENSION_AFTER_DUE_DAYS} days</span></> : invoice.periodEnd ? <><span className="block">Period ends {displayDate(invoice.periodEnd)}</span><span className="mt-1 block">{formatInterval(invoice.billingInterval)}</span></> : "Not recorded"}</td><td className="px-4 py-4 text-end text-[11.5px] font-semibold">{amount}</td><td className="px-4 py-4"><Status invoice={invoice} /></td><td className="px-5 py-4"><div className="flex justify-end gap-1"><Button size="sm" variant="secondary" onClick={() => openInvoicePdf(invoice, { name: invoice.gym })} aria-label={`View invoice ${invoice.id} as PDF`} data-testid="view-invoice-pdf"><FileText /> PDF</Button>{invoice.status === "draft" ? <Button size="sm" loading={issuing} onClick={onIssue}><Send /> Issue</Button> : null}{invoice.status === "open" && (!isAutomaticRenewal(invoice) || isSubscriptionChange(invoice)) ? <Button size="sm" variant="secondary" onClick={onPastDue}><CircleAlert /> Past due</Button> : null}{outstanding ? <Button size="sm" onClick={onPayment}><CheckCircle2 /> {paymentLabel}</Button> : null}{canVoid ? <Button size="sm" variant="secondary" onClick={onVoid}><Ban /> Void</Button> : null}</div></td></tr>;
-}
-
-function Status({ invoice }: { invoice: PlatformBillingInvoice }) {
-  const label = isAutomaticRenewal(invoice) ? invoice.status === "open" ? "Upcoming" : invoice.status === "past_due" ? "In grace" : invoice.status === "paid" ? "Paid" : invoice.status.replace("_", " ") : invoice.status.replace("_", " ");
-  const status = invoice.status;
-  return <span className={cn("rounded-full px-2 py-1 text-[11px] font-medium capitalize", status === "paid" ? "bg-success-bg text-success" : ["failed", "past_due"].includes(status) ? "bg-danger-bg text-danger" : status === "void" ? "bg-sunken text-ink-3" : "bg-info-bg text-info")}>{label}</span>;
+  const renewal = isAutomaticRenewal(invoice);
+  const paymentLabel = invoice.status === "past_due" && renewal ? "Reactivate" : "Record payment";
+  const graceEnd = renewal ? graceEndAt(invoice) : undefined;
+  return (
+    <TableRow id={`platform-invoice-${invoice.id}`} className={cn(focused && "bg-sunken/60")}>
+      <TableCell className="ps-4 sm:ps-5"><span className="block font-mono text-[12px]" dir="ltr">{invoice.id}</span><Badge variant={renewal ? "neutral" : "outline"} className="mt-1">{isSubscriptionChange(invoice) ? "Subscription change" : renewal ? "Automatic renewal" : "Manual exception"}</Badge></TableCell>
+      <TableCell className="text-[13px] font-medium">{invoice.gym}</TableCell>
+      <TableCell className="whitespace-nowrap text-[12.5px] text-ink-2">{displayDate(invoice.issuedAt ?? invoice.date)}</TableCell>
+      <TableCell className="whitespace-nowrap text-[12.5px] text-ink-2">{displayDate(invoice.dueAt)}</TableCell>
+      <TableCell className="text-[12.5px] text-ink-2">{invoice.status === "past_due" && renewal ? <><span className="block font-medium text-danger">Grace ends {displayDate(graceEnd)}</span><span className="mt-0.5 block text-ink-3">Due + {SUSPENSION_AFTER_DUE_DAYS} days</span></> : invoice.periodEnd ? <><span className="block">Period ends {displayDate(invoice.periodEnd)}</span><span className="mt-0.5 block text-ink-3">{formatInterval(invoice.billingInterval)}</span></> : "Not recorded"}</TableCell>
+      <TableCell className="text-end text-[13px] font-semibold tabular">{amount}</TableCell>
+      <TableCell><InvoiceStatusBadge status={invoice.status} renewal={renewal} /></TableCell>
+      <TableCell className="pe-4 sm:pe-5"><div className="flex flex-wrap justify-end gap-1">
+        <Button size="sm" variant="secondary" onClick={() => openInvoicePdf(invoice, { name: invoice.gym })} aria-label={`View invoice ${invoice.id} as PDF`} data-testid="view-invoice-pdf"><FileText /> PDF</Button>
+        {invoice.status === "draft" ? <Button size="sm" loading={issuing} onClick={onIssue}><Send /> Issue</Button> : null}
+        {invoice.status === "open" && (!renewal || isSubscriptionChange(invoice)) ? <Button size="sm" variant="secondary" onClick={onPastDue}><CircleAlert /> Past due</Button> : null}
+        {outstanding ? <Button size="sm" onClick={onPayment}><CheckCircle2 /> {paymentLabel}</Button> : null}
+        {canVoid ? <Button size="sm" variant="secondary" onClick={onVoid}><Ban /> Void</Button> : null}
+      </div></TableCell>
+    </TableRow>
+  );
 }
 
 function isAutomaticRenewal(invoice: PlatformBillingInvoice): boolean {
@@ -302,12 +374,6 @@ function parsePositiveMinorAmount(raw: string, currency: string): { amountMinor?
   if (!Number.isFinite(numeric) || !Number.isSafeInteger(amountMinor)) return { error: "Amount is too large for a safe ledger value." };
   if (amountMinor <= 0) return { error: "Amount must be greater than zero at the currency's minor-unit precision." };
   return { amountMinor };
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="grid gap-1.5 text-[11px] font-medium text-ink-2"><span>{label}</span>{children}</label>; }
-
-function Card({ icon, label, value, detail, warning = false }: { icon: React.ReactNode; label: string; value: string; detail: string; warning?: boolean }) {
-  return <div className="border border-line bg-surface p-5"><span className={warning ? "text-warning [&_svg]:size-4" : "text-ink-3 [&_svg]:size-4"}>{icon}</span><p className="context-label mt-6">{label}</p><p className={warning ? "mt-2 text-[25px] font-semibold tabular text-warning" : "mt-2 text-[25px] font-semibold tabular"}>{value}</p><p className="mt-1 text-[12px] text-ink-3">{detail}</p></div>;
 }
 
 function downloadInvoices(invoices: PlatformBillingInvoice[]) {

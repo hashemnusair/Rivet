@@ -5,6 +5,8 @@ import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import type { PlatformEmailDelivery } from "@/lib/domain/types";
 import { formatDateTime } from "@/lib/utils/dates";
+import { PageHeader } from "@/components/shared/chrome";
+import { PlatformPage, PlatformPanel } from "@/components/platform/platform-page";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/misc";
 import { EmptyState, QueryErrorState } from "@/components/ui/states";
@@ -37,22 +39,19 @@ function outcome(delivery: PlatformEmailDelivery): string {
  */
 export function PlatformEmailLog() {
   const query = useApiQuery(qk.platformEmailDeliveries, (api) => api.listPlatformEmailDeliveries());
-  if (query.isLoading) return <div className="space-y-3"><Skeleton className="h-8 w-56" /><Skeleton className="h-64 w-full" /></div>;
-  if (query.isError || !query.data) return <QueryErrorState error={query.error} onRetry={() => void query.refetch()} />;
+  if (query.isLoading) return <PlatformPage><div className="space-y-3" role="status" aria-label="Loading email log"><Skeleton className="h-8 w-56" /><Skeleton className="h-64 w-full" /></div></PlatformPage>;
+  if (query.isError || !query.data) return <PlatformPage><QueryErrorState error={query.error} onRetry={() => void query.refetch()} /></PlatformPage>;
   const rows = query.data;
   const sent = rows.filter((row) => row.status === "delivered" || row.status === "provider_accepted").length;
   return (
-    <div className="space-y-5" data-testid="platform-email-log">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="context-label">Delivery</p>
-          <h1 className="mt-1 font-display text-[26px] font-semibold tracking-tight">Email log</h1>
-          <p className="mt-1 max-w-2xl text-[13px] text-ink-2">The last hundred messages RIVET queued, across every gym, and what happened to each. A message that was not sent says why; one the provider refused shows its error.</p>
-        </div>
-        <Badge variant={sent > 0 ? "success" : "neutral"} dot>{sent} of {rows.length} sent</Badge>
-      </header>
-      {rows.length === 0 ? <EmptyState icon={MailX} title="Nothing queued yet" description="Messages appear here the moment RIVET queues them, before the worker runs." /> : (
-        <section className="panel overflow-hidden">
+    <PlatformPage className="space-y-5" data-testid="platform-email-log">
+      <PageHeader
+        title="Email log"
+        description="The last hundred messages RIVET queued, across every gym, and what happened to each. A message that was not sent says why; one the provider refused shows its error."
+        actions={<Badge variant={sent > 0 ? "success" : "neutral"} dot>{sent} of {rows.length} sent</Badge>}
+      />
+      {rows.length === 0 ? <EmptyState layout="page" icon={MailX} title="Nothing queued yet" description="Messages appear here the moment RIVET queues them, before the worker runs." /> : (
+        <PlatformPanel className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -70,7 +69,7 @@ export function PlatformEmailLog() {
                 return (
                   <TableRow key={row.id} data-testid="email-log-row">
                     <TableCell className="whitespace-nowrap text-[12px] text-ink-3">{formatDateTime(row.createdAt)}</TableCell>
-                    <TableCell><span className="block max-w-[320px] truncate text-[13px]" title={row.subject}>{row.subject ?? row.kind}</span><span className="block font-mono text-[10.5px] text-ink-3">{row.kind}{row.attachments.length ? ` · ${row.attachments.length} PDF` : ""}</span></TableCell>
+                    <TableCell><span className="block max-w-[320px] truncate text-[13px]" title={row.subject}>{row.subject ?? row.kind}</span><span className="block font-mono text-[11px] text-ink-3">{row.kind}{row.attachments.length ? ` · ${row.attachments.length} PDF` : ""}</span></TableCell>
                     <TableCell dir="ltr" className="text-[12.5px]">{row.recipientEmail ?? "—"}</TableCell>
                     <TableCell className="text-[12.5px]">{row.gym}</TableCell>
                     <TableCell><Badge variant={status.variant} dot>{status.label}</Badge></TableCell>
@@ -80,8 +79,8 @@ export function PlatformEmailLog() {
               })}
             </TableBody>
           </Table>
-        </section>
+        </PlatformPanel>
       )}
-    </div>
+    </PlatformPage>
   );
 }

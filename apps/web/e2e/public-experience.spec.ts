@@ -306,7 +306,7 @@ test.describe("RIVET platform administration", () => {
     await expect(dialog.getByRole("button", { name: "Suspend gym", exact: true })).toBeDisabled();
     await dialog.getByRole("button", { name: "Keep as is", exact: true }).click();
     await expect(dialog).toBeHidden();
-    await expect(forgeRow).toContainText("active");
+    await expect(forgeRow).toContainText(/active/i);
   });
 
   test("suppresses a suspended gym from public surfaces while retaining the authorized platform record", async ({ page }) => {

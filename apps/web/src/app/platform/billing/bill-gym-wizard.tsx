@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Receipt, Search } from "lucide-react";
+import { SubscriptionStatusBadge } from "@/components/platform/platform-status";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import type { BillingInterval, PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import type { MarketplaceGym } from "@/lib/public/experience-data";
@@ -114,13 +117,13 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
           <DialogDescription>Three steps: pick the gym, pick the plan and billing, confirm the invoice. The server derives every date and credit.</DialogDescription>
         </DialogHeader>
         <DialogBody className="grid gap-4">
-          <ol className="flex flex-wrap items-center gap-2 text-[12px]" aria-label="Billing steps">
+          <ol className="flex flex-wrap items-center gap-2 text-[12.5px]" aria-label="Billing steps">
             {STEPS.map((item, index) => {
               const activeIndex = STEPS.findIndex((candidate) => candidate.key === step);
               const state = index < activeIndex ? "done" : index === activeIndex ? "current" : "todo";
               return (
-                <li key={item.key} className={cn("flex items-center gap-1.5 rounded-full border px-2.5 py-1", state === "current" ? "border-ink bg-sunken font-semibold" : state === "done" ? "border-success/40 bg-success-bg/40 text-success-deep" : "border-line text-ink-3")} aria-current={state === "current" ? "step" : undefined}>
-                  {state === "done" ? <Check className="size-3" aria-hidden /> : <span className="font-mono">{index + 1}</span>}
+                <li key={item.key} className={cn("flex items-center gap-1.5 rounded-full border px-2.5 py-1", state === "current" ? "border-ink bg-ink text-paper" : state === "done" ? "border-line-2 text-ink" : "border-line-2 text-ink-3")} aria-current={state === "current" ? "step" : undefined}>
+                  {state === "done" ? <Check className="size-3" aria-hidden /> : <span className="tabular">{index + 1}</span>}
                   {item.label}
                 </li>
               );
@@ -130,17 +133,17 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
           {step === "gym" ? (
             <div className="grid gap-3">
               <label className="relative block">
-                <Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
+                <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
                 <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search gyms by name" aria-label="Search gyms" className="ps-9" autoFocus />
               </label>
-              <div className="max-h-72 divide-y divide-line overflow-y-auto border border-line" role="listbox" aria-label="Billable gyms">
-                {matchedGyms.length === 0 ? <p className="px-4 py-8 text-center text-[12px] text-ink-3">No provisioned gyms match this search.</p> : matchedGyms.map((item) => (
+              <div className="max-h-72 divide-y divide-line overflow-y-auto rounded-md border border-line" role="listbox" aria-label="Billable gyms">
+                {matchedGyms.length === 0 ? <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">No provisioned gyms match this search.</p> : matchedGyms.map((item) => (
                   <button key={item.id} type="button" role="option" aria-selected={item.id === gymId} onClick={() => chooseGym(item)} className="grid w-full gap-1 px-4 py-3 text-start transition-colors hover:bg-sunken">
-                    <span className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="text-[13px] font-semibold">{item.name}</span>
-                      <StatusBadge status={item.subscriptionStatus} />
+                    <span className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[13.5px] font-semibold">{item.name}</span>
+                      <SubscriptionStatusBadge status={item.subscriptionStatus} />
                     </span>
-                    <span className="text-[12px] text-ink-3">
+                    <span className="text-[12.5px] text-ink-3">
                       {item.rivetPlan} · {item.billingInterval === "annual" ? "annual" : "monthly"}
                       {item.subscriptionStatus === "active" && item.currentPeriodEndsAt ? ` · paid through ${formatBillingDate(new Date(item.currentPeriodEndsAt))}` : ""}
                     </span>
@@ -152,15 +155,15 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
 
           {step === "plan" && gym ? (
             <div className="grid gap-4">
-              <p className="text-[11.5px] text-ink-2"><span className="font-semibold">{gym.name}</span> is currently <span className="font-semibold">{gym.subscriptionStatus === "overdue" ? "past due" : gym.subscriptionStatus}</span> on {gym.rivetPlan} · {currentCadence}.</p>
+              <p className="text-[13px] text-ink-2"><span className="font-semibold text-ink">{gym.name}</span> is currently <span className="font-semibold text-ink">{gym.subscriptionStatus === "overdue" ? "past due" : gym.subscriptionStatus}</span> on {gym.rivetPlan} · {currentCadence}.</p>
               <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Plan">
                 {plans.map((item) => (
-                  <button key={item.name} type="button" role="radio" aria-checked={selectedPlan === item.name} onClick={() => setPlan(item.name as PlanName)} className={cn("grid gap-1 border px-4 py-3 text-start transition-colors", selectedPlan === item.name ? "border-ink bg-sunken" : "border-line hover:bg-sunken/60")}>
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="text-[13px] font-semibold">{item.name}</span>
-                      {item.name === gym.rivetPlan ? <span className="rounded-sm bg-night px-1.5 py-0.5 text-[11px] font-medium text-night-ink">Current</span> : null}
+                  <button key={item.name} type="button" role="radio" aria-checked={selectedPlan === item.name} onClick={() => setPlan(item.name as PlanName)} className={cn("grid gap-1 rounded-md border px-4 py-3 text-start transition-colors", selectedPlan === item.name ? "border-ink bg-sunken" : "border-line-2 hover:border-line-3")}>
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="text-[13.5px] font-semibold">{item.name}</span>
+                      {item.name === gym.rivetPlan ? <Badge variant="ink">Current</Badge> : null}
                     </span>
-                    <span className="text-[11px] text-ink-2">JOD {(item.priceMinor / 1_000).toFixed(3)} / month</span>
+                    <span className="text-[12.5px] text-ink-2">JOD {(item.priceMinor / 1_000).toFixed(3)} / month</span>
                   </button>
                 ))}
               </div>
@@ -168,9 +171,9 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
                 {(["monthly", "annual"] as const).map((interval) => {
                   const amount = planPrice === undefined ? undefined : termPriceMinor(planPrice, interval);
                   return (
-                    <button key={interval} type="button" role="radio" aria-checked={cadence === interval} onClick={() => setCadence(interval)} className={cn("grid gap-1 border px-4 py-3 text-start transition-colors", cadence === interval ? "border-ink bg-sunken" : "border-line hover:bg-sunken/60")}>
-                      <span className="text-[13px] font-semibold">{interval === "annual" ? "Annual · saves 20%" : "Monthly"}</span>
-                      <span className="text-[11px] text-ink-2">{amount === undefined ? "—" : `JOD ${(amount / 1_000).toFixed(3)} ${interval === "annual" ? "per year" : "per month"}`}</span>
+                    <button key={interval} type="button" role="radio" aria-checked={cadence === interval} onClick={() => setCadence(interval)} className={cn("grid gap-1 rounded-md border px-4 py-3 text-start transition-colors", cadence === interval ? "border-ink bg-sunken" : "border-line-2 hover:border-line-3")}>
+                      <span className="text-[13.5px] font-semibold">{interval === "annual" ? "Annual · saves 20%" : "Monthly"}</span>
+                      <span className="text-[12.5px] text-ink-2">{amount === undefined ? "—" : `JOD ${(amount / 1_000).toFixed(3)} ${interval === "annual" ? "per year" : "per month"}`}</span>
                     </button>
                   );
                 })}
@@ -180,23 +183,23 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
 
           {step === "review" && gym && selectedPlan ? (
             <div className="grid gap-4">
-              <p className="text-[11.5px] text-ink-2">
+              <p className="text-[13px] leading-relaxed text-ink-2">
                 {needsActivation
-                  ? <>Saving <span className="font-semibold">reactivates {gym.name}</span> on {selectedPlan} · {cadence}, starting a fresh paid term today.</>
+                  ? <>Saving <span className="font-semibold text-ink">reactivates {gym.name}</span> on {selectedPlan} · {cadence}, starting a fresh paid term today.</>
                   : alreadyExact
                     ? <>{gym.name} is already active on exactly this plan and billing — there is nothing to bill.</>
-                    : <>Saving changes <span className="font-semibold">{gym.name}</span> to {selectedPlan} · {cadence}. Unused paid days are credited against the new invoice, so there is no need to wait for the current term to end.</>}
+                    : <>Saving changes <span className="font-semibold text-ink">{gym.name}</span> to {selectedPlan} · {cadence}. Unused paid days are credited against the new invoice, so there is no need to wait for the current term to end.</>}
               </p>
               {!alreadyExact ? (
-                <div className="border border-signal/40 bg-signal-bg/60 px-4 py-3 text-[11.5px] leading-relaxed" role="note" aria-label="Billing preview">
-                  <p className="flex items-start gap-2 font-semibold"><Receipt className="mt-0.5 size-3.5 shrink-0" aria-hidden />What happens when you save</p>
+                <div className="rounded-md border border-line bg-sunken/60 px-4 py-3 text-[12.5px] leading-relaxed" role="note" aria-label="Billing preview">
+                  <p className="flex items-start gap-2 font-semibold text-ink"><Receipt className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />What happens when you save</p>
                   <ul className="mt-2 grid gap-1 text-ink-2">
                     {subscriptionBillingLines({ currentStatus: gym.subscriptionStatus, currentPeriodEndsAt: gym.currentPeriodEndsAt, plan: selectedPlan, billingInterval: cadence, priceMinor: planPrice, currentPlanPriceMinor: currentPlanPrice, currentBillingInterval: currentCadence }).map((line) => <li key={line}>{line}</li>)}
                   </ul>
                 </div>
               ) : null}
               {!alreadyExact ? (
-                <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="bill-gym-reason">Reason for this change<Textarea id="bill-gym-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></label>
+                <Field label="Reason for this change" htmlFor="bill-gym-reason"><Textarea id="bill-gym-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></Field>
               ) : null}
             </div>
           ) : null}
@@ -207,16 +210,11 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => close(false)} disabled={bill.isPending}>Cancel</Button>
-            {step === "plan" ? <Button variant="signal" onClick={() => setStep("review")} disabled={!selectedPlan}>Review<ArrowRight className="rtl:rotate-180" /></Button> : null}
+            {step === "plan" ? <Button onClick={() => setStep("review")} disabled={!selectedPlan}>Review<ArrowRight className="rtl:rotate-180" /></Button> : null}
             {step === "review" ? <Button variant="signal" loading={bill.isPending} disabled={alreadyExact || !reason.trim()} onClick={() => bill.mutate()}><Check />Confirm & bill</Button> : null}
           </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
-}
-
-function StatusBadge({ status }: { status: MarketplaceGym["subscriptionStatus"] }) {
-  const label = status === "overdue" ? "past due" : status;
-  return <span className={cn("rounded-sm px-2 py-1 text-[11px] font-medium capitalize", status === "active" ? "bg-success-bg text-success-deep" : status === "trial" ? "bg-sunken text-ink-2" : "bg-signal-bg text-signal-deep")}>{label}</span>;
 }

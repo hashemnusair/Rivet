@@ -1,11 +1,13 @@
 "use client";
 
-import { Check, Pencil, ShieldAlert } from "lucide-react";
+import { Check, Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/shared/chrome";
+import { PlatformPage, PlatformPanel } from "@/components/platform/platform-page";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { ErrorState } from "@/components/ui/states";
 import { useApiMutation } from "@/lib/hooks/use-api";
@@ -16,6 +18,7 @@ import type { WorkspaceModuleCatalogEntry, WorkspaceModuleKey } from "@/lib/doma
 import { useExperience } from "@/lib/providers/experience-provider";
 import { workspaceFeatureLabelsForPlan } from "@/lib/platform/workspace-feature-labels";
 import { calculatePlanPrice, formatJodMinor } from "@/lib/public/pricing";
+import { cn } from "@/lib/utils/cn";
 import { formatMoney } from "@/lib/utils/money";
 
 type PlanUpdateInput = UpdatePlatformPlanInput & {
@@ -61,45 +64,51 @@ export default function SubscriptionsPage() {
   const failed = !plans.length && experienceStatus === "error";
 
   if (failed) {
-    return <div className="px-4 py-8 sm:px-6 lg:px-8"><div className="mx-auto max-w-[1480px]"><ErrorState title="Pricing catalog unavailable" description={experienceError ?? "The live subscription catalog could not be loaded."} onRetry={retryExperience} /></div></div>;
+    return <PlatformPage narrow><ErrorState title="Pricing catalog unavailable" description={experienceError ?? "The live subscription catalog could not be loaded."} onRetry={retryExperience} /></PlatformPage>;
   }
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <div className="mx-auto max-w-[1180px]">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="context-label">Commercial operations</p>
-            <h1 className="mt-2 text-[30px] font-semibold tracking-tight">Pricing &amp; entitlements</h1>
-            <p className="mt-2 max-w-2xl text-[12.5px] text-ink-2">One audited catalog powers the public landing page, gym applications, and workspace feature access. Gym subscription changes stay on the gym detail page.</p>
-          </div>
-          <div className="border border-warning/30 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="note">
-            <p className="flex items-center gap-1.5 font-medium"><ShieldAlert className="size-3.5" aria-hidden /> Catalog controls</p>
-            <p className="mt-1 max-w-[280px]">Every price or limit change requires a reason and is written to the platform audit trail.</p>
-          </div>
+    <PlatformPage narrow>
+      <PageHeader
+        title="Pricing & entitlements"
+        description="One audited catalog powers the public landing page, gym applications and workspace feature access. Every price or limit change needs a reason and is written to the platform audit trail; a gym's own subscription is changed in Billing."
+      />
+
+      <section className="mt-5" aria-labelledby="plan-catalog-title">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
+          <h2 id="plan-catalog-title" className="text-[15px] font-semibold">Four tiers, one live contract</h2>
+          <p className="text-[12.5px] text-ink-3">Monthly JOD · annual billing saves 20%</p>
         </div>
+        <p className="mt-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-2.5 text-[12.5px] leading-relaxed text-warning-deep" role="note" data-testid="pricing-provisional-notice">Provisional: these prices and limits are live in the product but not yet signed off. The sign-off sheet is docs/19; nothing here should be quoted as final until it is signed.</p>
+        {loading ? <p className="px-5 py-10 text-center text-[12.5px] text-ink-3" role="status">Loading the live pricing catalog…</p> : plans.length === 0 ? <p className="mt-4 rounded-lg border border-dashed border-line-2 px-4 py-10 text-center text-[12.5px] text-ink-3">No pricing plans have been published.</p> : <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{plans.map((plan) => <PlanCard key={plan.name} plan={plan} onEdit={() => { updatePlan.reset(); setEditingPlan(plan); }} />)}</div>}
+      </section>
 
-        <section className="mt-7" aria-labelledby="plan-catalog-title">
-          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-4">
-            <div><p className="context-label">Published pricing</p><h2 id="plan-catalog-title" className="mt-1 text-[18px] font-semibold">Four tiers, one live contract</h2><p className="mt-1 text-[12px] text-warning-deep" data-testid="pricing-provisional-notice">Provisional: these prices and limits are live in the product but not yet signed off. The sign-off sheet is docs/19; nothing here should be quoted as final until it is signed.</p></div>
-            <p className="text-[12px] font-medium text-ink-3">Monthly JOD · annual billing saves 20%</p>
-          </div>
-          {loading ? <p className="px-5 py-10 text-center text-[12px] text-ink-3" role="status">Loading the live pricing catalog…</p> : plans.length === 0 ? <p className="border border-dashed border-line-2 px-4 py-10 text-center text-[11px] text-ink-3">No pricing plans have been published.</p> : <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{plans.map((plan) => <PlanCard key={plan.name} plan={plan} onEdit={() => { updatePlan.reset(); setEditingPlan(plan); }} />)}</div>}
-        </section>
-
-        {editingPlan ? <PlanDialog plan={editingPlan} open saving={updatePlan.isPending} error={updatePlan.error} onOpenChange={(open) => { if (!open && !updatePlan.isPending) setEditingPlan(null); }} onSave={(input) => updatePlan.mutate(input)} /> : null}
-      </div>
-    </div>
+      {editingPlan ? <PlanDialog plan={editingPlan} open saving={updatePlan.isPending} error={updatePlan.error} onOpenChange={(open) => { if (!open && !updatePlan.isPending) setEditingPlan(null); }} onSave={(input) => updatePlan.mutate(input)} /> : null}
+    </PlatformPage>
   );
 }
 
 function PlanCard({ plan, onEdit }: { plan: PlatformSaasPlan; onEdit: () => void }) {
   const annual = calculatePlanPrice(plan, "annual");
-  return <article className={`flex h-full flex-col border p-5 ${plan.name === "Enterprise" ? "border-night bg-night text-night-ink" : plan.name === "Growth" ? "border-signal/60 bg-signal-bg" : "border-line bg-surface"}`}>
-    <div className="flex items-start justify-between gap-3"><div><p className={plan.name === "Enterprise" ? "context-label text-night-ink-3" : "context-label"}>{plan.name}</p><p className="mt-3 text-[23px] font-semibold">{formatMoney({ amount: plan.priceMinor, currency: "JOD" })}<span className={plan.name === "Enterprise" ? "text-night-ink-3" : "text-ink-3"}> / mo</span></p><p className={`mt-1 text-[12px] ${plan.name === "Enterprise" ? "text-night-ink-3" : "text-ink-3"}`}>JOD {formatJodMinor(annual.annualTotalMinor)} billed annually</p></div><Button variant="ghost" size="icon-sm" aria-label={`Edit ${plan.name} plan`} onClick={onEdit}><Pencil /></Button></div>
-    <ul className={`mt-5 grid gap-2 text-[12px] leading-relaxed ${plan.name === "Enterprise" ? "text-night-ink-2" : "text-ink-2"}`}><li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" />Up to {plan.branches.toLocaleString()} branch{plan.branches === 1 ? "" : "es"}</li><li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" />Up to {plan.members.toLocaleString()} members</li><li className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" />Up to {plan.staff.toLocaleString()} staff seats</li>{workspaceFeatureLabelsForPlan(plan).map((feature) => <li key={feature} className="flex items-start gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-success" />{feature}</li>)}</ul>
-    <p className={`mt-auto border-t pt-4 text-[12px] leading-relaxed ${plan.name === "Enterprise" ? "border-night-line text-night-ink-3" : "border-line text-ink-3"}`}>{workspaceFeatureLabelsForPlan(plan).join(" · ")}.</p>
-  </article>;
+  const features = [
+    `Up to ${plan.branches.toLocaleString()} branch${plan.branches === 1 ? "" : "es"}`,
+    `Up to ${plan.members.toLocaleString()} members`,
+    `Up to ${plan.staff.toLocaleString()} staff seats`,
+    ...workspaceFeatureLabelsForPlan(plan),
+  ];
+  return (
+    <PlatformPanel className="flex h-full flex-col p-4 sm:p-5" aria-label={`${plan.name} plan`}>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-[15px] font-semibold">{plan.name}</h3>
+        <Button variant="ghost" size="icon-sm" aria-label={`Edit ${plan.name} plan`} onClick={onEdit}><Pencil /></Button>
+      </div>
+      <p className="mt-3 text-[23px] font-semibold leading-none tabular tracking-[-0.01em]">{formatMoney({ amount: plan.priceMinor, currency: "JOD" })}<span className="ms-1 text-[13px] font-medium text-ink-3">/ month</span></p>
+      <p className="mt-1.5 text-[12.5px] text-ink-3">JOD {formatJodMinor(annual.annualTotalMinor)} billed annually</p>
+      <ul className="mt-4 grid gap-1.5 border-t border-line pt-4 text-[12.5px] leading-relaxed text-ink-2">
+        {features.map((feature) => <li key={feature} className="flex items-start gap-2"><Check className="mt-1 size-3.5 shrink-0 text-ink-3" aria-hidden />{feature}</li>)}
+      </ul>
+    </PlatformPanel>
+  );
 }
 
 function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan: PlatformSaasPlan; open: boolean; saving: boolean; error: Error | null; onOpenChange: (open: boolean) => void; onSave: (input: PlanUpdateInput) => void }) {
@@ -162,5 +171,39 @@ function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan:
     onSave({ name: plan.name, priceMinor, branches: branchCount, staff: staffCount, members: memberCount, entitledModules, reason: reason.trim() });
   };
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Edit {plan.name} plan</DialogTitle><DialogDescription>These values update the public landing page, new applications, and the entitlement catalog. Existing gym subscriptions are changed from the gym detail page.</DialogDescription></DialogHeader><DialogBody className="grid gap-4 sm:grid-cols-2"><Field label="Monthly price (JOD)" required error={errors.price}><Input value={price} onChange={(event) => { setPrice(event.target.value); setErrors((current) => ({ ...current, price: undefined, changes: undefined })); }} inputMode="decimal" aria-invalid={Boolean(errors.price)} /></Field><Field label="Branches" required error={errors.branches}><Input value={branches} onChange={(event) => { setBranches(event.target.value); setErrors((current) => ({ ...current, branches: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.branches)} /></Field><Field label="Staff seats" required error={errors.staff}><Input value={staff} onChange={(event) => { setStaff(event.target.value); setErrors((current) => ({ ...current, staff: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.staff)} /></Field><Field label="Member capacity" required error={errors.members}><Input value={members} onChange={(event) => { setMembers(event.target.value); setErrors((current) => ({ ...current, members: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.members)} /></Field><fieldset className="sm:col-span-2 rounded-md border border-line p-3" aria-label={`${plan.name} workspace capabilities`}><legend className="px-1 text-[12px] font-medium">Workspace capabilities</legend><p className="mb-3 text-[12px] leading-relaxed text-ink-3">These module keys are the same entitlement contract used by gym navigation and direct routes. Foundation is required for every tier; optional modules can be packaged into any tier with an audited reason.</p><div className="grid gap-2 sm:grid-cols-2">{WORKSPACE_MODULE_CATALOG.map((entry) => { const selected = entitledModules.includes(entry.key); const disabled = entry.required; return <label key={entry.key} className={`flex items-start gap-2 rounded-md border px-2.5 py-2 ${disabled ? "border-line bg-sunken/50" : "border-line-2 hover:border-ink"}`}><input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggleModule(entry)} className="mt-0.5 accent-[var(--tenant-brand-primary)]" aria-label={entry.label} /><span className="min-w-0"><span className="block text-[11.5px] font-medium">{entry.label}{entry.required ? " · required" : ""}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{entry.description}</span></span></label>; })}</div></fieldset>{errors.changes ? <p className="text-[11.5px] text-danger sm:col-span-2" role="alert">{errors.changes}</p> : null}<Field label="Reason for this change" required error={errors.reason} hint="Written to the immutable platform audit trail." className="sm:col-span-2"><textarea className="min-h-20 w-full resize-y rounded-md border border-line-2 bg-surface px-3 py-2 text-[13.5px] text-ink placeholder:text-ink-4 focus:border-ink aria-[invalid=true]:border-danger aria-[invalid=true]:bg-danger-bg/30" value={reason} onChange={(event) => { setReason(event.target.value); setErrors((current) => ({ ...current, reason: undefined })); }} placeholder="Explain why the catalog limits, capabilities, or price are changing." aria-invalid={Boolean(errors.reason)} /></Field>{error ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger sm:col-span-2" role="alert">{error.message || "The plan could not be saved."}</p> : null}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button><Button loading={saving} onClick={submit}>Save plan</Button></DialogFooter></DialogContent></Dialog>;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Edit {plan.name} plan</DialogTitle><DialogDescription>These values update the public landing page, new applications, and the entitlement catalog. Existing gym subscriptions are changed in Billing.</DialogDescription></DialogHeader>
+        <DialogBody className="grid gap-4 sm:grid-cols-2">
+          <Field label="Monthly price (JOD)" required error={errors.price}><Input value={price} onChange={(event) => { setPrice(event.target.value); setErrors((current) => ({ ...current, price: undefined, changes: undefined })); }} inputMode="decimal" aria-invalid={Boolean(errors.price)} /></Field>
+          <Field label="Branches" required error={errors.branches}><Input value={branches} onChange={(event) => { setBranches(event.target.value); setErrors((current) => ({ ...current, branches: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.branches)} /></Field>
+          <Field label="Staff seats" required error={errors.staff}><Input value={staff} onChange={(event) => { setStaff(event.target.value); setErrors((current) => ({ ...current, staff: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.staff)} /></Field>
+          <Field label="Member capacity" required error={errors.members}><Input value={members} onChange={(event) => { setMembers(event.target.value); setErrors((current) => ({ ...current, members: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.members)} /></Field>
+          <fieldset className="rounded-md border border-line p-3 sm:col-span-2" aria-label={`${plan.name} workspace capabilities`}>
+            <legend className="px-1 text-[13px] font-medium">Workspace capabilities</legend>
+            <p className="mb-3 text-[12.5px] leading-relaxed text-ink-3">These module keys are the same entitlement contract used by gym navigation and direct routes. Foundation is required for every tier; optional modules can be packaged into any tier with an audited reason.</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {WORKSPACE_MODULE_CATALOG.map((entry) => {
+                const selected = entitledModules.includes(entry.key);
+                const disabled = entry.required;
+                return (
+                  <label key={entry.key} className={cn("flex items-start gap-2.5 rounded-md border px-3 py-2.5", disabled ? "border-line bg-sunken/50" : "border-line-2 hover:border-ink")}>
+                    <input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggleModule(entry)} className="mt-0.5 size-4 accent-[var(--tenant-brand-primary)]" aria-label={entry.label} />
+                    <span className="min-w-0"><span className="block text-[13px] font-medium">{entry.label}{entry.required ? " · required" : ""}</span><span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-3">{entry.description}</span></span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+          {errors.changes ? <p className="text-[12.5px] text-danger sm:col-span-2" role="alert">{errors.changes}</p> : null}
+          <Field label="Reason for this change" required error={errors.reason} hint="Written to the immutable platform audit trail." className="sm:col-span-2">
+            <Textarea value={reason} onChange={(event) => { setReason(event.target.value); setErrors((current) => ({ ...current, reason: undefined })); }} placeholder="Explain why the catalog limits, capabilities, or price are changing." aria-invalid={Boolean(errors.reason)} />
+          </Field>
+          {error ? <p className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger sm:col-span-2" role="alert">{error.message || "The plan could not be saved."}</p> : null}
+        </DialogBody>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button><Button loading={saving} onClick={submit}>Save plan</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

@@ -15,6 +15,8 @@ import { AgreementRecord } from "@/features/legal/agreement-record";
 import { SignaturePad, type SignatureValue } from "@/features/legal/signature-pad";
 import { flattenSignatureToJpeg } from "@/features/legal/signature-image";
 import { downloadAgreementPdf } from "@/features/legal/agreement-pdf";
+import { PageHeader } from "@/components/shared/chrome";
+import { PlatformPage, PlatformPanel } from "@/components/platform/platform-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -41,24 +43,21 @@ export function PlatformAgreements() {
 
   useEffect(() => { if (requested) setSelectedId(requested); }, [requested]);
 
-  if (list.isLoading) return <div className="space-y-3"><Skeleton className="h-8 w-56" /><Skeleton className="h-64 w-full" /></div>;
-  if (list.isError || !list.data) return <QueryErrorState error={list.error} onRetry={() => void list.refetch()} />;
+  if (list.isLoading) return <PlatformPage><div className="space-y-3" role="status" aria-label="Loading agreements"><Skeleton className="h-8 w-56" /><Skeleton className="h-64 w-full" /></div></PlatformPage>;
+  if (list.isError || !list.data) return <PlatformPage><QueryErrorState error={list.error} onRetry={() => void list.refetch()} /></PlatformPage>;
   const rows = list.data;
   const awaiting = rows.filter((row) => row.status === "signed").length;
 
   return (
-    <div className="space-y-5" data-testid="platform-agreements">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="context-label">Legal</p>
-          <h1 className="mt-1 font-display text-[26px] font-semibold tracking-tight">Subscription agreements</h1>
-          <p className="mt-1 max-w-2xl text-[13px] text-ink-2">Every agreement a gym owner has signed in RIVET. Countersign to complete one; the signatory’s ID number stays masked until you reveal it with a reason.</p>
-        </div>
-        <Badge variant={awaiting > 0 ? "warning" : "success"} dot>{awaiting > 0 ? `${awaiting} awaiting countersignature` : "All countersigned"}</Badge>
-      </header>
+    <PlatformPage className="space-y-5" data-testid="platform-agreements">
+      <PageHeader
+        title="Subscription agreements"
+        description="Every agreement a gym owner has signed in RIVET. Countersign to complete one; the signatory’s ID number stays masked until you reveal it with a reason."
+        actions={<Badge variant={awaiting > 0 ? "warning" : "success"} dot>{awaiting > 0 ? `${awaiting} awaiting countersignature` : "All countersigned"}</Badge>}
+      />
 
-      {rows.length === 0 ? <EmptyState icon={FileSignature} title="No agreements signed yet" description="When a gym owner signs during onboarding, the agreement appears here for countersigning." /> : (
-        <section className="panel overflow-hidden">
+      {rows.length === 0 ? <EmptyState layout="page" icon={FileSignature} title="No agreements signed yet" description="When a gym owner signs during onboarding, the agreement appears here for countersigning." /> : (
+        <PlatformPanel className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -68,28 +67,28 @@ export function PlatformAgreements() {
                 <TableHead>Starts</TableHead>
                 <TableHead>Signed</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-end">Action</TableHead>
+                <TableHead className="text-end">Open</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id} data-testid="platform-agreement-row">
-                  <TableCell><span className="font-medium">{row.organizationName}</span><span className="block text-[11.5px] text-ink-3">{row.signatoryName}</span></TableCell>
+                  <TableCell><span className="font-medium">{row.organizationName}</span><span className="block text-[12.5px] text-ink-3">{row.signatoryName}</span></TableCell>
                   <TableCell><span className="font-mono text-[12px]" dir="ltr">{row.reference}</span>{row.hashMatch ? null : <Badge variant="warning" className="ms-2">Fingerprint mismatch</Badge>}</TableCell>
                   <TableCell>{row.plan}{row.termMonths ? ` · ${row.termMonths}m` : ""}</TableCell>
                   <TableCell dir="ltr">{row.startDate}</TableCell>
                   <TableCell>{formatDateTime(row.signedAt)}</TableCell>
                   <TableCell><Badge variant={row.status === "void" ? "neutral" : row.status === "countersigned" ? "success" : "warning"} dot>{row.status === "void" ? "Void" : row.status === "countersigned" ? "Countersigned" : "Awaiting RIVET"}</Badge></TableCell>
-                  <TableCell className="text-end"><Button size="xs" variant="secondary" onClick={() => setSelectedId(row.id)} aria-label={`Open agreement ${row.reference}`}><Eye /> Open</Button></TableCell>
+                  <TableCell className="text-end"><Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)} aria-label={`Open agreement ${row.reference}`}><Eye /> Open</Button></TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </section>
+        </PlatformPanel>
       )}
 
       {selectedId ? <AgreementDialog agreementId={selectedId} summary={rows.find((row) => row.id === selectedId)} onClose={() => setSelectedId(null)} /> : null}
-    </div>
+    </PlatformPage>
   );
 }
 

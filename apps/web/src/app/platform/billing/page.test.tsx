@@ -109,7 +109,7 @@ describe("BillingPage", () => {
     view.rerender(<BillingPage />);
 
     const row = await screen.findByRole("row", { name: /INV-2/ });
-    await waitFor(() => expect(row).toHaveClass("bg-info-bg\/50"));
+    await waitFor(() => expect(row).toHaveClass("bg-sunken\/60"));
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
   });
 
@@ -117,11 +117,11 @@ describe("BillingPage", () => {
     state.snapshot = snapshot([invoice(), invoice({ id: "INV-2", gym: "Mosaic Women's Fitness" })]);
     window.history.replaceState({}, "", "/platform/billing?invoice=INV-1");
     const view = render(<BillingPage />);
-    expect(await screen.findByRole("row", { name: /INV-1/ })).toHaveClass("bg-info-bg\/50");
+    expect(await screen.findByRole("row", { name: /INV-1/ })).toHaveClass("bg-sunken\/60");
 
     window.history.replaceState({}, "", "/platform/billing?invoice=INV-2");
     view.rerender(<BillingPage />);
-    await waitFor(() => expect(screen.getByRole("row", { name: /INV-2/ })).toHaveClass("bg-info-bg\/50"));
+    await waitFor(() => expect(screen.getByRole("row", { name: /INV-2/ })).toHaveClass("bg-sunken\/60"));
   });
 
   it.each([
