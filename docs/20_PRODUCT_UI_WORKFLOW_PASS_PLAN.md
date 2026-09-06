@@ -339,7 +339,7 @@ Release: `main` was fast-forwarded from `5356870` to `e3f583d` on 5 September 20
 **Status:** In review — implemented on `main` locally, awaiting Hashem's Preview review
 **Baseline SHA:** `b86f146` (fetched and verified against `origin/main` after the Pass 5 closure)
 **Finish SHA:** To record
-**Preview:** To record
+**Preview:** [https://rivet-8ucploo84-nusairhashem04-gmailcoms-projects.vercel.app](https://rivet-8ucploo84-nusairhashem04-gmailcoms-projects.vercel.app/login/gym) · GitHub deployment 6294439398 · READY · built from review branch `review/ui-workflow-pass-6` at `d6a101e`, protected, synthetic mock data
 **Human approval:** Pending
 
 Sections:
@@ -375,11 +375,11 @@ Workflow outcomes:
 Completion:
 
 - [ ] Before and after evidence approved.
-- [ ] Full pass gate passed.
+- [x] Full pass gate passed.
 - [ ] Pass merged and deployed.
 - [ ] Finish evidence recorded here.
 
-Implementation and review evidence: [`docs/ui-evidence/pass-6/README.md`](ui-evidence/pass-6/README.md). All sixteen sections were inspected at 360, 390, 768, 820, 1280 and 1440px. Every editable section now uses the shared save bar (Public profile, Payments and Notifications joined it; the quiet-hour fields no longer write on every keystroke), section headings match the rail and phone picker, the rail is arrow-key operable, a deep link to a section the role cannot save shows a permission state, and Branches, Gym spaces, Users, Invoices and the permission matrix have phone layouts. The seeded manager cannot open Settings, so the partially permitted case is a component test; the Payments section saves methods and each role's limit as separate server calls and reports a partial failure per part; the credential-gated staging owner-settings journey already used selectors that predate the Settings rail split and is flagged rather than rewritten blind. The Impeccable skill is unavailable here, so an equivalent banned-pattern scan ran over the changed targets and the detector checkbox stays unticked.
+Implementation and review evidence: [`docs/ui-evidence/pass-6/README.md`](ui-evidence/pass-6/README.md). All sixteen sections were inspected at 360, 390, 768, 820, 1280 and 1440px. Every editable section now uses the shared save bar (Public profile, Payments and Notifications joined it; the quiet-hour fields no longer write on every keystroke), section headings match the rail and phone picker, the rail is arrow-key operable, a deep link to a section the role cannot save shows a permission state, and Branches, Gym spaces, Users, Invoices and the permission matrix have phone layouts. The seeded manager cannot open Settings, so the partially permitted case is a component test; the Payments section saves methods and each role's limit as separate server calls and reports a partial failure per part; the credential-gated staging owner-settings journey already used selectors that predate the Settings rail split and is flagged rather than rewritten blind. The Impeccable skill is unavailable here, so an equivalent banned-pattern scan ran over the changed targets and the detector checkbox stays unticked. Gate evidence: GitHub Actions [run 34041097903](https://github.com/hashemnusair/Rivet/actions/runs/34041097903) passed every job for `d6a101e` (static checks, Convex generated-code check, and all 129 credential-free browser journeys); the Linux 390px references were generated and verified on the runner by [run 34040531744](https://github.com/hashemnusair/Rivet/actions/runs/34040531744). Implementation commits: `726614d`, `eb67d40`, `81c50e2`, `d6a101e`.
 
 ## Pass 7: Platform, authentication, and public product states
 

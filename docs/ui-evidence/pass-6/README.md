@@ -2,7 +2,7 @@
 
 Baseline: `b86f146` (fetched and verified against `origin/main` after the Pass 5 closure). Scope is exactly the tracker's Pass 6 list: the Settings shell (sticky heading, rail, search, phone picker, URL state) and its sixteen sections: Organization, Brand Kit, Public profile, Branches, Gym spaces, Agreement, Subscription & invoices, Users, Roles & permissions, Payments, Receipts & tax, Notifications, Operational email, Operational rules, Hours & trials and Daily checklists.
 
-Sign in as Omar Al-Khatib (owner); the seeded owner reaches every section. The manager persona cannot open Settings in the seed (no staff or settings permission), so the manager-with-staff-rights case is verified with a component test rather than in the Preview.
+[Open the protected Vercel Preview](https://rivet-8ucploo84-nusairhashem04-gmailcoms-projects.vercel.app/login/gym). GitHub deployment 6294439398 targets Preview and was built by the Vercel Git integration from the pushed review branch `review/ui-workflow-pass-6` at `d6a101e`, with synthetic mock data and the existing deployment protection (the first Preview, deployment 6294324501 from `81c50e2`, carries the same application code without the Linux references). Sign in as Omar Al-Khatib (owner); the seeded owner reaches every section. The manager persona cannot open Settings in the seed (no staff or settings permission), so the manager-with-staff-rights case is verified with a component test rather than in the Preview.
 
 ## What changed for owners
 
@@ -39,7 +39,7 @@ The browser suite checks 360, 390, 768, 820, 1280 and 1440px. Deterministic afte
 - The credential-gated staging journey `staging-owner-settings.spec.ts` already referenced a "Rules & hours" tab and a "Save operational rules" button that stopped existing before this pass; it is left as found and flagged for the staging owner rather than rewritten blind.
 - The Impeccable skill is not installed in this environment. An equivalent scan for the DESIGN.md prohibitions ran over the changed targets; findings are recorded in CURRENT_STATE.md. The tracker's detector checkbox stays unticked.
 - Hosted Preview checks are Hashem's own review of the Preview; the protected host resets non-browser connections from this session.
-- The Pass 1 design-system reference `settings-desktop.png` captures the Roles section, which changed on purpose. Every local attempt to refresh it coincided with the shared dev server rebuilding under the partner agent's saves, so it is refreshed before the release push, once the checkout is quiet; until then the design-system visual job fails on that one capture.
+- The Pass 1 design-system reference `settings-desktop.png` captures the Roles section, which changed on purpose. Every local attempt to refresh it coincided with the shared dev server rebuilding under the partner agent's saves, so it is refreshed on a quiet checkout before the release push. On Linux CI the capture stays within the 4% tolerance, so the design-system visual job passes as it is.
 
 ## Verification
 
@@ -53,7 +53,8 @@ The browser suite checks 360, 390, 768, 820, 1280 and 1440px. Deterministic afte
 | Production dependency audit | No known vulnerabilities |
 | Patch formatting | `git diff --check` clean |
 | Pass 6 browser suite | 14 of 14 passed inside the full local run (six widths with 32 deterministic references, plus eight journeys); the 390 and 1440 sweeps were also verified on their own |
-| Full browser suite | Not stable in this checkout: a partner agent edited and tested in the same tree, and each of its saves rebuilt the dev server mid-test (stack-less "Invalid or unexpected token" chunk errors, sign-in timeouts, one server restart under memory pressure). The first full run passed 80 with 14 credential-gated skips and 62 environment failures; the specs that touch Settings (the happy-path Settings navigation geometry, the legal agreement record) passed in it. The clean full-suite verdict is GitHub Actions on the review branch |
+| GitHub Actions on the review branch | [Run 34041097903](https://github.com/hashemnusair/Rivet/actions/runs/34041097903) for `d6a101e` passed every job: typecheck, whole-tree lint, unit tests, build, audit and diff check; the Convex generated-code check; and the credential-free browser job with all 129 journeys in 28 minutes. [Run 34040514376](https://github.com/hashemnusair/Rivet/actions/runs/34040514376) for `81c50e2` passed the same static and Convex jobs and 128 of 129 journeys, failing only the Pass 6 390px sweep because its Linux references did not exist yet. The Linux references came from [run 34040531744](https://github.com/hashemnusair/Rivet/actions/runs/34040531744) of a temporary push-triggered workflow on a throwaway branch (deleted), which generated them and verified the whole Pass 6 suite on Ubuntu |
+| Full browser suite (local) | Not stable in this checkout: a partner agent edited and tested in the same tree, and each of its saves rebuilt the dev server mid-test (stack-less "Invalid or unexpected token" chunk errors, sign-in timeouts, one server restart under memory pressure). The first full run passed 80 with 14 credential-gated skips and 62 environment failures; the specs that touch Settings (the happy-path Settings navigation geometry, the legal agreement record) passed in it. The clean full-suite verdict is GitHub Actions on the review branch |
 
 Reference captures are viewport-sized like the earlier passes; the `after/` folder holds full-page captures of the same routes from the same script as `before/`.
 
