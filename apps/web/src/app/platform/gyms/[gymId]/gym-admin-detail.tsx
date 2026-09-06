@@ -1,22 +1,26 @@
 "use client";
 
-import { Archive, ArrowLeft, Building2, CalendarClock, Check, CircleAlert, CreditCard, ExternalLink, Mail, MapPin, Phone, Receipt, Users } from "lucide-react";
+import { Archive, ArrowLeft, Check, CircleAlert, ExternalLink, Mail, MapPin, Phone, Receipt } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PlatformGymLogo } from "@/components/platform/platform-gym-logo";
+import { PlatformPage, PlatformPanel, PlatformPanelHeader, StaleNotice } from "@/components/platform/platform-page";
+import { SubscriptionStatusBadge, subscriptionStatusLabel } from "@/components/platform/platform-status";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
 import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail } from "@/lib/api/GymOSApi";
 import { Switch } from "@/components/ui/switch";
+import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { QueryErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { formatDateTime } from "@/lib/utils/dates";
+import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
+import { formatDate, formatDateTime } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 
 type GymArchiveApi = { archivePlatformGym?: (input: ArchivePlatformGymInput) => Promise<void> };
@@ -84,197 +88,205 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
 
   if (detailQuery.isLoading || !detail) {
     if (detailQuery.isError) {
-      return <div className="p-10"><QueryErrorState error={detailQuery.error} notFoundTitle="Gym not found" forbiddenDescription="Your platform role cannot view this gym." onRetry={() => detailQuery.refetch()} /></div>;
+      return <PlatformPage><QueryErrorState error={detailQuery.error} notFoundTitle="Gym not found" forbiddenDescription="Your platform role cannot view this gym." onRetry={() => detailQuery.refetch()} /></PlatformPage>;
     }
-    return <div className="space-y-5 p-6 sm:p-8" role="status" aria-label="Loading gym detail"><Skeleton className="h-4 w-24" /><Skeleton className="h-20 w-full" /><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div></div>;
+    return (
+      <PlatformPage>
+        <div className="space-y-5" role="status" aria-label="Loading gym detail">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-24 w-full" />
+          <div className="grid gap-5 xl:grid-cols-[1.4fr_.8fr]"><Skeleton className="h-64" /><Skeleton className="h-64" /></div>
+        </div>
+      </PlatformPage>
+    );
   }
 
   const publicListingAllowed = Boolean(organizationAvailable) && isPublicSubscriptionStatus(detail.controls.status);
   const marketplaceProfileAvailable = organizationAvailable && isPublicSubscriptionStatus(detail.controls.status) && detail.controls.isPublic;
   const publicPage = detail.publicPage.state === "available" ? detail.publicPage.value : undefined;
   const draftAwaitingReview = Boolean(publicPage && publicPage.draftStatus === "draft" && (publicPage.draftVersion ?? 0) > publicPage.publishedVersion);
+  const stale = detailQuery.isBackgroundError || detailQuery.streamState === "fallback";
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <div className="mx-auto max-w-[1480px]">
-        <Link href="/platform/gyms" className="inline-flex items-center gap-2 text-[11.5px] text-ink-3 hover:text-ink"><ArrowLeft className="size-3.5 rtl:rotate-180" />All gyms</Link>
+    <PlatformPage>
+      <Link href="/platform/gyms" className="inline-flex min-h-8 items-center gap-1.5 text-[12.5px] font-medium text-ink-2 hover:text-ink"><ArrowLeft className="size-3.5 rtl:rotate-180" aria-hidden />All gyms</Link>
 
-        {detailQuery.isBackgroundError || detailQuery.streamState === "fallback" ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status" aria-live="polite">
-            <span>Showing the last known gym record while the live connection recovers.</span>
-            <Button variant="secondary" size="sm" onClick={() => detailQuery.refetch()}>Retry</Button>
-          </div>
-        ) : null}
+      {stale ? <div className="mt-4"><StaleNotice onRetry={() => detailQuery.refetch()}>Showing the last known gym record while the live connection recovers.</StaleNotice></div> : null}
 
-        <section className="mt-6 border border-line bg-surface p-6">
-          <div className="flex flex-wrap items-start justify-between gap-6">
-            <div className="flex items-center gap-5">
-              <PlatformGymLogo name={detail.name} shortName={detail.shortName} accent={detail.accent} logoUrl={detail.logoUrl?.state === "available" ? detail.logoUrl.value : undefined} className="size-16 text-[12px]" />
-              <div>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h1 className="text-[26px] font-semibold tracking-tight">{detail.name}</h1>
-                  <HeroStatus status={detail.controls.status} />
-                </div>
-                <p className="mt-1.5 text-[12px] text-ink-2">
-                  {detail.controls.plan}
-                  {detail.subscription.billingInterval?.state === "available" ? ` · ${detail.subscription.billingInterval.value}` : ""}
-                  {detail.subscription.currentPeriodEndsAt.state === "available" ? ` · paid through ${formatDateTime(detail.subscription.currentPeriodEndsAt.value).split(",")[0]}` : ""}
-                </p>
-                <p className="mt-0.5 text-[11px] text-ink-3">Customer since <FieldValue field={detail.joinedAt} render={(value) => value.slice(0, 10)} /></p>
+      <PlatformPanel className="mt-4 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-4">
+            <PlatformGymLogo name={detail.name} shortName={detail.shortName} accent={detail.accent} logoUrl={detail.logoUrl?.state === "available" ? detail.logoUrl.value : undefined} className="size-14 rounded-md text-[12px]" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight">{detail.name}</h1>
+                <SubscriptionStatusBadge status={detail.controls.status} />
               </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`}>Public page <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title="Hidden from public discovery">Public page <ExternalLink /></Button>}
-              {organizationAvailable
-                ? <Button asChild variant="signal"><Link href={`/platform/billing?bill=${detail.id}`}><Receipt />Manage subscription</Link></Button>
-                : <Button variant="signal" disabled title="Unavailable until this gym is provisioned"><Receipt />Manage subscription</Button>}
+              <p className="mt-1 text-[13px] text-ink-2">
+                {detail.controls.plan}
+                {detail.subscription.billingInterval?.state === "available" ? ` · ${billingIntervalLabel(detail.subscription.billingInterval.value)}` : ""}
+                {detail.subscription.currentPeriodEndsAt.state === "available" ? ` · paid through ${formatDate(detail.subscription.currentPeriodEndsAt.value)}` : ""}
+              </p>
+              <p className="mt-0.5 text-[12.5px] text-ink-3">{detail.joinedAt.state === "available" ? `Customer since ${formatDate(detail.joinedAt.value)}` : "Start date not recorded"}</p>
             </div>
           </div>
-        </section>
-
-        {!organizationAvailable ? <div className="mt-5 flex items-start gap-3 border border-warning/30 bg-warning-bg px-4 py-3 text-[11.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked. Resolve it through the applications workflow.</p></div> : null}
-
-        <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr]">
-          <section className="border border-line bg-surface">
-            <div className="border-b border-line px-5 py-4"><p className="context-label">Organization</p><h2 className="mt-1 text-[17px] font-semibold">Branches and usage</h2></div>
-            <div className="divide-y divide-line">
-              {detail.branches.state === "available" && detail.branches.value.length > 0 ? detail.branches.value.map((branch) => (
-                <div key={branch.id} className="grid gap-4 px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center">
-                  <div><p className="text-[13px] font-semibold">{branch.name}</p><p className="mt-1 flex items-center gap-1.5 text-[12px] text-ink-3"><MapPin className="size-3" />{branch.address || "Not available"}</p><p className="mt-1 text-[12px] text-ink-3">Code {branch.code} · {branch.status}</p></div>
-                  <p className="text-[11px] text-ink-3">Branch actions are not configured</p>
-                </div>
-              )) : <UnavailableBlock field={detail.branches} empty="No branches recorded" />}
-            </div>
-            <div className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-5">
-              <Usage icon={<Users />} label="Active staff" field={detail.usage.activeStaffCount} />
-              <Usage icon={<Users />} label="Staff plan limit" field={detail.usage.staffLimit} />
-              <Usage icon={<Building2 />} label="Storage" field={detail.usage.storage} />
-              <Usage icon={<CalendarClock />} label="Automation rules" field={detail.usage.automationRuleCount} />
-              <Usage icon={<CreditCard />} label="Payment records" field={detail.usage.paymentTransactionCount} />
-            </div>
-          </section>
-
-          <div className="grid gap-5">
-            <section className="border border-line bg-surface p-5">
-              <p className="context-label">Account owner</p>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3 text-[12px]">
-                <span className="text-ink-3">Subscription agreement</span>
-                {detail.agreement.state === "available" ? <Link href={`/platform/agreements?agreement=${detail.agreement.value.id}`} className="font-medium text-ink underline-offset-2 hover:underline" data-testid="gym-agreement-link">{detail.agreement.value.reference} · {detail.agreement.value.status === "countersigned" ? "countersigned" : "awaiting RIVET"}</Link> : detail.agreement.state === "not_configured" ? <span className="text-warning-deep">Not signed yet</span> : <span className="text-ink-3">Not available</span>}
-              </div>
-              {detail.owner.state === "available" ? <><h2 className="mt-2 text-[17px] font-semibold">{detail.owner.value.name}</h2><div className="mt-5 grid gap-3 text-[11.5px] text-ink-2"><p className="flex items-center gap-2"><Mail className="size-3.5 text-ink-3" />{detail.owner.value.email}</p><p className="flex items-center gap-2"><Phone className="size-3.5 text-ink-3" />{detail.owner.value.phone || "Not available"}</p></div></> : <UnavailableValue state={detail.owner.state} className="mt-3" />}
-            </section>
-            <section className="night-surface bg-night p-5 text-night-ink">
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="context-label">Subscription facts</p>
-                <Link href={`/platform/billing?bill=${detail.id}`} className="text-[12px] text-night-ink-3 underline-offset-2 hover:text-night-ink hover:underline">Manage in Billing</Link>
-              </div>
-              <dl className="mt-5 grid gap-3 text-[12px]">
-                <FactRow label="Plan"><FieldValue field={detail.subscription.plan} /></FactRow>
-                <FactRow label="Billing cadence"><FieldValue field={detail.subscription.billingInterval ?? { state: "not_configured" }} render={billingIntervalLabel} /></FactRow>
-                <FactRow label="Status"><FieldValue field={detail.subscription.status} render={statusLabel} /></FactRow>
-                <FactRow label="Started"><FieldValue field={detail.subscription.startedAt} render={(value) => formatDateTime(value)} /></FactRow>
-                <FactRow label="Trial ends"><FieldValue field={detail.subscription.trialEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
-                <FactRow label="Period ends"><FieldValue field={detail.subscription.currentPeriodEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
-                <FactRow label="Cancelled"><FieldValue field={detail.subscription.cancelledAt} render={(value) => formatDateTime(value)} /></FactRow>
-                <FactRow label="Last change reason"><FieldValue field={detail.subscription.statusReason} /></FactRow>
-                <FactRow label="Recurring amount"><FieldValue field={detail.subscription.recurringAmount} render={(value) => formatMoney(value)} /></FactRow>
-                <FactRow label="Renewal"><FieldValue field={detail.subscription.renewalDate} /></FactRow>
-                <FactRow label="Payment method"><FieldValue field={detail.subscription.paymentMethod} /></FactRow>
-                <FactRow label="Invoices"><FieldValue field={detail.subscription.invoices} render={(value) => `${value.length} recorded`} /></FactRow>
-              </dl>
-            </section>
+          <div className="flex flex-wrap gap-2">
+            {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`}>Public page <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title="Hidden from public discovery">Public page <ExternalLink /></Button>}
+            {organizationAvailable
+              ? <Button asChild><Link href={`/platform/billing?bill=${detail.id}`}><Receipt />Manage subscription</Link></Button>
+              : <Button disabled title="Unavailable until this gym is provisioned"><Receipt />Manage subscription</Button>}
           </div>
         </div>
+      </PlatformPanel>
 
-        <section className="mt-5 border border-line bg-surface p-5">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="context-label">Marketplace</p>
-              <h2 className="mt-1 text-[16px] font-semibold">Public page</h2>
-              <p className="mt-1 text-[11px] text-ink-2">
-                {publicPage
-                  ? publicPage.publishedVersion > 0
-                    ? <>Live at v{publicPage.publishedVersion}.{draftAwaitingReview ? <> Draft v{publicPage.draftVersion} saved {publicPage.draftUpdatedAt ? formatDateTime(publicPage.draftUpdatedAt) : "by the gym"} — awaiting your review.</> : " No draft awaiting review."}</>
-                    : draftAwaitingReview
-                      ? <>Never published. Draft v{publicPage.draftVersion} is waiting — the gym&rsquo;s first publish is self-serve, but you can publish it for them.</>
-                      : "Never published, and the gym has not saved a draft."
-                  : "Unavailable until this gym is provisioned."}
-              </p>
-            </div>
-            {draftAwaitingReview ? <Button variant="signal" onClick={() => { setPublishPageReason(""); setPublishPageOpen(true); }}><Check />Publish draft v{publicPage?.draftVersion}</Button> : null}
+      {!organizationAvailable ? <div className="mt-4 flex items-start gap-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-3 text-[12.5px] text-warning-deep" role="status"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><p>Cleanup-only record: no provisioned organization is linked. Resolve it through the applications workflow.</p></div> : null}
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.8fr] xl:items-start">
+        <PlatformPanel aria-labelledby="branches-title">
+          <PlatformPanelHeader id="branches-title" title="Branches and usage" />
+          <div className="divide-y divide-line">
+            {detail.branches.state === "available" && detail.branches.value.length > 0 ? detail.branches.value.map((branch) => (
+              <div key={branch.id} className="grid gap-2 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center sm:px-5">
+                <div><p className="text-[13.5px] font-semibold">{branch.name}</p><p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-ink-3"><MapPin className="size-3.5 shrink-0" aria-hidden />{branch.address || "Address not available"}</p><p className="mt-0.5 text-[12.5px] text-ink-3">Code <span className="font-mono text-[12px]">{branch.code}</span> · {branch.status}</p></div>
+                <p className="text-[12.5px] text-ink-3">Branch actions are not configured</p>
+              </div>
+            )) : <UnavailableBlock field={detail.branches} empty="No branches recorded" />}
           </div>
-        </section>
+          <dl className="grid grid-cols-2 gap-px border-t border-line bg-line sm:grid-cols-5">
+            <Usage label="Active staff" field={detail.usage.activeStaffCount} />
+            <Usage label="Staff plan limit" field={detail.usage.staffLimit} />
+            <Usage label="Storage" field={detail.usage.storage} />
+            <Usage label="Automation rules" field={detail.usage.automationRuleCount} />
+            <Usage label="Payment records" field={detail.usage.paymentTransactionCount} />
+          </dl>
+        </PlatformPanel>
 
-        <Dialog open={publishPageOpen} onOpenChange={(open) => { if (!publishPage.isPending) setPublishPageOpen(open); }}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Publish {detail.name}&rsquo;s draft v{publicPage?.draftVersion}?</DialogTitle>
-              <DialogDescription>The saved draft replaces the live public page immediately. Review it in the gym&rsquo;s support ticket or preview before publishing.</DialogDescription>
-            </DialogHeader>
-            <DialogBody>
-              <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="publish-page-reason">Reason for this change<Textarea id="publish-page-reason" value={publishPageReason} onChange={(event) => setPublishPageReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></label>
-            </DialogBody>
-            <DialogFooter>
-              <Button variant="secondary" onClick={() => setPublishPageOpen(false)} disabled={publishPage.isPending}>Cancel</Button>
-              <Button variant="signal" loading={publishPage.isPending} disabled={!publishPageReason.trim()} onClick={() => publishPage.mutate()}><Check />Publish draft</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <section className="mt-5 border border-line bg-surface p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="context-label">Marketplace</p>
-              <h2 className="mt-1 text-[16px] font-semibold">Public directory listing</h2>
-              <p className="mt-1 text-[12px] text-ink-3">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while the subscription is not active. Reactivate from Billing first." : "Suppressed: this row is not provisioned."}</p>
-            </div>
-            <Switch checked={publicListingAllowed && isPublic} onCheckedChange={setIsPublic} disabled={!organizationAvailable || !publicListingAllowed} aria-label="Public directory listing" />
-          </div>
-          {listingDirty ? (
-            <div className="mt-4 grid gap-3 border-t border-line pt-4">
-              <label className="grid gap-1.5 text-[12px] font-medium">Reason for this change<Textarea value={listingReason} onChange={(event) => setListingReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></label>
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="secondary" size="sm" onClick={() => { setIsPublic(detail.organization.state === "available" && detail.controls.isPublic); setListingReason(""); }}>Cancel</Button>
-                <Button variant="signal" size="sm" loading={saveListing.isPending} disabled={!listingReason.trim()} onClick={() => saveListing.mutate()}><Check />Save listing</Button>
+        <div className="grid content-start gap-5">
+          <PlatformPanel aria-labelledby="owner-title">
+            <PlatformPanelHeader id="owner-title" title="Account owner" />
+            <div className="px-4 py-4 sm:px-5">
+              {detail.owner.state === "available" ? <><p className="text-[15px] font-semibold">{detail.owner.value.name}</p><div className="mt-3 grid gap-2 text-[13px] text-ink-2"><p className="flex items-center gap-2"><Mail className="size-3.5 text-ink-3" aria-hidden /><span dir="ltr">{detail.owner.value.email}</span></p><p className="flex items-center gap-2"><Phone className="size-3.5 text-ink-3" aria-hidden /><span dir="ltr">{detail.owner.value.phone || "Phone not available"}</span></p></div></> : <UnavailableValue state={detail.owner.state} />}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[12.5px]">
+                <span className="text-ink-3">Subscription agreement</span>
+                {detail.agreement.state === "available" ? <Link href={`/platform/agreements?agreement=${detail.agreement.value.id}`} className="font-medium text-ink underline-offset-4 hover:underline" data-testid="gym-agreement-link"><span className="font-mono text-[12px]">{detail.agreement.value.reference}</span> · {detail.agreement.value.status === "countersigned" ? "countersigned" : "awaiting RIVET"}</Link> : detail.agreement.state === "not_configured" ? <span className="font-medium text-warning-deep">Not signed yet</span> : <span className="text-ink-3">Not available</span>}
               </div>
             </div>
-          ) : null}
-        </section>
+          </PlatformPanel>
 
-        <section className="mt-5 flex flex-wrap items-center justify-between gap-4 border border-danger/30 bg-danger-bg p-5">
-          <div>
-            <p className="context-label text-danger">Danger zone</p>
-            <h2 className="mt-1 text-[16px] font-semibold">Remove gym access</h2>
-            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-danger">Archiving removes access and public discovery. All records and history are kept.</p>
-          </div>
-          <Button variant="danger" onClick={() => { setDeleteError(undefined); setDeleteConfirmation(""); setDeleteReason(""); setDeleteOpen(true); }}><Archive />Archive gym</Button>
-        </section>
-
-        <Dialog open={deleteOpen} onOpenChange={(open) => { if (!archive.isPending) setDeleteOpen(open); }}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Archive {detail.name}?</DialogTitle>
-              <DialogDescription>This removes the gym from active RIVET workspaces and public discovery. Financial, subscription, and audit history are retained for compliance and future review.</DialogDescription>
-            </DialogHeader>
-            <DialogBody className="grid gap-4">
-              <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-confirmation">Type the gym name to confirm<Input id="delete-gym-confirmation" value={deleteConfirmation} onChange={(event) => { setDeleteConfirmation(event.target.value); setDeleteError(undefined); }} placeholder={detail.name} autoComplete="off" /></label>
-              <label className="grid gap-1.5 text-[12px] font-medium" htmlFor="delete-gym-reason">Reason for archiving<Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></label>
-              {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[12px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
-              {deleteError ? <p className="border border-danger/30 bg-danger-bg px-3 py-2.5 text-[11.5px] text-danger" role="alert">{deleteError}</p> : null}
-            </DialogBody>
-            <DialogFooter>
-              <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={archive.isPending}>Cancel</Button>
-              <Button variant="danger" loading={archive.isPending} disabled={deleteConfirmation !== detail.name || !deleteReason.trim()} onClick={() => archive.mutate({ gymId, confirmation: deleteConfirmation, reason: deleteReason.trim() })}><Archive />Archive gym</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <section className="mt-5 border border-line bg-surface">
-          <div className="border-b border-line px-5 py-4"><p className="context-label">Account activity</p><h2 className="mt-1 text-[17px] font-semibold">Platform timeline</h2></div>
-          {detail.activity.state === "available" && detail.activity.value.length > 0 ? <div className="grid divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0">{detail.activity.value.map((event) => <div key={event.id} className="p-5"><p className="font-mono text-[10.5px] uppercase tracking-[.1em] text-ink-3">{formatDateTime(event.occurredAt)}</p><p className="mt-3 text-[12.5px] font-semibold">{event.summary}</p><p className="mt-1 text-[10.5px] leading-relaxed text-ink-3">{event.action} · {event.actorName}</p></div>)}</div> : <UnavailableBlock field={detail.activity} empty="No platform activity recorded" />}
-        </section>
+          <PlatformPanel aria-labelledby="subscription-facts-title">
+            <PlatformPanelHeader id="subscription-facts-title" title="Subscription facts" actions={<Link href={`/platform/billing?bill=${detail.id}`} className="text-[12.5px] font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline">Manage in Billing</Link>} />
+            <dl className="divide-y divide-line px-4 sm:px-5">
+              <FactRow label="Plan"><FieldValue field={detail.subscription.plan} /></FactRow>
+              <FactRow label="Billing cadence"><FieldValue field={detail.subscription.billingInterval ?? { state: "not_configured" }} render={billingIntervalLabel} /></FactRow>
+              <FactRow label="Status"><FieldValue field={detail.subscription.status} render={subscriptionStatusLabel} /></FactRow>
+              <FactRow label="Started"><FieldValue field={detail.subscription.startedAt} render={(value) => formatDateTime(value)} /></FactRow>
+              <FactRow label="Trial ends"><FieldValue field={detail.subscription.trialEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
+              <FactRow label="Period ends"><FieldValue field={detail.subscription.currentPeriodEndsAt} render={(value) => formatDateTime(value)} /></FactRow>
+              <FactRow label="Cancelled"><FieldValue field={detail.subscription.cancelledAt} render={(value) => formatDateTime(value)} /></FactRow>
+              <FactRow label="Last change reason"><FieldValue field={detail.subscription.statusReason} /></FactRow>
+              <FactRow label="Recurring amount"><FieldValue field={detail.subscription.recurringAmount} render={(value) => formatMoney(value)} /></FactRow>
+              <FactRow label="Renewal"><FieldValue field={detail.subscription.renewalDate} render={displayDateOrText} /></FactRow>
+              <FactRow label="Payment method"><FieldValue field={detail.subscription.paymentMethod} /></FactRow>
+              <FactRow label="Invoices"><FieldValue field={detail.subscription.invoices} render={(value) => `${value.length} recorded`} /></FactRow>
+            </dl>
+          </PlatformPanel>
+        </div>
       </div>
-    </div>
+
+      <PlatformPanel className="mt-5 px-4 py-4 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold">Public page</h2>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">
+              {publicPage
+                ? publicPage.publishedVersion > 0
+                  ? <>Live at v{publicPage.publishedVersion}.{draftAwaitingReview ? <> Draft v{publicPage.draftVersion} saved {publicPage.draftUpdatedAt ? formatDateTime(publicPage.draftUpdatedAt) : "by the gym"} — awaiting your review.</> : " No draft awaiting review."}</>
+                  : draftAwaitingReview
+                    ? <>Never published. Draft v{publicPage.draftVersion} is waiting — the gym&rsquo;s first publish is self-serve, but you can publish it for them.</>
+                    : "Never published, and the gym has not saved a draft."
+                : "Unavailable until this gym is provisioned."}
+            </p>
+          </div>
+          {draftAwaitingReview ? <Button onClick={() => { setPublishPageReason(""); setPublishPageOpen(true); }}><Check />Publish draft v{publicPage?.draftVersion}</Button> : null}
+        </div>
+      </PlatformPanel>
+
+      <Dialog open={publishPageOpen} onOpenChange={(open) => { if (!publishPage.isPending) setPublishPageOpen(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Publish {detail.name}&rsquo;s draft v{publicPage?.draftVersion}?</DialogTitle>
+            <DialogDescription>The saved draft replaces the live public page immediately. Review it in the gym&rsquo;s support ticket or preview before publishing.</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <Field label="Reason for this change" htmlFor="publish-page-reason"><Textarea id="publish-page-reason" value={publishPageReason} onChange={(event) => setPublishPageReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setPublishPageOpen(false)} disabled={publishPage.isPending}>Cancel</Button>
+            <Button loading={publishPage.isPending} disabled={!publishPageReason.trim()} onClick={() => publishPage.mutate()}><Check />Publish draft</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <PlatformPanel className="mt-5 px-4 py-4 sm:px-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold">Public directory listing</h2>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">{publicListingAllowed ? "Let members discover this gym and request a free trial." : organizationAvailable ? "Suppressed while the subscription is not active. Reactivate from Billing first." : "Suppressed: this row is not provisioned."}</p>
+          </div>
+          <Switch checked={publicListingAllowed && isPublic} onCheckedChange={setIsPublic} disabled={!organizationAvailable || !publicListingAllowed} aria-label="Public directory listing" />
+        </div>
+        {listingDirty ? (
+          <div className="mt-4 grid gap-3 border-t border-line pt-4">
+            <Field label="Reason for this change"><Textarea value={listingReason} onChange={(event) => setListingReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></Field>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => { setIsPublic(detail.organization.state === "available" && detail.controls.isPublic); setListingReason(""); }}>Cancel</Button>
+              <Button size="sm" loading={saveListing.isPending} disabled={!listingReason.trim()} onClick={() => saveListing.mutate()}><Check />Save listing</Button>
+            </div>
+          </div>
+        ) : null}
+      </PlatformPanel>
+
+      <PlatformPanel className="mt-5 flex flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-5">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold">Remove gym access</h2>
+          <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-ink-2">Archiving removes access and public discovery. All records and history are kept, and the change is audited.</p>
+        </div>
+        <Button variant="danger" onClick={() => { setDeleteError(undefined); setDeleteConfirmation(""); setDeleteReason(""); setDeleteOpen(true); }}><Archive />Archive gym</Button>
+      </PlatformPanel>
+
+      <Dialog open={deleteOpen} onOpenChange={(open) => { if (!archive.isPending) setDeleteOpen(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Archive {detail.name}?</DialogTitle>
+            <DialogDescription>This removes the gym from active RIVET workspaces and public discovery. Financial, subscription, and audit history are retained for compliance and future review.</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="grid gap-4">
+            <Field label="Type the gym name to confirm" htmlFor="delete-gym-confirmation"><Input id="delete-gym-confirmation" value={deleteConfirmation} onChange={(event) => { setDeleteConfirmation(event.target.value); setDeleteError(undefined); }} placeholder={detail.name} autoComplete="off" /></Field>
+            <Field label="Reason for archiving" htmlFor="delete-gym-reason"><Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></Field>
+            {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[12.5px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
+            {deleteError ? <p className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{deleteError}</p> : null}
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={archive.isPending}>Cancel</Button>
+            <Button variant="danger" loading={archive.isPending} disabled={deleteConfirmation !== detail.name || !deleteReason.trim()} onClick={() => archive.mutate({ gymId, confirmation: deleteConfirmation, reason: deleteReason.trim() })}><Archive />Archive gym</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <PlatformPanel className="mt-5" aria-labelledby="timeline-title">
+        <PlatformPanelHeader id="timeline-title" title="Platform timeline" description="Operator actions on this gym, from the immutable platform audit." />
+        {detail.activity.state === "available" && detail.activity.value.length > 0 ? (
+          <div className="divide-y divide-line">
+            {detail.activity.value.map((event) => (
+              <div key={event.id} className="grid gap-1 px-4 py-3 sm:grid-cols-[150px_1fr] sm:gap-4 sm:px-5">
+                <span className="text-[12.5px] text-ink-3">{formatDateTime(event.occurredAt)}</span>
+                <div className="min-w-0"><p className="text-[13.5px] font-medium">{event.summary}</p><p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12.5px] text-ink-3"><TechnicalLabel as="span">{event.action}</TechnicalLabel><span>{event.actorName}</span></p></div>
+              </div>
+            ))}
+          </div>
+        ) : <UnavailableBlock field={detail.activity} empty="No platform activity recorded" />}
+      </PlatformPanel>
+    </PlatformPage>
   );
 }
 
@@ -287,17 +299,13 @@ function UnavailableValue({ state, className }: { state: "not_available" | "not_
 }
 
 function UnavailableBlock<T>({ field, empty }: { field: PlatformData<T>; empty: string }) {
-  return <div className="px-5 py-8 text-[12px] text-ink-3">{field.state === "available" ? empty : <UnavailableValue state={field.state} />}</div>;
+  return <div className="px-5 py-8 text-center text-[12.5px] text-ink-3">{field.state === "available" ? empty : <UnavailableValue state={field.state} />}</div>;
 }
 
-function statusLabel(value: string) {
-  return value === "overdue" ? "Past due" : value.replaceAll("_", " ");
-}
-
-function HeroStatus({ status }: { status: PlatformGymDetail["controls"]["status"] }) {
-  const label = status === "overdue" ? "past due" : status;
-  const tone = status === "active" ? "bg-success-bg text-success-deep" : status === "trial" ? "bg-sunken text-ink-2" : "bg-signal-bg text-signal-deep";
-  return <span className={`rounded-sm px-2 py-1 font-mono text-[10.5px] uppercase tracking-[.12em] ${tone}`}>{label}</span>;
+/** A stored renewal value may be a timestamp or plain text; only real dates are reformatted. */
+function displayDateOrText(value: string): string {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && /\d{4}-\d{2}-\d{2}/.test(value) ? formatDateTime(value) : value;
 }
 
 function isPublicSubscriptionStatus(status: PlatformGymDetail["controls"]["status"] | undefined): boolean {
@@ -312,10 +320,10 @@ function billingIntervalLabel(value: BillingInterval): string {
   return value === "annual" ? "Annual · saves 20%" : "Monthly";
 }
 
-function Usage({ icon, label, field }: { icon: React.ReactNode; label: string; field: PlatformData<number | string> }) {
-  return <div className="bg-surface p-4"><span className="text-ink-3 [&_svg]:size-3.5">{icon}</span><p className="mt-4 font-mono text-[10.5px] uppercase tracking-[.1em] text-ink-3">{label}</p><p className="mt-1 text-[12px] font-semibold"><FieldValue field={field} render={(value) => typeof value === "number" ? value.toLocaleString() : value} /></p></div>;
+function Usage({ label, field }: { label: string; field: PlatformData<number | string> }) {
+  return <div className="bg-surface px-4 py-3 last:col-span-2 sm:px-5 sm:last:col-span-1"><ContextLabel as="dt">{label}</ContextLabel><dd className="mt-1 text-[13.5px] font-semibold tabular"><FieldValue field={field} render={(value) => typeof value === "number" ? value.toLocaleString() : value} /></dd></div>;
 }
 
 function FactRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="flex items-baseline justify-between gap-3 border-b border-night-line/60 pb-2.5"><dt className="text-night-ink-3">{label}</dt><dd className="text-end font-medium">{children}</dd></div>;
+  return <div className="flex items-baseline justify-between gap-3 py-2.5 text-[13px]"><dt className="text-ink-3">{label}</dt><dd className="text-end font-medium">{children}</dd></div>;
 }

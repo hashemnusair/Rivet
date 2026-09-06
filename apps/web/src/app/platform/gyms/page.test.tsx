@@ -18,6 +18,14 @@ vi.mock("@/lib/hooks/use-realtime-api", () => ({
   useRealtimeApiQuery: () => state.query,
 }));
 
+// The status filter and search round-trip through the URL; the directory
+// itself keeps local state so a mocked router still drives the view.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+  usePathname: () => "/platform/gyms",
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+}));
+
 function gym(id: string, status: MarketplaceGym["subscriptionStatus"], overrides: Partial<MarketplaceGym> = {}): MarketplaceGym {
   return {
     id,
@@ -63,13 +71,13 @@ describe("Platform gyms directory", () => {
     };
   });
 
-  it("shows lean status cards and links Add gym to applications", () => {
+  it("shows lean status cards and links the header action to applications", () => {
     render(<PlatformGymsPage />);
 
     expect(screen.getByRole("heading", { name: "Gym organizations" })).toBeInTheDocument();
     expect(screen.getAllByText("Period ends").length).toBeGreaterThan(0);
     expect(screen.queryByText("Gym revenue")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Add gym" })).toHaveAttribute("href", "/platform/applications");
+    expect(screen.getByRole("link", { name: "Review applications" })).toHaveAttribute("href", "/platform/applications");
 
     fireEvent.click(screen.getByRole("button", { name: "All gyms 3" }));
     expect(screen.getByRole("link", { name: "Open Paused Fitness admin details" })).toHaveAttribute("href", "/platform/gyms/paused");
