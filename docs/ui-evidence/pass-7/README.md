@@ -1,6 +1,6 @@
 # Pass 7 review evidence
 
-Baseline: `b86f146` (fetched and verified against `origin/main` after the Pass 5 closure; the Pass 6 Settings work is proceeding in parallel in the same checkout and is not part of this pass). Implementation commits, the review Preview and Hashem's decision are recorded at the end of this file and in the tracker.
+Baseline: `b86f146` (fetched and verified against `origin/main` after the Pass 5 closure; the Pass 6 Settings work is proceeding in parallel in the same checkout and is not part of this pass). Implementation commits, the review Preview and Hashem's decision are recorded in the Review section at the end of this file and in the tracker.
 
 Sign in as the platform administrator (`/login/admin` → Open platform console) for every console surface, and as Omar Al-Khatib (owner) for `/getting-started` and `/onboarding/agreement`. The sign-in portals, the invitation states, the gym application, the public offer link, the legal pages, the offline page and the not-found page are reached signed out.
 
@@ -72,3 +72,10 @@ The browser suite checks 360, 390, 768, 820, 1280 and 1440px. Deterministic afte
 - `/login/accept-invitation` in preview mode runs against Clerk's development instance; the sign-up form renders and validates, but no ticket can be redeemed in the mock.
 - The Impeccable skill is not installed in this environment. An equivalent scan for the DESIGN.md prohibitions ran over the changed targets; the tracker's detector checkbox stays unticked.
 - Hosted Preview checks are Hashem's own review of the Preview; the protected host resets non-browser connections from this session.
+
+## Review
+
+- Implementation commits: `350063f`, `eef2abd`, `dbf73c3`, `e333740`, `e94f004`, `8358ac0` and `38f60e1`.
+- Preview: https://rivet-ebfqypj7c-nusairhashem04-gmailcoms-projects.vercel.app (GitHub deployment 6295612990, READY, built by the Vercel Git integration from review branch `review/ui-workflow-pass-7` at `8358ac0`, protected, synthetic mock data; the earlier deployment 6295389058 at `e94f004` is the same build without the invitation-route fix). Hosted checks could not run from this session (the protected host resets non-browser connections and the in-app browser pane did not render), so the hosted check is Hashem's own review; the equivalent local checks are recorded above.
+- Linux references: GitHub Actions run 34047242595 on the throwaway branch `tmp/pass-7-linux-refs` (deleted after download) generated and verified the eighteen `pass-7-*-390-linux.png` references and the realigned `pass-4-login-member-390-linux.png`.
+- Hashem's decision: pending. One consolidated correction batch follows the review; `main` is pushed only after approval, after a final fetch and integration.

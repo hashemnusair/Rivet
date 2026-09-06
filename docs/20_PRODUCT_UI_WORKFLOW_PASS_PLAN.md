@@ -381,50 +381,50 @@ Completion:
 
 ## Pass 7: Platform, authentication, and public product states
 
-**Status:** Not started
-**Baseline SHA:** To record
+**Status:** In review — implemented on `main` locally, awaiting Hashem's Preview review
+**Baseline SHA:** `b86f146`
 **Finish SHA:** To record
-**Preview:** To record
+**Preview:** https://rivet-ebfqypj7c-nusairhashem04-gmailcoms-projects.vercel.app (GitHub deployment 6295612990, READY, built by the Vercel Git integration from review branch `review/ui-workflow-pass-7` at `8358ac0`, protected, synthetic mock data; the earlier deployment 6295389058 at `e94f004` is the same build without the invitation-route fix)
 **Human approval:** Pending
 
 Platform routes:
 
-- [ ] `/platform`
-- [ ] `/platform/gyms`
-- [ ] `/platform/gyms/[gymId]`
-- [ ] `/platform/applications`
-- [ ] `/platform/billing`
-- [ ] `/platform/subscriptions`
-- [ ] `/platform/agreements`
-- [ ] `/platform/email-log`
-- [ ] `/platform/support`
+- [x] `/platform`
+- [x] `/platform/gyms`
+- [x] `/platform/gyms/[gymId]`
+- [x] `/platform/applications`
+- [x] `/platform/billing`
+- [x] `/platform/subscriptions`
+- [x] `/platform/agreements`
+- [x] `/platform/email-log`
+- [x] `/platform/support`
 
 Authentication, onboarding, and public product routes:
 
-- [ ] `/login`
-- [ ] `/login/gym`
-- [ ] `/login/gym/create`
-- [ ] `/login/admin`
-- [ ] `/login/accept-invitation`
-- [ ] `/signup`
-- [ ] `/onboarding/gym`
-- [ ] `/onboarding/agreement`
-- [ ] `/getting-started`
-- [ ] `/offers/[token]`
-- [ ] `/privacy`
-- [ ] `/terms`
-- [ ] Global error, unavailable, not-found, and offline states
+- [x] `/login`
+- [x] `/login/gym`
+- [x] `/login/gym/create`
+- [x] `/login/admin`
+- [x] `/login/accept-invitation`
+- [x] `/signup`
+- [x] `/onboarding/gym`
+- [x] `/onboarding/agreement`
+- [x] `/getting-started`
+- [x] `/offers/[token]`
+- [x] `/privacy`
+- [x] `/terms`
+- [x] Global error, unavailable, not-found, and offline states
 
 Workflow outcomes:
 
-- [ ] Portal identity is obvious before sign-in.
-- [ ] Authentication never shows an irrelevant role or workspace while identity loads.
-- [ ] Invitations and profile completion explain expiration, conflict, retry, and already-completed states.
-- [ ] Provisioning shows truthful progress and recovery without exposing internal machinery.
-- [ ] Platform money, subscription, legal, email, and support records share one administrative language.
-- [ ] Sensitive platform actions remain explicit, reason-gated, audited, and recoverable where possible.
-- [ ] Public offers and legal records remain readable and actionable on phones.
-- [ ] Error pages preserve context and provide a useful next action.
+- [x] Portal identity is obvious before sign-in.
+- [x] Authentication never shows an irrelevant role or workspace while identity loads.
+- [x] Invitations and profile completion explain expiration, conflict, retry, and already-completed states.
+- [x] Provisioning shows truthful progress and recovery without exposing internal machinery.
+- [x] Platform money, subscription, legal, email, and support records share one administrative language.
+- [x] Sensitive platform actions remain explicit, reason-gated, audited, and recoverable where possible.
+- [x] Public offers and legal records remain readable and actionable on phones.
+- [x] Error pages preserve context and provide a useful next action.
 
 Completion:
 
@@ -432,6 +432,8 @@ Completion:
 - [ ] Full pass gate passed.
 - [ ] Pass merged and deployed.
 - [ ] Finish evidence recorded here.
+
+Implementation and review evidence: [`docs/ui-evidence/pass-7/README.md`](ui-evidence/pass-7/README.md). Implementation commits: `350063f`, `eef2abd`, `dbf73c3`, `e333740`, `e94f004`, `8358ac0` and `38f60e1`. All listed surfaces were inspected at 360, 390, 768, 820, 1280 and 1440px with the administrator, owner and signed-out states. The live public offer cannot be reached in the mock Preview (seeded offers carry no public token and the mock database is per-tab memory), so its available, expired, accepted and declined states are verified with the offer component's fixtures while the browser suite checks the unavailable link; the shared onboarding checklist is left as Pass 4 approved it; the Impeccable skill is unavailable here, so the equivalent banned-pattern scan is recorded in the evidence README and the detector checkbox stays unticked.
 
 ## Final closure
 
