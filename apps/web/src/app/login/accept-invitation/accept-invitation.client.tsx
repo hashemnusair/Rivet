@@ -51,7 +51,7 @@ export function invitationErrorMessage(error: unknown): string {
 }
 
 function InvitationFrame({ children }: { children: ReactNode }) {
-  return <LoginLayout portal={PORTALS.staff} footer={<p className="text-center font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">Secure identity by Clerk · gym access issued by RIVET</p>}>{children}</LoginLayout>;
+  return <LoginLayout portal={PORTALS.staff} footer={<p className="text-center text-[12px] text-ink-3">Secure identity by Clerk · gym access issued by RIVET</p>}>{children}</LoginLayout>;
 }
 
 export function AcceptInvitation() {
@@ -151,6 +151,12 @@ export function AcceptInvitation() {
     return <InvitationFrame><InvitationError title={status === "expired" ? "Invitation expired" : "Invitation revoked"} body={invitationErrorMessage({ code: status })} /></InvitationFrame>;
   }
 
+  // Clerk marks a ticket complete once its account exists. Opened again while
+  // signed out, the link has nothing left to do except point at sign-in.
+  if (status === "complete" && authLoaded && !isSignedIn) {
+    return <InvitationFrame><InvitationError tone="done" title="This invitation was already accepted" body="Your gym account exists. Sign in with the invited email address to open the workspace; the invitation link itself is single-use." action="Sign in" /></InvitationFrame>;
+  }
+
   if (authLoaded && isSignedIn && status !== "complete") {
     return <InvitationFrame><InvitationConflict onSignOut={() => void signOut({ redirectUrl: window.location.href })} /></InvitationFrame>;
   }
@@ -160,8 +166,8 @@ export function AcceptInvitation() {
       <InvitationFrame>
         <div className="animate-fade-up">
           <div className="flex items-start gap-3.5">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper"><ShieldCheck className="size-5" /></span>
-            <div><p className="context-label">RIVET gym access</p><h1 className="mt-2 font-display text-[23px] font-semibold leading-tight tracking-tight">Create your owner account</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">Your invitation is verified. Set a password to open the gym workspace.</p></div>
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper" aria-hidden><ShieldCheck className="size-5" /></span>
+            <div><h1 className="font-display text-[23px] font-semibold leading-tight tracking-tight">Create your owner account</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">Your invitation is verified. Set a password to open the gym workspace.</p></div>
           </div>
           <form className="mt-7 grid gap-4" onSubmit={(event) => void submit(event)} noValidate>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -173,7 +179,7 @@ export function AcceptInvitation() {
             {error ? <p className="flex items-start gap-2 rounded-md border border-danger/25 bg-danger-bg px-3 py-2.5 text-[12px] leading-relaxed text-danger" role="alert"><CircleAlert className="mt-0.5 size-4 shrink-0" />{error}</p> : null}
             <Button type="submit" size="lg" className="mt-1 w-full" loading={signUpFetchStatus === "fetching"} disabled={signUpFetchStatus === "fetching"}>Open gym workspace <ArrowRight className="size-4" /></Button>
           </form>
-          <p className="mt-5 flex items-center gap-2 text-[11.5px] leading-relaxed text-ink-3"><LockKeyhole className="size-3.5 shrink-0" />This link is single-use and tied to the invited email address.</p>
+          <p className="mt-5 flex items-center gap-2 text-[12.5px] leading-relaxed text-ink-3"><LockKeyhole className="size-3.5 shrink-0" aria-hidden />This link is single-use and tied to the invited email address.</p>
         </div>
       </InvitationFrame>
     );
@@ -186,10 +192,19 @@ export function AcceptInvitation() {
   return <InvitationFrame><div className="flex min-h-56 flex-col items-center justify-center text-center" role="status" aria-live="polite"><div className="relative flex size-16 items-center justify-center"><span className="absolute inset-0 animate-ping rounded-full border border-line-3 opacity-30" aria-hidden /><span className="absolute inset-2 rounded-full bg-sunken" aria-hidden /><MailCheck className="relative size-7 text-signal" /></div><p className="mt-5 font-display text-[18px] font-semibold tracking-tight">{state === "success" ? "Invitation accepted" : "Verifying your invitation"}</p><p className="mt-1.5 text-[12.5px] text-ink-3">{state === "success" ? "Opening your workspace…" : "This only takes a moment…"}</p><AuthProgressBar className="mt-5 w-36" /></div></InvitationFrame>;
 }
 
-function InvitationError({ title, body }: { title: string; body: string }) {
-  return <div className="mt-7" role="alert"><div className="rounded-lg border border-danger/25 bg-danger-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-danger"><CircleAlert className="size-4" />{title}</p><p className="mt-2 text-[12.5px] leading-relaxed text-danger/90">{body}</p></div><Button asChild variant="secondary" className="mt-5 w-full" size="lg"><a href="/login">Back to sign in</a></Button></div>;
+function InvitationError({ title, body, tone = "error", action = "Back to sign in" }: { title: string; body: string; tone?: "error" | "done"; action?: string }) {
+  const done = tone === "done";
+  return (
+    <div className="mt-7" role={done ? "status" : "alert"}>
+      <div className={done ? "rounded-lg border border-line-2 bg-surface p-4" : "rounded-lg border border-danger/25 bg-danger-bg p-4"}>
+        <p className={done ? "flex items-center gap-2 text-[13px] font-semibold text-ink" : "flex items-center gap-2 text-[13px] font-semibold text-danger"}>{done ? <MailCheck className="size-4 text-ink-3" aria-hidden /> : <CircleAlert className="size-4" aria-hidden />}{title}</p>
+        <p className={done ? "mt-2 text-[12.5px] leading-relaxed text-ink-2" : "mt-2 text-[12.5px] leading-relaxed text-danger/90"}>{body}</p>
+      </div>
+      <Button asChild variant={done ? "primary" : "secondary"} className="mt-5 w-full" size="lg"><a href="/login">{action}</a></Button>
+    </div>
+  );
 }
 
 function InvitationConflict({ onSignOut }: { onSignOut: () => void }) {
-  return <div className="mt-7"><div className="rounded-lg border border-warning/30 bg-warning-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><CircleAlert className="size-4" />You are already signed in</p><p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep/90">Sign out first so this invitation is accepted by the invited email, not the account currently open in this browser.</p></div><Button className="mt-5 w-full" size="lg" onClick={onSignOut}>Sign out and continue <ArrowRight className="size-4" /></Button></div>;
+  return <div className="mt-7" role="status"><div className="rounded-lg border border-warning/30 bg-warning-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><CircleAlert className="size-4" aria-hidden />You are already signed in</p><p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep/90">Sign out first so this invitation is accepted by the invited email, not the account currently open in this browser.</p></div><Button className="mt-5 w-full" size="lg" onClick={onSignOut}>Sign out and continue <ArrowRight className="size-4" /></Button></div>;
 }

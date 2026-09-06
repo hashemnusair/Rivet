@@ -58,7 +58,7 @@ function SignedInIdentity() {
     <div className="mt-6 flex items-center gap-3 rounded-lg border border-line-2 bg-surface p-3">
       <Monogram name={user.fullName ?? label} size="sm" />
       <span className="min-w-0 flex-1">
-        <span className="block text-[12px] font-medium text-ink-4">Signed in as</span>
+        <span className="block text-[12px] font-medium text-ink-3">Signed in as</span>
         <span className="block truncate text-[13px] font-medium text-ink">{label}</span>
       </span>
       <Button variant="ghost" size="sm" onClick={() => void signOut({ redirectUrl: "/login" })}>
@@ -83,8 +83,8 @@ function PortalSignInFallback({ audience, mode = "sign-in" }: { audience: Audien
       portal={portal}
       mode={mode}
       footer={
-        <p className="text-center font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">
-          {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · data by Convex"}
+        <p className="text-center text-[12px] text-ink-3">
+          {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · application data by Convex"}
         </p>
       }
     >
@@ -153,15 +153,15 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
       portal={portal}
       mode={mode}
       footer={
-        <p className="text-center font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">
-          {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · data by Convex"}
+        <p className="text-center text-[12px] text-ink-3">
+          {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · application data by Convex"}
         </p>
       }
     >
       <div className="animate-fade-up">
         {audience !== "account" ? (
-          <Link href="/login" className="flex w-fit items-center gap-2 text-[12px] text-ink-3 transition-colors hover:text-ink">
-            <ArrowLeft className="size-3.5" /> Back to sign in
+          <Link href="/login" className="flex min-h-8 w-fit items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
+            <ArrowLeft className="size-3.5" aria-hidden /> Back to sign in
           </Link>
         ) : null}
 
@@ -333,7 +333,7 @@ function StaffRoles({ loading, onEnter }: { loading: boolean; onEnter: (role: Ro
                 <span className="text-[12px] font-medium text-ink-3">{ROLE_LABELS[item.role]}</span>
               </span>
               <span className="text-[13.5px] font-medium text-ink">{item.name}</span>
-              <span className="text-[11.5px] leading-snug text-ink-3">{item.scope}</span>
+              <span className="text-[12px] leading-snug text-ink-3">{item.scope}</span>
             </button>
           );
         })}
@@ -418,7 +418,7 @@ function AdminEntry({ onEnter }: { onEnter: () => void }) {
     >
       <div className="rounded-lg border border-line-2 bg-surface p-4">
         <p className="flex items-center gap-2 text-[13px] font-medium">
-          <ShieldCheck className="size-4 text-signal" /> Restricted console
+          <ShieldCheck className="size-4 text-ink-3" aria-hidden /> Restricted console
         </p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">
           Tenant management, subscriptions, billing and support across every gym on RIVET. Opening the preview does not

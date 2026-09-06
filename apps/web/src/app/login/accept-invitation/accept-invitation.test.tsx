@@ -115,6 +115,15 @@ describe("accept gym invitation", () => {
     });
   });
 
+  it("tells a signed-out visitor that a completed invitation only needs sign-in", () => {
+    state.search = new URLSearchParams("__clerk_ticket=ticket-1&__clerk_status=complete");
+    render(<AcceptInvitation />);
+    expect(screen.getByRole("status")).toHaveTextContent("This invitation was already accepted");
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(screen.queryByText(/Verifying your invitation/)).not.toBeInTheDocument();
+    expect(state.replace).not.toHaveBeenCalled();
+  });
+
   it("keeps invitation failures actionable without exposing the ticket", () => {
     expect(invitationErrorMessage({ code: "invitation_expired" })).toMatch(/expired/i);
     expect(invitationErrorMessage({ code: "email_address_mismatch", message: "ticket=secret" })).toMatch(/different email/i);

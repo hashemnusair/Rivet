@@ -154,7 +154,7 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
         <div className="mt-4 grid gap-2 text-left">
           {identity.memberships.map((membership) => (
             <Button key={membership.organizationId} variant="secondary" className="h-auto justify-between py-3 text-left" onClick={() => void choose(membership.organizationId)} disabled={Boolean(busy)} loading={busy === membership.organizationId}>
-              <span><span className="block font-medium">{membership.organizationName}</span><span className="mt-0.5 block text-[11px] text-ink-3">{membership.role}</span></span>
+              <span><span className="block font-medium">{membership.organizationName}</span><span className="mt-0.5 block text-[12px] text-ink-3">{membership.role}</span></span>
               <span aria-hidden>→</span>
             </Button>
           ))}
@@ -241,7 +241,7 @@ function BranchSelection({ identity, membership }: { identity: RivetIdentity; me
         <div className="mt-4 grid gap-2 text-left">
           {membership.branches.map((branch) => (
             <Button key={branch.id} variant="secondary" className="h-auto justify-between py-3 text-left" onClick={() => void choose(branch.id)} disabled={Boolean(busy)} loading={busy === branch.id}>
-              <span><span className="block font-medium">{branch.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">Code {branch.code}</span></span>
+              <span><span className="block font-medium">{branch.name}</span><span className="mt-0.5 block text-[12px] text-ink-3">Code <span className="font-mono">{branch.code}</span></span></span>
               <span aria-hidden>→</span>
             </Button>
           ))}

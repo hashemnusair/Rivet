@@ -5,7 +5,6 @@ import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils/cn";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
 import type { Audience, Portal } from "./portals";
 
@@ -67,25 +66,25 @@ export function LoginLayout({
           </p>
         </div>
 
-        <div className="flex items-center justify-between border-t border-night-line pt-5 font-mono text-[11px] tracking-[0.12em] text-night-ink-3">
-          <span>RIVET · GYM REVENUE &amp; OPERATIONS</span>
-          <span>AMMAN · JOD</span>
+        <div className="flex items-center justify-between gap-4 border-t border-night-line pt-5 text-[12px] font-medium text-night-ink-3">
+          <span>RIVET · Gym revenue &amp; operations</span>
+          <span>Amman · JOD</span>
         </div>
       </div>
 
       <div className="flex flex-col bg-paper px-5 py-8 sm:px-8">
         <div className="flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 text-[12px] text-ink-3 transition-colors hover:text-ink">
-            <ArrowLeft className="size-3.5" /> rivet.jo
+          <Link href="/" className="flex min-h-8 items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
+            <ArrowLeft className="size-3.5" aria-hidden /> rivet.jo
           </Link>
           {/* Members can create accounts here; gym access is issued by RIVET
               after an application is reviewed. */}
           {portal && mode === "sign-up" ? (
-            <Link href={portal.href} className="text-[12px] font-medium text-ink-2 transition-colors hover:text-ink">
+            <Link href={portal.href} className="flex min-h-8 items-center text-[12.5px] font-medium text-ink-2 transition-colors hover:text-ink">
               Already have an account? Sign in
             </Link>
           ) : portal?.signUpUrl ? (
-            <Link href={portal.signUpUrl} className="text-[12px] font-medium text-ink-2 transition-colors hover:text-ink">
+            <Link href={portal.signUpUrl} className="flex min-h-8 items-center text-[12.5px] font-medium text-ink-2 transition-colors hover:text-ink">
               Create a member account
             </Link>
           ) : null}
@@ -101,7 +100,7 @@ export function LoginLayout({
         <div className="mx-auto w-full max-w-md border-t border-line pt-4">
           {footer ?? (
             <div className="space-y-2 text-center">
-              <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
+              <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
                 <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="hover:text-ink" dir="ltr">WhatsApp {RIVET_CONTACT.phoneDisplay}</a>
                 <span aria-hidden>·</span>
                 <a href={RIVET_CONTACT.instagramHref} target="_blank" rel="noreferrer" className="hover:text-ink" dir="ltr">{RIVET_CONTACT.instagramHandle}</a>
@@ -113,7 +112,7 @@ export function LoginLayout({
                   </span>
                 ))}
               </p>
-              <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">
+              <p className="text-[12px] text-ink-3">
                 Secure identity by Clerk · application data by Convex
               </p>
             </div>
@@ -127,12 +126,7 @@ export function LoginLayout({
 export function PortalHeading({ portal, mode = "sign-in" }: { portal: Portal; mode?: "sign-in" | "sign-up" }) {
   return (
     <div className="flex items-start gap-3.5">
-      <span
-        className={cn(
-          "flex size-11 shrink-0 items-center justify-center rounded-lg border",
-          portal.id === "admin" ? "border-line-2 bg-surface text-signal" : "border-transparent bg-ink text-paper",
-        )}
-      >
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper" aria-hidden>
         <portal.icon className="size-5" />
       </span>
       <div className="min-w-0">

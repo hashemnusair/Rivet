@@ -187,13 +187,13 @@ export function PasswordSignIn({ redirectUrl = "/login" }: { redirectUrl?: strin
         ? "Check your phone"
         : "Two-step verification";
     return (
-      <div className="mt-7 rounded-xl border border-line-2 bg-surface px-5 py-6 shadow-[0_18px_50px_rgba(21,20,15,0.06)] sm:px-7">
+      <div className="mt-7 rounded-lg border border-line-2 bg-surface px-5 py-6 sm:px-7">
         <div className="text-center">
           <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-sunken text-ink">
             {verification === "email_code" ? <MailCheck className="size-5" /> : <ShieldCheck className="size-5" />}
           </span>
           <h2 className="mt-4 font-display text-[21px] font-semibold tracking-tight">{title}</h2>
-          <p className="mx-auto mt-2 max-w-sm text-[12.5px] leading-relaxed text-ink-3">
+          <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-ink-2">
             {sentCode
               ? `We sent a six-digit security code to your ${verification === "email_code" ? "email address" : "phone number"}. Enter it below to finish signing in.`
               : verification === "totp"
@@ -231,8 +231,8 @@ export function PasswordSignIn({ redirectUrl = "/login" }: { redirectUrl?: strin
             </button>
           ) : null}
         </div>
-        <p className="mt-4 flex items-center justify-center gap-1.5 text-center font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-4">
-          <LockKeyhole className="size-3" /> Secure verification by Clerk
+        <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[12px] text-ink-3">
+          <LockKeyhole className="size-3.5" aria-hidden /> Secure verification by Clerk
         </p>
       </div>
     );

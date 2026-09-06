@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Building2, Check, CheckCircle2, Mail, Phone, RefreshCcw } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, Mail, Phone, RefreshCcw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PublicHeader } from "@/components/public/public-shell";
@@ -98,55 +98,52 @@ export default function GymApplicationPage() {
   return (
     <div className="min-h-screen bg-paper">
       <PublicHeader />
-      <main className="marketing-grid px-5 py-10 sm:px-8 lg:px-12 lg:py-16">
+      <main className="px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
         <div className="mx-auto max-w-5xl">
           {result ? (
             <ApplicationReceived result={result} gymName={gymName} email={email} />
           ) : (
             <>
-              <div className="mb-8 max-w-2xl">
-                <p className="context-label">Partner with RIVET</p>
-                <h1 className="mt-3 text-[32px] font-semibold tracking-tight sm:text-[38px]">Send a gym application.</h1>
-                <p className="mt-4 text-[14px] leading-relaxed text-ink-2">
+              <div className="max-w-2xl">
+                <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight">Send a gym application.</h1>
+                <p className="mt-2 text-[14px] leading-relaxed text-ink-2">
                   Tell us about your gym and the team behind it. We review every application, contact you directly, and create access for approved gyms.
                 </p>
               </div>
 
-              <form onSubmit={submit} data-billing-interval={billingInterval} className="grid gap-5 border border-ink bg-surface p-6 shadow-pop sm:p-9 lg:grid-cols-[1fr_0.9fr] lg:p-12">
+              <form onSubmit={submit} data-billing-interval={billingInterval} className="mt-6 grid gap-6 rounded-lg border border-line bg-surface p-5 sm:p-8 lg:grid-cols-[1fr_0.9fr] lg:gap-10">
                 <label htmlFor="application-website" className="absolute -start-[9999px] h-px w-px overflow-hidden" aria-hidden="true">
                   Website
                   <input id="application-website" name="website" type="text" tabIndex={-1} autoComplete="off" />
                 </label>
                 <section>
-                  <p className="context-label">Your details</p>
-                  <h2 className="mt-2 text-[21px] font-semibold">Who should we contact?</h2>
-                  <div className="mt-7 grid gap-4">
+                  <h2 className="text-[15px] font-semibold">Who should we contact?</h2>
+                  <div className="mt-4 grid gap-4">
                     <Field label="Owner name" htmlFor="application-owner" error={errors.ownerName} required>
                       <Input id="application-owner" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="Omar Khalil" autoComplete="name" disabled={!hydrated} />
                     </Field>
                     <Field label="Email address" htmlFor="application-email" error={errors.email} hint="We’ll send your application confirmation here." required>
-                      <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" disabled={!hydrated} /></div>
+                      <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                     <Field label="Contact number" htmlFor="application-phone" error={errors.contactNumber} hint="Use a number where our team can reach you." required>
-                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="+962 79 555 0194" autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
+                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="+962 79 555 0194" autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                   </div>
 
-                  <div className="mt-8 border-t border-line pt-6">
-                    <p className="flex items-center gap-2 text-[12px] text-ink-2"><Building2 className="size-4 text-signal" /> Gym access is issued by RIVET after approval.</p>
-                    <p className="mt-2 text-[11.5px] leading-relaxed text-ink-3">There is no self-serve gym account. Members and gym teams with access use the sign-in portal.</p>
+                  <div className="mt-6 border-t border-line pt-5">
+                    <p className="text-[13px] font-medium text-ink">Gym access is issued by RIVET after approval.</p>
+                    <p className="mt-1 text-[12.5px] leading-relaxed text-ink-3">There is no self-serve gym account. Members and gym teams with access use the sign-in portal.</p>
                   </div>
                 </section>
 
-                <section className="border-t border-line pt-6 lg:border-s lg:border-t-0 lg:ps-9 lg:pt-0">
-                  <p className="context-label">Your gym</p>
-                  <h2 className="mt-2 text-[21px] font-semibold">Which plan fits?</h2>
-                  <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-7" required>
+                <section className="border-t border-line pt-6 lg:border-s lg:border-t-0 lg:ps-10 lg:pt-0">
+                  <h2 className="text-[15px] font-semibold">Which plan fits?</h2>
+                  <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-4" required>
                     <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" disabled={!hydrated} />
                   </Field>
-                  <fieldset className="mt-6">
-                    <legend className="text-[12px] font-medium">Billing cadence</legend>
-                    <div role="tablist" aria-label="Billing interval" className="mt-2 grid grid-cols-2 rounded-md border border-line bg-sunken p-1">
+                  <fieldset className="mt-5">
+                    <legend className="text-[13px] font-medium text-ink-2">Billing cadence</legend>
+                    <div role="tablist" aria-label="Billing interval" className="mt-1.5 grid grid-cols-2 rounded-md border border-line bg-sunken p-1">
                       {(["monthly", "annual"] as const).map((interval) => {
                         const selected = billingInterval === interval;
                         return (
@@ -156,7 +153,8 @@ export default function GymApplicationPage() {
                             role="tab"
                             aria-selected={selected}
                             onClick={() => setBillingInterval(interval)}
-                            className={cn("rounded px-3 py-2 text-[11.5px] font-medium transition-colors", selected ? "bg-ink text-paper" : "text-ink-3 hover:text-ink")}
+                            data-touch-target
+                            className={cn("rounded-sm px-3 py-2 text-[12.5px] font-medium transition-colors", selected ? "bg-ink text-paper" : "text-ink-2 hover:text-ink")}
                           >
                             {interval === "monthly" ? "Monthly" : "Annual · Save 20%"}
                           </button>
@@ -165,25 +163,29 @@ export default function GymApplicationPage() {
                     </div>
                   </fieldset>
                   {usingFallbackCatalog ? (
-                    <div className="mt-6 flex items-start gap-2 border border-warning/30 bg-warning-bg px-3 py-2.5 text-[11.5px] text-warning-deep" role="status">
+                    <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning-bg px-3 py-2.5 text-[12.5px] text-warning-deep" role="status">
                       <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                       <span className="min-w-0 flex-1">{experienceStatus === "error" ? (experienceError ?? "The live catalog is temporarily unavailable.") : "The live catalog is loading; approved launch choices are shown for now."}</span>
                       <Button type="button" variant="ghost" size="sm" onClick={retryExperience} className="-my-1 shrink-0 px-1.5 text-warning-deep" aria-label="Retry loading plans"><RefreshCcw /></Button>
                     </div>
                   ) : null}
                   <div className="mt-3 grid gap-2" role="radiogroup" aria-label="RIVET plan">
-                    {plans.map((item) => (
-                      <button key={item.name} type="button" role="radio" aria-checked={plan === item.name} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", plan === item.name ? "border-signal bg-signal/[0.035]" : "border-line hover:border-ink")}>
-                        <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", plan === item.name ? "border-signal bg-signal text-white" : "border-line-3")}>{plan === item.name ? <Check className="size-3" /> : null}</span>
-                        <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[11px] text-ink-3">JD {formatJodMinor(calculatePlanPrice(item, billingInterval).effectiveMonthlyMinor)} / month{billingInterval === "annual" ? ` · JD ${formatJodMinor(calculatePlanPrice(item, billingInterval).annualTotalMinor)} billed annually` : ""}</span><span className="mt-1 block text-[12px] text-ink-4">{publicPlanFeatures(item).slice(-1)[0]}</span></span>
-                      </button>
-                    ))}
+                    {plans.map((item) => {
+                      const selected = plan === item.name;
+                      const price = calculatePlanPrice(item, billingInterval);
+                      return (
+                        <button key={item.name} type="button" role="radio" aria-checked={selected} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 rounded-md border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", selected ? "border-ink bg-sunken/60" : "border-line-2 hover:border-line-3")}>
+                          <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-ink bg-ink text-paper" : "border-line-3")} aria-hidden>{selected ? <Check className="size-3" /> : null}</span>
+                          <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[12.5px] text-ink-2">JD {formatJodMinor(price.effectiveMonthlyMinor)} / month{billingInterval === "annual" ? ` · JD ${formatJodMinor(price.annualTotalMinor)} billed annually` : ""}</span><span className="mt-0.5 block text-[12px] text-ink-3">{publicPlanFeatures(item).slice(-1)[0]}</span></span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <p className="mt-4 text-[11px] leading-relaxed text-ink-3">Plan and billing cadence are starting points for the conversation, not a payment or activation.</p>
-                  {formError ? <p className="mt-5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
-                  <Button type="submit" variant="signal" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-7 w-full">Send gym application <ArrowRight /></Button>
-                  <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4">Terms of service</Link> and <Link href="/privacy" className="underline underline-offset-4">Privacy policy</Link>. The subscription agreement is signed later, inside RIVET, by the gym owner.</p>
-                  <p className="mt-4 text-center text-[11px] text-ink-3">Already have RIVET access? <Link href="/login" className="font-medium text-ink-2 underline underline-offset-4">Sign in</Link>.</p>
+                  <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">Plan and billing cadence are starting points for the conversation, not a payment or activation.</p>
+                  {formError ? <p className="mt-4 rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
+                  <Button type="submit" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-6 w-full">Send gym application <ArrowRight /></Button>
+                  <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4 hover:text-ink">Terms of service</Link> and <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">Privacy policy</Link>. The subscription agreement is signed later, inside RIVET, by the gym owner.</p>
+                  <p className="mt-3 text-center text-[12.5px] text-ink-3">Already have RIVET access? <Link href="/login" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">Sign in</Link>.</p>
                 </section>
               </form>
             </>
@@ -196,17 +198,17 @@ export default function GymApplicationPage() {
 
 function ApplicationReceived({ result, gymName, email }: { result: SubmitGymApplicationResult; gymName: string; email: string }) {
   return (
-    <div className="mx-auto max-w-xl border border-ink bg-surface p-8 text-center shadow-pop sm:p-12">
-      <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-success-bg text-success"><CheckCircle2 className="size-8" /></span>
-      <p className="mt-7 context-label">Application received</p>
-      <h1 className="mt-3 text-[32px] font-semibold tracking-tight">We’ll be in touch soon.</h1>
-      <p className="mt-4 text-[13.5px] leading-relaxed text-ink-2">We received the application for <strong>{gymName || "your gym"}</strong>. We sent a confirmation to <strong>{email}</strong> and our team will contact you after review.</p>
-      {result.duplicate ? <p className="mt-4 text-[11.5px] text-ink-3">This application is already in our review queue.</p> : null}
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
-        <Button asChild variant="signal" size="lg"><Link href="/login">Sign in <ArrowRight /></Link></Button>
+    <div className="mx-auto max-w-xl rounded-lg border border-line bg-surface p-6 text-center sm:p-10" role="status">
+      <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-bg text-success-deep" aria-hidden><CheckCircle2 className="size-6" /></span>
+      <p className="mt-5 text-[12px] font-medium text-ink-3">Application received</p>
+      <h1 className="mt-2 font-display text-[26px] font-semibold leading-tight tracking-tight">We’ll be in touch soon.</h1>
+      <p className="mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>. We sent a confirmation to <strong className="text-ink">{email}</strong> and our team will contact you after review.</p>
+      {result.duplicate ? <p className="mt-3 text-[12.5px] text-ink-3">This application is already in our review queue.</p> : null}
+      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        <Button asChild size="lg"><Link href="/login">Sign in <ArrowRight /></Link></Button>
         <Button asChild variant="secondary" size="lg"><Link href="/">Return home</Link></Button>
       </div>
-      <p className="mt-5 text-[11px] text-ink-3">Gym accounts are created and issued by RIVET after approval.</p>
+      <p className="mt-4 text-[12.5px] text-ink-3">Gym accounts are created and issued by RIVET after approval.</p>
     </div>
   );
 }
