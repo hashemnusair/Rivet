@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { toast } from "sonner";
-import { ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox, Switch } from "@/components/ui/switch";
-import { SettingsPanel, SettingsSaveBar } from "@/features/settings/settings-layout";
+import { SettingsPanel, SettingsSaveBar, SettingsSection, SettingsToggleRow, SettingsUnitInput } from "@/features/settings/settings-layout";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import type { OperationalPolicies, WeekdayKey } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 
 const WEEKDAY_ROWS: Array<{ key: WeekdayKey; label: string }> = [
@@ -175,20 +176,19 @@ function useOperationalPoliciesDraft() {
   return { settingsQuery, policies, setPolicies, dirty, discard, markSaved };
 }
 
-function NumberSetting({ label, unit, className, ...props }: ComponentProps<typeof Input> & { label: string; unit: string }) {
+/** A numeric rule with its unit inside the control: "Expiry warning" · 7 days. */
+function NumberSetting({ label, unit, hint, ...props }: Omit<ComponentProps<typeof Input>, "type"> & { label: string; unit: string; hint?: string }) {
   return (
-    <Field label={label}>
-      <div className="relative">
-        <Input {...props} type="number" aria-label={`${label}, ${unit}`} className={cn("pe-16", className)} />
-        <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-[11px] text-ink-3" aria-hidden>{unit}</span>
-      </div>
+    <Field label={label} hint={hint}>
+      <SettingsUnitInput {...props} type="number" inputMode="numeric" unit={unit} aria-label={`${label}, ${unit}`} />
     </Field>
   );
 }
 
-function CompactToggle({ label, checked, onCheckedChange, disabled }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void; disabled?: boolean }) {
+/** A switch in a panel header that turns the fields beneath it on or off. */
+function HeaderToggle({ label, checked, onCheckedChange, disabled }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void; disabled?: boolean }) {
   return (
-    <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-[12px] font-medium text-ink-2">
+    <label className="inline-flex min-h-9 cursor-pointer items-center gap-2.5 text-[13px] font-medium text-ink">
       <span>{label}</span>
       <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} aria-label={label} />
     </label>
@@ -199,13 +199,24 @@ function SectionLead({ title, description, toggle }: { title: string; descriptio
   return (
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
-        <h3 className="text-[13.5px] font-semibold text-ink">{title}</h3>
-        <p className="mt-1 max-w-2xl text-[11.5px] leading-5 text-ink-3">{description}</p>
+        <h4 className="text-[13.5px] font-semibold text-ink">{title}</h4>
+        <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-ink-3">{description}</p>
       </div>
       {toggle}
     </div>
   );
 }
+
+/** Fields that a header switch governs: still readable when off, clearly inactive. */
+function Governed({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  return (
+    <fieldset disabled={!enabled} aria-disabled={!enabled} className={cn("min-w-0 transition-opacity", !enabled && "opacity-55")}>
+      {children}
+    </fieldset>
+  );
+}
+
+const RULES_DESCRIPTION = "The rules the desk, the member app and the automations follow. They apply to every branch and are enforced by the server.";
 
 export function OperationalRulesSection() {
   const invalidate = useInvalidate();
@@ -219,8 +230,8 @@ export function OperationalRulesSection() {
     onError: (error) => toast.error(isApiError(error) ? error.message : "Could not save operational rules."),
   });
 
-  if (settingsQuery.isLoading || !policies) return <Skeleton className="h-96 w-full" />;
-  if (settingsQuery.isError) return <ErrorState onRetry={() => settingsQuery.refetch()} />;
+  if (settingsQuery.isError) return <SettingsSection title="Operational rules" description={RULES_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading || !policies) return <SettingsSection title="Operational rules" description={RULES_DESCRIPTION}><Skeleton className="h-96 w-full" /></SettingsSection>;
 
   const updateEntry = <K extends keyof OperationalPolicies["entry"]>(key: K, value: OperationalPolicies["entry"][K]) =>
     setPolicies((current) => current ? { ...current, entry: { ...current.entry, [key]: value } } : current);
@@ -238,13 +249,14 @@ export function OperationalRulesSection() {
     await save.mutateAsync(policies);
     markSaved(policies);
   };
+  const lastHourOptions = Array.from({ length: 24 }, (_, index) => index + 1);
 
   return (
-    <div className="mx-auto max-w-5xl pb-4">
+    <SettingsSection title="Operational rules" description={RULES_DESCRIPTION}>
       <div className="space-y-4">
-        <SettingsPanel title="Entry and access" description="Rules Convex checks for every QR scan and manual check-in.">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Outstanding balance">
+        <SettingsPanel title="Entry and access" description="Checked for every QR scan and manual check-in.">
+          <FieldGrid className="md:grid-cols-3">
+            <Field label="Outstanding balance" hint="What happens when a member with a balance due scans in.">
               <Select value={policies.entry.outstandingBalance} onValueChange={(value) => updateEntry("outstandingBalance", value as OperationalPolicies["entry"]["outstandingBalance"])}>
                 <SelectTrigger aria-label="Outstanding balance policy"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -254,21 +266,20 @@ export function OperationalRulesSection() {
                 </SelectContent>
               </Select>
             </Field>
-            <NumberSetting label="Expiry warning" unit="days" min={0} max={30} value={policies.entry.expiryWarningDays} onChange={(event) => updateEntry("expiryWarningDays", Number(event.target.value))} />
-            <NumberSetting label="Duplicate scan window" unit="min" min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onChange={(event) => updateEntry("duplicateScanWindowMinutes", Number(event.target.value))} />
-          </div>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-            <div><p className="text-[13px] font-medium text-ink">Enforce branch hours</p><p className="mt-0.5 text-[11.5px] text-ink-3">Outside-hours entries require a manager override.</p></div>
-            <Switch checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} aria-label="Enforce branch hours" />
+            <NumberSetting label="Expiry warning" unit="days" hint="Warn the desk this many days before a membership ends." min={0} max={30} value={policies.entry.expiryWarningDays} onChange={(event) => updateEntry("expiryWarningDays", Number(event.target.value))} />
+            <NumberSetting label="Duplicate scan window" unit="min" hint="A second scan inside this window is ignored." min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onChange={(event) => updateEntry("duplicateScanWindowMinutes", Number(event.target.value))} />
+          </FieldGrid>
+          <div className="mt-4 border-t border-line">
+            <SettingsToggleRow label="Enforce branch hours" hint="Outside-hours entries require a manager override. Hours are set under Hours & trials." checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} />
           </div>
         </SettingsPanel>
 
         <SettingsPanel
           title="Class booking"
-          description="Control self-booking, plan eligibility, waitlists, and attendance follow-up."
-          control={<CompactToggle label="Member booking" checked={policies.classBooking.enabled} onCheckedChange={(value) => updateClassBooking("enabled", value)} />}
+          description="Self-booking from the member app, plan eligibility, waitlists and attendance follow-up."
+          control={<HeaderToggle label="Member booking" checked={policies.classBooking.enabled} onCheckedChange={(value) => updateClassBooking("enabled", value)} />}
         >
-          <fieldset disabled={!policies.classBooking.enabled} className={cn("transition-opacity", !policies.classBooking.enabled && "opacity-55")}>
+          <Governed enabled={policies.classBooking.enabled}>
             <FieldGrid className="md:grid-cols-2 xl:grid-cols-4">
               <Field label="Membership eligibility">
                 <Select value={policies.classBooking.eligibilityMode} onValueChange={(value) => updateClassBooking("eligibilityMode", value as OperationalPolicies["classBooking"]["eligibilityMode"])} disabled={!policies.classBooking.enabled}>
@@ -282,37 +293,54 @@ export function OperationalRulesSection() {
             </FieldGrid>
             {policies.classBooking.eligibilityMode === "selected_plans" ? (
               <div className="mt-5 border-t border-line pt-4">
-                <p className="text-[12.5px] font-medium text-ink">Plans that include classes</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{plansQuery.data?.items.map((plan) => { const checked = policies.classBooking.eligiblePlanIds.includes(plan.id); return <label key={plan.id} className="flex min-h-11 cursor-pointer items-center justify-between gap-2 rounded-md bg-sunken px-3 py-2 text-[12px]"><span>{plan.name}</span><Switch checked={checked} onCheckedChange={(value) => updateClassBooking("eligiblePlanIds", value ? [...policies.classBooking.eligiblePlanIds, plan.id] : policies.classBooking.eligiblePlanIds.filter((id) => id !== plan.id))} aria-label={`${plan.name} includes classes`} /></label>; })}</div>
+                <p className="text-[13.5px] font-medium text-ink">Plans that include classes</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-ink-3">Members on other plans can still be booked by staff.</p>
+                <div className="mt-2 divide-y divide-line sm:grid sm:grid-cols-2 sm:gap-x-8 sm:divide-y-0 lg:grid-cols-3">
+                  {plansQuery.data?.items.map((plan) => (
+                    <SettingsToggleRow key={plan.id} label={plan.name} checked={policies.classBooking.eligiblePlanIds.includes(plan.id)} onCheckedChange={(value) => updateClassBooking("eligiblePlanIds", value ? [...policies.classBooking.eligiblePlanIds, plan.id] : policies.classBooking.eligiblePlanIds.filter((id) => id !== plan.id))} />
+                  ))}
+                </div>
               </div>
             ) : null}
-            <div className="mt-5 grid gap-4 border-t border-line pt-4 md:grid-cols-[minmax(0,1fr)_220px_minmax(0,1fr)] md:items-end">
-              <div className="flex min-h-9 items-center justify-between gap-3"><div><p className="text-[13px] font-medium text-ink">Waitlist</p><p className="mt-0.5 text-[11.5px] text-ink-3">Promote the earliest waiting member automatically.</p></div><Switch checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} aria-label="Class waitlist" /></div>
-              <NumberSetting label="Waitlist limit" unit="members" min={1} max={200} value={policies.classBooking.waitlistSize} disabled={!policies.classBooking.waitlistEnabled} onChange={(event) => updateClassBooking("waitlistSize", Number(event.target.value))} />
-              <div className="flex min-h-9 items-center justify-between gap-3"><div><p className="text-[13px] font-medium text-ink">Track no-shows</p><p className="mt-0.5 text-[11.5px] text-ink-3">Count only after attendance is finalized.</p></div><Switch checked={policies.classBooking.noShowTracking} onCheckedChange={(value) => updateClassBooking("noShowTracking", value)} aria-label="Track class no-shows" /></div>
-              <div className="sm:col-span-2 border-t border-line pt-3">
-                <p className="text-[13px] font-medium text-ink">Calendar hours</p>
-                <p className="mt-0.5 text-[11.5px] text-ink-3">The visible day on the classes calendar. Automatic hugs your first and last class.</p>
-                <div className="mt-2 grid grid-cols-2 gap-3">
-                  <label className="grid gap-1 text-[11px] text-ink-3">First hour
-                    <select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={policies.classBooking.calendarStartHour ?? ""} onChange={(event) => updateClassBooking("calendarStartHour", event.target.value === "" ? undefined : Number(event.target.value))} aria-label="Calendar first hour">
-                      <option value="">Automatic</option>
-                      {Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}
-                    </select>
-                  </label>
-                  <label className="grid gap-1 text-[11px] text-ink-3">Last hour
-                    <select className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={policies.classBooking.calendarEndHour ?? ""} onChange={(event) => updateClassBooking("calendarEndHour", event.target.value === "" ? undefined : Number(event.target.value))} aria-label="Calendar last hour">
-                      <option value="">Automatic</option>
-                      {Array.from({ length: 24 }, (_, index) => { const hour = index + 1; return <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>; })}
-                    </select>
-                  </label>
+            <div className="mt-5 grid gap-x-8 border-t border-line pt-1 lg:grid-cols-2">
+              <div className="divide-y divide-line">
+                <SettingsToggleRow label="Waitlist" hint="Promote the earliest waiting member automatically when a place opens." checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} />
+                <div className="py-3">
+                  <NumberSetting label="Waitlist limit" unit="members" className="max-w-56" min={1} max={200} value={policies.classBooking.waitlistSize} disabled={!policies.classBooking.waitlistEnabled} onChange={(event) => updateClassBooking("waitlistSize", Number(event.target.value))} />
+                </div>
+              </div>
+              <div className="divide-y divide-line">
+                <SettingsToggleRow label="Track no-shows" hint="Count a no-show only after attendance is finalized." checked={policies.classBooking.noShowTracking} onCheckedChange={(value) => updateClassBooking("noShowTracking", value)} />
+                <div className="py-3">
+                  <p className="text-[13px] font-medium text-ink">Calendar hours</p>
+                  <p className="mt-0.5 text-[12px] leading-5 text-ink-3">The visible day on the classes calendar. Automatic hugs your first and last class.</p>
+                  <FieldGrid className="mt-2 grid-cols-2">
+                    <Field label="First hour">
+                      <Select value={policies.classBooking.calendarStartHour === undefined ? "auto" : String(policies.classBooking.calendarStartHour)} onValueChange={(value) => updateClassBooking("calendarStartHour", value === "auto" ? undefined : Number(value))} disabled={!policies.classBooking.enabled}>
+                        <SelectTrigger aria-label="Calendar first hour"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Automatic</SelectItem>
+                          {Array.from({ length: 24 }, (_, hour) => <SelectItem key={hour} value={String(hour)}>{String(hour).padStart(2, "0")}:00</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Last hour">
+                      <Select value={policies.classBooking.calendarEndHour === undefined ? "auto" : String(policies.classBooking.calendarEndHour)} onValueChange={(value) => updateClassBooking("calendarEndHour", value === "auto" ? undefined : Number(value))} disabled={!policies.classBooking.enabled}>
+                        <SelectTrigger aria-label="Calendar last hour"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Automatic</SelectItem>
+                          {lastHourOptions.map((hour) => <SelectItem key={hour} value={String(hour)}>{String(hour).padStart(2, "0")}:00</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </FieldGrid>
                 </div>
               </div>
             </div>
-          </fieldset>
+          </Governed>
         </SettingsPanel>
 
-        <SettingsPanel title="Membership and retention" description="Set the lifecycle guardrails and when the team should contact members.">
+        <SettingsPanel title="Membership and retention" description="Lifecycle guardrails, and when the team should contact members.">
           <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-line rtl:lg:divide-x-reverse">
             <section>
               <SectionLead title="Retention radar" description="Create follow-ups for inactive, expiring, and recently expired members." />
@@ -329,7 +357,9 @@ export function OperationalRulesSection() {
                 <NumberSetting label="Minimum freeze" unit="days" min={1} max={30} value={policies.membership.minimumFreezeDays} onChange={(event) => updateMembership("minimumFreezeDays", Number(event.target.value))} />
                 <NumberSetting label="Maximum extension" unit="days" min={1} max={365} value={policies.membership.maximumExtensionDays} onChange={(event) => updateMembership("maximumExtensionDays", Number(event.target.value))} />
               </FieldGrid>
-              <div className="mt-4 flex min-h-11 items-center justify-between gap-3 border-t border-line pt-4"><div><p className="text-[13px] font-medium text-ink">Overlapping memberships</p><p className="mt-0.5 text-[11.5px] text-ink-3">Keep off to prevent duplicate active terms.</p></div><Switch checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} aria-label="Allow overlapping memberships" /></div>
+              <div className="mt-3 border-t border-line">
+                <SettingsToggleRow label="Overlapping memberships" hint="Keep off to prevent duplicate active terms." checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} />
+              </div>
             </section>
           </div>
         </SettingsPanel>
@@ -337,36 +367,47 @@ export function OperationalRulesSection() {
         <SettingsPanel title="Referrals and freeze requests" description="Member benefits stay visible here, with clear limits that staff cannot bypass.">
           <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-line rtl:lg:divide-x-reverse">
             <section>
-              <SectionLead title="Referral rewards" description="Grant free membership days after a referred member buys their first term." toggle={<CompactToggle label="Reward referrals" checked={policies.referrals.enabled} onCheckedChange={(value) => updateReferrals("enabled", value)} />} />
-              <fieldset disabled={!policies.referrals.enabled} className={cn("transition-opacity", !policies.referrals.enabled && "opacity-55")}>
+              <SectionLead title="Referral rewards" description="Grant free membership days after a referred member buys their first term." toggle={<HeaderToggle label="Reward referrals" checked={policies.referrals.enabled} onCheckedChange={(value) => updateReferrals("enabled", value)} />} />
+              <Governed enabled={policies.referrals.enabled}>
                 <FieldGrid className="sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
                   <NumberSetting label="Reward" unit="days" min={1} max={90} value={policies.referrals.rewardDays} onChange={(event) => updateReferrals("rewardDays", Number(event.target.value))} />
                   <NumberSetting label="Member cap" unit="days" min={1} max={365} value={policies.referrals.maxRewardDaysPerWindow} onChange={(event) => updateReferrals("maxRewardDaysPerWindow", Number(event.target.value))} />
                   <NumberSetting label="Cap resets after" unit="days" min={7} max={365} value={policies.referrals.windowDays} onChange={(event) => updateReferrals("windowDays", Number(event.target.value))} />
                 </FieldGrid>
-              </fieldset>
+              </Governed>
             </section>
             <section className="border-t border-line pt-5 lg:border-t-0 lg:ps-6 lg:pt-0">
-              <SectionLead title="Member freeze requests" description="Members request dates in their app. Staff still approve every request." toggle={<CompactToggle label="Accept requests" checked={policies.memberFreezes.requestsEnabled} onCheckedChange={(value) => updateFreezes("requestsEnabled", value)} />} />
-              <fieldset disabled={!policies.memberFreezes.requestsEnabled} className={cn("transition-opacity", !policies.memberFreezes.requestsEnabled && "opacity-55")}>
+              <SectionLead title="Member freeze requests" description="Members request dates in their app. Staff still approve every request." toggle={<HeaderToggle label="Accept requests" checked={policies.memberFreezes.requestsEnabled} onCheckedChange={(value) => updateFreezes("requestsEnabled", value)} />} />
+              <Governed enabled={policies.memberFreezes.requestsEnabled}>
                 <FieldGrid className="sm:grid-cols-2">
                   <NumberSetting label="Free allowance" unit="freezes" min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} onChange={(event) => updateFreezes("freeFreezesPerWindow", Number(event.target.value))} />
                   <NumberSetting label="Fee after allowance" unit="JOD" min={0} max={1000} step={0.5} value={policies.memberFreezes.extraFreezeFeeMinor / 1000} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(event.target.value) * 1000))} />
                   <NumberSetting label="Maximum length" unit="days" min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} onChange={(event) => updateFreezes("maxDaysPerFreeze", Number(event.target.value))} />
                   <NumberSetting label="Allowance resets after" unit="days" min={30} max={730} value={policies.memberFreezes.windowDays} onChange={(event) => updateFreezes("windowDays", Number(event.target.value))} />
                 </FieldGrid>
-              </fieldset>
+              </Governed>
             </section>
           </div>
         </SettingsPanel>
       </div>
-      <SettingsSaveBar dirty={dirty} saving={save.isPending} onSave={commit} onDiscard={discard} saveLabel="Save rules" />
-    </div>
+      <SettingsSaveBar
+        dirty={dirty}
+        saving={save.isPending}
+        error={save.isError ? (isApiError(save.error) ? save.error.message : "The operational rules could not be saved. Try again.") : undefined}
+        onSave={commit}
+        onDiscard={discard}
+        saveLabel="Save rules"
+        guardTitle="Unsaved operational rules"
+      />
+    </SettingsSection>
   );
 }
 
+const HOURS_DESCRIPTION = "When each branch is open, and on which days visitors may request a free trial. Times follow the organization timezone.";
+
 export function HoursAndTrialsSection() {
   const invalidate = useInvalidate();
+  const { session } = useApp();
   const { settingsQuery, policies, setPolicies, dirty, discard, markSaved } = useOperationalPoliciesDraft();
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
@@ -380,11 +421,13 @@ export function HoursAndTrialsSection() {
   const branches = useMemo(() => settingsQuery.data?.branches?.filter((branch) => branch.status === "active") ?? [], [settingsQuery.data?.branches]);
   useEffect(() => {
     const branchIds = branches.map((branch) => branch.id);
-    setSelectedBranchId((current) => branchIds.includes(current) ? current : "");
-  }, [branches]);
+    setSelectedBranchId((current) => branchIds.includes(current)
+      ? current
+      : branchIds.includes(session?.activeBranchId ?? "") ? (session?.activeBranchId ?? "") : (branchIds[0] ?? ""));
+  }, [branches, session?.activeBranchId]);
 
-  if (settingsQuery.isLoading || !policies) return <Skeleton className="h-96 w-full" />;
-  if (settingsQuery.isError) return <ErrorState onRetry={() => settingsQuery.refetch()} />;
+  if (settingsQuery.isError) return <SettingsSection title="Hours & trials" description={HOURS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading || !policies) return <SettingsSection title="Hours & trials" description={HOURS_DESCRIPTION}><Skeleton className="h-96 w-full" /></SettingsSection>;
 
   const selectedSchedule = policies.operatingHours.find((schedule) => schedule.branchId === selectedBranchId);
   const selectedTrialSchedule = policies.trialSchedules.find((schedule) => schedule.branchId === selectedBranchId);
@@ -396,50 +439,70 @@ export function HoursAndTrialsSection() {
     await save.mutateAsync(policies);
     markSaved(policies);
   };
+  const openDays = selectedSchedule ? WEEKDAY_ROWS.filter(({ key }) => selectedSchedule.days[key].enabled).length : 0;
+  const trialDays = selectedSchedule && selectedTrialSchedule ? WEEKDAY_ROWS.filter(({ key }) => selectedSchedule.days[key].enabled && selectedTrialSchedule.days[key].enabled).length : 0;
 
   return (
-    <div className="mx-auto max-w-6xl pb-4">
-      <SettingsPanel
-        title="Branch hours and free trials"
-        description="Set one branch at a time. All times use the organization timezone."
-        control={
-          <Select value={selectedBranchId || "none"} onValueChange={(value) => setSelectedBranchId(value === "none" ? "" : value)}>
-            <SelectTrigger className="w-56" aria-label="Branch schedule"><SelectValue placeholder="Select branch" /></SelectTrigger>
-            <SelectContent><SelectItem value="none">Choose a branch</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
-          </Select>
-        }
-      >
-        {selectedSchedule && selectedTrialSchedule ? (
-          <div className="overflow-hidden rounded-md border border-line">
-            <div className="hidden grid-cols-[150px_minmax(260px,1fr)_minmax(300px,1fr)] gap-5 bg-sunken px-4 py-2.5 text-[11px] font-medium text-ink-3 lg:grid">
-              <span>Day</span><span>Branch hours</span><span>Free-trial requests</span>
-            </div>
-            <div className="divide-y divide-line">
-              {WEEKDAY_ROWS.map(({ key, label }) => {
-                const day = selectedSchedule.days[key];
-                const trialWindow = selectedTrialSchedule.days[key];
-                return (
-                  <div key={key} className="grid gap-4 px-4 py-4 lg:grid-cols-[150px_minmax(260px,1fr)_minmax(300px,1fr)] lg:items-center lg:gap-5">
-                    <label className="flex min-h-9 cursor-pointer items-center gap-2 text-[13px] font-semibold text-ink"><Checkbox checked={day.enabled} onCheckedChange={(value) => { const enabled = value === true; updateHours(key, { enabled }); if (!enabled) updateTrialWindow(key, { enabled: false }); }} aria-label={`${label} open`} />{label}</label>
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-medium text-ink-3 lg:hidden">Branch hours</p>
-                      {day.enabled ? <div className="grid grid-cols-2 gap-2"><Input type="time" value={day.opensAt} onChange={(event) => updateHours(key, { opensAt: event.target.value })} aria-label={`${label} opening time`} /><Input type="time" value={day.closesAt} onChange={(event) => updateHours(key, { closesAt: event.target.value })} aria-label={`${label} closing time`} /></div> : <p className="flex min-h-9 items-center text-[12px] text-ink-3">Closed</p>}
-                    </div>
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-medium text-ink-3 lg:hidden">Free-trial requests</p>
-                      <div className="grid gap-2 sm:grid-cols-[112px_1fr] sm:items-center">
-                        <label className="flex min-h-9 cursor-pointer items-center gap-2 text-[12px] font-medium text-ink-2"><Checkbox checked={trialWindow.enabled} disabled={!day.enabled} onCheckedChange={(value) => updateTrialWindow(key, { enabled: value === true })} aria-label={`${label} trial requests enabled`} />Offer trials</label>
-                        {day.enabled && trialWindow.enabled ? <div className="grid grid-cols-2 gap-2"><Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.opensAt} onChange={(event) => updateTrialWindow(key, { opensAt: event.target.value })} aria-label={`${label} trial window opening time`} /><Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.closesAt} onChange={(event) => updateTrialWindow(key, { closesAt: event.target.value })} aria-label={`${label} trial window closing time`} /></div> : <span className="text-[12px] text-ink-3">{day.enabled ? "Not offered" : "Branch closed"}</span>}
+    <SettingsSection title="Hours & trials" description={HOURS_DESCRIPTION}>
+      {branches.length === 0 ? (
+        <EmptyState layout="section" title="No active branches" description="Add or reactivate a branch under Branches before setting its hours." />
+      ) : (
+        <SettingsPanel
+          title="Branch hours and free trials"
+          description={selectedSchedule ? `Open ${openDays} of 7 days · trials offered on ${trialDays}. Set one branch at a time; unsaved edits to other branches are kept until you save.` : "Set one branch at a time."}
+          bodyClassName="p-0"
+          control={
+            <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
+              <span>Branch</span>
+              <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                <SelectTrigger className="w-52" aria-label="Branch schedule"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+          }
+        >
+          {selectedSchedule && selectedTrialSchedule ? (
+            <div>
+              <div className="hidden grid-cols-[150px_minmax(240px,1fr)_minmax(280px,1fr)] gap-5 border-b border-line bg-sunken/60 px-5 py-2 text-[11.5px] font-semibold text-ink-3 lg:grid">
+                <span>Day</span><span>Branch hours</span><span>Free-trial requests</span>
+              </div>
+              <div className="divide-y divide-line">
+                {WEEKDAY_ROWS.map(({ key, label }) => {
+                  const day = selectedSchedule.days[key];
+                  const trialWindow = selectedTrialSchedule.days[key];
+                  return (
+                    <div key={key} className="grid gap-3 px-4 py-3 sm:px-5 lg:grid-cols-[150px_minmax(240px,1fr)_minmax(280px,1fr)] lg:items-center lg:gap-5">
+                      <label className="flex min-h-9 cursor-pointer items-center gap-2.5 text-[13.5px] font-semibold text-ink" data-touch-target><Checkbox checked={day.enabled} onCheckedChange={(value) => { const enabled = value === true; updateHours(key, { enabled }); if (!enabled) updateTrialWindow(key, { enabled: false }); }} aria-label={`${label} open`} />{label}<span className="text-[12px] font-normal text-ink-3 lg:hidden">{day.enabled ? "· open" : "· closed"}</span></label>
+                      <div>
+                        <p className="mb-1 text-[12px] font-medium text-ink-3 lg:hidden">Branch hours</p>
+                        {day.enabled ? <div className="grid grid-cols-2 gap-2"><Input type="time" value={day.opensAt} onChange={(event) => updateHours(key, { opensAt: event.target.value })} aria-label={`${label} opening time`} /><Input type="time" value={day.closesAt} onChange={(event) => updateHours(key, { closesAt: event.target.value })} aria-label={`${label} closing time`} /></div> : <p className="flex min-h-9 items-center text-[12.5px] text-ink-3">Closed</p>}
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[12px] font-medium text-ink-3 lg:hidden">Free-trial requests</p>
+                        <div className="grid gap-2 sm:grid-cols-[124px_1fr] sm:items-center">
+                          <label className={cn("flex min-h-9 cursor-pointer items-center gap-2.5 text-[12.5px] font-medium text-ink-2", !day.enabled && "cursor-not-allowed text-ink-3")} data-touch-target><Checkbox checked={trialWindow.enabled} disabled={!day.enabled} onCheckedChange={(value) => updateTrialWindow(key, { enabled: value === true })} aria-label={`${label} trial requests enabled`} />Offer trials</label>
+                          {day.enabled && trialWindow.enabled ? <div className="grid grid-cols-2 gap-2"><Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.opensAt} onChange={(event) => updateTrialWindow(key, { opensAt: event.target.value })} aria-label={`${label} trial window opening time`} /><Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.closesAt} onChange={(event) => updateTrialWindow(key, { closesAt: event.target.value })} aria-label={`${label} trial window closing time`} /></div> : <span className="flex min-h-9 items-center text-[12.5px] text-ink-3">{day.enabled ? "Not offered" : "Branch closed"}</span>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ) : <p className="rounded-md border border-dashed border-line-2 px-5 py-12 text-center text-[12.5px] text-ink-3">{branches.length ? "Choose a branch to edit its hours and trial window." : "Create an active branch before setting hours."}</p>}
-      </SettingsPanel>
-      <SettingsSaveBar dirty={dirty} saving={save.isPending} onSave={commit} onDiscard={discard} saveLabel="Save hours" guardTitle="Unsaved hours and trial changes" />
-    </div>
+          ) : (
+            <EmptyState layout="section" className="m-4 sm:m-5" title="Choose a branch" description="Pick a branch above to edit its hours and trial window." />
+          )}
+        </SettingsPanel>
+      )}
+      <SettingsSaveBar
+        dirty={dirty}
+        saving={save.isPending}
+        error={save.isError ? (isApiError(save.error) ? save.error.message : "The branch hours could not be saved. Try again.") : undefined}
+        onSave={commit}
+        onDiscard={discard}
+        saveLabel="Save hours"
+        guardTitle="Unsaved hours and trial changes"
+      />
+    </SettingsSection>
   );
 }
