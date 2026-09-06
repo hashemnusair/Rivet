@@ -95,7 +95,7 @@ describe("Settings gym spaces", () => {
 
     await waitFor(() => expect(upsertZone).toHaveBeenCalledWith(expect.objectContaining({ name: "Ladies studio", branchId: expect.any(String), kind: "floor" })));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add gym space" })).not.toBeInTheDocument());
-    expect(await screen.findByText("Ladies studio")).toBeInTheDocument();
+    expect((await screen.findAllByText("Ladies studio")).length).toBeGreaterThan(0);
   });
 });
 
@@ -130,7 +130,7 @@ describe("Settings navigation and operational drafts", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
 
     await user.click(screen.getByRole("tab", { name: "Organization" }));
-    expect(screen.getByRole("dialog", { name: "Unsaved settings changes" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Unsaved operational rules" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stay" }));
     await user.click(screen.getByRole("button", { name: "Discard" }));
     expect(expiry).toHaveValue(7);
