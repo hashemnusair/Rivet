@@ -14,7 +14,9 @@ import { AuthProgressBar } from "@/components/auth/auth-transition";
 import { LoginLayout } from "../login-chrome";
 import { PORTALS } from "../portals";
 import { api } from "../../../../convex/_generated/api";
+import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { INVITATION_CLAIMED_EVENT } from "@/lib/auth/rivet-identity";
+import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 
 export const invitationAccountSchema = z
   .object({
@@ -54,6 +56,12 @@ function InvitationFrame({ children }: { children: ReactNode }) {
   return <LoginLayout portal={PORTALS.staff} footer={<p className="text-center text-[12px] text-ink-3">Secure identity by Clerk · gym access issued by RIVET</p>}>{children}</LoginLayout>;
 }
 
+/**
+ * The link states that need no identity service (no ticket, expired, revoked)
+ * render on their own. Everything else needs Clerk and the Convex claim
+ * action, which only exist in a connected deployment; the mock preview says
+ * so instead of throwing.
+ */
 export function AcceptInvitation() {
   const searchParams = useSearchParams();
   const ticket = searchParams.get("__clerk_ticket");
@@ -61,6 +69,44 @@ export function AcceptInvitation() {
   const router = useRouter();
   const { isLoaded: authLoaded, isSignedIn } = useAuth();
   const { signOut } = useClerk();
+  // The seeded preview never has a Clerk session, so its identity is known
+  // to be signed out even though Clerk itself never reports as loaded.
+  const identityKnown = authLoaded || DEMO_AUTH_BYPASS;
+  const signedIn = authLoaded && Boolean(isSignedIn);
+
+  useEffect(() => {
+    if (status === "complete" && signedIn) router.replace("/login");
+  }, [router, signedIn, status]);
+
+  if (!ticket || status === "invalid") {
+    return <InvitationFrame><InvitationError title="Invitation link not recognized" body="Open the invitation link from the email RIVET sent you. If it still fails, ask your RIVET contact to resend it." /></InvitationFrame>;
+  }
+
+  if (status === "expired" || status === "revoked") {
+    return <InvitationFrame><InvitationError title={status === "expired" ? "Invitation expired" : "Invitation revoked"} body={invitationErrorMessage({ code: status })} /></InvitationFrame>;
+  }
+
+  // Clerk marks a ticket complete once its account exists. Opened again while
+  // signed out, the link has nothing left to do except point at sign-in.
+  if (status === "complete") {
+    if (signedIn) return <InvitationFrame><InvitationProgress state="success" /></InvitationFrame>;
+    if (identityKnown) return <InvitationFrame><InvitationError tone="done" title="This invitation was already accepted" body="Your gym account exists. Sign in with the invited email address to open the workspace; the invitation link itself is single-use." action="Sign in" /></InvitationFrame>;
+    return <InvitationFrame><InvitationProgress state="processing" /></InvitationFrame>;
+  }
+
+  if (signedIn) {
+    return <InvitationFrame><InvitationConflict onSignOut={() => void signOut({ redirectUrl: window.location.href })} /></InvitationFrame>;
+  }
+
+  if (!CONVEX_ENABLED) {
+    return <InvitationFrame><InvitationError tone="done" title="Invitations need the connected RIVET backend" body="This build has no identity service connected, so an invitation cannot be verified or accepted here. Open the link on the RIVET address in your invitation email." action="Back to sign in" /></InvitationFrame>;
+  }
+
+  return <InvitationFlow ticket={ticket} status={status} />;
+}
+
+function InvitationFlow({ ticket, status }: { ticket: string; status: "sign_in" | "sign_up" }) {
+  const router = useRouter();
   const { fetchStatus: signInFetchStatus, signIn } = useSignIn();
   const { fetchStatus: signUpFetchStatus, signUp } = useSignUp();
   const claimInvitation = useAction(api.users.claimInvitation);
@@ -71,7 +117,7 @@ export function AcceptInvitation() {
   const attempted = useRef(false);
 
   useEffect(() => {
-    if (!ticket || status !== "sign_in" || !authLoaded || isSignedIn || !signIn || signInFetchStatus === "fetching" || attempted.current) return;
+    if (status !== "sign_in" || !signIn || signInFetchStatus === "fetching" || attempted.current) return;
     attempted.current = true;
     setState("processing");
     void (async () => {
@@ -91,18 +137,11 @@ export function AcceptInvitation() {
       setState("error");
       setError(invitationErrorMessage(reason));
     });
-  }, [authLoaded, claimInvitation, isSignedIn, router, signIn, signInFetchStatus, status, ticket]);
-
-  useEffect(() => {
-    if (status === "complete" && authLoaded && isSignedIn) {
-      setState("success");
-      router.replace("/login");
-    }
-  }, [authLoaded, isSignedIn, router, status]);
+  }, [claimInvitation, router, signIn, signInFetchStatus, status, ticket]);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!ticket || status !== "sign_up" || !signUp || signUpFetchStatus === "fetching") return;
+    if (status !== "sign_up" || !signUp || signUpFetchStatus === "fetching") return;
     const parsed = invitationAccountSchema.safeParse(values);
     if (!parsed.success) {
       const nextErrors: Partial<Record<keyof typeof values, string>> = {};
@@ -143,24 +182,6 @@ export function AcceptInvitation() {
     }
   };
 
-  if (!ticket || status === "invalid") {
-    return <InvitationFrame><InvitationError title="Invitation link not recognized" body="Open the invitation link from the email RIVET sent you. If it still fails, ask your RIVET contact to resend it." /></InvitationFrame>;
-  }
-
-  if (status === "expired" || status === "revoked") {
-    return <InvitationFrame><InvitationError title={status === "expired" ? "Invitation expired" : "Invitation revoked"} body={invitationErrorMessage({ code: status })} /></InvitationFrame>;
-  }
-
-  // Clerk marks a ticket complete once its account exists. Opened again while
-  // signed out, the link has nothing left to do except point at sign-in.
-  if (status === "complete" && authLoaded && !isSignedIn) {
-    return <InvitationFrame><InvitationError tone="done" title="This invitation was already accepted" body="Your gym account exists. Sign in with the invited email address to open the workspace; the invitation link itself is single-use." action="Sign in" /></InvitationFrame>;
-  }
-
-  if (authLoaded && isSignedIn && status !== "complete") {
-    return <InvitationFrame><InvitationConflict onSignOut={() => void signOut({ redirectUrl: window.location.href })} /></InvitationFrame>;
-  }
-
   if (status === "sign_up" && state === "form") {
     return (
       <InvitationFrame>
@@ -189,7 +210,11 @@ export function AcceptInvitation() {
     return <InvitationFrame><InvitationError title="Invitation could not be accepted" body={error ?? "Ask your RIVET contact to resend the invitation."} /></InvitationFrame>;
   }
 
-  return <InvitationFrame><div className="flex min-h-56 flex-col items-center justify-center text-center" role="status" aria-live="polite"><div className="relative flex size-16 items-center justify-center"><span className="absolute inset-0 animate-ping rounded-full border border-line-3 opacity-30" aria-hidden /><span className="absolute inset-2 rounded-full bg-sunken" aria-hidden /><MailCheck className="relative size-7 text-signal" /></div><p className="mt-5 font-display text-[18px] font-semibold tracking-tight">{state === "success" ? "Invitation accepted" : "Verifying your invitation"}</p><p className="mt-1.5 text-[12.5px] text-ink-3">{state === "success" ? "Opening your workspace…" : "This only takes a moment…"}</p><AuthProgressBar className="mt-5 w-36" /></div></InvitationFrame>;
+  return <InvitationFrame><InvitationProgress state={state === "success" ? "success" : "processing"} /></InvitationFrame>;
+}
+
+function InvitationProgress({ state }: { state: "processing" | "success" }) {
+  return <div className="flex min-h-56 flex-col items-center justify-center text-center" role="status" aria-live="polite"><div className="relative flex size-16 items-center justify-center"><span className="absolute inset-0 animate-ping rounded-full border border-line-3 opacity-30" aria-hidden /><span className="absolute inset-2 rounded-full bg-sunken" aria-hidden /><MailCheck className="relative size-7 text-signal" aria-hidden /></div><p className="mt-5 font-display text-[18px] font-semibold tracking-tight">{state === "success" ? "Invitation accepted" : "Verifying your invitation"}</p><p className="mt-1.5 text-[12.5px] text-ink-3">{state === "success" ? "Opening your workspace…" : "This only takes a moment…"}</p><AuthProgressBar className="mt-5 w-36" /></div>;
 }
 
 function InvitationError({ title, body, tone = "error", action = "Back to sign in" }: { title: string; body: string; tone?: "error" | "done"; action?: string }) {

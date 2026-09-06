@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AcceptInvitation, invitationAccountSchema, invitationErrorMessage } from "./accept-invitation.client";
 
 const state = vi.hoisted(() => ({
+  convexEnabled: true,
   search: new URLSearchParams("__clerk_ticket=ticket-1&__clerk_status=sign_up"),
   replace: vi.fn(),
   signOut: vi.fn(),
@@ -27,8 +28,14 @@ vi.mock("convex/react", () => ({
   useAction: () => state.claimInvitation,
 }));
 
+// The sign-in and sign-up flows exist only with a connected Convex deployment.
+vi.mock("@/lib/providers/convex-client-provider", () => ({
+  get CONVEX_ENABLED() { return state.convexEnabled; },
+}));
+
 describe("accept gym invitation", () => {
   beforeEach(() => {
+    state.convexEnabled = true;
     state.search = new URLSearchParams("__clerk_ticket=ticket-1&__clerk_status=sign_up");
     state.replace.mockReset();
     state.signOut.mockReset();
@@ -122,6 +129,19 @@ describe("accept gym invitation", () => {
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
     expect(screen.queryByText(/Verifying your invitation/)).not.toBeInTheDocument();
     expect(state.replace).not.toHaveBeenCalled();
+  });
+
+  it("says that a build without the RIVET backend cannot accept an invitation, instead of throwing", () => {
+    state.convexEnabled = false;
+    render(<AcceptInvitation />);
+    expect(screen.getByRole("status")).toHaveTextContent("Invitations need the connected RIVET backend");
+    expect(screen.queryByLabelText(/First name/)).not.toBeInTheDocument();
+    expect(state.claimInvitation).not.toHaveBeenCalled();
+
+    // The states that need no identity service still render without it.
+    state.search = new URLSearchParams("__clerk_ticket=ticket-1&__clerk_status=expired");
+    render(<AcceptInvitation />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Invitation expired");
   });
 
   it("keeps invitation failures actionable without exposing the ticket", () => {
