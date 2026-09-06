@@ -336,11 +336,11 @@ Release: `main` was fast-forwarded from `5356870` to `e3f583d` on 5 September 20
 
 ## Pass 6: Settings
 
-**Status:** In review — implemented on `main` locally, awaiting Hashem's Preview review
+**Status:** Complete
 **Baseline SHA:** `b86f146` (fetched and verified against `origin/main` after the Pass 5 closure)
-**Finish SHA:** To record
+**Finish SHA:** `4996a01` (merge of the Pass 6 tip `31f9bf7` with the Pass 7 tip `e2871f5`; implementation tip `38107b5`)
 **Preview:** [https://rivet-3shzu2ta3-nusairhashem04-gmailcoms-projects.vercel.app](https://rivet-3shzu2ta3-nusairhashem04-gmailcoms-projects.vercel.app/login/gym) · GitHub deployment 6296300300 · READY · built from review branch `review/ui-workflow-pass-6` at `38107b5`, protected, synthetic mock data
-**Human approval:** Pending
+**Human approval:** Approved on 6 September 2026 ("apply and merge with main, make sure pass 6 is also merged"; no correction batch)
 
 Sections:
 
@@ -374,20 +374,22 @@ Workflow outcomes:
 
 Completion:
 
-- [ ] Before and after evidence approved.
+- [x] Before and after evidence approved.
 - [x] Full pass gate passed.
-- [ ] Pass merged and deployed.
-- [ ] Finish evidence recorded here.
+- [x] Pass merged and deployed.
+- [x] Finish evidence recorded here.
 
 Implementation and review evidence: [`docs/ui-evidence/pass-6/README.md`](ui-evidence/pass-6/README.md). All sixteen sections were inspected at 360, 390, 768, 820, 1280 and 1440px. Every editable section now uses the shared save bar (Public profile, Payments and Notifications joined it; the quiet-hour fields no longer write on every keystroke), section headings match the rail and phone picker, the rail is arrow-key operable, a deep link to a section the role cannot save shows a permission state, and Branches, Gym spaces, Users, Invoices and the permission matrix have phone layouts. The seeded manager cannot open Settings, so the partially permitted case is a component test; the Payments section saves methods and each role's limit as separate server calls and reports a partial failure per part; the credential-gated staging owner-settings journey already used selectors that predate the Settings rail split and is flagged rather than rewritten blind. The Impeccable skill is unavailable here, so an equivalent banned-pattern scan ran over the changed targets and the detector checkbox stays unticked. Gate evidence: GitHub Actions [run 34050912420](https://github.com/hashemnusair/Rivet/actions/runs/34050912420) passed every job for `38107b5` (static checks, Convex generated-code check, and all 130 credential-free browser journeys), as [run 34041097903](https://github.com/hashemnusair/Rivet/actions/runs/34041097903) had for `d6a101e`; the Linux 390px references were generated and verified on the runner by [run 34040531744](https://github.com/hashemnusair/Rivet/actions/runs/34040531744). Implementation commits: `726614d`, `eb67d40`, `81c50e2`, `d6a101e`, `8010986`, `38107b5`.
 
+Release: merged into `main` together with Pass 7 on 6 September 2026 as `4996a01`, a fast-forward from `b86f146`: the Pass 6 Settings branch tip `31f9bf7` was merged into the Pass 7 tip `e2871f5` in a separate worktree as `4996a01` (only `CURRENT_STATE.md` overlapped; both sections were kept). The integrated tree passed both typechecks, the canonical zero-warning lint with the secret audit, 225 Vitest files / 1,302 tests, the 67-page Production build with no tracked file changed and the diff check (neither pass changed a dependency manifest, so the earlier clean audit stands), and Actions [run 34053140586](https://github.com/hashemnusair/Rivet/actions/runs/34053140586) passed every job for `4996a01` on the integration branch, with 157 credential-free browser journeys passed, 3 flaky and 14 credential-gated skips in 51 minutes. Actions [run 34055955876](https://github.com/hashemnusair/Rivet/actions/runs/34055955876) passed every job for the pushed SHA, and Vercel Production (GitHub deployment 6297229775, https://rivet-jxjoqobfs-nusairhashem04-gmailcoms-projects.vercel.app) is READY: www, app and dashboard login return 200, the root domain redirects with 308, the Production design gallery returns 404, and the platform console and gym application routes return 200. Neither pass touched `apps/web/convex/**`, so no Convex deploy was owed. The review and integration branches are deleted.
+
 ## Pass 7: Platform, authentication, and public product states
 
-**Status:** In review — implemented on `main` locally, awaiting Hashem's Preview review
+**Status:** Complete
 **Baseline SHA:** `b86f146`
-**Finish SHA:** To record
+**Finish SHA:** `4996a01` (merge of the Pass 7 tip `e2871f5` with the Pass 6 tip `31f9bf7`; implementation tip `38f60e1`, with `d88fdbb` and `e2871f5` recording the review evidence)
 **Preview:** https://rivet-ebfqypj7c-nusairhashem04-gmailcoms-projects.vercel.app (GitHub deployment 6295612990, READY, built by the Vercel Git integration from review branch `review/ui-workflow-pass-7` at `8358ac0`, protected, synthetic mock data; the earlier deployment 6295389058 at `e94f004` is the same build without the invitation-route fix)
-**Human approval:** Pending
+**Human approval:** Approved on 6 September 2026 ("apply and merge with main, make sure pass 6 is also merged"; no correction batch)
 
 Platform routes:
 
@@ -430,12 +432,14 @@ Workflow outcomes:
 
 Completion:
 
-- [ ] Before and after evidence approved.
-- [ ] Full pass gate passed.
-- [ ] Pass merged and deployed.
-- [ ] Finish evidence recorded here.
+- [x] Before and after evidence approved.
+- [x] Full pass gate passed.
+- [x] Pass merged and deployed.
+- [x] Finish evidence recorded here.
 
 Implementation and review evidence: [`docs/ui-evidence/pass-7/README.md`](ui-evidence/pass-7/README.md). Implementation commits: `350063f`, `eef2abd`, `dbf73c3`, `e333740`, `e94f004`, `8358ac0` and `38f60e1`. All listed surfaces were inspected at 360, 390, 768, 820, 1280 and 1440px with the administrator, owner and signed-out states. The live public offer cannot be reached in the mock Preview (seeded offers carry no public token and the mock database is per-tab memory), so its available, expired, accepted and declined states are verified with the offer component's fixtures while the browser suite checks the unavailable link; the shared onboarding checklist is left as Pass 4 approved it; the Impeccable skill is unavailable here, so the equivalent banned-pattern scan is recorded in the evidence README and the detector checkbox stays unticked.
+
+Release: after the approval, the final fetch found `origin/main` still at `b86f146`; the Pass 6 Settings branch tip `31f9bf7` was merged into the Pass 7 tip `e2871f5` in a separate worktree as `4996a01` (only `CURRENT_STATE.md` overlapped; both sections were kept). The integrated tree passed both typechecks, the canonical zero-warning lint with the secret audit, 225 Vitest files / 1,302 tests, the 67-page Production build with no tracked file changed and the diff check (neither pass changed a dependency manifest, so the earlier clean audit stands), and Actions [run 34053140586](https://github.com/hashemnusair/Rivet/actions/runs/34053140586) passed every job for `4996a01` on the integration branch, with 157 credential-free browser journeys passed, 3 flaky and 14 credential-gated skips in 51 minutes. `main` was then fast-forwarded `b86f146..4996a01` on 6 September 2026. Actions [run 34055955876](https://github.com/hashemnusair/Rivet/actions/runs/34055955876) passed every job for the pushed SHA, and Vercel Production (GitHub deployment 6297229775, https://rivet-jxjoqobfs-nusairhashem04-gmailcoms-projects.vercel.app) is READY: www, app and dashboard login return 200, the root domain redirects with 308, the Production design gallery returns 404, and the platform console and gym application routes return 200. Neither pass touched `apps/web/convex/**`, so no Convex deploy was owed. The review and integration branches are deleted.
 
 ## Final closure
 
