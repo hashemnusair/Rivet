@@ -23,6 +23,13 @@
   filter: brightness(0.58);
 }
 
+/* Sections focused after a menu jump keep the page's own focus ring off —
+   they are targets, not controls. (The fixed bar's scroll-padding lives in
+   globals.css, since it must sit on the document itself.) */
+.pageSheet section:focus {
+  outline: none;
+}
+
 /* ------------------------------------------------------------------ header */
 
 .header {
@@ -30,21 +37,33 @@
   inset: 0 0 auto;
   z-index: 70;
   display: flex;
-  height: 4.5rem;
+  height: calc(4.5rem + env(safe-area-inset-top, 0px));
   align-items: center;
   justify-content: space-between;
+  padding-top: env(safe-area-inset-top, 0px);
   padding-inline: clamp(1.25rem, 3.35vw, 3.5rem);
+  border-bottom: 1px solid rgb(27 26 21 / 0.08);
+  background: rgb(245 244 239 / 0.94);
   color: #1b1a15;
-  pointer-events: none;
-  transition: color 320ms ease;
+  transition:
+    background-color 320ms ease,
+    border-color 320ms ease,
+    color 320ms ease;
 }
 
-.header > * {
-  pointer-events: auto;
+@supports (backdrop-filter: blur(1px)) {
+  .header {
+    background: rgb(245 244 239 / 0.86);
+    backdrop-filter: blur(14px) saturate(1.15);
+  }
 }
 
-.headerDark {
+/* The open menu's plate runs under the bar, so the bar joins it. */
+.headerOpen {
+  border-color: transparent;
+  background: #171612;
   color: #f5f4ef;
+  backdrop-filter: none;
 }
 
 .brand {
@@ -63,7 +82,7 @@
   gap: clamp(1.2rem, 3vw, 3.25rem);
 }
 
-.walkthrough {
+.apply {
   position: relative;
   padding-block: 0.35rem;
   font-size: 0.86rem;
@@ -71,7 +90,7 @@
   letter-spacing: -0.015em;
 }
 
-.walkthrough::after {
+.apply::after {
   content: "";
   position: absolute;
   inset: auto 0 0;
@@ -81,8 +100,8 @@
   transition: transform 350ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.walkthrough:hover::after,
-.walkthrough:focus-visible::after {
+.apply:hover::after,
+.apply:focus-visible::after {
   transform: scaleX(0.35);
 }
 
@@ -103,7 +122,7 @@
 
 .menuToggle:focus-visible,
 .brand:focus-visible,
-.walkthrough:focus-visible {
+.apply:focus-visible {
   outline: 2px solid #d9232b;
   outline-offset: 5px;
 }
@@ -122,6 +141,32 @@
 .menuToggle:focus-visible .menuPin,
 .menuToggle[aria-expanded="true"] .menuPin {
   transform: scaleX(1);
+}
+
+/* Reading progress, drawn along the bar's bottom edge. */
+.progress {
+  position: fixed;
+  inset-inline: 0;
+  top: calc(4.5rem + env(safe-area-inset-top, 0px) - 2px);
+  z-index: 71;
+  height: 2px;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+}
+
+:global(html.landing-nav-open) .progress {
+  opacity: 0;
+}
+
+.progressBar {
+  height: 100%;
+  background: #d9232b;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+:global([dir="rtl"]) .progressBar {
+  transform-origin: right;
 }
 
 /* -------------------------------------------------------------------- menu */
@@ -148,6 +193,7 @@
   border: 0;
   background: rgb(15 14 12 / 0.74);
   opacity: 0;
+  touch-action: none;
   transition: opacity 500ms ease;
 }
 
@@ -161,12 +207,13 @@
   display: grid;
   width: min(66vw, 74rem);
   grid-template-rows: minmax(0, 1fr) auto;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   border-radius: 0 0 1.4rem 0;
   background: #171612;
   color: #f5f4ef;
-  padding: calc(4.5rem + 4vh) clamp(1.25rem, 3.35vw, 3.5rem) 4vh;
+  padding: calc(4.5rem + env(safe-area-inset-top, 0px) + 4vh) clamp(1.25rem, 3.35vw, 3.5rem) 4vh;
   transform: translateY(-102%);
   transition: transform 760ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
@@ -184,6 +231,7 @@
 
 .menuList {
   width: 100%;
+  min-width: 0;
 }
 
 .menuItem {
@@ -221,6 +269,7 @@
 
 .menuLink {
   display: flex;
+  min-width: 0;
   align-items: baseline;
   gap: clamp(0.85rem, 1.8vw, 1.5rem);
   padding-block: clamp(0.25rem, 0.85vh, 0.58rem);
@@ -257,10 +306,12 @@
   The mask clips the label's rise-in. It is sized from the label's own type so
   the side padding scales with the letters: the hover nudge (0.12em) and the
   overhang of a tight, heavy face both stay inside the clip instead of losing
-  the last letter's edge.
+  the last letter's edge. On phones the type is sized to the width the longest
+  label has, so the plate never grows a sideways scroll.
 */
 .menuMask {
   display: block;
+  min-width: 0;
   overflow: hidden;
   font-size: clamp(2rem, 4.85vw, 5.25rem);
   padding: 0.04em 0.24em 0.08em 0.06em;
@@ -296,14 +347,23 @@
   transform: scaleX(1);
 }
 
-.menuLink:hover .menuLabel,
-.menuLink:focus-visible .menuLabel {
-  transform: translateX(0.12em);
-  transition-delay: 0s;
+@media (hover: hover) {
+  .menuLink:hover .menuLabel,
+  .menuLink:focus-visible .menuLabel {
+    transform: translateX(0.12em);
+    transition-delay: 0s;
+  }
 }
 
 .menuLink:focus-visible {
   outline: 0;
+}
+
+.menuLink:focus-visible .menuLabel {
+  text-decoration: underline;
+  text-decoration-color: #e5262e;
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.08em;
 }
 
 .menuMeta {
@@ -329,6 +389,7 @@
 
 .menuMeta > div {
   display: grid;
+  min-width: 0;
   gap: 0.3rem;
 }
 
@@ -380,6 +441,12 @@
   background: #ffffff;
 }
 
+.menuCta:focus-visible,
+.menuSignIn:focus-visible {
+  outline: 2px solid #e5262e;
+  outline-offset: 4px;
+}
+
 /* ------------------------------------------------------------------ sheets */
 
 .coverSheet {
@@ -428,6 +495,7 @@
   margin-bottom: -1.5rem;
 }
 
+.sheetUnderPaper { background: #f5f4ef; }
 .sheetUnderSunken { background: #edece5; }
 .sheetUnderStack { background: #1c1b16; }
 
@@ -440,8 +508,6 @@
 .layer7 { z-index: 7; }
 .layer8 { z-index: 8; }
 .layer9 { z-index: 9; }
-.layer10 { z-index: 10; }
-.layer11 { z-index: 11; }
 
 .heroMotion {
   transform: translate3d(0, var(--landing-hero-y, 0), 0) scale(var(--landing-hero-scale, 1));
@@ -458,10 +524,11 @@
   border-radius: 1.5rem 1.5rem 0 0;
   background: #1c1b16;
   color: #f2f0e6;
+  scroll-margin-top: calc(-4.5rem - env(safe-area-inset-top, 0px));
 }
 
 .stackTrack {
-  height: 640svh;
+  height: 600svh;
 }
 
 .stackStage {
@@ -479,7 +546,7 @@
   grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-rows: auto minmax(0, 1fr);
   column-gap: clamp(1.25rem, 3vw, 3.25rem);
-  padding: 4.75rem clamp(1.25rem, 3.35vw, 3.5rem) 2.75rem;
+  padding: calc(4.5rem + env(safe-area-inset-top, 0px) + 1.5rem) clamp(1.25rem, 3.35vw, 3.5rem) 2.5rem;
 }
 
 .stackHeader {
@@ -515,7 +582,7 @@
   justify-content: center;
 }
 
-/* Sized by the column, then capped by the room left under the header. */
+/* Sized by the column, then capped by the room left under the header row. */
 .rig {
   position: relative;
   width: min(86%, 30rem, calc((100svh - 17rem) * 0.91));
@@ -535,7 +602,12 @@
 .rigBar { inset: 0 auto auto 0; width: 58%; height: 8%; }
 .rigReturn { inset: 0 auto auto 50%; width: 8%; height: 25%; }
 
-/* The pin is drawn under the plates so its rod disappears when it is home. */
+/*
+  The pin is drawn under the plates so its rod disappears when it is home.
+  Its position is written from the scroll position on every frame; the short
+  transition runs on the compositor and only rounds off wheel steps, so the
+  pin follows the reader's hand without an animation loop of its own.
+*/
 .rigPin {
   position: absolute;
   top: 0;
@@ -544,7 +616,10 @@
   align-items: center;
   color: #e5262e;
   transform: translate3d(var(--stack-pin-x, 0px), var(--stack-pin-y, 0px), 0);
-  will-change: transform;
+}
+
+.stackStory[data-stack-ready] .rigPin {
+  transition: transform 140ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rigPinRod {
@@ -569,7 +644,10 @@
   width: 66%;
   height: 61%;
   transform: translate3d(0, var(--stack-lift, 0px), 0);
-  will-change: transform;
+}
+
+.stackStory[data-stack-ready] .rigPlates {
+  transition: transform 140ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rigPlate {
@@ -594,10 +672,24 @@
   letter-spacing: -0.015em;
   white-space: nowrap;
   transition:
-    color 260ms ease,
-    background-color 260ms ease,
-    border-color 260ms ease,
-    box-shadow 260ms ease;
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+/* Every plate carries the pin's socket on the edge the pin enters from. */
+.rigPlate::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 0.3rem;
+  height: 34%;
+  border-radius: 2px 0 0 2px;
+  background: rgb(242 240 230 / 0.16);
+  transform: translateY(-50%);
+  transition: background-color 160ms ease;
 }
 
 .rigPlate > span:last-child {
@@ -605,7 +697,7 @@
   font-size: 0.72em;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  transition: color 260ms ease;
+  transition: color 160ms ease;
 }
 
 .rigPlateShort {
@@ -618,13 +710,17 @@
   color: #1c1b16;
 }
 
+.rigPlateActive::after {
+  background: rgb(27 26 21 / 0.14);
+}
+
 .rigPlateActive > span:last-child {
   color: #8b887b;
 }
 
-/* The plate the pin is home in shows the pin's mark on its edge. */
-.rigPlateSeated {
-  box-shadow: inset -0.28rem 0 0 #e5262e;
+/* The socket fills with the pin's colour while the pin is home in it. */
+.rigPlateSeated::after {
+  background: #e5262e;
 }
 
 .stackCopy {
@@ -635,24 +731,21 @@
   align-items: center;
 }
 
+/*
+  One state is on screen at a time: the leaving state is dropped at once and
+  the arriving one plays a short entrance, so fast scrolling never stacks two
+  descriptions on top of each other.
+*/
 .stackState {
   position: absolute;
   inset: auto 0;
   max-width: 34rem;
   visibility: hidden;
-  opacity: 0;
-  transform: translateY(1.4rem);
-  transition:
-    opacity 360ms ease,
-    transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
-    visibility 0s linear 520ms;
 }
 
 .stackStateActive {
   visibility: visible;
-  opacity: 1;
-  transform: translateY(0);
-  transition-delay: 0s;
+  animation: stackStateIn 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .stackState h3 {
@@ -709,185 +802,15 @@
   background: #e5262e;
 }
 
-/* ----------------------------------------------------------------- modules */
-
-.modulesSection {
-  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(7rem, 15vh, 12rem);
-}
-
-.modulesInner {
-  max-width: 84rem;
-  margin-inline: auto;
-}
-
-.modulesIntro {
-  display: grid;
-  grid-template-columns: 1fr 0.7fr;
-  gap: clamp(2rem, 7vw, 7rem);
-  align-items: end;
-  margin-top: clamp(3rem, 7vh, 6rem);
-}
-
-.modulesTitle {
-  font-family: var(--font-archivo), sans-serif;
-  font-size: clamp(2.8rem, 5.1vw, 5.25rem);
-  font-weight: 650;
-  line-height: 0.95;
-  letter-spacing: -0.035em;
-}
-
-.modulesLead {
-  max-width: 31rem;
-  color: #aaa698;
-  font-size: clamp(0.98rem, 1.35vw, 1.15rem);
-  line-height: 1.65;
-}
-
-.modulesList {
-  margin-top: clamp(3.5rem, 8vh, 7rem);
-  border-top: 1px solid rgb(242 240 230 / 0.14);
-}
-
-.moduleItem {
-  border-bottom: 1px solid rgb(242 240 230 / 0.14);
-}
-
-.moduleButton {
-  position: relative;
-  display: grid;
-  width: 100%;
-  cursor: pointer;
-  grid-template-columns: 3.5rem minmax(10rem, 0.8fr) minmax(14rem, 1fr) 2rem;
-  gap: clamp(1rem, 3vw, 3rem);
-  align-items: center;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding-block: clamp(1.25rem, 2.8vh, 2rem);
-  text-align: left;
-}
-
-.moduleButton::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  left: 0;
-  width: 4.2rem;
-  height: 2px;
-  background: #e5262e;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.moduleButton:hover::before,
-.moduleButton:focus-visible::before,
-.moduleItemOpen .moduleButton::before {
-  transform: scaleX(1);
-}
-
-.moduleIndex,
-.moduleSummary {
-  color: #777469;
-}
-
-.moduleIndex {
-  font-size: 0.8rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.moduleName {
-  font-family: var(--font-archivo), sans-serif;
-  font-size: clamp(1.35rem, 2.1vw, 2.1rem);
-  font-weight: 640;
-  line-height: 1;
-  letter-spacing: -0.025em;
-  transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.moduleButton:hover .moduleName,
-.moduleButton:focus-visible .moduleName {
-  transform: translateX(0.35rem);
-}
-
-.moduleSummary {
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.moduleToggle {
-  position: relative;
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-.moduleToggle::before,
-.moduleToggle::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 1px;
-  background: currentColor;
-  transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.moduleToggle::after {
-  transform: rotate(90deg);
-}
-
-.moduleItemOpen .moduleToggle::after {
-  transform: rotate(0deg);
-}
-
-.modulePanel {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition:
-    grid-template-rows 560ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 320ms ease;
-}
-
-.moduleItemOpen .modulePanel {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-
-.modulePanelInner {
-  overflow: hidden;
-}
-
-.moduleCaps {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.9rem 3rem;
-  padding: 0 3rem 2.2rem calc(3.5rem + clamp(1rem, 3vw, 3rem));
-  color: #aaa698;
-  font-size: 0.84rem;
-  line-height: 1.55;
-}
-
-.moduleCaps li {
-  display: flex;
-  gap: 0.8rem;
-}
-
-.moduleCaps li::before {
-  content: "";
-  width: 0.8rem;
-  height: 2px;
-  margin-top: 0.65em;
-  flex: none;
-  background: #e5262e;
+@keyframes stackStateIn {
+  from { opacity: 0; transform: translateY(0.9rem); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ------------------------------------------------------------- a day */
 
 .daySection {
-  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(8rem, 16vh, 13rem);
+  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(7rem, 14vh, 11rem);
 }
 
 .dayGrid {
@@ -904,7 +827,15 @@
 
 .daySticky {
   position: sticky;
-  top: 5rem;
+  top: calc(5.5rem + env(safe-area-inset-top, 0px));
+}
+
+.dayLead {
+  max-width: 24rem;
+  margin-top: 1.5rem;
+  color: #565449;
+  font-size: 0.98rem;
+  line-height: 1.6;
 }
 
 .dayClock {
@@ -944,12 +875,12 @@
 
 .dayMoment {
   display: grid;
-  min-height: clamp(15rem, 42vh, 23rem);
+  min-height: clamp(14rem, 40vh, 22rem);
   grid-template-columns: 5.2rem minmax(0, 1fr);
   column-gap: clamp(1.2rem, 2.5vw, 2.5rem);
   align-content: center;
   border-bottom: 1px solid rgb(27 26 21 / 0.14);
-  padding-block: 3rem;
+  padding-block: 2.75rem;
   transition:
     opacity 420ms ease,
     transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -965,7 +896,7 @@
 
 .dayMomentTime {
   position: relative;
-  grid-row: 1 / span 3;
+  grid-row: 1 / span 2;
   padding-top: 0.35em;
   padding-left: 1.35rem;
   color: #8b887b;
@@ -997,8 +928,7 @@
 }
 
 .dayMoment h3,
-.dayMoment p,
-.dayMomentTag {
+.dayMoment p {
   grid-column: 2;
 }
 
@@ -1017,17 +947,10 @@
   line-height: 1.55;
 }
 
-.dayMomentTag {
-  margin-top: 1.4rem;
-  color: #8b887b;
-  font-size: 0.86rem;
-  font-weight: 500;
-}
-
 /* ---------------------------------------------------------- accountability */
 
 .accountSection {
-  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(8rem, 16vh, 13rem);
+  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(7rem, 14vh, 11rem);
   /* Ledger ruling, faint enough to read as paper grain on the ink sheet. */
   background-image: repeating-linear-gradient(
     to bottom,
@@ -1043,16 +966,6 @@
   margin-inline: auto;
 }
 
-.accountTitle {
-  max-width: 58rem;
-  margin-top: clamp(3rem, 8vh, 7rem);
-  font-family: var(--font-archivo), sans-serif;
-  font-size: clamp(3.4rem, 6.5vw, 6.25rem);
-  font-weight: 650;
-  line-height: 0.9;
-  letter-spacing: -0.035em;
-}
-
 .accountBody {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1061,10 +974,20 @@
   margin-top: clamp(2.5rem, 6vh, 5rem);
 }
 
+.accountTitle {
+  max-width: 32rem;
+  font-family: var(--font-archivo), sans-serif;
+  font-size: clamp(3rem, 5.6vw, 5.4rem);
+  font-weight: 650;
+  line-height: 0.9;
+  letter-spacing: -0.035em;
+}
+
 .accountLead {
-  max-width: 30rem;
+  max-width: 28rem;
+  margin-top: 1.75rem;
   color: #aaa698;
-  font-size: clamp(1rem, 1.6vw, 1.28rem);
+  font-size: clamp(1rem, 1.45vw, 1.2rem);
   line-height: 1.65;
 }
 
@@ -1152,114 +1075,10 @@
   transform: translateY(0);
 }
 
-.chainReveal {
-  margin-top: clamp(4rem, 10vh, 8rem);
-}
-
-.chain {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: clamp(1rem, 2vw, 2rem);
-  padding-block: 2.5rem 4.5rem;
-}
-
-.chainRod {
-  position: absolute;
-  top: calc(50% - 0.7rem);
-  right: 1rem;
-  left: 1rem;
-  height: 2px;
-  background: #e5262e;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 1100ms cubic-bezier(0.22, 1, 0.36, 1) 120ms;
-}
-
-.chainNode {
-  position: relative;
-  opacity: 0;
-  transform: translateY(1.6rem);
-  transition:
-    opacity 500ms ease var(--chain-delay),
-    transform 680ms cubic-bezier(0.22, 1, 0.36, 1) var(--chain-delay);
-}
-
-.chainPlate {
-  display: flex;
-  min-height: 5.2rem;
-  align-items: center;
-  border: 1px solid rgb(242 240 230 / 0.28);
-  border-radius: 0.4rem;
-  background: #201f19;
-  padding: 1rem 1.2rem;
-  font-family: var(--font-archivo), sans-serif;
-  font-size: clamp(1.05rem, 1.75vw, 1.6rem);
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  transition: border-color 420ms ease calc(var(--chain-delay) + 420ms);
-}
-
-.chainSub {
-  display: block;
-  margin-top: 0.9rem;
-  color: #8c897d;
-  font-size: 0.84rem;
-  font-weight: 500;
-}
-
-.chainPin {
-  position: absolute;
-  right: -0.75rem;
-  top: calc(50% - 1.15rem);
-  display: flex;
-  align-items: center;
-  color: #e5262e;
-  opacity: 0;
-  transform: translateX(2rem);
-  transition:
-    opacity 300ms ease 1050ms,
-    transform 560ms cubic-bezier(0.22, 1, 0.36, 1) 1050ms;
-}
-
-.chainPin span:first-child {
-  width: 2.2rem;
-  height: 0.42rem;
-  border-radius: 0.2rem;
-  background: currentColor;
-}
-
-.chainPin span:last-child {
-  width: 1.65rem;
-  height: 1.65rem;
-  margin-left: -0.15rem;
-  border: 0.42rem solid currentColor;
-  border-radius: 50%;
-}
-
-.chainReveal[data-reveal-state="shown"] .chainRod {
-  transform: scaleX(1);
-}
-
-.chainReveal[data-reveal-state="shown"] .chainNode {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Each plate locks as the rod reaches it. */
-.chainReveal[data-reveal-state="shown"] .chainPlate {
-  border-color: rgb(242 240 230 / 0.6);
-}
-
-.chainReveal[data-reveal-state="shown"] .chainPin {
-  opacity: 1;
-  transform: translateX(0);
-}
-
 /* ------------------------------------------------------------------ region */
 
 .regionSection {
-  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(8rem, 16vh, 13rem);
+  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(6rem, 12vh, 10rem);
 }
 
 .regionInner {
@@ -1272,7 +1091,7 @@
   grid-template-columns: 1fr 1fr;
   gap: clamp(2rem, 7vw, 8rem);
   align-items: end;
-  margin-top: clamp(3rem, 7vh, 6rem);
+  margin-top: clamp(2.5rem, 6vh, 5rem);
 }
 
 .regionEnglish,
@@ -1287,7 +1106,9 @@
 .regionArabic {
   font-family: var(--font-plex-arabic), sans-serif;
   font-size: clamp(3rem, 5.3vw, 5.3rem);
-  line-height: 0.95;
+  /* Room for the shadda and kasra above and below the letters. */
+  line-height: 1.25;
+  margin-block: -0.12em;
   text-align: right;
   text-transform: none;
 }
@@ -1296,7 +1117,7 @@
   display: grid;
   grid-template-columns: 0.7fr 1.3fr;
   gap: clamp(2.5rem, 7vw, 8rem);
-  margin-top: clamp(3rem, 8vh, 7rem);
+  margin-top: clamp(2.5rem, 7vh, 6rem);
 }
 
 .regionLead {
@@ -1334,7 +1155,8 @@
 /*
   A pricing tier fills like a vessel on hover: a tinted liquid rises from the
   bottom edge with a slow surface swell, then drains when the pointer leaves.
-  Transform-only, so it composites without repainting the card's text.
+  Transform-only, so it composites without repainting the card's text, and it
+  never sits between the reader and a control.
 */
 .tier {
   position: relative;
@@ -1393,7 +1215,6 @@
   /* Parked below the card by more than the wave's height, so no crest shows at rest. */
   transform: translate3d(0, calc(100% + 2.5rem), 0);
   transition: transform 1000ms cubic-bezier(0.32, 0.72, 0, 1);
-  will-change: transform;
 }
 
 .tier:hover .tierLiquid,
@@ -1413,9 +1234,11 @@
   transform: translate3d(0, -96%, 0);
 }
 
-.tier:hover .tierWave,
-.tier:focus-within .tierWave {
-  animation: tierWave 2.8s linear infinite;
+@media (hover: hover) {
+  .tier:hover .tierWave,
+  .tier:focus-within .tierWave {
+    animation: tierWave 2.8s linear infinite;
+  }
 }
 
 .tierBody {
@@ -1451,12 +1274,10 @@
   .stackLead { display: none; }
   .stackFigure { grid-column: 1 / span 5; }
   .stackCopy { grid-column: 6 / span 7; }
-  .rig { width: min(90%, 24rem, calc((100svh - 16rem) * 0.91)); }
-  .dayGrid { grid-template-columns: minmax(0, 0.62fr) minmax(0, 1.38fr); gap: 2rem; }
-  .dayTime { font-size: clamp(4rem, 11vw, 7rem); }
+  .rig { width: min(100%, 24rem, calc((100svh - 16rem) * 0.91)); }
+  .dayGrid { grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr); gap: 2rem; }
+  .dayTime { font-size: clamp(3rem, 6.4vw, 5.5rem); }
   .accountBody { grid-template-columns: 1fr; }
-  .chain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .chainRod, .chainPin { display: none; }
 }
 
 @media (max-width: 720px) {
@@ -1465,102 +1286,94 @@
     border-radius: 1rem;
   }
 
-  .header { height: 4.25rem; }
-  .walkthrough { display: none; }
+  .header { height: calc(4.25rem + env(safe-area-inset-top, 0px)); }
+  .progress { top: calc(4.25rem + env(safe-area-inset-top, 0px) - 2px); }
+  .apply { display: none; }
   .brand img { width: 7rem; }
   .menuPlate {
     width: 100%;
     border-radius: 0 0 1.25rem 1.25rem;
-    padding-top: calc(4.25rem + 3vh);
+    padding-top: calc(4.25rem + env(safe-area-inset-top, 0px) + 3vh);
     padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
   }
   .menuPrimary { align-items: center; }
-  .menuIndex { width: 2rem; }
-  .menuMask { font-size: clamp(1.75rem, 9vw, 3rem); }
+  .menuIndex { width: 1.75rem; }
+  .menuMask { font-size: clamp(1.4rem, 8vw, 3rem); padding-right: 0.12em; }
   .menuLabel { line-height: 0.96; }
-  .menuLink { gap: 0.65rem; padding-block: 0.45rem; }
+  .menuLink { gap: 0.6rem; padding-block: 0.45rem; }
   .menuMeta { grid-template-columns: 1fr 1fr; gap: 1.1rem; }
   .menuMeta > div:nth-child(3) { display: none; }
-  .menuMeta > .menuAuth { grid-column: 1 / -1; }
+  .menuMeta > .menuAuth { grid-column: 1 / -1; flex-wrap: wrap; }
 
   .paperSheet,
   .inkSheet,
   .stackStory { border-radius: 1.1rem 1.1rem 0 0; }
 
-  .stackTrack { height: 560svh; }
+  .stackStory { scroll-margin-top: calc(-4.25rem - env(safe-area-inset-top, 0px)); }
+  .stackTrack { height: 540svh; }
   .stackGrid {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(11rem, 40vh) minmax(0, 1fr);
-    padding-top: 4.75rem;
-    padding-bottom: 1.75rem;
+    grid-template-rows: auto minmax(9rem, 36svh) minmax(0, 1fr);
+    padding-top: calc(4.25rem + env(safe-area-inset-top, 0px) + 1.25rem);
+    padding-bottom: 1.5rem;
   }
-  .stackHeader h2 { font-size: clamp(1.7rem, 8vw, 2.4rem); }
+  .stackHeader h2 { margin-top: 0.8rem; font-size: clamp(1.6rem, 7.5vw, 2.3rem); }
   .stackHeader,
   .stackFigure,
   .stackCopy { grid-column: 1; }
-  .stackFigure { grid-row: 2; }
-  .rig { width: min(68vw, 17rem, calc((100svh - 25rem) * 0.91)); --stack-rod: 2.1rem; }
-  .rigPlate { padding-inline: 0.65rem; font-size: 0.72rem; }
-  .rigPinRing { width: 1.5rem; height: 1.5rem; border-width: 0.38rem; }
-  .rigPinRod { height: 0.4rem; }
-  .stackCopy { grid-row: 3; align-items: start; padding-top: 1rem; }
-  .stackState { inset: 1rem 0 auto; }
-  .stackState h3 { font-size: clamp(2rem, 10vw, 3.1rem); }
-  .stackState p { margin-top: 1rem; font-size: 0.88rem; line-height: 1.52; }
+  .stackFigure { grid-row: 2; align-items: center; padding-top: 1rem; }
+  .rig { width: min(60vw, calc(33svh * 0.91)); --stack-rod: 2rem; }
+  .rigPlate { padding-inline: 0.6rem; font-size: 0.72rem; }
+  .rigPlate > span:last-child { display: none; }
+  .rigPinRing { width: 1.4rem; height: 1.4rem; border-width: 0.36rem; }
+  .rigPinRod { height: 0.38rem; }
+  .stackCopy { grid-row: 3; align-items: start; padding-top: 1.25rem; }
+  .stackState { inset: 1.25rem 0 auto; }
+  .stackState h3 { font-size: clamp(1.9rem, 8vw, 2.6rem); }
+  .stackState p { margin-top: 0.8rem; font-size: 0.92rem; line-height: 1.5; }
   .stackCaps { display: none; }
 
-  .modulesIntro,
   .regionBilingual,
   .regionBody { grid-template-columns: 1fr; }
-  .modulesTitle { font-size: clamp(2.6rem, 12vw, 4.4rem); }
-  .moduleButton {
-    grid-template-columns: 2.4rem minmax(0, 1fr) 1.5rem;
-    grid-template-rows: auto auto;
-    gap: 0.5rem 0.8rem;
-  }
-  .moduleSummary { grid-column: 2; grid-row: 2; }
-  .moduleToggle { grid-column: 3; grid-row: 1; }
-  .moduleCaps { grid-template-columns: 1fr; padding: 0 0 1.8rem calc(2.4rem + 0.8rem); }
 
   .dayGrid { grid-template-columns: 1fr; }
   .dayAside {
     position: sticky;
     z-index: 2;
-    top: 4.25rem;
+    top: calc(4.25rem + env(safe-area-inset-top, 0px));
     align-self: start;
   }
   .daySticky {
     position: static;
     margin-inline: -1.25rem;
     background: rgb(245 244 239 / 0.94);
-    padding: 0 1.25rem 1rem;
+    padding: 0 1.25rem 0.9rem;
     backdrop-filter: blur(12px);
   }
-  .dayClock { grid-template-columns: auto 1fr; align-items: baseline; gap: 1rem; margin-top: 1rem; }
-  .dayTime { font-size: clamp(3rem, 15vw, 4.6rem); }
+  .dayLead { display: none; }
+  .dayClock { grid-template-columns: auto 1fr; align-items: baseline; gap: 1rem; margin-top: 0.9rem; }
+  .dayTime { font-size: clamp(2.8rem, 14vw, 4.4rem); }
   .dayList { margin-top: 1rem; }
   .dayMoment {
-    min-height: 19rem;
+    min-height: 17rem;
     grid-template-columns: 1fr;
     align-content: center;
-    padding-block: 2.5rem;
+    padding-block: 2.25rem;
   }
   .dayMomentTime { grid-row: auto; padding-top: 0; }
   .dayMoment h3,
-  .dayMoment p,
-  .dayMomentTag { grid-column: 1; }
-  .dayMoment h3 { margin-top: 1.4rem; font-size: clamp(1.9rem, 8.5vw, 2.5rem); }
+  .dayMoment p { grid-column: 1; }
+  .dayMoment h3 { margin-top: 1.2rem; font-size: clamp(1.9rem, 8.5vw, 2.5rem); }
+  .dayMoment p { margin-top: 1rem; }
   .dayMomentActive { transform: translateX(0); }
   .dayMoment:not(.dayMomentActive) { opacity: 0.56; }
 
-  .accountTitle { font-size: clamp(2.9rem, 13vw, 4.6rem); }
+  .accountTitle { font-size: clamp(2.7rem, 12vw, 4rem); }
   .trailRow { grid-template-columns: 1fr; gap: 0.5rem; }
-  .chain { grid-template-columns: 1fr; gap: 1rem; padding-block: 1rem; }
-  .chainPlate { min-height: 4.5rem; }
 
   .regionEnglish { font-size: clamp(3.2rem, 15vw, 5rem); }
   .regionArabic { font-size: clamp(2.8rem, 12vw, 4.25rem); text-align: left; }
-  .regionBody { margin-top: 3rem; }
+  .regionBody { margin-top: 2.5rem; }
   .regionSpec { grid-template-columns: 1fr; gap: 0.45rem; }
 }
 
@@ -1575,19 +1388,15 @@
   .heroMotion,
   .rigPlate,
   .rigPin,
-  .stackState,
-  .modulePanel,
+  .rigPlates,
   .dayMoment,
   .trailRow,
-  .chainRod,
-  .chainNode,
-  .chainPlate,
-  .chainPin,
   .tierLiquid {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
   }
 
+  .stackStateActive,
   .dayTime,
   .dayWhere,
   .tierWave {
@@ -1598,16 +1407,34 @@
     position: relative;
     top: auto;
   }
+}
 
+/*
+  Where the pinned scene cannot be read as one composition — a short window, a
+  phone on its side, or a reader who has asked for less motion — the stage is
+  released into the flow and every description is printed in order. The
+  component reads the same query, so the pin is drawn seated in the last plate.
+*/
+@media (prefers-reduced-motion: reduce), (max-height: 600px) {
   .stackTrack { height: auto; }
-  .stackStage { position: relative; height: auto; min-height: 100svh; }
-  .stackGrid { height: auto; }
-  .stackFigure { min-height: 28rem; }
-  .stackCopy { display: grid; align-content: start; gap: 2.5rem; }
-  .stackState {
-    position: static;
-    visibility: visible;
-    opacity: 1;
-    transform: none;
-  }
+  .stackStage { position: relative; height: auto; overflow: visible; }
+  .stackGrid { height: auto; padding-bottom: 4rem; }
+  .stackFigure { align-items: start; padding-top: 1rem; }
+  .rig { width: min(100%, 22rem); }
+  .stackCopy { display: grid; align-content: start; gap: 2.25rem; }
+  .stackState { position: static; visibility: visible; animation: none; }
+  .stackState h3 { font-size: clamp(1.6rem, 2.4vw, 2.2rem); }
+  .stackState p { margin-top: 0.7rem; font-size: 0.95rem; }
+  .stackCaps { margin-top: 0.9rem; gap: 0.45rem; font-size: 0.88rem; }
+  .stackProgress { display: none; }
+  .rigPin,
+  .rigPlates { transition: none; }
+}
+
+@media (max-width: 720px) and (prefers-reduced-motion: reduce), (max-width: 720px) and (max-height: 600px) {
+  .stackGrid { grid-template-rows: auto auto auto; padding-top: calc(4.25rem + env(safe-area-inset-top, 0px) + 1.25rem); }
+  .rig { width: min(72vw, 17rem); }
+  .stackCopy { padding-top: 0.5rem; }
+  .stackState { inset: auto; }
+  .stackCaps { display: grid; }
 }

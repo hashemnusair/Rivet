@@ -5,161 +5,84 @@ import { Reveal } from "@/components/marketing/reveal";
 import { cn } from "@/lib/utils/cn";
 import styles from "./landing-cinematic.module.css";
 
-const STACK_ITEMS = [
+export const STACK_ITEMS = [
   {
     label: "Sales",
-    copy: "The first walk-in, trial, call, and follow-up all carry the name of the person who handled them.",
-    caps: ["Leads, trials, follow-ups", "Conversion by staff member", "Nothing lives in a chat"],
+    copy: "Walk-ins, trials, calls and follow-ups are logged to the staff member who handled them, with a due date instead of a memory.",
+    caps: ["Leads and free trials", "Follow-ups with due dates", "Conversion by staff member"],
   },
   {
     label: "Memberships",
-    copy: "Plans, renewals, freezes, upgrades, and family memberships, with expiries the desk actually sees.",
-    caps: ["Plans and renewals", "Freezes and transfers", "Access follows the plan"],
+    copy: "Plans, renewals, freezes, upgrades and family memberships, with expiries the desk sees before the member asks.",
+    caps: ["Plans and renewals", "Freezes and transfers", "Access ends with the plan"],
   },
   {
     label: "Payments",
-    copy: "Cash, card, CliQ, and installments, with a receipt for every dinar and a balance for every member.",
+    copy: "Cash, card, CliQ and installments, with a receipt for every payment and an outstanding balance on every member.",
     caps: ["Cash, card, CliQ", "Receipts and balances", "Drawer reconciled every shift"],
   },
   {
     label: "Reception",
-    copy: "Check-in, who is inside right now, front-desk sales, and a proper handover between shifts.",
+    copy: "Check-in by card, code or phone number, who is inside right now, front-desk sales and a proper handover between shifts.",
     caps: ["Check-in and access", "Front-desk sales", "Shift open and close"],
   },
   {
     label: "Operations",
-    copy: "Staff, shifts, classes, trainers, maintenance, and the daily close live in one operating record.",
-    caps: ["Staff, shifts, roles", "Classes and capacity", "The daily close"],
+    copy: "Staff, shifts, classes, trainers, maintenance and the daily close, kept in one operating record instead of three notebooks.",
+    caps: ["Staff, shifts and roles", "Classes and capacity", "The daily close"],
   },
   {
     label: "Member activity",
     copy: "Attendance and engagement per member, so a lapse becomes a conversation before it becomes a cancellation.",
-    caps: ["Attendance history", "Inactivity flags", "Renewals at the right time"],
+    caps: ["Attendance history", "Inactivity flags", "Renewal at the right time"],
   },
 ] as const;
 
-const MODULES = [
-  {
-    name: "Sales",
-    summary: "From walk-in to member, with a name on every sale.",
-    caps: [
-      "Leads, walk-ins, and trials logged to the staff member who handled them",
-      "Follow-ups with due dates instead of memory",
-      "Conversion by person, day, and branch",
-      "Every sale carries a name and a time",
-    ],
-  },
-  {
-    name: "Memberships",
-    summary: "Plans, renewals, and freezes, with expiries the desk can see.",
-    caps: [
-      "Plans, renewals, freezes, upgrades, and transfers",
-      "Family and group memberships",
-      "Expiry lists at reception",
-      "Access ends when the membership ends",
-    ],
-  },
-  {
-    name: "Payments",
-    summary: "Cash, card, CliQ, and installments. A receipt for every dinar.",
-    caps: [
-      "Cash, card, CliQ, and installment plans",
-      "A receipt for every payment, including partial ones",
-      "Outstanding balances by member",
-      "End-of-shift reconciliation against the drawer",
-    ],
-  },
-  {
-    name: "Reception",
-    summary: "Check-in, who is inside, and a proper shift handover.",
-    caps: [
-      "Check-in by card, code, or phone number",
-      "Who is inside right now",
-      "Front-desk sales and top-ups",
-      "Shift open, close, and handover notes",
-    ],
-  },
-  {
-    name: "Operations",
-    summary: "Staff, shifts, classes, and the daily close, in one place.",
-    caps: [
-      "Staff, shifts, and roles",
-      "Classes, trainers, and capacity",
-      "Daily tasks and maintenance logs",
-      "The daily close on one screen",
-    ],
-  },
-  {
-    name: "Member activity",
-    summary: "Attendance and engagement, so lapses are seen before they happen.",
-    caps: [
-      "Attendance history per member",
-      "Inactivity flags before members disappear",
-      "Class bookings and no-shows",
-      "Renewal conversations at the right time",
-    ],
-  },
-] as const;
+export const STACK_FINALE = {
+  title: "All six, on one record.",
+  copy: "A payment taken at reception is already on the member, already in the ledger and already in the daily close. Nothing is copied across.",
+} as const;
 
 const DAY_EVENTS = [
   {
     time: "06:00",
     where: "Reception",
     title: "Doors open.",
-    copy: "Members check in. The desk sees who is active, who expires this week, and who still owes a balance, before anyone asks.",
-    tag: "Reception · Memberships",
+    copy: "Members check in. The desk sees who is active, who expires this week and who still owes a balance, before anyone asks.",
   },
   {
     time: "09:30",
     where: "Sales desk",
     title: "A walk-in asks about prices.",
-    copy: "The trial is logged to the staff member who handled it. If they join next week, the sale is theirs, on record.",
-    tag: "Sales",
+    copy: "The trial is logged to the person who handled it. If they join next week, the sale is theirs, on record.",
   },
   {
     time: "13:15",
     where: "Reception",
     title: "Half now, half next month.",
-    copy: "An installment plan is created, a receipt is issued, and the balance is visible to everyone who needs to see it.",
-    tag: "Payments",
-  },
-  {
-    time: "17:30",
-    where: "The floor",
-    title: "Peak hour.",
-    copy: "Class capacity, the trainer schedule, and the number of people inside sit on one screen at reception.",
-    tag: "Operations · Member activity",
+    copy: "An installment plan is created, a receipt is issued, and the balance shows on the member for everyone who needs to see it.",
   },
   {
     time: "21:00",
     where: "Reception",
     title: "Shift handover.",
-    copy: "The cash in the drawer is counted against what the system says was collected. Any difference has a name.",
-    tag: "Reception · Payments",
+    copy: "The cash in the drawer is counted against what the system says was collected. Any difference has a name next to it.",
   },
   {
     time: "23:00",
     where: "The office",
     title: "Daily close.",
-    copy: "The owner sees revenue by method, new members, renewals due, and who did what, exactly as the day happened.",
-    tag: "Operations",
+    copy: "The owner sees revenue by method, new members, renewals due and who did what, as the day happened.",
   },
 ] as const;
 
 const REGIONAL_SPECS = [
-  ["Currency", "JOD, to the fils. Three decimals wherever a number appears."],
-  ["Payments", "Cash, card, CliQ, and installments, with a receipt for each."],
-  ["Language", "English and Arabic, with RTL-ready layouts."],
-  ["Calendar", "Ramadan hours, Friday schedules, and public holidays."],
-  ["Memberships", "Family plans, women's hours, freezes, and transfers."],
+  ["Currency", "JOD to the fils. Three decimals wherever a number appears."],
+  ["Payments", "Cash, card, CliQ and installments, with a receipt for each."],
+  ["Language", "English and Arabic, with right-to-left layouts."],
+  ["Calendar", "Ramadan hours, Friday schedules and public holidays."],
+  ["Memberships", "Family plans, women's hours, freezes and transfers."],
   ["Branches", "One account across branches, in Amman or anywhere in the region."],
-] as const;
-
-const CHAIN = [
-  ["Member pays", "Who, amount, method"],
-  ["Reception records", "Name, time, shift"],
-  ["Shift closes", "Drawer against system"],
-  ["Owner sees", "The day, as it happened"],
 ] as const;
 
 /** One entry's life on the ledger. Roles only, so nothing reads as a real person or amount. */
@@ -190,7 +113,6 @@ const smoothstep = (value: number) => {
   const progress = clamp(value, 0, 1);
   return progress * progress * (3 - 2 * progress);
 };
-const easeOut = (value: number) => 1 - (1 - clamp(value, 0, 1)) ** 3;
 
 export function StoryMarker({ label, dark = false }: { label: string; dark?: boolean }) {
   return (
@@ -202,8 +124,9 @@ export function StoryMarker({ label, dark = false }: { label: string; dark?: boo
 }
 
 /** Lays the previous section's colour under a rounded sheet's corners. */
-export function SheetUnder({ tone }: { tone: "sunken" | "stack" }) {
-  return <div aria-hidden className={cn(styles.sheetUnder, tone === "sunken" ? styles.sheetUnderSunken : styles.sheetUnderStack)} />;
+export function SheetUnder({ tone }: { tone: "paper" | "sunken" | "stack" }) {
+  const toneClass = tone === "sunken" ? styles.sheetUnderSunken : tone === "stack" ? styles.sheetUnderStack : styles.sheetUnderPaper;
+  return <div aria-hidden className={cn(styles.sheetUnder, toneClass)} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +136,7 @@ export function SheetUnder({ tone }: { tone: "sunken" | "stack" }) {
 const PLATE_COUNT = STACK_ITEMS.length;
 
 /** Rig geometry shared with the stylesheet, as fractions of the rig box. */
-const RIG = {
+export const RIG = {
   platesTop: 0.34,
   platesHeight: 0.61,
   platesLeft: 0.235,
@@ -221,60 +144,122 @@ const RIG = {
   platePitch: 0.155,
   plateHeight: 0.125,
   shortPlate: 0.72,
+  /** How far the load rises in the finale, as a fraction of the rig height. */
+  lift: 0.06,
 } as const;
 
 /**
  * The scroll timeline, as fractions of the track. The pin starts home in the
- * first plate, rests in each plate for a read, then pulls out, travels down and
- * pushes into the next one. What is left after the last plate lifts the stack.
+ * first plate, rests in each plate for a read, then withdraws, travels and
+ * inserts into the next one. What is left after the last plate lifts the stack.
  */
-const LEAD = 0.03;
-const DWELL = 0.09;
-const MOVE = 0.07;
-const OUT_END = 0.3;
-const TRAVEL_END = 0.68;
+export const STACK_TIMELINE = { lead: 0.03, dwell: 0.09, move: 0.07 } as const;
 
-interface PinState {
-  /** Plate the pin is aligned with, fractional while it travels. */
-  y: number;
-  /** Plate whose edge the pin is measured from while it is out. */
+export interface RigGeometry {
+  width: number;
+  height: number;
+  /** Length of the pin's rod, the part that disappears into a plate. */
+  rod: number;
+  /** Clearance between the rod's tip and the widest plate while travelling. */
+  gap: number;
+}
+
+export interface StackPose {
+  /** Plate the pin is aligned with: the one it is leaving, or the one it is entering. */
   plate: number;
-  /** 0 = home in the plate, 1 = fully withdrawn. */
-  pull: number;
-  /** How far the finale lift has progressed. */
+  /** Plate whose description is showing. */
+  engaged: number;
+  /** True while the pin is fully home in `plate`. */
+  seated: boolean;
+  /** Vertical centre of the pin, in rig pixels, before the lift. */
+  y: number;
+  /** Left edge of the pin's ring, in rig pixels. */
+  ringLeft: number;
+  /** Vertical offset of the lifted load, in rig pixels (negative is up). */
   lift: number;
-  finale: boolean;
+  /** Progress through the finale, 0 until the last plate has been read. */
+  finale: number;
 }
 
-function resolvePin(progress: number): PinState {
-  let cursor = LEAD;
-  if (progress < cursor) return { y: 0, plate: 0, pull: 0, lift: 0, finale: false };
+export const plateRight = (index: number, width: number) =>
+  width * (RIG.platesLeft + RIG.platesWidth * (index < 3 ? RIG.shortPlate : 1));
+
+export const plateCentre = (index: number, height: number) =>
+  height * (RIG.platesTop + RIG.platesHeight * (index * RIG.platePitch + RIG.plateHeight / 2));
+
+/** Where the ring rests while the pin travels: the rod's tip clears every plate by `gap`. */
+export const restingRingLeft = (geometry: RigGeometry) => plateRight(PLATE_COUNT - 1, geometry.width) + geometry.rod + geometry.gap;
+
+/**
+ * The pin's pose for a scroll progress, in rig pixels. A pure function of the
+ * progress, so scrolling back plays the same motion in reverse and reloading
+ * mid-section lands on exactly the pose the reader left.
+ *
+ * Between plates the pin withdraws until its rod clears the widest plate,
+ * travels straight down that clear lane, then inserts. One eased sweep is
+ * spread over the whole path in proportion to distance, so the pin moves at a
+ * steady pace and the three legs join without a jump.
+ *
+ * The description switches at the moment the rod's tip meets the edge of the
+ * plate it is entering; in reverse, at the moment it leaves. The plate
+ * lights at the same instant.
+ */
+export function stackPoseAt(progress: number, geometry: RigGeometry): StackPose {
+  const right = (index: number) => plateRight(index, geometry.width);
+  const centre = (index: number) => plateCentre(index, geometry.height);
+  const out = restingRingLeft(geometry);
+
+  const finish = (raw: { plate: number; from: number; y: number; ringLeft: number; lift: number; finale: number }): StackPose => {
+    const edge = right(raw.plate);
+    const inside = raw.ringLeft - geometry.rod <= edge + 0.5;
+    return {
+      plate: raw.plate,
+      engaged: inside ? raw.plate : raw.from,
+      seated: raw.plate === raw.from && raw.ringLeft <= edge + 0.5,
+      y: raw.y,
+      ringLeft: raw.ringLeft,
+      lift: raw.lift,
+      finale: raw.finale,
+    };
+  };
+  const home = (index: number) => finish({ plate: index, from: index, y: centre(index), ringLeft: right(index), lift: 0, finale: 0 });
+
+  const { lead, dwell, move } = STACK_TIMELINE;
+  let cursor = lead;
+  if (progress < cursor) return home(0);
   for (let index = 0; index < PLATE_COUNT; index += 1) {
-    if (progress < cursor + DWELL) return { y: index, plate: index, pull: 0, lift: 0, finale: false };
-    cursor += DWELL;
+    if (progress < cursor + dwell) return home(index);
+    cursor += dwell;
     if (index === PLATE_COUNT - 1) break;
-    if (progress < cursor + MOVE) {
-      const phase = (progress - cursor) / MOVE;
-      if (phase < OUT_END) {
-        return { y: index, plate: index, pull: smoothstep(phase / OUT_END), lift: 0, finale: false };
+    if (progress < cursor + move) {
+      const withdraw = out - right(index);
+      const travel = centre(index + 1) - centre(index);
+      const insert = out - right(index + 1);
+      const distance = smoothstep((progress - cursor) / move) * (withdraw + travel + insert);
+      if (distance <= withdraw) {
+        return finish({ plate: index, from: index, y: centre(index), ringLeft: right(index) + distance, lift: 0, finale: 0 });
       }
-      if (phase < TRAVEL_END) {
-        return { y: index + smoothstep((phase - OUT_END) / (TRAVEL_END - OUT_END)), plate: index, pull: 1, lift: 0, finale: false };
+      if (distance <= withdraw + travel) {
+        return finish({ plate: index, from: index, y: centre(index) + (distance - withdraw), ringLeft: out, lift: 0, finale: 0 });
       }
-      return { y: index + 1, plate: index + 1, pull: 1 - easeOut((phase - TRAVEL_END) / (1 - TRAVEL_END)), lift: 0, finale: false };
+      return finish({ plate: index + 1, from: index, y: centre(index + 1), ringLeft: out - (distance - withdraw - travel), lift: 0, finale: 0 });
     }
-    cursor += MOVE;
+    cursor += move;
   }
+  const last = PLATE_COUNT - 1;
   const finale = clamp((progress - cursor) / Math.max(0.001, 1 - cursor), 0, 1);
-  return { y: PLATE_COUNT - 1, plate: PLATE_COUNT - 1, pull: 0, lift: smoothstep(finale / 0.7), finale: finale > 0.02 };
+  return finish({ plate: last, from: last, y: centre(last), ringLeft: right(last), lift: -smoothstep(finale / 0.7) * geometry.height * RIG.lift, finale });
 }
+
+/** The scene is pinned only where the whole composition fits; the stylesheet mirrors this query. */
+const STATIC_STACK_QUERY = "(prefers-reduced-motion: reduce), (max-height: 600px)";
 
 export function ScrollStackStory() {
   const sectionRef = useRef<HTMLElement>(null);
   const rigRef = useRef<HTMLDivElement>(null);
   const rodRef = useRef<HTMLSpanElement>(null);
-  const [active, setActive] = useState(0);
-  const [seated, setSeated] = useState(0);
+  const [engaged, setEngaged] = useState(0);
+  const [seated, setSeated] = useState(true);
   const [finale, setFinale] = useState(false);
 
   useEffect(() => {
@@ -282,61 +267,29 @@ export function ScrollStackStory() {
     const rig = rigRef.current;
     const rod = rodRef.current;
     if (!section || !rig || !rod) return;
-    const reduced = typeof window.matchMedia === "function"
-      ? window.matchMedia("(prefers-reduced-motion: reduce)")
-      : { matches: false };
 
-    let rigWidth = rig.clientWidth;
-    let rigHeight = rig.clientHeight;
-    let rodWidth = rod.getBoundingClientRect().width;
-    let gap = 14;
+    const geometry: RigGeometry = { width: 1, height: 1, rod: 48, gap: 14 };
     const measure = () => {
-      rigWidth = rig.clientWidth;
-      rigHeight = rig.clientHeight;
-      rodWidth = rod.getBoundingClientRect().width;
-      gap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.9;
+      geometry.width = Math.max(1, rig.clientWidth);
+      geometry.height = Math.max(1, rig.clientHeight);
+      geometry.rod = rod.offsetWidth;
+      geometry.gap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.9;
     };
 
-    const plateRight = (index: number) => rigWidth * (RIG.platesLeft + RIG.platesWidth * (index < 3 ? RIG.shortPlate : 1));
-    const plateCenter = (index: number) => rigHeight * (RIG.platesTop + RIG.platesHeight * (index * RIG.platePitch + RIG.plateHeight / 2));
-
     const paint = (progress: number) => {
-      const pin = resolvePin(progress);
-      const home = plateRight(pin.plate);
-      const out = plateRight(PLATE_COUNT - 1) + rodWidth + gap;
-      const ringLeft = home + pin.pull * (out - home);
-      const lift = -pin.lift * rigHeight * 0.06;
-      // The copy switches the moment the rod's tip crosses the plate's edge.
-      const tip = ringLeft - rodWidth;
-      const entered = tip <= home + 0.5;
-      const nextActive = entered ? pin.plate : Math.max(0, Math.min(pin.plate, Math.floor(pin.y)));
-      const nextSeated = pin.pull === 0 ? pin.plate : -1;
-
-      section.style.setProperty("--stack-pin-x", `${(ringLeft - rodWidth).toFixed(2)}px`);
-      section.style.setProperty("--stack-pin-y", `${(plateCenter(pin.y) + lift).toFixed(2)}px`);
-      section.style.setProperty("--stack-lift", `${lift.toFixed(2)}px`);
+      const pose = stackPoseAt(progress, geometry);
+      section.style.setProperty("--stack-pin-x", `${(pose.ringLeft - geometry.rod).toFixed(2)}px`);
+      section.style.setProperty("--stack-pin-y", `${(pose.y + pose.lift).toFixed(2)}px`);
+      section.style.setProperty("--stack-lift", `${pose.lift.toFixed(2)}px`);
       section.style.setProperty("--stack-progress", `${(progress * 100).toFixed(2)}%`);
       // The bar has done its job once the stack lifts; fading it keeps the seam
       // with the next sheet clean.
       section.style.setProperty("--stack-progress-opacity", (1 - smoothstep((progress - 0.9) / 0.08)).toFixed(3));
-      setActive((current) => (current === nextActive ? current : nextActive));
-      setSeated((current) => (current === nextSeated ? current : nextSeated));
-      setFinale((current) => (current === pin.finale ? current : pin.finale));
+      const showFinale = pose.finale > 0.02;
+      setEngaged((current) => (current === pose.engaged ? current : pose.engaged));
+      setSeated((current) => (current === pose.seated ? current : pose.seated));
+      setFinale((current) => (current === showFinale ? current : showFinale));
     };
-
-    if (reduced.matches) {
-      measure();
-      paint(1);
-      return;
-    }
-
-    // Scroll position is followed through a short lag so wheel steps read as
-    // one continuous motion instead of jumps; the loop runs only while the
-    // pin still has somewhere to go.
-    let target = 0;
-    let current = 0;
-    let frame = 0;
-    let last = 0;
 
     const readProgress = () => {
       const rect = section.getBoundingClientRect();
@@ -344,62 +297,99 @@ export function ScrollStackStory() {
       return clamp(-rect.top / range, 0, 1);
     };
 
-    const tick = (now: number) => {
-      const elapsed = last ? Math.min(64, now - last) : 16;
-      last = now;
-      current += (target - current) * (1 - Math.exp(-elapsed / 85));
-      if (Math.abs(target - current) < 0.0003) {
-        current = target;
-        frame = 0;
-        paint(current);
-        return;
-      }
-      paint(current);
-      frame = window.requestAnimationFrame(tick);
-    };
+    // Test and legacy environments have no matchMedia; they get the scrolling scene.
+    const staticQuery = typeof window.matchMedia === "function" ? window.matchMedia(STATIC_STACK_QUERY) : null;
+    const isStatic = () => staticQuery?.matches ?? false;
+    let frame = 0;
+    let readyFrame = 0;
+    let following = false;
 
     const follow = () => {
-      target = readProgress();
-      if (!frame) {
-        last = 0;
-        frame = window.requestAnimationFrame(tick);
-      }
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        paint(readProgress());
+      });
     };
 
     const settle = () => {
       measure();
-      target = readProgress();
-      current = target;
-      paint(current);
+      if (isStatic()) {
+        paint(1);
+        return;
+      }
+      paint(readProgress());
     };
 
-    settle();
-    window.addEventListener("scroll", follow, { passive: true });
-    window.addEventListener("resize", settle, { passive: true });
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(settle);
-    observer?.observe(rig);
-    return () => {
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(settle);
+
+    const start = () => {
+      if (following) return;
+      following = true;
+      window.addEventListener("scroll", follow, { passive: true });
+      window.addEventListener("resize", settle, { passive: true });
+      resizeObserver?.observe(rig);
+    };
+    const stop = () => {
+      if (!following) return;
+      following = false;
       window.removeEventListener("scroll", follow);
       window.removeEventListener("resize", settle);
-      observer?.disconnect();
+      resizeObserver?.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
+      frame = 0;
+    };
+
+    const apply = () => {
+      // The first pose is written without a transition so a reload mid-section
+      // shows the pin where it belongs instead of sliding it in from the top.
+      delete section.dataset.stackReady;
+      settle();
+      if (isStatic()) {
+        stop();
+        return;
+      }
+      start();
+      readyFrame = window.requestAnimationFrame(() => {
+        readyFrame = 0;
+        section.dataset.stackReady = "";
+      });
+    };
+
+    apply();
+    staticQuery?.addEventListener("change", apply);
+    return () => {
+      staticQuery?.removeEventListener("change", apply);
+      stop();
+      if (readyFrame) window.cancelAnimationFrame(readyFrame);
+      delete section.dataset.stackReady;
     };
   }, []);
 
   return (
-    <section ref={sectionRef} id="product" data-landing-theme="dark" className={styles.stackStory}>
+    <section ref={sectionRef} id="product" data-landing-theme="dark" className={styles.stackStory} aria-labelledby="stack-title">
       <div className={styles.stackTrack}>
         <div className={styles.stackStage}>
           <div className={styles.stackGrid}>
             <div className={styles.stackHeader}>
               <div>
                 <StoryMarker label="The stack" dark />
-                <h2>Six plates. One pin.</h2>
+                <h2 id="stack-title">Six plates. One pin.</h2>
               </div>
               <p className={styles.stackLead}>
-                A weight stack works because one pin turns loose plates into a single load. RIVET does that to a gym.
+                Six parts of running a gym, kept on one member record. Each plate is a module; the pin marks the one you are reading about.
               </p>
             </div>
+
+            {/* The written version of the scene, for readers who do not scroll it. */}
+            <ol className="sr-only">
+              {STACK_ITEMS.map((item) => (
+                <li key={item.label}>
+                  {item.label}. {item.copy} {item.caps.join(". ")}.
+                </li>
+              ))}
+              <li>{STACK_FINALE.title} {STACK_FINALE.copy}</li>
+            </ol>
 
             <div className={styles.stackFigure} aria-hidden>
               <div ref={rigRef} className={styles.rig}>
@@ -418,8 +408,8 @@ export function ScrollStackStory() {
                       className={cn(
                         styles.rigPlate,
                         index < 3 && styles.rigPlateShort,
-                        index <= active && styles.rigPlateActive,
-                        index === seated && styles.rigPlateSeated,
+                        index <= engaged && styles.rigPlateActive,
+                        seated && index === engaged && styles.rigPlateSeated,
                       )}
                       style={{ "--plate-index": index } as CSSProperties}
                     >
@@ -431,9 +421,9 @@ export function ScrollStackStory() {
               </div>
             </div>
 
-            <div className={styles.stackCopy} aria-live="polite">
+            <div className={styles.stackCopy} aria-hidden>
               {STACK_ITEMS.map((item, index) => (
-                <div key={item.label} className={cn(styles.stackState, !finale && active === index && styles.stackStateActive)}>
+                <div key={item.label} className={cn(styles.stackState, !finale && engaged === index && styles.stackStateActive)}>
                   <h3>{item.label}</h3>
                   <p>{item.copy}</p>
                   <ul className={styles.stackCaps}>
@@ -442,8 +432,8 @@ export function ScrollStackStory() {
                 </div>
               ))}
               <div className={cn(styles.stackState, finale && styles.stackStateActive)}>
-                <h3>The full stack,<br />lifted together.</h3>
-                <p>Every module reads and writes the same record. A payment at reception is already on the member, already in the ledger, and already in the daily close.</p>
+                <h3>{STACK_FINALE.title}</h3>
+                <p>{STACK_FINALE.copy}</p>
               </div>
             </div>
           </div>
@@ -455,73 +445,11 @@ export function ScrollStackStory() {
 }
 
 // ---------------------------------------------------------------------------
-// Modules
-// ---------------------------------------------------------------------------
-
-export function ModulesShowcase() {
-  const [openModule, setOpenModule] = useState(0);
-
-  return (
-    <section
-      id="modules"
-      data-landing-cover
-      data-landing-theme="dark"
-      aria-labelledby="modules-title"
-      className={cn(styles.coverSheet, styles.inkSheet, styles.layer4, styles.modulesSection)}
-    >
-      <div className={styles.modulesInner}>
-        <StoryMarker label="Modules" dark />
-        <div className={styles.modulesIntro}>
-          <Reveal>
-            <h2 id="modules-title" className={styles.modulesTitle}>What each<br />plate carries.</h2>
-          </Reveal>
-          <Reveal delay={140}>
-            <p className={styles.modulesLead}>Six modules, one record. Everything a gym does between opening the door and counting the drawer.</p>
-          </Reveal>
-        </div>
-
-        <ol className={styles.modulesList}>
-          {MODULES.map((module, index) => {
-            const open = openModule === index;
-            const panelId = `landing-module-${index + 1}`;
-            return (
-              <li key={module.name} className={cn(styles.moduleItem, open && styles.moduleItemOpen)}>
-                <Reveal delay={index * 55}>
-                  <button
-                    type="button"
-                    className={styles.moduleButton}
-                    aria-expanded={open}
-                    aria-controls={panelId}
-                    onClick={() => setOpenModule(open ? -1 : index)}
-                  >
-                    <span className={styles.moduleIndex}>{String(index + 1).padStart(2, "0")}</span>
-                    <span className={styles.moduleName}>{module.name}</span>
-                    <span className={styles.moduleSummary}>{module.summary}</span>
-                    <span className={styles.moduleToggle} aria-hidden />
-                  </button>
-                  <div id={panelId} className={styles.modulePanel} aria-hidden={!open}>
-                    <div className={styles.modulePanelInner}>
-                      <ul className={styles.moduleCaps}>
-                        {module.caps.map((cap) => <li key={cap}>{cap}</li>)}
-                      </ul>
-                    </div>
-                  </div>
-                </Reveal>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // A day on RIVET
 // ---------------------------------------------------------------------------
 
 /** Where the sticky clock rests, matching `.daySticky` / `.dayAside` in the stylesheet. */
-const clockOffset = () => (window.innerWidth <= 720 ? 68 : 80);
+const clockOffset = () => (window.innerWidth <= 720 ? 68 : 88);
 
 export function OperationalDay() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -578,14 +506,15 @@ export function OperationalDay() {
       id="day"
       data-landing-theme="paper"
       aria-labelledby="day-title"
-      className={cn(styles.coverSheet, styles.paperSheet, styles.layer5, styles.daySection)}
+      className={cn(styles.coverSheet, styles.paperSheet, styles.layer4, styles.daySection)}
     >
       <div className={styles.dayGrid}>
         <aside className={styles.dayAside}>
           <div className={styles.daySticky}>
             <StoryMarker label="A day on RIVET" />
             <h2 id="day-title" className="sr-only">A day on RIVET</h2>
-            <p className={styles.dayClock} aria-live="polite" aria-atomic="true">
+            <p className={styles.dayLead}>One ordinary day, as reception and the owner see it.</p>
+            <p className={styles.dayClock} aria-hidden>
               <span className={styles.dayTimeMask}>
                 <span key={`${current.time}-${landed}`} className={styles.dayTime}>{current.time}</span>
               </span>
@@ -606,7 +535,6 @@ export function OperationalDay() {
               <time className={styles.dayMomentTime}>{event.time}</time>
               <h3>{event.title}</h3>
               <p>{event.copy}</p>
-              <span className={styles.dayMomentTag}>{event.tag}</span>
             </li>
           ))}
         </ol>
@@ -626,17 +554,19 @@ export function AccountabilityLedger() {
       data-landing-cover
       data-landing-theme="dark"
       aria-labelledby="accountability-title"
-      className={cn(styles.coverSheet, styles.inkSheet, styles.layer6, styles.accountSection)}
+      className={cn(styles.coverSheet, styles.inkSheet, styles.layer5, styles.accountSection)}
     >
       <div className={styles.accountInner}>
         <StoryMarker label="Accountability" dark />
-        <Reveal>
-          <h2 id="accountability-title" className={styles.accountTitle}>Nothing gets<br />edited quietly.</h2>
-        </Reveal>
         <div className={styles.accountBody}>
-          <Reveal delay={120}>
-            <p className={styles.accountLead}>Every sale, payment, check-in, and shift change is recorded under the person who did it. Corrections are allowed. Silent ones are not. The owner sees the day as it happened.</p>
-          </Reveal>
+          <div>
+            <Reveal>
+              <h2 id="accountability-title" className={styles.accountTitle}>Nothing gets edited quietly.</h2>
+            </Reveal>
+            <Reveal delay={120}>
+              <p className={styles.accountLead}>Every sale, payment, check-in and shift change is recorded under the person who did it. Corrections are allowed. Silent ones are not, and the owner sees the day as it happened.</p>
+            </Reveal>
+          </div>
           <Reveal delay={200} className={styles.trailReveal}>
             <div className={styles.trail}>
               <div className={styles.trailHead}>
@@ -655,18 +585,6 @@ export function AccountabilityLedger() {
             </div>
           </Reveal>
         </div>
-        <Reveal delay={180} className={styles.chainReveal}>
-          <div className={styles.chain} role="img" aria-label="A payment's chain of custody from member payment to owner review">
-            <span className={styles.chainRod} aria-hidden />
-            {CHAIN.map(([title, detail], index) => (
-              <div key={title} className={styles.chainNode} style={{ "--chain-delay": `${220 + index * 150}ms` } as CSSProperties}>
-                <span className={styles.chainPlate}>{title}</span>
-                <span className={styles.chainSub}>{detail}</span>
-              </div>
-            ))}
-            <span className={styles.chainPin} aria-hidden><span /><span /></span>
-          </div>
-        </Reveal>
       </div>
     </section>
   );
@@ -682,7 +600,7 @@ export function RegionProof() {
       id="region"
       data-landing-theme="paper"
       aria-labelledby="region-title"
-      className={cn(styles.coverSheet, styles.paperSheet, styles.layer7, styles.regionSection)}
+      className={cn(styles.coverSheet, styles.paperSheet, styles.layer6, styles.regionSection)}
     >
       <div className={styles.regionInner}>
         <StoryMarker label="Built for here" />

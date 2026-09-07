@@ -24,9 +24,7 @@ vi.mock("@/components/public/public-shell", () => ({
 vi.mock("@/components/marketing/decorative-qr", () => ({ DecorativeQr: () => <div aria-hidden /> }));
 vi.mock("@/components/marketing/hero-devices", () => ({ HeroDevices: () => <div aria-hidden /> }));
 vi.mock("@/components/marketing/reveal", () => ({ Reveal: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
-vi.mock("@/components/marketing/rivet-loop-machine", () => ({ RivetLoopMachine: () => <div aria-hidden /> }));
 vi.mock("@/components/marketing/scroll-progress", () => ({ ScrollProgress: () => <div aria-hidden /> }));
-vi.mock("@/components/marketing/vocabulary-marquee", () => ({ VocabularyMarquee: () => <div aria-hidden /> }));
 vi.mock("@/components/public/experience-data-state", () => ({ ExperienceDataState: () => <div role="status" /> }));
 
 describe("landing-page pricing", () => {

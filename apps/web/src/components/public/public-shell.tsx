@@ -171,7 +171,7 @@ function MarketingSignedOutActions({ mobile = false, onClose }: { mobile?: boole
 export function PublicFooter() {
   return (
     <footer className="night-surface bg-night text-night-ink">
-      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.5fr_1fr_1fr_1fr_1fr] lg:px-12">
+      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:grid-cols-2 sm:px-8 lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr] lg:px-12">
         <div>
             <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={36} />
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">

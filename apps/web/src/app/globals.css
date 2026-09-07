@@ -200,6 +200,18 @@
   font-family: var(--font-marketing);
 }
 
+/* The landing's fixed bar: anchor jumps and focus scrolls stop below it. The
+   class is set by the landing's motion controller, so no other page is moved. */
+html.landing-motion-ready {
+  scroll-padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
+}
+
+@media (max-width: 720px) {
+  html.landing-motion-ready {
+    scroll-padding-top: calc(4.25rem + env(safe-area-inset-top, 0px));
+  }
+}
+
 @layer base {
   :root {
     /* The neutral fallback is used outside an authenticated gym shell. The
