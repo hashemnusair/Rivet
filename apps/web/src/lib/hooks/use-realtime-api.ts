@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getApi } from "@/lib/api/client";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApiScopeEpoch } from "@/lib/api/scope";
+import { isAccessDenied } from "@/lib/hooks/use-api";
 
 type StreamState = "connecting" | "live" | "fallback";
 
@@ -132,11 +133,16 @@ export function useRealtimeApiQuery<T>(options: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, fallbackIntervalMs, queryClient, scopeEpoch, stableKey]);
 
+  // As in useApiQuery: a refusal after the watch or its fallback fetch is
+  // re-checked by the server withdraws the snapshot instead of leaving stale
+  // data behind a "could not refresh" notice.
   const hasRenderedData = query.data !== undefined;
+  const denied = query.isError && isAccessDenied(query.error);
   return {
     ...query,
+    data: denied ? undefined : query.data,
     streamState,
-    isError: query.isError && !hasRenderedData,
-    isBackgroundError: query.isError && hasRenderedData,
+    isError: query.isError && (!hasRenderedData || denied),
+    isBackgroundError: query.isError && hasRenderedData && !denied,
   };
 }

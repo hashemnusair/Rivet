@@ -5597,13 +5597,12 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "pt.workspace": {
       const canReadReports = hasPermission(actor, "pt.reports.read");
       if (!canReadReports && !hasPermission(actor, "pt.schedule.self")) requirePermission(actor, "pt.reports.read");
-      const [allTrainers, allPackages, allBookings, allOrders, entitlements, paymentRows] = await Promise.all([
+      const [allTrainers, allPackages, allBookings, allOrders, entitlements] = await Promise.all([
         ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
         ctx.db.query("ptPackages").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
         ctx.db.query("ptBookings").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id)).collect(),
         ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
         ctx.db.query("ptEntitlements").withIndex("by_expiry", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
-        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "payment")).collect(),
       ]);
       const ownTrainer = allTrainers.find((item) => item.userId === actor.user._id);
       const visibleTrainers = canReadReports ? allTrainers : ownTrainer ? [ownTrainer] : [];
@@ -5611,8 +5610,14 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const visibleBookings = allBookings.filter((item) => visibleTrainerIds.has(item.trainerProfileId) && (actor.branchScope === "all" || actor.branchIds.includes(item.branchId)));
       const visibleEntitlementIds = new Set(visibleBookings.map((item) => item.entitlementId));
       const visibleEntitlements = canReadReports ? entitlements : entitlements.filter((item) => visibleEntitlementIds.has(item._id));
-      const ptChargeIds = new Set(allOrders.map((order) => order.chargePublicId));
-      const packageRevenue = canReadReports ? paymentRows.map((row) => data(row.data)).filter((payment) => ptChargeIds.has(stringValue(payment.chargeId)) && payment.status !== "voided").reduce((total, payment) => total + amountOf(payment.amount), 0) : 0;
+      // Package revenue is what the PT charges have actually collected, net of
+      // refunds and voids, which the charge already carries as paidAmount. One
+      // indexed lookup per order replaces scanning every payment the gym has
+      // ever taken on each realtime update of this workspace.
+      const ptChargeIds = [...new Set(allOrders.map((order) => order.chargePublicId))];
+      const packageRevenue = canReadReports
+        ? (await Promise.all(ptChargeIds.map((chargeId) => recordOfOptional(ctx, actor, "charge", chargeId)))).reduce((total, charge) => total + amountOf(data(charge?.data).paidAmount), 0)
+        : 0;
       const ptPolicy = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
       return {
         cancellationCutoffHours: numberValue(ptPolicy.cancellationCutoffHours, 12),
@@ -9991,6 +9996,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await patchRecord(ctx, actor, originalRecord, { refundedAmount: money(newRefunded, actor.organization.currency), refundReason: stringValue(input.reason), status: newRefunded >= amountOf(original.amount) ? "refunded" : "partially_refunded" });
         remaining -= part;
       }
+      // The charge carries what was actually collected: a refund of unused
+      // sessions lowers paidAmount exactly as a membership refund does, while
+      // nothing becomes outstanding because the sessions are revoked with it.
+      const chargeRecord = await recordOf(ctx, actor, "charge", order.chargePublicId);
+      const chargeValue = data(chargeRecord.data);
+      await patchRecord(ctx, actor, chargeRecord, { paidAmount: money(Math.max(0, amountOf(chargeValue.paidAmount) - refundMinor), actor.organization.currency) });
       await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + sessions, status: ptAvailable({ ...entitlement, revoked: entitlement.revoked + sessions }) === 0 && entitlement.reserved === 0 ? "revoked" : "active", updatedAt: Date.now() });
       await ctx.db.patch(order._id, { refundedSessions: nextSessions, refundedMinor: cumulativeMinor, status: nextSessions >= terms.sessionCount ? "refunded" : "partially_refunded", updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: order.memberPublicId, type: "refund_revoke", quantity: -sessions, reason: stringValue(input.reason) });

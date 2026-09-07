@@ -118,7 +118,9 @@ describe("dated class booking", () => {
     await owner.mutation(api.domain.mutate, operation("classes.occurrence.coach.substitute", { occurrenceId, coachId: substitute.id, reason: "Regular coach is unavailable." }));
 
     vi.setSystemTime(new Date("2026-09-02T07:30:00.000Z"));
-    const finalized = await reception.mutation(api.domain.mutate, operation("classes.occurrence.attendance.finalize", { occurrenceId })) as { status: string };
+    // Reception marks attendance; only a manager or owner may finalize it.
+    await expectCode(reception.mutation(api.domain.mutate, operation("classes.occurrence.attendance.finalize", { occurrenceId })), "FORBIDDEN");
+    const finalized = await owner.mutation(api.domain.mutate, operation("classes.occurrence.attendance.finalize", { occurrenceId })) as { status: string };
     expect(finalized.status).toBe("completed");
     const staffView = await owner.query(api.domain.query, operation("classes.occurrences.list", { branchId: "branch-class-booking", fromDate: date, toDate: date })) as Array<{ roster: Array<{ memberId: string; noShowCount: number }> }>;
     expect(staffView[0]?.roster[0]).toMatchObject({ memberId: "member-class-a", noShowCount: 1 });
@@ -205,5 +207,30 @@ describe("dated class booking integrity", () => {
     const experience = await a.query(api.domain.query, operation("customer.classes", { membershipId: "membership-class-a" })) as { upcoming: Array<{ id: string; canBook: boolean; bookingBlockReason?: string }> };
     expect(experience.upcoming.find((item) => item.id === occurrenceId)).toMatchObject({ canBook: false, bookingBlockReason: "Booking closed when the class started." });
     await expectCode(a.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-a", occurrenceId })), "CONFLICT");
+  });
+});
+
+describe("moving a class to another weekday", () => {
+  it("refuses while members hold its dates, then retires the emptied date as a cancelled record", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-01T05:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-class-booking" });
+    const a = t.withIdentity({ subject: "clerk-customer-class-a" });
+    const base = { branchId: "branch-class-booking", name: "Core", startMinute: 8 * 60, durationMinutes: 60, capacity: 5, audience: "mixed" };
+    const template = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { ...base, dayOfWeek: 3 })) as { id: string };
+    const occurrenceId = `occ:${template.id}:2026-09-02`;
+    await a.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-a", occurrenceId }));
+
+    await expect(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { ...base, sessionId: template.id, dayOfWeek: 4 })))
+      .rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR", message: expect.stringContaining("2026-09-02") }) });
+
+    await a.mutation(api.domain.mutate, operation("customer.classes.cancel", { membershipId: "membership-class-a", occurrenceId }));
+    await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { ...base, sessionId: template.id, dayOfWeek: 4 }));
+    const rows = await t.run(async (ctx) => await ctx.db.query("classOccurrences").collect());
+    expect(rows.find((row) => row.publicId === occurrenceId)).toMatchObject({ status: "cancelled", cancelReason: "Class moved to Thursday" });
+    const listed = await owner.query(api.domain.query, operation("classes.occurrences.list", { branchId: "branch-class-booking", fromDate: "2026-09-02", toDate: "2026-09-03" })) as Array<{ id: string; date: string; status: string }>;
+    expect(listed.map((item) => [item.date, item.status])).toEqual([["2026-09-02", "cancelled"], ["2026-09-03", "scheduled"]]);
   });
 });

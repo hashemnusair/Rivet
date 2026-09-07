@@ -917,7 +917,8 @@ export interface UpsertClassCoachInput {
   specialty?: string;
 }
 
-export type ClassBookingStatus = "booked" | "waitlisted" | "cancelled" | "late_cancelled" | "attended" | "no_show";
+export type { ClassBookingStatus } from "./class-booking";
+import type { ClassBookingStatus } from "./class-booking";
 
 export interface ClassOccurrenceRosterEntry {
   bookingId: UUID;

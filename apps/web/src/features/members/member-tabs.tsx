@@ -6,7 +6,8 @@ import { CalendarClock, CheckCircle2, Dumbbell } from "lucide-react";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import type { CheckInSummary, MemberDetail, MembershipSummary, TimelineEventType, TransactionSummary, UUID } from "@/lib/domain/types";
+import type { CheckInSummary, MemberDetail, MembershipSummary, Task, TimelineEventType, TransactionSummary, UUID } from "@/lib/domain/types";
+import { LogContactForm } from "@/features/crm/contact-work-panel";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { toast } from "sonner";
 import { DateText, DateTimeText, DaysUntilText, MoneyText, RelativeText } from "@/components/shared/data-display";
@@ -457,17 +458,26 @@ function CheckInRecordRow({ checkIn }: { checkIn: CheckInSummary }) {
 // ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------
+/** Tasks that stand for a conversation with the member: "Done" asks what happened, as Today does. */
+const CONTACT_TASK_TYPES = new Set<Task["type"]>(["follow_up", "renewal_call", "trial_follow_up"]);
+
 export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
   const invalidate = useInvalidate();
   const query = useApiQuery(qk.tasks({ memberId, open: true }), (api) =>
     api.listTasks({ status: "open", memberId, pageSize: 10 }),
   );
+  const [logging, setLogging] = useState<Task>();
   const complete = useApiMutation((api, taskId: string) => api.completeTask(taskId, { outcome: "Completed from member page" }), {
     onSuccess: async () => {
       toast.success("Task completed.");
+      setLogging(undefined);
       await invalidate();
     },
   });
+  const requestComplete = (task: Task) => {
+    if (CONTACT_TASK_TYPES.has(task.type)) setLogging(task);
+    else complete.mutate(task.id);
+  };
 
   const tasks = (query.data?.items ?? []).filter((t) => t.memberId === memberId);
   if (query.isLoading) return <Skeleton className="h-20 w-full" />;
@@ -475,14 +485,16 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
   if (tasks.length === 0) return <p className="text-[12.5px] text-ink-3">No open tasks for this member.</p>;
 
   return (
+    <>
     <ul className="space-y-2">
       {tasks.map((t) => (
         <li key={t.id} className="flex items-start gap-2 text-[12.5px]">
           <button
             type="button"
             aria-label={`Complete task ${t.title}`}
-            onClick={() => complete.mutate(t.id)}
-            className="mt-0.5 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-3 text-transparent hover:border-success hover:text-success"
+            disabled={complete.isPending}
+            onClick={() => requestComplete(t)}
+            className="mt-0.5 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-3 text-transparent hover:border-success hover:text-success focus-visible:border-success focus-visible:text-success"
           >
             <CheckCircle2 className="size-3.5" />
           </button>
@@ -495,6 +507,24 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
         </li>
       ))}
     </ul>
+      <Dialog open={Boolean(logging)} onOpenChange={(open) => { if (!open) setLogging(undefined); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>What happened?</DialogTitle>
+            <DialogDescription>{logging ? `${logging.title}. Record the outcome so this follow-up closes with it, or move it to the next date.` : ""}</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <LogContactForm subject="member" memberId={memberId} submitLabel="Log contact and finish" onLogged={() => setLogging(undefined)} />
+          </DialogBody>
+          <DialogFooter className="justify-between">
+            <Button type="button" variant="ghost" size="sm" loading={complete.isPending} onClick={() => { if (logging) complete.mutate(logging.id); }}>
+              Mark done without a contact
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setLogging(undefined)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

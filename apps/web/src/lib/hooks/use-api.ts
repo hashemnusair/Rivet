@@ -11,8 +11,18 @@ import {
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { getApi } from "@/lib/api/client";
-import { isApiError } from "@/lib/api/errors";
+import { ERR, isApiError } from "@/lib/api/errors";
 import { INVALIDATE_ALL } from "@/lib/api/keys";
+
+/**
+ * A denied or signed-out answer is final for this session: the server has
+ * re-checked the actor's role, branch and membership and refused. Unlike a
+ * network failure, no retry changes it, and a snapshot loaded before access
+ * was revoked must not stay on screen behind a "could not refresh" notice.
+ */
+export function isAccessDenied(error: unknown): boolean {
+  return isApiError(error) && (error.code === ERR.FORBIDDEN || error.code === ERR.UNAUTHENTICATED);
+}
 
 export function useApiQuery<TData>(
   key: QueryKey,
@@ -38,11 +48,15 @@ export function useApiQuery<TData>(
   // TanStack Query can retain a useful snapshot while a background refetch
   // fails. Treat that as a stale-data warning rather than replacing a working
   // table/card with a full-page error; initial failures still remain errors.
+  // A refusal (revoked role, branch or membership, or a signed-out account)
+  // is not a refresh problem: the snapshot is withdrawn and the denial shown.
   const hasRenderedData = query.data !== undefined;
+  const denied = query.isError && isAccessDenied(query.error);
   return {
     ...query,
-    isError: query.isError && !hasRenderedData,
-    isBackgroundError: query.isError && hasRenderedData,
+    data: denied ? undefined : query.data,
+    isError: query.isError && (!hasRenderedData || denied),
+    isBackgroundError: query.isError && hasRenderedData && !denied,
   };
 }
 

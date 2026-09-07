@@ -355,7 +355,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
               <>
                 <DialogHeader>
                   <DialogTitle>{waitlisted ? `Leave the ${cancelTarget.name} waitlist?` : `Cancel ${cancelTarget.name}?`}</DialogTitle>
-                  <DialogDescription>{formatDateTime(cancelTarget.startsAt)}{cancelTarget.coachName ? ` · ${cancelTarget.coachName}` : ""}</DialogDescription>
+                  <DialogDescription dir="ltr">{formatDateTime(cancelTarget.startsAt)}{cancelTarget.coachName ? ` · ${cancelTarget.coachName}` : ""}</DialogDescription>
                 </DialogHeader>
                 <DialogBody>
                   <p role="status" className={cn("rounded-md border p-3 text-[13px]", preview.outcome === "late_cancelled" ? "border-warning/30 bg-warning-bg text-warning-deep" : "border-line bg-sunken text-ink-2")}>{preview.text}</p>
@@ -389,19 +389,19 @@ function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: 
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h4 className="text-[14px] font-semibold">{occurrence.name}</h4>
-            <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-ink-2"><Clock3 className="size-3.5 text-ink-3" aria-hidden /> {formatTime(occurrence.startsAt)} · {minutes} min</p>
+            <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-ink-2"><Clock3 className="size-3.5 text-ink-3" aria-hidden /> <span dir="ltr">{formatTime(occurrence.startsAt)} · {minutes} min</span></p>
           </div>
           <Badge variant="outline">{occurrence.audience === "mixed" ? "Everyone" : occurrence.audience === "women" ? "Women" : "Men"}</Badge>
         </div>
         <div className="mt-3 flex items-center justify-between gap-3 border-y border-line py-2.5 text-[12.5px]">
           <span className="flex min-w-0 items-center gap-1.5 text-ink-2"><UserRoundCheck className="size-3.5 shrink-0 text-ink-3" aria-hidden /> <span className="truncate">{occurrence.coachName ?? "Coach to be confirmed"}</span></span>
-          <span className={cn("shrink-0 tabular", full ? "font-medium text-warning-deep" : "text-ink-3")}>{full ? `${occurrence.waitlistCount} waiting` : `${occurrence.spotsRemaining} spots left`}</span>
+          <span dir="ltr" className={cn("shrink-0 tabular", full ? "font-medium text-warning-deep" : "text-ink-3")}>{full ? `${occurrence.waitlistCount} waiting` : `${occurrence.spotsRemaining} spots left`}</span>
         </div>
         {active ? (
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[13px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? `Waitlist · #${occurrence.booking.position ?? "—"}` : occurrence.booking?.fromWaitlist ? "Booked from waitlist" : "Booked"}</p>
-              <p className="mt-0.5 text-[12px] text-ink-3">{cancelHint}</p>
+              <p className="mt-0.5 text-[12px] text-ink-3" dir="ltr">{cancelHint}</p>
             </div>
             <Button size="sm" variant="secondary" loading={busy} disabled={preview?.outcome === "closed"} onClick={onCancel}>{occurrence.booking?.status === "waitlisted" ? "Leave" : "Cancel"}</Button>
           </div>
@@ -753,7 +753,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
               <>
                 <DialogHeader>
                   <DialogTitle>Cancel your PT session?</DialogTitle>
-                  <DialogDescription>{formatDateTime(cancelBooking.startsAt)} with {cancelBooking.trainerName}</DialogDescription>
+                  <DialogDescription><span dir="ltr">{formatDateTime(cancelBooking.startsAt)}</span> with {cancelBooking.trainerName}</DialogDescription>
                 </DialogHeader>
                 <DialogBody>
                   <p role="status" className={cn("rounded-md border p-3 text-[13px]", returnsCredit ? "border-line bg-sunken text-ink-2" : "border-warning/30 bg-warning-bg text-warning-deep")}>{returnsCredit ? "Your reserved credit will be returned." : `This is inside the gym's ${cutoffHours}-hour cutoff, so the reserved credit will be used.`}</p>

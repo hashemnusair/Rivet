@@ -194,6 +194,9 @@ describe("Convex personal-training lifecycle", () => {
     expect(experience).toMatchObject({ availableSessions: 12, reservedSessions: 0 });
 
     const order = await owner.mutation(api.domain.mutate, operation("pt.package.refund", { orderId: requested.id, sessions: 2, reason: "Unused sessions refunded at member request" })) as { status: string; refundedSessions: number; refundedAmount: { amount: number } };
+    // Package revenue is what the PT charges collected net of refunds: 240 paid, 40 refunded.
+    const ownerWorkspace = await owner.query(api.domain.query, operation("pt.workspace")) as { metrics: { packageRevenue: { amount: number } } };
+    expect(ownerWorkspace.metrics.packageRevenue.amount).toBe(200_000);
     expect(order).toMatchObject({ status: "partially_refunded", refundedSessions: 2, refundedAmount: { amount: 40_000 } });
     experience = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as typeof experience;
     expect(experience.availableSessions).toBe(10);

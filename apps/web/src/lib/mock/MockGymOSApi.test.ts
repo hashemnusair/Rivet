@@ -2939,3 +2939,19 @@ describe("PT outcomes and reserved credits", () => {
     expect(after.upcomingBookings.some((item) => item.id === booking.id)).toBe(false);
   });
 });
+
+describe("moving a class to another weekday", () => {
+  it("refuses while a member holds one of its dates", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const date = addDays(todayISODate("Asia/Amman"), 2);
+    const dayOfWeek = new Date(`${date}T12:00:00Z`).getUTCDay();
+    const template = await api.upsertClassSession({ branchId, name: "Move test", dayOfWeek, startMinute: 23 * 60, durationMinutes: 45, capacity: 2, audience: "mixed" });
+    const page = await api.listMembers({ membershipStatus: "active", pageSize: 3 });
+    const member = page.items[0]!;
+    const membership = (await api.listMemberships({ memberId: member.id, status: "active", pageSize: 5 })).items[0]!;
+    await api.addClassOccurrenceAttendee({ occurrenceId: `occ:${template.id}:${date}`, memberId: member.id, membershipId: membership.id });
+    await expect(api.upsertClassSession({ sessionId: template.id, branchId, name: "Move test", dayOfWeek: (dayOfWeek + 1) % 7, startMinute: 23 * 60, durationMinutes: 45, capacity: 2, audience: "mixed" }))
+      .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION && error.message.includes(date));
+  });
+});

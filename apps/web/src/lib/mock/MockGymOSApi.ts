@@ -61,6 +61,7 @@ import {
 } from "@/lib/domain/workspace-modules";
 import { DEFAULT_PUBLIC_PRICING_PLANS } from "@/lib/public/pricing";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
+import { classCancellationOutcome } from "@/lib/domain/class-booking";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "@/lib/members/lookup";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
@@ -10877,10 +10878,22 @@ export class MockGymOSApi implements GymOSApi {
         const scheduled = this.classOccurrences.filter((occurrence) => occurrence.templateId === existing.id && occurrence.status === "scheduled" && Date.parse(occurrence.startsAt) > Date.now());
         const overbooked = scheduled.find((occurrence) => input.capacity < this.classSeatedCount(occurrence));
         if (overbooked) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${this.classSeatedCount(overbooked)} people already booked for ${overbooked.date}.`);
+        const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        if (existing.dayOfWeek !== input.dayOfWeek) {
+          // Moving the class to another weekday would strand the dates members already hold.
+          const held = scheduled.filter((occurrence) => occurrence.roster.some((entry) => ["booked", "waitlisted"].includes(entry.status)));
+          if (held.length) throw ApiError.of(ERR.VALIDATION, `Members are booked on ${held.map((occurrence) => occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${dayNames[input.dayOfWeek]}.`);
+        }
         Object.assign(existing, { name, coachId: input.coachId, coachName, dayOfWeek: input.dayOfWeek, startMinute: input.startMinute, durationMinutes: input.durationMinutes, capacity: input.capacity, audience: input.audience, imageAssetId: input.imageAssetId, imageUrl: image?.url, imageAltText: image?.altText, notes: input.notes?.trim() || undefined, updatedAt: now });
         for (const occurrence of scheduled) {
           const sameWeekday = new Date(`${occurrence.date}T12:00:00Z`).getUTCDay() === existing.dayOfWeek;
-          const startsAt = sameWeekday ? this.mockClassInstant(occurrence.date, existing.startMinute) : occurrence.startsAt;
+          if (!sameWeekday) {
+            // An untouched date disappears; one with only past cancellations stays as a cancelled record.
+            if (!occurrence.roster.length) { this.classOccurrences = this.classOccurrences.filter((candidate) => candidate !== occurrence); continue; }
+            occurrence.status = "cancelled";
+            continue;
+          }
+          const startsAt = this.mockClassInstant(occurrence.date, existing.startMinute);
           Object.assign(occurrence, {
             name, capacity: input.capacity, audience: input.audience, imageUrl: image?.url, imageAltText: image?.altText, notes: existing.notes,
             regularCoachId: existing.coachId, regularCoachName: coachName,
@@ -11208,11 +11221,10 @@ export class MockGymOSApi implements GymOSApi {
    */
   private cancelClassRosterEntry(occurrence: T.ClassOccurrence, booking: T.ClassOccurrenceRosterEntry): { outcome: "cancelled" | "late_cancelled"; promoted: T.ClassOccurrenceRosterEntry[] } {
     if (Date.parse(occurrence.endsAt) <= Date.now()) throw ApiError.of(ERR.CONFLICT, "This class has ended. Finalize attendance instead.");
-    const freedSeat = booking.status === "booked";
-    const late = freedSeat && Date.parse(occurrence.startsAt) - Date.now() < this.db.operationalPolicies.classBooking.cancellationCutoffHours * 3_600_000;
-    booking.status = late ? "late_cancelled" : "cancelled";
-    const promoted = freedSeat ? this.promoteClassWaitlist(occurrence) : [];
-    return { outcome: booking.status, promoted };
+    const { outcome, freesSeat } = classCancellationOutcome({ startsAt: Date.parse(occurrence.startsAt), bookingStatus: booking.status, cutoffHours: this.db.operationalPolicies.classBooking.cancellationCutoffHours });
+    booking.status = outcome;
+    const promoted = freesSeat ? this.promoteClassWaitlist(occurrence) : [];
+    return { outcome, promoted };
   }
 
   cancelCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> {
@@ -11291,7 +11303,8 @@ export class MockGymOSApi implements GymOSApi {
 
   finalizeClassOccurrenceAttendance(input: { occurrenceId: T.UUID }): Promise<T.ClassOccurrence> {
     return this.respond(() => {
-      this.requireRosterPermission();
+      // A manager or owner decision, matching Convex: it locks the roster and records no-shows.
+      this.require("operations.manage");
       const occurrence = this.classOccurrenceById(input.occurrenceId);
       // Finalization happens once; a repeat returns the recorded roster untouched.
       if (occurrence.attendanceFinalizedAt) return this.refreshClassOccurrence(occurrence);

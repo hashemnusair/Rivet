@@ -4,6 +4,11 @@ import { cn } from "@/lib/utils/cn";
 import { formatDate, formatDateTime, formatRelative, formatTime } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 
+// Dates, times, amounts and relative labels start with a digit. In an RTL
+// layout the bidi algorithm splits "8 Sept 2026" or "7:00 PM" into separate
+// runs and shows "Sept 2026 8" / "PM 7:00"; dir="ltr" isolates each value so
+// it reads the same in Arabic and English layouts.
+
 /** Money always in tabular mono — the ledger voice of the product. */
 export function MoneyText({
   money,
@@ -23,7 +28,7 @@ export function MoneyText({
   const abs = { ...money, amount: Math.abs(money.amount) };
   const formatted = formatMoney(abs, { hideCurrency, compact });
   return (
-    <span className={cn("tabular", negative && "text-danger", className)}>
+    <span dir="ltr" className={cn("tabular", negative && "text-danger", className)}>
       {signed && money.amount > 0 ? "+" : null}
       {negative ? "−" : null}
       {formatted}
@@ -33,23 +38,23 @@ export function MoneyText({
 
 export function DateText({ iso, className }: { iso?: string | null; className?: string }) {
   if (!iso) return <span className="text-ink-3">—</span>;
-  return <span className={cn("whitespace-nowrap", className)}>{formatDate(iso)}</span>;
+  return <span dir="ltr" className={cn("whitespace-nowrap", className)}>{formatDate(iso)}</span>;
 }
 
 export function TimeText({ iso, className }: { iso?: string | null; className?: string }) {
   if (!iso) return <span className="text-ink-3">—</span>;
-  return <span className={cn("whitespace-nowrap tabular", className)}>{formatTime(iso)}</span>;
+  return <span dir="ltr" className={cn("whitespace-nowrap tabular", className)}>{formatTime(iso)}</span>;
 }
 
 export function DateTimeText({ iso, className }: { iso?: string | null; className?: string }) {
   if (!iso) return <span className="text-ink-3">—</span>;
-  return <span className={cn("whitespace-nowrap tabular", className)}>{formatDateTime(iso)}</span>;
+  return <span dir="ltr" className={cn("whitespace-nowrap tabular", className)}>{formatDateTime(iso)}</span>;
 }
 
 export function RelativeText({ iso, className, ...rest }: { iso?: string | null } & ComponentProps<"span">) {
   if (!iso) return <span className="text-ink-3">—</span>;
   return (
-    <span className={cn("whitespace-nowrap", className)} title={formatDateTime(iso)} {...rest}>
+    <span dir="ltr" className={cn("whitespace-nowrap", className)} title={formatDateTime(iso)} {...rest}>
       {formatRelative(iso)}
     </span>
   );

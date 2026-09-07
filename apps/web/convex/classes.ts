@@ -12,6 +12,7 @@ import {
 } from "./security";
 import { deriveServerMembershipStatus } from "./invariants";
 import { addDays, diffDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
+import { classCancellationOutcome } from "../src/lib/domain/class-booking";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -25,6 +26,7 @@ type User = Doc<"users">;
 const MAX_CAPACITY = 200;
 const MAX_DURATION_MINUTES = 8 * 60;
 const DAY_MINUTES = 24 * 60;
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const AUDIENCES = ["mixed", "women", "men"] as const;
 const ACTIVE_BOOKING_STATUSES = new Set<ClassBooking["status"]>(["booked", "waitlisted"]);
 const DEFAULT_CLASS_POLICY = {
@@ -296,9 +298,10 @@ async function scheduledOccurrencesFor(ctx: MutationCtx, actor: ActorContext, te
  * A dated class snapshots its template when the first booking creates it, so
  * a timetable edit must flow into the upcoming dates or staff read one
  * capacity on the timetable while members are held to another on the roster.
- * Seats opened by a larger capacity go to the waitlist in FIFO order. A date
- * whose weekday no longer matches the template keeps its time: those bookings
- * are real commitments and moving them silently is a policy decision.
+ * Seats opened by a larger capacity go to the waitlist in FIFO order. When the
+ * class moves to another weekday (the upsert has already refused if anyone
+ * still holds a place), an untouched date disappears and a date that only
+ * carries past cancellations stays as a cancelled record for history.
  */
 async function syncScheduledOccurrences(ctx: MutationCtx, actor: ActorContext, template: ClassSession, scheduled: ScheduledOccurrence[]): Promise<{ synced: number; promoted: number }> {
   const timezone = actor.organization.timezone || "Asia/Amman";
@@ -307,7 +310,12 @@ async function syncScheduledOccurrences(ctx: MutationCtx, actor: ActorContext, t
   for (const { occurrence, bookings } of scheduled) {
     const now = Date.now();
     const sameWeekday = new Date(`${occurrence.date}T12:00:00.000Z`).getUTCDay() === slot.dayOfWeek;
-    const times = sameWeekday ? occurrenceTimes(occurrence.date, slot.startMinute, template.durationMinutes, timezone) : { startsAt: occurrence.startsAt, endsAt: occurrence.endsAt };
+    if (!sameWeekday) {
+      if (bookings.length === 0) { await ctx.db.delete(occurrence._id); continue; }
+      await ctx.db.patch(occurrence._id, { status: "cancelled", cancelReason: `Class moved to ${DAY_NAMES[slot.dayOfWeek]}`, updatedAt: now });
+      continue;
+    }
+    const times = occurrenceTimes(occurrence.date, slot.startMinute, template.durationMinutes, timezone);
     // A reason-gated substitute stays in place; only the regular coach follows the template.
     const substituted = Boolean(occurrence.substitutionReason) || Boolean(occurrence.coachId && occurrence.coachId !== occurrence.regularCoachId);
     await ctx.db.patch(occurrence._id, {
@@ -404,6 +412,12 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
     const scheduled = await scheduledOccurrencesFor(ctx, actor, existing);
     const overbooked = scheduled.find((row) => capacity < row.rostered);
     if (overbooked) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${overbooked.rostered} people already booked for ${overbooked.occurrence.date}.`, { correlationId: actor.correlationId, fieldErrors: { capacity: [`${overbooked.rostered} booked on ${overbooked.occurrence.date}`] } });
+    // Moving the class to another weekday would strand the dates members
+    // already hold; those bookings are commitments, not something to sync.
+    if (weeklySlot(existing, actor.organization.timezone || "Asia/Amman").dayOfWeek !== dayOfWeek) {
+      const held = scheduled.filter((row) => row.bookings.some((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status)));
+      if (held.length) domainError("VALIDATION_ERROR", `Members are booked on ${held.map((row) => row.occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${DAY_NAMES[dayOfWeek]}.`, { correlationId: actor.correlationId, fieldErrors: { dayOfWeek: ["Members are booked on the current day"] } });
+    }
     const before = { name: existing.name, dayOfWeek: existing.dayOfWeek, startMinute: existing.startMinute, durationMinutes: existing.durationMinutes, capacity: existing.capacity, audience: existing.audience, coachName: existing.coachName, imageAssetId: existing.imageAssetId };
     await activateClassImage(ctx, actor, imageAssetId, existing.imageAssetId);
     await ctx.db.patch(existing._id, { name, coachUserId: coachId, coachName, dayOfWeek, startMinute, startsAt: undefined, audience: audience as ClassSession["audience"], durationMinutes, capacity, imageAssetId, notes, status: "scheduled", cancelReason: undefined, updatedAt: now });
@@ -901,10 +915,8 @@ async function cancelBooking(ctx: MutationCtx, input: { organization: Organizati
   if (input.occurrence.endsAt <= Date.now()) domainError("CONFLICT", "This class has ended. Finalize attendance instead.", { correlationId: input.correlationId });
   const policy = await classPolicy(ctx, input.organization._id);
   const previousStatus = input.booking.status;
-  // Only a confirmed place can be given up late: leaving the waitlist frees no
-  // seat, so it is a plain cancellation whatever the clock says.
-  const late = previousStatus === "booked" && Date.now() > input.occurrence.startsAt - Number(policy.cancellationCutoffHours) * 3_600_000;
-  const outcome = late ? "late_cancelled" as const : "cancelled" as const;
+  // One rule shared with the mock adapter and the member-facing preview.
+  const { outcome, late } = classCancellationOutcome({ startsAt: input.occurrence.startsAt, bookingStatus: previousStatus, cutoffHours: Number(policy.cancellationCutoffHours) });
   const now = Date.now();
   await ctx.db.patch(input.booking._id, { status: outcome, cancelledAt: now, updatedAt: now });
   const updated = (await ctx.db.get(input.booking._id))!;
@@ -989,7 +1001,9 @@ async function setOccurrenceAttendance(ctx: MutationCtx, actor: ActorContext, in
 }
 
 async function finalizeOccurrenceAttendance(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
-  requireRosterPermission(actor);
+  // Finalizing turns unmarked bookings into no-shows and locks the roster: a
+  // manager or owner decision, as the policy states and the UI already implies.
+  requirePermission(actor, "operations.manage");
   const occurrence = await occurrenceFromInput(ctx, actor.organization, input.occurrenceId);
   if (actor.branchScope !== "all" && !actor.branchIds.includes(occurrence.branchId)) domainError("FORBIDDEN", "Your role cannot manage this class.", { correlationId: actor.correlationId });
   if (occurrence.endsAt > Date.now()) domainError("CONFLICT", "Attendance can be finalized after the class ends.", { correlationId: actor.correlationId });

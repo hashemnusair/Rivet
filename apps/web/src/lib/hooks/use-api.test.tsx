@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { ApiError, ERR } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery } from "./use-api";
 
 const toastSpies = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
@@ -117,5 +118,40 @@ describe("useApiMutation follow-up work", () => {
     expect(toastSpies.error).not.toHaveBeenCalled();
     expect(toastSpies.warning).toHaveBeenCalledWith(expect.stringMatching(/Saved, but this screen could not refresh/));
     consoleError.mockRestore();
+  });
+});
+
+describe("useApiQuery access revocation", () => {
+  function RevocationHarness({ deny }: { deny: { current: boolean } }) {
+    const query = useApiQuery(
+      ["revocation"],
+      async () => {
+        if (deny.current) throw ApiError.of(ERR.FORBIDDEN, "Your role is missing the members.read permission.");
+        return "member list";
+      },
+      { retry: false },
+    );
+    return (
+      <div>
+        <span data-testid="data">{query.data ?? "no data"}</span>
+        <span data-testid="error">{String(query.isError)}</span>
+        <span data-testid="background-error">{String(query.isBackgroundError)}</span>
+        <span data-testid="message">{query.error?.message ?? ""}</span>
+      </div>
+    );
+  }
+
+  it("withdraws a loaded snapshot once the server refuses access, instead of a refresh warning", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    const deny = { current: false };
+    render(<QueryClientProvider client={client}><RevocationHarness deny={deny} /></QueryClientProvider>);
+    await waitFor(() => expect(screen.getByTestId("data")).toHaveTextContent("member list"));
+
+    deny.current = true;
+    await client.invalidateQueries({ queryKey: ["revocation"] });
+    await waitFor(() => expect(screen.getByTestId("error")).toHaveTextContent("true"));
+    expect(screen.getByTestId("data")).toHaveTextContent("no data");
+    expect(screen.getByTestId("background-error")).toHaveTextContent("false");
+    expect(screen.getByTestId("message")).toHaveTextContent("members.read");
   });
 });

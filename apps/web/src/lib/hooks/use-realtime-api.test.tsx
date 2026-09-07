@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setApiForTests } from "@/lib/api/client";
+import { ApiError, ERR } from "@/lib/api/errors";
 import { bumpApiScope } from "@/lib/api/scope";
 import { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import { useRealtimeApiQuery } from "./use-realtime-api";
@@ -177,5 +178,41 @@ describe("useRealtimeApiQuery", () => {
     act(() => listeners.get("first")?.emit({ id: "first", value: "after-reconnect" }));
     await waitFor(() => expect(screen.getByTestId("snapshot")).toHaveTextContent("after-reconnect"));
     expect(screen.getByTestId("stream-state")).toHaveTextContent("live");
+  });
+});
+
+describe("useRealtimeApiQuery access revocation", () => {
+  it("withdraws the live snapshot when the fallback fetch is refused after the watch fails", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    const deny = { current: false };
+    let fail: ((error: unknown) => void) | undefined;
+    function Harness() {
+      const query = useRealtimeApiQuery({
+        queryKey: ["revoked-record"],
+        query: async () => {
+          if (deny.current) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+          return { id: "record", value: "loaded" } as Snapshot;
+        },
+        subscribe: async (_api, _onValue, onError) => { fail = onError; return () => undefined; },
+        fallbackIntervalMs: 60_000,
+      });
+      return (
+        <div>
+          <span data-testid="snapshot">{query.data?.value ?? "empty"}</span>
+          <span data-testid="error">{String(query.isError)}</span>
+          <span data-testid="background-error">{String(query.isBackgroundError)}</span>
+        </div>
+      );
+    }
+    setApiForTests(new MockGymOSApi());
+    render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>);
+    await waitFor(() => expect(screen.getByTestId("snapshot")).toHaveTextContent("loaded"));
+
+    deny.current = true;
+    await act(async () => { fail?.(new Error("watch closed")); });
+    await client.invalidateQueries({ queryKey: ["revoked-record"] });
+    await waitFor(() => expect(screen.getByTestId("error")).toHaveTextContent("true"));
+    expect(screen.getByTestId("snapshot")).toHaveTextContent("empty");
+    expect(screen.getByTestId("background-error")).toHaveTextContent("false");
   });
 });
