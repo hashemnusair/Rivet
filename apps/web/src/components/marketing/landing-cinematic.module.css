@@ -23,6 +23,8 @@
   filter: brightness(0.58);
 }
 
+/* ------------------------------------------------------------------ header */
+
 .header {
   position: fixed;
   inset: 0 0 auto;
@@ -89,15 +91,14 @@
   min-height: 2.75rem;
   cursor: pointer;
   align-items: center;
-  gap: 0.85rem;
+  gap: 0.75rem;
   border: 0;
   background: transparent;
   color: currentColor;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
 }
 
 .menuToggle:focus-visible,
@@ -123,9 +124,7 @@
   transform: scaleX(1);
 }
 
-.menuCount {
-  opacity: 0.48;
-}
+/* -------------------------------------------------------------------- menu */
 
 .menu {
   position: fixed;
@@ -233,9 +232,10 @@
   width: 2.5rem;
   flex: none;
   color: #817f74;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   transition: color 220ms ease;
 }
 
@@ -253,16 +253,24 @@
   transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/*
+  The mask clips the label's rise-in. It is sized from the label's own type so
+  the side padding scales with the letters: the hover nudge (0.12em) and the
+  overhang of a tight, heavy face both stay inside the clip instead of losing
+  the last letter's edge.
+*/
 .menuMask {
   display: block;
   overflow: hidden;
-  padding-bottom: 0.08em;
+  font-size: clamp(2rem, 4.85vw, 5.25rem);
+  padding: 0.04em 0.24em 0.08em 0.06em;
+  margin-left: -0.06em;
 }
 
 .menuLabel {
   display: block;
   font-family: var(--font-archivo), sans-serif;
-  font-size: clamp(2rem, 4.85vw, 5.25rem);
+  font-size: inherit;
   font-weight: 850;
   font-stretch: 110%;
   line-height: 0.91;
@@ -321,7 +329,7 @@
 
 .menuMeta > div {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 
 .menuMeta > .menuAuth {
@@ -333,10 +341,8 @@
 
 .metaKey {
   color: #777469;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.58rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 500;
 }
 
 .menuCta {
@@ -374,6 +380,8 @@
   background: #ffffff;
 }
 
+/* ------------------------------------------------------------------ sheets */
+
 .coverSheet {
   position: relative;
   isolation: isolate;
@@ -382,6 +390,16 @@
 :global(html.landing-motion-ready) .coverSheet[data-landing-cover] {
   position: sticky;
   top: var(--landing-cover-top, 0);
+}
+
+/*
+  A cover sheet stays pinned while the sheet after it slides over it. The pair
+  shares a positioned wrapper so the pinned sheet is released once its follower
+  has passed, instead of staying stuck behind every later section and showing
+  through their rounded corners.
+*/
+.coverPair {
+  position: relative;
 }
 
 .paperSheet,
@@ -399,6 +417,19 @@
   background: #15140f;
   color: #f2f0e6;
 }
+
+/*
+  Rounded sheet corners reveal whatever sits behind them. Where the section
+  above ends exactly at the sheet's top edge that would be the bare page, so a
+  strip in the previous section's colour is laid under the corners.
+*/
+.sheetUnder {
+  height: 1.5rem;
+  margin-bottom: -1.5rem;
+}
+
+.sheetUnderSunken { background: #edece5; }
+.sheetUnderStack { background: #1c1b16; }
 
 .layer1 { z-index: 1; }
 .layer2 { z-index: 2; }
@@ -419,6 +450,8 @@
   will-change: transform, opacity;
 }
 
+/* ------------------------------------------------------------- the stack */
+
 .stackStory {
   position: relative;
   z-index: 3;
@@ -428,7 +461,7 @@
 }
 
 .stackTrack {
-  height: 620svh;
+  height: 640svh;
 }
 
 .stackStage {
@@ -446,11 +479,32 @@
   grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-rows: auto minmax(0, 1fr);
   column-gap: clamp(1.25rem, 3vw, 3.25rem);
-  padding: 5rem clamp(1.25rem, 3.35vw, 3.5rem) 2.5rem;
+  padding: 4.75rem clamp(1.25rem, 3.35vw, 3.5rem) 2.75rem;
 }
 
 .stackHeader {
+  display: grid;
   grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 3vw, 3.25rem);
+  align-items: end;
+}
+
+.stackHeader h2 {
+  margin-top: 1.1rem;
+  font-family: var(--font-archivo), sans-serif;
+  font-size: clamp(1.9rem, 2.7vw, 2.85rem);
+  font-weight: 650;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+
+.stackLead {
+  max-width: 27rem;
+  justify-self: end;
+  color: #aaa698;
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 .stackFigure {
@@ -461,9 +515,10 @@
   justify-content: center;
 }
 
+/* Sized by the column, then capped by the room left under the header. */
 .rig {
   position: relative;
-  width: min(86%, 32rem);
+  width: min(86%, 30rem, calc((100svh - 17rem) * 0.91));
   aspect-ratio: 0.91;
   color: #f2f0e6;
 }
@@ -480,12 +535,40 @@
 .rigBar { inset: 0 auto auto 0; width: 58%; height: 8%; }
 .rigReturn { inset: 0 auto auto 50%; width: 8%; height: 25%; }
 
+/* The pin is drawn under the plates so its rod disappears when it is home. */
+.rigPin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  color: #e5262e;
+  transform: translate3d(var(--stack-pin-x, 0px), var(--stack-pin-y, 0px), 0);
+  will-change: transform;
+}
+
+.rigPinRod {
+  width: var(--stack-rod, 3rem);
+  height: 0.5rem;
+  border-radius: 0.2rem 0 0 0.2rem;
+  background: currentColor;
+}
+
+.rigPinRing {
+  width: 1.9rem;
+  height: 1.9rem;
+  margin-left: -0.15rem;
+  border: 0.48rem solid currentColor;
+  border-radius: 50%;
+  background: #1c1b16;
+}
+
 .rigPlates {
   position: absolute;
   inset: 34% auto auto 23.5%;
   width: 66%;
   height: 61%;
-  transform: translateY(var(--stack-lift, 0));
+  transform: translate3d(0, var(--stack-lift, 0px), 0);
   will-change: transform;
 }
 
@@ -498,20 +581,31 @@
   height: 12.5%;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
   overflow: hidden;
-  border: 1px solid rgb(242 240 230 / 0.3);
+  border: 1px solid rgb(242 240 230 / 0.32);
   border-radius: 0.34rem;
-  padding-inline: 0.9rem;
-  color: #817e72;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: clamp(0.55rem, 0.75vw, 0.7rem);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  background: #1c1b16;
+  padding-inline: 0.95rem;
+  color: #8c897d;
+  font-family: var(--font-archivo), sans-serif;
+  font-size: clamp(0.8rem, 1.05vw, 1rem);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
   transition:
-    color 320ms ease,
-    background-color 360ms ease,
-    transform 460ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 320ms ease;
+    color 260ms ease,
+    background-color 260ms ease,
+    border-color 260ms ease,
+    box-shadow 260ms ease;
+}
+
+.rigPlate > span:last-child {
+  color: #6f6c5d;
+  font-size: 0.72em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition: color 260ms ease;
 }
 
 .rigPlateShort {
@@ -524,43 +618,13 @@
   color: #1c1b16;
 }
 
-.rigPin {
-  position: absolute;
-  top: var(--stack-pin-y, 37.8125%);
-  right: -1.2rem;
-  display: flex;
-  align-items: center;
-  color: #e5262e;
-  opacity: var(--stack-pin-opacity, 1);
-  transform: translate3d(var(--stack-pin-x, 0), calc(-50% + var(--stack-lift, 0px)), 0);
-  will-change: transform;
-  transition: opacity 180ms ease;
+.rigPlateActive > span:last-child {
+  color: #8b887b;
 }
 
-.rigPinRod {
-  width: clamp(2.2rem, 4vw, 4rem);
-  height: 0.5rem;
-  border-radius: 0.2rem;
-  background: currentColor;
-}
-
-.rigPinRing {
-  width: 1.9rem;
-  height: 1.9rem;
-  margin-left: -0.2rem;
-  border: 0.48rem solid currentColor;
-  border-radius: 50%;
-}
-
-.stackReadout {
-  position: absolute;
-  right: 0;
-  bottom: -2rem;
-  color: #777469;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.58rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+/* The plate the pin is home in shows the pin's mark on its edge. */
+.rigPlateSeated {
+  box-shadow: inset -0.28rem 0 0 #e5262e;
 }
 
 .stackCopy {
@@ -577,11 +641,11 @@
   max-width: 34rem;
   visibility: hidden;
   opacity: 0;
-  transform: translateY(2.2rem);
+  transform: translateY(1.4rem);
   transition:
-    opacity 440ms ease,
-    transform 620ms cubic-bezier(0.22, 1, 0.36, 1),
-    visibility 0s linear 620ms;
+    opacity 360ms ease,
+    transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 520ms;
 }
 
 .stackStateActive {
@@ -591,46 +655,29 @@
   transition-delay: 0s;
 }
 
-.stackState h2,
 .stackState h3 {
   font-family: var(--font-archivo), sans-serif;
-  font-size: clamp(2.4rem, 4.2vw, 4.5rem);
+  font-size: clamp(2.15rem, 3.8vw, 3.9rem);
   font-weight: 700;
   line-height: 0.95;
   letter-spacing: -0.035em;
 }
 
-.stackState h3 {
-  font-size: clamp(2.15rem, 3.8vw, 3.9rem);
-}
-
 .stackState p {
   max-width: 31rem;
-  margin-top: 1.5rem;
+  margin-top: 1.4rem;
   color: #b9b5a8;
   font-size: clamp(0.95rem, 1.35vw, 1.14rem);
   line-height: 1.65;
 }
 
-.stackStateMeta {
-  display: block;
-  margin-bottom: 1.1rem;
-  color: #777469;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.62rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-}
-
 .stackCaps {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.7rem;
   margin-top: 1.6rem;
-  color: #8c897d;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.61rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: #d3cfc1;
+  font-size: 0.95rem;
+  line-height: 1.4;
 }
 
 .stackCaps li {
@@ -652,6 +699,7 @@
   inset: auto 0 0;
   height: 3px;
   background: rgb(242 240 230 / 0.08);
+  opacity: var(--stack-progress-opacity, 1);
 }
 
 .stackProgress span {
@@ -660,6 +708,8 @@
   height: 100%;
   background: #e5262e;
 }
+
+/* ----------------------------------------------------------------- modules */
 
 .modulesSection {
   padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(7rem, 15vh, 12rem);
@@ -742,9 +792,9 @@
 }
 
 .moduleIndex {
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.64rem;
-  letter-spacing: 0.13em;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .moduleName {
@@ -834,6 +884,8 @@
   background: #e5262e;
 }
 
+/* ------------------------------------------------------------- a day */
+
 .daySection {
   padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(8rem, 16vh, 13rem);
 }
@@ -875,17 +927,15 @@
   font-variant-numeric: tabular-nums;
   line-height: 0.82;
   letter-spacing: -0.055em;
-  animation: dayTick 580ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: dayTick 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .dayWhere {
   color: #e5262e;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  animation: dayWhere 520ms ease both;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  animation: dayWhere 480ms ease both;
 }
 
 .dayList {
@@ -916,12 +966,12 @@
 .dayMomentTime {
   position: relative;
   grid-row: 1 / span 3;
-  padding-top: 0.4em;
+  padding-top: 0.35em;
   padding-left: 1.35rem;
   color: #8b887b;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
+  font-size: 0.86rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .dayMomentTime::before {
@@ -969,15 +1019,23 @@
 
 .dayMomentTag {
   margin-top: 1.4rem;
-  color: #777469;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.62rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  color: #8b887b;
+  font-size: 0.86rem;
+  font-weight: 500;
 }
+
+/* ---------------------------------------------------------- accountability */
 
 .accountSection {
   padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(8rem, 16vh, 13rem);
+  /* Ledger ruling, faint enough to read as paper grain on the ink sheet. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(3rem - 1px),
+    rgb(242 240 230 / 0.045) calc(3rem - 1px),
+    rgb(242 240 230 / 0.045) 3rem
+  );
 }
 
 .accountInner {
@@ -995,12 +1053,103 @@
   letter-spacing: -0.035em;
 }
 
-.accountLead {
-  max-width: 47rem;
+.accountBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2.5rem, 6vw, 7rem);
+  align-items: start;
   margin-top: clamp(2.5rem, 6vh, 5rem);
+}
+
+.accountLead {
+  max-width: 30rem;
   color: #aaa698;
   font-size: clamp(1rem, 1.6vw, 1.28rem);
   line-height: 1.65;
+}
+
+/* One entry's audit trail: the correction is visible, the original stays. */
+.trail {
+  overflow: hidden;
+  border: 1px solid rgb(242 240 230 / 0.16);
+  border-radius: 0.5rem;
+  background: #1c1b16;
+  box-shadow: 0 30px 60px -40px rgb(0 0 0 / 0.8);
+}
+
+.trailHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgb(242 240 230 / 0.12);
+  padding: 0.95rem 1.25rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.trailHead span:last-child {
+  color: #8c897d;
+  font-weight: 500;
+}
+
+.trailRow {
+  display: grid;
+  grid-template-columns: 6.25rem minmax(0, 1fr);
+  gap: 1.25rem;
+  border-bottom: 1px solid rgb(242 240 230 / 0.08);
+  padding: 1rem 1.25rem;
+  opacity: 0;
+  transform: translateY(0.6rem);
+  transition:
+    opacity 420ms ease var(--row-delay, 0ms),
+    transform 560ms cubic-bezier(0.22, 1, 0.36, 1) var(--row-delay, 0ms);
+}
+
+.trailRow:last-child {
+  border-bottom: 0;
+}
+
+.trailKey {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #f2f0e6;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.trailKey::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 50%;
+  background: #e5262e;
+}
+
+.trailRow p {
+  color: #d3cfc1;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.trailRow s {
+  color: #8c897d;
+  text-decoration-color: #e5262e;
+  text-decoration-thickness: 1.5px;
+}
+
+.trailMeta {
+  display: block;
+  margin-top: 0.3rem;
+  color: #8c897d;
+  font-size: 0.8rem;
+}
+
+.trailReveal[data-reveal-state="shown"] .trailRow {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .chainReveal {
@@ -1048,16 +1197,15 @@
   font-size: clamp(1.05rem, 1.75vw, 1.6rem);
   font-weight: 600;
   letter-spacing: -0.025em;
+  transition: border-color 420ms ease calc(var(--chain-delay) + 420ms);
 }
 
 .chainSub {
   display: block;
-  margin-top: 1rem;
-  color: #777469;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.58rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  margin-top: 0.9rem;
+  color: #8c897d;
+  font-size: 0.84rem;
+  font-weight: 500;
 }
 
 .chainPin {
@@ -1098,10 +1246,17 @@
   transform: translateY(0);
 }
 
+/* Each plate locks as the rod reaches it. */
+.chainReveal[data-reveal-state="shown"] .chainPlate {
+  border-color: rgb(242 240 230 / 0.6);
+}
+
 .chainReveal[data-reveal-state="shown"] .chainPin {
   opacity: 1;
   transform: translateX(0);
 }
+
+/* ------------------------------------------------------------------ region */
 
 .regionSection {
   padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(8rem, 16vh, 13rem);
@@ -1163,11 +1318,9 @@
 }
 
 .regionSpec dt {
-  color: #8b887b;
-  font-family: var(--font-plex-mono), monospace;
-  font-size: 0.6rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
+  color: #1b1a15;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .regionSpec dd {
@@ -1176,9 +1329,111 @@
   line-height: 1.55;
 }
 
+/* ----------------------------------------------------------------- pricing */
+
+/*
+  A pricing tier fills like a vessel on hover: a tinted liquid rises from the
+  bottom edge with a slow surface swell, then drains when the pointer leaves.
+  Transform-only, so it composites without repainting the card's text.
+*/
+.tier {
+  position: relative;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    border-color 320ms ease,
+    box-shadow 520ms ease;
+}
+
+.tierPaper {
+  border: 1px solid #e3e1d6;
+  background: #ffffff;
+  --tier-liquid: #edece5;
+}
+
+.tierSignal {
+  border: 2px solid #d9232b;
+  background: #ffffff;
+  --tier-liquid: #fbeeee;
+}
+
+.tierNight {
+  border: 1px solid #2e2c22;
+  background: #15140f;
+  color: #f2f0e6;
+  --tier-liquid: #24221b;
+}
+
+.tierPaper:hover,
+.tierPaper:focus-within {
+  border-color: #bdb9a9;
+  box-shadow: 0 24px 48px -32px rgb(27 26 21 / 0.35);
+}
+
+.tierSignal:hover,
+.tierSignal:focus-within {
+  box-shadow: 0 24px 48px -28px rgb(217 35 43 / 0.35);
+}
+
+.tierNight:hover,
+.tierNight:focus-within {
+  border-color: #4a4738;
+  box-shadow: 0 24px 48px -28px rgb(0 0 0 / 0.7);
+}
+
+.tierLiquid {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--tier-liquid);
+  /* Parked below the card by more than the wave's height, so no crest shows at rest. */
+  transform: translate3d(0, calc(100% + 2.5rem), 0);
+  transition: transform 1000ms cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+
+.tier:hover .tierLiquid,
+.tier:focus-within .tierLiquid {
+  transform: translate3d(0, 0, 0);
+  transition-duration: 1100ms;
+}
+
+.tierWave {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 200%;
+  height: 1.5rem;
+  fill: var(--tier-liquid);
+  transform: translate3d(0, -96%, 0);
+}
+
+.tier:hover .tierWave,
+.tier:focus-within .tierWave {
+  animation: tierWave 2.8s linear infinite;
+}
+
+.tierBody {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 1.5rem;
+}
+
+@keyframes tierWave {
+  from { transform: translate3d(0, -96%, 0); }
+  to { transform: translate3d(-50%, -96%, 0); }
+}
+
 @keyframes dayTick {
-  from { opacity: 0; transform: translateY(0.36em) rotate(1deg); filter: blur(6px); }
-  to { opacity: 1; transform: translateY(0) rotate(0); filter: blur(0); }
+  from { opacity: 0; transform: translateY(0.28em); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes dayWhere {
@@ -1186,14 +1441,20 @@
   to { opacity: 1; transform: translateX(0); }
 }
 
+/* -------------------------------------------------------------- responsive */
+
 @media (max-width: 900px) {
   .menuPlate { width: min(82vw, 44rem); }
   .menuMeta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menuMeta > .menuAuth { justify-self: start; }
+  .stackHeader { grid-template-columns: 1fr; }
+  .stackLead { display: none; }
   .stackFigure { grid-column: 1 / span 5; }
   .stackCopy { grid-column: 6 / span 7; }
+  .rig { width: min(90%, 24rem, calc((100svh - 16rem) * 0.91)); }
   .dayGrid { grid-template-columns: minmax(0, 0.62fr) minmax(0, 1.38fr); gap: 2rem; }
   .dayTime { font-size: clamp(4rem, 11vw, 7rem); }
+  .accountBody { grid-template-columns: 1fr; }
   .chain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .chainRod, .chainPin { display: none; }
 }
@@ -1215,7 +1476,8 @@
   }
   .menuPrimary { align-items: center; }
   .menuIndex { width: 2rem; }
-  .menuLabel { font-size: clamp(1.75rem, 9vw, 3rem); line-height: 0.96; }
+  .menuMask { font-size: clamp(1.75rem, 9vw, 3rem); }
+  .menuLabel { line-height: 0.96; }
   .menuLink { gap: 0.65rem; padding-block: 0.45rem; }
   .menuMeta { grid-template-columns: 1fr 1fr; gap: 1.1rem; }
   .menuMeta > div:nth-child(3) { display: none; }
@@ -1225,24 +1487,27 @@
   .inkSheet,
   .stackStory { border-radius: 1.1rem 1.1rem 0 0; }
 
-  .stackTrack { height: 540svh; }
+  .stackTrack { height: 560svh; }
   .stackGrid {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(12rem, 42vh) minmax(0, 1fr);
+    grid-template-rows: auto minmax(11rem, 40vh) minmax(0, 1fr);
     padding-top: 4.75rem;
+    padding-bottom: 1.75rem;
   }
+  .stackHeader h2 { font-size: clamp(1.7rem, 8vw, 2.4rem); }
   .stackHeader,
   .stackFigure,
   .stackCopy { grid-column: 1; }
   .stackFigure { grid-row: 2; }
-  .rig { width: min(68vw, 17rem); }
+  .rig { width: min(68vw, 17rem, calc((100svh - 25rem) * 0.91)); --stack-rod: 2.1rem; }
+  .rigPlate { padding-inline: 0.65rem; font-size: 0.72rem; }
+  .rigPinRing { width: 1.5rem; height: 1.5rem; border-width: 0.38rem; }
+  .rigPinRod { height: 0.4rem; }
   .stackCopy { grid-row: 3; align-items: start; padding-top: 1rem; }
   .stackState { inset: 1rem 0 auto; }
-  .stackState h2,
   .stackState h3 { font-size: clamp(2rem, 10vw, 3.1rem); }
   .stackState p { margin-top: 1rem; font-size: 0.88rem; line-height: 1.52; }
   .stackCaps { display: none; }
-  .stackReadout { right: 0; bottom: -1.3rem; }
 
   .modulesIntro,
   .regionBilingual,
@@ -1289,6 +1554,7 @@
   .dayMoment:not(.dayMomentActive) { opacity: 0.56; }
 
   .accountTitle { font-size: clamp(2.9rem, 13vw, 4.6rem); }
+  .trailRow { grid-template-columns: 1fr; gap: 0.5rem; }
   .chain { grid-template-columns: 1fr; gap: 1rem; padding-block: 1rem; }
   .chainPlate { min-height: 4.5rem; }
 
@@ -1312,11 +1578,20 @@
   .stackState,
   .modulePanel,
   .dayMoment,
+  .trailRow,
   .chainRod,
   .chainNode,
-  .chainPin {
+  .chainPlate,
+  .chainPin,
+  .tierLiquid {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
+  }
+
+  .dayTime,
+  .dayWhere,
+  .tierWave {
+    animation: none !important;
   }
 
   :global(html.landing-motion-ready) .coverSheet[data-landing-cover] {
@@ -1326,4 +1601,13 @@
 
   .stackTrack { height: auto; }
   .stackStage { position: relative; height: auto; min-height: 100svh; }
+  .stackGrid { height: auto; }
+  .stackFigure { min-height: 28rem; }
+  .stackCopy { display: grid; align-content: start; gap: 2.5rem; }
+  .stackState {
+    position: static;
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+  }
 }

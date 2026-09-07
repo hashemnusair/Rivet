@@ -174,7 +174,6 @@ export function CinematicHeader() {
           >
             <span className={styles.menuPin} aria-hidden />
             <span>{open ? "Close" : "Menu"}</span>
-            <span className={styles.menuCount} aria-hidden>01–06</span>
           </button>
         </div>
       </header>

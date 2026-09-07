@@ -20,6 +20,7 @@ import {
   OperationalDay,
   RegionProof,
   ScrollStackStory,
+  SheetUnder,
   StoryMarker,
 } from "@/components/marketing/landing-story";
 import { Reveal } from "@/components/marketing/reveal";
@@ -28,6 +29,7 @@ import { VocabularyMarquee } from "@/components/marketing/vocabulary-marquee";
 import { PublicFooter } from "@/components/public/public-shell";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils/cn";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import {
   ANNUAL_DISCOUNT_PERCENT,
@@ -39,17 +41,19 @@ import {
   type BillingInterval,
 } from "@/lib/public/pricing";
 
-/** Hero entrance order, in ms — one cascade from eyebrow to the stat rail. */
+/** Hero entrance order, in ms — one cascade from the headline to the stat rail. */
 const HERO_STEP = {
-  eyebrow: 0,
-  line1: 70,
-  line2: 140,
-  line3: 210,
-  copy: 300,
-  actions: 380,
-  note: 440,
-  stats: 500,
+  line1: 0,
+  line2: 70,
+  line3: 140,
+  copy: 240,
+  actions: 320,
+  note: 380,
+  stats: 440,
 } as const;
+
+/** Two full swells across the wave, so a half-width shift loops seamlessly. */
+const WAVE_PATH = "M0 12 C 33 0 67 0 100 12 C 133 24 167 24 200 12 C 233 0 267 0 300 12 C 333 24 367 24 400 12 V 24 H 0 Z";
 
 export default function LandingPage() {
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
@@ -77,17 +81,9 @@ export default function LandingPage() {
             <div className="marketing-grid-sm absolute inset-0 [mask-image:radial-gradient(115%_85%_at_72%_18%,black,transparent_72%)]" />
           </div>
 
-          <div className={`${styles.heroMotion} relative mx-auto grid min-h-[100svh] max-w-[1440px] items-center gap-12 px-5 pb-16 pt-24 sm:px-8 lg:grid-cols-[1fr_1fr] lg:gap-14 lg:px-12 lg:pb-20 lg:pt-24`}>
+          <div className={`${styles.heroMotion} relative mx-auto grid min-h-[100svh] max-w-[1440px] items-center gap-12 px-5 pb-16 pt-24 sm:px-8 lg:grid-cols-[1fr_1fr] lg:gap-12 lg:px-12 lg:pb-20 lg:pt-24`}>
             <div>
-              <p
-                className="flex animate-rise-in items-center gap-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.18em] text-ink-3"
-                style={{ animationDelay: `${HERO_STEP.eyebrow}ms` }}
-              >
-                <span className="h-px w-10 origin-left animate-underline bg-signal [animation-delay:250ms]" />
-                Revenue &amp; operations OS · Built in Amman
-              </p>
-
-              <h1 className="marketing-display mt-7 text-[clamp(2.7rem,5vw,4.7rem)] leading-[0.9]">
+              <h1 className="marketing-display text-[clamp(2.7rem,5vw,4.7rem)] leading-[0.9]">
                 <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>
                   Every member.
                 </span>
@@ -145,10 +141,10 @@ export default function LandingPage() {
                 ].map(([term, detail]) => (
                   <div key={term} className="group relative">
                     <span className="absolute -top-8 left-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
-                    <dt className="font-mono text-[9.5px] font-medium uppercase tracking-[0.12em] text-ink transition-colors duration-300 group-hover:text-signal">
+                    <dt className="text-[13px] font-semibold tracking-[-0.01em] text-ink transition-colors duration-300 group-hover:text-signal">
                       {term}
                     </dt>
-                    <dd className="mt-1.5 text-[11.5px] leading-snug text-ink-3">{detail}</dd>
+                    <dd className="mt-1 text-[12px] leading-snug text-ink-3">{detail}</dd>
                   </div>
                 ))}
               </dl>
@@ -166,7 +162,7 @@ export default function LandingPage() {
           <VocabularyMarquee />
 
           {/* ----------------------------------------------------------- Numbers */}
-          <section className="border-b border-ink/10 bg-sunken">
+          <section className="bg-sunken">
           <div className="mx-auto grid max-w-[1440px] divide-y divide-ink/10 px-5 sm:px-8 md:grid-cols-4 md:divide-x md:divide-y-0 lg:px-12">
             {[
               ["Live", "branch operations in one workspace"],
@@ -176,10 +172,8 @@ export default function LandingPage() {
             ].map(([value, label], index) => (
               <Reveal key={label} delay={index * 90} className={index === 0 ? "py-8 md:pe-6" : "py-8 md:px-6"}>
                 <div className="group">
-                  <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-4 transition-colors duration-300 group-hover:text-signal">
-                    {String(index + 1).padStart(2, "0")}
-                  </p>
-                  <p className="mt-2 text-[34px] font-semibold leading-none tabular transition-transform duration-500 ease-out group-hover:-translate-y-0.5">
+                  <span className="block h-[3px] w-6 rounded-sm bg-signal/70 transition-[width] duration-500 ease-out group-hover:w-10" aria-hidden />
+                  <p className="mt-4 text-[34px] font-semibold leading-none tabular">
                     {value}
                   </p>
                   <p className="mt-2 text-[12.5px] text-ink-3">{label}</p>
@@ -191,19 +185,23 @@ export default function LandingPage() {
         </div>
 
         {/* --------------------------------------------------------- Scroll stack */}
+        <SheetUnder tone="sunken" />
         <ScrollStackStory />
 
-        {/* ------------------------------------------------------------- Modules */}
-        <ModulesShowcase />
+        {/* --------------------------------------------- Modules, then a day on RIVET
+            The day sheet slides over the pinned modules sheet; the pair shares
+            one wrapper so the pin releases once the day has passed. */}
+        <SheetUnder tone="stack" />
+        <div className={styles.coverPair}>
+          <ModulesShowcase />
+          <OperationalDay />
+        </div>
 
-        {/* --------------------------------------------------------- A day on RIVET */}
-        <OperationalDay />
-
-        {/* ------------------------------------------------------- Accountability */}
-        <AccountabilityLedger />
-
-        {/* --------------------------------------------------------- Regional fit */}
-        <RegionProof />
+        {/* ------------------------------------------ Accountability, then the region */}
+        <div className={styles.coverPair}>
+          <AccountabilityLedger />
+          <RegionProof />
+        </div>
 
         {/* -------------------------------------------------------------- Member */}
         <section
@@ -215,7 +213,6 @@ export default function LandingPage() {
             <div>
               <SectionIntro
                 stacked
-                eyebrow="RIVET for members"
                 title="Their side of the counter."
                 description="One account finds new gyms, books a free trial, and holds every active membership. No plastic card or screenshots of old receipts."
               />
@@ -256,11 +253,10 @@ export default function LandingPage() {
         {/* --------------------------------------------------------- Marketplace */}
         <section
           data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.layer9} border-b border-ink/10 bg-paper px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+          className={`${styles.coverSheet} ${styles.layer9} bg-paper px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
         >
           <div className="mx-auto max-w-[1344px]">
             <SectionIntro
-              eyebrow="The RIVET network"
               title="Find the gym. Book before you visit."
               description="Only gyms actually operating on RIVET appear in discovery, so a trial request lands on a real follow-up queue instead of an inbox."
             />
@@ -274,13 +270,13 @@ export default function LandingPage() {
                 <Reveal key={gym.id} delay={index * 80} className="h-full">
                 <Link
                   href={`/customer/gyms/${gym.id}`}
-                  className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-[transform,border-color,box-shadow] duration-300 ease-out hover:-translate-y-1.5 hover:border-ink hover:shadow-pop"
+                  className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-[border-color,box-shadow] duration-300 ease-out hover:border-ink hover:shadow-pop"
                 >
                   <div className="relative h-24 overflow-hidden px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
                     <div className="absolute inset-0 opacity-20 marketing-grid" />
-                    <span className="relative flex items-center justify-between font-mono text-[9.5px] uppercase tracking-[0.16em]">
+                    <span className="relative flex items-center justify-between text-[12.5px] font-semibold tracking-[-0.01em]">
                       {gym.shortName}
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 text-[11.5px] font-medium">
                         <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0} PT
                       </span>
                     </span>
@@ -290,7 +286,7 @@ export default function LandingPage() {
                     />
                   </div>
                   <div className="flex flex-1 flex-col p-5">
-                    <p className="eyebrow">{gym.category}</p>
+                    <p className="text-[12px] font-medium text-ink-3">{gym.category}</p>
                     <h3 className="mt-1.5 text-[19px] font-semibold tracking-tight">{gym.name}</h3>
                     <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-ink-2">{gym.tagline}</p>
                     <div className="mt-auto flex items-center justify-between border-t border-line pt-4">
@@ -315,11 +311,10 @@ export default function LandingPage() {
         <section
           id="pricing"
           data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer10} scroll-mt-20 border-b border-ink/10 bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+          className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer10} scroll-mt-20 bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
         >
           <div className="mx-auto max-w-[1344px]">
             <SectionIntro
-              eyebrow="Pricing"
               title="One branch or every branch. Same system."
               description="Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Choose monthly or save 20% with annual billing."
             />
@@ -330,7 +325,7 @@ export default function LandingPage() {
             ) : null}
             <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="eyebrow">Billing cadence</p>
+                <p className="text-[13.5px] font-semibold tracking-[-0.01em]">Billing cadence</p>
                 <p className="mt-1 text-[12px] text-ink-3">Same workspace features either way. Annual is paid once and saves {ANNUAL_DISCOUNT_PERCENT}%.</p>
               </div>
               <div role="tablist" aria-label="Billing interval" className="inline-flex rounded-md border border-line bg-surface p-1 shadow-sm">
@@ -358,55 +353,65 @@ export default function LandingPage() {
                   const features = publicPlanFeatures(plan);
                   const isEnterprise = plan.name === "Enterprise";
                   const isNight = plan.tone === "night";
+                  const isSignal = plan.tone === "signal";
                   return (
                 <Reveal key={plan.name} delay={index * 90} className="h-full">
                   <div
-                    className={`h-full transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1.5 hover:shadow-pop ${
-                      isNight
-                        ? "night-surface rounded-lg bg-night p-6 text-night-ink"
-                        : plan.tone === "signal"
-                          ? "rounded-lg border-2 border-signal bg-surface p-6 shadow-pop"
-                          : "rounded-lg border border-line bg-surface p-6"
-                    }`}
+                    className={cn(
+                      "rounded-lg",
+                      styles.tier,
+                      isNight ? styles.tierNight : isSignal ? styles.tierSignal : styles.tierPaper,
+                      isNight && "night-surface",
+                    )}
                   >
-                  <div className="flex items-center justify-between">
-                    <p className={plan.tone === "night" ? "eyebrow-night" : "eyebrow"}>{plan.name}</p>
-                    {plan.tone === "signal" ? (
-                      <span className="rounded-sm bg-signal px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-white">
-                        Most popular
-                      </span>
-                    ) : isEnterprise ? (
-                      <span className="rounded-sm border border-night-line px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-night-ink-2">
-                        Multi-site
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-6">
-                    <span className="text-[34px] font-semibold tabular">JD {formatJodMinor(price.effectiveMonthlyMinor)}</span>
-                    <span className={isNight ? "text-night-ink-3" : "text-ink-3"}> / month</span>
-                  </p>
-                  {billingInterval === "annual" ? (
-                    <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>
-                      JD {formatJodMinor(price.annualTotalMinor)} billed annually · <strong className={isNight ? "text-night-ink-2" : "text-ink-2"}>Save {ANNUAL_DISCOUNT_PERCENT}%</strong>
+                    {/* The liquid that fills the card on hover — see `.tierLiquid`. */}
+                    <span className={styles.tierLiquid} aria-hidden>
+                      <svg className={styles.tierWave} viewBox="0 0 400 24" preserveAspectRatio="none">
+                        <path d={WAVE_PATH} />
+                      </svg>
+                    </span>
+                    <div className={styles.tierBody}>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[15px] font-semibold tracking-[-0.01em]">{plan.name}</p>
+                        {isSignal ? (
+                          <span className="rounded-sm bg-signal px-2 py-1 text-[11px] font-medium leading-none text-white">
+                            Most popular
+                          </span>
+                        ) : isEnterprise ? (
+                          <span className="rounded-sm border border-night-line px-2 py-1 text-[11px] font-medium leading-none text-night-ink-2">
+                            Multi-site
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-6">
+                        <span className="text-[34px] font-semibold tabular">JD {formatJodMinor(price.effectiveMonthlyMinor)}</span>
+                        <span className={isNight ? "text-night-ink-3" : "text-ink-3"}> / month</span>
+                      </p>
+                      {billingInterval === "annual" ? (
+                        <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>
+                          JD {formatJodMinor(price.annualTotalMinor)} billed annually · <strong className={isNight ? "text-night-ink-2" : "text-ink-2"}>Save {ANNUAL_DISCOUNT_PERCENT}%</strong>
+                        </div>
+                      ) : (
+                        <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>Billed monthly · cancel before renewal</div>
+                      )}
+                      <ul className={`mt-7 grid gap-2.5 text-[13px] ${isNight ? "text-night-ink-2" : "text-ink-2"}`}>
+                        {features.map((line) => (
+                          <li key={line} className="flex items-start gap-2.5">
+                            <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-auto pt-8">
+                        <Button
+                          asChild
+                          variant={isNight ? "night" : isSignal ? "signal" : "secondary"}
+                          className="w-full"
+                        >
+                          <Link href={pricingSignupHref(plan.name, billingInterval)}>Send gym application</Link>
+                        </Button>
+                      </div>
                     </div>
-                  ) : (
-                    <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>Billed monthly · cancel before renewal</div>
-                  )}
-                  <ul className={`mt-7 grid gap-2.5 text-[13px] ${isNight ? "text-night-ink-2" : "text-ink-2"}`}>
-                    {features.map((line) => (
-                      <li key={line} className="flex items-start gap-2.5">
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    asChild
-                    variant={isNight ? "night" : plan.tone === "signal" ? "signal" : "secondary"}
-                    className="mt-8 w-full"
-                  >
-                    <Link href={pricingSignupHref(plan.name, billingInterval)}>Send gym application</Link>
-                  </Button>
                   </div>
                 </Reveal>
                   );
@@ -416,6 +421,7 @@ export default function LandingPage() {
         </section>
 
         {/* ----------------------------------------------------------------- CTA */}
+        <SheetUnder tone="sunken" />
         <section
           id="contact"
           data-landing-theme="dark"
@@ -427,7 +433,7 @@ export default function LandingPage() {
             <div className="absolute inset-y-0 start-[76%] w-px bg-night-ink" />
           </div>
           <div className="relative mx-auto max-w-[1344px]">
-            <StoryMarker index="07" label="Walkthrough" dark />
+            <StoryMarker label="Walkthrough" dark />
             <div className="mt-12 grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-20">
               <Reveal>
                 <div>
@@ -440,14 +446,14 @@ export default function LandingPage() {
                 </div>
               </Reveal>
               <Reveal delay={120}>
-                <div className="flex flex-wrap items-center gap-4 lg:justify-end">
+                <div className="flex flex-wrap items-center gap-5 lg:justify-end">
                   <Button asChild variant="signal" size="lg" className="group">
                     <Link href="/signup">
                       Send a gym application{" "}
                       <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
                     </Link>
                   </Button>
-                  <Link href="/login" className="font-mono text-[10px] uppercase tracking-[0.16em] text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink">
+                  <Link href="/login" className="text-[13.5px] font-medium text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink hover:decoration-night-ink-2">
                     Already have access? Sign in
                   </Link>
                 </div>
@@ -476,26 +482,26 @@ function MemberCard() {
   return (
     <Reveal>
       <div className="night-surface mx-auto w-full max-w-sm rounded-lg bg-night p-6 text-night-ink shadow-[0_24px_70px_rgb(27_26_21/0.22)]">
-        <div className="flex items-center justify-between border-b border-night-line pb-4 font-mono text-[9px] uppercase tracking-[0.15em] text-night-ink-3">
-          <span>RIVET MEMBER</span>
+        <div className="flex items-center justify-between border-b border-night-line pb-4 text-[12.5px] font-medium text-night-ink-3">
+          <span>RIVET member</span>
           <span className="flex items-center gap-1.5 text-success">
             <span className="relative flex size-1.5">
               <span className="absolute inset-0 animate-pulse-ring rounded-full bg-current" />
               <span className="relative size-1.5 rounded-full bg-current" />
             </span>
-            LIVE WORKSPACE
+            Live workspace
           </span>
         </div>
-        <p className="mt-6 eyebrow-night">Your gym membership</p>
+        <p className="mt-6 text-[12.5px] font-medium text-night-ink-3">Your gym membership</p>
         <h3 className="mt-1.5 text-[27px] font-semibold tracking-tight">One verified member record</h3>
-        <p className="mt-1 font-mono text-[10px] text-night-ink-3">PLAN · BRANCH · MEMBER NUMBER</p>
+        <p className="mt-1.5 text-[12.5px] text-night-ink-3">Plan, branch and member number, in one place.</p>
         <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-md bg-night-line">
           <div className="bg-night-2 p-4 transition-colors duration-300 hover:bg-night-3">
-            <p className="eyebrow-night">Membership</p>
+            <p className="text-[12px] font-medium text-night-ink-3">Membership</p>
             <p className="mt-2 text-[14px] font-semibold">Live gym status</p>
           </div>
           <div className="bg-night-2 p-4 transition-colors duration-300 hover:bg-night-3">
-            <p className="eyebrow-night">Visits</p>
+            <p className="text-[12px] font-medium text-night-ink-3">Visits</p>
             <p className="mt-2 text-[14px] font-semibold">Recorded check-ins</p>
           </div>
         </div>
@@ -514,8 +520,8 @@ function MemberCard() {
           </p>
         </div>
 
-        <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-night-ink-3">
-          Check-in identity · authorized by the gym
+        <p className="mt-3 text-center text-[12px] text-night-ink-3">
+          Check-in identity, authorized by the gym
         </p>
       </div>
     </Reveal>
@@ -523,13 +529,11 @@ function MemberCard() {
 }
 
 function SectionIntro({
-  eyebrow,
   title,
   description,
   dark = false,
   stacked = false,
 }: {
-  eyebrow: string;
   title: string;
   description: string;
   dark?: boolean;
@@ -537,14 +541,11 @@ function SectionIntro({
 }) {
   return (
     <Reveal className={stacked ? "max-w-xl" : "grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"}>
-      <div>
-        <p className={`font-mono text-[10px] font-medium uppercase tracking-[0.18em] ${dark ? "text-signal" : "text-ink-3"}`}>{eyebrow}</p>
-        <h2
-          className={`mt-4 text-[clamp(2.15rem,3.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.025em] [font-family:var(--font-marketing-display)] ${dark ? "text-night-ink" : "text-ink"}`}
-        >
-          {title}
-        </h2>
-      </div>
+      <h2
+        className={`text-[clamp(2.15rem,3.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.025em] [font-family:var(--font-marketing-display)] ${dark ? "text-night-ink" : "text-ink"}`}
+      >
+        {title}
+      </h2>
       <p className={`text-[14.5px] leading-[1.7] ${dark ? "text-night-ink-2" : "text-ink-2"} ${stacked ? "mt-5" : "lg:pb-2"}`}>
         {description}
       </p>

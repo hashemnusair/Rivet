@@ -31,10 +31,10 @@ export function VocabularyMarquee() {
           <div key={copy} className="flex items-center">
             {TERMS.map((term) => (
               <span key={`${copy}-${term}`} className="flex items-center">
-                <span className="whitespace-nowrap font-mono text-[10.5px] uppercase tracking-[0.16em] text-ink-3">
+                <span className="whitespace-nowrap text-[12.5px] font-medium tracking-[-0.005em] text-ink-3">
                   {term}
                 </span>
-                <span className="mx-6 size-1 rounded-full bg-signal/50" />
+                <span className="mx-7 size-1 rounded-full bg-signal/60" />
               </span>
             ))}
           </div>
