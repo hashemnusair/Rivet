@@ -16,7 +16,6 @@ import styles from "@/components/marketing/landing-cinematic.module.css";
 import { LandingMotionController } from "@/components/marketing/landing-motion";
 import {
   AccountabilityLedger,
-  ModulesShowcase,
   OperationalDay,
   RegionProof,
   ScrollStackStory,
@@ -25,7 +24,6 @@ import {
 } from "@/components/marketing/landing-story";
 import { Reveal } from "@/components/marketing/reveal";
 import { ScrollProgress } from "@/components/marketing/scroll-progress";
-import { VocabularyMarquee } from "@/components/marketing/vocabulary-marquee";
 import { PublicFooter } from "@/components/public/public-shell";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
@@ -41,7 +39,7 @@ import {
   type BillingInterval,
 } from "@/lib/public/pricing";
 
-/** Hero entrance order, in ms — one cascade from the headline to the stat rail. */
+/** Hero entrance order, in ms — one cascade from the headline to the fact rail. */
 const HERO_STEP = {
   line1: 0,
   line2: 70,
@@ -49,7 +47,7 @@ const HERO_STEP = {
   copy: 240,
   actions: 320,
   note: 380,
-  stats: 440,
+  facts: 440,
 } as const;
 
 /** Two full swells across the wave, so a half-width shift loops seamlessly. */
@@ -60,6 +58,8 @@ export default function LandingPage() {
   const marketplaceGyms = useMarketplaceGyms();
   const pricingPlans = resolvePublicPricingPlans(saasPlans);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
+  const liveGyms = experienceStatus === "ready" ? marketplaceGyms : [];
+
   return (
     <div className={`${styles.pageShell} marketing-body min-h-screen bg-paper text-ink`}>
       <LandingMotionController />
@@ -73,7 +73,7 @@ export default function LandingPage() {
           id="top"
           data-landing-hero
           data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.layer1} relative min-h-[100svh] overflow-hidden border-b border-ink/10 bg-paper`}
+          className={`${styles.coverSheet} ${styles.layer1} relative overflow-hidden bg-paper lg:min-h-[100svh]`}
         >
           {/* Ruled backdrop, faded out at the edges so it never competes with
               the headline. Texture only — no painted colour. */}
@@ -81,9 +81,9 @@ export default function LandingPage() {
             <div className="marketing-grid-sm absolute inset-0 [mask-image:radial-gradient(115%_85%_at_72%_18%,black,transparent_72%)]" />
           </div>
 
-          <div className={`${styles.heroMotion} relative mx-auto grid min-h-[100svh] max-w-[1440px] items-center gap-12 px-5 pb-16 pt-24 sm:px-8 lg:grid-cols-[1fr_1fr] lg:gap-12 lg:px-12 lg:pb-20 lg:pt-24`}>
+          <div className={`${styles.heroMotion} relative mx-auto grid max-w-[1440px] items-center gap-10 px-5 pb-10 pt-[calc(4.25rem+2.5rem)] sm:px-8 sm:pb-14 lg:min-h-[100svh] lg:grid-cols-[1fr_1fr] lg:gap-12 lg:px-12 lg:pb-20 lg:pt-28`}>
             <div>
-              <h1 className="marketing-display text-[clamp(2.7rem,5vw,4.7rem)] leading-[0.9]">
+              <h1 className="marketing-display text-[clamp(1.9rem,9.2vw,4.7rem)] leading-[0.9] lg:text-[clamp(2.6rem,4.7vw,4.7rem)] xl:text-[clamp(2.6rem,5vw,4.7rem)]">
                 <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>
                   Every member.
                 </span>
@@ -100,11 +100,11 @@ export default function LandingPage() {
               </h1>
 
               <p
-                className="mt-8 max-w-xl animate-rise-in text-[16px] leading-[1.65] text-ink-2 sm:text-[17px]"
+                className="mt-7 max-w-xl animate-rise-in text-[16px] leading-[1.65] text-ink-2 sm:text-[17px]"
                 style={{ animationDelay: `${HERO_STEP.copy}ms` }}
               >
-                RIVET joins the sales desk, the gym floor, the cash drawer, and the member&rsquo;s phone in one record, from the
-                first free trial to the tenth renewal.
+                One record for the sales desk, reception, the cash drawer and the member&rsquo;s phone. Every trial, membership,
+                payment and check-in is logged under the person who handled it.
               </p>
 
               <div
@@ -130,17 +130,17 @@ export default function LandingPage() {
               </p>
 
               <dl
-                className="mt-12 grid max-w-2xl animate-rise-in grid-cols-2 gap-x-8 gap-y-6 border-t border-ink/10 pt-8 xl:grid-cols-4"
-                style={{ animationDelay: `${HERO_STEP.stats}ms` }}
+                className="mt-10 grid max-w-2xl animate-rise-in grid-cols-2 gap-x-8 gap-y-5 border-t border-ink/10 pt-7 xl:grid-cols-4"
+                style={{ animationDelay: `${HERO_STEP.facts}ms` }}
               >
                 {[
-                  ["Cash · Card · CliQ", "Every tender receipted"],
-                  ["Multi-branch", "One ledger, every floor"],
-                  ["Arabic / RTL", "Native from day one"],
-                  ["Member QR", "One scan, clear verdict"],
+                  ["Cash, card, CliQ", "A receipt for every payment"],
+                  ["Multi-branch", "One ledger across every floor"],
+                  ["Arabic and English", "Right-to-left ready"],
+                  ["Member QR", "One scan at the door"],
                 ].map(([term, detail]) => (
                   <div key={term} className="group relative">
-                    <span className="absolute -top-8 left-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
+                    <span className="absolute -top-7 left-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
                     <dt className="text-[13px] font-semibold tracking-[-0.01em] text-ink transition-colors duration-300 group-hover:text-signal">
                       {term}
                     </dt>
@@ -154,156 +154,122 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <div
-          data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.layer2} overflow-hidden`}
-        >
-          {/* -------------------------------------------------------- Vocabulary */}
-          <VocabularyMarquee />
-
-          {/* ----------------------------------------------------------- Numbers */}
-          <section className="bg-sunken">
-          <div className="mx-auto grid max-w-[1440px] divide-y divide-ink/10 px-5 sm:px-8 md:grid-cols-4 md:divide-x md:divide-y-0 lg:px-12">
-            {[
-              ["Live", "branch operations in one workspace"],
-              ["One", "chronological member timeline"],
-              ["Audited", "payments, shifts and overrides"],
-              ["Scoped", "roles, branches and tenant access"],
-            ].map(([value, label], index) => (
-              <Reveal key={label} delay={index * 90} className={index === 0 ? "py-8 md:pe-6" : "py-8 md:px-6"}>
-                <div className="group">
-                  <span className="block h-[3px] w-6 rounded-sm bg-signal/70 transition-[width] duration-500 ease-out group-hover:w-10" aria-hidden />
-                  <p className="mt-4 text-[34px] font-semibold leading-none tabular">
-                    {value}
-                  </p>
-                  <p className="mt-2 text-[12.5px] text-ink-3">{label}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-          </section>
-        </div>
-
-        {/* --------------------------------------------------------- Scroll stack */}
-        <SheetUnder tone="sunken" />
+        {/* ------------------------------------------------------------- The stack */}
+        <SheetUnder tone="paper" />
         <ScrollStackStory />
 
-        {/* --------------------------------------------- Modules, then a day on RIVET
-            The day sheet slides over the pinned modules sheet; the pair shares
-            one wrapper so the pin releases once the day has passed. */}
+        {/* --------------------------------------------------------- A day on RIVET */}
         <SheetUnder tone="stack" />
-        <div className={styles.coverPair}>
-          <ModulesShowcase />
-          <OperationalDay />
-        </div>
+        <OperationalDay />
 
-        {/* ------------------------------------------ Accountability, then the region */}
+        {/* ---------------------------------- Accountability, then where it is built
+            The region sheet slides over the pinned accountability sheet; the pair
+            shares one wrapper so the pin releases once the region has passed. */}
         <div className={styles.coverPair}>
           <AccountabilityLedger />
           <RegionProof />
         </div>
 
-        {/* -------------------------------------------------------------- Member */}
+        {/* ------------------------------------------------------------- Members */}
         <section
           id="member"
           data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.layer8} scroll-mt-20 border-b border-ink/10 bg-paper px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
-        >
-          <div className="mx-auto grid max-w-[1344px] gap-14 lg:grid-cols-[1fr_0.85fr] lg:items-center">
-            <div>
-              <SectionIntro
-                stacked
-                title="Their side of the counter."
-                description="One account finds new gyms, books a free trial, and holds every active membership. No plastic card or screenshots of old receipts."
-              />
-              <ul className="mt-8 grid gap-3.5">
-                {[
-                  "Membership status, expiry, visits and balance at a glance",
-                  "A dedicated QR identity for fast entry at the desk",
-                  "Receipts and payment history that survive a lost phone",
-                  "Arabic or English, per member",
-                ].map((item, index) => (
-                  <li key={item}>
-                    <Reveal delay={index * 80} className="group flex items-start gap-3 text-[14px] text-ink-2">
-                      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-success/30 transition-colors duration-300 group-hover:border-success group-hover:bg-success-bg">
-                        <Check className="size-3 text-success" />
-                      </span>
-                      {item}
-                    </Reveal>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Button asChild size="lg" className="group">
-                  <Link href="/login/member/create">
-                    Create a free account{" "}
-                    <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                  </Link>
-                </Button>
-                <Button asChild variant="secondary" size="lg">
-                  <Link href="/customer/discover">Find a gym</Link>
-                </Button>
-              </div>
-            </div>
-
-            <MemberCard />
-          </div>
-        </section>
-
-        {/* --------------------------------------------------------- Marketplace */}
-        <section
-          data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.layer9} bg-paper px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+          aria-labelledby="member-title"
+          className={`${styles.coverSheet} ${styles.layer7} bg-paper px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
         >
           <div className="mx-auto max-w-[1344px]">
-            <SectionIntro
-              title="Find the gym. Book before you visit."
-              description="Only gyms actually operating on RIVET appear in discovery, so a trial request lands on a real follow-up queue instead of an inbox."
-            />
-            {experienceStatus !== "ready" || marketplaceGyms.length === 0 ? (
-              <div className="mt-12">
-                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="No RIVET gyms are live yet" emptyDescription="The network directory is ready, but no gym has published a live listing yet." />
+            <div className="grid gap-12 lg:grid-cols-[1fr_0.85fr] lg:items-center lg:gap-14">
+              <div>
+                <StoryMarker label="For members" />
+                <SectionIntro
+                  id="member-title"
+                  stacked
+                  title="Their side of the counter."
+                  description="One account finds gyms, books a free trial and holds every membership, with receipts that survive a lost phone."
+                />
+                <ul className="mt-7 grid gap-3">
+                  {[
+                    "Membership status, expiry, visits and balance at a glance",
+                    "A QR identity for entry at the desk",
+                    "Arabic or English, per member",
+                  ].map((item, index) => (
+                    <li key={item}>
+                      <Reveal delay={index * 80} className="group flex items-start gap-3 text-[14px] text-ink-2">
+                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-success/30 transition-colors duration-300 group-hover:border-success group-hover:bg-success-bg">
+                          <Check className="size-3 text-success" />
+                        </span>
+                        {item}
+                      </Reveal>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <Button asChild size="lg" className="group">
+                    <Link href="/login/member/create">
+                      Create a free account{" "}
+                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                    </Link>
+                  </Button>
+                  <Button asChild variant="secondary" size="lg">
+                    <Link href="/customer/discover">Find a gym</Link>
+                  </Button>
+                </div>
               </div>
-            ) : (
-              <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {marketplaceGyms.map((gym, index) => (
-                <Reveal key={gym.id} delay={index * 80} className="h-full">
-                <Link
-                  href={`/customer/gyms/${gym.id}`}
-                  className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-[border-color,box-shadow] duration-300 ease-out hover:border-ink hover:shadow-pop"
-                >
-                  <div className="relative h-24 overflow-hidden px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
-                    <div className="absolute inset-0 opacity-20 marketing-grid" />
-                    <span className="relative flex items-center justify-between text-[12.5px] font-semibold tracking-[-0.01em]">
-                      {gym.shortName}
-                      <span className="flex items-center gap-1 text-[11.5px] font-medium">
-                        <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0} PT
-                      </span>
-                    </span>
-                    <Dumbbell
-                      className="absolute bottom-3 end-4 size-8 opacity-30 transition-transform duration-500 ease-out group-hover:-rotate-12 group-hover:scale-110"
-                      strokeWidth={1.4}
-                    />
-                  </div>
-                  <div className="flex flex-1 flex-col p-5">
-                    <p className="text-[12px] font-medium text-ink-3">{gym.category}</p>
-                    <h3 className="mt-1.5 text-[19px] font-semibold tracking-tight">{gym.name}</h3>
-                    <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-ink-2">{gym.tagline}</p>
-                    <div className="mt-auto flex items-center justify-between border-t border-line pt-4">
-                      <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
-                        <MapPin className="size-3.5" /> {gym.areas.join(" · ")}
-                      </span>
-                      <span className="flex items-center gap-1.5 text-[12px] font-medium">
-                        JD {gym.fromPriceMinor / 1000}+
-                        <ArrowRight className="size-3.5 -translate-x-1 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
-                      </span>
-                    </div>
-                  </div>
-                </Link>
+
+              <MemberCard />
+            </div>
+
+            {/* Gyms that are live on RIVET, when there are any. The directory
+                page carries the full loading, empty and error states; the
+                landing simply does not advertise a listing it cannot show. */}
+            {liveGyms.length > 0 ? (
+              <div className="mt-16 border-t border-ink/10 pt-10">
+                <Reveal className="flex flex-wrap items-end justify-between gap-4">
+                  <h3 className="text-[19px] font-semibold tracking-tight">Gyms on RIVET</h3>
+                  <Link href="/customer/discover" className="text-[13.5px] font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">
+                    See every gym
+                  </Link>
                 </Reveal>
-                ))}
+                <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {liveGyms.map((gym, index) => (
+                    <Reveal key={gym.id} delay={index * 80} className="h-full">
+                      <Link
+                        href={`/customer/gyms/${gym.id}`}
+                        className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-[border-color,box-shadow] duration-300 ease-out hover:border-ink hover:shadow-pop"
+                      >
+                        <div className="relative h-24 overflow-hidden px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
+                          <div className="absolute inset-0 opacity-20 marketing-grid" />
+                          <span className="relative flex items-center justify-between text-[12.5px] font-semibold tracking-[-0.01em]">
+                            {gym.shortName}
+                            <span className="flex items-center gap-1 text-[11.5px] font-medium">
+                              <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0} PT
+                            </span>
+                          </span>
+                          <Dumbbell
+                            className="absolute bottom-3 end-4 size-8 opacity-30 transition-transform duration-500 ease-out group-hover:-rotate-12 group-hover:scale-110"
+                            strokeWidth={1.4}
+                          />
+                        </div>
+                        <div className="flex flex-1 flex-col p-5">
+                          <p className="text-[12px] font-medium text-ink-3">{gym.category}</p>
+                          <h4 className="mt-1.5 text-[19px] font-semibold tracking-tight">{gym.name}</h4>
+                          <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-ink-2">{gym.tagline}</p>
+                          <div className="mt-auto flex items-center justify-between border-t border-line pt-4">
+                            <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                              <MapPin className="size-3.5" /> {gym.areas.join(" · ")}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-[12px] font-medium">
+                              JD {gym.fromPriceMinor / 1000}+
+                              <ArrowRight className="size-3.5 -translate-x-1 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
+                            </span>
+                          </div>
+                        </div>
+                      </Link>
+                    </Reveal>
+                  ))}
+                </div>
               </div>
-            )}
+            ) : null}
           </div>
         </section>
 
@@ -311,13 +277,18 @@ export default function LandingPage() {
         <section
           id="pricing"
           data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer10} scroll-mt-20 bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+          aria-labelledby="pricing-title"
+          className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer8} bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
         >
           <div className="mx-auto max-w-[1344px]">
-            <SectionIntro
-              title="One branch or every branch. Same system."
-              description="Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Choose monthly or save 20% with annual billing."
-            />
+            <StoryMarker label="Pricing" />
+            <div className="mt-8">
+              <SectionIntro
+                id="pricing-title"
+                title="One branch or every branch. Same system."
+                description="Every plan includes the member app, staff permissions, audit history and the full revenue loop. Pay monthly, or once a year at 20% off."
+              />
+            </div>
             {experienceStatus === "error" && saasPlans.length === 0 ? (
               <div className="mt-8">
                 <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Showing launch pricing" emptyDescription="The live catalog is temporarily unavailable. These prices are the approved launch defaults." />
@@ -325,8 +296,8 @@ export default function LandingPage() {
             ) : null}
             <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="text-[13.5px] font-semibold tracking-[-0.01em]">Billing cadence</p>
-                <p className="mt-1 text-[12px] text-ink-3">Same workspace features either way. Annual is paid once and saves {ANNUAL_DISCOUNT_PERCENT}%.</p>
+                <p className="text-[13.5px] font-semibold tracking-[-0.01em]">Billing</p>
+                <p className="mt-1 text-[12px] text-ink-3">Same features either way. Annual is paid once and saves {ANNUAL_DISCOUNT_PERCENT}%.</p>
               </div>
               <div role="tablist" aria-label="Billing interval" className="inline-flex rounded-md border border-line bg-surface p-1 shadow-sm">
                 {(["monthly", "annual"] as const).map((interval) => {
@@ -339,7 +310,7 @@ export default function LandingPage() {
                       aria-selected={selected}
                       aria-controls="pricing-plans"
                       onClick={() => setBillingInterval(interval)}
-                      className={`rounded px-4 py-2 text-[12px] font-medium transition-colors ${selected ? "bg-ink text-paper" : "text-ink-3 hover:text-ink"}`}
+                      className={`min-h-10 rounded px-4 py-2 text-[12.5px] font-medium transition-colors ${selected ? "bg-ink text-paper" : "text-ink-3 hover:text-ink"}`}
                     >
                       {interval === "monthly" ? "Monthly" : "Annual · Save 20%"}
                     </button>
@@ -347,7 +318,7 @@ export default function LandingPage() {
                 })}
               </div>
             </div>
-            <div id="pricing-plans" role="tabpanel" className="mt-6 grid gap-4 lg:grid-cols-4">
+            <div id="pricing-plans" role="tabpanel" className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {pricingPlans.map((plan, index) => {
                   const price = calculatePlanPrice(plan, billingInterval);
                   const features = publicPlanFeatures(plan);
@@ -406,6 +377,7 @@ export default function LandingPage() {
                         <Button
                           asChild
                           variant={isNight ? "night" : isSignal ? "signal" : "secondary"}
+                          size="lg"
                           className="w-full"
                         >
                           <Link href={pricingSignupHref(plan.name, billingInterval)}>Send gym application</Link>
@@ -420,12 +392,13 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ----------------------------------------------------------------- CTA */}
+        {/* ----------------------------------------------------------- Next step */}
         <SheetUnder tone="sunken" />
         <section
           id="contact"
           data-landing-theme="dark"
-          className={`${styles.coverSheet} ${styles.inkSheet} ${styles.layer11} night-surface scroll-mt-20 relative overflow-hidden bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24`}
+          aria-labelledby="contact-title"
+          className={`${styles.coverSheet} ${styles.inkSheet} ${styles.layer9} night-surface relative overflow-hidden bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24`}
         >
           <div className="pointer-events-none absolute inset-0 opacity-[0.06]" aria-hidden>
             <div className="absolute inset-y-0 start-[68%] w-px bg-night-ink" />
@@ -433,15 +406,15 @@ export default function LandingPage() {
             <div className="absolute inset-y-0 start-[76%] w-px bg-night-ink" />
           </div>
           <div className="relative mx-auto max-w-[1344px]">
-            <StoryMarker label="Walkthrough" dark />
-            <div className="mt-12 grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-20">
+            <StoryMarker label="Next step" dark />
+            <div className="mt-10 grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-20">
               <Reveal>
                 <div>
-                  <h2 className="max-w-xl text-[clamp(2.6rem,4.8vw,4.25rem)] font-semibold leading-[0.95] tracking-[-0.03em] text-night-ink [font-family:var(--font-marketing-display)]">
-                    Pin the whole gym together.
+                  <h2 id="contact-title" className="max-w-xl text-[clamp(2.4rem,4.6vw,4.1rem)] font-semibold leading-[0.95] tracking-[-0.03em] text-night-ink [font-family:var(--font-marketing-display)]">
+                    Bring RIVET to your gym.
                   </h2>
-                  <p className="mt-7 max-w-md text-[15px] leading-[1.7] text-night-ink-2">
-                    See RIVET on your own branches, members, and operating rules. We will walk through the parts that matter at your desk.
+                  <p className="mt-6 max-w-md text-[15px] leading-[1.7] text-night-ink-2">
+                    Send an application with your branches and how you run the desk. We review it, then set up your workspace with you.
                   </p>
                 </div>
               </Reveal>
@@ -453,7 +426,7 @@ export default function LandingPage() {
                       <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
                     </Link>
                   </Button>
-                  <Link href="/login" className="text-[13.5px] font-medium text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink hover:decoration-night-ink-2">
+                  <Link href="/login" className="py-2 text-[13.5px] font-medium text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink hover:decoration-night-ink-2">
                     Already have access? Sign in
                   </Link>
                 </div>
@@ -481,26 +454,15 @@ export default function LandingPage() {
 function MemberCard() {
   return (
     <Reveal>
-      <div className="night-surface mx-auto w-full max-w-sm rounded-lg bg-night p-6 text-night-ink shadow-[0_24px_70px_rgb(27_26_21/0.22)]">
-        <div className="flex items-center justify-between border-b border-night-line pb-4 text-[12.5px] font-medium text-night-ink-3">
-          <span>RIVET member</span>
-          <span className="flex items-center gap-1.5 text-success">
-            <span className="relative flex size-1.5">
-              <span className="absolute inset-0 animate-pulse-ring rounded-full bg-current" />
-              <span className="relative size-1.5 rounded-full bg-current" />
-            </span>
-            Live workspace
-          </span>
-        </div>
-        <p className="mt-6 text-[12.5px] font-medium text-night-ink-3">Your gym membership</p>
-        <h3 className="mt-1.5 text-[27px] font-semibold tracking-tight">One verified member record</h3>
-        <p className="mt-1.5 text-[12.5px] text-night-ink-3">Plan, branch and member number, in one place.</p>
+      <div className="night-surface mx-auto w-full max-w-sm rounded-lg bg-night p-6 text-night-ink shadow-[0_24px_70px_rgb(27_26_21/0.22)]" aria-hidden>
+        <p className="border-b border-night-line pb-4 text-[12.5px] font-medium text-night-ink-3">RIVET member</p>
+        <h3 className="mt-6 text-[26px] font-semibold leading-tight tracking-tight">One verified member record</h3>
         <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-md bg-night-line">
-          <div className="bg-night-2 p-4 transition-colors duration-300 hover:bg-night-3">
+          <div className="bg-night-2 p-4">
             <p className="text-[12px] font-medium text-night-ink-3">Membership</p>
             <p className="mt-2 text-[14px] font-semibold">Live gym status</p>
           </div>
-          <div className="bg-night-2 p-4 transition-colors duration-300 hover:bg-night-3">
+          <div className="bg-night-2 p-4">
             <p className="text-[12px] font-medium text-night-ink-3">Visits</p>
             <p className="mt-2 text-[14px] font-semibold">Recorded check-ins</p>
           </div>
@@ -510,43 +472,40 @@ function MemberCard() {
         <div className="mt-5 rounded-md bg-night-2 p-4">
           <div className="relative mx-auto w-full max-w-[168px] overflow-hidden rounded-sm bg-night-ink p-3 text-night">
             <DecorativeQr />
-            <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] animate-qr-scan bg-signal" aria-hidden />
+            <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] animate-qr-scan bg-signal" />
           </div>
           <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-[12px] font-semibold">
             <ScanLine className="size-3.5 text-signal" /> Entry QR after activation
           </p>
-          <p className="mt-1 text-center text-[10px] text-night-ink-3">
-            Issued only from an active persisted membership.
+          <p className="mt-1 text-center text-[11px] text-night-ink-3">
+            Issued only from an active membership, authorized by the gym.
           </p>
         </div>
-
-        <p className="mt-3 text-center text-[12px] text-night-ink-3">
-          Check-in identity, authorized by the gym
-        </p>
       </div>
     </Reveal>
   );
 }
 
 function SectionIntro({
+  id,
   title,
   description,
-  dark = false,
   stacked = false,
 }: {
+  id?: string;
   title: string;
   description: string;
-  dark?: boolean;
   stacked?: boolean;
 }) {
   return (
-    <Reveal className={stacked ? "max-w-xl" : "grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"}>
+    <Reveal className={stacked ? "mt-7 max-w-xl" : "grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"}>
       <h2
-        className={`text-[clamp(2.15rem,3.4vw,3.2rem)] font-semibold leading-[1.02] tracking-[-0.025em] [font-family:var(--font-marketing-display)] ${dark ? "text-night-ink" : "text-ink"}`}
+        id={id}
+        className="text-[clamp(2rem,3.4vw,3.1rem)] font-semibold leading-[1.02] tracking-[-0.025em] text-ink [font-family:var(--font-marketing-display)]"
       >
         {title}
       </h2>
-      <p className={`text-[14.5px] leading-[1.7] ${dark ? "text-night-ink-2" : "text-ink-2"} ${stacked ? "mt-5" : "lg:pb-2"}`}>
+      <p className={`text-[14.5px] leading-[1.7] text-ink-2 ${stacked ? "mt-5" : "lg:pb-2"}`}>
         {description}
       </p>
     </Reveal>

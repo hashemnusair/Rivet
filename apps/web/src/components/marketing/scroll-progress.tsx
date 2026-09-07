@@ -1,43 +1,45 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
+import styles from "./landing-cinematic.module.css";
 
 /**
- * A hairline of signal red across the very top of the marketing page, filling
- * with reading progress. It sits above the sticky header and is decorative —
- * the page never depends on it for orientation.
+ * A hairline of signal red along the bottom edge of the fixed bar, filling
+ * with reading progress. Decorative: the page never depends on it for
+ * orientation, and it is written straight to the element so scrolling does
+ * not re-render anything.
  */
 export function ScrollProgress() {
-  const [progress, setProgress] = useState(0);
+  const barRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let frame = 0;
     const measure = () => {
       frame = 0;
+      const bar = barRef.current;
+      if (!bar) return;
       const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-      setProgress(scrollable > 0 ? Math.min(1, Math.max(0, window.scrollY / scrollable)) : 0);
+      const progress = scrollable > 0 ? Math.min(1, Math.max(0, window.scrollY / scrollable)) : 0;
+      bar.style.transform = `scaleX(${progress.toFixed(4)})`;
     };
-    const onScroll = () => {
+    const request = () => {
       if (frame) return;
       frame = window.requestAnimationFrame(measure);
     };
 
     measure();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
+    window.addEventListener("scroll", request, { passive: true });
+    window.addEventListener("resize", request, { passive: true });
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("scroll", request);
+      window.removeEventListener("resize", request);
     };
   }, []);
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] h-[2px]" aria-hidden>
-      <div
-        className="h-full origin-left bg-signal transition-transform duration-150 ease-out rtl:origin-right"
-        style={{ transform: `scaleX(${progress})` }}
-      />
+    <div className={styles.progress} aria-hidden>
+      <div ref={barRef} className={styles.progressBar} />
     </div>
   );
 }
