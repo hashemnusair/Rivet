@@ -83,6 +83,25 @@
         "3160"
       ],
       "port": 3160
+    },
+    {
+      "name": "web-mock-finops",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "NEXT_DIST_DIR=.next-playwright/finops",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "dev",
+        "--webpack",
+        "-p",
+        "3510"
+      ],
+      "port": 3510
     }
   ]
 }

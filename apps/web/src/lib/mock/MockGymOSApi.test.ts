@@ -1733,6 +1733,36 @@ describe("refunds and voids", () => {
     });
   });
 
+  it("replays an identical refund retry and refuses the same key for different figures", async () => {
+    const member = await anyMemberWithBalance();
+    const receipt = await api.createPayment({ memberId: member.id, amount: money(10_000), method: "cash" }, "idem-ref-replay");
+    const input = { amount: money(4_000), reason: "Lost response, retried", idempotencyKey: "refund-replay-key" };
+    const first = await api.refundPayment(receipt.payment.id, input);
+    const replay = await api.refundPayment(receipt.payment.id, input);
+    expect(replay.receipt.id).toBe(first.receipt.id);
+    expect((await api.getReceipt(receipt.receipt.id)).payment.refundedAmount?.amount).toBe(4_000);
+    await expect(api.refundPayment(receipt.payment.id, { ...input, amount: money(5_000) })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("needs the paying branch's open drawer for a cash refund and keeps a closed drawer's cash out of reach of a void", async () => {
+    const member = await anyMemberWithBalance();
+    const branchId = member.homeBranchId ?? (await api.getSession()).branches[0]!.id;
+    const receipt = await api.createPayment({ memberId: member.id, amount: money(6_000), method: "cash" }, "idem-ref-drawer");
+    const open = (await api.getCurrentShiftTotals(branchId))!;
+    const expected = open.shift.openingFloat.amount + open.totals.cashPayments.amount - open.totals.cashRefunds.amount - open.totals.supplierCashPayments.amount + open.totals.supplierCashReversals.amount;
+    await api.closeCashShift(open.shift.id, { countedCash: money(expected) });
+
+    await expect(api.refundPayment(receipt.payment.id, { reason: "Cash back with the drawer closed", idempotencyKey: "refund-closed-drawer" })).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+    await expect(api.voidPayment(receipt.payment.id, { reason: "Void after the drawer closed", idempotencyKey: "void-closed-drawer" })).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+
+    const reopened = await api.openCashShift({ branchId, openingFloat: money(0) });
+    const refund = await api.refundPayment(receipt.payment.id, { reason: "Cash back from the new drawer", idempotencyKey: "refund-new-drawer" });
+    expect(refund.payment.shiftId).toBe(reopened.id);
+    expect((await api.getCurrentShiftTotals(branchId))!.totals.cashRefunds.amount).toBe(6_000);
+    // The original cash still belongs to the closed shift; it cannot be voided from the new one.
+    await expect(api.voidPayment(receipt.payment.id, { reason: "Void from another shift", idempotencyKey: "void-other-drawer" })).rejects.toMatchObject({ code: ERR.PAYMENT_ALREADY_REFUNDED });
+  });
+
   it("refuses to void a payment from an earlier business day", async () => {
     // "Same day" is the tenant's business day in Amman, not the UTC calendar day.
     const today = todayISODate();
@@ -2278,6 +2308,24 @@ describe("seed coverage required by the docs", () => {
 });
 
 describe("retail checkout", () => {
+  it("keeps shelf stock sellable while a purchase order is open and releases sold cost from the valuation", async () => {
+    const branchId = (await api.getSession()).branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-ON-ORDER", name: "Mock on-order item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 4, unitCost: money(500, "JOD"), idempotencyKey: "mock-on-order-opening" });
+    const supplier = await api.upsertSupplier({ name: "Mock on-order supplier", branchIds: [branchId], preferredProductIds: [product.id] });
+    const order = await api.createPurchaseOrder({ branchId, supplierId: supplier.id, lines: [{ productId: product.id, quantity: 50, unitCost: money(500, "JOD") }] });
+    await api.approvePurchaseOrder(order.id);
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ quantityOnHand: 4, availableQuantity: 4, totalCost: money(2_000, "JOD") })]);
+
+    const sale = await api.checkoutRetail({ branchId, guest: { fullName: "Shelf Guest", phone: "+962790000077" }, lines: [{ productId: product.id, quantity: 3 }], method: "card", externalReference: "VISA-ON-ORDER", idempotencyKey: "mock-on-order-sale" });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 1, totalCost: money(500, "JOD") })]);
+    await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 3 }], reason: "Unopened items returned", idempotencyKey: "mock-on-order-refund" });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 4, totalCost: money(2_000, "JOD") })]);
+
+    await api.receivePurchaseOrder({ purchaseOrderId: order.id, idempotencyKey: "mock-on-order-receive" });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 54, committedQuantity: 0 })]);
+  });
+
   it("supports front-desk member and guest sales with idempotent stock decrements", async () => {
     const ownerSession = await api.getSession();
     const branchId = ownerSession.branches[0]!.id;

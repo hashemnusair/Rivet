@@ -3,7 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { useApiQuery } from "./use-api";
+import { useApiMutation, useApiQuery } from "./use-api";
+
+const toastSpies = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
+vi.mock("sonner", () => ({ toast: toastSpies }));
 
 function Harness() {
   const queryClient = useQueryClient();
@@ -63,5 +66,56 @@ describe("useApiQuery refresh recovery", () => {
     render(<QueryClientProvider client={client}><InitialFailure /></QueryClientProvider>);
     await waitFor(() => expect(screen.getByTestId("initial-error")).toHaveTextContent("true"));
     expect(screen.getByTestId("initial-data")).toHaveTextContent("none");
+  });
+});
+
+describe("useApiMutation follow-up work", () => {
+  function renderMutation(onSuccess: () => Promise<void>) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    function Harness() {
+      const mutation = useApiMutation(async () => "saved", { onSuccess });
+      return (
+        <div>
+          <span data-testid="pending">{String(mutation.isPending)}</span>
+          <span data-testid="success">{String(mutation.isSuccess)}</span>
+          <span data-testid="mutation-error">{String(mutation.isError)}</span>
+          <button type="button" onClick={() => mutation.mutate()}>Save</button>
+        </div>
+      );
+    }
+    return render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>);
+  }
+
+  it("stays pending until the caller's asynchronous success work has finished", async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => undefined;
+    const followUp = new Promise<void>((resolve) => { release = resolve; });
+    let followUpStarted = false;
+    renderMutation(async () => { followUpStarted = true; await followUp; });
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(followUpStarted).toBe(true));
+    // The write itself resolved immediately; the refresh has not.
+    expect(screen.getByTestId("pending")).toHaveTextContent("true");
+    expect(screen.getByTestId("success")).toHaveTextContent("false");
+
+    release();
+    await waitFor(() => expect(screen.getByTestId("success")).toHaveTextContent("true"));
+    expect(screen.getByTestId("pending")).toHaveTextContent("false");
+  });
+
+  it("does not report a committed write as failed when only its follow-up refresh throws", async () => {
+    const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    toastSpies.error.mockClear();
+    toastSpies.warning.mockClear();
+    renderMutation(async () => { throw new Error("refresh failed"); });
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByTestId("success")).toHaveTextContent("true"));
+    expect(screen.getByTestId("mutation-error")).toHaveTextContent("false");
+    expect(toastSpies.error).not.toHaveBeenCalled();
+    expect(toastSpies.warning).toHaveBeenCalledWith(expect.stringMatching(/Saved, but this screen could not refresh/));
+    consoleError.mockRestore();
   });
 });

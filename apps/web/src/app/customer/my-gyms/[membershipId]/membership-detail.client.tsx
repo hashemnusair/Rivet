@@ -605,18 +605,18 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
   );
   const book = useApiMutation(
     (api, startsAt: string) => rescheduleBookingId ? api.rescheduleCustomerPtBooking({ bookingId: rescheduleBookingId, trainerProfileId: trainerId, branchId: selectedBranchId, startsAt, reason: "Rescheduled by member", idempotencyKey: crypto.randomUUID() }) : api.createCustomerPtBooking({ membershipId, trainerProfileId: trainerId, branchId: selectedBranchId, startsAt, idempotencyKey: crypto.randomUUID() }),
-    { onSuccess: async () => { toast.success(rescheduleBookingId ? "Your PT session was rescheduled." : "Your PT session is reserved."); setRescheduleBookingId(undefined); await invalidate(); } },
+    { onSuccess: async () => { toast.success(rescheduleBookingId ? "Your PT session was rescheduled." : "Your PT session is reserved."); setRescheduleBookingId(undefined); await invalidate([["customer"]]); } },
   );
   // Cancelling is confirmed first, and the toast repeats what the server
   // actually did to the credit instead of assuming.
   const [cancelBooking, setCancelBooking] = useState<PtBooking>();
   const cancel = useApiMutation(
     (api, bookingId: string) => api.cancelCustomerPtBooking(bookingId, "Cancelled by member"),
-    { onSuccess: async (result) => { toast.success(result.status === "late_cancelled" ? "Cancelled after the cutoff. One PT credit was used." : "Booking cancelled. Your credit was returned."); setCancelBooking(undefined); await invalidate(); } },
+    { onSuccess: async (result) => { toast.success(result.status === "late_cancelled" ? "Cancelled after the cutoff. One PT credit was used." : "Booking cancelled. Your credit was returned."); setCancelBooking(undefined); await invalidate([["customer"]]); } },
   );
   const requestPackage = useApiMutation(
     (api, packageId: string) => api.requestCustomerPtPackage({ membershipId, packageId, idempotencyKey: crypto.randomUUID() }),
-    { onSuccess: async () => { toast.success("Package request created. Credits activate only after full payment is recorded by the gym."); await invalidate(); } },
+    { onSuccess: async () => { toast.success("Package request created. Credits activate only after full payment is recorded by the gym."); await invalidate([["customer"]]); } },
   );
 
   // The panel exists as soon as the tab is chosen; loading and failure are

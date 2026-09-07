@@ -7449,11 +7449,16 @@ export class MockGymOSApi implements GymOSApi {
       this.db.retailSales.push(sale);
       this.db.receipts.push(receipt);
       for (const line of lines) {
+        // The sold units carry their share of the running valuation out of
+        // the balance, as any outgoing movement does.
+        const knownCost = line.balance.totalCost && line.balance.totalCost.currency === this.db.organization.currency && Number.isSafeInteger(line.balance.totalCost.amount) && line.balance.totalCost.amount >= 0 ? line.balance.totalCost : undefined;
+        const soldCostMinor = knownCost ? allocateExactCost(knownCost.amount, line.balance.quantityOnHand, line.quantity) : undefined;
+        line.balance.totalCost = knownCost && soldCostMinor !== undefined ? { amount: knownCost.amount - soldCostMinor, currency: knownCost.currency } : undefined;
         line.balance.quantityOnHand -= line.quantity;
         line.balance.availableQuantity = line.balance.quantityOnHand - line.balance.committedQuantity;
         line.balance.lastMovementAt = now;
         line.balance.updatedAt = now;
-        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.unitCost, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.unitCost, totalCost: soldCostMinor === undefined || !knownCost ? undefined : { amount: soldCostMinor, currency: knownCost.currency }, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
         this.db.stockMovements.unshift(movement);
       }
       if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.db.organization.currency} ${(totalMinor / 1000).toFixed(3)}`, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
@@ -7510,6 +7515,9 @@ export class MockGymOSApi implements GymOSApi {
           this.db.inventoryBalances.push(balance);
         }
         if (balance) {
+          // Returned units bring their sale-time cost back into the valuation,
+          // matching the outgoing share the sale took out.
+          this.restoreBalanceCost(balance, sold?.unitCost, line.quantity);
           balance.quantityOnHand += line.quantity;
           balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
           if (tombstone) balance.sellable = false;
@@ -7594,6 +7602,7 @@ export class MockGymOSApi implements GymOSApi {
           this.db.inventoryBalances.push(balance);
         }
         if (balance) {
+          this.restoreBalanceCost(balance, line.unitCost, line.quantity);
           balance.quantityOnHand += line.quantity;
           balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
           if (tombstone) balance.sellable = false;
@@ -7662,6 +7671,11 @@ export class MockGymOSApi implements GymOSApi {
       }
       const original = this.db.payments.find((p) => p.id === paymentId);
       if (!original) throw ApiError.of(ERR.NOT_FOUND, "Payment not found.");
+      // Same contract as Convex: an identical retry returns the original
+      // refund receipt; the same key with different figures is refused.
+      const signature = JSON.stringify({ paymentId, amount: input.amount, reason: input.reason });
+      const replay = this.operationsIdempotent("payment.refund", input.idempotencyKey, signature) as T.ReceiptDetail | undefined;
+      if (replay) return replay;
       if (original.type !== "payment") throw ApiError.of(ERR.VALIDATION, "Only payments can be refunded.");
       if (original.status === "voided") throw ApiError.of(ERR.PAYMENT_ALREADY_VOIDED, "Voided payments cannot be refunded.");
       const alreadyRefunded = original.refundedAmount?.amount ?? 0;
@@ -7675,6 +7689,12 @@ export class MockGymOSApi implements GymOSApi {
         throw ApiError.of(ERR.REFUND_EXCEEDS_AMOUNT, "Refund amount exceeds the refundable balance.");
       }
 
+      // Cash leaves the drawer of the branch that took the payment, so that
+      // drawer must be open; otherwise no shift close could account for it.
+      const openShift = this.db.shifts.find((s) => s.branchId === original.branchId && s.status === "open");
+      if (!openShift && this.methodAffectsCashDrawer(original.method)) {
+        throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift at the branch that took this payment before refunding it in cash.");
+      }
       const receiptNumber = this.nextReceiptNumber();
       const refund: T.Payment = {
         id: mockUuid(),
@@ -7690,7 +7710,7 @@ export class MockGymOSApi implements GymOSApi {
         receiptNumber,
         collectedById: this.actor().id,
         collectedByName: this.actor().name,
-        shiftId: this.db.shifts.find((s) => s.branchId === original.branchId && s.status === "open")?.id,
+        shiftId: openShift?.id,
         idempotencyKey: `refund-${original.id}-${mockUuid()}`,
         originalPaymentId: original.id,
         refundReason: input.reason,
@@ -7735,7 +7755,9 @@ export class MockGymOSApi implements GymOSApi {
         actorId: this.actor().id,
         actorName: this.actor().name,
       });
-      return this.getReceiptSync(receipt.id);
+      const detail = this.getReceiptSync(receipt.id);
+      this.operationsIdempotency.set(`payment.refund:${input.idempotencyKey}`, { signature, result: detail });
+      return detail;
     });
   }
 
@@ -7747,6 +7769,9 @@ export class MockGymOSApi implements GymOSApi {
       }
       const original = this.db.payments.find((p) => p.id === paymentId);
       if (!original) throw ApiError.of(ERR.NOT_FOUND, "Payment not found.");
+      const signature = JSON.stringify({ paymentId, reason: input.reason });
+      const replay = this.operationsIdempotent("payment.void", input.idempotencyKey, signature) as T.ReceiptDetail | undefined;
+      if (replay) return replay;
       if (original.type !== "payment") throw ApiError.of(ERR.VALIDATION, "Only payments can be voided.");
       if (original.status === "voided") throw ApiError.of(ERR.PAYMENT_ALREADY_VOIDED, "Payment is already voided.");
       if (original.status === "refunded" || original.status === "partially_refunded") {
@@ -7755,6 +7780,14 @@ export class MockGymOSApi implements GymOSApi {
       const paymentDay = todayISODate(TZ, new Date(original.occurredAt));
       if (paymentDay !== this.today()) {
         throw ApiError.of(ERR.VOID_WINDOW_EXPIRED, "Payments can only be voided on the same business day. Issue a refund instead.");
+      }
+      // Cash counted into a closed drawer is part of a reconciled total; a
+      // void would rewrite that shift. Retail sales already follow this rule.
+      if (this.methodAffectsCashDrawer(original.method)) {
+        const openShift = this.db.shifts.find((s) => s.branchId === original.branchId && s.status === "open");
+        if (!openShift || !original.shiftId || openShift.id !== original.shiftId) {
+          throw ApiError.of(ERR.NO_OPEN_SHIFT, "Cash payments can only be voided while their original cash shift is open. Issue a refund instead.");
+        }
       }
       original.status = "voided";
       original.voidReason = input.reason;
@@ -7785,7 +7818,9 @@ export class MockGymOSApi implements GymOSApi {
         actorId: this.actor().id,
         actorName: this.actor().name,
       });
-      return this.getReceiptSync(original.receiptId);
+      const detail = this.getReceiptSync(original.receiptId);
+      this.operationsIdempotency.set(`payment.void:${input.idempotencyKey}`, { signature, result: detail });
+      return detail;
     });
   }
 
@@ -7883,6 +7918,27 @@ export class MockGymOSApi implements GymOSApi {
 
   subscribeCurrentShiftTotals(branchId: T.UUID, onValue: (value: { shift: T.CashShift; totals: T.ShiftTotals } | null) => void, onError?: (error: unknown) => void): Promise<() => void> {
     return this.subscribeOnce(() => this.getCurrentShiftTotals(branchId), onValue, onError);
+  }
+
+  /** Add the cost of incoming units to a balance whose valuation is known. */
+  private restoreBalanceCost(balance: T.InventoryBalance, unitCost: T.Money | undefined, quantity: number): void {
+    const incoming = exactCostTotal(unitCost, quantity);
+    const current = balance.quantityOnHand === 0
+      ? { amount: 0, currency: this.db.organization.currency }
+      : balance.totalCost && balance.totalCost.currency === this.db.organization.currency && Number.isSafeInteger(balance.totalCost.amount) && balance.totalCost.amount >= 0 ? balance.totalCost : undefined;
+    if (current && incoming && incoming.currency === this.db.organization.currency && Number.isSafeInteger(current.amount + incoming.amount)) {
+      balance.totalCost = { amount: current.amount + incoming.amount, currency: incoming.currency };
+    } else if (incoming && balance.quantityOnHand === 0) {
+      balance.totalCost = { ...incoming };
+    } else {
+      balance.totalCost = undefined;
+    }
+  }
+
+  /** "cash" always moves drawer money; a configured method can opt in. */
+  private methodAffectsCashDrawer(method: string): boolean {
+    if (method === "cash") return true;
+    return Boolean(this.db.paymentMethods.find((item) => item.key === method)?.affectsCashDrawer);
   }
 
   private shiftTotals(shift: T.CashShift): T.ShiftTotals {
@@ -9074,6 +9130,11 @@ export class MockGymOSApi implements GymOSApi {
       const filters = input.filters ?? {};
       const requestedBranchId = typeof filters.branchId === "string" ? filters.branchId : undefined;
       const search = typeof filters.search === "string" ? filters.search.trim().toLocaleLowerCase() : "";
+      const from = typeof filters.from === "string" && filters.from ? filters.from : undefined;
+      const to = typeof filters.to === "string" && filters.to ? filters.to : undefined;
+      // Date filters are gym-calendar days, exactly as the transaction list
+      // and the Convex export apply them.
+      const inRange = (instant: string | undefined) => !instant || (!from && !to) || instantFallsInTenantDateRange(instant, TZ, from, to);
       const branches = new Map(this.db.branches.map((branch) => [branch.id, branch.name]));
       const members = new Map(this.db.members.map((member) => [member.id, member]));
       const plans = new Map(this.db.plans.map((plan) => [plan.id, plan]));
@@ -9085,7 +9146,7 @@ export class MockGymOSApi implements GymOSApi {
       if (input.kind === "members") {
         title = "Member directory";
         headers = ["Member number", "Full name", "Arabic name", "Phone", "Email", "Gender", "Status", "Current plan", "Membership ends", "Outstanding amount", "Currency", "Home branch", "Preferred language", "Marketing consent", "Tags", "Created"];
-        rows = this.db.members.filter((member) => (!requestedBranchId || member.homeBranchId === requestedBranchId) && matches([member.fullName, member.fullNameAr, member.phone, member.email, member.memberNumber])).map((member) => {
+        rows = this.db.members.filter((member) => (!requestedBranchId || member.homeBranchId === requestedBranchId) && inRange(member.createdAt) && matches([member.fullName, member.fullNameAr, member.phone, member.email, member.memberNumber])).map((member) => {
           const membership = this.currentMembership(member.id);
           const plan = membership ? plans.get(membership.planId) : undefined;
           return [member.memberNumber, member.fullName, member.fullNameAr, member.phone, member.email, exportStatusLabel(member.gender), exportStatusLabel(member.status), plan?.name, membership?.endDate, formatMinorUnits(this.outstandingForMember(member.id).amount, this.db.organization.currency), this.db.organization.currency, branches.get(member.homeBranchId), exportStatusLabel(member.preferredLanguage), exportStatusLabel(member.marketingPreference?.status ?? (member.marketingOptIn ? "explicit_opt_in" : "explicit_opt_out")), exportList(member.tags), formatExportDateTime(member.createdAt, TZ)];
@@ -9093,11 +9154,11 @@ export class MockGymOSApi implements GymOSApi {
       } else if (input.kind === "leads") {
         title = "CRM leads";
         headers = ["Full name", "Phone", "Email", "Branch", "Stage", "Source", "Owner", "Expected value", "Currency", "Next follow-up", "Lost reason", "Created", "Updated"];
-        rows = this.db.leads.filter((lead) => (!requestedBranchId || lead.branchId === requestedBranchId) && matches([lead.fullName, lead.phone, lead.email])).map((lead) => [lead.fullName, lead.phone, lead.email, branches.get(lead.branchId), exportStatusLabel(lead.stage), exportStatusLabel(lead.source), lead.ownerId ? users.get(lead.ownerId) : "Unassigned", lead.expectedValue ? formatMinorUnits(lead.expectedValue.amount, lead.expectedValue.currency) : "", lead.expectedValue?.currency, formatExportDateTime(lead.nextFollowUpAt, TZ), lead.lostReason, formatExportDateTime(lead.createdAt, TZ), formatExportDateTime(lead.updatedAt, TZ)]);
+        rows = this.db.leads.filter((lead) => (!requestedBranchId || lead.branchId === requestedBranchId) && inRange(lead.createdAt) && matches([lead.fullName, lead.phone, lead.email])).map((lead) => [lead.fullName, lead.phone, lead.email, branches.get(lead.branchId), exportStatusLabel(lead.stage), exportStatusLabel(lead.source), lead.ownerId ? users.get(lead.ownerId) : "Unassigned", lead.expectedValue ? formatMinorUnits(lead.expectedValue.amount, lead.expectedValue.currency) : "", lead.expectedValue?.currency, formatExportDateTime(lead.nextFollowUpAt, TZ), lead.lostReason, formatExportDateTime(lead.createdAt, TZ), formatExportDateTime(lead.updatedAt, TZ)]);
       } else if (input.kind === "payments") {
         title = "Payment ledger";
         headers = ["When", "Member", "Member number", "Branch", "Receipt number", "Transaction type", "Payment method", "Amount", "Currency", "Status", "Refunded amount", "Recorded by", "External reference", "Refund reason", "Void reason"];
-        rows = this.db.payments.filter((payment) => (!requestedBranchId || payment.branchId === requestedBranchId) && matches([payment.receiptNumber, payment.externalReference, members.get(payment.memberId)?.fullName])).map((payment) => [formatExportDateTime(payment.occurredAt, TZ), members.get(payment.memberId)?.fullName, members.get(payment.memberId)?.memberNumber, branches.get(payment.branchId), payment.receiptNumber, exportStatusLabel(payment.type), exportStatusLabel(payment.method), formatMinorUnits(payment.amount.amount, payment.amount.currency), payment.amount.currency, exportStatusLabel(payment.status), payment.refundedAmount ? formatMinorUnits(payment.refundedAmount.amount, payment.refundedAmount.currency) : "", payment.collectedByName, payment.externalReference, payment.refundReason, payment.voidReason]);
+        rows = this.db.payments.filter((payment) => (!requestedBranchId || payment.branchId === requestedBranchId) && inRange(payment.occurredAt) && matches([payment.receiptNumber, payment.externalReference, members.get(payment.memberId)?.fullName])).map((payment) => [formatExportDateTime(payment.occurredAt, TZ), members.get(payment.memberId)?.fullName, members.get(payment.memberId)?.memberNumber, branches.get(payment.branchId), payment.receiptNumber, exportStatusLabel(payment.type), exportStatusLabel(payment.method), formatMinorUnits(payment.amount.amount, payment.amount.currency), payment.amount.currency, exportStatusLabel(payment.status), payment.refundedAmount ? formatMinorUnits(payment.refundedAmount.amount, payment.refundedAmount.currency) : "", payment.collectedByName, payment.externalReference, payment.refundReason, payment.voidReason]);
       } else if (input.kind === "membership_liabilities") {
         title = "Outstanding member balances";
         headers = ["Member", "Member number", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status"];
@@ -9765,7 +9826,6 @@ export class MockGymOSApi implements GymOSApi {
       if (confirmation !== product.sku.toLowerCase() && confirmation !== product.name.toLowerCase()) throw ApiError.of(ERR.VALIDATION, "Type the exact SKU or product name to confirm permanent deletion.");
       const balances = this.db.inventoryBalances.filter((candidate) => candidate.productId === product.id);
       if (this.actor().branchScope !== "all" && balances.some((balance) => !this.branchIsVisible(balance.branchId))) throw ApiError.of(ERR.FORBIDDEN, "This product has inventory in a branch outside your access.");
-      if (balances.some((balance) => balance.committedQuantity > 0)) throw ApiError.of(ERR.CONFLICT, "This product has inventory committed to an open purchase order. Receive or cancel that order first.");
       if (balances.some((balance) => balance.quantityOnHand > 0)) throw ApiError.of(ERR.CONFLICT, "This product still has stock on hand. Sell, return, or adjust it to zero before permanently deleting the item.");
       const dependentOrders = this.db.purchaseOrders.filter((order) => order.lines.some((line) => line.productId === product.id && line.receivedQuantity < line.orderedQuantity));
       if (this.actor().branchScope !== "all" && dependentOrders.some((order) => !this.branchIsVisible(order.branchId))) throw ApiError.of(ERR.FORBIDDEN, "This product is used by a purchase order in a branch outside your access.");
@@ -10054,13 +10114,9 @@ export class MockGymOSApi implements GymOSApi {
       order.approvedAt = nowISO();
       order.approvedById = this.actor().id;
       order.updatedAt = nowISO();
-      for (const line of order.lines) {
-        let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === order.branchId && candidate.productId === line.productId);
-        if (!balance) { balance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: order.branchId, productId: line.productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: true, updatedAt: nowISO() }; this.db.inventoryBalances.push(balance); }
-        balance.committedQuantity += line.orderedQuantity;
-        balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
-        balance.updatedAt = nowISO();
-      }
+      // Stock on order is not stock on the shelf and reserves nothing: the
+      // open order itself is what blocks product deletion. Counting it as
+      // committed used to hide sellable units from checkout and transfers.
       this.audit({ category: "operations", action: "operations.purchase_order.approve", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Purchase order approved", reason, branchId: order.branchId });
       return { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
     });

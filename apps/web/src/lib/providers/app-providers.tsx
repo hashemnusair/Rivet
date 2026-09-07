@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import { getApi } from "@/lib/api/client";
+import { bumpApiScope } from "@/lib/api/scope";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { ERR, isApiError } from "@/lib/api/errors";
 import type { MockBehavior } from "@/lib/api/GymOSApi";
@@ -242,6 +243,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       .then((nextSession) => {
         setSession(nextSession);
         setSignedIn(true);
+        bumpApiScope();
       })
       .catch(() => {
         setSession(undefined);
@@ -302,6 +304,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
         setSession(s);
         setSignedIn(true);
         queryClient.clear();
+        bumpApiScope();
         return;
       }
       const api = getApi();
@@ -313,6 +316,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       setSession(s);
       setSignedIn(true);
       queryClient.clear();
+      bumpApiScope();
     },
     [convexMode, queryClient],
   );
@@ -324,6 +328,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
     setSignedIn(false);
     setSession(undefined);
     queryClient.clear();
+    bumpApiScope();
   }, [queryClient]);
 
   const switchRole = useCallback(
@@ -335,6 +340,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       window.sessionStorage.removeItem(STORAGE_KEYS.branch);
       setSession(s);
       queryClient.clear();
+      bumpApiScope();
       router.push(role === "receptionist" ? "/reception" : "/dashboard");
     },
     [convexMode, queryClient, router],
@@ -347,6 +353,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       else window.sessionStorage.removeItem(STORAGE_KEYS.branch);
       setSession(s);
       queryClient.invalidateQueries();
+      bumpApiScope();
     },
     [queryClient],
   );
@@ -357,6 +364,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
     window.sessionStorage.removeItem(STORAGE_KEYS.branch);
     setSession(nextSession);
     queryClient.clear();
+    bumpApiScope();
   }, [convexMode, queryClient]);
 
   const refreshSession = useCallback(async () => {
@@ -372,6 +380,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
     const s = await getApi().getSession();
     setSession(s);
     queryClient.clear();
+    bumpApiScope();
     queryClient.invalidateQueries({ queryKey: qk.session });
   }, [convexMode, queryClient]);
 

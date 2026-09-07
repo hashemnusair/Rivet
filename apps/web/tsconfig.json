@@ -41,7 +41,9 @@
     ".next-playwright/pass7/types/**/*.ts",
     ".next-playwright/pass7/dev/types/**/*.ts",
     ".next-playwright/classes-pt/types/**/*.ts",
-    ".next-playwright/classes-pt/dev/types/**/*.ts"
+    ".next-playwright/classes-pt/dev/types/**/*.ts",
+    ".next-playwright/finops/types/**/*.ts",
+    ".next-playwright/finops/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

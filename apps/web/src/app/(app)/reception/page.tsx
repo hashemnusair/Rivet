@@ -35,7 +35,7 @@ import { CollectPaymentDialog } from "@/features/membership-actions/payment-dial
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
 import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
 import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
-import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dialogs";
+import { CloseShiftDialog, OpenShiftDialog, authoritativeExpectedCash } from "@/features/finance/shift-dialogs";
 import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
 
 export default function ReceptionPage() {
@@ -250,7 +250,7 @@ export default function ReceptionPage() {
       {/* Shift strip — cash is gated on an open drawer */}
       <ShiftStrip
         shift={shift?.shift ?? null}
-        expected={shift ? { amount: shift.shift.openingFloat.amount + shift.totals.cashPayments.amount - shift.totals.cashRefunds.amount, currency } : null}
+        expected={shift ? { amount: authoritativeExpectedCash(shift.shift, shift) ?? shift.shift.openingFloat.amount, currency } : null}
         cashTaken={shift?.totals.cashPayments ?? null}
         loading={shiftQuery.isLoading && shift === undefined}
         error={shiftQuery.isError}

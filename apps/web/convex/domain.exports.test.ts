@@ -33,6 +33,25 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("tenant data exports", () => {
+  it("applies from/to date filters on the gym calendar, not the UTC day", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    // 22:30 UTC on 3 March is 00:30 on 4 March in Amman (UTC+2 in winter).
+    const lateEvening = "2026-03-03T22:30:00.000Z";
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-export")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "branch-export")).unique();
+      const now = Date.now();
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "payment", publicId: "payment-late-evening", branchId: branch!._id, memberPublicId: "member-customer-export", createdAt: now, updatedAt: now, data: { id: "payment-late-evening", memberId: "member-customer-export", branchId: "branch-export", receiptId: "receipt-late-evening", receiptNumber: "R-LATE", type: "payment", status: "completed", amount: { amount: 7_000, currency: "JOD" }, method: "cash", occurredAt: lateEvening } });
+    });
+    const owner = t.withIdentity({ subject: "clerk-owner-export" });
+    const request = async (key: string, filters: Record<string, string>) => await owner.mutation(api.domain.mutate, operation("exports.request", { kind: "payments", filters, idempotencyKey: key })) as { content: string };
+    const march3 = await request("export-payments-march-3", { from: "2026-03-03", to: "2026-03-03" });
+    expect(march3.content).not.toContain("R-LATE");
+    const march4 = await request("export-payments-march-4", { from: "2026-03-04", to: "2026-03-04" });
+    expect(march4.content).toContain("R-LATE");
+  });
+
   it("generates escaped, scoped CSV with metadata, idempotency, history, and audit", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

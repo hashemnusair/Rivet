@@ -506,9 +506,6 @@ async function deleteProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   if (actor.branchScope !== "all" && productBalances.some((row) => !actor.branchIds.includes(row.branchId))) {
     domainError("FORBIDDEN", "This product has inventory in a branch outside your access.", { correlationId: actor.correlationId });
   }
-  if (productBalances.some((row) => row.committedQuantity > 0)) {
-    domainError("CONFLICT", "This product has inventory committed to an open purchase order. Receive or cancel that order first.", { correlationId: actor.correlationId });
-  }
   if (productBalances.some((row) => row.quantityOnHand > 0)) {
     domainError("CONFLICT", "This product still has stock on hand. Sell, return, or adjust it to zero before permanently deleting the item.", { correlationId: actor.correlationId });
   }
@@ -1070,8 +1067,15 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   for (const line of lines) {
     const movementId = `movement-${crypto.randomUUID()}`;
     const delta = -line.quantity;
-    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: delta, quantity: line.quantity, unitCostMinor: line.unitCost?.amount, unitCostCurrency: line.unitCost?.currency, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
-    await ctx.db.patch(line.balance._id, { quantityOnHand: line.balance.quantityOnHand + delta, lastMovementAt: now, updatedAt: now });
+    // The sold units take their share of the balance's running cost with
+    // them, exactly as an outgoing adjustment or transfer does. Leaving the
+    // valuation untouched inflated the remaining stock's cost after every
+    // sale and double-counted it once a return added the cost back.
+    const balanceCostKnown = line.balance.totalCostMinor !== undefined && Number.isSafeInteger(line.balance.totalCostMinor) && line.balance.totalCostMinor >= 0 && line.balance.totalCostCurrency === actor.organization.currency;
+    const soldCostMinor = balanceCostKnown ? allocateExactCost(line.balance.totalCostMinor, line.balance.quantityOnHand, line.quantity) : undefined;
+    const remainingCostMinor = balanceCostKnown && soldCostMinor !== undefined ? line.balance.totalCostMinor! - soldCostMinor : undefined;
+    await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: movementId, branchId: branch._id, productId: line.product._id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: delta, quantity: line.quantity, unitCostMinor: line.unitCost?.amount, unitCostCurrency: line.unitCost?.currency, totalCostMinor: soldCostMinor, totalCostCurrency: soldCostMinor === undefined ? undefined : actor.organization.currency, reason: `Retail sale ${receipt.number}`, referenceType: "retail_sale", referenceId: saleId, idempotencyKey: `${idempotencyKey}:${line.product.publicId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
+    await ctx.db.patch(line.balance._id, { quantityOnHand: line.balance.quantityOnHand + delta, totalCostMinor: remainingCostMinor, totalCostCurrency: remainingCostMinor === undefined ? undefined : actor.organization.currency, lastMovementAt: now, updatedAt: now });
   }
   if (memberRecord) {
     const timelineId = `timeline-${crypto.randomUUID()}`;
@@ -1442,11 +1446,10 @@ async function createPurchaseOrder(ctx: MutationCtx, actor: ActorContext, input:
   return createdView;
 }
 
-async function updateCommitted(ctx: MutationCtx, actor: ActorContext, branchId: Id<"branches">, productId: Id<"products">, delta: number): Promise<void> {
-  const balance = await ensureBalance(ctx, actor, branchId, productId);
-  const next = balance.committedQuantity + delta;
-  if (next < 0) domainError("CONFLICT", "Committed inventory cannot become negative.", { correlationId: actor.correlationId });
-  await ctx.db.patch(balance._id, { committedQuantity: next, updatedAt: Date.now() });
+async function releaseLegacyCommitted(ctx: MutationCtx, actor: ActorContext, branchId: Id<"branches">, productId: Id<"products">, quantity: number): Promise<void> {
+  const balance = await balanceRow(ctx, actor.organization._id, branchId, productId);
+  if (!balance || balance.committedQuantity <= 0) return;
+  await ctx.db.patch(balance._id, { committedQuantity: Math.max(0, balance.committedQuantity - quantity), updatedAt: Date.now() });
 }
 
 async function approvePurchaseOrder(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -1460,7 +1463,11 @@ async function approvePurchaseOrder(ctx: MutationCtx, actor: ActorContext, input
   if (order.status !== "draft") domainError("CONFLICT", "Only draft purchase orders can be approved.", { correlationId: actor.correlationId });
   const reason = optionalText(input.reason);
   const now = Date.now();
-  for (const line of order.lines) await updateCommitted(ctx, actor, order.branchId, line.productId, line.orderedQuantity);
+  // Approving an order says stock is on its way. It reserves nothing on the
+  // shelf: the units are not on hand yet, and counting them as "committed"
+  // made checkout, transfers, low-stock alerts and the product form treat
+  // sellable stock as unavailable for as long as the order stayed open.
+  // Open orders are tracked on the order itself (see product deletion).
   await ctx.db.patch(order._id, { status: "approved", approvedAt: now, approvedByUserId: actor.user._id, updatedAt: now });
   const updated = await ctx.db.get(order._id);
   if (!updated) domainError("NOT_FOUND", "Purchase order could not be loaded after approval.", { correlationId: actor.correlationId });
@@ -1504,7 +1511,10 @@ async function receivePurchaseOrder(ctx: MutationCtx, actor: ActorContext, input
     const key = `${idempotencyKey}:${product.publicId}`;
     await recordMovementInternal(ctx, actor, { branch, product, type: "receive", quantity, unitCost: suppliedCost, reason: `Purchase order ${order.publicId} receiving`, referenceType: "purchase_order", referenceId: order.publicId, idempotencyKey: key, financialPostingStatus: "not_posted" });
     line.receivedQuantity += quantity;
-    await updateCommitted(ctx, actor, order.branchId, product._id, -quantity);
+    // Orders approved before on-order quantity stopped touching the balance
+    // still carry a committed count; receiving drains it so their shelf
+    // availability recovers. Never below zero, and nothing to do otherwise.
+    await releaseLegacyCommitted(ctx, actor, order.branchId, product._id, quantity);
     movementKeys.push(key);
   }
   const complete = lines.every((line) => line.receivedQuantity === line.orderedQuantity);

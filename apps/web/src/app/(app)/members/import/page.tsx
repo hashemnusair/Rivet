@@ -3,6 +3,7 @@
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, FileSpreadsheet, FileUp, History, RotateCcw, Upload } from "lucide-react";
 import Link from "next/link";
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { isApiError } from "@/lib/api/errors";
 import type { MemberImportColumnMapping, MemberImportCommitResult, MemberImportPlanMapping, MemberImportPreview, MemberImportPreviewInput, MemberImportSummary, MemberImportUndoResult } from "@/lib/api/GymOSApi";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -52,6 +53,7 @@ export default function MemberImportPage() {
   const [preview, setPreview] = useState<MemberImportPreview>();
   const [result, setResult] = useState<MemberImportCommitResult>();
   const [committing, setCommitting] = useState(false);
+  const [commitNotice, setCommitNotice] = useState<string>();
   const [fileName, setFileName] = useState("");
   const [sourceKind, setSourceKind] = useState<MemberImportPreviewInput["sourceKind"]>("csv");
   const [fileSize, setFileSize] = useState(0);
@@ -148,6 +150,7 @@ export default function MemberImportPage() {
   const commit = async () => {
     if (!preview || preview.branchId !== visibleBranchId(session?.branches, branchId) || committing) return;
     setCommitting(true);
+    setCommitNotice(undefined);
     try {
       let cursor = preview.cursor ?? 0;
       let lastResult: MemberImportCommitResult | undefined;
@@ -157,9 +160,24 @@ export default function MemberImportPage() {
       } while (lastResult.status !== "completed");
       setResult(lastResult);
       setPreview(await getApi().getMemberImport(preview.id));
+    } catch (error) {
+      // A chunk failed or its response was lost. Every chunk is one server
+      // transaction, so nothing partial exists; reload the import so the
+      // cursor and counts describe what the server actually holds, and let
+      // the operator continue from there instead of retrying a stale cursor.
+      let stored: MemberImportPreview | undefined;
+      try { stored = await getApi().getMemberImport(preview.id); } catch { stored = undefined; }
+      if (stored) setPreview(stored);
+      const done = stored?.committedCount ?? preview.committedCount ?? 0;
+      const position = stored?.cursor ?? preview.cursor ?? 0;
+      const total = stored?.totalRows ?? preview.totalRows;
+      const message = isApiError(error) ? error.message : "The connection dropped.";
+      setCommitNotice(`Import paused after row ${position} of ${total}: ${message} ${done} ${done === 1 ? "member has" : "members have"} been created so far; rows after that point were not touched. Choose Resume import to continue from where the server stopped.`);
+    } finally {
+      setCommitting(false);
       await invalidate();
       await imports.refetch();
-    } finally { setCommitting(false); }
+    }
   };
 
   const resume = async (item: MemberImportSummary) => {
@@ -176,15 +194,22 @@ export default function MemberImportPage() {
     if (!undoTarget || undoReason.trim().length < 3) return;
     let cursor = undoTarget.undoCursor ?? 0;
     let last: MemberImportUndoResult | undefined;
-    do {
-      last = await new Promise<MemberImportUndoResult>((resolve, reject) => undoMutation.mutate({ importId: undoTarget.id, cursor, chunkSize: 50, reason: undoReason.trim(), idempotencyKey: newIdempotencyKey(`undo-${undoTarget.id}`, cursor) }, { onSuccess: resolve, onError: reject }));
-      cursor = last.cursor;
-    } while (last.status !== "undone");
-    setUndoResult(last);
-    setUndoTarget(undefined);
-    setUndoReason("");
-    await invalidate();
-    await imports.refetch();
+    try {
+      do {
+        last = await new Promise<MemberImportUndoResult>((resolve, reject) => undoMutation.mutate({ importId: undoTarget.id, cursor, chunkSize: 50, reason: undoReason.trim(), idempotencyKey: newIdempotencyKey(`undo-${undoTarget.id}`, cursor) }, { onSuccess: resolve, onError: reject }));
+        cursor = last.cursor;
+      } while (last.status !== "undone");
+      setUndoResult(last);
+      setUndoTarget(undefined);
+      setUndoReason("");
+    } catch {
+      // The mutation hook already showed the server's message. The batch
+      // stays in "undoing" with the server's cursor; the history row offers
+      // Undo again to continue. Nothing beyond the last finished chunk changed.
+    } finally {
+      await invalidate();
+      await imports.refetch();
+    }
   };
 
   if (!can("members.write")) return <EmptyState title="Member imports require member write access" description="Ask a manager or owner to grant member write access." />;
@@ -223,6 +248,7 @@ export default function MemberImportPage() {
       <ImportPreviewRows preview={preview} currency={preview.currency ?? session?.organization.currency ?? "JOD"} />
     </section> : null}
 
+    {commitNotice ? <section className="flex items-start gap-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-3 text-[13px] text-warning-deep" role="alert"><AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Import paused</p><p className="mt-0.5">{commitNotice}</p></div></section> : null}
     {result ? <section className="flex items-start gap-3 rounded-md border border-success/30 bg-success-bg px-4 py-3 text-[13px] text-success-deep" role="status"><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Import completed</p><p className="mt-0.5">{result.committedCount} members created; {result.skippedCount} rows skipped. You can safely undo untouched records from import history for seven days.</p></div></section> : null}
     {undoResult ? <section className="flex items-start gap-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-3 text-[13px] text-warning-deep" role="status"><RotateCcw className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Import undo completed</p><p className="mt-0.5">{undoResult.archivedCount} untouched members removed from the active directory; {undoResult.skippedCount} changed or used records were protected.</p></div></section> : null}
 

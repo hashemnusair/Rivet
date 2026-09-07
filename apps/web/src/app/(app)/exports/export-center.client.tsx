@@ -3,6 +3,7 @@
 import { Download, FileSpreadsheet, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
+import { toast } from "sonner";
 import { DateTimeText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +40,19 @@ export default function ExportCenterClient() {
   const invalidate = useInvalidate();
   const jobs = useApiQuery(qk.exports, (api) => api.listExportJobs());
   const filters = useMemo(() => Object.fromEntries(["branchId", "search", "from", "to"].flatMap((key) => { const value = params.get(key); return value ? [[key, value]] : []; })), [params]);
-  const request = useApiMutation((api, kind: ExportKind) => api.requestExport({ kind, filters, idempotencyKey: crypto.randomUUID() }), { successMessage: (job) => `Prepared ${job.rowCount ?? 0} rows.`, onSuccess: async (job) => { downloadExport(job); await invalidate([qk.exports]); } });
+  const request = useApiMutation((api, kind: ExportKind) => api.requestExport({ kind, filters, idempotencyKey: crypto.randomUUID() }), {
+    // The server answers an oversized request with a "failed" job rather than
+    // a truncated file, so the job's own status decides the message: never
+    // "Prepared 0 rows." and never a download for a file that was not made.
+    onSuccess: async (job) => {
+      if (job.status === "failed" || !job.content) toast.error(job.failureMessage ?? "The export could not be prepared.");
+      else {
+        toast.success(`Prepared ${job.rowCount ?? 0} rows.`);
+        downloadExport(job);
+      }
+      await invalidate([qk.exports]);
+    },
+  });
   const available = EXPORTS.filter((item) => can(item.permission));
 
   return <div className="space-y-5">

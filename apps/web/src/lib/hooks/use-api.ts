@@ -77,19 +77,32 @@ export function useApiMutation<TData, TVariables = void>(
   const { successMessage, onSuccess, onError, ...rest } = options ?? {};
   return useMutation<TData, Error, TVariables>({
     mutationFn: (variables) => fn(getApi(), variables),
-    onSuccess: (data, variables, onMutateResult, context) => {
+    // TanStack awaits this callback before the mutation leaves its pending
+    // state, so the caller's follow-up work (cache invalidation, navigation,
+    // closing a dialog) is awaited too: a Submit button stays disabled until
+    // the refreshed data is in place instead of re-enabling on the bare
+    // network response. A failure inside that follow-up must not be reported
+    // as a failed write, though: the server already committed the change,
+    // and a retry toast would invite a second submission. Log it and tell
+    // the operator that the screen, not the record, is what needs a refresh.
+    onSuccess: async (data, variables, onMutateResult, context) => {
       if (successMessage) {
         toast.success(typeof successMessage === "function" ? successMessage(data) : successMessage);
       }
-      onSuccess?.(data, variables, onMutateResult, context);
+      try {
+        await onSuccess?.(data, variables, onMutateResult, context);
+      } catch (followUpError) {
+        console.error("Mutation follow-up failed after the change was saved", followUpError);
+        toast.warning("Saved, but this screen could not refresh. Reload to see the latest data.");
+      }
     },
-    onError: (error, variables, onMutateResult, context) => {
+    onError: async (error, variables, onMutateResult, context) => {
       if (isApiError(error)) {
         toast.error(error.message);
       } else {
         toast.error("Something went wrong. Please try again.");
       }
-      onError?.(error, variables, onMutateResult, context);
+      await onError?.(error, variables, onMutateResult, context);
     },
     ...rest,
   });

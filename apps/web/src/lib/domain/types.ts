@@ -216,7 +216,13 @@ export interface InventoryBalance {
   branchId: UUID;
   productId: UUID;
   quantityOnHand: number;
+  /**
+   * Units on hand that are reserved for an outbound commitment and therefore
+   * not sellable. Stock arriving on an approved purchase order is never a
+   * commitment: it is tracked on the order and does not reduce availability.
+   */
   committedQuantity: number;
+  /** quantityOnHand minus committedQuantity: what checkout may sell now. */
   availableQuantity: number;
   /** Moving-average inventory valuation for the on-hand quantity. */
   totalCost?: Money;

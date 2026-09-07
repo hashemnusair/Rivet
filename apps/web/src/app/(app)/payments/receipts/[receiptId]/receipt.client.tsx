@@ -4,7 +4,7 @@ import { ArrowLeft, Printer, Undo2, XOctagon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
@@ -396,7 +396,7 @@ function RefundDialog({
 }) {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [amountError, setAmountError] = useState<string | null>(null);
   void receiptId;
@@ -404,6 +404,21 @@ function RefundDialog({
   const amountRead = amount.trim() ? readMoneyInput(amount, currency) : undefined;
   const requestedMinor = amountRead?.ok ? amountRead.money.amount : amount.trim() ? undefined : maxMinor;
   const reviewFlagged = requestedMinor !== undefined && requestedMinor > 25_000;
+
+  // The dialog stays mounted between refunds, so each opening starts from a
+  // clean draft. One idempotency key per distinct draft and per opening: a
+  // retry after a lost response replays the same refund, while a second
+  // refund with the same figures is a new request rather than a silent replay.
+  useEffect(() => {
+    if (!open) return;
+    setAmount("");
+    setReason("");
+    setError(null);
+    setAmountError(null);
+    setAttempt((current) => current + 1);
+  }, [open]);
+  const draftSignature = JSON.stringify({ attempt, paymentId, amount: amountRead?.ok ? amountRead.money.amount : amount.trim(), reason: reason.trim() });
+  const idempotencyKey = useMemo(() => crypto.randomUUID(), [draftSignature]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mutation = useApiMutation(
     (api) =>
@@ -488,8 +503,16 @@ function VoidDialog({
   onDone: () => void;
 }) {
   const [reason, setReason] = useState("");
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    setReason("");
+    setError(null);
+    setAttempt((current) => current + 1);
+  }, [open]);
+  const draftSignature = JSON.stringify({ attempt, paymentId, retailSaleId, reason: reason.trim() });
+  const idempotencyKey = useMemo(() => crypto.randomUUID(), [draftSignature]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mutation = useApiMutation((api) => retailSaleId ? api.voidRetailSale(retailSaleId, { reason, idempotencyKey }) : api.voidPayment(paymentId, { reason, idempotencyKey }), {
     onSuccess: () => onDone(),

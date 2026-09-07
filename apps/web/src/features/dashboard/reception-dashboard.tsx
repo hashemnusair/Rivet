@@ -21,10 +21,10 @@ export function ReceptionDashboard() {
   const today = todayISODate(session?.organization.timezone);
   const dashboardInput = { branchId, from: addDays(today, -29), to: today };
   const dashboard = useRealtimeApiQuery({ queryKey: qk.dashboard(branchId), query: (api) => api.getDashboard(dashboardInput), subscribe: (api, onValue, onError) => api.subscribeDashboard(dashboardInput, onValue, onError), enabled: Boolean(session) });
-  const shift = useRealtimeApiQuery({ queryKey: ["current-shift-totals", branchId], query: (api) => api.getCurrentShiftTotals(branchId!), subscribe: (api, onValue, onError) => api.subscribeCurrentShiftTotals(branchId!, onValue, onError), enabled: Boolean(branchId) });
-  const occupancy = useRealtimeApiQuery({ queryKey: ["occupancy", branchId], query: (api) => api.getOccupancy(branchId!), subscribe: (api, onValue, onError) => api.subscribeOccupancy(branchId!, onValue, onError), enabled: Boolean(branchId) });
+  const shift = useRealtimeApiQuery({ queryKey: qk.shiftTotals(branchId ?? ""), query: (api) => api.getCurrentShiftTotals(branchId!), subscribe: (api, onValue, onError) => api.subscribeCurrentShiftTotals(branchId!, onValue, onError), enabled: Boolean(branchId) });
+  const occupancy = useRealtimeApiQuery({ queryKey: qk.occupancy(branchId ?? ""), query: (api) => api.getOccupancy(branchId!), subscribe: (api, onValue, onError) => api.subscribeOccupancy(branchId!, onValue, onError), enabled: Boolean(branchId) });
   const checkInsInput = { branchId, date: today, acceptedOnly: true, pageSize: 8 };
-  const checkIns = useRealtimeApiQuery({ queryKey: ["checkins", "dashboard", branchId], query: (api) => api.listRecentCheckIns(checkInsInput), subscribe: (api, onValue, onError) => api.subscribeRecentCheckIns(checkInsInput, onValue, onError), enabled: Boolean(branchId) });
+  const checkIns = useRealtimeApiQuery({ queryKey: qk.checkIns({ dashboard: true, branchId }), query: (api) => api.listRecentCheckIns(checkInsInput), subscribe: (api, onValue, onError) => api.subscribeRecentCheckIns(checkInsInput, onValue, onError), enabled: Boolean(branchId) });
   const outstanding = useApiQuery(qk.members({ dashboard: "outstanding", branchId }), (api) => api.listMembers({ branchId, membershipStatus: "outstanding", pageSize: 50 }), { enabled: Boolean(branchId) });
   const trialLeads = useApiQuery(qk.leads({ dashboard: "trials", branchId }), (api) => api.listLeads({ branchId, stage: ["trial_booked"], pageSize: 50 }), { enabled: Boolean(branchId) });
   const loading = dashboard.isLoading || shift.isLoading || occupancy.isLoading || checkIns.isLoading || outstanding.isLoading || trialLeads.isLoading;

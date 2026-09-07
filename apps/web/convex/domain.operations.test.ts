@@ -317,6 +317,38 @@ describe("daily operations typed contracts", () => {
     expect(received.status).toBe("received");
   });
 
+  it("keeps shelf stock sellable while a purchase order is open and releases sold cost from the valuation", async () => {
+    const { owner, manager, sales, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "ON-ORDER", name: "On-order drink", unit: "each", reorderPoint: 1, retailPrice: { amount: 2_000, currency: "JOD" } })) as { id: string };
+    await owner.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "operations-branch-a", productId: product.id, type: "receive", quantity: 4, unitCost: { amount: 500, currency: "JOD" }, idempotencyKey: "on-order-opening" }));
+    const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "On-order supplier", branchIds: ["operations-branch-a"], preferredProductIds: [product.id] })) as { id: string };
+    const order = await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { branchId: "operations-branch-a", supplierId: supplier.id, lines: [{ productId: product.id, quantity: 50, unitCost: { amount: 500, currency: "JOD" } }] })) as { id: string };
+    await manager.mutation(api.domain.mutate, operation("operations.purchase_order.approve", { id: order.id }));
+
+    // Fifty units on their way must not hide the four already on the shelf.
+    const whileOpen = await sales.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number; quantityOnHand: number; totalCost?: { amount: number } }>;
+    expect(whileOpen[0]).toMatchObject({ quantityOnHand: 4, availableQuantity: 4, totalCost: { amount: 2_000 } });
+    const alerts = await owner.query(api.domain.query, operation("operations.low_stock.list", { branchId: "operations-branch-a" })) as Array<{ productId: string }>;
+    expect(alerts.find((alert) => alert.productId === product.id)).toBeUndefined();
+
+    const sale = await sales.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "operations-branch-a", guest: { fullName: "Shelf Guest", phone: "+962790000077" }, lines: [{ productId: product.id, quantity: 3 }], method: "card", externalReference: "VISA-ON-ORDER", idempotencyKey: "on-order-sale" })) as { retailSale: { id: string } };
+    const afterSale = await sales.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number; totalCost?: { amount: number } }>;
+    // Three of four units left with three quarters of the running cost.
+    expect(afterSale[0]).toMatchObject({ availableQuantity: 1, totalCost: { amount: 500 } });
+    const saleMovement = await t.run(async (ctx) => (await ctx.db.query("stockMovements").withIndex("by_organization").collect()).find((movement) => movement.type === "sale" && movement.referenceId === sale.retailSale.id));
+    expect(saleMovement).toMatchObject({ totalCostMinor: 1_500, quantityDelta: -3 });
+
+    // A return brings its cost back; the valuation lands where it started.
+    await owner.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 3 }], reason: "Unopened items returned", idempotencyKey: "on-order-refund" }));
+    const afterReturn = await sales.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number; totalCost?: { amount: number } }>;
+    expect(afterReturn[0]).toMatchObject({ availableQuantity: 4, totalCost: { amount: 2_000 } });
+
+    // Receiving the order adds the units; the open order never held any back.
+    await manager.mutation(api.domain.mutate, operation("operations.purchase_order.receive", { purchaseOrderId: order.id, idempotencyKey: "on-order-receive" }));
+    const received = await sales.query(api.domain.query, operation("operations.inventory.list", { branchId: "operations-branch-a", productId: product.id })) as Array<{ availableQuantity: number; committedQuantity: number }>;
+    expect(received[0]).toMatchObject({ availableQuantity: 54, committedQuantity: 0 });
+  });
+
   it("approves and partially receives a purchase order without double receiving", async () => {
     const { owner, manager } = await seeded();
     const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "SUP-PROTEIN", name: "Protein", unit: "each", reorderPoint: 5 })) as { id: string };

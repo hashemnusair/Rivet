@@ -4477,7 +4477,7 @@ function csvFromRows(rows: Data[], metadata: { title: string; headers: string[];
   return { content, rowCount: complete ? normalized.length : contentBytes > 750_000 ? 0 : normalized.length, totalRows: rows.length, complete };
 }
 
-function exportMatchesFilters(row: Data, filters: Data): boolean {
+function exportMatchesFilters(row: Data, filters: Data, timezone: string): boolean {
   const branchId = optionalString(filters.branchId);
   if (branchId && ![row.branchId, row.homeBranchId].includes(branchId)) return false;
   const search = optionalString(filters.search);
@@ -4485,8 +4485,10 @@ function exportMatchesFilters(row: Data, filters: Data): boolean {
   const from = optionalString(filters.from);
   const to = optionalString(filters.to);
   const occurred = optionalString(row.occurredAt) ?? optionalString(row.createdAt) ?? optionalString(row.updatedAt);
-  if (from && occurred && occurred < from) return false;
-  if (to && occurred && occurred.slice(0, 10) > to) return false;
+  // "From" and "to" are gym-calendar days, as on every other dated screen.
+  // Comparing the UTC timestamp put a late-evening payment on the wrong day
+  // for any gym east of Greenwich.
+  if ((from || to) && occurred && !instantFallsInTenantDateRange(occurred, timezone, from, to)) return false;
   return true;
 }
 
@@ -4498,7 +4500,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
   const branchPublicIdsByInternalId = new Map(branches.map((branch) => [String(branch._id), publicBranchId(branch)]));
 
   if (kind === "members") {
-    const memberValues = (await memberRecords(ctx, actor)).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters));
+    const memberValues = (await memberRecords(ctx, actor)).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters, timezone));
     const summaries = await toMemberSummaries(ctx, actor, memberValues);
     const rawById = new Map(memberValues.map((row) => [stringValue(row.id), row]));
     return summaries.map((summary) => {
@@ -4529,7 +4531,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     });
   }
   if (kind === "leads") {
-    const leadValues = (await recordsOf(ctx, actor, "lead")).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters));
+    const leadValues = (await recordsOf(ctx, actor, "lead")).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters, timezone));
     const summaries = await toLeadSummaries(ctx, actor, leadValues);
     return summaries.map((lead) => {
       const expected = data(lead.expectedValue);
@@ -4555,7 +4557,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     });
   }
   if (kind === "payments") {
-    const values = (await paymentRecords(ctx, actor)).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters));
+    const values = (await paymentRecords(ctx, actor)).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters, timezone));
     const transactions = await toTransactionSummaries(ctx, actor, values);
     return transactions.map((payment) => {
       const paymentCurrency = currencyOf(payment.amount, currency);
@@ -4581,7 +4583,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
   if (kind === "membership_liabilities") {
     const members = new Map((await memberRecords(ctx, actor)).map((record) => [record.publicId, data(record.data)]));
     return (await chargeRecords(ctx, actor)).map((record): Data => ({ id: record.publicId, ...chargeProjection(data(record.data), todayIn(timezone)) }))
-      .filter((row) => amountOf(row.outstandingAmount) > 0 && exportMatchesFilters({ ...row, homeBranchId: members.get(stringValue(row.memberId))?.homeBranchId }, filters))
+      .filter((row) => amountOf(row.outstandingAmount) > 0 && exportMatchesFilters({ ...row, homeBranchId: members.get(stringValue(row.memberId))?.homeBranchId }, filters, timezone))
       .map((charge) => {
         const member = members.get(stringValue(charge.memberId));
         const chargeCurrency = currencyOf(charge.total, currency);
@@ -4605,7 +4607,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     let events = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").collect();
     if (actor.branchScope === "selected") events = events.filter((event) => !event.branchId || actor.branchIds.includes(event.branchId));
     return events.map((event) => ({ id: event.publicId, branchId: event.branchId ? branchPublicIdsByInternalId.get(String(event.branchId)) : undefined, actorName: event.actorName, actorRole: event.actorRole, category: event.category, action: event.action, entityType: event.entityType, entityLabel: event.entityLabel, summary: event.summary, reason: event.reason, approvalStatus: event.approvalStatus, occurredAt: utcIso(event.occurredAt) }))
-      .filter((row) => exportMatchesFilters(row, filters))
+      .filter((row) => exportMatchesFilters(row, filters, timezone))
       .map((event) => ({
         "When": formatExportDateTime(event.occurredAt, timezone),
         "Branch": event.branchId ? branchNames.get(event.branchId) ?? "Unknown branch" : "Organization-wide",
@@ -4623,7 +4625,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
   if (kind === "personal_training") {
     const orders = await ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
     const visibleMembers = new Map((await memberRecords(ctx, actor)).map((record) => [record.publicId, data(record.data)]));
-    return orders.filter((order) => visibleMembers.has(order.memberPublicId)).map((order) => ({ id: order.publicId, memberId: order.memberPublicId, homeBranchId: visibleMembers.get(order.memberPublicId)?.homeBranchId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters)).map((order) => {
+    return orders.filter((order) => visibleMembers.has(order.memberPublicId)).map((order) => ({ id: order.publicId, memberId: order.memberPublicId, homeBranchId: visibleMembers.get(order.memberPublicId)?.homeBranchId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters, timezone)).map((order) => {
       const member = visibleMembers.get(order.memberId);
       return {
         "Member": member?.fullName ?? "Unknown member",
@@ -4657,7 +4659,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     ...scoped(balances).map((row) => ({ recordType: "Inventory balance", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: productById.get(String(row.productId))?.sku, itemName: productById.get(String(row.productId))?.name, quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency })),
     ...scoped(movements).map((row) => ({ recordType: "Stock movement", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: row.productSku, itemName: row.productName, movementType: row.type, quantityChange: row.quantityDelta, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency, reason: row.reason, referenceType: row.referenceType, occurredAt: utcIso(row.occurredAt) })),
   ];
-  return operationRows.filter((row) => exportMatchesFilters(row, filters)).map((row) => ({
+  return operationRows.filter((row) => exportMatchesFilters(row, filters, timezone)).map((row) => ({
     "Record type": row.recordType,
     "Branch": row.branchId ? branchNames.get(row.branchId) ?? "Unknown branch" : "Organization-wide",
     "SKU": row.sku,
@@ -6297,6 +6299,19 @@ async function allocateReceipt(ctx: MutationCtx, actor: ActorContext): Promise<{
   const prefix = actor.organization.receiptPrefix ?? "RV";
   const number = `${prefix}-${String(current).padStart(6, "0")}`;
   return { id: newPublicId(), number };
+}
+
+/**
+ * Whether a payment method moves physical cash through the branch drawer.
+ * "cash" always does; a configured method can opt in through its settings.
+ * Collections, refunds and voids consult the same answer so the drawer story
+ * cannot disagree with itself.
+ */
+async function methodAffectsCashDrawer(ctx: ReadContext, actor: ActorContext, method: string): Promise<boolean> {
+  if (method === "cash") return true;
+  const settings = await settingsData(ctx, actor);
+  const paymentMethod = arrayValue(settings.paymentMethods).map(data).find((item) => item.key === method);
+  return booleanValue(paymentMethod?.affectsCashDrawer);
 }
 
 async function findOpenShift(ctx: ReadContext, actor: ActorContext, branchId: string): Promise<DomainRecord | null> {
@@ -10923,8 +10938,17 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!allocation.ok && allocation.code === "PAYMENT_ALREADY_REFUNDED") domainError(allocation.code, "This payment was already fully refunded.", { correlationId: actor.correlationId });
       if (!allocation.ok) domainError(allocation.code, "Refund amount exceeds the refundable balance.", { correlationId: actor.correlationId });
       const amount = allocation.amount;
+      // A cash refund is money leaving the drawer of the branch that took the
+      // payment. Without an open shift there it would be a cash movement no
+      // shift close or daily reconciliation could ever see, so it is refused
+      // the same way a cash collection or retail refund is. Non-cash refunds
+      // are recorded against whatever shift happens to be open, for context.
+      const openShift = await findOpenShift(ctx, actor, stringValue(original.branchId));
+      if (!openShift && await methodAffectsCashDrawer(ctx, actor, stringValue(original.method))) {
+        domainError("NO_OPEN_SHIFT", "Open a cash shift at the branch that took this payment before refunding it in cash.", { correlationId: actor.correlationId });
+      }
       const allocated = await allocateReceipt(ctx, actor);
-      const refund = { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId: original.branchId, memberId: original.memberId, chargeId: original.chargeId, type: "refund", amount: signedMoney(-amount, actor.organization.currency), method: original.method, status: "completed", receiptId: allocated.id, receiptNumber: allocated.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: (await findOpenShift(ctx, actor, stringValue(original.branchId))) ? stringValue(data((await findOpenShift(ctx, actor, stringValue(original.branchId)))!.data).id) : undefined, idempotencyKey: `refund-${original.id}-${allocated.id}`, originalPaymentId: original.id, refundReason: stringValue(input.reason), occurredAt: isoNow() };
+      const refund = { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId: original.branchId, memberId: original.memberId, chargeId: original.chargeId, type: "refund", amount: signedMoney(-amount, actor.organization.currency), method: original.method, status: "completed", receiptId: allocated.id, receiptNumber: allocated.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: openShift ? stringValue(data(openShift.data).id) : undefined, idempotencyKey: `refund-${original.id}-${allocated.id}`, originalPaymentId: original.id, refundReason: stringValue(input.reason), occurredAt: isoNow() };
       const receipt = { id: allocated.id, receiptNumber: allocated.number, paymentId: refund.id, issuedAt: refund.occurredAt };
       await insertRecord(ctx, actor, "payment", refund, { branchId: optionalString(original.branchId), memberPublicId: optionalString(original.memberId) });
       await insertRecord(ctx, actor, "receipt", receipt, { branchId: optionalString(original.branchId), memberPublicId: optionalString(original.memberId) });
@@ -10959,6 +10983,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (original.status === "refunded" || original.status === "partially_refunded") domainError("PAYMENT_ALREADY_REFUNDED", "Refunded payments cannot be voided.", { correlationId: actor.correlationId });
       const paymentDay = todayIn(actor.organization.timezone || TZ_FALLBACK);
       if (businessDate(stringValue(original.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== paymentDay) domainError("VOID_WINDOW_EXPIRED", "Payments can only be voided on the same business day. Issue a refund instead.", { correlationId: actor.correlationId });
+      // A void says the collection never happened. Once the drawer that took
+      // the cash has been counted and closed, that money is part of a
+      // reconciled total; removing it afterwards would rewrite a closed shift.
+      // Retail sales already apply this rule; membership payments follow it.
+      if (await methodAffectsCashDrawer(ctx, actor, stringValue(original.method))) {
+        const openShift = await findOpenShift(ctx, actor, stringValue(original.branchId));
+        if (!openShift || !original.shiftId || stringValue(data(openShift.data).id) !== stringValue(original.shiftId)) {
+          domainError("NO_OPEN_SHIFT", "Cash payments can only be voided while their original cash shift is open. Issue a refund instead.", { correlationId: actor.correlationId });
+        }
+      }
       await patchRecord(ctx, actor, originalRecord, { status: "voided", voidReason: stringValue(input.reason) });
       if (original.chargeId) {
         const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId));
