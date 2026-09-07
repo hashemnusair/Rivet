@@ -2,11 +2,12 @@
 
 import { Search } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import type { MemberSummary } from "@/lib/domain/types";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { useApp } from "@/lib/providers/app-providers";
 import { MoneyText } from "@/components/shared/data-display";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,10 @@ export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boole
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 250);
   const [member, setMember] = useState<MemberSummary | null>(null);
+  const { session } = useApp();
+  // The desk taking the money is the operator's concrete branch, when one is
+  // selected; an organization-wide scope leaves the server to use the home branch.
+  const branchId = visibleBranchId(session?.branches, session?.activeBranchId);
 
   const query = useApiQuery(
     qk.members({ search: debounced, outstandingPicker: true }),
@@ -90,10 +95,7 @@ export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boole
             }
           }}
           member={member}
-          onCollected={(receipt) => {
-            toast.success(`Collected — receipt ${receipt.receipt.receiptNumber}.`);
-            setMember(null);
-          }}
+          branchId={branchId}
         />
       ) : null}
     </>

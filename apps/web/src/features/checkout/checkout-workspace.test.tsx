@@ -270,6 +270,42 @@ describe("checkout workspace", () => {
     expect(checkoutSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts a typed quantity, clamps it to the shelf, and keeps the line on empty or zero", async () => {
+    const user = userEvent.setup();
+    const probe = new MockGymOSApi();
+    const session = await probe.getSession();
+    const branchId = session.branches[0]!.id;
+    const bar = (await probe.listProducts()).find((item) => item.name === "Protein bar")!;
+    const available = (await probe.listInventory({ branchId })).find((balance) => balance.productId === bar.id)!.availableQuantity;
+    await renderWithApp(<><BranchChanger branchId={branchId} /><CheckoutWorkspace /></>, { role: "owner" });
+    await screen.findByText("Protein bar");
+    await user.click(screen.getByRole("button", { name: /^Add Protein bar/i }));
+
+    const quantity = screen.getByRole("textbox", { name: "Quantity for Protein bar" });
+    await user.clear(quantity);
+    await user.type(quantity, "3{Enter}");
+    expect(quantity).toHaveValue("3");
+    expect(screen.getByTestId("complete-retail-sale")).toHaveTextContent(`${(bar.retailPrice!.amount * 3 / 1000).toFixed(3)} JOD`);
+
+    // More than the shelf holds is clamped to what is available.
+    await user.clear(quantity);
+    await user.type(quantity, String(available + 50));
+    await user.tab();
+    expect(quantity).toHaveValue(String(available));
+
+    // Empty, zero and Arabic-Indic input never drop or misread the line.
+    await user.clear(quantity);
+    await user.tab();
+    expect(quantity).toHaveValue(String(available));
+    await user.clear(quantity);
+    await user.type(quantity, "0{Enter}");
+    expect(quantity).toHaveValue(String(available));
+    await user.clear(quantity);
+    await user.type(quantity, "٢{Enter}");
+    expect(quantity).toHaveValue("2");
+    expect(screen.getAllByTestId("cart-line")).toHaveLength(1);
+  });
+
   it("shows honest out-of-stock and missing-price rows instead of hiding them", async () => {
     const probe = new MockGymOSApi();
     const session = await probe.getSession();

@@ -6,6 +6,7 @@ export const REASON_CODE_LABELS: Record<CheckInReasonCode, string> = {
   EXPIRES_SOON: "Membership expires soon",
   OUTSTANDING_BALANCE: "Outstanding balance on the account",
   MEMBERSHIP_EXPIRED: "Membership has expired",
+  MEMBERSHIP_NOT_STARTED: "Membership has not started yet",
   NO_ACTIVE_MEMBERSHIP: "No membership on file",
   WRONG_BRANCH: "Membership does not cover this branch",
   VISITS_DEPLETED: "No visits left on the pass",

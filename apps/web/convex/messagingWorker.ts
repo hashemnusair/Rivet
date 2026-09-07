@@ -58,6 +58,77 @@ async function organizationName(ctx: MutationCtx, organizationId: Id<"organizati
   return (await ctx.db.get(organizationId))?.name ?? "Your gym";
 }
 
+type DeliveryState = "provider_accepted" | "failed" | "suppressed";
+
+function channelLabel(channel: string): string {
+  return channel === "sms" ? "SMS" : "WhatsApp";
+}
+
+/**
+ * What the member record shows for an automated message. "Accepted by the
+ * provider" is the strongest claim RIVET can make without a status webhook;
+ * it is never written as "delivered". Failures and suppressions are written
+ * too, so a reminder that never left is visible next to the calls that did.
+ */
+async function recordDeliveryOutcomeOnTimeline(ctx: MutationCtx, input: {
+  organizationId: Id<"organizations">;
+  branchId?: Id<"branches">;
+  memberPublicId?: string;
+  leadPublicId?: string;
+  channel: string;
+  context: string;
+  state: DeliveryState;
+  mode: string;
+  attempts: number;
+  reason?: string;
+  providerMessageId?: string;
+  source: "automation" | "renewal";
+  deliveryPublicId: string;
+  now: number;
+}): Promise<void> {
+  if (!input.memberPublicId && !input.leadPublicId) return;
+  const organization = await ctx.db.get(input.organizationId);
+  const label = channelLabel(input.channel);
+  const title = input.state === "provider_accepted"
+    ? `${label} ${input.context} accepted by the provider`
+    : input.state === "failed"
+      ? `${label} ${input.context} failed`
+      : `${label} ${input.context} not sent`;
+  const body = input.state === "provider_accepted"
+    ? input.mode === "sandbox"
+      ? "Redirected to RIVET's sandbox number (sandbox mode). The member did not receive it."
+      : "Handed to the messaging provider. Delivery to the phone is not confirmed by RIVET."
+    : input.state === "failed"
+      ? `Failed after ${input.attempts} attempt${input.attempts === 1 ? "" : "s"}${input.reason ? ` (${input.reason})` : ""}. Managers were notified; follow up by phone.`
+      : input.reason ?? "Suppressed by RIVET's messaging rules.";
+  await ctx.db.insert("domainRecords", {
+    organizationId: input.organizationId,
+    entityType: "timeline",
+    publicId: `MESSAGE-TIMELINE-${crypto.randomUUID()}`,
+    branchId: input.branchId,
+    memberPublicId: input.memberPublicId,
+    leadPublicId: input.leadPublicId,
+    createdAt: input.now,
+    updatedAt: input.now,
+    data: {
+      id: `MESSAGE-TIMELINE-${crypto.randomUUID()}`,
+      organizationId: organization?.publicId ?? String(input.organizationId),
+      memberId: input.memberPublicId,
+      leadId: input.leadPublicId,
+      type: "message",
+      title,
+      body,
+      occurredAt: new Date(input.now).toISOString(),
+      meta: { channel: input.channel, deliveryState: input.state, mode: input.mode, source: input.source, deliveryId: input.deliveryPublicId, providerMessageId: input.providerMessageId, attempts: input.attempts },
+    },
+  });
+}
+
+/** Where a manager should land after a failure: the person, not a settings page. */
+function attentionHref(memberPublicId?: string, leadPublicId?: string): string {
+  return memberPublicId ? `/members/${memberPublicId}` : leadPublicId ? `/crm/leads/${leadPublicId}` : "/settings?section=notifications";
+}
+
 async function memberVariables(ctx: MutationCtx, organizationId: Id<"organizations">, memberPublicId: string | undefined, leadPublicId: string | undefined): Promise<{ variables: Record<string, string>; phone?: string; language: "en" | "ar" }> {
   const record = memberPublicId
     ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "member").eq("publicId", memberPublicId)).unique()
@@ -172,7 +243,11 @@ export const recordAttempt = internalMutation({
       const status = suppressed ? "suppressed" : args.accepted ? "sent" : args.retryable && !exhausted ? "retrying" : "failed";
       const nextAttemptAt = status === "retrying" ? new Date(now + (MESSAGE_RETRY_MINUTES[Math.min(attempts.length - 1, MESSAGE_RETRY_MINUTES.length - 1)] ?? 30) * 60_000).toISOString() : undefined;
       await ctx.db.patch(record._id, { data: { ...data, status, attempts, nextAttemptAt, leaseToken: undefined, leaseExpiresAt: undefined, suppressionReason: args.suppressionReason ?? data.suppressionReason, providerMessageId: args.providerMessageId ?? data.providerMessageId, sentAt: status === "sent" ? new Date(now).toISOString() : data.sentAt, deliveryMode: args.mode, deliveredTo: args.deliveredTo ?? data.deliveredTo }, updatedAt: now });
-      if (status === "failed") await notifyOrganizationSupervisors(ctx, { organizationId: record.organizationId, branchId: record.branchId, kind: "message_delivery_failed", title: "A member message could not be sent", body: `${stringValue(data.requestedChannel, "whatsapp")} message failed after ${attempts.length} attempts (${args.errorCode ?? "provider error"}).`, href: "/settings?section=notifications", dedupeKey: `message-failed:${record.publicId}` });
+      const channel = stringValue(data.requestedChannel, "whatsapp");
+      if (status === "failed") await notifyOrganizationSupervisors(ctx, { organizationId: record.organizationId, branchId: record.branchId, kind: "message_delivery_failed", title: "A member message could not be sent", body: `${channel} message failed after ${attempts.length} attempts (${args.errorCode ?? "provider error"}).`, href: attentionHref(record.memberPublicId, record.leadPublicId), dedupeKey: `message-failed:${record.publicId}` });
+      if (status !== "retrying") {
+        await recordDeliveryOutcomeOnTimeline(ctx, { organizationId: record.organizationId, branchId: record.branchId, memberPublicId: record.memberPublicId, leadPublicId: record.leadPublicId, channel, context: "message", state: status === "sent" ? "provider_accepted" : status === "failed" ? "failed" : "suppressed", mode: args.mode, attempts: attempts.length, reason: args.suppressionReason ?? args.errorCode, providerMessageId: args.providerMessageId, source: "automation", deliveryPublicId: record.publicId, now });
+      }
       return null;
     }
     const row = await ctx.db.get(args.id as Id<"renewalDeliveries">);
@@ -182,6 +257,13 @@ export const recordAttempt = internalMutation({
     const status: Renewal["status"] = suppressed ? "suppressed" : args.accepted ? "sent" : args.retryable && !exhausted ? "queued" : "failed";
     await ctx.db.patch(row._id, { status, attempts, lastAttemptAt: now, lastErrorCode: args.errorCode, nextAttemptAt: status === "queued" ? now + (MESSAGE_RETRY_MINUTES[Math.min(attempts.length - 1, MESSAGE_RETRY_MINUTES.length - 1)] ?? 30) * 60_000 : undefined, sentAt: status === "sent" ? now : row.sentAt, suppressionReason: args.suppressionReason ?? row.suppressionReason, updatedAt: now });
     await ctx.db.insert("renewalDeliveryEvents", { publicId: `RENEWAL-EVENT-${crypto.randomUUID()}`, organizationId: row.organizationId, branchId: row.branchId, deliveryPublicId: row.publicId, membershipPublicId: row.membershipPublicId, memberPublicId: row.memberPublicId, eventType: "provider_attempt", beforeStatus: "queued", afterStatus: status, reason: args.suppressionReason ?? args.errorCode, details: { mode: args.mode, deliveredTo: args.deliveredTo, providerMessageId: args.providerMessageId, statusCode: args.statusCode, channel: row.channel }, source: "system", occurredAt: now });
+    // The renewal journey gets the same visibility as automation messages: a
+    // final failure reaches the managers, and every terminal outcome is on the
+    // member's timeline beside the calls staff actually made.
+    if (status === "failed") await notifyOrganizationSupervisors(ctx, { organizationId: row.organizationId, branchId: row.branchId, kind: "message_delivery_failed", title: "A renewal reminder could not be sent", body: `${row.channel} renewal reminder failed after ${attempts.length} attempts (${args.errorCode ?? "provider error"}). Call the member instead.`, href: attentionHref(row.memberPublicId), dedupeKey: `renewal-failed:${row.publicId}` });
+    if (status !== "queued") {
+      await recordDeliveryOutcomeOnTimeline(ctx, { organizationId: row.organizationId, branchId: row.branchId, memberPublicId: row.memberPublicId, channel: row.channel, context: "renewal reminder", state: status === "sent" ? "provider_accepted" : status === "failed" ? "failed" : "suppressed", mode: args.mode, attempts: attempts.length, reason: args.suppressionReason ?? args.errorCode, providerMessageId: args.providerMessageId, source: "renewal", deliveryPublicId: row.publicId, now });
+    }
     return null;
   },
 });

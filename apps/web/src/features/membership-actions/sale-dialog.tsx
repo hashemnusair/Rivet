@@ -22,7 +22,7 @@ import type {
 import { usePermissions } from "@/lib/providers/app-providers";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils/cn";
-import { money, parseMoneyInput, toMajor } from "@/lib/utils/money";
+import { money, moneyInputError, parseMoneyInput, toMajorString } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
 import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
@@ -64,12 +64,18 @@ export function MembershipSaleDialog({
   onOpenChange,
   member,
   renewalOf,
+  branchId,
+  cashDrawerOpen,
   onCompleted,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   member: MemberSummary;
   renewalOf?: MembershipSummary;
+  /** The desk taking any money now. Its drawer, not the member's home branch, gets the cash. */
+  branchId?: string;
+  /** When known to be false, cash is unavailable here and a non-cash method is preselected. */
+  cashDrawerOpen?: boolean;
   onCompleted?: (result: MembershipSaleResult) => void;
 }) {
   const isRenewal = Boolean(renewalOf);
@@ -85,6 +91,9 @@ export function MembershipSaleDialog({
     () => (settingsQuery.data?.paymentMethods ?? []).filter((m) => m.enabled),
     [settingsQuery.data],
   );
+  const cashUnavailable = cashDrawerOpen === false;
+  const methodUnavailable = (method: { key: PaymentMethodKey; affectsCashDrawer: boolean }) => cashUnavailable && (method.affectsCashDrawer || method.key === "cash");
+  const defaultMethod = (methods.find((m) => !methodUnavailable(m))?.key ?? "cash") as FormValues["payMethod"];
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -101,7 +110,7 @@ export function MembershipSaleDialog({
       discountReason: "",
       payNow: !isRenewal,
       payAmount: "",
-      payMethod: "cash",
+      payMethod: defaultMethod,
       paymentReference: "",
     },
   });
@@ -121,7 +130,7 @@ export function MembershipSaleDialog({
         discountReason: "",
         payNow: !isRenewal,
         payAmount: "",
-        payMethod: "cash",
+        payMethod: defaultMethod,
         paymentReference: "",
       });
       setServerError(null);
@@ -142,12 +151,34 @@ export function MembershipSaleDialog({
     if (renewalStartsInFuture && form.getValues("payNow")) form.setValue("payNow", false);
   }, [form, renewalStartsInFuture]);
 
+  // Settings can arrive after the dialog opened: move off a method the desk
+  // cannot take right now, but never off one the operator chose deliberately.
+  useEffect(() => {
+    if (!open || !cashUnavailable) return;
+    const chosen = methods.find((m) => m.key === watchPayMethod);
+    if (chosen && methodUnavailable(chosen) && defaultMethod !== watchPayMethod) form.setValue("payMethod", defaultMethod);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cashUnavailable, watchPayMethod, defaultMethod, methods.length]);
+
   const plan: MembershipPlan | undefined = plans.find((p) => p.id === watchPlanId);
-  const basePrice = plan ? (parseMoneyInput(watchPrice ?? "") ?? plan.basePrice) : money(0);
-  const discount = parseMoneyInput(watchDiscount ?? "") ?? money(0);
-  const total = money(Math.max(0, basePrice.amount - discount.amount));
-  const payingNow = watchPayNow ? (parseMoneyInput(watchPayAmount ?? "") ?? total) : money(0);
-  const remaining = money(Math.max(0, total.amount - payingNow.amount));
+  // Money is read under the one input policy in the plan's currency. Text
+  // that cannot be read is an error at submit (and once the field is left),
+  // never a silent fallback to the base price, to no discount or to the full
+  // total.
+  const currency = plan?.basePrice.currency ?? member.outstanding.currency;
+  const rawPrice = watchPrice?.trim() ?? "";
+  const rawDiscount = watchDiscount?.trim() ?? "";
+  const rawPayAmount = watchPayAmount?.trim() ?? "";
+  const priceProblem = rawPrice ? moneyInputError(rawPrice, currency) : undefined;
+  const discountProblem = rawDiscount ? moneyInputError(rawDiscount, currency) : undefined;
+  const payAmountProblem = watchPayNow && rawPayAmount ? moneyInputError(rawPayAmount, currency) : undefined;
+  const showProblem = (field: "priceOverride" | "discount" | "payAmount") => Boolean(form.formState.touchedFields[field] || form.formState.isSubmitted);
+  const priceOverride = plan ? parseMoneyInput(rawPrice, currency) : null;
+  const basePrice = plan ? (priceOverride ?? plan.basePrice) : money(0, currency);
+  const discount = parseMoneyInput(rawDiscount, currency) ?? money(0, currency);
+  const total = money(Math.max(0, basePrice.amount - discount.amount), currency);
+  const payingNow = watchPayNow ? (rawPayAmount ? (parseMoneyInput(rawPayAmount, currency) ?? money(0, currency)) : total) : money(0, currency);
+  const remaining = money(Math.max(0, total.amount - payingNow.amount), currency);
   const needsApproval =
     discount.amount > 0 && role ? discountNeedsApproval(settingsQuery.data?.roles ?? [], role, discount.amount) : false;
   const canOverridePrice = can("memberships.override_dates");
@@ -156,7 +187,7 @@ export function MembershipSaleDialog({
     ? renewalOf.endDate >= todayISODate() ? addDays(renewalOf.endDate, 1) : todayISODate()
     : todayISODate();
   const needsOverrideReason = Boolean(
-    (plan && parseMoneyInput(watchPrice ?? "")?.amount !== undefined && parseMoneyInput(watchPrice ?? "")!.amount !== plan.basePrice.amount)
+    (plan && priceOverride !== null && priceOverride.amount !== plan.basePrice.amount)
     || form.watch("startDate") !== standardStartDate,
   );
 
@@ -177,6 +208,26 @@ export function MembershipSaleDialog({
 
   const submit = form.handleSubmit((values) => {
     setServerError(null);
+    if (priceProblem) {
+      form.setError("priceOverride", { message: priceProblem });
+      return;
+    }
+    if (discountProblem) {
+      form.setError("discount", { message: discountProblem });
+      return;
+    }
+    if (values.payNow && payAmountProblem) {
+      form.setError("payAmount", { message: payAmountProblem });
+      return;
+    }
+    if (values.payNow && rawPayAmount && payingNow.amount <= 0) {
+      form.setError("payAmount", { message: "Enter an amount greater than zero, or leave it empty to collect the full total" });
+      return;
+    }
+    if (values.payNow && payingNow.amount > total.amount) {
+      form.setError("payAmount", { message: `Cannot exceed the ${toMajorString(total)} ${currency} total` });
+      return;
+    }
     if (discount.amount > 0 && !values.discountReason?.trim()) {
       form.setError("discountReason", { message: "A reason is required for discounts" });
       return;
@@ -189,9 +240,14 @@ export function MembershipSaleDialog({
       form.setError("paymentReference", { message: "Reference is required for this payment method" });
       return;
     }
+    const chosenMethod = methods.find((m) => m.key === values.payMethod);
+    if (values.payNow && payingNow.amount > 0 && chosenMethod && methodUnavailable(chosenMethod)) {
+      form.setError("payMethod", { message: "Open a cash shift before taking cash at this desk" });
+      return;
+    }
     const payment =
       values.payNow && payingNow.amount > 0
-        ? { amount: payingNow, method: values.payMethod as PaymentMethodKey, externalReference: values.paymentReference?.trim() || undefined }
+        ? { amount: payingNow, method: values.payMethod as PaymentMethodKey, externalReference: values.paymentReference?.trim() || undefined, branchId }
         : undefined;
     if (isRenewal && renewalOf) {
       mutation.mutate({
@@ -200,9 +256,9 @@ export function MembershipSaleDialog({
           input: {
             planId: values.planId !== renewalOf.planId ? values.planId : undefined,
             startDate: values.startDate,
-            priceOverride: parseMoneyInput(values.priceOverride ?? "") ?? undefined,
+            priceOverride: parseMoneyInput(values.priceOverride ?? "", currency) ?? undefined,
             overrideReason: values.overrideReason || undefined,
-            discount: parseMoneyInput(values.discount ?? "") ?? undefined,
+            discount: parseMoneyInput(values.discount ?? "", currency) ?? undefined,
             discountReason: values.discountReason || undefined,
             payment,
           },
@@ -214,9 +270,9 @@ export function MembershipSaleDialog({
           memberId: member.id,
           planId: values.planId,
           startDate: values.startDate,
-          priceOverride: parseMoneyInput(values.priceOverride ?? "") ?? undefined,
+          priceOverride: parseMoneyInput(values.priceOverride ?? "", currency) ?? undefined,
           overrideReason: values.overrideReason || undefined,
-          discount: parseMoneyInput(values.discount ?? "") ?? undefined,
+          discount: parseMoneyInput(values.discount ?? "", currency) ?? undefined,
           discountReason: values.discountReason || undefined,
           payment,
         },
@@ -254,7 +310,7 @@ export function MembershipSaleDialog({
                       <SelectContent>
                         {plans.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.name} — JOD {toMajor(p.basePrice).toFixed(3)}
+                            {p.name} — {p.basePrice.currency} {toMajorString(p.basePrice)}
                             {p.kind === "visits" ? ` · ${p.visitAllowance} visits` : ` · ${p.durationDays}d`}
                           </SelectItem>
                         ))}
@@ -272,12 +328,14 @@ export function MembershipSaleDialog({
                   <Input type="date" {...form.register("startDate")} />
                 </Field>
                 <Field
-                  label="Price override (JOD)"
+                  label={`Price override (${currency})`}
+                  error={form.formState.errors.priceOverride?.message ?? (showProblem("priceOverride") ? priceProblem : undefined)}
                   hint={canOverridePrice ? undefined : "Manager permission required"}
                 >
                   <Input
                     inputMode="decimal"
-                    placeholder={plan ? toMajor(plan.basePrice).toFixed(3) : ""}
+                    dir="ltr"
+                    placeholder={plan ? toMajorString(plan.basePrice) : ""}
                     disabled={!canOverridePrice}
                     {...form.register("priceOverride")}
                   />
@@ -291,8 +349,8 @@ export function MembershipSaleDialog({
               ) : null}
 
               <FieldGrid alignFrom="base" className="grid-cols-2">
-                <Field label="Discount (JOD)" hint={canDiscount ? undefined : "No discount permission"}>
-                  <Input inputMode="decimal" placeholder="0.000" disabled={!canDiscount} {...form.register("discount")} />
+                <Field label={`Discount (${currency})`} error={form.formState.errors.discount?.message ?? (showProblem("discount") ? discountProblem : undefined)} hint={canDiscount ? undefined : "No discount permission"}>
+                  <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(money(0, currency))} disabled={!canDiscount} {...form.register("discount")} />
                 </Field>
                 <Field label="Discount reason" error={form.formState.errors.discountReason?.message}>
                   <Input placeholder="e.g. Corporate rate" disabled={!canDiscount} {...form.register("discountReason")} />
@@ -318,10 +376,10 @@ export function MembershipSaleDialog({
                 </label>
                 {watchPayNow ? (
                   <FieldGrid alignFrom="base" className="mt-3 grid-cols-2">
-                    <Field label="Amount (JOD)">
-                      <Input inputMode="decimal" placeholder={toMajor(total).toFixed(3)} {...form.register("payAmount")} />
+                    <Field label={`Amount (${currency})`} error={form.formState.errors.payAmount?.message ?? (showProblem("payAmount") ? payAmountProblem : undefined)} hint="Leave empty to collect the full total.">
+                      <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(total)} {...form.register("payAmount")} />
                     </Field>
-                    <Field label="Method">
+                    <Field label="Method" error={form.formState.errors.payMethod?.message} hint={cashUnavailable ? "No cash shift is open at this desk, so cash cannot be taken here." : undefined}>
                       <Controller
                         control={form.control}
                         name="payMethod"
@@ -332,8 +390,9 @@ export function MembershipSaleDialog({
                             </SelectTrigger>
                             <SelectContent>
                               {methods.map((m) => (
-                                <SelectItem key={m.key} value={m.key}>
+                                <SelectItem key={m.key} value={m.key} disabled={methodUnavailable(m)}>
                                   {PAYMENT_METHOD_LABELS[m.key] ?? m.label}
+                                  {methodUnavailable(m) ? " · needs an open shift" : ""}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -400,7 +459,7 @@ export function MembershipSaleDialog({
             </Button>
             <Button type="submit" loading={mutation.isPending} disabled={!plan} data-testid="confirm-sale">
               {isRenewal ? "Confirm renewal" : "Confirm sale"}
-              {total.amount > 0 ? ` — ${toMajor(total).toFixed(3)} JOD` : ""}
+              {total.amount > 0 ? ` — ${toMajorString(total)} ${currency}` : ""}
             </Button>
           </DialogFooter>
         </form>

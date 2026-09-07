@@ -19,7 +19,9 @@ import { useState } from "react";
 
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/misc";
+import { LogContactForm } from "@/features/crm/contact-work-panel";
 import type { TodayQueueData, TodayQueueItem, TodayQueueKind } from "@/lib/domain/types";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { cn } from "@/lib/utils/cn";
@@ -48,14 +50,23 @@ export function TodayQueue({
   className?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  /** A follow-up about a person: "Done" asks what happened so the outcome is kept. */
+  const [logging, setLogging] = useState<TodayQueueItem>();
   const invalidate = useInvalidate();
   const completeTask = useApiMutation(
     (api, taskId: string) => api.completeTask(taskId, { outcome: "Completed from Today" }),
     {
       successMessage: "Done. The next priority is ready.",
-      onSuccess: async () => invalidate(),
+      onSuccess: async () => {
+        setLogging(undefined);
+        await invalidate();
+      },
     },
   );
+  const requestComplete = (item: TodayQueueItem) => {
+    if (item.subject && item.kind === "follow_up") setLogging(item);
+    else if (item.action.taskId) completeTask.mutate(item.action.taskId);
+  };
   const items = data?.items ?? [];
   const visibleItems = expanded ? items : items.slice(0, initialVisible);
   const hiddenItems = Math.max(0, items.length - visibleItems.length);
@@ -107,7 +118,7 @@ export function TodayQueue({
                 item={item}
                 first={index === 0}
                 completing={completeTask.isPending && completeTask.variables === item.action.taskId}
-                onComplete={(taskId) => completeTask.mutate(taskId)}
+                onComplete={() => requestComplete(item)}
               />
             ))}
           </ol>
@@ -133,6 +144,31 @@ export function TodayQueue({
           ) : null}
         </>
       )}
+      <Dialog open={Boolean(logging)} onOpenChange={(open) => { if (!open) setLogging(undefined); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>What happened?</DialogTitle>
+            <DialogDescription>{logging ? `${logging.title}. Record the outcome so this follow-up closes with it, or move it to the next date.` : ""}</DialogDescription>
+          </DialogHeader>
+          {logging?.subject ? (
+            <DialogBody>
+              <LogContactForm
+                subject={logging.subject.kind}
+                leadId={logging.subject.kind === "lead" ? logging.subject.id : undefined}
+                memberId={logging.subject.kind === "member" ? logging.subject.id : undefined}
+                submitLabel="Log contact and finish"
+                onLogged={() => setLogging(undefined)}
+              />
+            </DialogBody>
+          ) : null}
+          <DialogFooter className="justify-between">
+            <Button type="button" variant="ghost" size="sm" loading={completeTask.isPending} onClick={() => { if (logging?.action.taskId) completeTask.mutate(logging.action.taskId); }}>
+              Mark done without a contact
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setLogging(undefined)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -146,7 +182,7 @@ function TodayQueueRow({
   item: TodayQueueItem;
   first: boolean;
   completing: boolean;
-  onComplete: (taskId: string) => void;
+  onComplete: () => void;
 }) {
   const meta = KIND_META[item.kind];
   const Icon = meta.icon;
@@ -179,7 +215,7 @@ function TodayQueueRow({
             size="sm"
             loading={completing}
             disabled={completing}
-            onClick={() => onComplete(item.action.taskId!)}
+            onClick={onComplete}
             aria-label={`Complete ${item.title}`}
           >
             <Check /> {item.action.label}

@@ -9,6 +9,7 @@ import LeadDetailPageClient from "./lead-detail.client";
 
 const navigation = vi.hoisted(() => ({
   leadId: "",
+  search: "",
   push: vi.fn(),
   replace: vi.fn(),
 }));
@@ -17,7 +18,7 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ leadId: navigation.leadId }),
   useRouter: () => ({ push: navigation.push, replace: navigation.replace, refresh: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => `/crm/leads/${navigation.leadId}`,
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(navigation.search),
 }));
 
 Object.assign(HTMLElement.prototype, {
@@ -31,6 +32,7 @@ afterEach(() => {
   setApiForTests(null);
   window.sessionStorage.clear();
   navigation.leadId = "";
+  navigation.search = "";
   navigation.push.mockReset();
   navigation.replace.mockReset();
 });
@@ -57,6 +59,20 @@ function renderLead(api: MockGymOSApi) {
 }
 
 describe("CRM lead workflow language and transitions", () => {
+  it("opens the contact log straight from a ?action=contact link and clears the flag when closed", async () => {
+    const api = new MockGymOSApi();
+    api.setBehavior({ latencyMs: 0 });
+    const leadId = await prepareLead(api);
+    navigation.search = "action=contact";
+    renderLead(api);
+
+    expect(await screen.findByRole("dialog", { name: "Log contact" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Contact outcome" })).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith(`/crm/leads/${leadId}`, { scroll: false }));
+  });
+
   it("opens trial scheduling in a centered dialog", async () => {
     const api = new MockGymOSApi();
     window.sessionStorage.setItem("rivet.demo.persona", "owner");

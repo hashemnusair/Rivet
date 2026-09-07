@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ERR, isApiError } from "@/lib/api/errors";
 import { DEMO_IDENTITY } from "@/lib/auth/rivet-identity";
 import type { PlatformGymDetail, PlatformSnapshot } from "@/lib/api/GymOSApi";
@@ -109,11 +109,18 @@ describe("session and role switching", () => {
     expect(receptionDashboard.todayQueue.items.every((item) => item.action.kind !== "complete_task")).toBe(true);
 
     const salesSession = await api.switchDemoRole("salesperson");
-    const expectedOwnOverdue = internals.db.tasks.filter((task) =>
-      task.status === "open" && task.ownerId === salesSession.user.id && task.dueAt < new Date().toISOString(),
-    ).length;
+    const now = new Date().toISOString();
+    const overdueOwnTasks = internals.db.tasks.filter((task) =>
+      task.status === "open" && task.ownerId === salesSession.user.id && task.dueAt < now,
+    );
+    // A lead's own overdue follow-up counts once: only when no open task already stands for it.
+    const leadsWithOpenTasks = new Set(internals.db.tasks.filter((task) => task.status === "open").map((task) => task.leadId));
+    const overdueOwnLeads = internals.db.leads.filter((lead) =>
+      lead.ownerId === salesSession.user.id && !["won", "lost"].includes(lead.stage) && !lead.convertedMemberId && Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < now) && !leadsWithOpenTasks.has(lead.id),
+    );
     const salesDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
-    expect(salesDashboard.todayQueue.overdueKindCounts.follow_up).toBe(expectedOwnOverdue);
+    expect(salesDashboard.todayQueue.overdueKindCounts.follow_up).toBe(overdueOwnTasks.length + overdueOwnLeads.length);
+    expect(salesDashboard.todayQueue.items.filter((item) => item.kind === "follow_up").every((item) => item.subject !== undefined || !item.action.taskId)).toBe(true);
 
     await api.switchDemoRole("trainer");
     const trainerDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
@@ -2700,5 +2707,187 @@ describe("branch checklists parity", () => {
     const again = await api.getChecklistDay({ branchId: opening.branchId });
     expect(again.runs.filter((run) => run.templateId === opening.id)).toHaveLength(1);
     expect(again.runs.find((run) => run.templateId === opening.id)!.id).toBe(afterComplete.id);
+  });
+});
+
+describe("front-desk lookup", () => {
+  it("offers every person a name fragment could mean instead of deciding for the first", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const alpha = (await api.createMember({ fullName: "Lookup Twin Alpha", phone: "+962 79 700 0001", homeBranchId: branchId, preferredLanguage: "en", gender: "female" })).member;
+    const beta = (await api.createMember({ fullName: "Lookup Twin Beta", phone: "+962 79 700 0002", homeBranchId: branchId, preferredLanguage: "en", gender: "male" })).member;
+
+    const ambiguous = await api.previewCheckIn({ branchId, query: "Lookup Twin" });
+    expect(ambiguous.found).toBe(false);
+    expect(ambiguous.member).toBeUndefined();
+    expect(ambiguous.reasonCodes).toEqual([]);
+    expect(ambiguous.message).toMatch(/2 members match/);
+    expect(ambiguous.candidates?.map((candidate) => candidate.id).sort()).toEqual([alpha.id, beta.id].sort());
+
+    const byNumber = await api.previewCheckIn({ branchId, query: beta.memberNumber.toLowerCase() });
+    expect(byNumber.found).toBe(true);
+    expect(byNumber.member?.id).toBe(beta.id);
+    expect(byNumber.candidates).toBeUndefined();
+
+    const byPhone = await api.previewCheckIn({ branchId, query: "0797000001" });
+    expect(byPhone.found).toBe(true);
+    expect(byPhone.member?.id).toBe(alpha.id);
+  });
+
+  it("explains a term that has not started instead of calling it expired", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const member = await freshMemberForSale();
+    const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
+    const start = addDays(todayISODate(), 10);
+    await api.createMembershipSale({ memberId: member.id, planId: plan.id, startDate: start, overrideReason: "Starts after the member's travel" });
+
+    const preview = await api.previewCheckIn({ branchId, query: member.memberNumber });
+    expect(preview.found).toBe(true);
+    expect(preview.decision).toBe("blocked");
+    expect(preview.reasonCodes).toEqual(["MEMBERSHIP_NOT_STARTED"]);
+    expect(preview.message).toContain(start);
+    expect(preview.message).not.toMatch(/renew/i);
+    expect(preview.membership?.status).toBe("scheduled");
+  });
+});
+
+describe("payments taken away from the member's home branch", () => {
+  it("credits the desk's drawer and shift rather than the home branch's", async () => {
+    const session = await api.getSession();
+    const member = await anyMemberWithBalance();
+    const desk = session.branches.find((branch) => branch.id !== member.homeBranchId)!;
+    const shift = (await api.getCurrentCashShift(desk.id)) ?? (await api.openCashShift({ branchId: desk.id, openingFloat: money(0) }));
+
+    const receipt = await api.createPayment({ memberId: member.id, branchId: desk.id, amount: money(1_000), method: "cash" }, "idem-desk-branch");
+    const payment = receipt.payment as Payment;
+    expect(payment.branchId).toBe(desk.id);
+    expect(payment.shiftId).toBe(shift.id);
+
+    const home = await api.createPayment({ memberId: member.id, amount: money(1_000), method: "card", externalReference: "POS-HOME-1" }, "idem-home-branch");
+    expect((home.payment as Payment).branchId).toBe(member.homeBranchId);
+  });
+
+  it("refuses cash at a desk whose drawer is closed even when the home branch has one open", async () => {
+    const session = await api.getSession();
+    const member = await anyMemberWithBalance();
+    const home = member.homeBranchId;
+    if (!(await api.getCurrentCashShift(home))) await api.openCashShift({ branchId: home, openingFloat: money(0) });
+    const desk = session.branches.find((branch) => branch.id !== home)!;
+    const open = await api.getCurrentCashShift(desk.id);
+    if (open) {
+      const totals = (await api.getCurrentShiftTotals(desk.id))!.totals;
+      await api.closeCashShift(open.id, { countedCash: money(open.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount) });
+    }
+
+    await expect(api.createPayment({ memberId: member.id, branchId: desk.id, amount: money(1_000), method: "cash" }, "idem-closed-desk")).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+    await expect(api.createPayment({ memberId: member.id, branchId: "no-such-branch", amount: money(1_000), method: "card", externalReference: "POS-X" }, "idem-bad-branch")).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+  });
+});
+
+async function membersWithActiveMemberships(count: number): Promise<Array<{ memberId: string; membershipId: string; name: string }>> {
+  const page = await api.listMembers({ membershipStatus: "active", pageSize: 12 });
+  const picked: Array<{ memberId: string; membershipId: string; name: string }> = [];
+  for (const member of page.items) {
+    const memberships = await api.listMemberships({ memberId: member.id, status: "active", pageSize: 5 });
+    const membership = memberships.items[0];
+    if (membership) picked.push({ memberId: member.id, membershipId: membership.id, name: member.fullName });
+    if (picked.length === count) break;
+  }
+  expect(picked).toHaveLength(count);
+  return picked;
+}
+
+describe("dated class rosters and waitlists", () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function futureClass(capacity: number, startMinute = 23 * 60) {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const date = addDays(todayISODate("Asia/Amman"), 2);
+    const dayOfWeek = new Date(`${date}T12:00:00Z`).getUTCDay();
+    const template = await api.upsertClassSession({ branchId, name: `Roster test ${capacity}`, dayOfWeek, startMinute, durationMinutes: 45, capacity, audience: "mixed" });
+    return { branchId, date, template, occurrenceId: `occ:${template.id}:${date}` };
+  }
+
+  it("seats the first member, waitlists the next, and promotes only when a confirmed seat is freed", async () => {
+    const { occurrenceId } = await futureClass(1);
+    const [first, second] = await membersWithActiveMemberships(2);
+    let occurrence = await api.addClassOccurrenceAttendee({ occurrenceId, memberId: first!.memberId, membershipId: first!.membershipId });
+    expect(occurrence).toMatchObject({ bookedCount: 1, waitlistCount: 0 });
+    occurrence = await api.addClassOccurrenceAttendee({ occurrenceId, memberId: second!.memberId, membershipId: second!.membershipId });
+    expect(occurrence).toMatchObject({ bookedCount: 1, waitlistCount: 1, spotsRemaining: 0 });
+    const waiting = occurrence.roster.find((entry) => entry.memberId === second!.memberId)!;
+    expect(waiting.status).toBe("waitlisted");
+
+    // Adding the same member twice changes nothing.
+    occurrence = await api.addClassOccurrenceAttendee({ occurrenceId, memberId: second!.memberId, membershipId: second!.membershipId });
+    expect(occurrence.roster.filter((entry) => entry.memberId === second!.memberId)).toHaveLength(1);
+
+    // Staff removal is reason-gated, and removing a waitlisted member frees no seat.
+    await expect(api.removeClassOccurrenceAttendee({ occurrenceId, bookingId: waiting.bookingId })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION);
+    occurrence = await api.removeClassOccurrenceAttendee({ occurrenceId, bookingId: waiting.bookingId, reason: "Member changed plans" });
+    expect(occurrence).toMatchObject({ bookedCount: 1, waitlistCount: 0 });
+    expect(occurrence.roster.find((entry) => entry.memberId === first!.memberId)?.status).toBe("booked");
+
+    // Back on the waitlist; when the seat holder is removed the seat passes on.
+    occurrence = await api.addClassOccurrenceAttendee({ occurrenceId, memberId: second!.memberId, membershipId: second!.membershipId });
+    const seat = occurrence.roster.find((entry) => entry.memberId === first!.memberId && entry.status === "booked")!;
+    occurrence = await api.removeClassOccurrenceAttendee({ occurrenceId, bookingId: seat.bookingId, reason: "Member is unwell" });
+    expect(occurrence).toMatchObject({ bookedCount: 1, waitlistCount: 0 });
+    expect(occurrence.roster.find((entry) => entry.memberId === second!.memberId && entry.status === "booked")).toMatchObject({ fromWaitlist: true });
+
+    // A repeated removal reports the roster as it is.
+    const again = await api.removeClassOccurrenceAttendee({ occurrenceId, bookingId: seat.bookingId, reason: "Double tap" });
+    expect(again).toMatchObject({ bookedCount: 1, waitlistCount: 0 });
+  });
+
+  it("carries a timetable edit into the dated class and fills the new seat from the waitlist", async () => {
+    const { branchId, date, template, occurrenceId } = await futureClass(1);
+    const [first, second] = await membersWithActiveMemberships(2);
+    await api.addClassOccurrenceAttendee({ occurrenceId, memberId: first!.memberId, membershipId: first!.membershipId });
+    await api.addClassOccurrenceAttendee({ occurrenceId, memberId: second!.memberId, membershipId: second!.membershipId });
+
+    await api.upsertClassSession({ sessionId: template.id, branchId, name: "Roster test renamed", dayOfWeek: template.dayOfWeek, startMinute: 22 * 60, durationMinutes: 45, capacity: 2, audience: "mixed" });
+    const occurrence = (await api.listClassOccurrences({ branchId, fromDate: date, toDate: date })).find((item) => item.id === occurrenceId)!;
+    expect(occurrence).toMatchObject({ name: "Roster test renamed", capacity: 2, bookedCount: 2, waitlistCount: 0, startsAt: new Date(`${date}T22:00:00+03:00`).toISOString() });
+    expect(occurrence.roster.find((entry) => entry.memberId === second!.memberId)).toMatchObject({ status: "booked", fromWaitlist: true });
+
+    await expect(api.upsertClassSession({ sessionId: template.id, branchId, name: "Roster test renamed", dayOfWeek: template.dayOfWeek, startMinute: 22 * 60, durationMinutes: 45, capacity: 1, audience: "mixed" }))
+      .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION && error.message.includes(date));
+  });
+});
+
+describe("PT outcomes and reserved credits", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("lists a started session until its outcome is recorded and refuses an outcome before the start", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the outcome test", idempotencyKey: "intro-mock-outcomes" });
+    const workspace = await api.getPtWorkspace();
+    expect(workspace.cancellationCutoffHours).toBe(12);
+    const trainer = workspace.trainers[0]!;
+    const branchId = trainer.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    let date = addDays(todayISODate("Asia/Amman"), 1);
+    let slots: T.PtAvailableSlot[] = [];
+    for (let attempt = 0; attempt < 7 && slots.length === 0; attempt += 1) {
+      slots = await api.listPtAvailableSlots({ trainerProfileId: trainer.id, branchId, from: date, to: date });
+      if (!slots.length) date = addDays(date, 1);
+    }
+    const booking = await api.createPtBooking({ membershipId: member!.membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[0]!.startsAt, idempotencyKey: "mock-booking-outcome" });
+    await expect(api.completePtBooking(booking.id)).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.parse(booking.startsAt) + 10 * 60_000));
+    const experience = await api.getPtMemberExperience(member!.membershipId);
+    expect(experience.cancellationCutoffHours).toBe(12);
+    expect(experience.reservedSessions).toBe(1);
+    expect(experience.upcomingBookings.map((item) => item.id)).toContain(booking.id);
+
+    expect((await api.completePtBooking(booking.id)).status).toBe("completed");
+    await expect(api.completePtBooking(booking.id)).rejects.toSatisfy((error) => isApiError(error));
+    const after = await api.getPtMemberExperience(member!.membershipId);
+    expect(after.reservedSessions).toBe(0);
+    expect(after.upcomingBookings.some((item) => item.id === booking.id)).toBe(false);
   });
 });

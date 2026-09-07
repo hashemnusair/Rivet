@@ -11,7 +11,7 @@ import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { usePermissions } from "@/lib/providers/app-providers";
 import { formatDateTime, todayISODate } from "@/lib/utils/dates";
-import { money, toMajor } from "@/lib/utils/money";
+import { currencyDisplayName, money, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 import { MoneyText } from "@/components/shared/data-display";
 import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
@@ -64,6 +64,8 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const isRefund = payment.type === "refund";
   const displayedPaymentAmount = isRefund ? { ...payment.amount, amount: Math.abs(payment.amount.amount) } : retailTotal ?? payment.amount;
   const isVoided = payment.status === "voided";
+  const currency = payment.amount.currency;
+  const refundedSoFar = paymentRecord?.refundedAmount?.amount ? paymentRecord.refundedAmount : retailSale?.refundedAmount?.amount ? retailSale.refundedAmount : undefined;
   const canVoid =
     can("payments.void") && !isRetailSale && !isRefund && !isVoided && payment.status === "completed" && payment.occurredAt.slice(0, 10) <= todayISODate() &&
     // void is same-day only — the API enforces; the UI reflects it
@@ -151,7 +153,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
                   <tr key={`${line.sku}-${index}`}>
                     <td className="py-2 pe-2 align-top">{line.productName} × {line.quantity}</td>
                     <td className="py-2 text-end align-top tabular">
-                      {toMajor(lineTotal).toFixed(3)}
+                      {toMajorString(lineTotal)}
                     </td>
                   </tr>
                 );
@@ -159,25 +161,25 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
                 <tr>
                   <td className="py-2 pe-2 align-top">{charge?.description ?? (isRefund ? "Refund" : "Payment")}</td>
                   <td className="py-2 text-end align-top tabular">
-                    {charge ? toMajor(charge.subtotal).toFixed(3) : toMajor(money(Math.abs(payment.amount.amount))).toFixed(3)}
+                    {charge ? toMajorString(charge.subtotal) : toMajorString({ ...payment.amount, amount: Math.abs(payment.amount.amount) })}
                   </td>
                 </tr>
               )}
               {charge && charge.discount.amount > 0 ? (
                 <tr>
                   <td className="pb-2 text-ink-2">Discount{charge.status ? "" : ""}</td>
-                  <td className="pb-2 text-end tabular">−{toMajor(charge.discount).toFixed(3)}</td>
+                  <td className="pb-2 text-end tabular">−{toMajorString(charge.discount)}</td>
                 </tr>
               ) : null}
               {isRetailSale && !isRefund ? (
                 <tr className="border-t border-line-2">
                   <td className="py-2 font-semibold">Sale total</td>
-                  <td className="py-2 text-end font-semibold tabular">{retailTotal ? toMajor(retailTotal).toFixed(3) : toMajor(money(Math.abs(payment.amount.amount))).toFixed(3)}</td>
+                  <td className="py-2 text-end font-semibold tabular">{retailTotal ? toMajorString(retailTotal) : toMajorString({ ...payment.amount, amount: Math.abs(payment.amount.amount) })}</td>
                 </tr>
               ) : charge ? (
                 <tr className="border-t border-line-2">
                   <td className="py-2 font-semibold">Charge total</td>
-                  <td className="py-2 text-end font-semibold tabular">{toMajor(charge.total).toFixed(3)}</td>
+                  <td className="py-2 text-end font-semibold tabular">{toMajorString(charge.total)}</td>
                 </tr>
               ) : null}
             </tbody>
@@ -186,12 +188,12 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           <div className="space-y-1 border-b border-dashed border-line-3 py-3 text-[12px]">
             <div className="flex justify-between">
               <span>{isRefund ? "Refunded" : "Paid"} ({paymentMethodLabel})</span>
-              <span className="tabular">{toMajor(displayedPaymentAmount).toFixed(3)}</span>
+              <span className="tabular">{toMajorString(displayedPaymentAmount)}</span>
             </div>
             {charge && charge.outstandingAmount.amount > 0 ? (
               <div className="flex justify-between font-semibold">
                 <span>Balance remaining</span>
-                <span className="tabular">{toMajor(charge.outstandingAmount).toFixed(3)}</span>
+                <span className="tabular">{toMajorString(charge.outstandingAmount)}</span>
               </div>
             ) : null}
           </div>
@@ -200,14 +202,15 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
             <p>Served by: {payment.collectedByName}</p>
             {payment.externalReference ? <p>Reference: {payment.externalReference}</p> : null}
             {isRefund && paymentRecord?.refundReason ? <p>Reason: {paymentRecord.refundReason}</p> : null}
-            {isVoided ? <p className="font-semibold text-danger">VOIDED — {paymentRecord?.voidReason}</p> : null}
-            {payment.status === "refunded" && !isRefund ? <p className="font-semibold">This payment was refunded.</p> : null}
+            {isVoided ? <p className="font-semibold text-danger">VOIDED{payment.voidReason ? ` — ${payment.voidReason}` : ""}</p> : null}
+            {payment.status === "refunded" && !isRefund ? <p className="font-semibold">This {isRetailSale ? "sale" : "payment"} was fully refunded{refundedSoFar ? ` (${toMajorString(refundedSoFar)})` : ""}.</p> : null}
+            {payment.status === "partially_refunded" && !isRefund && refundedSoFar ? <p className="font-semibold">Partially refunded: {toMajorString(refundedSoFar)} returned so far.</p> : null}
           </div>
 
           <div className="border-t border-dashed border-line-3 pt-3 text-center">
             <p className="text-[12px] leading-relaxed text-ink-2">{detail.organization.receiptFooter}</p>
             <p className="mt-3 font-mono text-[13px] tracking-[0.3em]">{customerReference}</p>
-            <p className="mt-1 text-[12px] text-ink-3">JOD · amounts in Jordanian Dinar</p>
+            <p className="mt-1 text-[12px] text-ink-3">{currency} · amounts in {currencyDisplayName(currency)}</p>
           </div>
         </div>
 
@@ -275,6 +278,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         receiptId={receiptId}
         paymentId={payment.id}
         maxMinor={refundableMinor}
+        currency={currency}
         open={refundOpen}
         onOpenChange={setRefundOpen}
         onDone={async () => {
@@ -329,8 +333,8 @@ function RetailRefundDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(next) => { if (!next && mutation.isPending) return; onOpenChange(next); }}>
+      <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
           <DialogTitle>Return and refund items</DialogTitle>
           <DialogDescription>Select the quantities physically returned. RIVET restores stock and creates an immutable refund fact for accounting.</DialogDescription>
@@ -341,7 +345,7 @@ function RetailRefundDialog({
               <div key={line.productId} className="grid grid-cols-[1fr_88px] items-center gap-3 rounded-md border border-line px-3 py-2.5">
                 <div>
                   <p className="text-[13px] font-medium">{line.productName}</p>
-                  <p className="text-[11.5px] text-ink-3">Up to {line.remaining} · {toMajor(line.unitPrice).toFixed(3)} each</p>
+                  <p className="text-[11.5px] text-ink-3">Up to {line.remaining} · {toMajorString(line.unitPrice)} each</p>
                 </div>
                 <Input
                   aria-label={`Return quantity for ${line.productName}`}
@@ -365,7 +369,7 @@ function RetailRefundDialog({
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
           <Button variant="signal" disabled={selected.length === 0 || reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="confirm-retail-refund">Issue refund</Button>
         </DialogFooter>
       </DialogContent>
@@ -377,6 +381,7 @@ function RefundDialog({
   receiptId,
   paymentId,
   maxMinor,
+  currency,
   open,
   onOpenChange,
   onDone,
@@ -384,6 +389,7 @@ function RefundDialog({
   receiptId: string;
   paymentId: string;
   maxMinor: number;
+  currency: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
@@ -392,12 +398,17 @@ function RefundDialog({
   const [reason, setReason] = useState("");
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [error, setError] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
   void receiptId;
+  const refundable = money(maxMinor, currency);
+  const amountRead = amount.trim() ? readMoneyInput(amount, currency) : undefined;
+  const requestedMinor = amountRead?.ok ? amountRead.money.amount : amount.trim() ? undefined : maxMinor;
+  const reviewFlagged = requestedMinor !== undefined && requestedMinor > 25_000;
 
   const mutation = useApiMutation(
     (api) =>
       api.refundPayment(paymentId, {
-        amount: amount ? money(Math.round(Number(amount) * 1000)) : undefined,
+        amount: amountRead?.ok ? amountRead.money : undefined,
         reason,
         idempotencyKey,
       }),
@@ -407,9 +418,27 @@ function RefundDialog({
     },
   );
 
+  const submit = () => {
+    setError(null);
+    if (amountRead && !amountRead.ok) {
+      setAmountError(amountRead.message);
+      return;
+    }
+    if (amountRead?.ok && amountRead.money.amount <= 0) {
+      setAmountError("Enter an amount greater than zero, or leave it empty for a full refund.");
+      return;
+    }
+    if (amountRead?.ok && amountRead.money.amount > maxMinor) {
+      setAmountError(`Cannot exceed the refundable ${toMajorString(refundable)} ${currency}.`);
+      return;
+    }
+    setAmountError(null);
+    mutation.mutate();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(next) => { if (!next && mutation.isPending) return; onOpenChange(next); }}>
+      <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
           <DialogTitle>Refund payment</DialogTitle>
           <DialogDescription>
@@ -419,24 +448,24 @@ function RefundDialog({
         <DialogBody className="space-y-4">
           <div className="flex justify-between rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[13px]">
             <span className="text-ink-2">Refundable remaining</span>
-            <MoneyText money={money(maxMinor)} className="font-semibold" />
+            <MoneyText money={refundable} className="font-semibold" />
           </div>
-          <Field label="Amount (JOD)" hint={`Leave empty to refund the full ${toMajor(money(maxMinor)).toFixed(3)}.`}>
-            <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={toMajor(money(maxMinor)).toFixed(3)} data-testid="refund-amount" />
+          <Field label={`Amount (${currency})`} error={amountError ?? undefined} hint={`Leave empty to refund the full ${toMajorString(refundable)}.`}>
+            <Input inputMode="decimal" dir="ltr" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountError(null); }} placeholder={toMajorString(refundable)} aria-invalid={amountError ? true : undefined} data-testid="refund-amount" />
           </Field>
           <Field label="Reason" required>
             <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Duplicate charge confirmed with the bank" data-testid="refund-reason" />
           </Field>
-          {Number(amount) * 1000 > 25_000 || (!amount && maxMinor > 25_000) ? (
+          {reviewFlagged ? (
             <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
-              Refunds above JOD 25.000 are flagged for manager review in the audit log.
+              Refunds above {currency} 25.000 are flagged for manager review in the audit log.
             </p>
           ) : null}
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="signal" disabled={reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="confirm-refund">
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
+          <Button variant="signal" disabled={reason.trim().length < 5} loading={mutation.isPending} onClick={submit} data-testid="confirm-refund">
             Issue refund
           </Button>
         </DialogFooter>
@@ -468,8 +497,8 @@ function VoidDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(next) => { if (!next && mutation.isPending) return; onOpenChange(next); }}>
+      <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
           <DialogTitle>{retailSaleId ? "Void retail sale" : "Void payment"}</DialogTitle>
           <DialogDescription>
@@ -486,7 +515,7 @@ function VoidDialog({
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
           <Button variant="signal" disabled={reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()}>
             {retailSaleId ? "Void sale" : "Void payment"}
           </Button>

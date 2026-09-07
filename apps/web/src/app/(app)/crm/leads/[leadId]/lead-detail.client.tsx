@@ -2,13 +2,14 @@
 
 import { CalendarClock, Check, CheckCircle2, CreditCard, Phone, UserCheck, UserX } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ERR, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
+import { describeContactOutcome } from "@/lib/crm/contact-outcomes";
 import { leadStageProgress } from "@/lib/crm/lead-stage-progress";
 import type { MembershipPlan, TrialBookingStatus, WeekdayKey } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
@@ -39,7 +40,15 @@ type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cance
 export default function LeadDetailPageClient() {
   const { leadId } = useParams<{ leadId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const invalidate = useInvalidate();
+  // Today and the queues link here with ?action=contact so the outcome can be
+  // recorded without hunting for the button; closing the dialog drops the flag.
+  const [contactOpen, setContactOpen] = useState(searchParams.get("action") === "contact");
+  const closeContact = () => {
+    setContactOpen(false);
+    if (searchParams.get("action") === "contact") router.replace(`/crm/leads/${leadId}`, { scroll: false });
+  };
   const [saleOpen, setSaleOpen] = useState(false);
   const [notSuccessfulOpen, setNotSuccessfulOpen] = useState(false);
   const [notSuccessfulReason, setNotSuccessfulReason] = useState("");
@@ -252,7 +261,7 @@ export default function LeadDetailPageClient() {
                   <h2 className="font-display text-[14px] font-semibold">Follow-up note</h2>
                   <p className="mt-1 text-[12px] text-ink-3">Keep the lead timeline concise while you log the interaction.</p>
                 </div>
-                <LogContactDialog subject="lead" leadId={lead.id} currentStage={lead.stage} />
+                <LogContactDialog subject="lead" leadId={lead.id} currentStage={lead.stage} open={contactOpen} onOpenChange={(next) => { if (next) setContactOpen(true); else closeContact(); }} />
               </div>
             </section>
           ) : null}
@@ -266,7 +275,8 @@ export default function LeadDetailPageClient() {
               <ContextRow label="Phone"><span dir="ltr">{lead.phone}</span></ContextRow>
               <ContextRow label="Email">{lead.email ?? "—"}</ContextRow>
               <ContextRow label="Owner">{lead.ownerName ?? "Unassigned"}</ContextRow>
-              <ContextRow label="Next follow-up">{lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}</ContextRow>
+              <ContextRow label="Last contact">{lead.lastContactAt ? <>{describeContactOutcome(lead.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={lead.lastContactAt} /></> : "Not contacted yet"}</ContextRow>
+              <ContextRow label="Next follow-up">{lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} className={lead.overdue ? "font-medium text-danger" : undefined} /> : "—"}</ContextRow>
               <ContextRow label="Created"><DateTimeText iso={lead.createdAt} /></ContextRow>
             </dl>
           </section>

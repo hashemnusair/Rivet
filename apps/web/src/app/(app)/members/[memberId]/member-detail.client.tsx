@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { isApiError } from "@/lib/api/errors";
+import { pickCurrentMembership, pickRenewalTarget } from "@/lib/domain/status";
 import { MemberHeader } from "@/features/members/member-header";
 import {
   CheckInsTab,
@@ -32,6 +33,8 @@ import {
   PersonalTrainingTab,
   TimelineTab,
 } from "@/features/members/member-tabs";
+import { LogContactDialog } from "@/features/crm/contact-work-panel";
+import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 
 export default function MemberDetailPageClient() {
   const { memberId } = useParams<{ memberId: string }>();
@@ -41,6 +44,8 @@ export default function MemberDetailPageClient() {
   const { can } = usePermissions();
   const [noteOpen, setNoteOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
+  // Today and the queues link here with ?action=contact to record an outcome.
+  const [contactOpen, setContactOpen] = useState(searchParams.get("action") === "contact");
   const requestedTab = searchParams.get("tab");
   const activeTab = MEMBER_TABS.some((tab) => tab.value === requestedTab) ? requestedTab! : "overview";
 
@@ -79,9 +84,11 @@ export default function MemberDetailPageClient() {
 
   const member = memberQuery.data;
   const memberships = membershipsQuery.data?.items ?? [];
-  const currentMembership = memberships.find(
-    (m) => m.status === "active" || m.status === "expiring" || m.status === "frozen" || m.status === "depleted" || m.status === "scheduled",
-  );
+  // Rank terms exactly as the server ranks them for the status chip, so the
+  // header never presents a scheduled successor as the term in force.
+  const currentMembership = pickCurrentMembership(memberships.filter((m) => m.status !== "expired" && m.status !== "cancelled"));
+  const renewalTarget = pickRenewalTarget(memberships);
+  const upcomingMembership = memberships.find((m) => m.status === "scheduled" && m.id !== currentMembership?.id);
   const branchName = session?.branches.find((b) => b.id === member.homeBranchId)?.name ?? "—";
   const salesperson = usersQuery.data?.items.find((u) => u.id === member.assignedSalespersonId);
 
@@ -89,7 +96,7 @@ export default function MemberDetailPageClient() {
     <div className="space-y-4">
       <Breadcrumbs items={[{ label: "Members", href: "/members" }, { label: member.fullName }]} />
 
-      <MemberHeader member={member} currentMembership={currentMembership} branchName={branchName} />
+      <MemberHeader member={member} currentMembership={currentMembership} renewalTarget={renewalTarget} upcomingMembership={upcomingMembership} branchName={branchName} />
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Tabs className="min-w-0" value={activeTab} onValueChange={(tab) => {
@@ -131,12 +138,14 @@ export default function MemberDetailPageClient() {
 
         <aside className="space-y-4 self-start">
           {can("members.write") ? (
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" className="flex-1" onClick={() => setNoteOpen(true)}>
+            <div className="flex flex-wrap gap-2" aria-label="Member contact actions">
+              <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} phone={member.phone} />
+              <LogContactDialog subject="member" memberId={member.id} open={contactOpen} onOpenChange={(next) => { setContactOpen(next); if (!next && searchParams.get("action") === "contact") router.replace(`/members/${memberId}`, { scroll: false }); }} />
+              <Button variant="secondary" size="sm" onClick={() => setNoteOpen(true)}>
                 <StickyNote /> Add note
               </Button>
               {can("crm.write") ? (
-                <Button variant="secondary" size="sm" className="flex-1" onClick={() => setTaskOpen(true)}>
+                <Button variant="secondary" size="sm" onClick={() => setTaskOpen(true)}>
                   <CalendarClock /> Create task
                 </Button>
               ) : null}

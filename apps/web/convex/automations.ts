@@ -234,10 +234,12 @@ export const evaluate = internalMutation({
               // channel for the outbound worker; quiet hours defer the send to
               // the end of the window instead of dropping it.
               const live = deliveryMode === "live";
-              const suppressionReason = marketingSuppressionReason(marketingRecipient)
-                ?? (!live && quiet ? "Tenant quiet hours" : undefined);
+              const suppressionReason = marketingSuppressionReason(marketingRecipient);
               const messageStatus = suppressionReason ? "suppressed" : "queued";
-              const deferredUntil = live && quiet && quietUntil ? new Date(quietUntil).toISOString() : undefined;
+              // Quiet hours defer, they never drop: in the sandbox ledger as
+              // well, so a gym previewing its rules sees the same decision a
+              // live gym would get instead of a "suppressed" it would not.
+              const deferredUntil = !suppressionReason && quiet && quietUntil ? new Date(quietUntil).toISOString() : undefined;
               const requestedChannel = normalizeMarketingChannel(actionItem.channel);
               const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, messageClass: "marketing", channel: live ? requestedChannel : "sandbox", requestedChannel, language: stringValue(candidate.preferredLanguage, "en"), templateId: actionItem.templateId, templateKey: actionItem.templateKey, recipientPhone: stringValue(candidate.phone) || undefined, memberId, leadId, queuedAt: isoNow(), suppressionReason, deferredUntil, nextAttemptAt: messageStatus === "queued" ? (deferredUntil ?? isoNow()) : undefined, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason ?? (deferredUntil ? `Deferred until quiet hours end (${quietEnd})` : undefined) }], automationExecutionId: executionId };
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "messageDelivery", publicId: messageId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: message });

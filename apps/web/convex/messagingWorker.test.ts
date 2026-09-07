@@ -108,8 +108,10 @@ describe("outbound messaging worker", () => {
     twilioReady("live");
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ sid: "SM-renewal" }), { status: 201, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
+    let liveOrganizationId: string | undefined;
     const seedRenewal = async (gymLive: boolean) => {
       const { t, organizationId, branchId } = await seed({ gymLive, quietHoursStart: "03:00", quietHoursEnd: "03:01" });
+      if (gymLive) liveOrganizationId = organizationId;
       await t.run(async (ctx) => {
         const now = Date.now();
         const settings = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "settings")).collect())[0]!;
@@ -133,8 +135,39 @@ describe("outbound messaging worker", () => {
     expect(sent?.attempts.at(-1)).toMatchObject({ outcome: "accepted", providerMessageId: "SM-renewal" });
     expect(fetchMock).toHaveBeenCalled();
 
-    const sandboxT = await seedRenewal(false);
+    const sandboxT = await sandboxRenewal();
     const sandboxRows = await sandboxT.run(async (ctx) => await ctx.db.query("renewalDeliveries").collect());
     expect(sandboxRows.filter((row) => row.channel !== "staff_task").map((row) => row.status)).toEqual(expect.arrayContaining(["sandboxed"]));
+
+    // The member record must say what actually happened: accepted by the
+    // provider, never "delivered".
+    const timeline = await liveT.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", liveOrganizationId as never).eq("entityType", "timeline")).collect()).map((row) => row.data as Record<string, unknown>));
+    const accepted = timeline.find((event) => event.type === "message" && String(event.title).includes("accepted by the provider"));
+    expect(accepted).toMatchObject({ memberId: "member-1", title: "WhatsApp renewal reminder accepted by the provider", meta: expect.objectContaining({ deliveryState: "provider_accepted", providerMessageId: "SM-renewal", source: "renewal" }) });
+    expect(String(accepted?.body)).toContain("not confirmed");
+    expect(timeline.some((event) => String(event.title).toLowerCase().includes("delivered"))).toBe(false);
+
+    async function sandboxRenewal() { return await seedRenewal(false); }
+  });
+
+  it("writes a terminal failure to the member timeline and tells the managers where the person is, not the settings page", async () => {
+    twilioReady("live");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 21211 }), { status: 400, headers: { "Content-Type": "application/json" } })));
+    const { t, organizationId, branchId } = await seed({ gymLive: true });
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const manager = await ctx.db.insert("users", { publicId: "msg-manager", authSubject: "clerk-msg-manager", email: "manager@forge.example", fullName: "Forge Manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId, userId: manager, role: "manager", branchIds: [branchId], branchScope: "all", active: true, createdAt: now, updatedAt: now });
+    });
+    const messageId = await queueAutomationMessage(t, organizationId, branchId, { requestedChannel: "sms", channel: "sms" });
+
+    await t.action(internal.messagingWorker.processDue, {});
+
+    const row = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "messageDelivery")).collect()).find((record) => record.publicId === messageId));
+    expect((row?.data as { status: string }).status).toBe("failed");
+    const notifications = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());
+    expect(notifications).toEqual([expect.objectContaining({ kind: "message_delivery_failed", href: "/members/member-1" })]);
+    const timeline = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "timeline")).collect()).map((record) => record.data as Record<string, unknown>));
+    expect(timeline).toContainEqual(expect.objectContaining({ type: "message", memberId: "member-1", title: "SMS message failed", meta: expect.objectContaining({ deliveryState: "failed", source: "automation" }) }));
   });
 });

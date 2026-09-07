@@ -16,7 +16,7 @@ import { qk } from "@/lib/api/keys";
 import type { CreateMemberMembershipSaleInput, MembershipPlan, PaymentMethodKey } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { addDays, todayISODate } from "@/lib/utils/dates";
-import { money, parseMoneyInput, toMajor } from "@/lib/utils/money";
+import { money, moneyInputError, parseMoneyInput, toMajorString } from "@/lib/utils/money";
 
 const schema = z.object({
   planId: z.string().min(1, "Choose a membership"),
@@ -60,8 +60,9 @@ export function QuickMembershipStep({
   const plan = plans.find((candidate) => candidate.id === form.watch("planId"));
   const collectNow = form.watch("collectNow");
   const selectedMethod = form.watch("payMethod");
+  const currency = plan?.basePrice.currency ?? "JOD";
   const rawAmount = (form.watch("payAmount") ?? "").trim();
-  const parsedAmount = parseMoneyInput(rawAmount);
+  const parsedAmount = parseMoneyInput(rawAmount, currency);
   const payingNow = collectNow && plan ? (rawAmount ? (parsedAmount ?? money(0, plan.basePrice.currency)) : plan.basePrice) : money(0, plan?.basePrice.currency ?? "JOD");
   const remaining = money(Math.max(0, (plan?.basePrice.amount ?? 0) - payingNow.amount), plan?.basePrice.currency ?? "JOD");
   const referenceRequired = selectedMethod === "card" || selectedMethod === "bank_transfer" || selectedMethod === "cliq";
@@ -74,7 +75,7 @@ export function QuickMembershipStep({
   const submit = form.handleSubmit((values) => {
     if (!plan) return;
     if (values.collectNow && rawAmount && !parsedAmount) {
-      form.setError("payAmount", { message: "Enter a valid amount" });
+      form.setError("payAmount", { message: moneyInputError(rawAmount, currency) ?? "Enter a valid amount" });
       return;
     }
     if (values.collectNow && payingNow.amount <= 0) {
@@ -134,7 +135,7 @@ export function QuickMembershipStep({
                     <SelectContent>
                       {plans.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
-                          {item.name} · {toMajor(item.basePrice).toFixed(3)} JOD
+                          {item.name} · {toMajorString(item.basePrice)} {item.basePrice.currency}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -156,8 +157,8 @@ export function QuickMembershipStep({
 
               {collectNow ? (
                 <FieldGrid className="mt-4 gap-4 border-t border-line pt-4 sm:grid-cols-2">
-                  <Field label="Amount (JOD)" error={form.formState.errors.payAmount?.message} hint="Leave blank to collect the full amount.">
-                    <Input inputMode="decimal" className="min-h-11" placeholder={plan ? toMajor(plan.basePrice).toFixed(3) : "0.000"} {...form.register("payAmount")} />
+                  <Field label={`Amount (${currency})`} error={form.formState.errors.payAmount?.message} hint="Leave blank to collect the full amount.">
+                    <Input inputMode="decimal" dir="ltr" className="min-h-11" placeholder={plan ? toMajorString(plan.basePrice) : toMajorString(money(0, currency))} {...form.register("payAmount")} />
                   </Field>
                   <Field label="Payment method" error={form.formState.errors.payMethod?.message}>
                     <Controller
@@ -198,7 +199,7 @@ export function QuickMembershipStep({
         <Button type="button" variant="secondary" className="max-sm:w-full" onClick={onBack} disabled={pending}><ArrowLeft /> Back</Button>
         <Button type="submit" className="max-sm:w-full" loading={pending} disabled={!plan || (collectNow && methods.length === 0)} data-testid="confirm-member-sale">
           <WalletCards /> Create member &amp; membership
-          {plan ? ` · ${toMajor(plan.basePrice).toFixed(3)} JOD` : ""}
+          {plan ? ` · ${toMajorString(plan.basePrice)} ${plan.basePrice.currency}` : ""}
         </Button>
       </div>
     </form>

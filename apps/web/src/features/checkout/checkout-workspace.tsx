@@ -9,7 +9,7 @@ import { isApiError } from "@/lib/api/errors";
 import type { InventoryBalance, OrganizationSettings, WorkspaceAccess } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { usePermissions } from "@/lib/providers/app-providers";
-import { toMajor } from "@/lib/utils/money";
+import { toMajorString } from "@/lib/utils/money";
 import { PageHeader } from "@/components/shared/chrome";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -167,7 +167,7 @@ export function CheckoutWorkspace() {
       <PaymentSection method={method} onMethod={(next) => { setMethod(next); if (next === "cash") setReference(""); }} enabledMethods={enabledMethods} reference={reference} onReference={setReference} branchName={branchName} cashShift={{ known: canSeeShift, loading: shiftQuery.isLoading, error: shiftQuery.error ?? undefined, shift: shiftQuery.data ?? null, onRetry: () => void shiftQuery.refetch() }} />
       {validationError ? <div className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{validationError}</div> : null}
       {serverError ? <div className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{serverError}</div> : null}
-      <Button type="button" size="lg" className="h-12 w-full" onClick={submit} loading={checkout.isPending} disabled={cartLines.length === 0 || cashBlocked} data-testid="complete-retail-sale">Complete sale · <span dir="ltr">{toMajor(total).toFixed(3)} {total.currency}</span></Button>
+      <Button type="button" size="lg" className="h-12 w-full" onClick={submit} loading={checkout.isPending} disabled={cartLines.length === 0 || cashBlocked} data-testid="complete-retail-sale">Complete sale · <span dir="ltr">{toMajorString(total)} {total.currency}</span></Button>
     </>
   );
   const queryError = productsQuery.error ?? inventoryQuery.error;

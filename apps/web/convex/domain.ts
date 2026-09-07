@@ -74,6 +74,8 @@ import {
 import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
 import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
 import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
+import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "../src/lib/members/lookup";
+import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, resolveFollowUpTasks, shouldClearLeadFollowUp } from "../src/lib/crm/contact-outcomes";
 import { deriveRetentionRisks } from "../src/lib/retention/at-risk";
 import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits, type CsvValue } from "../src/lib/exports/csv";
 
@@ -3957,13 +3959,18 @@ async function ptMemberExperience(ctx: ReadContext, actor: ActorContext, members
     ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
   ]);
   const entitlementViews = entitlements.map((item) => ptEntitlementView(actor.organization, item));
+  const policy = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
   return {
     organizationId: publicOrganizationId(actor.organization),
     membershipId: membershipRecord.publicId,
     availableSessions: entitlementViews.reduce((total, item) => total + numberValue(item.available), 0),
     reservedSessions: entitlementViews.reduce((total, item) => total + numberValue(item.reserved), 0),
+    cancellationCutoffHours: numberValue(policy.cancellationCutoffHours, 12),
     entitlements: entitlementViews,
-    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && item.endsAt >= Date.now()).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, actor.organization, item))),
+    // Every booking still holding a reserved credit is listed, including a
+    // session that started without an outcome: hiding it would leave the
+    // "reserved" count pointing at nothing.
+    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status)).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, actor.organization, item))),
     orders: await Promise.all(orders.sort((left, right) => right.createdAt - left.createdAt).map((item) => ptPackageOrderView(ctx, actor.organization, item))),
     trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, actor.organization, item))),
     packages: await Promise.all(packages.map((item) => ptPackageView(ctx, actor.organization, item))),
@@ -3991,13 +3998,17 @@ async function customerPtExperience(ctx: ReadContext, membershipId: string): Pro
     ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", organization._id).eq("status", "active")).collect(),
   ]);
   const entitlementViews = entitlements.map((item) => ptEntitlementView(organization, item));
+  const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+  const policy = { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(data(data(settings?.data).operationalPolicies).personalTraining) };
   return {
     organizationId: publicOrganizationId(organization),
     membershipId,
     availableSessions: entitlementViews.reduce((total, item) => total + numberValue(item.available), 0),
     reservedSessions: entitlementViews.reduce((total, item) => total + numberValue(item.reserved), 0),
+    cancellationCutoffHours: numberValue(policy.cancellationCutoffHours, 12),
     entitlements: entitlementViews,
-    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && item.endsAt >= Date.now()).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, organization, item))),
+    // Sessions that started without an outcome stay listed while they hold a credit.
+    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status)).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, organization, item))),
     orders: await Promise.all(orders.sort((left, right) => right.createdAt - left.createdAt).map((item) => ptPackageOrderView(ctx, organization, item))),
     trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, organization, item))),
     packages: await Promise.all(packages.map((item) => ptPackageView(ctx, organization, item))),
@@ -5600,7 +5611,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const visibleEntitlements = canReadReports ? entitlements : entitlements.filter((item) => visibleEntitlementIds.has(item._id));
       const ptChargeIds = new Set(allOrders.map((order) => order.chargePublicId));
       const packageRevenue = canReadReports ? paymentRows.map((row) => data(row.data)).filter((payment) => ptChargeIds.has(stringValue(payment.chargeId)) && payment.status !== "voided").reduce((total, payment) => total + amountOf(payment.amount), 0) : 0;
+      const ptPolicy = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
       return {
+        cancellationCutoffHours: numberValue(ptPolicy.cancellationCutoffHours, 12),
         trainers: await Promise.all(visibleTrainers.map((item) => ptTrainerView(ctx, actor.organization, item))),
         packages: canReadReports ? await Promise.all(allPackages.map((item) => ptPackageView(ctx, actor.organization, item))) : [],
         bookings: await Promise.all(visibleBookings.sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, actor.organization, item))),
@@ -5816,6 +5829,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       );
       if (input.status) items = items.filter((task) => task.status === input.status);
       if (input.ownerId) items = items.filter((task) => task.ownerId === input.ownerId);
+      if (input.memberId) items = items.filter((task) => task.memberId === input.memberId);
+      if (input.leadId) items = items.filter((task) => task.leadId === input.leadId);
       if (input.overdueOnly) items = items.filter((task) => task.status === "open" && stringValue(task.dueAt) < isoNow());
       if (input.dueBefore) items = items.filter((task) => stringValue(task.dueAt) <= stringValue(input.dueBefore));
       items = sortRecords(items, input.sort ?? "dueAt", (task, key) => stringValue(task[key]));
@@ -5908,13 +5923,30 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (!query) return { found: false, decision: "blocked", reasonCodes: [], message: "Type a name, phone, or member number." };
       if (query.length < 3) return { found: false, decision: "blocked", reasonCodes: [], message: "Keep typing — at least 3 characters." };
       const entryPass = await resolveEntryPass(ctx, actor, query, branchId);
-      const members = await memberRecords(ctx, actor);
-      const member = entryPass
-        ? members.map((record) => data(record.data)).find((item) => item.id === entryPass.payload.memberId || item.memberNumber === data(entryPass.membership.data).memberNumber)
-        : query.startsWith(`${ENTRY_PASS_PREFIX}.`)
-          ? undefined
-          : members.map((record) => data(record.data)).find((item) => matchesSearch([item.fullName, item.fullNameAr, item.phone, item.memberNumber, item.email], query));
-      if (!member) return { found: false, decision: "blocked", reasonCodes: [], message: `No member matches “${query}”.` };
+      // A profile merged into another one must never be the record the desk
+      // acts on: its survivor carries the membership and the balance.
+      const members = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter((item) => !optionalString(item.mergedIntoMemberId));
+      let member: Data | undefined;
+      let candidates: Data[] = [];
+      if (entryPass) {
+        member = members.find((item) => item.id === entryPass.payload.memberId || item.memberNumber === data(entryPass.membership.data).memberNumber);
+      } else if (!query.startsWith(`${ENTRY_PASS_PREFIX}.`)) {
+        const lookup = resolveMemberLookup(members.map((item) => ({ id: stringValue(item.id), memberNumber: stringValue(item.memberNumber), fullName: stringValue(item.fullName), fullNameAr: optionalString(item.fullNameAr), phone: stringValue(item.phone), email: optionalString(item.email), status: stringValue(item.status, "active"), record: item })), query, organizationPhoneCountryCallingCode(actor.organization));
+        member = lookup.member?.record;
+        candidates = lookup.candidates.map((candidate) => candidate.record);
+      }
+      if (!member) {
+        if (candidates.length > 1) {
+          return {
+            found: false,
+            decision: "blocked",
+            reasonCodes: [],
+            message: `${candidates.length} members match “${query}”. Choose the right person to continue.`,
+            candidates: await toMemberSummaries(ctx, actor, candidates.slice(0, MAX_LOOKUP_CANDIDATES)),
+          };
+        }
+        return { found: false, decision: "blocked", reasonCodes: [], message: `No member matches “${query}”.` };
+      }
       return await evaluateCheckIn(ctx, actor, member, branchId, false);
     }
     case "checkins.list": {
@@ -6198,7 +6230,10 @@ async function evaluateCheckIn(ctx: ReadContext, actor: ActorContext, member: Da
     decision = "blocked"; codes.push("NO_ACTIVE_MEMBERSHIP"); message = "No membership on file. Sell or renew a membership to allow entry.";
   } else {
     const status = statusOfMembership(membership, today);
-    if (["expired", "scheduled", "cancelled"].includes(status)) {
+    if (status === "scheduled") {
+      // A future term is not an expired one: the desk must not be told to renew a membership the member already bought.
+      decision = "blocked"; codes.push("MEMBERSHIP_NOT_STARTED"); message = `Membership starts on ${stringValue(membership.startDate)}. Entry before then needs a manager override.`;
+    } else if (["expired", "cancelled"].includes(status)) {
       decision = "blocked"; codes.push("MEMBERSHIP_EXPIRED"); message = status === "cancelled" ? "Membership was cancelled. Entry requires a manager override." : "Membership is not currently valid. Renew to allow entry.";
     } else if (status === "frozen") {
       decision = "blocked"; codes.push("MEMBERSHIP_FROZEN"); message = "Membership is frozen. Unfreeze or ask a manager to override.";
@@ -7065,7 +7100,8 @@ async function createMembershipMutation(
   let payment: Data | undefined;
   let receipt: Data | undefined;
   if (input.payment && amountOf(data(input.payment).amount) > 0) {
-    const paymentResult = await paymentRecord(ctx, actor, { ...data(input.payment), memberId: memberData.id, chargeId: charge.id, branchId: memberData.homeBranchId }, `sale-${membership.id}`);
+    // The drawer that takes the money is the desk's branch when the caller names one; paymentRecord asserts access to it.
+    const paymentResult = await paymentRecord(ctx, actor, { ...data(input.payment), memberId: memberData.id, chargeId: charge.id, branchId: optionalString(data(input.payment).branchId) ?? memberData.homeBranchId }, `sale-${membership.id}`);
     payment = paymentResult.payment;
     receipt = paymentResult.receipt;
     await auditPaymentCollection(ctx, actor, payment);
@@ -7256,6 +7292,62 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
   if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   return task;
+}
+
+/**
+ * A logged contact is the follow-up happening. The actor's open follow-up
+ * tasks for that person are moved to the next date or closed with the
+ * outcome, never stacked; a task is created only when none exists and the
+ * caller asked for one. Team managers may resolve anyone's task, exactly as
+ * they may complete it from Today.
+ */
+async function resolveFollowUpTasksForContact(
+  ctx: MutationCtx,
+  actor: ActorContext,
+  subject: { memberId?: string; leadId?: string },
+  subjectName: string,
+  outcome: string,
+  nextFollowUpAt: string | undefined,
+  options: { createWhenMissing: boolean },
+): Promise<void> {
+  const taskRecords = subject.memberId
+    ? await recordsOfMember(ctx, actor.organization._id, subject.memberId, "task")
+    : subject.leadId
+      ? await recordsOfLead(ctx, actor.organization._id, subject.leadId, "task")
+      : [];
+  const byId = new Map(taskRecords.map((record) => [record.publicId, record]));
+  const timezone = actor.organization.timezone || TZ_FALLBACK;
+  const today = todayIn(timezone);
+  const resolution = resolveFollowUpTasks({
+    tasks: taskRecords.map((record) => { const task = data(record.data); return { id: record.publicId, type: stringValue(task.type), status: stringValue(task.status, "open"), ownerId: optionalString(task.ownerId), memberId: optionalString(task.memberId), leadId: optionalString(task.leadId), dueAt: stringValue(task.dueAt) }; }),
+    subject,
+    actorId: publicUserId(actor.user),
+    canManageTeam: actor.role === "owner" || actor.role === "manager",
+    nextFollowUpAt,
+    outcome,
+    isDue: (dueAt) => businessDate(dueAt, timezone) <= today,
+  });
+  const completedOutcome = completedByContactOutcome(outcome);
+  for (const task of resolution.complete) {
+    const record = byId.get(task.id);
+    if (!record) continue;
+    const updated = await patchRecord(ctx, actor, record, { status: "completed", outcome: completedOutcome, completedAt: isoNow() });
+    if (task.memberId) await insertTimeline(ctx, actor, { memberId: task.memberId, type: "task_completed", title: `Task completed: ${stringValue(updated.title)}`, body: completedOutcome, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+  }
+  if (resolution.reschedule && nextFollowUpAt) {
+    const record = byId.get(resolution.reschedule.id);
+    if (record) await patchRecord(ctx, actor, record, { dueAt: nextFollowUpAt, ...(resolution.reschedule.type === "follow_up" ? { title: followUpTaskTitle(subjectName, outcome) } : {}) });
+  } else if (resolution.createFollowUp && nextFollowUpAt && options.createWhenMissing) {
+    await createTaskMutation(ctx, actor, {
+      type: "follow_up",
+      title: followUpTaskTitle(subjectName, outcome),
+      ownerId: publicUserId(actor.user),
+      dueAt: nextFollowUpAt,
+      priority: "normal",
+      memberId: subject.memberId,
+      leadId: subject.leadId,
+    });
+  }
 }
 
 function automationQuietHours(timezone: string, start: string, end: string): boolean {
@@ -9436,18 +9528,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const outcome = stringValue(input.outcome);
       if (!outcome) domainError("VALIDATION_ERROR", "Contact outcome is required.", { correlationId: actor.correlationId });
       const nextFollowUpAt = optionalString(input.nextFollowUpAt);
-      if (nextFollowUpAt) {
-        await createTaskMutation(ctx, actor, {
-          type: "follow_up",
-          title: `Follow up — ${stringValue(data(member.data).fullName)}`,
-          ownerId: publicUserId(actor.user),
-          dueAt: nextFollowUpAt,
-          priority: "normal",
-          memberId: member.publicId,
-        });
-      }
+      await resolveFollowUpTasksForContact(ctx, actor, { memberId: member.publicId }, stringValue(data(member.data).fullName), outcome, nextFollowUpAt, { createWhenMissing: true });
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Contact — ${outcome.replaceAll("_", " ")}`;
-      return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "call_attempt", title: contactTitle, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
+      return await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(data(member.data).homeBranchId), type: "call_attempt", title: contactTitle, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
     }
     case "retention.snooze": {
       requirePermission(actor, "crm.write");
@@ -10301,7 +10384,35 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         if (requestedOwnerId) await assertLeadOwner(ctx, actor, requestedOwnerId);
         patch.ownerId = requestedOwnerId;
       }
+      // Closing from the lead record must follow the same rules as closing
+      // from the pipeline: a real reason, no dangling follow-up, one audit fact.
+      const closingAsLost = stringValue(input.stage) === "lost" && stringValue(current.stage) !== "lost";
+      const lostReason = optionalString(input.lostReason)?.trim();
+      if (closingAsLost) {
+        if (!lostReason || lostReason.length < 5) domainError("VALIDATION_ERROR", "A specific reason is required before closing a lead.", { correlationId: actor.correlationId });
+        patch.lostReason = lostReason;
+        patch.nextFollowUpAt = undefined;
+      }
       const updated = await patchRecord(ctx, actor, record, patch);
+      if (closingAsLost) {
+        for (const taskRecord of await recordsOfLead(ctx, actor.organization._id, record.publicId, "task")) {
+          const task = data(taskRecord.data);
+          if (stringValue(task.status, "open") !== "open") continue;
+          await patchRecord(ctx, actor, taskRecord, { status: "cancelled", outcome: `Lead marked not sold: ${lostReason}`, completedAt: isoNow() });
+        }
+        await insertAudit(ctx, actor, {
+          category: "crm",
+          action: "lead.lost",
+          entityType: "lead",
+          entityId: record.publicId,
+          entityLabel: stringValue(current.fullName),
+          summary: "Lead marked as not sold",
+          reason: lostReason,
+          before: { stage: stringValue(current.stage), lostReason: optionalString(current.lostReason) ?? null },
+          after: { stage: "lost", lostReason: lostReason ?? null },
+          branchId: optionalString(current.branchId),
+        });
+      }
       return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities: [], offers: [] };
     }
     case "leads.update_contact": {
@@ -10336,16 +10447,26 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (nextStage === "lost" && (!notes || notes.length < 5)) {
         domainError("VALIDATION_ERROR", "A specific reason is required before closing a lead.", { correlationId: actor.correlationId });
       }
+      // A contact with no new date clears a lead date that was already due
+      // (this contact was that follow-up) or any date after a terminal outcome,
+      // so an overdue lead does not go straight back to Today.
+      const contactTimezone = actor.organization.timezone || TZ_FALLBACK;
+      const clearsDueFollowUp = input.nextFollowUpAt === undefined && nextStage !== "lost" && shouldClearLeadFollowUp({ outcome: stringValue(input.outcome), currentNextFollowUpAt: optionalString(current.nextFollowUpAt), isDue: (dueAt) => businessDate(dueAt, contactTimezone) <= todayIn(contactTimezone) });
       const updatedLead = await patchRecord(ctx, actor, record, {
         stage: nextStage,
         ...(nextStage === "lost"
           ? { lostReason: notes, nextFollowUpAt: undefined }
           : input.nextFollowUpAt !== undefined
             ? { nextFollowUpAt: input.nextFollowUpAt || undefined }
-            : {}),
+            : clearsDueFollowUp
+              ? { nextFollowUpAt: undefined }
+              : {}),
         updatedAt: isoNow(),
       });
       const outcome = stringValue(input.outcome);
+      // The lead keeps its own next-follow-up date; open tasks about the lead
+      // are the same work and must not survive as duplicates on Today.
+      await resolveFollowUpTasksForContact(ctx, actor, { leadId: record.publicId }, stringValue(current.fullName), outcome, nextStage === "lost" ? undefined : optionalString(input.nextFollowUpAt), { createWhenMissing: false });
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${outcome.replaceAll("_", " ")}`;
       await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
       if (nextStage === "lost") {
@@ -11394,7 +11515,17 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
   const memberships = membershipRows.map((record) => data(record.data)).filter(inBranch);
   const plans = planRows.map((record) => data(record.data));
   const leads = leadRows.map((record) => data(record.data)).filter(inBranch);
-  const tasks = taskRows.map((record) => data(record.data)).filter(inBranch);
+  // A task carries no branch of its own; it belongs where its member or lead
+  // does. Filtering tasks by a branch field they never have emptied the Today
+  // queue and the overdue KPI whenever a branch was selected.
+  const memberBranchById = new Map(memberRows.map((record) => [record.publicId, optionalString(data(record.data).homeBranchId)]));
+  const leadBranchById = new Map(leadRows.map((record) => [record.publicId, optionalString(data(record.data).branchId)]));
+  const taskBranchOf = (task: Data): string | undefined => task.memberId
+    ? memberBranchById.get(stringValue(task.memberId))
+    : task.leadId
+      ? leadBranchById.get(stringValue(task.leadId))
+      : optionalString(task.branchId);
+  const tasks = taskRows.map((record) => data(record.data)).filter((task) => { const taskBranch = taskBranchOf(task); return !branchId || !taskBranch || taskBranch === branchId; });
   const allCheckins = checkinRows.map((record) => data(record.data)).filter(inBranch);
   const checkins = allCheckins.filter((checkin) => inRange(checkin, "occurredAt"));
   const charges = chargeRows.map((record) => data(record.data));
@@ -11497,6 +11628,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
         title: stringValue(task.title),
         detail: `${stringValue(task.subjectName)} · ${stringValue(task.ownerName)}`,
         subjectName: stringValue(task.subjectName),
+        subject: task.leadId ? { kind: "lead", id: stringValue(task.leadId) } : task.memberId ? { kind: "member", id: stringValue(task.memberId) } : undefined,
         branchName: taskBranchId ? branchNameById.get(taskBranchId) : undefined,
         dueAt,
         overdue: overdueTask,
@@ -11504,6 +11636,44 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
         action: canComplete
           ? { kind: "complete_task", label: "Done", taskId: stringValue(task.id) }
           : { kind: "navigate", label: "Open" },
+      });
+    }
+
+    // A lead's own next-follow-up date is work too. It only appears here when
+    // no open task already represents it, so nothing shows twice.
+    const leadsWithOpenTasks = new Set(tasks.filter((task) => stringValue(task.status, "open") === "open").map((task) => optionalString(task.leadId)).filter(Boolean));
+    const lastLeadContactOutcome = new Map<string, { occurredAt: string; outcome?: string }>();
+    for (const record of timelineRecords) {
+      const event = data(record.data);
+      const leadId = optionalString(event.leadId);
+      if (!leadId || event.type !== "call_attempt") continue;
+      const current = lastLeadContactOutcome.get(leadId);
+      if (!current || current.occurredAt < stringValue(event.occurredAt)) lastLeadContactOutcome.set(leadId, { occurredAt: stringValue(event.occurredAt), outcome: optionalString(data(event.meta).outcome) });
+    }
+    for (const lead of leads) {
+      const leadId = stringValue(lead.id);
+      const nextFollowUpAt = optionalString(lead.nextFollowUpAt);
+      if (!nextFollowUpAt || leadsWithOpenTasks.has(leadId)) continue;
+      const facts = progressFactsByLead.get(leadId);
+      if (!facts || facts.hasConversion || facts.hasLoss) continue;
+      if (!canManageTeam && optionalString(lead.ownerId) !== actorPublicId) continue;
+      if (businessDate(nextFollowUpAt, actor.organization.timezone || TZ_FALLBACK) > today) continue;
+      const overdueLead = nextFollowUpAt < isoNow();
+      const lastLabel = describeContactOutcome(lastLeadContactOutcome.get(leadId)?.outcome);
+      const leadBranchId = optionalString(lead.branchId);
+      queueItems.push({
+        id: `lead-follow-up:${leadId}`,
+        kind: "follow_up",
+        priority: overdueLead ? "high" : "normal",
+        title: `Follow up — ${stringValue(lead.fullName)}`,
+        detail: lastLabel ? `Lead · last contact: ${lastLabel}` : "Lead · not contacted yet",
+        subjectName: stringValue(lead.fullName),
+        subject: { kind: "lead", id: leadId },
+        branchName: leadBranchId ? branchNameById.get(leadBranchId) : undefined,
+        dueAt: nextFollowUpAt,
+        overdue: overdueLead,
+        href: `/crm/leads/${leadId}?action=contact`,
+        action: { kind: "navigate", label: hasPermission(actor, "crm.write") ? "Log contact" : "Open" },
       });
     }
 
@@ -11526,6 +11696,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
         title: `Renew ${stringValue(member.fullName)}`,
         detail: `${planName} · ${daysUntilExpiry === 0 ? "ends today" : `${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"} left`}`,
         subjectName: stringValue(member.fullName),
+        subject: { kind: "member", id: stringValue(member.id) },
         branchName: homeBranchId ? branchNameById.get(homeBranchId) : undefined,
         dueAt: `${stringValue(membership.endDate)}T20:59:59.999Z`,
         href: `/members/${stringValue(member.id)}?action=renew`,
@@ -11562,6 +11733,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
         title: `Reconnect with ${stringValue(member.fullName)}`,
         detail: `${risk.reasons.map((reason) => reason.label).join(" · ")}${plan ? ` · ${stringValue(plan.name)}` : ""}`,
         subjectName: stringValue(member.fullName),
+        subject: { kind: "member", id: risk.memberId },
         branchName: branchNameById.get(risk.branchId),
         occurredAt: risk.lastVisitAt,
         href: `/crm/queues?view=at-risk&member=${encodeURIComponent(risk.memberId)}`,
@@ -11585,6 +11757,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
         title: `Collect from ${stringValue(member.fullName)}`,
         detail: "Outstanding member balance",
         subjectName: stringValue(member.fullName),
+        subject: { kind: "member", id: memberId },
         branchName: homeBranchId ? branchNameById.get(homeBranchId) : undefined,
         amount: money(amount, actor.organization.currency),
         href: `/members/${memberId}?action=collect`,

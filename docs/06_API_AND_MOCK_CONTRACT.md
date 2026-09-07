@@ -156,6 +156,27 @@ convertLead(leadId: string, input: ConvertLeadInput): Promise<MemberDetail>
 listRenewalQueue(query: RenewalQueueQuery): Promise<Page<RenewalQueueItem>>
 ```
 
+Contact logging resolves the follow-up it fulfils. `logContactAttempt` and
+`logMemberContactAttempt` look at the actor's open `follow_up`, `renewal_call`
+and `trial_follow_up` tasks for that person (a manager's or owner's call
+resolves anyone's): with `nextFollowUpAt` the most recent one moves to that
+date and duplicates close; without it they all close with
+`Contact logged — <outcome>` as their result. A member contact creates a task
+only when none exists; a lead contact never does, because the lead's own
+`nextFollowUpAt` is the follow-up. Neither adapter stacks one task per call.
+`updateLead({ stage: "lost" })` follows the same rules as the pipeline close:
+a reason of at least five characters, `nextFollowUpAt` cleared, open lead
+tasks cancelled, and one `lead.lost` audit fact. `TaskListQuery.memberId` /
+`leadId` narrow the task list to one person; the member record must never
+list the whole gym's work.
+
+`TodayQueueItem.subject?: { kind: "lead" | "member"; id }` (additive) names
+the person a queue item is about. Both adapters set it on task, renewal,
+at-risk and balance items, and both add `lead-follow-up:<leadId>` items for an
+open lead whose own `nextFollowUpAt` is due, only when no open task already
+represents that lead. Tasks belong to the branch of their member or lead; the
+Convex dashboard no longer filters them by a branch field they never carry.
+
 A member free-trial request creates one gym/branch-scoped lead and one linked
 trial booking. `LeadDetail.trialBooking` is the staff-facing lifecycle record.
 No-show and cancellation require a reason. Completion and no-show create one
@@ -187,11 +208,28 @@ interface CheckInResult {
 }
 ```
 
+Lookup resolution is shared by both adapters (`src/lib/members/lookup.ts`). A
+complete member number, entry-pass token, or complete phone number resolves to
+one person. A shorter fragment must match exactly one record; when several
+people match, the preview returns `found: false` with `candidates:
+MemberSummary[]` and no decision, and profiles merged into another record are
+never candidates. A term that has not begun yet is reported with the reason
+code `MEMBERSHIP_NOT_STARTED` and its start date, not as expired.
+
 ### Payments and shifts
 
 ```ts
 listTransactions(query: TransactionListQuery): Promise<Page<TransactionSummary>>
 createPayment(input: CreatePaymentInput, idempotencyKey: string): Promise<PaymentReceipt>
+// CreatePaymentInput.branchId (and the sale/renewal payment.branchId) names the
+// desk taking the money; its drawer and open shift are used. It defaults to
+// the member's home branch, and access to the named branch is asserted.
+// The client keeps one idempotencyKey per unchanged draft and reuses it when
+// retrying after a failed request; both adapters replay the recorded payment
+// for a repeated key and reject a repeated key with a different payload.
+// Amounts are integer minor units in the organization currency; the UI reads
+// typed text through readMoneyInput (src/lib/utils/money.ts) and rejects
+// ambiguous separators, other currencies, signs and excess precision.
 refundPayment(paymentId: string, input: RefundPaymentInput): Promise<PaymentReceipt>
 voidPayment(paymentId: string, input: VoidPaymentInput): Promise<PaymentReceipt>
 getReceipt(receiptId: string): Promise<ReceiptDetail>

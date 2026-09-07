@@ -67,13 +67,16 @@ export default function NewMemberPage() {
   const [completed, setCompleted] = useState<CreateMemberMembershipSaleResult | null>(null);
   const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId) ?? "";
   const prefilledName = searchParams.get("name")?.trim().slice(0, 120) ?? "";
+  // Reception hands over a phone number it could not match; that is the new
+  // member's phone, never their name.
+  const prefilledPhone = searchParams.get("phone")?.trim().slice(0, 40) ?? "";
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       fullName: prefilledName,
       fullNameAr: "",
-      phone: "",
+      phone: prefilledPhone,
       email: "",
       homeBranchId: activeBranchId,
       preferredLanguage: "en",

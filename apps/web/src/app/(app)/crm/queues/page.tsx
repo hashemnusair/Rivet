@@ -2,12 +2,13 @@
 
 import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
 
-import { Activity, ArrowUpRight, CalendarClock, PhoneCall, RefreshCw, RotateCcw, Search, UserPlus, X } from "lucide-react";
+import { Activity, ArrowUpRight, Banknote, CalendarClock, PhoneCall, RefreshCw, RotateCcw, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
+import { describeContactOutcome } from "@/lib/crm/contact-outcomes";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { AtRiskMemberItem, RenewalQueueItem, RetentionRiskKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
@@ -114,6 +115,7 @@ function AtRiskQueuePage() {
     </aside>
 
     <div className={cn("grid gap-4", selectedItem && "2xl:grid-cols-[minmax(0,1fr)_340px]")}>
+      {selectedId && !selectedItem && risks.data && !risks.isLoading ? <MissingSelectionNotice memberId={selectedId} onClear={() => setSelectedId(undefined)} /> : null}
       <section className="panel min-h-[420px] overflow-hidden self-start" aria-labelledby="risk-results-title">
         <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div><h2 id="risk-results-title" className="mt-1 text-[15px] font-semibold">Recommended follow-ups</h2><p className="mt-0.5 text-[12px] text-ink-3">Each member appears once, with every current reason shown.</p></div><div className="flex shrink-0 items-center gap-2"><span className="text-[12px] tabular text-ink-3">{risks.data?.totalItems ?? "…"}</span><Button type="button" variant="ghost" size="icon-sm" onClick={() => void risks.refetch()} aria-label="Refresh at-risk members"><RefreshCw className="size-3.5" /></Button></div></header>
         {risks.isBackgroundError ? <ErrorState layout="inline" title="Queue could not refresh" onRetry={() => void risks.refetch()} /> : null}
@@ -125,11 +127,35 @@ function AtRiskQueuePage() {
   </div>;
 }
 
+/**
+ * A Today link names a member who is not on this page of the queue (another
+ * page, a filter, or no longer at risk). Say so and offer the record instead
+ * of opening nothing.
+ */
+function MissingSelectionNotice({ memberId, onClear }: { memberId: string; onClear: () => void }) {
+  return <aside className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3 animate-fade-in" data-testid="at-risk-missing-selection" aria-label="Selected member not in this view">
+    <div className="min-w-0">
+      <p className="text-[13px] font-medium">That member is not in this view</p>
+      <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-3">They may be on another page, outside the current filters, snoozed, or no longer at risk. Their record has the full history and every follow-up action.</p>
+    </div>
+    <div className="flex flex-wrap gap-2">
+      <Button asChild size="sm"><Link href={`/members/${memberId}`}>Open member record <ArrowUpRight /></Link></Button>
+      <Button type="button" variant="ghost" size="sm" onClick={onClear}>Clear selection</Button>
+    </div>
+  </aside>;
+}
+
 function AtRiskRow({ item, selected, onClick }: { item: AtRiskMemberItem; selected: boolean; onClick: () => void }) {
-  return <li><button type="button" aria-pressed={selected} onClick={onClick} className={cn("flex w-full items-center gap-3 px-4 py-3 text-start transition-colors", selected ? "bg-sunken/70" : "hover:bg-sunken/40")}><Monogram name={item.member.fullName} size="sm" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="break-words text-[13px] font-medium">{item.member.fullName}</span><span className={cn("rounded-sm px-2 py-0.5 text-[12px] font-medium capitalize", item.priority === "urgent" ? "bg-danger-soft text-danger" : item.priority === "high" ? "bg-warning-soft text-warning-deep" : "bg-sunken text-ink-3")}>{item.priority}</span></span><span className="mt-1 block text-[12px] text-ink-3">{item.reasons.map((risk) => risk.label).join(" · ")}</span></span><span className="hidden shrink-0 text-end sm:block"><span className="block text-[12px] font-medium">{item.membership.planName}</span><span className="block text-[12px] text-ink-3">{item.lastContactAt ? <>contacted <RelativeText iso={item.lastContactAt} /></> : "not contacted"}</span></span><PhoneCall className="size-3.5 shrink-0 text-ink-4" /></button></li>;
+  return <li><button type="button" aria-pressed={selected} onClick={onClick} className={cn("flex w-full items-center gap-3 px-4 py-3 text-start transition-colors", selected ? "bg-sunken/70" : "hover:bg-sunken/40")}><Monogram name={item.member.fullName} size="sm" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="break-words text-[13px] font-medium">{item.member.fullName}</span><span className={cn("rounded-sm px-2 py-0.5 text-[12px] font-medium capitalize", item.priority === "urgent" ? "bg-danger-soft text-danger" : item.priority === "high" ? "bg-warning-soft text-warning-deep" : "bg-sunken text-ink-3")}>{item.priority}</span></span><span className="mt-1 block text-[12px] text-ink-3">{item.reasons.map((risk) => risk.label).join(" · ")}</span></span><span className="hidden shrink-0 text-end sm:block"><span className="block text-[12px] font-medium">{item.membership.planName}</span><span className="block text-[12px] text-ink-3">{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : "not contacted"}</span></span><PhoneCall className="size-3.5 shrink-0 text-ink-4" /></button></li>;
 }
 
 function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: () => void; ref: React.Ref<HTMLElement> }) {
+  const { session } = useApp();
+  const today = todayISODate(session?.organization?.timezone);
+  const canSell = (session?.permissions ?? []).includes("memberships.sell");
+  const canCollect = (session?.permissions ?? []).includes("payments.collect");
+  const needsRenewal = item.reasons.some((reason) => reason.kind === "expired" || reason.kind === "expiring");
+  const lapsedSnooze = item.snoozedUntil && item.snoozedUntil < today ? item.snoozedUntil : undefined;
   const initialMessage = item.reasons.some((reason) => reason.kind === "expired")
     ? `Hi ${item.member.fullName.split(/\s+/)[0]}, we have missed seeing you at the gym. If you would like to return, reply here and we will help you find the right membership.`
     : item.reasons.some((reason) => reason.kind === "expiring")
@@ -139,10 +165,12 @@ function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: 
     <FollowUpHeader member={item.member} onClose={onClose} />
     <div className="space-y-4 px-4 py-4">
       <div className="space-y-1">{item.reasons.map((reason) => <p key={reason.kind} className="text-[13px] font-medium">{reason.label}</p>)}</div>
+      {lapsedSnooze ? <p className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] leading-relaxed text-ink-2" data-testid="at-risk-lapsed-snooze">Snoozed until {formatDate(lapsedSnooze)} and back in the queue since. The snooze note is on the timeline.</p> : null}
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]">
         <ContextRow label="Plan">{item.membership.planName}</ContextRow>
         <ContextRow label="Membership ends">{formatDate(item.membership.endDate)}</ContextRow>
         <ContextRow label="Last visit">{item.lastVisitAt ? <RelativeText iso={item.lastVisitAt} /> : "No recorded visit"}</ContextRow>
+        <ContextRow label="Last contact">{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">never contacted</span>}</ContextRow>
         {item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}
       </dl>
     </div>
@@ -150,6 +178,8 @@ function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: 
       <Button asChild variant="secondary" size="sm"><a href={`tel:${item.member.phone}`}><PhoneCall /> Call</a></Button>
       <WhatsAppHandoff subject="member" subjectId={item.member.id} recipientName={item.member.fullName} phone={item.member.phone} initialMessage={initialMessage} onLogged={onClose} />
       <LogContactDialog subject="member" memberId={item.member.id} onLogged={onClose} />
+      {needsRenewal && canSell ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=renew`}><RotateCcw /> Renew</Link></Button> : null}
+      {item.membership.outstanding.amount > 0 && canCollect ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=collect`}><Banknote /> Collect</Link></Button> : null}
       <SnoozeRiskDialog item={item} onSnoozed={onClose} />
     </footer>
   </aside>;
@@ -278,6 +308,8 @@ function RenewalQueuePage() {
           <Button asChild variant="secondary" size="sm"><a href={`tel:${selectedItem.member.phone}`}><PhoneCall /> Call</a></Button>
           <WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} />
           <LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} />
+          {(session?.permissions ?? []).includes("memberships.sell") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=renew`}><RotateCcw /> Renew</Link></Button> : null}
+          {selectedItem.membership.outstanding.amount > 0 && (session?.permissions ?? []).includes("payments.collect") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=collect`}><Banknote /> Collect</Link></Button> : null}
         </footer>
         </aside> : null}
       </div>
@@ -285,7 +317,7 @@ function RenewalQueuePage() {
 }
 
 function RenewalRow({ item, selected, onClick }: { item: RenewalQueueItem; selected: boolean; onClick: () => void }) {
-  return <li><button type="button" aria-pressed={selected} onClick={onClick} className={cn("flex w-full items-center gap-3 px-4 py-3 text-start transition-colors", selected ? "bg-sunken/70" : "hover:bg-sunken/40")}><Monogram name={item.member.fullName} size="sm" /><span className="min-w-0 flex-1"><span className="block break-words text-[13px] font-medium">{item.member.fullName}</span><span className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] text-ink-3"><MembershipStatusChip status={item.membership.status} />{item.membership.planName} · ends {formatDate(item.membership.endDate)}</span></span><span className="shrink-0 text-end"><span className="block text-[12px]"><DaysUntilText date={item.membership.endDate} /></span><span className="block text-[12px] text-ink-3">{item.lastContactAt ? <>called <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">not contacted</span>}</span></span><PhoneCall className="size-3.5 shrink-0 text-ink-4" aria-hidden /></button></li>;
+  return <li><button type="button" aria-pressed={selected} onClick={onClick} className={cn("flex w-full items-center gap-3 px-4 py-3 text-start transition-colors", selected ? "bg-sunken/70" : "hover:bg-sunken/40")}><Monogram name={item.member.fullName} size="sm" /><span className="min-w-0 flex-1"><span className="block break-words text-[13px] font-medium">{item.member.fullName}</span><span className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] text-ink-3"><MembershipStatusChip status={item.membership.status} />{item.membership.planName} · ends {formatDate(item.membership.endDate)}</span></span><span className="shrink-0 text-end"><span className="block text-[12px]"><DaysUntilText date={item.membership.endDate} /></span><span className="block text-[12px] text-ink-3">{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">not contacted</span>}</span></span><PhoneCall className="size-3.5 shrink-0 text-ink-4" aria-hidden /></button></li>;
 }
 
 function EmptyQueue({ text, description, onReset }: { text: string; description: string; onReset: () => void }) {
@@ -293,7 +325,7 @@ function EmptyQueue({ text, description, onReset }: { text: string; description:
 }
 
 function RenewalContext({ item }: { item: RenewalQueueItem }) {
-  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends"><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact"><RelativeText iso={item.lastContactAt} /> {item.lastContactOutcome ? `· ${item.lastContactOutcome.replace(/_/g, " ")}` : ""}</ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
+  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends"><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact">{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
 }
 
 function FollowUpHeader({ member, onClose }: { member: { id: string; fullName: string; phone: string }; onClose: () => void }) {

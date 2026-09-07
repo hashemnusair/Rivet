@@ -3,7 +3,8 @@
 import { CheckCircle2, ExternalLink, RotateCcw, ShoppingBag } from "lucide-react";
 import Link from "next/link";
 import type { ReceiptDetail, RetailSale } from "@/lib/domain/types";
-import { MoneyText } from "@/components/shared/data-display";
+import { DateTimeText, MoneyText } from "@/components/shared/data-display";
+import { TransactionStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { CHECKOUT_PAYMENT_METHOD_LABELS } from "./checkout-model";
 
@@ -20,12 +21,14 @@ export function SaleResult({ result, canAdjust, onNextSale }: { result: RetailCh
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success text-white" aria-hidden><CheckCircle2 className="size-5" /></span>
         <div>
           <h2 id="sale-result-heading" className="text-[17px] font-semibold">Sale completed</h2>
-          <p className="text-[12.5px] text-ink-2">Receipt {result.receipt.receiptNumber} · stock updated for {units} {units === 1 ? "item" : "items"}.</p>
+          <p className="text-[12.5px] text-ink-2">Receipt <span className="font-mono">{result.receipt.receiptNumber}</span> · stock updated for {units} {units === 1 ? "item" : "items"}.</p>
+          <p className="text-[12px] text-ink-3"><DateTimeText iso={result.receipt.issuedAt} /> · {result.branch.name}</p>
         </div>
       </div>
       <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 px-5 py-4 text-[13px]">
         <dt className="text-ink-3">Amount</dt><dd className="font-semibold"><MoneyText money={sale.total} /></dd>
         <dt className="text-ink-3">Paid by</dt><dd>{CHECKOUT_PAYMENT_METHOD_LABELS[sale.method]}{sale.externalReference ? <span className="font-mono text-[12px] text-ink-2"> · {sale.externalReference}</span> : null}</dd>
+        <dt className="text-ink-3">Status</dt><dd><TransactionStatusChip status={result.payment.status} /></dd>
         <dt className="text-ink-3">Receipt</dt><dd className="font-mono">{result.receipt.receiptNumber}</dd>
         {customer.kind === "member" ? <><dt className="text-ink-3">Member</dt><dd>{customer.fullName}{customer.memberNumber ? <span className="font-mono text-[12px] text-ink-2"> · {customer.memberNumber}</span> : null}</dd></> : null}
         {customer.kind === "guest" ? <><dt className="text-ink-3">Receipt name</dt><dd>{customer.fullName}</dd></> : null}
@@ -36,7 +39,7 @@ export function SaleResult({ result, canAdjust, onNextSale }: { result: RetailCh
         <Button asChild variant="secondary" size="lg" className="h-12 w-full sm:h-10 sm:w-auto"><Link href={`/payments/receipts/${encodeURIComponent(result.receiptId)}`}><ExternalLink /> Open receipt</Link></Button>
         {canAdjust ? <Button asChild variant="ghost" size="sm" className="w-full sm:w-auto"><Link href={`/payments/receipts/${encodeURIComponent(result.receiptId)}`}><RotateCcw /> Refund or void from the receipt</Link></Button> : null}
       </div>
-      <p className="px-5 pb-4 text-[11.5px] text-ink-3">Print or download the receipt from its page. {customer.kind === "walk_in" ? "No customer profile was created for this sale." : ""}</p>
+      <p className="px-5 pb-4 text-[11.5px] text-ink-3">{sale.method !== "cash" ? `${CHECKOUT_PAYMENT_METHOD_LABELS[sale.method]} payment recorded as received; RIVET did not verify it with the terminal or bank. ` : ""}Print or download the receipt from its page. {customer.kind === "walk_in" ? "No customer profile was created for this sale." : ""}</p>
     </section>
   );
 }

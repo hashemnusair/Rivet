@@ -9,6 +9,7 @@ import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import type { MembershipSummary } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
+import { MEMBERSHIP_STATUS_LABELS } from "@/lib/domain/status";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,13 +118,20 @@ export function FreezeDialog({
 }) {
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
+  const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
+  const minimumDays = Math.max(1, settingsQuery.data?.operationalPolicies.membership.minimumFreezeDays ?? 1);
+  const today = todayISODate();
+  // Propose a fortnight, but never more than the plan still allows: a default
+  // the server is bound to refuse is not a default.
+  const defaultDays = Math.max(1, Math.min(14, allowanceRemaining));
+  const defaults = () => ({ startDate: today, endDate: addDays(today, defaultDays - 1), reason: "" });
   const form = useForm<FreezeValues>({
     resolver: zodResolver(freezeSchema),
-    defaultValues: { startDate: todayISODate(), endDate: addDays(todayISODate(), 13), reason: "" },
+    defaultValues: defaults(),
   });
   useEffect(() => {
     if (open) {
-      form.reset({ startDate: todayISODate(), endDate: addDays(todayISODate(), 13), reason: "" });
+      form.reset(defaults());
       setServerError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,6 +140,23 @@ export function FreezeDialog({
   const start = form.watch("startDate");
   const end = form.watch("endDate");
   const days = start && end ? diffDays(start, end) + 1 : 0;
+  // The same rules the server enforces, explained before the request is sent.
+  // The server still decides; this only stops a doomed submission.
+  const problem = !start || !end
+    ? null
+    : days <= 0
+      ? "Freeze end must be on or after the start date."
+      : start < today
+        ? "A freeze cannot begin before today."
+        : start > membership.endDate
+          ? `A freeze must begin during the current term, which ends ${membership.endDate}.`
+          : days < minimumDays
+            ? `A freeze must be at least ${minimumDays} day${minimumDays === 1 ? "" : "s"}.`
+            : days > allowanceRemaining
+              ? allowanceRemaining <= 0
+                ? "No freeze days remain on this plan."
+                : `This plan allows ${allowanceRemaining} more freeze day${allowanceRemaining === 1 ? "" : "s"}.`
+              : null;
 
   const mutation = useApiMutation(
     (api, v: FreezeValues) => api.freezeMembership(membership.id, { startDate: v.startDate, endDate: v.endDate, reason: v.reason }),
@@ -169,8 +194,10 @@ export function FreezeDialog({
               rows={[
                 { label: "Freeze length", before: "—", after: `${days} day${days === 1 ? "" : "s"}` },
                 { label: "Expiry date", before: membership.endDate, after: days > 0 ? addDays(membership.endDate, days) : membership.endDate },
+                { label: "Status", before: MEMBERSHIP_STATUS_LABELS[membership.status], after: days > 0 && start ? (start <= today ? `Frozen until ${end}` : `${MEMBERSHIP_STATUS_LABELS[membership.status]} · frozen from ${start}`) : MEMBERSHIP_STATUS_LABELS[membership.status] },
               ]}
             />
+            {problem ? <p role="alert" className="text-[12.5px] text-danger" data-testid="freeze-problem">{problem}</p> : null}
             <Field label="Reason" required error={form.formState.errors.reason?.message}>
               <Textarea placeholder="e.g. Travel for work, back on the 20th" {...form.register("reason")} />
             </Field>
@@ -178,7 +205,7 @@ export function FreezeDialog({
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending} disabled={days <= 0}>Freeze for {days > 0 ? days : "—"} days</Button>
+            <Button type="submit" loading={mutation.isPending} disabled={days <= 0 || Boolean(problem)} data-testid="confirm-freeze">Freeze for {days > 0 ? days : "—"} day{days === 1 ? "" : "s"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -357,6 +384,11 @@ export function UnfreezeDialog({
     },
     onError: (e) => setServerError(isApiError(e) ? e.message : "Unfreeze failed."),
   });
+  const today = todayISODate();
+  const freeze = membership.activeFreeze;
+  // The server only ends a freeze that is already running; say so instead of
+  // offering a button that always fails for a freeze scheduled to start later.
+  const inProgress = Boolean(freeze && freeze.startDate <= today && today <= freeze.endDate);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -364,7 +396,9 @@ export function UnfreezeDialog({
         <DialogHeader>
           <DialogTitle>End freeze early</DialogTitle>
           <DialogDescription>
-            {membership.memberName} · frozen since {membership.activeFreeze?.startDate}. Unused freeze days return to the allowance.
+            {inProgress
+              ? `${membership.memberName} · frozen since ${freeze?.startDate}. Unused freeze days return to the allowance and the expiry moves back by the same number.`
+              : `${membership.memberName} · this freeze is scheduled for ${freeze?.startDate} → ${freeze?.endDate}. Only a freeze already in progress can be ended early.`}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
@@ -376,7 +410,7 @@ export function UnfreezeDialog({
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Back</Button>
-            <Button type="submit" loading={mutation.isPending}>End freeze today</Button>
+            <Button type="submit" loading={mutation.isPending} disabled={!inProgress}>End freeze today</Button>
           </DialogFooter>
         </form>
       </DialogContent>

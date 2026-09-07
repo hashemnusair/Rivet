@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
+import { ptBookingAwaitsOutcome, ptNextBooking } from "@/lib/domain/personal-training";
 
 // ---------------------------------------------------------------------------
 // Overview
@@ -276,9 +277,10 @@ export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
   if (query.isError && !query.data) return <ErrorState title="PT details could not be loaded" onRetry={() => query.refetch()} />;
   const experience = query.data;
   if (!experience) return <Skeleton className="h-56 w-full" />;
+  const nextBooking = ptNextBooking(experience.upcomingBookings);
   return <div className="space-y-4">
     {query.isBackgroundError ? <ErrorState layout="inline" title="PT details could not refresh" onRetry={() => query.refetch()} /> : null}
-    <section className="grid border border-line bg-surface sm:grid-cols-3"><StatCell label="Available PT sessions" value={experience.availableSessions} /><StatCell label="Reserved" value={experience.reservedSessions} /><StatCell label="Next booking" value={experience.upcomingBookings[0] ? <DateTimeText iso={experience.upcomingBookings[0].startsAt} /> : "—"} /></section>
+    <section className="grid border border-line bg-surface sm:grid-cols-3"><StatCell label="Available PT sessions" value={experience.availableSessions} /><StatCell label="Reserved" value={experience.reservedSessions} /><StatCell label="Next booking" value={nextBooking ? <DateTimeText iso={nextBooking.startsAt} /> : "—"} /></section>
     <div className="grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
       <section className="panel p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><CalendarClock className="size-4 text-ink-3" /><div><h3 className="text-[13px] font-semibold">Book a session</h3><p className="mt-1 text-[12px] text-ink-3">Choose a trainer, branch, date, and available time.</p></div></div>{experience.availableSessions > 0 ? <Button size="sm" onClick={() => setBookingOpen(true)}><CalendarClock /> Book session</Button> : null}</div>{experience.availableSessions <= 0 ? <p className="mt-4 border border-warning/25 bg-warning-bg p-3 text-[12px] text-warning-deep">No usable PT credit remains. Create a package charge from the catalog, then collect the full payment before booking.</p> : null}</section>
       <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
@@ -298,7 +300,7 @@ export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
       </Dialog>
       <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><div className="flex items-center gap-2"><Dumbbell className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">Package catalog</h3></div></header><div className="divide-y divide-line">{experience.packages.length ? experience.packages.map((item) => <article key={item.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold">{item.name}</p><p className="mt-1 text-[12px] text-ink-3">{item.sessionCount} sessions · {item.validityDays} days</p><p className="mt-1 text-[12px]"><MoneyText money={item.totalPrice} /></p></div>{can("pt.book_for_member") ? <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>Create charge</Button> : null}</div></article>) : <p className="p-5 text-[12px] text-ink-3">No active PT packages.</p>}</div>{experience.orders.length ? <div className="border-t border-line p-4"><p className="context-label">Recent orders</p><div className="mt-2 space-y-1">{experience.orders.map((order) => <p key={order.id} className="flex justify-between text-[12px]"><span className="font-mono text-ink-3">{order.id.slice(0, 8)}</span><span>{order.status.replaceAll("_", " ")}</span></p>)}</div></div> : null}</section>
     </div>
-    {experience.upcomingBookings.length ? <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-semibold">Upcoming bookings</h3></header><div className="divide-y divide-line">{experience.upcomingBookings.map((booking) => <article key={booking.id} className="flex items-center justify-between gap-3 p-4"><div><p className="text-[12px] font-medium">{booking.trainerName}</p><p className="mt-1 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge></article>)}</div></section> : null}
+    {experience.upcomingBookings.length ? <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-semibold">Upcoming bookings</h3><p className="mt-0.5 text-[12px] text-ink-3">Each booking holds one reserved credit until its outcome is recorded.</p></header><div className="divide-y divide-line">{experience.upcomingBookings.map((booking) => { const awaiting = ptBookingAwaitsOutcome(booking); return <article key={booking.id} className="flex items-center justify-between gap-3 p-4"><div><p className="text-[12px] font-medium">{booking.trainerName}</p><p className="mt-1 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p>{awaiting ? <p className="mt-1 text-[12px] text-warning-deep">Started without a recorded outcome. The trainer or a manager records it from Personal training.</p> : null}</div><Badge variant={awaiting ? "warning" : "outline"}>{awaiting ? "Awaiting outcome" : booking.status}</Badge></article>; })}</div></section> : null}
   </div>;
 }
 
@@ -458,7 +460,7 @@ function CheckInRecordRow({ checkIn }: { checkIn: CheckInSummary }) {
 export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
   const invalidate = useInvalidate();
   const query = useApiQuery(qk.tasks({ memberId, open: true }), (api) =>
-    api.listTasks({ status: "open", pageSize: 10 }),
+    api.listTasks({ status: "open", memberId, pageSize: 10 }),
   );
   const complete = useApiMutation((api, taskId: string) => api.completeTask(taskId, { outcome: "Completed from member page" }), {
     onSuccess: async () => {

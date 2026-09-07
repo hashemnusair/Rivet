@@ -184,6 +184,9 @@ export interface LeadListQuery extends ListQuery {
 export interface TaskListQuery extends ListQuery {
   status?: "open" | "completed" | "cancelled";
   ownerId?: UUID;
+  /** Only tasks about this member / lead; the member record must never list the whole gym's work. */
+  memberId?: UUID;
+  leadId?: UUID;
   dueBefore?: string;
   overdueOnly?: boolean;
 }

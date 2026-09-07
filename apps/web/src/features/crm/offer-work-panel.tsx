@@ -96,13 +96,15 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
 function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
   const invalidate = useInvalidate();
   const [origin, setOrigin] = useState("");
+  /** How the link was last shared from here; "Confirm sent" records that channel, not a guess. */
+  const [shareChannel, setShareChannel] = useState<"whatsapp" | "manual">("manual");
   const { offer } = props;
   const path = offer.publicToken ? `/offers/${offer.publicToken}` : undefined;
   const url = path && origin ? `${origin}${path}` : path;
 
   useEffect(() => setOrigin(window.location.origin), []);
 
-  const confirmSent = useApiMutation((api) => api.markOfferDelivered(offer.id, { channel: "whatsapp", reference: "Branded public offer link" }), {
+  const confirmSent = useApiMutation((api) => api.markOfferDelivered(offer.id, { channel: shareChannel, reference: shareChannel === "whatsapp" ? "Branded public offer link · WhatsApp handoff" : "Branded public offer link · shared by hand" }), {
     onSuccess: async () => {
       toast.success("Offer marked sent. The public link can now accept a response.");
       await invalidate([qk.lead(props.leadId)]);
@@ -113,6 +115,7 @@ function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
     if (!url) return;
     try {
       await navigator.clipboard.writeText(url);
+      setShareChannel("manual");
       toast.success("Offer link copied.");
     } catch {
       toast.error("Could not copy the link. Open the offer and copy its address.");
@@ -127,7 +130,7 @@ function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
         <Badge variant={variant}>{offer.status}</Badge>
       </div>
       {path ? <a href={path} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-9 items-center text-[12px] font-medium underline underline-offset-4">Open offer</a> : <p className="mt-2 text-[12px] text-warning-deep">Legacy offer — create a new offer to get a public link.</p>}
-      {path && offer.status === "draft" ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => void copy()}><Copy /> Copy link</Button><WhatsAppHandoff subject="lead" subjectId={props.leadId} recipientName={props.leadName} phone={props.phone} organizationName={props.organizationName} defaultCountryCallingCode={props.defaultCountryCallingCode} initialMessage={`Hi ${props.leadName.split(/\s+/)[0]}, ${props.organizationName} prepared a membership offer for you: ${url}`} buttonLabel="Open WhatsApp" className="" /><Button type="button" size="sm" loading={confirmSent.isPending} onClick={() => confirmSent.mutate()}><Check /> Confirm sent</Button></div> : null}
+      {path && offer.status === "draft" ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => void copy()}><Copy /> Copy link</Button><WhatsAppHandoff subject="lead" subjectId={props.leadId} recipientName={props.leadName} phone={props.phone} organizationName={props.organizationName} defaultCountryCallingCode={props.defaultCountryCallingCode} initialMessage={`Hi ${props.leadName.split(/\s+/)[0]}, ${props.organizationName} prepared a membership offer for you: ${url}`} buttonLabel="Open WhatsApp" className="" onLogged={() => setShareChannel("whatsapp")} /><Button type="button" size="sm" loading={confirmSent.isPending} onClick={() => confirmSent.mutate()}><Check /> {shareChannel === "whatsapp" ? "Confirm sent via WhatsApp" : "Confirm sent"}</Button></div> : null}
       {offer.status === "sent" ? <p className="mt-3 flex items-center gap-1.5 text-[12px] text-warning-deep"><Clock3 className="size-3.5" /> Waiting for the recipient&apos;s response.</p> : null}
       {offer.status === "accepted" ? <p className="mt-3 text-[12px] font-medium text-success-deep">Accepted. Complete the membership sale when payment and dates are agreed.</p> : null}
       {offer.status === "declined" && offer.responseReason ? <p className="mt-3 text-[12px] text-ink-2">Reason: {offer.responseReason}</p> : null}

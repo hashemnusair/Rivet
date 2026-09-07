@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
+import { describeContactOutcome } from "@/lib/crm/contact-outcomes";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { LeadListQuery } from "@/lib/api/GymOSApi";
@@ -127,7 +128,9 @@ function PipelinePageInner() {
     const { lead, target } = input;
     if (target === "sold") return Promise.reject(new Error("Open the lead to complete the membership sale."));
     if (target === "not_sold") return Promise.reject(new Error("A reason is required before closing a lead."));
-    if (target === "no_answer") return api.logContactAttempt(lead.id, { outcome: "no_answer", stage: "attempted", notes: "Moved to Did not answer from the pipeline." });
+    // No stage is forced: the server moves a new lead to "attempted" and leaves a
+    // booked trial where it is. The column is derived from the outcome itself.
+    if (target === "no_answer") return api.logContactAttempt(lead.id, { outcome: "no_answer", notes: "Moved to Did not answer from the pipeline." });
     return api.updateLead(lead.id, { stage: "contacted", lostReason: undefined });
   }, {
     onSuccess: async (_updated, input) => {
@@ -378,7 +381,7 @@ function LeadCard({
         <span className="text-ink-2">{lead.ownerName ?? "Unassigned"}</span>
         {lead.expectedValue ? <MoneyText money={lead.expectedValue} className="text-ink-2" /> : null}
       </div>
-      {lead.lastContactAt ? <p className="px-2.5 pb-2 text-[12px] text-ink-2">Last contact <RelativeText iso={lead.lastContactAt} /></p> : <p className="px-2.5 pb-2 text-[12px] text-ink-2">Not contacted yet</p>}
+      {lead.lastContactAt ? <p className="px-2.5 pb-2 text-[12px] text-ink-2">{describeContactOutcome(lead.lastContactOutcome) ?? "Last contact"} · <RelativeText iso={lead.lastContactAt} /></p> : <p className="px-2.5 pb-2 text-[12px] text-ink-2">Not contacted yet</p>}
       {lead.nextFollowUpAt ? (
         <p className={cn("mx-2.5 border-t border-line/70 py-1.5 text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
           {lead.overdue ? "Follow-up overdue — " : "Follow up "}

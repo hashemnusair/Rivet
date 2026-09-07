@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MemberSummary } from "@/lib/domain/types";
+import { money } from "@/lib/utils/money";
 import { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
@@ -316,5 +317,158 @@ describe("reception console — cash gating", () => {
     // The seed leaves a shift open at the branch, so cash is enabled.
     expect(screen.getByTestId("quick-collect")).toBeEnabled();
     expect(screen.getByText(/shift open/i)).toBeInTheDocument();
+  });
+});
+
+describe("reception console — ambiguous lookup", () => {
+  it("asks the desk to choose between people who share a name before showing any verdict", async () => {
+    const { api } = await renderWithApp(<ReceptionPage />, {
+      role: "receptionist",
+      prepare: async (api) => {
+        const session = await api.switchDemoRole("receptionist");
+        const branchId = session.activeBranchId ?? session.branches[0]!.id;
+        await api.switchDemoRole("owner");
+        await api.createMember({ fullName: "Lookup Twin Alpha", phone: "+962 79 700 0001", homeBranchId: branchId, preferredLanguage: "en", gender: "female" });
+        await api.createMember({ fullName: "Lookup Twin Beta", phone: "+962 79 700 0002", homeBranchId: branchId, preferredLanguage: "en", gender: "male" });
+      },
+    });
+    const user = await lookup("Lookup Twin");
+
+    const list = await screen.findByTestId("checkin-candidates");
+    expect(within(list).getAllByTestId("checkin-candidate")).toHaveLength(2);
+    expect(within(list).getByText(/2 members match/)).toBeInTheDocument();
+    // No decision is rendered for the first name in the list.
+    expect(screen.queryByTestId("checkin-verdict")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("confirm-checkin")).not.toBeInTheDocument();
+
+    await user.click(within(list).getByRole("button", { name: /Lookup Twin Beta/ }));
+
+    const verdict = await screen.findByTestId("checkin-verdict");
+    expect(within(verdict).getByText("Lookup Twin Beta")).toBeInTheDocument();
+    const beta = (await api.listMembers({ search: "Lookup Twin Beta", pageSize: 5 })).items[0]!;
+    expect(screen.getByTestId("reception-search")).toHaveValue(beta.memberNumber);
+  });
+});
+
+describe("reception console — repeat scan", () => {
+  it("says when the member already came in instead of reading as a denial", async () => {
+    let memberNumber = "";
+    await renderWithApp(<ReceptionPage />, {
+      role: "receptionist",
+      prepare: async (api) => {
+        const session = await api.switchDemoRole("receptionist");
+        const branchId = session.activeBranchId ?? session.branches[0]!.id;
+        const member = (await api.listMembers({ branchId, pageSize: 200 })).items.find((m) => m.membershipStatus === "active" && m.outstanding.amount === 0);
+        if (!member) throw new Error("no seeded member for the repeat-scan check");
+        memberNumber = member.memberNumber;
+        await api.createCheckIn({ memberId: member.id, branchId });
+      },
+    });
+    await lookup(memberNumber);
+
+    const verdict = await screen.findByTestId("checkin-verdict");
+    expect(within(verdict).getByText("Already checked in")).toBeInTheDocument();
+    expect(within(verdict).getByText(/already checked in at .* no second visit was recorded/i)).toBeInTheDocument();
+    expect(within(verdict).queryByText("Blocked")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("confirm-checkin")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("override-checkin")).not.toBeInTheDocument();
+    expect(screen.getByTestId("next-member")).toBeInTheDocument();
+  });
+});
+
+describe("reception console — no open shift", () => {
+  it("still lets the desk take a card payment and explains why cash is unavailable", async () => {
+    let target: MemberSummary | undefined;
+    await renderWithApp(<ReceptionPage />, {
+      role: "receptionist",
+      prepare: async (api) => {
+        const session = await api.switchDemoRole("receptionist");
+        const branchId = session.activeBranchId ?? session.branches[0]!.id;
+        target = (await api.listMembers({ branchId, pageSize: 200 })).items.find(
+          (m) => (m.membershipStatus === "active" || m.membershipStatus === "expiring") && m.outstanding.amount > 0,
+        );
+        await api.switchDemoRole("owner");
+        const current = await api.getCurrentShiftTotals(branchId);
+        if (current) {
+          const { shift, totals } = current;
+          await api.closeCashShift(shift.id, { countedCash: money(shift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount) });
+        }
+      },
+    });
+    if (!target) throw new Error("no seeded member with a balance at the desk's branch");
+    const user = await lookup(target.memberNumber);
+
+    await screen.findByTestId("checkin-verdict");
+    expect(screen.getByText(/no shift open/i)).toBeInTheDocument();
+    expect(screen.getByTestId("quick-collect")).toBeEnabled();
+
+    await user.click(screen.getByTestId("quick-collect"));
+    expect(await screen.findByText(/no cash shift is open at this desk/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("payment-method")).not.toHaveTextContent(/^Cash$/));
+  });
+});
+
+describe("reception console — after collecting", () => {
+  it("refreshes the recorded verdict's balance once the money is taken", async () => {
+    const { member } = await findMember(
+      "receptionist",
+      (m) => (m.membershipStatus === "active" || m.membershipStatus === "expiring") && m.outstanding.amount > 0 && (m.outstandingCharges?.length ?? 0) === 1,
+    );
+
+    await renderWithApp(<ReceptionPage />, { role: "receptionist" });
+    const user = await lookup(member.memberNumber);
+    await user.click(await screen.findByTestId("confirm-checkin"));
+    await screen.findByTestId("next-member");
+
+    await user.click(screen.getByTestId("quick-collect"));
+    await user.click(await screen.findByTestId("confirm-payment"));
+    // The dialog confirms the recorded receipt before the desk moves on.
+    expect(await screen.findByTestId("payment-collected")).toHaveTextContent(/Receipt R-/);
+    await user.click(screen.getByTestId("payment-done"));
+
+    await waitFor(() => expect(screen.queryByTestId("quick-collect")).not.toBeInTheDocument());
+    const verdict = screen.getByTestId("checkin-verdict");
+    expect(within(verdict).getByText(/checked in ·/i)).toBeInTheDocument();
+    expect(within(within(verdict).getByTestId("checkin-facts")).getByText("0.000")).toBeInTheDocument();
+  });
+});
+
+describe("reception console — scanner Enter", () => {
+  it("commits a scanned member number whose Enter arrived before the verdict", async () => {
+    const { member } = await findMember(
+      "receptionist",
+      (m) => m.membershipStatus === "active" && m.outstanding.amount === 0,
+    );
+    const { api } = await renderWithApp(<ReceptionPage />, { role: "receptionist" });
+    const user = userEvent.setup();
+    const input = await screen.findByTestId("reception-search");
+
+    // A keyboard-wedge scanner types the number and sends Enter within a few
+    // milliseconds — well inside the lookup debounce.
+    await user.type(input, `${member.memberNumber}{enter}`);
+
+    await waitFor(() => expect(screen.getByText(/checked in ·/i)).toBeInTheDocument());
+    const recent = await api.listRecentCheckIns({ pageSize: 5 });
+    expect(recent.items[0]!.memberId).toBe(member.id);
+  });
+
+  it("never auto-commits a typed name, even when it matches one person", async () => {
+    const { member } = await findMember(
+      "receptionist",
+      (m) => m.membershipStatus === "active" && m.outstanding.amount === 0,
+    );
+    const { api } = await renderWithApp(<ReceptionPage />, { role: "receptionist" });
+    const user = userEvent.setup();
+    const input = await screen.findByTestId("reception-search");
+
+    await user.type(input, `${member.fullName}{enter}`);
+
+    const verdict = await screen.findByTestId("checkin-verdict");
+    expect(within(verdict).getByText(member.fullName)).toBeInTheDocument();
+    // The desk still has to confirm: the verdict is shown, not recorded.
+    expect(screen.getByTestId("confirm-checkin")).toBeInTheDocument();
+    expect(screen.queryByText(/checked in ·/i)).not.toBeInTheDocument();
+    const recent = await api.listRecentCheckIns({ memberId: member.id, pageSize: 5 });
+    expect(recent.items.some((item) => Date.now() - new Date(item.occurredAt).getTime() < 60_000)).toBe(false);
   });
 });

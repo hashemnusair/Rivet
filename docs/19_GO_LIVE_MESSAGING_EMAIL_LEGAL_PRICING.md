@@ -28,9 +28,17 @@ provider credentials and applicant details out of this file.
   rows for live gyms, renders the body, calls Twilio, and records the
   provider id, the mode and the number actually used. Transient failures
   retry at 1, 5 and 30 minutes; a final failure notifies the gym's managers.
-- **Quiet hours** are per gym (default 22:00–08:00, gym timezone). A live
-  gym's message that falls inside the window is deferred to the end of the
-  window, never dropped. Sandbox gyms keep today's retained ledger.
+- **Quiet hours** are per gym (default 22:00–08:00, gym timezone). A
+  message that falls inside the window is deferred to the end of the window,
+  never dropped, for live and sandbox gyms alike, so the sandbox ledger shows
+  the decision a live gym would get (7 September 2026; earlier sandbox rows
+  read "suppressed: Tenant quiet hours").
+- **What the member record shows.** When the worker gets a terminal answer it
+  writes a `message` timeline event on the member (or lead): *accepted by the
+  provider* (never "delivered"; sandbox mode says the message went to the
+  sandbox number), *failed* after the retry budget, or *not sent* with the
+  suppression reason. A final failure on either queue notifies the gym's
+  owners and managers with a link to the person, not to Settings.
 - Phone numbers are normalised to E.164 with Jordan (+962) as the default.
 - Every message names the gym. Marketing-class messages carry the opt-out
   line ("Reply STOP to stop these messages" / "أرسل إيقاف لإيقاف هذه الرسائل").

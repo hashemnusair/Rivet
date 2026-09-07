@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { MemberDetail, MembershipSummary } from "@/lib/domain/types";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { formatDate } from "@/lib/utils/dates";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
+import { formatDate, todayISODate } from "@/lib/utils/dates";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { MembershipStatusChip, PaymentStatusChip } from "@/components/shared/status-chip";
@@ -32,12 +33,12 @@ type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" 
 
 export function resolveMemberActionLink(
   searchParams: Pick<URLSearchParams, "get">,
-  options: { canCollect: boolean; canSell: boolean; hasCurrentMembership: boolean; outstandingAmount: number },
+  options: { canCollect: boolean; canSell: boolean; hasRenewableMembership: boolean; outstandingAmount: number },
 ): Extract<DialogKind, "sell" | "renew" | "collect"> | null {
   const action = searchParams.get("action");
   if (action === "collect" && options.canCollect && options.outstandingAmount > 0) return "collect";
-  if (action === "renew" && options.canSell && options.hasCurrentMembership) return "renew";
-  if (searchParams.get("sell") === "1" && options.canSell && !options.hasCurrentMembership) return "sell";
+  if (action === "renew" && options.canSell && options.hasRenewableMembership) return "renew";
+  if (searchParams.get("sell") === "1" && options.canSell && !options.hasRenewableMembership) return "sell";
   return null;
 }
 
@@ -48,10 +49,17 @@ export function resolveMemberActionLink(
 export function MemberHeader({
   member,
   currentMembership,
+  renewalTarget,
+  upcomingMembership,
   branchName,
 }: {
   member: MemberDetail;
+  /** The term in force (or the depleted/scheduled one), used for freeze, extend, transfer and cancel. */
   currentMembership?: MembershipSummary;
+  /** The latest non-cancelled term; a renewal chains from it. Expired terms still renew, with lineage. */
+  renewalTarget?: MembershipSummary;
+  /** A successor already sold, so staff see the member has renewed before selling another term. */
+  upcomingMembership?: MembershipSummary;
   branchName: string;
 }) {
   const { can } = usePermissions();
@@ -62,10 +70,15 @@ export function MemberHeader({
   const router = useRouter();
   const searchParams = useSearchParams();
   const invalidate = useInvalidate();
+  const today = todayISODate(session?.organization.timezone ?? "Asia/Amman");
+  // Money taken from this screen goes into the drawer of the branch the
+  // operator is working, when that is a concrete branch.
+  const operatingBranchId = visibleBranchId(session?.branches, session?.activeBranchId);
+  const shownMembership = currentMembership ?? renewalTarget;
   const [dialog, setDialog] = useState<DialogKind>(() => resolveMemberActionLink(searchParams, {
     canCollect,
     canSell,
-    hasCurrentMembership: Boolean(currentMembership),
+    hasRenewableMembership: Boolean(renewalTarget),
     outstandingAmount: outstanding.amount,
   }));
   const handledActionLink = useRef(false);
@@ -114,21 +127,19 @@ export function MemberHeader({
   });
   const uploadPhoto = useApiMutation((api, file: File) => api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file }), { onSuccess: async () => { toast.success("Member photo uploaded and sanitized."); await invalidate(); } });
 
-  const usable = currentMembership && (currentMembership.status === "active" || currentMembership.status === "expiring" || currentMembership.status === "frozen");
-
   useEffect(() => {
     if (handledActionLink.current) return;
     const requestedDialog = resolveMemberActionLink(searchParams, {
       canCollect,
       canSell,
-      hasCurrentMembership: Boolean(currentMembership),
+      hasRenewableMembership: Boolean(renewalTarget),
       outstandingAmount: outstanding.amount,
     });
     if (requestedDialog) {
       handledActionLink.current = true;
       setDialog(requestedDialog);
     }
-  }, [canCollect, canSell, currentMembership, outstanding.amount, searchParams]);
+  }, [canCollect, canSell, renewalTarget, outstanding.amount, searchParams]);
 
   return (
     <header className="panel overflow-hidden">
@@ -174,24 +185,42 @@ export function MemberHeader({
               </span>
             ))}
           </div>
-          {currentMembership ? (
-            <p className="mt-2 text-[12.5px] text-ink-3">
-              {currentMembership.planName} · {formatDate(currentMembership.startDate)} → {formatDate(currentMembership.endDate)}{" "}
-              <DaysUntilText date={currentMembership.endDate} />
-              {currentMembership.remainingVisits != null ? (
-                <span className="ms-2 tabular">· {currentMembership.remainingVisits}/{currentMembership.totalVisits} visits left</span>
+          {shownMembership ? (
+            <p className="mt-2 text-[12.5px] text-ink-3" data-testid="member-current-term">
+              {shownMembership.planName} · {formatDate(shownMembership.startDate)} → {formatDate(shownMembership.endDate)}{" "}
+              {shownMembership.status === "scheduled" ? (
+                <span>· starts <DaysUntilText date={shownMembership.startDate} /></span>
+              ) : shownMembership.status === "expired" ? (
+                <span>· ended <DaysUntilText date={shownMembership.endDate} /></span>
+              ) : (
+                <DaysUntilText date={shownMembership.endDate} />
+              )}
+              {shownMembership.remainingVisits != null ? (
+                <span className="ms-2 tabular">· {shownMembership.remainingVisits}/{shownMembership.totalVisits} visits left</span>
+              ) : null}
+              {shownMembership.activeFreeze ? (
+                <span className="ms-2">
+                  · {shownMembership.activeFreeze.startDate <= today
+                    ? `frozen until ${formatDate(shownMembership.activeFreeze.endDate)}`
+                    : `freeze scheduled ${formatDate(shownMembership.activeFreeze.startDate)} → ${formatDate(shownMembership.activeFreeze.endDate)}`}
+                </span>
               ) : null}
             </p>
           ) : (
             <p className="mt-2 text-[12.5px] text-ink-3">No membership on file.</p>
           )}
+          {upcomingMembership ? (
+            <p className="mt-1 text-[12.5px] text-ink-3" data-testid="member-next-term">
+              Already renewed · next term {upcomingMembership.planName} · {formatDate(upcomingMembership.startDate)} → {formatDate(upcomingMembership.endDate)}
+            </p>
+          ) : null}
         </div>
 
         {/* On phones the actions drop to a full-width row below the identity,
             so the name/meta column is never squeezed between avatar and buttons. */}
         <div className="flex shrink-0 flex-wrap items-center gap-2 max-sm:w-full max-sm:[&>button:not([aria-label])]:flex-1">
           {canSell ? (
-            usable ? (
+            renewalTarget ? (
               <Button onClick={() => setDialog("renew")} data-testid="renew-membership">
                 <WalletCards /> Renew
               </Button>
@@ -224,7 +253,7 @@ export function MemberHeader({
                     <Snowflake /> Freeze…
                   </DropdownMenuItem>
                 ) : null}
-                {can("memberships.freeze") && currentMembership?.activeFreeze ? (
+                {can("memberships.freeze") && currentMembership?.activeFreeze && currentMembership.activeFreeze.startDate <= today ? (
                   <DropdownMenuItem onClick={() => setDialog("unfreeze")}>
                     <Sun /> End freeze early…
                   </DropdownMenuItem>
@@ -277,7 +306,8 @@ export function MemberHeader({
           open={dialog === "sell" || dialog === "renew"}
           onOpenChange={(v) => !v && setDialog(null)}
           member={member}
-          renewalOf={dialog === "renew" ? currentMembership : undefined}
+          renewalOf={dialog === "renew" ? renewalTarget : undefined}
+          branchId={operatingBranchId}
           onCompleted={(result) => {
             toast.success(
               result.receipt
@@ -291,7 +321,7 @@ export function MemberHeader({
         open={dialog === "collect"}
         onOpenChange={(v) => !v && setDialog(null)}
         member={member}
-        onCollected={(receipt) => toast.success(`Collected — receipt ${receipt.receipt.receiptNumber}.`)}
+        branchId={operatingBranchId}
       />
       {currentMembership ? (
         <>

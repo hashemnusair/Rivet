@@ -33,6 +33,15 @@ test.describe("Unified Today queue", () => {
     expect(actionName).toBeTruthy();
     await complete.click();
 
+    // A follow-up about a person asks what happened instead of closing blind;
+    // a task with no person attached completes on the spot.
+    const outcomeDialog = page.getByRole("dialog", { name: "What happened?" });
+    if (await outcomeDialog.isVisible({ timeout: 1_500 }).catch(() => false)) {
+      await outcomeDialog.getByRole("radio", { name: "Not interested" }).click();
+      await outcomeDialog.getByRole("button", { name: "Log contact and finish" }).click();
+      await expect(outcomeDialog).toBeHidden();
+    }
+
     await expect(queue.locator(`button[aria-label="${actionName}"]`)).toHaveCount(0);
     await expect(queue.locator("header p.tabular")).toHaveText(String(before - 1));
   });

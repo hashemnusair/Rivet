@@ -62,7 +62,9 @@ import {
 import { DEFAULT_PUBLIC_PRICING_PLANS } from "@/lib/public/pricing";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
+import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "@/lib/members/lookup";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
+import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, resolveFollowUpTasks, shouldClearLeadFollowUp } from "@/lib/crm/contact-outcomes";
 import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
@@ -4425,6 +4427,7 @@ export class MockGymOSApi implements GymOSApi {
             title: task.title,
             detail: `${task.subjectName} · ${task.ownerName}`,
             subjectName: task.subjectName,
+            subject: task.leadId ? { kind: "lead", id: task.leadId } : task.memberId ? { kind: "member", id: task.memberId } : undefined,
             branchName: taskBranchId ? branchNameById.get(taskBranchId) : undefined,
             dueAt: task.dueAt,
             overdue,
@@ -4432,6 +4435,34 @@ export class MockGymOSApi implements GymOSApi {
             action: canComplete
               ? { kind: "complete_task", label: "Done", taskId: task.id }
               : { kind: "navigate", label: "Open" },
+          });
+        }
+
+        // A lead's own next-follow-up date is work too. It only appears here
+        // when no open task already represents it, so nothing shows twice.
+        const leadsWithOpenTasks = new Set(openTasks.map((task) => task.leadId).filter(Boolean));
+        for (const lead of leads) {
+          if (!lead.nextFollowUpAt || leadsWithOpenTasks.has(lead.id)) continue;
+          const facts = progressFactsByLead.get(lead.id);
+          if (!facts || facts.hasConversion || facts.hasLoss) continue;
+          if (!canManageTeam && lead.ownerId !== actor.id) continue;
+          if (todayISODate(TZ, new Date(lead.nextFollowUpAt)) > today) continue;
+          const overdue = lead.nextFollowUpAt < nowISO();
+          const lastContact = this.db.activities.find((activity) => activity.leadId === lead.id && activity.type === "call_attempt");
+          const lastLabel = describeContactOutcome(lastContact?.meta?.outcome ? String(lastContact.meta.outcome) : undefined);
+          queueItems.push({
+            id: `lead-follow-up:${lead.id}`,
+            kind: "follow_up",
+            priority: overdue ? "high" : "normal",
+            title: `Follow up — ${lead.fullName}`,
+            detail: lastLabel ? `Lead · last contact: ${lastLabel}` : "Lead · not contacted yet",
+            subjectName: lead.fullName,
+            subject: { kind: "lead", id: lead.id },
+            branchName: branchNameById.get(lead.branchId),
+            dueAt: lead.nextFollowUpAt,
+            overdue,
+            href: `/crm/leads/${lead.id}?action=contact`,
+            action: { kind: "navigate", label: permissions.includes("crm.write") ? "Log contact" : "Open" },
           });
         }
 
@@ -4452,6 +4483,7 @@ export class MockGymOSApi implements GymOSApi {
             title: `Renew ${member.fullName}`,
             detail: `${planName} · ${daysUntilExpiry === 0 ? "ends today" : `${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"} left`}`,
             subjectName: member.fullName,
+            subject: { kind: "member", id: member.id },
             branchName: branchNameById.get(membership.homeBranchId),
             dueAt: `${membership.endDate}T20:59:59.999Z`,
             href: `/members/${member.id}?action=renew`,
@@ -4484,6 +4516,7 @@ export class MockGymOSApi implements GymOSApi {
             title: `Reconnect with ${member.fullName}`,
             detail: `${risk.reasons.map((reason) => reason.label).join(" · ")}${plan ? ` · ${plan.name}` : ""}`,
             subjectName: member.fullName,
+            subject: { kind: "member", id: member.id },
             branchName: branchNameById.get(risk.branchId),
             occurredAt: risk.lastVisitAt,
             href: `/crm/queues?view=at-risk&member=${encodeURIComponent(risk.memberId)}`,
@@ -4507,6 +4540,7 @@ export class MockGymOSApi implements GymOSApi {
             title: `Collect from ${member.fullName}`,
             detail: "Outstanding member balance",
             subjectName: member.fullName,
+            subject: { kind: "member", id: member.id },
             branchName: branchNameById.get(member.homeBranchId),
             amount: money(amount, this.db.organization.currency),
             href: `/members/${member.id}?action=collect`,
@@ -5034,27 +5068,11 @@ export class MockGymOSApi implements GymOSApi {
 
   logMemberContactAttempt(memberId: T.UUID, input: T.ContactAttemptInput): Promise<T.TimelineEvent> {
     return this.respond(() => {
-      this.require("crm.write");
+      // Same permission as the Convex `members.contact` operation.
+      this.require("members.write");
       const m = this.db.members.find((x) => x.id === memberId);
       if (!m) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
-      if (input.nextFollowUpAt) {
-        // surface as an open renewal/follow-up task owned by the actor
-        this.db.tasks.push({
-          id: mockUuid(),
-          organizationId: this.db.organization.id,
-          type: "follow_up",
-          title: `Follow up — ${m.fullName}`,
-          ownerId: this.actor().id,
-          ownerName: this.actor().name,
-          dueAt: input.nextFollowUpAt,
-          priority: "normal",
-          status: "open",
-          memberId: m.id,
-          subjectName: m.fullName,
-          createdById: this.actor().id,
-          createdAt: nowISO(),
-        });
-      }
+      this.resolveFollowUpTasksForContact({ memberId: m.id }, m.fullName, input);
       return this.activity({
         memberId,
         type: "call_attempt",
@@ -5065,6 +5083,53 @@ export class MockGymOSApi implements GymOSApi {
         meta: { outcome: input.outcome },
       });
     });
+  }
+
+  /**
+   * A logged contact is the follow-up happening. Move the actor's open
+   * follow-up task to the next date (or close it with the outcome) instead of
+   * stacking one more task per call; create a task only when none exists.
+   */
+  private resolveFollowUpTasksForContact(subject: { memberId?: T.UUID; leadId?: T.UUID }, subjectName: string, input: T.ContactAttemptInput, options: { createWhenMissing?: boolean } = {}): void {
+    const role = currentRole(this.db);
+    const today = this.today();
+    const resolution = resolveFollowUpTasks({
+      tasks: this.db.tasks,
+      subject,
+      actorId: this.actor().id,
+      canManageTeam: role === "owner" || role === "manager",
+      nextFollowUpAt: input.nextFollowUpAt,
+      outcome: input.outcome,
+      isDue: (dueAt) => todayISODate(TZ, new Date(dueAt)) <= today,
+    });
+    const outcome = completedByContactOutcome(input.outcome);
+    for (const task of resolution.complete) {
+      task.status = "completed";
+      task.outcome = outcome;
+      task.completedAt = nowISO();
+      if (task.memberId) this.activity({ memberId: task.memberId, type: "task_completed", title: `Task completed: ${task.title}`, body: outcome, actorId: this.actor().id, actorName: this.actor().name });
+    }
+    if (resolution.reschedule && input.nextFollowUpAt) {
+      resolution.reschedule.dueAt = input.nextFollowUpAt;
+      if (resolution.reschedule.type === "follow_up") resolution.reschedule.title = followUpTaskTitle(subjectName, input.outcome);
+    } else if (resolution.createFollowUp && input.nextFollowUpAt && (options.createWhenMissing ?? true)) {
+      this.db.tasks.push({
+        id: mockUuid(),
+        organizationId: this.db.organization.id,
+        type: "follow_up",
+        title: followUpTaskTitle(subjectName, input.outcome),
+        ownerId: this.actor().id,
+        ownerName: this.actor().name,
+        dueAt: input.nextFollowUpAt,
+        priority: "normal",
+        status: "open",
+        memberId: subject.memberId,
+        leadId: subject.leadId,
+        subjectName,
+        createdById: this.actor().id,
+        createdAt: nowISO(),
+      });
+    }
   }
 
   addMemberNote(memberId: T.UUID, input: { body: string }): Promise<T.TimelineEvent> {
@@ -5153,6 +5218,7 @@ export class MockGymOSApi implements GymOSApi {
         return total + (order.totalPriceSnapshot?.amount ?? this.ptPackages.find((item) => item.id === order.packageId)?.totalPrice.amount ?? 0);
       }, 0);
       return {
+        cancellationCutoffHours: this.db.operationalPolicies.personalTraining.cancellationCutoffHours,
         trainers: this.ptTrainers.map((item) => ({ ...this.ptTrainerView(item), availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
         packages: this.ptPackages.map((item) => ({ ...item })),
         bookings: [...this.ptBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
@@ -5184,8 +5250,9 @@ export class MockGymOSApi implements GymOSApi {
         membershipId,
         availableSessions: entitlements.reduce((total, item) => total + item.available, 0),
         reservedSessions: entitlements.reduce((total, item) => total + item.reserved, 0),
+        cancellationCutoffHours: this.db.operationalPolicies.personalTraining.cancellationCutoffHours,
         entitlements,
-        upcomingBookings: this.ptBookings.filter((item) => item.memberId === membership.memberId && ["reserved", "confirmed"].includes(item.status)).map((item) => this.ptBookingView(item)),
+        upcomingBookings: this.ptBookings.filter((item) => item.memberId === membership.memberId && ["reserved", "confirmed"].includes(item.status)).sort((left, right) => left.startsAt.localeCompare(right.startsAt)).map((item) => this.ptBookingView(item)),
         orders: this.ptOrders.filter((item) => item.memberId === membership.memberId).map((item) => ({ ...item })),
         trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)),
         packages: this.ptPackages.filter((item) => item.status === "active").map((item) => ({ ...item })),
@@ -5200,7 +5267,7 @@ export class MockGymOSApi implements GymOSApi {
   getCustomerPtExperience(membershipId: T.UUID): Promise<T.PtMemberExperience> {
     const internal = this.db.memberships.find((item) => item.id === membershipId);
     if (internal) return this.getPtMemberExperience(membershipId);
-    return this.respond(() => ({ organizationId: this.db.organization.id, membershipId, availableSessions: 0, reservedSessions: 0, entitlements: [], upcomingBookings: [], orders: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), packages: this.ptPackages.filter((item) => item.status === "active") }));
+    return this.respond(() => ({ organizationId: this.db.organization.id, membershipId, availableSessions: 0, reservedSessions: 0, cancellationCutoffHours: this.db.operationalPolicies.personalTraining.cancellationCutoffHours, entitlements: [], upcomingBookings: [], orders: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), packages: this.ptPackages.filter((item) => item.status === "active") }));
   }
 
   subscribeCustomerPtExperience(membershipId: T.UUID, onValue: (experience: T.PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -5391,6 +5458,9 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const booking = this.ptBookings.find((item) => item.id === bookingId);
       if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      // An outcome is a fact about a session that happened; Convex refuses it
+      // before the start, and so does the mock.
+      if (Date.parse(booking.startsAt) > Date.now()) throw ApiError.of(ERR.VALIDATION, "PT outcomes can only be recorded after the session begins.");
       const trainer = this.ptTrainers.find((item) => item.id === booking.trainerProfileId);
       if (trainer?.userId !== this.actor().id) this.require("pt.manage"); else this.require("pt.outcome.self");
       if (status === "no_show") this.requireReason(reason);
@@ -5560,7 +5630,7 @@ export class MockGymOSApi implements GymOSApi {
     overrideReason?: string;
     discount?: T.Money;
     discountReason?: string;
-    payment?: { amount: T.Money; method: T.PaymentMethodKey; externalReference?: string };
+    payment?: { amount: T.Money; method: T.PaymentMethodKey; externalReference?: string; branchId?: T.UUID };
     previousMembershipId?: T.UUID;
     operation?: "sale" | "renewal" | "plan_change";
     previousPlanId?: T.UUID;
@@ -5735,6 +5805,7 @@ export class MockGymOSApi implements GymOSApi {
       const result = this.recordPayment({
         memberId: member.id,
         chargeId: charge.id,
+        branchId: args.payment.branchId,
         amount: args.payment.amount,
         method: args.payment.method,
         externalReference: args.payment.externalReference,
@@ -6337,6 +6408,10 @@ export class MockGymOSApi implements GymOSApi {
       this.require("crm.write");
       const lead = this.db.leads.find((l) => l.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      const closingAsLost = input.stage === "lost" && lead.stage !== "lost";
+      const lostReason = input.lostReason?.trim();
+      if (closingAsLost && (!lostReason || lostReason.length < 5)) throw ApiError.of(ERR.VALIDATION, "A specific reason is required before closing a lead.");
+      const before = { stage: lead.stage, lostReason: lead.lostReason ?? null };
       if (input.ownerId !== undefined) {
         const ownerId = input.ownerId === "unassigned" ? undefined : input.ownerId;
         if (ownerId && ownerId !== lead.ownerId) this.require("crm.assign");
@@ -6344,6 +6419,14 @@ export class MockGymOSApi implements GymOSApi {
         Object.assign(lead, { ...input, ownerId }, { updatedAt: nowISO() });
       } else {
         Object.assign(lead, input, { updatedAt: nowISO() });
+      }
+      if (closingAsLost) {
+        // Closing from the lead record must leave the same audit trail as
+        // closing from the pipeline, and nothing about a lost lead is due.
+        lead.lostReason = lostReason;
+        lead.nextFollowUpAt = undefined;
+        for (const task of this.db.tasks) if (task.leadId === lead.id && task.status === "open") { task.status = "cancelled"; task.outcome = `Lead marked not sold: ${lostReason}`; task.completedAt = nowISO(); }
+        this.audit({ category: "crm", action: "lead.lost", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: "Lead marked as not sold", reason: lostReason, before, after: { stage: "lost", lostReason: lostReason ?? null }, branchId: lead.branchId });
       }
       return this.getLeadSync(leadId);
     });
@@ -6387,7 +6470,15 @@ export class MockGymOSApi implements GymOSApi {
         lead.lostReason = lossReason;
         lead.nextFollowUpAt = undefined;
       } else if (input.nextFollowUpAt !== undefined) lead.nextFollowUpAt = input.nextFollowUpAt || undefined;
+      else if (shouldClearLeadFollowUp({ outcome: input.outcome, currentNextFollowUpAt: lead.nextFollowUpAt, isDue: (dueAt) => todayISODate(TZ, new Date(dueAt)) <= this.today() })) {
+        // This contact was the due follow-up (or ended the thread): an
+        // overdue date must not send the lead straight back to Today.
+        lead.nextFollowUpAt = undefined;
+      }
       lead.updatedAt = nowISO();
+      // The lead keeps its own next-follow-up date; open tasks about the lead
+      // are the same work and must not survive as duplicates on Today.
+      this.resolveFollowUpTasksForContact({ leadId: lead.id }, lead.fullName, { ...input, nextFollowUpAt: input.stage === "lost" ? undefined : input.nextFollowUpAt }, { createWhenMissing: false });
       const outcomeLabels: Record<T.ContactOutcome, string> = {
         no_answer: "No answer",
         answered_interested: "Answered — interested",
@@ -6649,6 +6740,8 @@ export class MockGymOSApi implements GymOSApi {
       });
       if (query.status) items = items.filter((t) => t.status === query.status);
       if (query.ownerId) items = items.filter((t) => t.ownerId === query.ownerId);
+      if (query.memberId) items = items.filter((t) => t.memberId === query.memberId);
+      if (query.leadId) items = items.filter((t) => t.leadId === query.leadId);
       if (query.overdueOnly) items = items.filter((t) => t.status === "open" && t.dueAt < nowISO());
       const dueBefore = query.dueBefore;
       if (dueBefore) items = items.filter((t) => t.dueAt <= dueBefore);
@@ -6973,6 +7066,7 @@ export class MockGymOSApi implements GymOSApi {
             planBranchAccess: plan?.branchAccess ?? "all",
             planBranchIds: plan?.branchIds ?? [],
             remainingVisits: current.remainingVisits,
+            startDate: current.startDate,
             endDate: current.endDate,
           }
         : undefined,
@@ -6993,10 +7087,20 @@ export class MockGymOSApi implements GymOSApi {
       if (q.length < 3) {
         return { found: false, decision: "blocked", reasonCodes: [], message: "Keep typing — at least 3 characters." };
       }
-      const member = this.db.members.find((m) =>
-        this.matchesSearch([m.fullName, m.fullNameAr, m.phone, m.memberNumber, m.email], q),
-      );
+      const lookup = resolveMemberLookup(this.db.members, q, this.db.organization.phoneCountryCallingCode);
+      const member = lookup.member;
       if (!member) {
+        if (lookup.candidates.length > 1) {
+          // Never decide for the first of several people who share a name or
+          // number fragment: the desk picks, then the exact number resolves.
+          return {
+            found: false,
+            decision: "blocked",
+            reasonCodes: [],
+            message: `${lookup.candidates.length} members match “${q}”. Choose the right person to continue.`,
+            candidates: lookup.candidates.slice(0, MAX_LOOKUP_CANDIDATES).map((candidate) => this.toMemberSummary(candidate)),
+          };
+        }
         return { found: false, decision: "blocked", reasonCodes: [], message: `No member matches “${q}”.` };
       }
       const evaluation = this.evaluateForMember(member, input.branchId);
@@ -7102,6 +7206,7 @@ export class MockGymOSApi implements GymOSApi {
       memberId: member.id,
       type: "check_in",
       title: `Checked in — ${checkIn.branchName}`,
+      body: overrideReason,
       actorId: this.actor().id,
       actorName: this.actor().name,
       meta: { decision },
@@ -7183,6 +7288,7 @@ export class MockGymOSApi implements GymOSApi {
   private recordPayment(args: {
     memberId: T.UUID;
     chargeId?: T.UUID;
+    branchId?: T.UUID;
     amount: T.Money;
     method: T.PaymentMethodKey;
     idempotencyKey: string;
@@ -7190,6 +7296,12 @@ export class MockGymOSApi implements GymOSApi {
   }): { payment: T.Payment; receipt: T.Receipt; timelineEventId: T.UUID } {
     const member = this.db.members.find((m) => m.id === args.memberId);
     if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+    // The drawer that takes the money is the desk's branch when the caller
+    // names one; a member paying away from home must not credit the home
+    // branch's shift.
+    const branchId = args.branchId ?? member.homeBranchId;
+    if (!this.db.branches.some((b) => b.id === branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    if (!this.branchIsVisible(branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
     const method = this.db.paymentMethods.find((m) => m.key === args.method);
     if (!method?.enabled) throw ApiError.of(ERR.VALIDATION, `Payment method “${args.method}” is disabled.`);
     if (args.amount.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Payment currency does not match the organization.");
@@ -7224,8 +7336,7 @@ export class MockGymOSApi implements GymOSApi {
     if (args.amount.amount > charge.outstandingAmount.amount) throw ApiError.of(ERR.VALIDATION, "Payment cannot exceed the outstanding balance.");
     const amount = args.amount.amount;
 
-    // cash requires an open shift at the member's home branch
-    const branchId = member.homeBranchId;
+    // cash requires an open shift at the branch taking the money
     let shift: T.CashShift | undefined;
     if (method.affectsCashDrawer) {
       shift = this.db.shifts.find((s) => s.branchId === branchId && s.status === "open");
@@ -10705,7 +10816,24 @@ export class MockGymOSApi implements GymOSApi {
         if (!this.branchIsVisible(existing.branchId)) throw ApiError.of(ERR.FORBIDDEN, "Your role cannot manage classes for this branch.");
         if (existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A class cannot move between branches.");
         if (input.capacity < existing.roster.length) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${existing.roster.length} people already in the class.`);
+        // Upcoming dated classes carry bookings against the old numbers; the
+        // timetable edit flows into them, and nobody loses a confirmed place.
+        const scheduled = this.classOccurrences.filter((occurrence) => occurrence.templateId === existing.id && occurrence.status === "scheduled" && Date.parse(occurrence.startsAt) > Date.now());
+        const overbooked = scheduled.find((occurrence) => input.capacity < this.classSeatedCount(occurrence));
+        if (overbooked) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${this.classSeatedCount(overbooked)} people already booked for ${overbooked.date}.`);
         Object.assign(existing, { name, coachId: input.coachId, coachName, dayOfWeek: input.dayOfWeek, startMinute: input.startMinute, durationMinutes: input.durationMinutes, capacity: input.capacity, audience: input.audience, imageAssetId: input.imageAssetId, imageUrl: image?.url, imageAltText: image?.altText, notes: input.notes?.trim() || undefined, updatedAt: now });
+        for (const occurrence of scheduled) {
+          const sameWeekday = new Date(`${occurrence.date}T12:00:00Z`).getUTCDay() === existing.dayOfWeek;
+          const startsAt = sameWeekday ? this.mockClassInstant(occurrence.date, existing.startMinute) : occurrence.startsAt;
+          Object.assign(occurrence, {
+            name, capacity: input.capacity, audience: input.audience, imageUrl: image?.url, imageAltText: image?.altText, notes: existing.notes,
+            regularCoachId: existing.coachId, regularCoachName: coachName,
+            ...(occurrence.substituted ? {} : { coachId: existing.coachId, coachName }),
+            startsAt, endsAt: new Date(Date.parse(startsAt) + existing.durationMinutes * 60_000).toISOString(),
+          });
+          this.promoteClassWaitlist(occurrence);
+          this.refreshClassOccurrence(occurrence);
+        }
         this.audit({ category: "operations", action: "classes.session.update", entityType: "class_session", entityId: existing.id, entityLabel: name, summary: `Updated class ${name}` });
         return this.classSessionView(existing);
       }
@@ -10931,15 +11059,25 @@ export class MockGymOSApi implements GymOSApi {
       const waitlist = occurrence.roster.filter((entry) => entry.status === "waitlisted");
       const audienceGender = occurrence.audience === "women" ? "female" : occurrence.audience === "men" ? "male" : undefined;
       const genderMismatch = audienceGender !== undefined && member.gender !== audienceGender;
-      const canBook = policy.enabled && membershipUsable && planEligible && !profileCorrectionRequired && !genderMismatch && !activeBooking && activeCount < policy.maxActiveBookingsPerMember && occurrence.status === "scheduled";
-      const bookingBlockReason = canBook ? undefined
-        : !policy.enabled ? "Online class booking is not enabled for this gym."
-          : !membershipUsable ? "Your membership is not active for this class."
-            : !planEligible ? "This membership plan does not include classes."
-              : profileCorrectionRequired ? "Add male or female to your profile before booking."
-                : genderMismatch ? `This class is for ${occurrence.audience}.`
-                  : activeCount >= policy.maxActiveBookingsPerMember ? `You already have ${policy.maxActiveBookingsPerMember} active class bookings.`
-                    : undefined;
+      const now = Date.now();
+      const ended = occurrence.status !== "scheduled" || Date.parse(occurrence.endsAt) <= now;
+      const started = Date.parse(occurrence.startsAt) <= now;
+      const seated = this.classSeatedCount(occurrence);
+      const full = seated >= occurrence.capacity && (!policy.waitlistEnabled || waitlist.length >= policy.waitlistSize);
+      // The reason mirrors what the booking mutation would refuse, so a
+      // disabled button never hides a surprise.
+      const bookingBlockReason = !policy.enabled ? "Online class booking is not enabled for this gym."
+        : occurrence.status === "cancelled" ? "This class was cancelled."
+          : ended ? "This class has ended."
+            : started ? "Booking closed when the class started."
+              : !membershipUsable ? "Your membership is not active for this class."
+                : !planEligible ? "This membership plan does not include classes."
+                  : profileCorrectionRequired ? "Add male or female to your profile before booking."
+                    : genderMismatch ? `This class is for ${occurrence.audience}.`
+                      : !activeBooking && activeCount >= policy.maxActiveBookingsPerMember ? `You already have ${policy.maxActiveBookingsPerMember} active class bookings.`
+                        : !activeBooking && full ? (policy.waitlistEnabled ? "This class and its waitlist are full." : "This class is full.")
+                          : undefined;
+      const canBook = !activeBooking && !bookingBlockReason;
       const { roster: _roster, ...summary } = this.refreshClassOccurrence(occurrence);
       return {
         ...summary,
@@ -10987,19 +11125,55 @@ export class MockGymOSApi implements GymOSApi {
     return occurrence;
   }
 
+  /** Seats taken on a dated class: confirmed places plus recorded outcomes. */
+  private classSeatedCount(occurrence: T.ClassOccurrence): number {
+    return occurrence.roster.filter((entry) => ["booked", "attended", "no_show"].includes(entry.status)).length;
+  }
+
+  /** Fill open seats from the waitlist in booking order; nothing moves once the class has started. */
+  private promoteClassWaitlist(occurrence: T.ClassOccurrence): T.ClassOccurrenceRosterEntry[] {
+    if (Date.parse(occurrence.startsAt) <= Date.now()) return [];
+    const promoted: T.ClassOccurrenceRosterEntry[] = [];
+    while (this.classSeatedCount(occurrence) < occurrence.capacity) {
+      const next = occurrence.roster.filter((entry) => entry.status === "waitlisted").sort((left, right) => left.bookedAt.localeCompare(right.bookedAt))[0];
+      if (!next) break;
+      next.status = "booked";
+      next.fromWaitlist = true;
+      promoted.push(next);
+      this.activity({ memberId: next.memberId, type: "class_waitlist_promoted", title: `Moved into ${occurrence.name}`, body: `A place opened for ${occurrence.date}.`, meta: { occurrenceId: occurrence.id, bookingId: next.bookingId } });
+    }
+    return promoted;
+  }
+
+  /**
+   * Shared cancellation: a confirmed place given up inside the cutoff is a late
+   * cancellation and its seat goes to the waitlist either way; leaving the
+   * waitlist frees no seat and is a plain cancellation whatever the clock says.
+   */
+  private cancelClassRosterEntry(occurrence: T.ClassOccurrence, booking: T.ClassOccurrenceRosterEntry): { outcome: "cancelled" | "late_cancelled"; promoted: T.ClassOccurrenceRosterEntry[] } {
+    if (Date.parse(occurrence.endsAt) <= Date.now()) throw ApiError.of(ERR.CONFLICT, "This class has ended. Finalize attendance instead.");
+    const freedSeat = booking.status === "booked";
+    const late = freedSeat && Date.parse(occurrence.startsAt) - Date.now() < this.db.operationalPolicies.classBooking.cancellationCutoffHours * 3_600_000;
+    booking.status = late ? "late_cancelled" : "cancelled";
+    const promoted = freedSeat ? this.promoteClassWaitlist(occurrence) : [];
+    return { outcome: booking.status, promoted };
+  }
+
   cancelCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> {
     return this.respond(() => {
       const { member } = this.customerOperationalMembership(input.membershipId);
       const occurrence = this.classOccurrenceById(input.occurrenceId);
-      const booking = occurrence.roster.find((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status));
-      if (!booking) throw ApiError.of(ERR.NOT_FOUND, "Active class booking not found.");
-      const late = booking.status === "booked" && Date.parse(occurrence.startsAt) - Date.now() < this.db.operationalPolicies.classBooking.cancellationCutoffHours * 3_600_000;
-      booking.status = late ? "late_cancelled" : "cancelled";
-      if (!late) {
-        const next = occurrence.roster.filter((entry) => entry.status === "waitlisted").sort((left, right) => left.bookedAt.localeCompare(right.bookedAt))[0];
-        if (next) { next.status = "booked"; next.fromWaitlist = true; }
+      const own = occurrence.roster.filter((entry) => entry.memberId === member.id).sort((left, right) => right.bookedAt.localeCompare(left.bookedAt));
+      const booking = own.find((entry) => ["booked", "waitlisted"].includes(entry.status));
+      if (!booking) {
+        // A second tap on Cancel reports the cancellation that already happened.
+        const latest = own[0];
+        if (latest && (latest.status === "cancelled" || latest.status === "late_cancelled")) return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: latest.status };
+        throw ApiError.of(ERR.NOT_FOUND, "Active class booking not found.");
       }
-      return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: booking.status, promotedMemberId: occurrence.roster.find((entry) => entry.fromWaitlist && entry.status === "booked")?.memberId };
+      const result = this.cancelClassRosterEntry(occurrence, booking);
+      this.activity({ memberId: member.id, type: result.outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${occurrence.name}`, body: result.outcome === "late_cancelled" ? "Cancelled after the gym's cutoff. No fee or membership penalty was applied." : undefined, meta: { occurrenceId: occurrence.id, bookingId: booking.bookingId, late: result.outcome === "late_cancelled" } });
+      return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: result.outcome, promotedMemberId: result.promoted[0]?.memberId };
     });
   }
 
@@ -11010,11 +11184,23 @@ export class MockGymOSApi implements GymOSApi {
       const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
       const membership = this.db.memberships.find((candidate) => candidate.id === input.membershipId && candidate.memberId === member?.id);
       if (!member || !membership) throw ApiError.of(ERR.NOT_FOUND, "Member membership not found.");
+      if (occurrence.status !== "scheduled" || Date.parse(occurrence.endsAt) <= Date.now()) throw ApiError.of(ERR.CONFLICT, "This class is no longer open for booking.");
       if (occurrence.roster.some((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status))) return this.refreshClassOccurrence(occurrence);
-      if (occurrence.bookedCount >= occurrence.capacity && !input.overrideReason?.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to override class capacity.");
+      const policy = this.db.operationalPolicies.classBooking;
+      const override = input.overrideReason?.trim();
       const audienceGender = occurrence.audience === "women" ? "female" : occurrence.audience === "men" ? "male" : undefined;
-      if (audienceGender !== undefined && member.gender !== audienceGender && !input.overrideReason?.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to override the class audience rule.");
-      occurrence.roster.push({ bookingId: mockUuid(), memberId: member.id, membershipId: membership.id, name: member.fullName, status: "booked", bookedAt: nowISO(), fromWaitlist: false });
+      if (audienceGender !== undefined && member.gender !== audienceGender && !override) throw ApiError.of(ERR.VALIDATION, "A reason is required to override the class audience rule.");
+      const activeCount = this.classOccurrences.reduce((count, row) => count + row.roster.filter((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status) && row.startsAt >= nowISO()).length, 0);
+      if (activeCount >= policy.maxActiveBookingsPerMember && !override) throw ApiError.of(ERR.VALIDATION, `This member already has ${policy.maxActiveBookingsPerMember} active class bookings. A staff override requires a reason.`);
+      // Capacity is not overridable: a full class takes the member onto the
+      // bounded waitlist, exactly as the server does.
+      const waiting = occurrence.roster.filter((entry) => entry.status === "waitlisted").length;
+      const status: T.ClassBookingStatus = this.classSeatedCount(occurrence) < occurrence.capacity ? "booked" : "waitlisted";
+      if (status === "waitlisted" && (!policy.waitlistEnabled || waiting >= policy.waitlistSize)) throw ApiError.of(ERR.CONFLICT, policy.waitlistEnabled ? "This class and its waitlist are full." : "This class is full.");
+      const entry: T.ClassOccurrenceRosterEntry = { bookingId: mockUuid(), memberId: member.id, membershipId: membership.id, name: member.fullName, status, bookedAt: nowISO(), fromWaitlist: false };
+      occurrence.roster.push(entry);
+      this.activity({ memberId: member.id, type: status === "booked" ? "class_booked" : "class_waitlisted", title: status === "booked" ? `Booked ${occurrence.name}` : `Joined the ${occurrence.name} waitlist`, body: occurrence.date, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, bookedBy: "staff" } });
+      this.audit({ category: "operations", action: status === "booked" ? "classes.booking.create" : "classes.waitlist.join", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `${member.fullName} ${status === "booked" ? "booked" : "joined the waitlist for"} ${occurrence.name}`, reason: override });
       return this.refreshClassOccurrence(occurrence);
     });
   }
@@ -11022,12 +11208,15 @@ export class MockGymOSApi implements GymOSApi {
   removeClassOccurrenceAttendee(input: { occurrenceId: T.UUID; bookingId: T.UUID; reason?: string }): Promise<T.ClassOccurrence> {
     return this.respond(() => {
       this.requireRosterPermission();
+      this.requireReason(input.reason);
       const occurrence = this.classOccurrenceById(input.occurrenceId);
-      const booking = occurrence.roster.find((entry) => entry.bookingId === input.bookingId && ["booked", "waitlisted"].includes(entry.status));
+      const booking = occurrence.roster.find((entry) => entry.bookingId === input.bookingId);
       if (!booking) throw ApiError.of(ERR.NOT_FOUND, "Class booking not found.");
-      booking.status = "cancelled";
-      const next = occurrence.roster.filter((entry) => entry.status === "waitlisted").sort((left, right) => left.bookedAt.localeCompare(right.bookedAt))[0];
-      if (next) { next.status = "booked"; next.fromWaitlist = true; }
+      // A repeated removal changes nothing and reports the roster as it is.
+      if (!["booked", "waitlisted"].includes(booking.status)) return this.refreshClassOccurrence(occurrence);
+      const result = this.cancelClassRosterEntry(occurrence, booking);
+      this.activity({ memberId: booking.memberId, type: result.outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${occurrence.name}`, body: input.reason?.trim(), meta: { occurrenceId: occurrence.id, bookingId: booking.bookingId, late: result.outcome === "late_cancelled" } });
+      this.audit({ category: "operations", action: result.outcome === "late_cancelled" ? "classes.booking.cancel_late" : "classes.booking.cancel", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `${booking.name} cancelled ${occurrence.name}`, reason: input.reason?.trim() });
       return this.refreshClassOccurrence(occurrence);
     });
   }
@@ -11048,6 +11237,8 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireRosterPermission();
       const occurrence = this.classOccurrenceById(input.occurrenceId);
+      // Finalization happens once; a repeat returns the recorded roster untouched.
+      if (occurrence.attendanceFinalizedAt) return this.refreshClassOccurrence(occurrence);
       if (Date.parse(occurrence.endsAt) > Date.now()) throw ApiError.of(ERR.VALIDATION, "Attendance can be finalized after the class ends.");
       occurrence.attendanceFinalizedAt = nowISO();
       occurrence.status = "completed";

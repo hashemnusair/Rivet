@@ -18,7 +18,7 @@ import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { formatDateTime } from "@/lib/utils/dates";
 import { qk } from "@/lib/api/keys";
 import type { PtAvailabilityException, PtPackage, PtBooking, PtTrainerProfile, PtPackageOrder, StaffUser, WeekdayKey } from "@/lib/domain/types";
-import { PT_PACKAGE_PRICE_GUIDE, ptPackageSuggestedPriceMinor, ptPackageUnitPriceMinor } from "@/lib/domain/personal-training";
+import { PT_PACKAGE_PRICE_GUIDE, ptBookingAwaitsOutcome, ptBookingIsOpen, ptPackageSuggestedPriceMinor, ptPackageUnitPriceMinor } from "@/lib/domain/personal-training";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -53,11 +53,26 @@ export default function PersonalTrainingPage() {
   const paymentMember = useApiQuery(qk.member(paymentOrder?.memberId ?? ""), (api) => api.getMember(paymentOrder!.memberId), { enabled: Boolean(paymentOrder) });
   const workspace = useRealtimeApiQuery({ queryKey: qk.ptWorkspace, query: (api) => api.getPtWorkspace(), subscribe: (api, onValue, onError) => api.subscribePtWorkspace(onValue, onError) });
   const trainerUsers = useApiQuery(qk.users({ role: "trainer" }), (api) => api.listUsers({ role: "trainer", pageSize: 100 }), { enabled: can("pt.manage") });
-  const finish = useApiMutation((api, input: { booking: PtBooking; outcome: "completed" | "no_show"; reason?: string }) => input.outcome === "completed" ? api.completePtBooking(input.booking.id) : api.markPtBookingNoShow(input.booking.id, { reason: input.reason }), { onSuccess: async () => { await invalidate(); setBookingAction(undefined); } });
-  const cancel = useApiMutation((api, input: { booking: PtBooking; reason: string }) => api.cancelPtBooking(input.booking.id, { reason: input.reason, cancelledByGym: true }), { onSuccess: async () => { await invalidate(); setBookingAction(undefined); } });
+  const finish = useApiMutation((api, input: { booking: PtBooking; outcome: "completed" | "no_show"; reason?: string }) => input.outcome === "completed" ? api.completePtBooking(input.booking.id) : api.markPtBookingNoShow(input.booking.id, { reason: input.reason }), { onSuccess: async (_, input) => { await invalidate(); setBookingAction(undefined); toast.success(input.outcome === "completed" ? "Session completed. One credit was used." : "No-show recorded. One credit was used."); } });
+  // The server decides what the cancellation did to the credit; the toast
+  // repeats its answer instead of assuming.
+  const cancel = useApiMutation((api, input: { booking: PtBooking; reason: string; cancelledByGym: boolean }) => api.cancelPtBooking(input.booking.id, { reason: input.reason, cancelledByGym: input.cancelledByGym }), { onSuccess: async (result) => { await invalidate(); setBookingAction(undefined); toast.success(result.status === "late_cancelled" ? "Late cancellation recorded. One credit was used." : result.status === "gym_cancelled" ? "Session cancelled by the gym. The credit was returned." : "Session cancelled. The credit was returned."); } });
 
   if (workspace.isError && !workspace.data) return <QueryErrorState error={workspace.error} onRetry={() => workspace.refetch()} />;
   const data = workspace.data;
+  const now = Date.now();
+  const openBookings = (data?.bookings ?? []).filter(ptBookingIsOpen);
+  // A session that started without an outcome still holds the member's credit
+  // and must stay in front of whoever can record it; it is never "upcoming".
+  const awaitingOutcome = openBookings.filter((booking) => ptBookingAwaitsOutcome(booking, now));
+  const upcomingBookings = openBookings.filter((booking) => !ptBookingAwaitsOutcome(booking, now));
+  const canRecordOutcome = can("pt.outcome.self") || can("pt.manage");
+  const canCancel = can("pt.book_for_member") || can("pt.manage");
+  const renderBooking = (booking: PtBooking, started: boolean) => <article key={booking.id} className="flex flex-wrap items-center gap-4 p-4" data-testid="pt-booking-row">
+    <div className="min-w-0 flex-1"><p className="text-[13px] font-semibold">{booking.memberName} <span className="font-normal text-ink-3">with {booking.trainerName}</span></p><p className="mt-1 text-[12px] text-ink-3">{formatDateTime(booking.startsAt)} · {booking.branchName}</p>{!started && canRecordOutcome ? <p className="mt-1 text-[12px] text-ink-3">Outcome controls unlock when the session begins.</p> : null}</div>
+    <Badge variant={started ? "warning" : "outline"}>{started ? "Awaiting outcome" : booking.status}</Badge>
+    <div className="flex gap-1">{canRecordOutcome && started ? <><Button size="sm" variant="secondary" disabled={finish.isPending} onClick={() => setBookingAction({ booking, action: "completed" })}><CheckCircle2 /> Complete</Button><Button size="sm" variant="ghost" disabled={finish.isPending} onClick={() => setBookingAction({ booking, action: "no_show" })}><XCircle /> No-show</Button></> : null}{canCancel ? <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => setBookingAction({ booking, action: "cancelled" })}>Cancel</Button> : null}</div>
+  </article>;
 
   return <div className="space-y-5">
     <PageHeader title="Personal training" description="Book the next session, collect package payments, and keep the trainer schedule current." actions={<div className="flex flex-wrap gap-2">{can("pt.manage") ? <><Button variant="secondary" onClick={() => { setEditingTrainer(undefined); setTrainerOpen(true); }}><UserRound /> Trainer</Button><Button variant="secondary" onClick={() => { setEditingPackage(undefined); setPackageOpen(true); }}><Plus /> Package</Button></> : null}{can("pt.book_for_member") || can("pt.manage") ? <Button onClick={() => setBookOpen(true)}><CalendarClock /> Book session</Button> : null}</div>} />
@@ -73,8 +88,12 @@ export default function PersonalTrainingPage() {
 
     <section className={`grid gap-5 ${can("payments.collect") ? "xl:grid-cols-2" : ""}`}>
       <div className="panel overflow-hidden">
+        {awaitingOutcome.length ? <section aria-labelledby="pt-awaiting-title">
+          <header className="flex items-center justify-between border-b border-line px-5 py-4"><div><h2 id="pt-awaiting-title" className="mt-1 text-[15px] font-semibold">Needs an outcome</h2><p className="mt-1 text-[12px] text-ink-2">These sessions started without a recorded result. Each still holds one reserved credit.</p></div><Badge variant="warning">{awaitingOutcome.length}</Badge></header>
+          <div className="divide-y divide-line border-b border-line">{awaitingOutcome.map((booking) => renderBooking(booking, true))}</div>
+        </section> : null}
         <header className="flex items-center justify-between border-b border-line px-5 py-4"><div><h2 className="mt-1 text-[15px] font-semibold">Upcoming sessions</h2></div><CalendarClock className="size-5 text-ink-3" /></header>
-        {!data ? <Skeleton className="m-4 h-32" /> : data.bookings.filter((booking) => ["reserved", "confirmed"].includes(booking.status)).length === 0 ? <EmptyState layout="section" className="m-4" title="No upcoming PT sessions" description="Book from a member’s PT credits. Available times follow the trainer’s saved availability." /> : <div className="divide-y divide-line">{data.bookings.filter((booking) => ["reserved", "confirmed"].includes(booking.status)).map((booking) => <article key={booking.id} className="flex flex-wrap items-center gap-4 p-4"><div className="min-w-0 flex-1"><p className="text-[13px] font-semibold">{booking.memberName} <span className="font-normal text-ink-3">with {booking.trainerName}</span></p><p className="mt-1 text-[12px] text-ink-3">{formatDateTime(booking.startsAt)} · {booking.branchName}</p></div><Badge variant="outline">{booking.status}</Badge><div className="flex gap-1">{can("pt.outcome.self") || can("pt.manage") ? <><Button size="sm" variant="secondary" disabled={finish.isPending} onClick={() => setBookingAction({ booking, action: "completed" })}><CheckCircle2 /> Complete</Button><Button size="sm" variant="ghost" disabled={finish.isPending} onClick={() => setBookingAction({ booking, action: "no_show" })}><XCircle /> No-show</Button></> : null}{can("pt.book_for_member") || can("pt.manage") ? <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => setBookingAction({ booking, action: "cancelled" })}>Cancel</Button> : null}</div></article>)}</div>}
+        {!data ? <Skeleton className="m-4 h-32" /> : upcomingBookings.length === 0 ? <EmptyState layout="section" className="m-4" title="No upcoming PT sessions" description="Book from a member’s PT credits. Available times follow the trainer’s saved availability." /> : <div className="divide-y divide-line">{upcomingBookings.map((booking) => renderBooking(booking, false))}</div>}
       </div>
 
       {can("payments.collect") ? <div className="panel overflow-hidden">
@@ -93,8 +112,8 @@ export default function PersonalTrainingPage() {
     <PackageDialog open={packageOpen} onOpenChange={setPackageOpen} package={editingPackage} />
     <TrainerDialog open={trainerOpen} onOpenChange={setTrainerOpen} users={trainerUsers.data?.items ?? []} trainer={editingTrainer} />
     <AvailabilityDialog trainer={availabilityTrainer} onOpenChange={(open) => { if (!open) setAvailabilityTrainer(undefined); }} />
-    <BookingOutcomeConfirmation booking={bookingAction?.booking} action={bookingAction?.action} open={Boolean(bookingAction)} pending={finish.isPending || cancel.isPending} cancelledByGym={bookingAction?.action === "cancelled"} onOpenChange={(open) => { if (!open) setBookingAction(undefined); }} onConfirm={({ booking, action, reason }) => { if (action === "cancelled") cancel.mutate({ booking, reason: reason ?? "" }); else finish.mutate({ booking, outcome: action, reason }); }} />
-    {paymentOrder && paymentMember.data ? <CollectPaymentDialog open member={paymentMember.data} initialChargeId={paymentOrder.chargeId} onOpenChange={(open) => { if (!open) setPaymentOrder(undefined); }} onCollected={() => setPaymentOrder(undefined)} /> : null}
+    <BookingOutcomeConfirmation booking={bookingAction?.booking} action={bookingAction?.action} open={Boolean(bookingAction)} pending={finish.isPending || cancel.isPending} cancelledByGym={bookingAction?.action === "cancelled"} cutoffHours={data?.cancellationCutoffHours} allowCancellationChoice={canCancel} onOpenChange={(open) => { if (!open) setBookingAction(undefined); }} onConfirm={({ booking, action, reason, cancelledByGym }) => { if (action === "cancelled") cancel.mutate({ booking, reason: reason ?? "", cancelledByGym }); else finish.mutate({ booking, outcome: action, reason }); }} />
+    {paymentOrder && paymentMember.data ? <CollectPaymentDialog open member={paymentMember.data} initialChargeId={paymentOrder.chargeId} onOpenChange={(open) => { if (!open) setPaymentOrder(undefined); }} /> : null}
     <CancelPtOrderDialog order={cancelOrder} onOpenChange={(open) => { if (!open) setCancelOrder(undefined); }} />
     <DeletePtPackageDialog package={deletePackage} onOpenChange={(open) => { if (!open) setDeletePackage(undefined); }} />
   </div>;

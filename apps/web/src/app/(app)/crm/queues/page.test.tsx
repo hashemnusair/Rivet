@@ -30,11 +30,14 @@ const state = vi.hoisted(() => ({
       items: [{
         member: { id: "member-risk", fullName: "At Risk Member", phone: "+962790000099", memberNumber: "MAIN-1099" },
         membership: { id: "membership-risk", status: "active", planName: "Monthly", endDate: "2026-09-10", outstanding: { amount: 0, currency: "JOD" } },
-        reasons: [{ kind: "inactive", label: "No visit in 18 days", daysInactive: 18 }],
+        reasons: [{ kind: "inactive", label: "No visit in 18 days", daysInactive: 18 }, { kind: "expiring", label: "Membership expires in 3 days", daysUntilExpiry: 3 }],
         priority: "high",
         memberId: "member-risk",
         membershipId: "membership-risk",
         branchId: "branch-1",
+        lastContactAt: "2026-09-05T08:00:00.000Z",
+        lastContactOutcome: "whatsapp_opened",
+        snoozedUntil: "2020-01-01",
         recommendedSnoozeDays: 7,
       }],
       totalItems: 1,
@@ -58,7 +61,7 @@ vi.mock("next/navigation", async () => {
 });
 
 vi.mock("@/lib/providers/app-providers", () => ({
-  useApp: () => ({ session: { activeBranchId: "branch-1" } }),
+  useApp: () => ({ session: { activeBranchId: "branch-1", permissions: ["memberships.sell", "payments.collect"], organization: { timezone: "Asia/Amman" } } }),
 }));
 
 vi.mock("@/lib/hooks/use-api", () => ({
@@ -110,12 +113,33 @@ describe("follow-up workspace layout", () => {
     const user = userEvent.setup();
     render(<QueuesPage />);
 
-    expect(screen.getByText("No visit in 18 days")).toBeInTheDocument();
+    expect(screen.getByText(/No visit in 18 days/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /At Risk Member/ }));
     expect(screen.getByRole("heading", { name: /At Risk Member/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open member record: At Risk Member" })).toHaveAttribute("href", "/members/member-risk");
     expect(screen.getByRole("link", { name: "Call" })).toHaveAttribute("href", "tel:+962790000099");
     expect(screen.getByTestId("whatsapp-handoff")).toBeInTheDocument();
+  });
+
+  it("names the last contact outcome, a lapsed snooze, and the exact renewal shortcut", async () => {
+    const user = userEvent.setup();
+    render(<QueuesPage />);
+
+    expect(screen.getAllByText(/WhatsApp opened · not confirmed/).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: /At Risk Member/ }));
+    expect(screen.getByTestId("at-risk-lapsed-snooze")).toHaveTextContent(/Snoozed until .*back in the queue/);
+    expect(screen.getByRole("link", { name: "Renew" })).toHaveAttribute("href", "/members/member-risk?action=renew");
+    expect(screen.queryByRole("link", { name: "Collect" })).not.toBeInTheDocument();
+  });
+
+  it("explains a Today link to a member who is not on this page instead of opening nothing", () => {
+    window.history.replaceState({}, "", "/crm/queues?view=at-risk&member=member-elsewhere");
+    render(<QueuesPage />);
+
+    const notice = screen.getByTestId("at-risk-missing-selection");
+    expect(notice).toHaveTextContent("That member is not in this view");
+    expect(screen.getByRole("link", { name: /Open member record/ })).toHaveAttribute("href", "/members/member-elsewhere");
+    expect(screen.queryByTestId("at-risk-panel")).not.toBeInTheDocument();
   });
 
   it("changes the renewal query when the filter rail switches buckets", async () => {

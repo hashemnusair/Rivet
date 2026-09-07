@@ -1607,6 +1607,8 @@ export interface CreateMembershipSaleInput {
     amount: Money;
     method: PaymentMethodKey;
     externalReference?: string;
+    /** Branch whose drawer takes the money; defaults to the member's home branch. */
+    branchId?: UUID;
   };
 }
 
@@ -1620,7 +1622,7 @@ export interface RenewMembershipInput {
   overrideReason?: string;
   discount?: Money;
   discountReason?: string;
-  payment?: { amount: Money; method: PaymentMethodKey; externalReference?: string };
+  payment?: { amount: Money; method: PaymentMethodKey; externalReference?: string; branchId?: UUID };
 }
 
 export type MembershipPlanChangeEffectiveDate = "immediate" | "next_renewal";
@@ -1882,7 +1884,11 @@ export interface PtMemberExperience {
   membershipId: UUID;
   availableSessions: number;
   reservedSessions: number;
+  /** Gym PT policy: hours before the start inside which a member cancellation consumes the credit. */
+  cancellationCutoffHours?: number;
   entitlements: PtEntitlement[];
+  /** Every booking still holding a reserved credit, including a session that
+   * started without an outcome yet; sorted by start. */
   upcomingBookings: PtBooking[];
   orders: PtPackageOrder[];
   trainers: PtTrainerProfile[];
@@ -1890,6 +1896,8 @@ export interface PtMemberExperience {
 }
 
 export interface PtWorkspace {
+  /** Gym PT policy: hours before the start inside which a member cancellation consumes the credit. */
+  cancellationCutoffHours?: number;
   trainers: PtTrainerProfile[];
   packages: PtPackage[];
   bookings: PtBooking[];
@@ -2297,6 +2305,11 @@ export type TimelineEventType =
   | "pt_session_completed"
   | "pt_session_no_show"
   | "pt_credit_refunded"
+  | "class_booked"
+  | "class_waitlisted"
+  | "class_waitlist_promoted"
+  | "class_cancelled"
+  | "class_cancelled_late"
   | "automation";
 
 export interface TimelineEvent {
@@ -2324,6 +2337,7 @@ export type CheckInReasonCode =
   | "EXPIRES_SOON"
   | "OUTSTANDING_BALANCE"
   | "MEMBERSHIP_EXPIRED"
+  | "MEMBERSHIP_NOT_STARTED"
   | "NO_ACTIVE_MEMBERSHIP"
   | "WRONG_BRANCH"
   | "VISITS_DEPLETED"
@@ -2346,6 +2360,11 @@ export interface CheckInPreview {
   reasonCodes: CheckInReasonCode[];
   message: string;
   criticalNotes?: string;
+  /**
+   * Present only when the lookup matched several people. The desk must pick
+   * one (their member number resolves uniquely) before any decision is shown.
+   */
+  candidates?: MemberSummary[];
 }
 
 export interface CreateCheckInInput {
@@ -2588,6 +2607,8 @@ export interface VoidRetailSaleInput {
 export interface CreatePaymentInput {
   memberId: UUID;
   chargeId?: UUID; // if omitted, applies to oldest outstanding charge
+  /** Branch whose drawer takes the money; defaults to the member's home branch. */
+  branchId?: UUID;
   amount: Money;
   method: PaymentMethodKey;
   externalReference?: string;
@@ -3290,6 +3311,11 @@ export interface TodayQueueItem {
   href: string;
   action: TodayQueueAction;
   subjectName?: string;
+  /**
+   * The person this work is about, when there is one. Lets the queue record
+   * the actual contact outcome in place instead of a bare "done".
+   */
+  subject?: { kind: "lead" | "member"; id: UUID };
   branchName?: string;
   dueAt?: ISODateTime;
   occurredAt?: ISODateTime;

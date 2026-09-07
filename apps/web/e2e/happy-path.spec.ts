@@ -108,6 +108,9 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText(/outstanding balance/i);
     await dialog.getByTestId("confirm-payment").click();
+    // The dialog confirms what the server recorded before it closes.
+    await expect(dialog.getByTestId("payment-collected")).toContainText(/Receipt R-\d+/);
+    await dialog.getByTestId("payment-done").click();
     await expect(dialog).toBeHidden();
 
     // The balance is settled and the timeline records the payment.

@@ -19,7 +19,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { qk } from "@/lib/api/keys";
-import type { CheckInPreview, CheckInResult, MembershipSummary, Session } from "@/lib/domain/types";
+import type { CheckInPreview, CheckInResult, CheckInSummary, MemberSummary, MembershipSummary, Session } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
@@ -59,6 +59,10 @@ export default function ReceptionPage() {
   const [branchSelectionError, setBranchSelectionError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const automaticBranchAttempt = useRef<string | null>(null);
+  // A scanner sends its Enter before the debounced preview has resolved. Keep
+  // that intent for the exact query it was pressed on, and commit only once
+  // the server identifies one person by a complete identifier.
+  const pendingCommit = useRef<string | null>(null);
 
   // Gate on the live *and* debounced query. Checking only the debounced value
   // would keep the previous member's verdict on screen for one debounce window
@@ -96,6 +100,10 @@ export default function ReceptionPage() {
   });
 
   const preview = lookupActive ? previewQuery.data : undefined;
+  const shownMemberId = result?.member.id ?? preview?.member?.id;
+  // The rail already streams today's accepted visits, so a duplicate scan can
+  // say when this person actually came in instead of reading as a denial.
+  const lastAcceptedCheckIn = shownMemberId ? recentQuery.data?.items.find((item) => item.memberId === shownMemberId) : undefined;
 
   const focusInput = useCallback(() => inputRef.current?.focus(), []);
 
@@ -128,8 +136,17 @@ export default function ReceptionPage() {
 
   /** A recorded verdict remains visible until staff explicitly starts the next lane. */
   const resetLane = useCallback(() => {
+    pendingCommit.current = null;
     setResult(null);
     setQuery("");
+    focusInput();
+  }, [focusInput]);
+
+  /** A candidate's member number is a complete identifier, so it resolves to exactly one verdict. */
+  const chooseCandidate = useCallback((candidate: MemberSummary) => {
+    pendingCommit.current = null;
+    setResult(null);
+    setQuery(candidate.memberNumber);
     focusInput();
   }, [focusInput]);
 
@@ -137,6 +154,10 @@ export default function ReceptionPage() {
     onSuccess: async (res) => {
       setResult(res);
       setRecentPage(1);
+      // Leave the number selected: the next scan or keystroke replaces it
+      // instead of appending to it and producing a no-match.
+      inputRef.current?.focus();
+      inputRef.current?.select();
       await invalidate();
     },
   });
@@ -144,21 +165,60 @@ export default function ReceptionPage() {
   // Keyboard: Enter commits, Escape clears, any keystroke returns focus to the lane
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const inLane = target === inputRef.current || target === document.body;
       if (e.key === "Escape") {
         resetLane();
         return;
       }
-      if (e.key === "Enter" && !result && preview?.found && preview.decision !== "blocked" && !checkIn.isPending) {
-        const target = e.target as HTMLElement | null;
-        if (target?.tagName === "INPUT" || target === document.body) {
+      if (e.key === "Enter" && inLane && !result && !checkIn.isPending) {
+        if (preview?.found && preview.decision !== "blocked") {
           e.preventDefault();
+          pendingCommit.current = null;
           checkIn.mutate();
+        } else if (!preview && query.trim().length >= 3) {
+          // The verdict for this exact query is still on its way.
+          e.preventDefault();
+          pendingCommit.current = query.trim();
         }
+        return;
+      }
+      // A scanner types wherever focus is. Bring stray keystrokes back to the
+      // lane so a scan after a closed dialog still lands in the lookup.
+      if (target === document.body && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        inputRef.current?.focus();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [preview, result, checkIn, resetLane]);
+  }, [preview, query, result, checkIn, resetLane]);
+
+  // Commit a scan whose Enter arrived before the verdict, but only when the
+  // server matched one person by their complete number or pass — never a
+  // name fragment the desk has not looked at.
+  useEffect(() => {
+    const pending = pendingCommit.current;
+    if (!pending || previewQuery.isFetching || !preview || result || checkIn.isPending) return;
+    if (debounced.trim() !== pending) return;
+    pendingCommit.current = null;
+    const squeeze = (value: string) => value.toLowerCase().replace(/[\s-]/g, "");
+    const exact = preview.found && preview.member && (pending.startsWith("rivet-pass.") || squeeze(preview.member.memberNumber) === squeeze(pending));
+    if (exact && preview.decision !== "blocked") checkIn.mutate();
+  }, [checkIn, debounced, preview, previewQuery.isFetching, result]);
+
+  /**
+   * After money or a term changes at the desk, the verdict stays what it was
+   * (the visit happened at that time) but its facts must be the server's
+   * current ones — otherwise a settled balance still reads as due.
+   */
+  const refreshShownFacts = async () => {
+    const fresh = await previewQuery.refetch();
+    const data = fresh.data;
+    setResult((current) => {
+      if (!current || !data?.found || !data.member || data.member.id !== current.member.id) return current;
+      return { ...current, member: data.member, membership: data.membership ?? current.membership };
+    });
+  };
 
   if (!can("members.read")) {
     return <ForbiddenState description="The reception console needs member lookup permission." />;
@@ -180,6 +240,9 @@ export default function ReceptionPage() {
   const decision = result?.decision ?? preview?.decision;
   const member = result?.member ?? preview?.member;
   const membership = result?.membership ?? preview?.membership;
+  // A cancelled term cannot be renewed (the server refuses); the desk sells a
+  // fresh membership instead, exactly as the member record does.
+  const renewalOf = membership && membership.status !== "cancelled" ? membership : undefined;
   const committed = result !== null;
 
   return (
@@ -224,6 +287,7 @@ export default function ReceptionPage() {
               ref={inputRef}
               value={query}
               onChange={(e) => {
+                pendingCommit.current = null;
                 setResult(null);
                 setQuery(e.target.value);
               }}
@@ -265,7 +329,11 @@ export default function ReceptionPage() {
             ) : !shown ? (
               <IdleState />
             ) : !member ? (
-              <NoMatchState message={preview?.message ?? "No match."} query={debounced} canCreate={can("members.write")} />
+              preview?.candidates && preview.candidates.length > 1 ? (
+                <CandidatesState message={preview.message} candidates={preview.candidates} branches={session?.branches ?? []} onChoose={chooseCandidate} />
+              ) : (
+                <NoMatchState message={preview?.message ?? "No match."} query={debounced} canCreate={can("members.write")} />
+              )
             ) : (
               <VerdictPanel
                 decision={decision!}
@@ -281,6 +349,8 @@ export default function ReceptionPage() {
                 canCollect={can("payments.collect")}
                 canSell={can("memberships.sell")}
                 cashBlocked={!shift}
+                renewable={Boolean(renewalOf)}
+                lastAcceptedCheckIn={lastAcceptedCheckIn}
                 onCheckIn={() => checkIn.mutate()}
                 onOverride={() => setDialog("override")}
                 onCollect={() => setDialog("collect")}
@@ -394,9 +464,10 @@ export default function ReceptionPage() {
           open={dialog === "collect"}
           onOpenChange={(v) => setDialog(v ? "collect" : null)}
           member={member}
+          branchId={branchId}
+          cashDrawerOpen={Boolean(shift)}
           onCollected={() => {
-            setDialog(null);
-            void previewQuery.refetch();
+            void refreshShownFacts();
           }}
         />
       ) : null}
@@ -405,10 +476,12 @@ export default function ReceptionPage() {
           open={dialog === "renew"}
           onOpenChange={(v) => setDialog(v ? "renew" : null)}
           member={member}
-          renewalOf={membership as MembershipSummary | undefined}
+          renewalOf={renewalOf}
+          branchId={branchId}
+          cashDrawerOpen={Boolean(shift)}
           onCompleted={() => {
             setDialog(null);
-            void previewQuery.refetch();
+            void refreshShownFacts();
           }}
         />
       ) : null}
@@ -630,17 +703,87 @@ function LookupErrorState({ onRetry }: { onRetry: () => void }) {
 }
 
 function NoMatchState({ message, query, canCreate }: { message: string; query: string; canCreate: boolean }) {
+  // A number typed at the desk is the new member's phone, not their name.
+  const looksLikePhone = /^\+?[\d\s()-]{6,}$/.test(query.trim());
+  const registerHref = looksLikePhone
+    ? `/members/new?phone=${encodeURIComponent(query.trim())}`
+    : `/members/new?name=${encodeURIComponent(query.trim())}`;
   return (
     <div className="rounded-lg border border-night-line bg-night-2 px-6 py-8 text-center">
       <p className="font-display text-[16px] font-medium text-night-ink">{message}</p>
       <p className="mt-1 text-[12.5px] text-night-ink-3">Check the spelling, or try the phone number instead.</p>
       {canCreate ? (
         <Button asChild size="sm" variant="night-outline" className="mt-4">
-          <Link href={`/members/new?name=${encodeURIComponent(query)}`}>
+          <Link href={registerHref}>
             <UserPlus /> Register as a new member
           </Link>
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Several people matched. The desk picks one before any verdict is shown —
+ * the console never decides for the first name in the list.
+ */
+function CandidatesState({
+  message,
+  candidates,
+  branches,
+  onChoose,
+}: {
+  message: string;
+  candidates: MemberSummary[];
+  branches: Session["branches"];
+  onChoose: (candidate: MemberSummary) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-fade-up" data-testid="checkin-candidates" role="region" aria-label="Choose the member">
+      <div className="border-b border-night-line px-5 py-3">
+        <p className="font-display text-[16px] font-medium text-night-ink">{message}</p>
+        <p className="mt-0.5 text-[12.5px] text-night-ink-3">Nothing is decided until you pick one person. A scanned or typed member number skips this step.</p>
+      </div>
+      <ul className="divide-y divide-night-line/70">
+        {candidates.map((candidate) => {
+          // A branch outside this account's scope still needs a truthful label.
+          const branchName = branches.find((b) => b.id === candidate.homeBranchId)?.name ?? "Another branch";
+          return (
+            <li key={candidate.id}>
+              <button
+                type="button"
+                onClick={() => onChoose(candidate)}
+                className="flex w-full min-w-0 cursor-pointer items-center gap-3 px-5 py-3 text-start transition-colors hover:bg-night-3 focus-visible:bg-night-3 focus-visible:outline-none"
+                data-testid="checkin-candidate"
+              >
+                <Monogram name={candidate.fullName} size="sm" className="shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium text-night-ink" dir="auto">
+                    {candidate.fullName}
+                    {candidate.fullNameAr ? (
+                      <>
+                        {/* A logical start margin on an RTL span lands on its right, so separate with a dot instead. */}
+                        <span className="mx-1.5 text-night-ink-3" aria-hidden>·</span>
+                        <span className="text-[12.5px] font-normal text-night-ink-2" dir="rtl">{candidate.fullNameAr}</span>
+                      </>
+                    ) : null}
+                  </span>
+                  <span className="block truncate font-mono text-[11.5px] text-night-ink-3" dir="ltr">
+                    {candidate.memberNumber} · {candidate.phone}
+                  </span>
+                </span>
+                <span className="hidden shrink-0 text-end text-[12px] text-night-ink-2 sm:block">
+                  <span className="block">{candidate.status === "archived" ? "Archived" : candidate.currentPlanName ?? "No membership"}</span>
+                  <span className="block text-night-ink-3">
+                    {branchName}
+                    {candidate.outstanding.amount > 0 ? ` · ${formatMoney(candidate.outstanding, { hideCurrency: true })} due` : ""}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -657,6 +800,8 @@ const VERDICT: Record<
   warning: { band: "bg-warning text-white", label: "Let in — with a notice", icon: AlertTriangle },
   blocked: { band: "bg-signal text-white", label: "Blocked", icon: Ban },
   overridden: { band: "bg-ink text-paper", label: "Overridden", icon: ShieldAlert },
+  // A repeat scan is not a denial: the person is already inside.
+  duplicate: { band: "bg-night-3 text-night-ink", label: "Already checked in", icon: CheckCircle2 },
 };
 
 function VerdictPanel({
@@ -673,6 +818,8 @@ function VerdictPanel({
   canCollect,
   canSell,
   cashBlocked,
+  renewable,
+  lastAcceptedCheckIn,
   onCheckIn,
   onOverride,
   onCollect,
@@ -692,17 +839,26 @@ function VerdictPanel({
   canCollect: boolean;
   canSell: boolean;
   cashBlocked: boolean;
+  renewable: boolean;
+  lastAcceptedCheckIn?: CheckInSummary;
   onCheckIn: () => void;
   onOverride: () => void;
   onCollect: () => void;
   onRenew: () => void;
   onNext: () => void;
 }) {
-  const verdict = VERDICT[decision] ?? VERDICT.blocked!;
+  const duplicateScan = decision === "blocked" && reasonCodes.includes("DUPLICATE_SCAN");
+  const verdict = duplicateScan ? VERDICT.duplicate! : (VERDICT[decision] ?? VERDICT.blocked!);
   const Icon = verdict.icon;
   const outstanding = member.outstanding;
   const hasBalance = outstanding.amount > 0;
-  const meaningfulCodes = reasonCodes.filter((c) => c !== "OK");
+  const meaningfulCodes = reasonCodes.filter((c) => c !== "OK" && !(duplicateScan && c === "DUPLICATE_SCAN"));
+  const shownMessage = duplicateScan && lastAcceptedCheckIn
+    ? `Already checked in at ${formatTime(lastAcceptedCheckIn.occurredAt)}${lastAcceptedCheckIn.actorName ? ` by ${lastAcceptedCheckIn.actorName}` : ""}. No second visit was recorded.`
+    : message;
+  // A future term has a start, not an expiry; a past one has already ended.
+  const termLabel = membership?.status === "scheduled" ? "Starts" : membership?.status === "expired" ? "Expired" : "Expires";
+  const termValue = membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate ?? "—";
 
   return (
     <div
@@ -718,7 +874,7 @@ function VerdictPanel({
         <span className="font-display text-[17px] font-semibold tracking-tight">
           {committed && decision !== "blocked" ? `Checked in · ${formatTime(occurredAt ?? new Date().toISOString())}` : verdict.label}
         </span>
-        <span className="min-w-0 break-words text-[13px] opacity-90">{message}</span>
+        <span className="min-w-0 break-words text-[13px] opacity-90">{shownMessage}</span>
       </div>
 
       {/* Identity + membership facts */}
@@ -738,7 +894,7 @@ function VerdictPanel({
 
         <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-4" data-testid="checkin-facts">
           <Cell label="Plan" value={member.currentPlanName ?? "None"} muted={!member.currentPlanName} />
-          <Cell label="Expires" value={member.membershipEndDate ?? "—"} mono />
+          <Cell label={termLabel} value={termValue} mono />
           <Cell
             label="Visits left"
             value={membership?.remainingVisits != null ? `${membership.remainingVisits}` : "—"}
@@ -785,8 +941,7 @@ function VerdictPanel({
               size="sm"
               variant="night-outline"
               onClick={onCollect}
-              disabled={cashBlocked}
-              title={cashBlocked ? "Open a shift before collecting cash" : undefined}
+              title={cashBlocked ? "No shift open — card, transfer or CliQ only" : undefined}
               data-testid="quick-collect"
             >
               <Banknote /> Collect {formatMoney(outstanding, { hideCurrency: true })}
@@ -795,14 +950,21 @@ function VerdictPanel({
 
           {canSell && (decision === "blocked" || member.membershipEndDate) ? (
             <Button size="sm" variant="night-outline" onClick={onRenew} data-testid="quick-renew">
-              <RotateCcw /> {membership ? "Renew" : "Sell membership"}
+              <RotateCcw /> {renewable ? "Renew" : "Sell membership"}
             </Button>
           ) : null}
 
-          {committed ? (
-            <Button size="sm" variant="night" onClick={onNext} data-testid="next-member">
-              Next member <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd>
-            </Button>
+          {committed || duplicateScan ? (
+            <>
+              {duplicateScan && !committed && canOverride ? (
+                <Button size="sm" variant="night-ghost" onClick={onOverride} data-testid="override-checkin">
+                  <ShieldAlert /> Record another entry
+                </Button>
+              ) : null}
+              <Button size="sm" variant="night" onClick={onNext} data-testid="next-member">
+                Next member <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd>
+              </Button>
+            </>
           ) : decision === "blocked" ? (
             canOverride ? (
               <Button size="sm" variant="signal" onClick={onOverride} data-testid="override-checkin">

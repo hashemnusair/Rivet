@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -40,6 +40,7 @@ const queue: TodayQueueData = {
       title: "Call Dana about trial",
       detail: "Trial follow-up",
       href: "/crm/leads/lead-1",
+      subject: { kind: "lead", id: "lead-1" },
       action: { kind: "complete_task", label: "Done", taskId: "task-1" },
       dueAt: "2026-08-29T09:00:00.000Z",
     },
@@ -79,6 +80,32 @@ describe("Today queue", () => {
     await user.click(screen.getByRole("button", { name: "Show 1 more" }));
     expect(screen.getByRole("link", { name: "Review: Review discount request" })).toHaveAttribute("href", "/approvals");
     expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument();
+  });
+
+  it("asks what happened before closing a follow-up about a person, and still allows a plain done", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<TodayQueue data={queue} initialVisible={3} />);
+    const completeTask = vi.spyOn(api, "completeTask").mockResolvedValue({} as never);
+
+    await user.click(screen.getByRole("button", { name: "Complete Call Dana about trial" }));
+    const dialog = await screen.findByRole("dialog", { name: "What happened?" });
+    expect(dialog).toHaveTextContent("Call Dana about trial");
+    expect(screen.getByRole("radiogroup", { name: "Contact outcome" })).toBeInTheDocument();
+    expect(completeTask).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Mark done without a contact" }));
+    await waitFor(() => expect(completeTask).toHaveBeenCalledWith("task-1", { outcome: "Completed from Today" }));
+  });
+
+  it("completes a task with no person attached immediately", async () => {
+    const user = userEvent.setup();
+    const generalTask = { ...queue, items: [{ id: "task:task-9", kind: "follow_up" as const, priority: "normal" as const, title: "Order new towels", detail: "General · Omar", href: "/crm/queues", action: { kind: "complete_task" as const, label: "Done", taskId: "task-9" } }] };
+    const { api } = await renderWithApp(<TodayQueue data={generalTask} />);
+    const completeTask = vi.spyOn(api, "completeTask").mockResolvedValue({} as never);
+
+    await user.click(screen.getByRole("button", { name: "Complete Order new towels" }));
+    await waitFor(() => expect(completeTask).toHaveBeenCalledWith("task-9", { outcome: "Completed from Today" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows a calm, useful empty state", async () => {

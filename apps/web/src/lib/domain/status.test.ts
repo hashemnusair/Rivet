@@ -7,6 +7,8 @@ import {
   evaluateCheckIn,
   isMembershipUsable,
   type CheckInDecisionInput,
+  pickCurrentMembership,
+  pickRenewalTarget,
 } from "./status";
 import type { FreezePeriod } from "./types";
 
@@ -189,8 +191,12 @@ describe("evaluateCheckIn — blocked", () => {
     expect(result.message).toMatch(/renew/i);
   });
 
-  it("blocks a scheduled term that has not started", () => {
-    expect(evaluateCheckIn(input({ membership: { ...input().membership!, status: "scheduled" } })).decision).toBe("blocked");
+  it("blocks a scheduled term that has not started, without calling it expired", () => {
+    const result = evaluateCheckIn(input({ membership: { ...input().membership!, status: "scheduled", startDate: "2026-09-20" } }));
+    expect(result.decision).toBe("blocked");
+    expect(result.reasonCodes).toEqual(["MEMBERSHIP_NOT_STARTED"]);
+    expect(result.message).toContain("2026-09-20");
+    expect(result.message).not.toMatch(/renew/i);
   });
 
   it("blocks a cancelled term and points at a manager override", () => {
@@ -247,5 +253,31 @@ describe("evaluateCheckIn — blocked", () => {
     );
     expect(result.decision).toBe("blocked");
     expect(result.reasonCodes).not.toContain("OUTSTANDING_BALANCE");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Which term the record treats as current — must match the API's rank
+// ---------------------------------------------------------------------------
+
+describe("pickCurrentMembership / pickRenewalTarget", () => {
+  const term = (id: string, status: "active" | "expiring" | "frozen" | "depleted" | "scheduled" | "expired" | "cancelled", endDate: string) => ({ id, status, endDate });
+
+  it("prefers the term in force over a successor that has not started", () => {
+    const current = pickCurrentMembership([term("next", "scheduled", "2026-12-31"), term("now", "expiring", "2026-09-15")]);
+    expect(current?.id).toBe("now");
+  });
+
+  it("falls back to a depleted pass, then a scheduled term, then history", () => {
+    expect(pickCurrentMembership([term("used", "depleted", "2026-10-01"), term("next", "scheduled", "2026-12-31")])?.id).toBe("used");
+    expect(pickCurrentMembership([term("old", "expired", "2026-08-01"), term("next", "scheduled", "2026-12-31")])?.id).toBe("next");
+    expect(pickCurrentMembership([term("older", "expired", "2026-06-01"), term("old", "expired", "2026-08-01")])?.id).toBe("old");
+  });
+
+  it("chains a renewal from the latest non-cancelled term so the new term never overlaps a successor", () => {
+    expect(pickRenewalTarget([term("now", "active", "2026-09-30"), term("next", "scheduled", "2026-10-31")])?.id).toBe("next");
+    expect(pickRenewalTarget([term("old", "expired", "2026-08-01")])?.id).toBe("old");
+    expect(pickRenewalTarget([term("gone", "cancelled", "2026-12-31")])).toBeUndefined();
+    expect(pickRenewalTarget([])).toBeUndefined();
   });
 });
