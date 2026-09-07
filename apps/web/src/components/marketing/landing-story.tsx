@@ -135,17 +135,25 @@ export function SheetUnder({ tone }: { tone: "paper" | "sunken" | "stack" }) {
 
 const PLATE_COUNT = STACK_ITEMS.length;
 
-/** Rig geometry shared with the stylesheet, as fractions of the rig box. */
+/**
+ * The machine, in the proportions of the RIVET mark: an upright, a crossbar
+ * with its return stub, plates stacked against the upright — a narrow group
+ * above a wide group — and the pin entering from the right. Everything is in
+ * viewBox units, so the same numbers drive the drawing, the motion and the
+ * tests regardless of how large the rig is rendered.
+ */
 export const RIG = {
-  platesTop: 0.34,
-  platesHeight: 0.61,
-  platesLeft: 0.235,
-  platesWidth: 0.66,
-  platePitch: 0.155,
-  plateHeight: 0.125,
-  shortPlate: 0.72,
-  /** How far the load rises in the finale, as a fraction of the rig height. */
-  lift: 0.06,
+  view: { width: 530, height: 560 },
+  upright: { x: 24, width: 24 },
+  bar: { height: 24, right: 310 },
+  stub: { x: 286, width: 24, bottom: 104 },
+  plate: { left: 92, narrowRight: 310, wideRight: 396, height: 54, pitch: 62, top: 190, narrowCount: 3 },
+  hole: { inset: 22, radius: 7 },
+  pin: { rod: 56, rodHeight: 12, collar: 12, collarHeight: 26, ringRadius: 16, ringStroke: 11, clearance: 14 },
+  /** How far each plate's lower face shows below it, to read as an iron slab. */
+  plateDepth: 4,
+  /** How far the load rises toward the stub in the finale. */
+  lift: 32,
 } as const;
 
 /**
@@ -155,15 +163,6 @@ export const RIG = {
  */
 export const STACK_TIMELINE = { lead: 0.03, dwell: 0.09, move: 0.07 } as const;
 
-export interface RigGeometry {
-  width: number;
-  height: number;
-  /** Length of the pin's rod, the part that disappears into a plate. */
-  rod: number;
-  /** Clearance between the rod's tip and the widest plate while travelling. */
-  gap: number;
-}
-
 export interface StackPose {
   /** Plate the pin is aligned with: the one it is leaving, or the one it is entering. */
   plate: number;
@@ -171,29 +170,27 @@ export interface StackPose {
   engaged: number;
   /** True while the pin is fully home in `plate`. */
   seated: boolean;
-  /** Vertical centre of the pin, in rig pixels, before the lift. */
+  /** The rod's tip, in viewBox units; the pin group is drawn from this point. */
+  tipX: number;
+  /** Vertical centre of the pin before the lift, in viewBox units. */
   y: number;
-  /** Left edge of the pin's ring, in rig pixels. */
-  ringLeft: number;
-  /** Vertical offset of the lifted load, in rig pixels (negative is up). */
+  /** Vertical offset of the lifted load, in viewBox units (negative is up). */
   lift: number;
   /** Progress through the finale, 0 until the last plate has been read. */
   finale: number;
 }
 
-export const plateRight = (index: number, width: number) =>
-  width * (RIG.platesLeft + RIG.platesWidth * (index < 3 ? RIG.shortPlate : 1));
-
-export const plateCentre = (index: number, height: number) =>
-  height * (RIG.platesTop + RIG.platesHeight * (index * RIG.platePitch + RIG.plateHeight / 2));
-
-/** Where the ring rests while the pin travels: the rod's tip clears every plate by `gap`. */
-export const restingRingLeft = (geometry: RigGeometry) => plateRight(PLATE_COUNT - 1, geometry.width) + geometry.rod + geometry.gap;
+export const plateRight = (index: number) => (index < RIG.plate.narrowCount ? RIG.plate.narrowRight : RIG.plate.wideRight);
+export const plateCentre = (index: number) => RIG.plate.top + index * RIG.plate.pitch + RIG.plate.height / 2;
+/** The rod is fully inside the plate when the collar meets the plate's edge. */
+export const seatedTip = (index: number) => plateRight(index) - RIG.pin.rod;
+/** Where the tip rests while the pin travels: clear of the widest plate. */
+export const travelTip = () => RIG.plate.wideRight + RIG.pin.clearance;
 
 /**
- * The pin's pose for a scroll progress, in rig pixels. A pure function of the
- * progress, so scrolling back plays the same motion in reverse and reloading
- * mid-section lands on exactly the pose the reader left.
+ * The pin's pose for a scroll progress. A pure function of the progress, so
+ * scrolling back plays the same motion in reverse and reloading mid-section
+ * lands on exactly the pose the reader left.
  *
  * Between plates the pin withdraws until its rod clears the widest plate,
  * travels straight down that clear lane, then inserts. One eased sweep is
@@ -201,28 +198,24 @@ export const restingRingLeft = (geometry: RigGeometry) => plateRight(PLATE_COUNT
  * steady pace and the three legs join without a jump.
  *
  * The description switches at the moment the rod's tip meets the edge of the
- * plate it is entering; in reverse, at the moment it leaves. The plate
- * lights at the same instant.
+ * plate it is entering; in reverse, at the moment it leaves. The plate lights
+ * at the same instant, and its hole shows the rod once the pin is home.
  */
-export function stackPoseAt(progress: number, geometry: RigGeometry): StackPose {
-  const right = (index: number) => plateRight(index, geometry.width);
-  const centre = (index: number) => plateCentre(index, geometry.height);
-  const out = restingRingLeft(geometry);
-
-  const finish = (raw: { plate: number; from: number; y: number; ringLeft: number; lift: number; finale: number }): StackPose => {
-    const edge = right(raw.plate);
-    const inside = raw.ringLeft - geometry.rod <= edge + 0.5;
+export function stackPoseAt(progress: number): StackPose {
+  const out = travelTip();
+  const finish = (raw: { plate: number; from: number; tipX: number; y: number; lift: number; finale: number }): StackPose => {
+    const inside = raw.tipX <= plateRight(raw.plate) + 0.5;
     return {
       plate: raw.plate,
       engaged: inside ? raw.plate : raw.from,
-      seated: raw.plate === raw.from && raw.ringLeft <= edge + 0.5,
+      seated: raw.plate === raw.from && raw.tipX <= seatedTip(raw.plate) + 0.5,
+      tipX: raw.tipX,
       y: raw.y,
-      ringLeft: raw.ringLeft,
       lift: raw.lift,
       finale: raw.finale,
     };
   };
-  const home = (index: number) => finish({ plate: index, from: index, y: centre(index), ringLeft: right(index), lift: 0, finale: 0 });
+  const home = (index: number) => finish({ plate: index, from: index, tipX: seatedTip(index), y: plateCentre(index), lift: 0, finale: 0 });
 
   const { lead, dwell, move } = STACK_TIMELINE;
   let cursor = lead;
@@ -232,23 +225,23 @@ export function stackPoseAt(progress: number, geometry: RigGeometry): StackPose 
     cursor += dwell;
     if (index === PLATE_COUNT - 1) break;
     if (progress < cursor + move) {
-      const withdraw = out - right(index);
-      const travel = centre(index + 1) - centre(index);
-      const insert = out - right(index + 1);
+      const withdraw = out - seatedTip(index);
+      const travel = plateCentre(index + 1) - plateCentre(index);
+      const insert = out - seatedTip(index + 1);
       const distance = smoothstep((progress - cursor) / move) * (withdraw + travel + insert);
       if (distance <= withdraw) {
-        return finish({ plate: index, from: index, y: centre(index), ringLeft: right(index) + distance, lift: 0, finale: 0 });
+        return finish({ plate: index, from: index, tipX: seatedTip(index) + distance, y: plateCentre(index), lift: 0, finale: 0 });
       }
       if (distance <= withdraw + travel) {
-        return finish({ plate: index, from: index, y: centre(index) + (distance - withdraw), ringLeft: out, lift: 0, finale: 0 });
+        return finish({ plate: index, from: index, tipX: out, y: plateCentre(index) + (distance - withdraw), lift: 0, finale: 0 });
       }
-      return finish({ plate: index + 1, from: index, y: centre(index + 1), ringLeft: out - (distance - withdraw - travel), lift: 0, finale: 0 });
+      return finish({ plate: index + 1, from: index, tipX: out - (distance - withdraw - travel), y: plateCentre(index + 1), lift: 0, finale: 0 });
     }
     cursor += move;
   }
   const last = PLATE_COUNT - 1;
   const finale = clamp((progress - cursor) / Math.max(0.001, 1 - cursor), 0, 1);
-  return finish({ plate: last, from: last, y: centre(last), ringLeft: right(last), lift: -smoothstep(finale / 0.7) * geometry.height * RIG.lift, finale });
+  return finish({ plate: last, from: last, tipX: seatedTip(last), y: plateCentre(last), lift: -smoothstep(finale / 0.7) * RIG.lift, finale });
 }
 
 /** The scene is pinned only where the whole composition fits; the stylesheet mirrors this query. */
@@ -256,31 +249,22 @@ const STATIC_STACK_QUERY = "(prefers-reduced-motion: reduce), (max-height: 600px
 
 export function ScrollStackStory() {
   const sectionRef = useRef<HTMLElement>(null);
-  const rigRef = useRef<HTMLDivElement>(null);
-  const rodRef = useRef<HTMLSpanElement>(null);
+  const pinRef = useRef<SVGGElement>(null);
+  const loadRef = useRef<SVGGElement>(null);
   const [engaged, setEngaged] = useState(0);
   const [seated, setSeated] = useState(true);
   const [finale, setFinale] = useState(false);
 
   useEffect(() => {
     const section = sectionRef.current;
-    const rig = rigRef.current;
-    const rod = rodRef.current;
-    if (!section || !rig || !rod) return;
-
-    const geometry: RigGeometry = { width: 1, height: 1, rod: 48, gap: 14 };
-    const measure = () => {
-      geometry.width = Math.max(1, rig.clientWidth);
-      geometry.height = Math.max(1, rig.clientHeight);
-      geometry.rod = rod.offsetWidth;
-      geometry.gap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.9;
-    };
+    const pin = pinRef.current;
+    const load = loadRef.current;
+    if (!section || !pin || !load) return;
 
     const paint = (progress: number) => {
-      const pose = stackPoseAt(progress, geometry);
-      section.style.setProperty("--stack-pin-x", `${(pose.ringLeft - geometry.rod).toFixed(2)}px`);
-      section.style.setProperty("--stack-pin-y", `${(pose.y + pose.lift).toFixed(2)}px`);
-      section.style.setProperty("--stack-lift", `${pose.lift.toFixed(2)}px`);
+      const pose = stackPoseAt(progress);
+      pin.style.transform = `translate(${pose.tipX.toFixed(2)}px, ${(pose.y + pose.lift).toFixed(2)}px)`;
+      load.style.transform = `translate(0px, ${pose.lift.toFixed(2)}px)`;
       section.style.setProperty("--stack-progress", `${(progress * 100).toFixed(2)}%`);
       // The bar has done its job once the stack lifts; fading it keeps the seam
       // with the next sheet clean.
@@ -300,50 +284,32 @@ export function ScrollStackStory() {
     // Test and legacy environments have no matchMedia; they get the scrolling scene.
     const staticQuery = typeof window.matchMedia === "function" ? window.matchMedia(STATIC_STACK_QUERY) : null;
     const isStatic = () => staticQuery?.matches ?? false;
-    let frame = 0;
     let readyFrame = 0;
     let following = false;
 
-    const follow = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        paint(readProgress());
-      });
-    };
-
-    const settle = () => {
-      measure();
-      if (isStatic()) {
-        paint(1);
-        return;
-      }
-      paint(readProgress());
-    };
-
-    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(settle);
+    // Scroll events already arrive at most once a frame; painting straight
+    // from them keeps the pin on the reader's hand with no loop of its own.
+    const follow = () => paint(readProgress());
+    const settle = () => paint(isStatic() ? 1 : readProgress());
 
     const start = () => {
       if (following) return;
       following = true;
       window.addEventListener("scroll", follow, { passive: true });
       window.addEventListener("resize", settle, { passive: true });
-      resizeObserver?.observe(rig);
     };
     const stop = () => {
       if (!following) return;
       following = false;
       window.removeEventListener("scroll", follow);
       window.removeEventListener("resize", settle);
-      resizeObserver?.disconnect();
-      if (frame) window.cancelAnimationFrame(frame);
-      frame = 0;
     };
 
     const apply = () => {
       // The first pose is written without a transition so a reload mid-section
       // shows the pin where it belongs instead of sliding it in from the top.
       delete section.dataset.stackReady;
+      if (readyFrame) window.cancelAnimationFrame(readyFrame);
       settle();
       if (isStatic()) {
         stop();
@@ -365,6 +331,8 @@ export function ScrollStackStory() {
       delete section.dataset.stackReady;
     };
   }, []);
+
+  const { view, upright, bar, stub, plate, hole, pin } = RIG;
 
   return (
     <section ref={sectionRef} id="product" data-landing-theme="dark" className={styles.stackStory} aria-labelledby="stack-title">
@@ -392,33 +360,48 @@ export function ScrollStackStory() {
             </ol>
 
             <div className={styles.stackFigure} aria-hidden>
-              <div ref={rigRef} className={styles.rig}>
-                <span className={styles.rigRod} />
-                <span className={styles.rigBar} />
-                <span className={styles.rigReturn} />
-                <span className={styles.rigPin} data-stack-pin>
-                  <span ref={rodRef} className={styles.rigPinRod} />
-                  <span className={styles.rigPinRing} />
-                </span>
-                <ol className={styles.rigPlates}>
-                  {STACK_ITEMS.map((item, index) => (
-                    <li
-                      key={item.label}
-                      data-stack-plate={index}
-                      className={cn(
-                        styles.rigPlate,
-                        index < 3 && styles.rigPlateShort,
-                        index <= engaged && styles.rigPlateActive,
-                        seated && index === engaged && styles.rigPlateSeated,
-                      )}
-                      style={{ "--plate-index": index } as CSSProperties}
-                    >
-                      <span>{item.label}</span>
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
+              <svg
+                className={styles.rig}
+                viewBox={`0 0 ${view.width} ${view.height}`}
+                width={view.width}
+                height={view.height}
+                focusable="false"
+              >
+                {/* frame: upright, crossbar, return stub */}
+                <rect className={styles.rigFrame} x={upright.x} y={0} width={upright.width} height={view.height} rx={6} />
+                <rect className={styles.rigFrame} x={upright.x} y={0} width={bar.right - upright.x} height={bar.height} rx={6} />
+                <rect className={styles.rigFrame} x={stub.x} y={0} width={stub.width} height={stub.bottom} rx={6} />
+
+                {/* the pin, drawn under the plates so its rod disappears inside one */}
+                <g ref={pinRef} className={styles.rigPin} data-stack-pin>
+                  <rect className={styles.rigPinPart} x={0} y={-pin.rodHeight / 2} width={pin.rod + 2} height={pin.rodHeight} rx={pin.rodHeight / 2} />
+                  <rect className={styles.rigPinPart} x={pin.rod} y={-pin.collarHeight / 2} width={pin.collar} height={pin.collarHeight} rx={4} />
+                  <circle className={styles.rigPinRing} cx={pin.rod + pin.collar + pin.ringRadius + pin.ringStroke / 2} cy={0} r={pin.ringRadius} />
+                </g>
+
+                {/* the load: every plate, lifted together in the finale */}
+                <g ref={loadRef} className={styles.rigLoad}>
+                  {STACK_ITEMS.map((item, index) => {
+                    const top = plate.top + index * plate.pitch;
+                    const right = plateRight(index);
+                    const lit = index <= engaged;
+                    return (
+                      <g
+                        key={item.label}
+                        data-stack-plate={index}
+                        className={cn(styles.rigPlateGroup, lit && styles.rigPlateGroupLit, seated && index === engaged && styles.rigPlateGroupSeated)}
+                      >
+                        <rect className={styles.rigPlateSide} x={plate.left} y={top + RIG.plateDepth} width={right - plate.left} height={plate.height} rx={7} />
+                        <rect className={styles.rigPlate} x={plate.left} y={top} width={right - plate.left} height={plate.height} rx={7} />
+                        <text className={styles.rigPlateLabel} x={plate.left + 18} y={top + plate.height / 2} dominantBaseline="central">
+                          {item.label}
+                        </text>
+                        <circle className={styles.rigHole} cx={right - hole.inset} cy={top + plate.height / 2} r={hole.radius} />
+                      </g>
+                    );
+                  })}
+                </g>
+              </svg>
             </div>
 
             <div className={styles.stackCopy} aria-hidden>
