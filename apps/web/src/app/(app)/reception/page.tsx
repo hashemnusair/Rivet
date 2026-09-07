@@ -24,7 +24,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { formatTime, todayISODate } from "@/lib/utils/dates";
+import { formatDate, formatTime, todayISODate } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
@@ -858,7 +858,7 @@ function VerdictPanel({
     : message;
   // A future term has a start, not an expiry; a past one has already ended.
   const termLabel = membership?.status === "scheduled" ? "Starts" : membership?.status === "expired" ? "Expired" : "Expires";
-  const termValue = membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate ?? "—";
+  const termDate = membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate;
 
   return (
     <div
@@ -892,9 +892,12 @@ function VerdictPanel({
           </div>
         </div>
 
-        <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-4" data-testid="checkin-facts">
+        {/* Two columns until the lane is genuinely wide: four narrow cells cut
+            "10-Visit Pass" and the expiry date to an ellipsis at the moment the
+            desk needs to read them. */}
+        <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 2xl:grid-cols-4" data-testid="checkin-facts">
           <Cell label="Plan" value={member.currentPlanName ?? "None"} muted={!member.currentPlanName} />
-          <Cell label={termLabel} value={termValue} mono />
+          <Cell label={termLabel} value={termDate ? formatDate(termDate) : "—"} muted={!termDate} />
           <Cell
             label="Visits left"
             value={membership?.remainingVisits != null ? `${membership.remainingVisits}` : "—"}
@@ -1005,7 +1008,7 @@ function Cell({
       <ContextLabel as="dt" tone="night">{label}</ContextLabel>
       <dd
         className={cn(
-          "mt-0.5 truncate text-[14px]",
+          "mt-0.5 break-words [overflow-wrap:anywhere] text-[14px]",
           mono && "tabular",
           tone === "warn" ? "text-warning" : muted ? "text-night-ink-3" : "text-night-ink",
         )}

@@ -16,7 +16,7 @@ import { CheckInDecisionChip, MembershipStatusChip, PaymentStatusChip, PAYMENT_M
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/misc";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState, QueryErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils/cn";
 import { receiptHref } from "@/lib/utils/receipt-links";
@@ -121,7 +121,7 @@ export function TimelineTab({ memberId }: { memberId: UUID }) {
         {query.isLoading ? (
           <Skeleton className="h-64 w-full" />
         ) : query.isError ? (
-          <ErrorState onRetry={() => query.refetch()} />
+          <QueryErrorState error={query.error} onRetry={() => query.refetch()} />
         ) : (
           <>
             <div data-testid="member-timeline">
@@ -144,7 +144,7 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
   );
 
   if (query.isLoading) return <Skeleton className="h-48 w-full" />;
-  if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
+  if (query.isError) return <QueryErrorState error={query.error} onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
     return <EmptyState layout="section" title="No memberships yet" description="Sell the first membership to start this member's commercial record." />;
@@ -314,7 +314,9 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
   );
 
   if (query.isLoading) return <Skeleton className="h-48 w-full" />;
-  if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
+  // A refusal (the role lost the financial-report permission) is a permission
+  // wall, not a "try again": retrying cannot change the server's answer.
+  if (query.isError) return <QueryErrorState error={query.error} onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
     return <EmptyState layout="section" title="No payments yet" description="Collected payments, refunds and receipts will appear here." />;
@@ -398,7 +400,7 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
   );
 
   if (query.isLoading) return <Skeleton className="h-48 w-full" />;
-  if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
+  if (query.isError) return <QueryErrorState error={query.error} onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
     return <EmptyState layout="section" title="No check-ins recorded" description="Check-ins from the reception console will appear here." />;
@@ -531,17 +533,20 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
 // ---------------------------------------------------------------------------
 // Details panel
 // ---------------------------------------------------------------------------
+/** A profile field nobody has filled in yet: the desk may still need to ask for it. */
+const NOT_RECORDED = <span className="text-ink-3">Not recorded</span>;
+
 export function MemberDetailsPanel({ member, branchName, salespersonName }: { member: MemberDetail; branchName: string; salespersonName?: string }) {
   const rows: Array<[string, React.ReactNode]> = [
     ["Phone", <span key="p" dir="ltr" className="text-[12.5px]">{member.phone}</span>],
-    ["Email", member.email ?? "—"],
+    ["Email", member.email ?? NOT_RECORDED],
     ["Home branch", branchName],
     ["Preferred language", member.preferredLanguage === "ar" ? "العربية" : "English"],
-    ["Gender", member.gender ?? "—"],
-    ["Date of birth", member.dateOfBirth ? <DateText key="dob" iso={member.dateOfBirth} /> : "—"],
-    ["Address", member.addressLine1 ? `${member.addressLine1}${member.city ? ` · ${member.city}` : ""}` : "—"],
-    ["Emergency contact", member.emergencyContactName ? `${member.emergencyContactName}${member.emergencyContactRelationship ? ` · ${member.emergencyContactRelationship}` : ""}${member.emergencyContactPhone ? ` · ${member.emergencyContactPhone}` : ""}` : "—"],
-    ["Source", member.source ? member.source.replace(/_/g, " ") : "—"],
+    ["Gender", member.gender ?? NOT_RECORDED],
+    ["Date of birth", member.dateOfBirth ? <DateText key="dob" iso={member.dateOfBirth} /> : NOT_RECORDED],
+    ["Address", member.addressLine1 ? `${member.addressLine1}${member.city ? ` · ${member.city}` : ""}` : NOT_RECORDED],
+    ["Emergency contact", member.emergencyContactName ? `${member.emergencyContactName}${member.emergencyContactRelationship ? ` · ${member.emergencyContactRelationship}` : ""}${member.emergencyContactPhone ? ` · ${member.emergencyContactPhone}` : ""}` : NOT_RECORDED],
+    ["Source", member.source ? member.source.replace(/_/g, " ") : NOT_RECORDED],
     ["Salesperson", salespersonName ?? "Unassigned"],
     ["Marketing", <span key="marketing">{member.marketingPreference?.status === "unknown" || !member.marketingPreference ? "Unknown · suppressed" : member.marketingOptIn ? "Opted in" : "Opted out"}{member.marketingPreference ? <span className="ms-1 text-ink-3">· {member.marketingPreference.source.replaceAll("_", " ")}</span> : null}</span>],
     ["Member since", <DateText key="c" iso={member.createdAt} />],

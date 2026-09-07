@@ -1,6 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -131,7 +132,7 @@ function MembershipsWorkspace() {
         ) : (
           <>
           <ul className="divide-y divide-line lg:hidden" aria-label="Memberships">
-            {data.items.map((membership) => <MembershipCompactRow key={membership.id} membership={membership} onOpen={() => router.push(`/members/${membership.memberId}`)} />)}
+            {data.items.map((membership) => <MembershipCompactRow key={membership.id} membership={membership} />)}
           </ul>
           <Table className="hidden lg:table">
             <TableHeader>
@@ -149,7 +150,7 @@ function MembershipsWorkspace() {
               {data.items.map((m) => (
                 <TableRow key={m.id} interactive onClick={() => router.push(`/members/${m.memberId}`)}>
                   <TableCell>
-                    <span className="block font-medium">{m.memberName}</span>
+                    <Link href={`/members/${m.memberId}`} className="block font-medium underline-offset-4 hover:underline focus-visible:underline">{m.memberName}</Link>
                     <span className="font-mono text-[11px] text-ink-3">{m.memberNumber}</span>
                   </TableCell>
                   <TableCell className="text-[12.5px]">
@@ -195,10 +196,10 @@ function MembershipsWorkspace() {
   );
 }
 
-function MembershipCompactRow({ membership, onOpen }: { membership: MembershipSummary; onOpen: () => void }) {
+function MembershipCompactRow({ membership }: { membership: MembershipSummary }) {
   return (
     <li>
-      <button type="button" className="block w-full px-4 py-3.5 text-start hover:bg-sunken/60" onClick={onOpen}>
+      <Link href={`/members/${membership.memberId}`} className="block w-full px-4 py-3.5 text-start hover:bg-sunken/60 focus-visible:bg-sunken/60">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-[13.5px] font-semibold text-ink">{membership.memberName}</p>
@@ -212,7 +213,7 @@ function MembershipCompactRow({ membership, onOpen }: { membership: MembershipSu
           <div><p className="text-ink-3">Term</p><p className="mt-0.5 tabular text-ink">{membership.startDate} → {membership.endDate}</p><DaysUntilText date={membership.endDate} className="mt-0.5 block text-[12px]" /></div>
           <div><p className="text-ink-3">Balance</p><p className={`mt-0.5 font-medium ${membership.outstanding.amount > 0 ? "text-warning-deep" : "text-ink-3"}`}>{membership.outstanding.amount > 0 ? <MoneyText money={membership.outstanding} /> : "Settled"}</p></div>
         </div>
-      </button>
+      </Link>
     </li>
   );
 }

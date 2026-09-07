@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Dumbbell, StickyNote } from "lucide-react";
+import { CalendarClock, Dumbbell, Lock, StickyNote } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/misc";
-import { ErrorState, NotFoundState } from "@/components/ui/states";
+import { ErrorState, NotFoundState, StatePanel } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { isApiError } from "@/lib/api/errors";
 import { pickCurrentMembership, pickRenewalTarget } from "@/lib/domain/status";
@@ -47,7 +47,13 @@ export default function MemberDetailPageClient() {
   // Today and the queues link here with ?action=contact to record an outcome.
   const [contactOpen, setContactOpen] = useState(searchParams.get("action") === "contact");
   const requestedTab = searchParams.get("tab");
-  const activeTab = MEMBER_TABS.some((tab) => tab.value === requestedTab) ? requestedTab! : "overview";
+  // A tab the role cannot read is left out of the strip, like a sidebar
+  // destination the role lacks. A deep link to it still lands on that tab so
+  // the permission wall explains the link instead of silently showing Overview.
+  const visibleTabs = MEMBER_TABS.filter((tab) => !tab.permission || can(tab.permission));
+  const requested = MEMBER_TABS.find((tab) => tab.value === requestedTab);
+  const activeTab = requested?.value ?? "overview";
+  const blockedTab = requested?.permission && !can(requested.permission) ? requested : undefined;
 
   const memberQuery = useRealtimeApiQuery({ queryKey: qk.member(memberId), query: (api) => api.getMember(memberId), subscribe: (api, onValue, onError) => api.subscribeMember(memberId, onValue, onError) });
   const membershipsQuery = useApiQuery(qk.memberships({ memberId }), (api) =>
@@ -108,7 +114,7 @@ export default function MemberDetailPageClient() {
         }}>
           <div className="min-w-0">
             <TabsList aria-label="Member sections">
-              {MEMBER_TABS.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value} data-testid={tab.value === "timeline" ? "tab-timeline" : undefined}>
                   {tab.value === "pt" ? <Dumbbell className="size-3.5" /> : null}
                   {tab.label}
@@ -126,7 +132,16 @@ export default function MemberDetailPageClient() {
             <MembershipsTab memberId={member.id} />
           </TabsContent>
           <TabsContent value="payments">
-            <PaymentsTab memberId={member.id} />
+            {blockedTab?.value === "payments" ? (
+              <StatePanel
+                icon={Lock}
+                layout="section"
+                title="Not allowed for this role"
+                description="The money trail needs the “View financial reports” permission. The paid or unpaid status above and the payment events on the Timeline are still available to you."
+              />
+            ) : (
+              <PaymentsTab memberId={member.id} />
+            )}
           </TabsContent>
           <TabsContent value="checkins">
             <CheckInsTab memberId={member.id} />
@@ -329,11 +344,13 @@ function CreateTaskDialog({
   );
 }
 
-const MEMBER_TABS = [
+const MEMBER_TABS: ReadonlyArray<{ value: string; label: string; permission?: string }> = [
   { value: "overview", label: "Overview" },
   { value: "timeline", label: "Timeline" },
   { value: "memberships", label: "Memberships" },
-  { value: "payments", label: "Payments" },
+  // The server refuses the transaction list without this permission; the
+  // Payments page hides the same way for the same roles.
+  { value: "payments", label: "Payments", permission: "reports.financial.read" },
   { value: "checkins", label: "Check-ins" },
   { value: "pt", label: "PT" },
-] as const;
+];

@@ -40,22 +40,24 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     for (const [route, ready] of [
-      ["/crm/pipeline?view=list", "Leads"], ["/crm/queues", "Retention"],
+      ["/crm/pipeline?view=list", "Leads"], ["/crm/queues", "Follow-ups"],
       ["/classes", "Classes"], ["/pt", "Personal training"],
       ["/memberships", "Memberships"], ["/plans", "Membership plans"],
     ]) {
       await page.goto(route!);
       await expect(page.getByRole("heading", { level: 1 }), route).toBeVisible();
       if (ready === "Leads") await expect(page.locator('a[href^="/crm/leads/"]:visible').first()).toBeVisible();
-      if (ready === "Retention") await expect(page.locator('section[aria-labelledby="risk-results-title"] li button').first()).toBeVisible();
+      if (ready === "Follow-ups") await expect(page.locator('section[aria-labelledby="risk-results-title"] li button').first()).toBeVisible();
       if (ready === "Classes") await expect(page.getByTestId("class-agenda-row").first()).toBeVisible();
       if (ready === "Personal training") await expect(page.getByRole("heading", { name: "No upcoming PT sessions" })).toBeVisible();
       await fits(page);
-      if ((width === 390 || width === 1440) && ["Leads", "Retention", "Classes", "Personal training"].includes(ready!)) {
+      if ((width === 390 || width === 1440) && ["Leads", "Follow-ups", "Classes", "Personal training"].includes(ready!)) {
         await page.evaluate(() => document.fonts.ready);
-        await expect(page).toHaveScreenshot(`pass-2-${ready!.toLowerCase().replaceAll(" ", "-")}-${width}.png`, { animations: "disabled", maxDiffPixelRatio: 0.04 });
+        // The follow-up queues keep their original "retention" reference name.
+        const slug = ready === "Follow-ups" ? "retention" : ready!.toLowerCase().replaceAll(" ", "-");
+        await expect(page).toHaveScreenshot(`pass-2-${slug}-${width}.png`, { animations: "disabled", maxDiffPixelRatio: 0.04 });
       }
-      if (ready === "Retention" && (width === 390 || width === 1440)) {
+      if (ready === "Follow-ups" && (width === 390 || width === 1440)) {
         await page.locator('section[aria-labelledby="risk-results-title"] li button').first().click();
         const detail = page.getByTestId("at-risk-panel");
         await expect(detail.getByRole("link", { name: /Open member record/ })).toBeVisible();

@@ -57,8 +57,8 @@ function RetentionWorkspace() {
   const view = params.get("view") === "renewals" ? "renewals" : "at-risk";
   const setView = (next: string) => update({ view: next, page: undefined, member: undefined });
   return <div className="space-y-4">
-    <PageHeader title="Retention" description="Follow up with members who stopped visiting or need to renew." />
-    <div className={tabListClassName} role="group" aria-label="Retention workspace">
+    <PageHeader title="Follow-ups" description="Follow up with members who stopped visiting or need to renew." />
+    <div className={tabListClassName} role="group" aria-label="Follow-up queues">
       <button type="button" aria-pressed={view === "at-risk"} onClick={() => setView("at-risk")} className={tabTriggerClassName}><Activity className="size-3.5" /> At risk</button>
       <button type="button" aria-pressed={view === "renewals"} onClick={() => setView("renewals")} className={tabTriggerClassName}><CalendarClock className="size-3.5" /> Renewals</button>
     </div>
@@ -325,7 +325,7 @@ function EmptyQueue({ text, description, onReset }: { text: string; description:
 }
 
 function RenewalContext({ item }: { item: RenewalQueueItem }) {
-  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends"><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact">{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
+  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends">{formatDate(item.membership.endDate)} · <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact">{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
 }
 
 function FollowUpHeader({ member, onClose }: { member: { id: string; fullName: string; phone: string }; onClose: () => void }) {
