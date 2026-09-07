@@ -166,9 +166,14 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByText("Booked", { exact: true }).first()).toBeVisible();
 
     await page.getByRole("button", { name: "Cancel" }).first().click();
-    // The seeded class is a fixed weekly slot, so depending on the time of day
-    // the cancellation lands inside the late window. Both outcomes are the
-    // honest result of the same flow; only the wording differs.
+    // Cancelling is confirmed first: the dialog states the outcome before
+    // anything is recorded. The seeded class is a fixed weekly slot, so
+    // depending on the time of day the cancellation lands inside the late
+    // window. Both outcomes are the honest result of the same flow; only the
+    // wording differs.
+    const confirmation = page.getByRole("dialog", { name: /^Cancel .+\?$/ });
+    await expect(confirmation.getByRole("status")).toBeVisible();
+    await confirmation.getByRole("button", { name: "Cancel booking" }).click();
     await expect(page.getByText(/^(Class booking cancelled\.|Late cancellation recorded\.)/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Book class" }).first()).toBeEnabled();
   });
