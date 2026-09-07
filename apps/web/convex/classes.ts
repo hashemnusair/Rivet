@@ -278,6 +278,66 @@ async function coachByPublicId(ctx: ReadContext, actor: ActorContext, id: string
   return coach;
 }
 
+type ScheduledOccurrence = { occurrence: ClassOccurrence; bookings: ClassBooking[]; rostered: number };
+
+/** Dated classes generated from this template that have not started yet. */
+async function scheduledOccurrencesFor(ctx: MutationCtx, actor: ActorContext, template: ClassSession): Promise<ScheduledOccurrence[]> {
+  const now = Date.now();
+  const rows = (await ctx.db.query("classOccurrences").withIndex("by_template_date", (q) => q.eq("organizationId", actor.organization._id).eq("templateId", template._id)).collect())
+    .filter((row) => row.status === "scheduled" && row.startsAt > now)
+    .sort((left, right) => left.startsAt - right.startsAt);
+  return await Promise.all(rows.map(async (occurrence) => {
+    const bookings = await ctx.db.query("classBookings").withIndex("by_occurrence", (q) => q.eq("organizationId", actor.organization._id).eq("occurrenceId", occurrence._id)).collect();
+    return { occurrence, bookings, rostered: bookings.filter((booking) => bookingIsRostered(booking.status)).length };
+  }));
+}
+
+/**
+ * A dated class snapshots its template when the first booking creates it, so
+ * a timetable edit must flow into the upcoming dates or staff read one
+ * capacity on the timetable while members are held to another on the roster.
+ * Seats opened by a larger capacity go to the waitlist in FIFO order. A date
+ * whose weekday no longer matches the template keeps its time: those bookings
+ * are real commitments and moving them silently is a policy decision.
+ */
+async function syncScheduledOccurrences(ctx: MutationCtx, actor: ActorContext, template: ClassSession, scheduled: ScheduledOccurrence[]): Promise<{ synced: number; promoted: number }> {
+  const timezone = actor.organization.timezone || "Asia/Amman";
+  const slot = weeklySlot(template, timezone);
+  let promoted = 0;
+  for (const { occurrence, bookings } of scheduled) {
+    const now = Date.now();
+    const sameWeekday = new Date(`${occurrence.date}T12:00:00.000Z`).getUTCDay() === slot.dayOfWeek;
+    const times = sameWeekday ? occurrenceTimes(occurrence.date, slot.startMinute, template.durationMinutes, timezone) : { startsAt: occurrence.startsAt, endsAt: occurrence.endsAt };
+    // A reason-gated substitute stays in place; only the regular coach follows the template.
+    const substituted = Boolean(occurrence.substitutionReason) || Boolean(occurrence.coachId && occurrence.coachId !== occurrence.regularCoachId);
+    await ctx.db.patch(occurrence._id, {
+      name: template.name,
+      capacity: template.capacity,
+      audience: template.audience ?? "mixed",
+      imageAssetId: template.imageAssetId,
+      notes: template.notes,
+      regularCoachId: template.coachUserId,
+      regularCoachName: template.coachName,
+      ...(substituted ? {} : { coachId: template.coachUserId, coachName: template.coachName }),
+      startsAt: times.startsAt,
+      endsAt: times.endsAt,
+      updatedAt: now,
+    });
+    if (times.startsAt !== occurrence.startsAt) {
+      for (const booking of bookings) await ctx.db.patch(booking._id, { startsAt: times.startsAt, updatedAt: now });
+    }
+    const updated = (await ctx.db.get(occurrence._id))!;
+    let rostered = bookings.filter((booking) => bookingIsRostered(booking.status)).length;
+    while (rostered < updated.capacity) {
+      const next = await promoteWaitlist(ctx, actor.organization, updated);
+      if (!next) break;
+      rostered += 1;
+      promoted += 1;
+    }
+  }
+  return { synced: scheduled.length, promoted };
+}
+
 async function listClassSessions(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data[]> {
   requirePermission(actor, "members.read");
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
@@ -339,11 +399,17 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
     }
     if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A class cannot move between branches.", { correlationId: actor.correlationId });
     if (capacity < existing.roster.length) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${existing.roster.length} people already in the class.`, { correlationId: actor.correlationId });
+    // Upcoming dated classes already carry bookings against the old numbers;
+    // nobody loses a confirmed place because the timetable shrank.
+    const scheduled = await scheduledOccurrencesFor(ctx, actor, existing);
+    const overbooked = scheduled.find((row) => capacity < row.rostered);
+    if (overbooked) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${overbooked.rostered} people already booked for ${overbooked.occurrence.date}.`, { correlationId: actor.correlationId, fieldErrors: { capacity: [`${overbooked.rostered} booked on ${overbooked.occurrence.date}`] } });
     const before = { name: existing.name, dayOfWeek: existing.dayOfWeek, startMinute: existing.startMinute, durationMinutes: existing.durationMinutes, capacity: existing.capacity, audience: existing.audience, coachName: existing.coachName, imageAssetId: existing.imageAssetId };
     await activateClassImage(ctx, actor, imageAssetId, existing.imageAssetId);
     await ctx.db.patch(existing._id, { name, coachUserId: coachId, coachName, dayOfWeek, startMinute, startsAt: undefined, audience: audience as ClassSession["audience"], durationMinutes, capacity, imageAssetId, notes, status: "scheduled", cancelReason: undefined, updatedAt: now });
     const updated = (await ctx.db.get(existing._id))!;
-    await classAudit(ctx, actor, { action: "classes.session.update", branchId: updated.branchId, entityId: updated.publicId, entityLabel: name, summary: `Updated class ${name}`, before, after: { name, dayOfWeek, startMinute, durationMinutes, capacity, audience, coachName, imageAssetId } });
+    const sync = await syncScheduledOccurrences(ctx, actor, updated, scheduled);
+    await classAudit(ctx, actor, { action: "classes.session.update", branchId: updated.branchId, entityId: updated.publicId, entityLabel: name, summary: `Updated class ${name}`, before, after: { name, dayOfWeek, startMinute, durationMinutes, capacity, audience, coachName, imageAssetId, syncedOccurrences: sync.synced, promotedFromWaitlist: sync.promoted } });
     return await classView(ctx, actor, updated);
   }
 
@@ -654,7 +720,13 @@ async function customerClassExperience(ctx: QueryCtx, context: CustomerClassCont
     const rostered = bookings.filter((booking) => bookingIsRostered(booking.status)).length;
     const waitlisted = bookings.filter((booking) => booking.status === "waitlisted").length;
     let reason: string | undefined;
+    const now = Date.now();
     if (!policy.enabled) reason = "This gym has paused member class booking.";
+    // A class that is over, in progress, or cancelled is never bookable; say so
+    // instead of offering a button the server would reject.
+    else if (source.status === "cancelled") reason = "This class was cancelled.";
+    else if (source.status !== "scheduled" || Number(source.endsAt) <= now) reason = "This class has ended.";
+    else if (Number(source.startsAt) <= now) reason = "Booking closed when the class started.";
     else if (policyPlanBlocked) reason = "Your membership plan does not include classes.";
     else if (!['active', 'expiring'].includes(membershipStatusOn(membership, String(source.date)))) reason = "Your membership is not active for this class date.";
     else if (profileCorrectionRequired) reason = "Add your gender in Profile before booking a gender-restricted class.";
@@ -828,10 +900,12 @@ async function cancelBooking(ctx: MutationCtx, input: { organization: Organizati
   if (input.requireStaffReason && !optionalText(input.reason)) domainError("VALIDATION_ERROR", "A reason is required when staff remove a class booking.", { correlationId: input.correlationId, fieldErrors: { reason: ["Required"] } });
   if (input.occurrence.endsAt <= Date.now()) domainError("CONFLICT", "This class has ended. Finalize attendance instead.", { correlationId: input.correlationId });
   const policy = await classPolicy(ctx, input.organization._id);
-  const late = Date.now() > input.occurrence.startsAt - Number(policy.cancellationCutoffHours) * 3_600_000;
+  const previousStatus = input.booking.status;
+  // Only a confirmed place can be given up late: leaving the waitlist frees no
+  // seat, so it is a plain cancellation whatever the clock says.
+  const late = previousStatus === "booked" && Date.now() > input.occurrence.startsAt - Number(policy.cancellationCutoffHours) * 3_600_000;
   const outcome = late ? "late_cancelled" as const : "cancelled" as const;
   const now = Date.now();
-  const previousStatus = input.booking.status;
   await ctx.db.patch(input.booking._id, { status: outcome, cancelledAt: now, updatedAt: now });
   const updated = (await ctx.db.get(input.booking._id))!;
   const promoted = previousStatus === "booked" ? await promoteWaitlist(ctx, input.organization, input.occurrence) : undefined;
@@ -850,11 +924,17 @@ async function customerBookingMutation(ctx: MutationCtx, context: CustomerClassC
     return { occurrence: await occurrenceView(ctx, context.organization, persistedOccurrenceData(occurrence, branch!), all, context.member.publicId), outcome: created.outcome };
   }
   const requestedBookingId = optionalText(input.bookingId);
+  const ownBookings = requestedBookingId
+    ? []
+    : (await ctx.db.query("classBookings").withIndex("by_occurrence_member", (q) => q.eq("organizationId", context.organization._id).eq("occurrenceId", occurrence._id).eq("memberPublicId", context.member.publicId)).collect())
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+  // A second tap on Cancel (or a retry after a lost response) must report the
+  // cancellation that already happened instead of "booking not found".
+  const latestOwn = ownBookings[0];
   const booking = requestedBookingId
     ? await ctx.db.query("classBookings").withIndex("by_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", requestedBookingId)).unique()
-    : (await ctx.db.query("classBookings").withIndex("by_occurrence_member", (q) => q.eq("organizationId", context.organization._id).eq("occurrenceId", occurrence._id).eq("memberPublicId", context.member.publicId)).collect())
-      .filter((candidate) => ACTIVE_BOOKING_STATUSES.has(candidate.status))
-      .sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null;
+    : ownBookings.find((candidate) => ACTIVE_BOOKING_STATUSES.has(candidate.status))
+      ?? (latestOwn && (latestOwn.status === "cancelled" || latestOwn.status === "late_cancelled") ? latestOwn : null);
   if (!booking || booking.occurrenceId !== occurrence._id || booking.memberPublicId !== context.member.publicId || booking.membershipPublicId !== context.membership.publicId) domainError("NOT_FOUND", "Class booking not found.", { correlationId });
   const cancelled = await cancelBooking(ctx, { organization: context.organization, actor: context.user, actorRole: "member", correlationId, occurrence, booking, requireStaffReason: false });
   const branch = await ctx.db.get(occurrence.branchId);

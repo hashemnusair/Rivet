@@ -47,6 +47,25 @@
       "port": 3310
     },
     {
+      "name": "web-mock-classes-pt",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "NEXT_DIST_DIR=.next-playwright/classes-pt",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "dev",
+        "--webpack",
+        "-p",
+        "3410"
+      ],
+      "port": 3410
+    },
+    {
       "name": "web-pass6-e2e",
       "runtimeExecutable": "env",
       "runtimeArgs": [

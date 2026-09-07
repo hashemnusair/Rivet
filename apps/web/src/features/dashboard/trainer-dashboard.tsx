@@ -16,6 +16,8 @@ import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { useState } from "react";
 import { BookingOutcomeConfirmation } from "@/features/personal-training/booking-outcome-confirmation";
+import { ptBookingAwaitsOutcome, ptBookingIsOpen } from "@/lib/domain/personal-training";
+import { formatDate } from "@/lib/utils/dates";
 
 export function TrainerDashboard() {
   const { session } = useApp();
@@ -34,11 +36,18 @@ export function TrainerDashboard() {
 
   if (workspace.isError) return <ErrorState title="Trainer dashboard could not be loaded" onRetry={() => workspace.refetch()} />;
 
-  const active = (workspace.data?.bookings ?? []).filter((booking) => ["reserved", "confirmed"].includes(booking.status));
+  const active = (workspace.data?.bookings ?? []).filter(ptBookingIsOpen);
   const timezone = session?.organization.timezone ?? "Asia/Amman";
-  const today = dateKey(Date.now(), timezone);
+  const now = Date.now();
+  const today = dateKey(now, timezone);
   const todayBookings = active.filter((booking) => dateKey(Date.parse(booking.startsAt), timezone) === today);
-  const upcoming = active.filter((booking) => Date.parse(booking.startsAt) > Date.now()).slice(0, 8);
+  // A session from an earlier day with no recorded outcome still holds the
+  // member's credit; it stays in front of the trainer until it is recorded.
+  const outcomes = active
+    .filter((booking) => dateKey(Date.parse(booking.startsAt), timezone) === today || ptBookingAwaitsOutcome(booking, now))
+    .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
+  const overdueCount = outcomes.length - todayBookings.length;
+  const upcoming = active.filter((booking) => Date.parse(booking.startsAt) > now).slice(0, 8);
   const members = [...new Map((workspace.data?.bookings ?? []).map((booking) => [booking.memberId, { id: booking.memberId, name: booking.memberName }])).values()];
 
   return <div className="space-y-5">
@@ -58,12 +67,13 @@ export function TrainerDashboard() {
 
     <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
       <section className="panel overflow-hidden">
-        <header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="context-label">Today</p><h2 className="mt-1 text-[14px] font-semibold">Session outcomes</h2></div><Clock3 className="size-4 text-ink-3" /></header>
-        {workspace.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div> : todayBookings.length ? <div className="divide-y divide-line">{todayBookings.map((booking) => {
-          const started = Date.parse(booking.startsAt) <= Date.now();
+        <header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="context-label">{overdueCount > 0 ? `Today · ${overdueCount} earlier session${overdueCount === 1 ? "" : "s"} awaiting an outcome` : "Today"}</p><h2 className="mt-1 text-[14px] font-semibold">Session outcomes</h2></div><Clock3 className="size-4 text-ink-3" /></header>
+        {workspace.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div> : outcomes.length ? <div className="divide-y divide-line">{outcomes.map((booking) => {
+          const started = Date.parse(booking.startsAt) <= now;
+          const earlierDay = started && dateKey(Date.parse(booking.startsAt), timezone) !== today;
           return <article key={booking.id} className="flex flex-wrap items-center gap-3 p-4">
-            <div className="min-w-0 flex-1"><Link href={`/members/${booking.memberId}`} className="text-[13px] font-semibold hover:underline">{booking.memberName}</Link><p className="mt-1 text-[11px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p>{!started ? <p className="mt-1 text-[12px] text-ink-3">Outcome controls unlock when the session begins.</p> : null}</div>
-            <Badge variant="outline">{booking.status}</Badge>
+            <div className="min-w-0 flex-1"><Link href={`/members/${booking.memberId}`} className="text-[13px] font-semibold hover:underline">{booking.memberName}</Link><p className="mt-1 text-[11px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p>{!started ? <p className="mt-1 text-[12px] text-ink-3">Outcome controls unlock when the session begins.</p> : earlierDay ? <p className="mt-1 text-[12px] text-warning-deep">No outcome recorded since {formatDate(booking.startsAt)}. The member&apos;s credit stays reserved until you record one.</p> : null}</div>
+            <Badge variant={started ? "warning" : "outline"}>{started ? "Awaiting outcome" : booking.status}</Badge>
             <div className="flex gap-1"><Button size="sm" variant="secondary" disabled={!started || outcome.isPending} onClick={() => setBookingAction({ booking, action: "completed" })}><CheckCircle2 /> Complete</Button><Button size="sm" variant="ghost" disabled={!started || outcome.isPending} onClick={() => setBookingAction({ booking, action: "no_show" })}><XCircle /> No-show</Button></div>
           </article>;
         })}</div> : <div className="px-5 py-12 text-center"><CheckCircle2 className="mx-auto size-5 text-success" /><p className="mt-3 text-[12px] font-medium">No PT sessions today</p><p className="mt-1 text-[12px] text-ink-3">This reflects your current assigned calendar.</p></div>}

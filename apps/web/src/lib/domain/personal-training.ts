@@ -1,10 +1,38 @@
-import type { PtEntitlement, PtPackage } from "./types";
+import type { PtBooking, PtEntitlement, PtPackage } from "./types";
 
 export type PtBookingOutcomeAction = "completed" | "no_show" | "cancelled";
 
 export const PT_SESSION_DURATION_MINUTES = 60;
 export const PT_DEFAULT_BOOKING_HORIZON_DAYS = 30;
 export const PT_DEFAULT_CANCELLATION_CUTOFF_HOURS = 12;
+
+type PtBookingTiming = Pick<PtBooking, "status" | "startsAt">;
+
+/** A booking that still holds a credit: nothing has been recorded against it yet. */
+export function ptBookingIsOpen(booking: Pick<PtBooking, "status">): boolean {
+  return booking.status === "reserved" || booking.status === "confirmed";
+}
+
+/**
+ * An open booking whose session has begun. The credit stays reserved until a
+ * trainer or manager records the outcome, so these must remain visible to
+ * whoever can record it; they are never inferred as completed or missed.
+ */
+export function ptBookingAwaitsOutcome(booking: PtBookingTiming, now: number = Date.now()): boolean {
+  return ptBookingIsOpen(booking) && Date.parse(booking.startsAt) <= now;
+}
+
+/** The next open booking that has not started, if any. */
+export function ptNextBooking<T extends PtBookingTiming>(bookings: T[], now: number = Date.now()): T | undefined {
+  return bookings
+    .filter((booking) => ptBookingIsOpen(booking) && Date.parse(booking.startsAt) > now)
+    .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))[0];
+}
+
+/** True while a member may still cancel or move the booking without consuming the credit. */
+export function ptBookingBeforeCutoff(booking: Pick<PtBooking, "startsAt">, cutoffHours: number = PT_DEFAULT_CANCELLATION_CUTOFF_HOURS, now: number = Date.now()): boolean {
+  return Date.parse(booking.startsAt) - now >= cutoffHours * 3_600_000;
+}
 
 /**
  * The gym's reference PT pricing ladder.  The total price remains editable,

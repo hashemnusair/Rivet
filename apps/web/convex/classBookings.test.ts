@@ -128,3 +128,82 @@ describe("dated class booking", () => {
     expect(persisted.payments).toHaveLength(0);
   });
 });
+
+describe("dated class booking integrity", () => {
+  it("records leaving the waitlist as a plain cancellation, promotes on a late seat release, and repeats safely", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-01T05:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-class-booking" });
+    const a = t.withIdentity({ subject: "clerk-customer-class-a" });
+    const b = t.withIdentity({ subject: "clerk-customer-class-b" });
+    // Wednesday 2 September, 08:00 Amman (05:00Z), one seat.
+    const template = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-class-booking", name: "Sunrise spin", dayOfWeek: 3, startMinute: 8 * 60, durationMinutes: 60, capacity: 1, audience: "mixed" })) as { id: string };
+    const occurrenceId = `occ:${template.id}:2026-09-02`;
+    await a.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-a", occurrenceId }));
+    expect((await b.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-b", occurrenceId })) as { outcome: string }).outcome).toBe("waitlisted");
+
+    // One hour before the start: inside the two-hour cutoff.
+    vi.setSystemTime(new Date("2026-09-02T04:00:00.000Z"));
+    const left = await b.mutation(api.domain.mutate, operation("customer.classes.cancel", { membershipId: "membership-class-b", occurrenceId })) as { outcome: string };
+    expect(left.outcome).toBe("cancelled");
+    expect((await b.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-b", occurrenceId })) as { outcome: string }).outcome).toBe("waitlisted");
+
+    const late = await a.mutation(api.domain.mutate, operation("customer.classes.cancel", { membershipId: "membership-class-a", occurrenceId })) as { outcome: string; promotedMemberId?: string };
+    expect(late).toMatchObject({ outcome: "late_cancelled", promotedMemberId: "member-class-b" });
+    // A second tap reports what already happened instead of "not found".
+    const repeat = await a.mutation(api.domain.mutate, operation("customer.classes.cancel", { membershipId: "membership-class-a", occurrenceId })) as { outcome: string };
+    expect(repeat.outcome).toBe("late_cancelled");
+
+    const bookings = await t.run(async (ctx) => await ctx.db.query("classBookings").collect());
+    expect(bookings.filter((booking) => booking.memberPublicId === "member-class-b").map((booking) => booking.status).sort()).toEqual(["booked", "cancelled"]);
+    expect(bookings.find((booking) => booking.memberPublicId === "member-class-b" && booking.status === "booked")).toMatchObject({ fromWaitlist: true });
+    expect(bookings.filter((booking) => booking.memberPublicId === "member-class-a")).toHaveLength(1);
+    expect(bookings.find((booking) => booking.memberPublicId === "member-class-a")).toMatchObject({ status: "late_cancelled" });
+  });
+
+  it("keeps upcoming dated classes in step with the timetable and fills freed seats from the waitlist", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-01T05:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const fixture = await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-class-booking" });
+    const a = t.withIdentity({ subject: "clerk-customer-class-a" });
+    const b = t.withIdentity({ subject: "clerk-customer-class-b" });
+    const base = { branchId: "branch-class-booking", dayOfWeek: 3, durationMinutes: 60, audience: "mixed" };
+    const template = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { ...base, name: "Conditioning", startMinute: 8 * 60, capacity: 1 })) as { id: string };
+    const occurrenceId = `occ:${template.id}:2026-09-02`;
+    await a.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-a", occurrenceId }));
+    await b.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-b", occurrenceId }));
+
+    // Rename, move within the same weekday, and open a second seat.
+    await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { ...base, sessionId: template.id, name: "Conditioning II", startMinute: 9 * 60, capacity: 2 }));
+    const listed = await owner.query(api.domain.query, operation("classes.occurrences.list", { branchId: "branch-class-booking", fromDate: "2026-09-02", toDate: "2026-09-02" })) as Array<{ id: string; name: string; capacity: number; bookedCount: number; waitlistCount: number; startsAt: string; roster: Array<{ memberId: string; status: string; fromWaitlist: boolean }> }>;
+    expect(listed.find((item) => item.id === occurrenceId)).toMatchObject({ name: "Conditioning II", capacity: 2, bookedCount: 2, waitlistCount: 0, startsAt: "2026-09-02T06:00:00.000Z" });
+    expect(listed.find((item) => item.id === occurrenceId)?.roster.find((entry) => entry.memberId === "member-class-b")).toMatchObject({ status: "booked", fromWaitlist: true });
+    const persisted = await t.run(async (ctx) => ({ bookings: await ctx.db.query("classBookings").collect(), notifications: await ctx.db.query("operationalNotifications").collect() }));
+    expect(persisted.bookings.every((booking) => booking.startsAt === Date.parse("2026-09-02T06:00:00.000Z"))).toBe(true);
+    expect(persisted.notifications).toEqual([expect.objectContaining({ kind: "class_waitlist_promoted", recipientUserId: fixture.customerB })]);
+
+    // Shrinking below the confirmed bookings is refused, naming the date.
+    await expect(owner.mutation(api.domain.mutate, operation("classes.session.upsert", { ...base, sessionId: template.id, name: "Conditioning II", startMinute: 9 * 60, capacity: 1 })))
+      .rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR", message: expect.stringContaining("2026-09-02") }) });
+  });
+
+  it("tells a member when booking has closed instead of offering a button the server refuses", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-01T05:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-class-booking" });
+    const a = t.withIdentity({ subject: "clerk-customer-class-a" });
+    const template = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-class-booking", name: "Mobility", dayOfWeek: 3, startMinute: 8 * 60, durationMinutes: 60, capacity: 8, audience: "mixed" })) as { id: string };
+    const occurrenceId = `occ:${template.id}:2026-09-02`;
+
+    vi.setSystemTime(new Date("2026-09-02T05:30:00.000Z"));
+    const experience = await a.query(api.domain.query, operation("customer.classes", { membershipId: "membership-class-a" })) as { upcoming: Array<{ id: string; canBook: boolean; bookingBlockReason?: string }> };
+    expect(experience.upcoming.find((item) => item.id === occurrenceId)).toMatchObject({ canBook: false, bookingBlockReason: "Booking closed when the class started." });
+    await expectCode(a.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-a", occurrenceId })), "CONFLICT");
+  });
+});

@@ -12,7 +12,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
-import type { ClassAudience, ClassCoach, ClassOccurrence, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
+import type { ClassAudience, ClassCoach, ClassOccurrence, ClassOccurrenceRosterEntry, ClassSession, MemberSummary, UpsertClassSessionInput } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { PageHeader } from "@/components/shared/chrome";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -131,6 +131,8 @@ function ClassesWorkspace() {
   const [substituteCoachId, setSubstituteCoachId] = useState("");
   const [substituteReason, setSubstituteReason] = useState("");
   const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<ClassOccurrenceRosterEntry>();
+  const [removeReason, setRemoveReason] = useState("");
   const [detailsId, setDetailsId] = useState<string>();
   const [deleteTarget, setDeleteTarget] = useState<ClassSession>();
   const [deleteReason, setDeleteReason] = useState("");
@@ -149,9 +151,13 @@ function ClassesWorkspace() {
   // chip and the details popup show the upcoming date's real numbers.
   const nextOccurrenceByTemplate = useMemo(() => {
     const map = new Map<string, ClassOccurrence>();
+    const now = Date.now();
     for (const occurrence of occurrencesQuery.data ?? []) {
       if (occurrence.status === "cancelled") continue;
-      if (!map.has(occurrence.templateId)) map.set(occurrence.templateId, occurrence);
+      const current = map.get(occurrence.templateId);
+      // Prefer the next date still to come; an ended date is only a fallback
+      // so its attendance can still be reviewed.
+      if (!current || (Date.parse(current.endsAt) <= now && Date.parse(occurrence.endsAt) > now)) map.set(occurrence.templateId, occurrence);
     }
     return map;
   }, [occurrencesQuery.data]);
@@ -198,8 +204,27 @@ function ClassesWorkspace() {
     const membership = memberships.items.find((item) => item.homeBranchId === managedOccurrence?.branchId) ?? memberships.items[0];
     if (!membership) throw new Error("This member has no active membership for this class.");
     return api.addClassOccurrenceAttendee({ occurrenceId: manageOccurrenceId!, memberId, membershipId: membership.id, overrideReason: overrideReason.trim() || undefined });
-  }, { onSuccess: async () => { setMemberSearch(""); setOverrideReason(""); await refresh(); } });
-  const removeOccurrenceAttendee = useApiMutation((api, bookingId: string) => api.removeClassOccurrenceAttendee({ occurrenceId: manageOccurrenceId!, bookingId, reason: "Removed from the dated roster by staff" }), { onSuccess: refresh });
+  }, {
+    onSuccess: async (occurrence, memberId) => {
+      // The server decides between a place and the waitlist; say which.
+      const entry = occurrence.roster.find((item) => item.memberId === memberId && ["booked", "waitlisted"].includes(item.status));
+      const position = occurrence.roster.filter((item) => item.status === "waitlisted").findIndex((item) => item.bookingId === entry?.bookingId) + 1;
+      toast.success(entry?.status === "waitlisted" ? `The class is full. ${entry.name} joined the waitlist at #${position}.` : `${entry?.name ?? "Member"} booked.`);
+      setMemberSearch("");
+      setOverrideReason("");
+      await refresh();
+    },
+  });
+  const removeOccurrenceAttendee = useApiMutation((api, input: { bookingId: string; reason: string }) => api.removeClassOccurrenceAttendee({ occurrenceId: manageOccurrenceId!, bookingId: input.bookingId, reason: input.reason }), {
+    onSuccess: async (occurrence, input) => {
+      const removed = managedOccurrence?.roster.find((item) => item.bookingId === input.bookingId);
+      const promoted = occurrence.roster.filter((item) => item.status === "booked" && item.fromWaitlist && managedOccurrence?.roster.some((previous) => previous.bookingId === item.bookingId && previous.status === "waitlisted"));
+      toast.success(`${removed?.name ?? "Member"} removed.${promoted.length ? ` ${promoted.map((item) => item.name).join(", ")} moved from the waitlist into the class.` : ""}`);
+      setRemoveTarget(undefined);
+      setRemoveReason("");
+      await refresh();
+    },
+  });
   const setOccurrenceAttendance = useApiMutation((api, input: { bookingId: string; attended: boolean }) => api.setClassOccurrenceAttendance({ occurrenceId: manageOccurrenceId!, ...input }), { onSuccess: refresh });
   const finalizeOccurrence = useApiMutation((api) => api.finalizeClassOccurrenceAttendance({ occurrenceId: manageOccurrenceId! }), { onSuccess: async () => { setFinalizeOpen(false); await refresh(); }, successMessage: "Attendance finalized. Unmarked bookings were recorded using the gym's no-show policy." });
   const substituteCoach = useApiMutation((api) => api.substituteClassOccurrenceCoach({ occurrenceId: manageOccurrenceId!, coachId: substituteCoachId, reason: substituteReason.trim() }), {
@@ -227,7 +252,7 @@ function ClassesWorkspace() {
   };
 
   const openNextOccurrence = (templateId: string) => {
-    const next = occurrencesQuery.data?.find((occurrence) => occurrence.templateId === templateId && occurrence.status !== "cancelled");
+    const next = nextOccurrenceByTemplate.get(templateId);
     if (!next) { toast.error("No dated class is available in this seven-day view."); return; }
     setManageOccurrenceId(next.id);
     setMemberSearch("");
@@ -335,7 +360,7 @@ function ClassesWorkspace() {
         {occurrencesQuery.isBackgroundError ? <ErrorState layout="inline" title="Classes could not refresh" onRetry={() => occurrencesQuery.refetch()} /> : null}
         {!branchId ? <EmptyState layout="section" title="No branch available" description="Ask your manager to assign a branch before opening its classes." className="m-4" /> : occurrencesQuery.isLoading && !occurrencesQuery.data ? <div className="space-y-3 p-4"><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></div> : occurrencesQuery.isError && !occurrencesQuery.data ? <ErrorState layout="section" title="Classes could not be loaded" onRetry={() => occurrencesQuery.refetch()} className="m-4" /> : !occurrencesQuery.data?.length ? <EmptyState layout="section" title="No classes in these seven days" description="Choose another week or check the weekly timetable." className="m-4" /> : <ul className="divide-y divide-line">{occurrencesQuery.data.map((occurrence) => <li key={occurrence.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[132px_minmax(0,1fr)] xl:grid-cols-[132px_minmax(0,1fr)_auto]" data-testid="class-agenda-row">
           <div className="text-[13px]"><p className="font-semibold">{formatDate(occurrence.date)}</p><p className="mt-1 tabular-nums text-ink-2">{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit", timeZone: session?.organization.timezone }).format(new Date(occurrence.startsAt))}</p></div>
-          <div className="min-w-0"><h2 className="text-[15px] font-semibold break-words">{occurrence.name}</h2><p className="mt-1 text-[13px] text-ink-2">{occurrence.coachName ?? "Coach not assigned"} · {AUDIENCE_LABEL[occurrence.audience]}</p><p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-2"><span>{occurrence.bookedCount}/{occurrence.capacity} booked</span><span>{occurrence.waitlistCount} waiting</span><span>{occurrence.status === "cancelled" ? "Cancelled" : occurrence.attendanceFinalizedAt ? "Attendance finalized" : "Attendance open"}</span></p></div>
+          <div className="min-w-0"><h2 className="text-[15px] font-semibold break-words">{occurrence.name}</h2><p className="mt-1 text-[13px] text-ink-2">{occurrence.coachName ?? "Coach not assigned"} · {AUDIENCE_LABEL[occurrence.audience]}</p><p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-2"><span>{occurrence.bookedCount}/{occurrence.capacity} booked</span><span>{occurrence.waitlistCount} waiting</span><span>{occurrence.status === "cancelled" ? "Cancelled" : occurrence.attendanceFinalizedAt ? "Attendance finalized" : Date.parse(occurrence.endsAt) <= Date.now() ? "Ended · attendance not finalized" : Date.parse(occurrence.startsAt) <= Date.now() ? "In progress · attendance open" : "Attendance open"}</span></p></div>
           <div className="flex flex-wrap items-center gap-2 sm:col-start-2 xl:col-start-auto">{occurrence.status !== "cancelled" && canRoster ? <Button variant="secondary" onClick={() => { setManageOccurrenceId(occurrence.id); setMemberSearch(""); }}>Who booked</Button> : null}<Button variant="ghost" onClick={() => setDetailsId(occurrence.templateId)}>Class details</Button></div>
         </li>)}</ul>}
       </section> : null}
@@ -492,19 +517,35 @@ function ClassesWorkspace() {
         <Dialog open={Boolean(managedOccurrence)} onOpenChange={(open) => { if (!open) { setManageOccurrenceId(undefined); setMemberSearch(""); setOverrideReason(""); setSubstituteCoachId(""); setSubstituteReason(""); } }}>
           <DialogContent className="max-w-2xl">
             {managedOccurrence ? <>
-              <DialogHeader><DialogTitle>Who booked — {managedOccurrence.name}</DialogTitle><DialogDescription>{formatDateTime(managedOccurrence.startsAt)} · {managedOccurrence.bookedCount}/{managedOccurrence.capacity} booked{managedOccurrence.waitlistCount ? ` · ${managedOccurrence.waitlistCount} waiting` : ""}</DialogDescription></DialogHeader>
+              <DialogHeader><DialogTitle>Who booked — {managedOccurrence.name}</DialogTitle><DialogDescription>{formatDateTime(managedOccurrence.startsAt)} · {managedOccurrence.bookedCount}/{managedOccurrence.capacity} booked{managedOccurrence.waitlistCount ? ` · ${managedOccurrence.waitlistCount} waiting` : ""}{managedOccurrence.attendanceFinalizedAt ? " · Finalized" : Date.parse(managedOccurrence.endsAt) <= Date.now() ? " · Ended" : Date.parse(managedOccurrence.startsAt) <= Date.now() ? " · In progress" : ""}</DialogDescription></DialogHeader>
               <DialogBody className="grid gap-4">
                 {/* The roster IS the page: one big list of everyone booked.
                     Desk tools stay one tap away but never crowd the names. */}
                 <section>
-                  <div className="divide-y divide-line rounded-md border border-line">{managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).length ? managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).map((entry) => <div key={entry.bookingId} className="flex items-center justify-between gap-3 px-4 py-3"><label className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-[14px]"><input type="checkbox" checked={entry.status === "attended"} className="size-5 shrink-0" disabled={setOccurrenceAttendance.isPending || !canRoster || Boolean(managedOccurrence.attendanceFinalizedAt) || entry.status === "waitlisted" || entry.status === "no_show"} onChange={(event) => setOccurrenceAttendance.mutate({ bookingId: entry.bookingId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} /><span className="min-w-0"><span className="block break-words font-medium">{entry.name}</span>{entry.noShowCount ? <span className="block text-[12px] text-warning-deep">{entry.noShowCount} recorded no-show{entry.noShowCount === 1 ? "" : "s"}</span> : null}</span>{entry.fromWaitlist ? <span className="rounded-sm bg-success-bg px-1.5 py-0.5 text-[12px] text-success-deep">promoted</span> : null}</label><div className="flex items-center gap-2"><span className="rounded-sm bg-sunken px-2 py-0.5 text-[12px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>{canRoster && !managedOccurrence.attendanceFinalizedAt && ["booked", "waitlisted"].includes(entry.status) ? <Button variant="ghost" size="sm" aria-label={`Remove ${entry.name}`} onClick={() => removeOccurrenceAttendee.mutate(entry.bookingId)}><X /></Button> : null}</div></div>) : <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">No one has booked this date yet.</p>}</div>
+                  <div className="divide-y divide-line rounded-md border border-line">{managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).length ? managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).map((entry) => <div key={entry.bookingId} className="flex items-center justify-between gap-3 px-4 py-3"><label className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-[14px]"><input type="checkbox" checked={entry.status === "attended"} className="size-5 shrink-0" disabled={setOccurrenceAttendance.isPending || !canRoster || Boolean(managedOccurrence.attendanceFinalizedAt) || entry.status === "waitlisted" || entry.status === "no_show"} onChange={(event) => setOccurrenceAttendance.mutate({ bookingId: entry.bookingId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} /><span className="min-w-0"><span className="block break-words font-medium">{entry.name}</span>{entry.noShowCount ? <span className="block text-[12px] text-warning-deep">{entry.noShowCount} recorded no-show{entry.noShowCount === 1 ? "" : "s"}</span> : null}</span>{entry.fromWaitlist ? <span className="rounded-sm bg-success-bg px-1.5 py-0.5 text-[12px] text-success-deep">promoted</span> : null}</label><div className="flex items-center gap-2"><span className="rounded-sm bg-sunken px-2 py-0.5 text-[12px] text-ink-3">{entry.status.replaceAll("_", " ")}</span>{canRoster && !managedOccurrence.attendanceFinalizedAt && Date.parse(managedOccurrence.endsAt) > Date.now() && ["booked", "waitlisted"].includes(entry.status) ? <Button variant="ghost" size="sm" aria-label={`Remove ${entry.name}`} disabled={removeOccurrenceAttendee.isPending} onClick={() => { setRemoveTarget(entry); setRemoveReason(""); }}><X /></Button> : null}</div></div>) : <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">No one has booked this date yet.</p>}</div>
                   <p className="mt-1.5 text-[12px] text-ink-3">{managedOccurrence.attendanceFinalizedAt ? `Attendance finalized ${formatDateTime(managedOccurrence.attendanceFinalizedAt)}.` : "Tick who showed up; attendance stays editable until finalized."}</p>
                 </section>
-                {canRoster && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Add a member at the desk</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to dated class" />{memberLookup.isLoading ? <p className="mt-2 text-[12px] text-ink-3">Searching…</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger"><span>Search unavailable</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div> : memberResults.length ? <div className="mt-2 w-full divide-y divide-line rounded-md border border-line bg-surface">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" disabled={addOccurrenceAttendee.isPending} onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="text-[12px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[12px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Override reason, only if needed" aria-label="Roster override reason" /></div><p className="mt-2 text-[12px] text-ink-3">RIVET asks for a reason only when capacity or the class audience would otherwise block the addition.</p></div></details> : null}
+                {canRoster && !managedOccurrence.attendanceFinalizedAt && Date.parse(managedOccurrence.endsAt) > Date.now() ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Add a member at the desk</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to dated class" />{memberLookup.isLoading ? <p className="mt-2 text-[12px] text-ink-3">Searching…</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger"><span>Search unavailable</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Retry</Button></div> : memberResults.length ? <div className="mt-2 w-full divide-y divide-line rounded-md border border-line bg-surface">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" disabled={addOccurrenceAttendee.isPending} onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="text-[12px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[12px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Override reason, only if needed" aria-label="Roster override reason" /></div><p className="mt-2 text-[12px] text-ink-3">A full class puts the member on the waitlist. RIVET asks for a reason only when the class audience or the member&apos;s booking limit would otherwise block the addition.</p></div></details> : null}
                 {canManage && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Substitute the coach for this date</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-2"><select aria-label="Substitute coach" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={substituteCoachId} onChange={(event) => setSubstituteCoachId(event.target.value)}><option value="">Choose substitute</option>{coaches.filter((coach) => coach.id !== managedOccurrence.coachId).map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select><Input aria-label="Substitution reason" value={substituteReason} onChange={(event) => setSubstituteReason(event.target.value)} placeholder="Why is the coach changing?" /></div><div className="mt-2 flex justify-end"><Button size="sm" variant="secondary" loading={substituteCoach.isPending} disabled={!substituteCoachId || !substituteReason.trim()} onClick={() => substituteCoach.mutate()}>Record substitute</Button></div></div></details> : null}
               </DialogBody>
               <DialogFooter><Button variant="secondary" onClick={() => setManageOccurrenceId(undefined)}>Close</Button>{canManage && !managedOccurrence.attendanceFinalizedAt ? <Button variant="primary" loading={finalizeOccurrence.isPending} disabled={Date.parse(managedOccurrence.endsAt) > Date.now()} onClick={() => setFinalizeOpen(true)}><Check /> Finalize attendance</Button> : null}</DialogFooter>
             </> : null}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(removeTarget)} onOpenChange={(open) => { if (!open && !removeOccurrenceAttendee.isPending) setRemoveTarget(undefined); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{removeTarget?.status === "waitlisted" ? `Remove ${removeTarget?.name} from the waitlist?` : `Remove ${removeTarget?.name} from ${managedOccurrence?.name}?`}</DialogTitle>
+              <DialogDescription>{removeTarget?.status === "waitlisted" ? "They leave the waitlist; nobody else moves." : "Their place is released and the first person waiting takes it. The cancellation appears on the member’s record."}</DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <label className="grid gap-1.5 text-[12px] font-medium">Reason<Textarea value={removeReason} onChange={(event) => setRemoveReason(event.target.value)} placeholder="Required for the audit trail" /></label>
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setRemoveTarget(undefined)} disabled={removeOccurrenceAttendee.isPending}>Keep them</Button>
+              <Button variant="danger" loading={removeOccurrenceAttendee.isPending} disabled={!removeReason.trim()} onClick={() => removeOccurrenceAttendee.mutate({ bookingId: removeTarget!.bookingId, reason: removeReason.trim() })}><X /> Remove</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 

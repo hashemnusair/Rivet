@@ -57,3 +57,24 @@ describe("PT workspace states", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   });
 });
+
+describe("PT workspace outcome context", () => {
+  it("separates sessions that need an outcome from upcoming ones and unlocks outcomes only after the start", () => {
+    const now = Date.now();
+    const base = { organizationId: "gym", memberId: "member", trainerProfileId: "trainer", trainerName: "Fadi Khoury", branchId: "branch", branchName: "Main", entitlementId: "entitlement", status: "reserved" as const, createdAt: "2026-09-01T09:00:00Z", updatedAt: "2026-09-01T09:00:00Z" };
+    Object.assign(state, {
+      isError: false, isBackgroundError: false, error: undefined,
+      data: { ...workspace, cancellationCutoffHours: 12, bookings: [
+        { ...base, id: "started", memberName: "Aya Started", startsAt: new Date(now - 30 * 60_000).toISOString(), endsAt: new Date(now + 30 * 60_000).toISOString() },
+        { ...base, id: "future", memberName: "Basel Future", startsAt: new Date(now + 3 * 3_600_000).toISOString(), endsAt: new Date(now + 4 * 3_600_000).toISOString() },
+      ] },
+    });
+    render(<PersonalTrainingPage />);
+    expect(screen.getByRole("heading", { name: "Needs an outcome" })).toBeInTheDocument();
+    expect(screen.getByText("Awaiting outcome")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Complete" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "No-show" })).toHaveLength(1);
+    expect(screen.getByText(/Basel Future/)).toBeInTheDocument();
+    expect(screen.getByText("Outcome controls unlock when the session begins.")).toBeInTheDocument();
+  });
+});

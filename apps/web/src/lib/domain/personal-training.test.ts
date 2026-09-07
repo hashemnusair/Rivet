@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ptAvailableCredits, ptBookingCreditConsequence, ptCancellationResult, ptIntervalsOverlap, ptPackageLadderIsValid, ptPackageSuggestedPriceMinor, ptPackageUnitPriceMinor, ptRefundMinor, selectPtEntitlement } from "./personal-training";
+import { ptAvailableCredits, ptBookingAwaitsOutcome, ptBookingBeforeCutoff, ptBookingCreditConsequence, ptBookingIsOpen, ptCancellationResult, ptIntervalsOverlap, ptNextBooking, ptPackageLadderIsValid, ptPackageSuggestedPriceMinor, ptPackageUnitPriceMinor, ptRefundMinor, selectPtEntitlement } from "./personal-training";
 import type { PtEntitlement, PtPackage } from "./types";
 
 const money = (amount: number) => ({ amount, currency: "JOD" });
@@ -64,5 +64,30 @@ describe("personal training commercial rules", () => {
     expect(selectPtEntitlement([future, current], Date.parse("2026-08-15T12:00:00.000Z"))).toBe(current);
     expect(selectPtEntitlement([future], Date.parse("2026-08-15T12:00:00.000Z"))).toBeUndefined();
     expect(selectPtEntitlement([future], Date.parse("2026-09-15T12:00:00.000Z"))).toBe(future);
+  });
+});
+
+describe("personal training booking timing", () => {
+  const booking = (startsAt: string, status: "reserved" | "completed" = "reserved") => ({ startsAt, status } as const);
+
+  it("treats an open booking whose session began as awaiting an outcome, never as done", () => {
+    const now = Date.parse("2026-09-08T10:30:00.000Z");
+    expect(ptBookingIsOpen(booking("2026-09-08T10:00:00.000Z"))).toBe(true);
+    expect(ptBookingAwaitsOutcome(booking("2026-09-08T10:00:00.000Z"), now)).toBe(true);
+    expect(ptBookingAwaitsOutcome(booking("2026-09-08T11:00:00.000Z"), now)).toBe(false);
+    expect(ptBookingAwaitsOutcome(booking("2026-09-08T10:00:00.000Z", "completed"), now)).toBe(false);
+  });
+
+  it("picks the next booking that has not started, skipping ones awaiting an outcome", () => {
+    const now = Date.parse("2026-09-08T10:30:00.000Z");
+    const next = ptNextBooking([booking("2026-09-08T10:00:00.000Z"), booking("2026-09-09T09:00:00.000Z"), booking("2026-09-08T12:00:00.000Z")], now);
+    expect(next?.startsAt).toBe("2026-09-08T12:00:00.000Z");
+    expect(ptNextBooking([booking("2026-09-08T10:00:00.000Z")], now)).toBeUndefined();
+  });
+
+  it("knows whether a member is still before the gym's cutoff", () => {
+    const now = Date.parse("2026-09-08T10:00:00.000Z");
+    expect(ptBookingBeforeCutoff({ startsAt: "2026-09-08T22:00:00.000Z" }, 12, now)).toBe(true);
+    expect(ptBookingBeforeCutoff({ startsAt: "2026-09-08T21:59:00.000Z" }, 12, now)).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
 import { Blob as NodeBlob } from "node:buffer";
 import { api, internal } from "./_generated/api";
@@ -262,5 +262,47 @@ describe("Convex personal-training lifecycle", () => {
     }));
     expect(stored.grants).toHaveLength(1);
     expect(stored.audits).toHaveLength(1);
+  });
+});
+
+describe("Convex personal-training outcome context", () => {
+  it("keeps a started session visible with its reserved credit until an outcome is recorded, once", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    const trainer = t.withIdentity({ subject: "clerk-pt-trainer" });
+    const customer = t.withIdentity({ subject: "clerk-pt-customer" });
+    await owner.mutation(api.domain.mutate, operation("pt.introductory.apply", { sessionCount: 2, reason: "Pilot introduction approved by owner", idempotencyKey: "intro-context" }));
+    const bookingDate = dateInDays(2);
+    const slots = await owner.query(api.domain.query, operation("pt.slots", { trainerProfileId: "trainer-profile", branchId: "pt-branch", from: bookingDate, to: bookingDate })) as Array<{ startsAt: string }>;
+    const booking = await owner.mutation(api.domain.mutate, operation("pt.booking.create", { membershipId: "pt-membership", trainerProfileId: "trainer-profile", branchId: "pt-branch", startsAt: slots[0]!.startsAt, idempotencyKey: "context-booking" })) as { id: string };
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.parse(slots[0]!.startsAt) + 15 * 60_000));
+    try {
+      type Experience = { availableSessions: number; reservedSessions: number; cancellationCutoffHours: number; upcomingBookings: Array<{ id: string; status: string }> };
+      const staffView = await owner.query(api.domain.query, operation("pt.member", { membershipId: "pt-membership" })) as Experience;
+      expect(staffView).toMatchObject({ availableSessions: 1, reservedSessions: 1, cancellationCutoffHours: 12 });
+      expect(staffView.upcomingBookings.map((item) => item.id)).toEqual([booking.id]);
+      const memberView = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as Experience;
+      expect(memberView).toMatchObject({ reservedSessions: 1, cancellationCutoffHours: 12 });
+      expect(memberView.upcomingBookings.map((item) => item.id)).toEqual([booking.id]);
+      const workspace = await trainer.query(api.domain.query, operation("pt.workspace")) as { cancellationCutoffHours: number; bookings: Array<{ id: string; status: string }> };
+      expect(workspace.cancellationCutoffHours).toBe(12);
+      expect(workspace.bookings.find((item) => item.id === booking.id)?.status).toBe("reserved");
+
+      const completed = await trainer.mutation(api.domain.mutate, operation("pt.booking.complete", { bookingId: booking.id })) as { status: string };
+      expect(completed.status).toBe("completed");
+      // A second recording cannot consume a second credit.
+      await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.complete", { bookingId: booking.id })), "VALIDATION_ERROR");
+      await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.no_show", { bookingId: booking.id, reason: "Recorded twice by mistake" })), "VALIDATION_ERROR");
+      const after = await owner.query(api.domain.query, operation("pt.member", { membershipId: "pt-membership" })) as Experience;
+      expect(after).toMatchObject({ availableSessions: 1, reservedSessions: 0 });
+      expect(after.upcomingBookings).toEqual([]);
+      const ledger = await t.run(async (ctx) => (await ctx.db.query("ptCreditLedger").collect()).filter((entry) => entry.bookingPublicId === booking.id).map((entry) => entry.type));
+      expect(ledger).toEqual(["reserve", "consume"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

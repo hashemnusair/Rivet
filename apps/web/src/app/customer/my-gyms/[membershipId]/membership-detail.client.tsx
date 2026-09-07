@@ -18,7 +18,9 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
-import type { CustomerClassOccurrence } from "@/lib/domain/types";
+import type { CustomerClassOccurrence, PtBooking } from "@/lib/domain/types";
+import { classCancellationPreview } from "@/lib/domain/class-booking";
+import { PT_DEFAULT_CANCELLATION_CUTOFF_HOURS, ptBookingAwaitsOutcome, ptBookingBeforeCutoff, ptNextBooking } from "@/lib/domain/personal-training";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
@@ -231,9 +233,13 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
       await invalidate([qk.customerClasses(membershipId)]);
     },
   });
-  const cancel = useApiMutation((api, occurrenceId: string) => api.cancelCustomerClass({ membershipId, occurrenceId }), {
-    onSuccess: async (result) => {
-      toast.success(result.outcome === "late_cancelled" ? "Late cancellation recorded. No fee or membership penalty was added." : "Class booking cancelled.");
+  // Cancelling is confirmed first: the member sees whether it counts as late
+  // (or only leaves the waitlist) before anything is recorded.
+  const [cancelTarget, setCancelTarget] = useState<CustomerClassOccurrence>();
+  const cancel = useApiMutation((api, input: { occurrenceId: string; wasWaitlisted: boolean }) => api.cancelCustomerClass({ membershipId, occurrenceId: input.occurrenceId }), {
+    onSuccess: async (result, input) => {
+      toast.success(result.outcome === "late_cancelled" ? "Late cancellation recorded. No fee or membership penalty was added." : input.wasWaitlisted ? "You left the waitlist." : "Class booking cancelled.");
+      setCancelTarget(undefined);
       await invalidate([qk.customerClasses(membershipId)]);
     },
   });
@@ -295,9 +301,10 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
                   <CustomerClassCard
                     key={occurrence.id}
                     occurrence={occurrence}
-                    busy={(book.isPending && book.variables === occurrence.id) || (cancel.isPending && cancel.variables === occurrence.id)}
+                    cutoffHours={value.policy.cancellationCutoffHours}
+                    busy={(book.isPending && book.variables === occurrence.id) || (cancel.isPending && cancel.variables?.occurrenceId === occurrence.id)}
                     onBook={() => book.mutate(occurrence.id)}
-                    onCancel={() => cancel.mutate(occurrence.id)}
+                    onCancel={() => setCancelTarget(occurrence)}
                   />
                 ))}
               </div>
@@ -338,14 +345,43 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
           )}
         </section>
       )}
+
+      <Dialog open={Boolean(cancelTarget)} onOpenChange={(open) => { if (!open && !cancel.isPending) setCancelTarget(undefined); }}>
+        <DialogContent className="max-w-md">
+          {cancelTarget ? (() => {
+            const waitlisted = cancelTarget.booking?.status === "waitlisted";
+            const preview = classCancellationPreview({ startsAt: cancelTarget.startsAt, endsAt: cancelTarget.endsAt, bookingStatus: cancelTarget.booking?.status ?? "booked", cutoffHours: value.policy.cancellationCutoffHours });
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{waitlisted ? `Leave the ${cancelTarget.name} waitlist?` : `Cancel ${cancelTarget.name}?`}</DialogTitle>
+                  <DialogDescription>{formatDateTime(cancelTarget.startsAt)}{cancelTarget.coachName ? ` · ${cancelTarget.coachName}` : ""}</DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  <p role="status" className={cn("rounded-md border p-3 text-[13px]", preview.outcome === "late_cancelled" ? "border-warning/30 bg-warning-bg text-warning-deep" : "border-line bg-sunken text-ink-2")}>{preview.text}</p>
+                </DialogBody>
+                <DialogFooter>
+                  <Button variant="secondary" disabled={cancel.isPending} onClick={() => setCancelTarget(undefined)}>Keep booking</Button>
+                  <Button variant="danger" loading={cancel.isPending} disabled={preview.outcome === "closed"} onClick={() => cancel.mutate({ occurrenceId: cancelTarget.id, wasWaitlisted: waitlisted })}>{waitlisted ? "Leave waitlist" : "Cancel booking"}</Button>
+                </DialogFooter>
+              </>
+            );
+          })() : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function CustomerClassCard({ occurrence, busy, onBook, onCancel }: { occurrence: CustomerClassOccurrence; busy: boolean; onBook: () => void; onCancel: () => void }) {
+function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: { occurrence: CustomerClassOccurrence; cutoffHours: number; busy: boolean; onBook: () => void; onCancel: () => void }) {
   const active = occurrence.booking && ["booked", "waitlisted"].includes(occurrence.booking.status);
   const full = occurrence.spotsRemaining === 0;
   const minutes = Math.round((Date.parse(occurrence.endsAt) - Date.parse(occurrence.startsAt)) / 60_000);
+  const preview = active ? classCancellationPreview({ startsAt: occurrence.startsAt, endsAt: occurrence.endsAt, bookingStatus: occurrence.booking?.status ?? "booked", cutoffHours }) : undefined;
+  const cancelHint = !preview ? "" : preview.outcome === "leave_waitlist" ? "Leave the waitlist any time."
+    : preview.outcome === "closed" ? "This class has ended."
+      : preview.outcome === "late_cancelled" ? `Inside the ${cutoffHours}-hour cutoff: cancelling now counts as late (no fee).`
+        : `Free cancellation until ${formatDateTime(new Date(preview.freeUntil!).toISOString())}.`;
   return (
     <article className="panel overflow-hidden">
       {occurrence.imageUrl ? <div className="h-24 bg-cover bg-center" role="img" aria-label={occurrence.imageAltText ?? occurrence.name} style={{ backgroundImage: `url(${occurrence.imageUrl})` }} /> : null}
@@ -365,9 +401,9 @@ function CustomerClassCard({ occurrence, busy, onBook, onCancel }: { occurrence:
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[13px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? `Waitlist · #${occurrence.booking.position ?? "—"}` : occurrence.booking?.fromWaitlist ? "Booked from waitlist" : "Booked"}</p>
-              <p className="mt-0.5 text-[12px] text-ink-3">Cancel any time. A late cancellation is recorded without a fee.</p>
+              <p className="mt-0.5 text-[12px] text-ink-3">{cancelHint}</p>
             </div>
-            <Button size="sm" variant="secondary" loading={busy} onClick={onCancel}>Cancel</Button>
+            <Button size="sm" variant="secondary" loading={busy} disabled={preview?.outcome === "closed"} onClick={onCancel}>{occurrence.booking?.status === "waitlisted" ? "Leave" : "Cancel"}</Button>
           </div>
         ) : (
           <div className="mt-3">
@@ -571,9 +607,12 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
     (api, startsAt: string) => rescheduleBookingId ? api.rescheduleCustomerPtBooking({ bookingId: rescheduleBookingId, trainerProfileId: trainerId, branchId: selectedBranchId, startsAt, reason: "Rescheduled by member", idempotencyKey: crypto.randomUUID() }) : api.createCustomerPtBooking({ membershipId, trainerProfileId: trainerId, branchId: selectedBranchId, startsAt, idempotencyKey: crypto.randomUUID() }),
     { onSuccess: async () => { toast.success(rescheduleBookingId ? "Your PT session was rescheduled." : "Your PT session is reserved."); setRescheduleBookingId(undefined); await invalidate(); } },
   );
+  // Cancelling is confirmed first, and the toast repeats what the server
+  // actually did to the credit instead of assuming.
+  const [cancelBooking, setCancelBooking] = useState<PtBooking>();
   const cancel = useApiMutation(
     (api, bookingId: string) => api.cancelCustomerPtBooking(bookingId, "Cancelled by member"),
-    { onSuccess: async () => { toast.success("Booking cancelled. Your credit balance has been updated."); await invalidate(); } },
+    { onSuccess: async (result) => { toast.success(result.status === "late_cancelled" ? "Cancelled after the cutoff. One PT credit was used." : "Booking cancelled. Your credit was returned."); setCancelBooking(undefined); await invalidate(); } },
   );
   const requestPackage = useApiMutation(
     (api, packageId: string) => api.requestCustomerPtPackage({ membershipId, packageId, idempotencyKey: crypto.randomUUID() }),
@@ -585,6 +624,8 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
   if (experience.isLoading) return <div className="mt-4" role="tabpanel" aria-label="Personal training" aria-busy="true"><Skeleton className="h-80 w-full" /></div>;
   if (experience.isError) return <div className="mt-4" role="tabpanel" aria-label="Personal training"><ErrorState layout="section" title="Personal training could not be loaded" onRetry={() => experience.refetch()} /></div>;
   const value = experience.data!;
+  const cutoffHours = value.cancellationCutoffHours ?? PT_DEFAULT_CANCELLATION_CUTOFF_HOURS;
+  const nextBooking = ptNextBooking(value.upcomingBookings);
   const canPickSlot = (value.availableSessions > 0 || Boolean(rescheduleBookingId)) && Boolean(trainerId && selectedBranchId);
   return (
     <div className="mt-4 space-y-4" role="tabpanel" aria-label="Personal training">
@@ -592,7 +633,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
       <dl className="grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-surface">
         <PtStat label="Available" value={String(value.availableSessions)} />
         <PtStat label="Reserved" value={String(value.reservedSessions)} />
-        <PtStat label="Next booking" value={value.upcomingBookings[0] ? formatDateTime(value.upcomingBookings[0].startsAt) : "None"} />
+        <PtStat label="Next booking" value={nextBooking ? formatDateTime(nextBooking.startsAt) : "None"} />
       </dl>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]">
@@ -672,23 +713,60 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
       </div>
 
       <section className="panel overflow-hidden" aria-labelledby="pt-upcoming-title">
-        <header className="border-b border-line px-4 py-3"><h2 id="pt-upcoming-title" className="text-[14px] font-semibold">Upcoming bookings</h2></header>
+        <header className="border-b border-line px-4 py-3"><h2 id="pt-upcoming-title" className="text-[14px] font-semibold">Upcoming bookings</h2><p className="mt-0.5 text-[12px] text-ink-3">Each booking holds one reserved credit. Free changes until {cutoffHours} hours before the start.</p></header>
         {value.upcomingBookings.length ? (
           <div className="divide-y divide-line">
-            {value.upcomingBookings.map((booking) => (
-              <article key={booking.id} className="flex flex-wrap items-center gap-3 p-4">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13.5px] font-medium">{booking.trainerName}</p>
-                  <p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {branchNames.get(booking.branchId) ?? booking.branchName}</p>
-                </div>
-                <Badge variant="outline">{booking.status}</Badge>
-                <Button size="sm" variant="secondary" onClick={() => { setRescheduleBookingId(booking.id); setTrainerId(booking.trainerProfileId); setBranchId(booking.branchId); setDate(booking.startsAt.slice(0, 10)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Reschedule</Button>
-                <Button size="sm" variant="ghost" loading={cancel.isPending} onClick={() => cancel.mutate(booking.id)}>Cancel</Button>
-              </article>
-            ))}
+            {value.upcomingBookings.map((booking) => {
+              const awaiting = ptBookingAwaitsOutcome(booking);
+              const beforeCutoff = ptBookingBeforeCutoff(booking, cutoffHours);
+              return (
+                <article key={booking.id} className="flex flex-wrap items-center gap-3 p-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13.5px] font-medium">{booking.trainerName}</p>
+                    <p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {branchNames.get(booking.branchId) ?? booking.branchName}</p>
+                  </div>
+                  {awaiting ? (
+                    <>
+                      <Badge variant="warning">Awaiting outcome</Badge>
+                      <p className="w-full text-[12px] text-ink-3">Your trainer records the result of this session. The credit stays reserved until then.</p>
+                    </>
+                  ) : (
+                    <>
+                      <Badge variant="outline">{booking.status}</Badge>
+                      {beforeCutoff ? <Button size="sm" variant="secondary" onClick={() => { setRescheduleBookingId(booking.id); setTrainerId(booking.trainerProfileId); setBranchId(booking.branchId); setDate(booking.startsAt.slice(0, 10)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Reschedule</Button> : null}
+                      <Button size="sm" variant="ghost" loading={cancel.isPending && cancel.variables === booking.id} onClick={() => setCancelBooking(booking)}>Cancel</Button>
+                      {!beforeCutoff ? <p className="w-full text-[12px] text-warning-deep">Inside the {cutoffHours}-hour cutoff: cancelling now uses the credit, and only the gym can move the time.</p> : null}
+                    </>
+                  )}
+                </article>
+              );
+            })}
           </div>
         ) : <p className="p-5 text-[13px] text-ink-2">No upcoming PT bookings.</p>}
       </section>
+
+      <Dialog open={Boolean(cancelBooking)} onOpenChange={(open) => { if (!open && !cancel.isPending) setCancelBooking(undefined); }}>
+        <DialogContent className="max-w-md">
+          {cancelBooking ? (() => {
+            const returnsCredit = ptBookingBeforeCutoff(cancelBooking, cutoffHours);
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Cancel your PT session?</DialogTitle>
+                  <DialogDescription>{formatDateTime(cancelBooking.startsAt)} with {cancelBooking.trainerName}</DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  <p role="status" className={cn("rounded-md border p-3 text-[13px]", returnsCredit ? "border-line bg-sunken text-ink-2" : "border-warning/30 bg-warning-bg text-warning-deep")}>{returnsCredit ? "Your reserved credit will be returned." : `This is inside the gym's ${cutoffHours}-hour cutoff, so the reserved credit will be used.`}</p>
+                </DialogBody>
+                <DialogFooter>
+                  <Button variant="secondary" disabled={cancel.isPending} onClick={() => setCancelBooking(undefined)}>Keep session</Button>
+                  <Button variant="danger" loading={cancel.isPending} onClick={() => cancel.mutate(cancelBooking.id)}>Cancel session</Button>
+                </DialogFooter>
+              </>
+            );
+          })() : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

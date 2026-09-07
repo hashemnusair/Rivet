@@ -191,4 +191,26 @@ describe("member visit history", () => {
     expect(screen.getByText(/No rewards yet/)).toBeInTheDocument();
     expect(screen.getByText(/arrive after a friend joins through your link/)).toBeInTheDocument();
   });
+
+  it("explains a class cancellation before recording it, including one inside the cutoff", async () => {
+    const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
+    const fixture = await state.getCustomerClassExperience();
+    const startsAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    const endsAt = new Date(Date.now() + 2 * 60 * 60_000).toISOString();
+    state.getCustomerClassExperience.mockResolvedValue({ ...fixture, upcoming: [{ ...fixture.upcoming[0], startsAt, endsAt, canBook: false, booking: { id: "bk-live", status: "booked", fromWaitlist: false } }] });
+    state.cancelCustomerClass.mockResolvedValue({ outcome: "late_cancelled", occurrence: {} });
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider>);
+
+    await user.click(screen.getByRole("tab", { name: "Classes" }));
+    // One hour before the start is inside the two-hour cutoff: the card says so before any tap.
+    expect(await screen.findByText(/counts as late/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    const dialog = await screen.findByRole("dialog", { name: "Cancel Strength circuit?" });
+    expect(within(dialog).getByRole("status")).toHaveTextContent(/late cancellation/);
+    expect(state.cancelCustomerClass).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel booking" }));
+    await waitFor(() => expect(state.cancelCustomerClass).toHaveBeenCalledWith({ membershipId: membership.id, occurrenceId: "occ-strength" }));
+  });
 });
