@@ -39,10 +39,12 @@ export default function ChecklistsPage() {
   const params = useSearchParams();
   const router = useRouter();
   const requestedBranch = params.get("branch");
-  const [branchChoice, setBranchChoice] = useState<string | undefined>();
-  const branchId = branchChoice ?? branches.find((branch) => branch.id === requestedBranch)?.id ?? session?.activeBranchId ?? branches[0]?.id;
+  // The branch is read from the URL alone, so Back/Forward and a refresh keep
+  // the walkthrough the operator was on; an unknown id falls back to the
+  // workspace branch.
+  const branchId = branches.find((branch) => branch.id === requestedBranch)?.id ?? session?.activeBranchId ?? branches[0]?.id;
   const branchName = branches.find((branch) => branch.id === branchId)?.name;
-  const chooseBranch = (id: string) => { setBranchChoice(id); router.replace(`/checklists?branch=${encodeURIComponent(id)}`, { scroll: false }); setProblem(undefined); setEscalate(undefined); };
+  const chooseBranch = (id: string) => { router.replace(`/checklists?branch=${encodeURIComponent(id)}`, { scroll: false }); setProblem(undefined); setEscalate(undefined); };
 
   const dayQuery = useApiQuery(qk.checklistDay(branchId ?? ""), (api) => api.getChecklistDay({ branchId: branchId! }), { enabled: Boolean(branchId) });
   const invalidate = useInvalidate();

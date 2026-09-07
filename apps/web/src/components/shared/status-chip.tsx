@@ -4,6 +4,7 @@ import type {
   MembershipEffectiveStatus,
   PaymentStatus,
   TransactionStatus,
+  TransactionType,
 } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
 
@@ -114,6 +115,14 @@ export const LEAD_SOURCE_LABELS: Record<string, string> = {
   google: "Google",
   phone_call: "Phone call",
   other: "Other",
+};
+
+/** Human names for the money-trail record types; the raw keys are storage identifiers. */
+export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
+  payment: "Payment",
+  refund: "Refund",
+  void: "Void",
+  retail_sale: "Retail sale",
 };
 
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {

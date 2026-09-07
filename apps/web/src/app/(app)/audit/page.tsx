@@ -1,12 +1,12 @@
 "use client";
 
 import { ChevronDown, Search } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { AuditQuery } from "@/lib/api/GymOSApi";
 import { useApiQuery } from "@/lib/hooks/use-api";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import type { AuditCategory, AuditEvent } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
 import { DateTimeText } from "@/components/shared/data-display";
@@ -35,30 +35,21 @@ const CATEGORY_LABELS: Record<AuditCategory, string> = {
   legal: "Legal",
 };
 
-function AuditPageInner() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  // Every filter is readable from the URL so an audit question can be shared
-  // or reopened exactly as it was asked.
-  const [search, setSearch] = useState(searchParams.get("q") ?? "");
-  const [category, setCategory] = useState(searchParams.get("category") ?? "all");
-  const [approval, setApproval] = useState(searchParams.get("approval") ?? "all");
-  const [actorId, setActorId] = useState(searchParams.get("actor") ?? "all");
-  const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page")) || 1));
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const debouncedSearch = useDebouncedValue(search, 250);
+const CATEGORY_FILTERS: ReadonlyArray<"all" | AuditCategory> = ["all", ...(Object.keys(CATEGORY_LABELS) as AuditCategory[])];
+const APPROVAL_FILTERS = ["all", "pending", "approved", "rejected"] as const;
 
-  useEffect(() => {
-    const next = new URLSearchParams();
-    if (debouncedSearch) next.set("q", debouncedSearch);
-    if (category !== "all") next.set("category", category);
-    if (actorId !== "all") next.set("actor", actorId);
-    if (approval !== "all") next.set("approval", approval);
-    if (page > 1) next.set("page", String(page));
-    const query = next.toString();
-    if (query !== searchParams.toString()) router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [actorId, approval, category, debouncedSearch, page, pathname, router, searchParams]);
+function AuditPageInner() {
+  const searchParams = useSearchParams();
+  const replaceParams = useReplaceSearchParams();
+  // Every filter is read from the URL so an audit question can be shared or
+  // reopened exactly as it was asked, and Back/Forward retrace the questions
+  // instead of being rewritten by stale component state.
+  const { text: search, setText: setSearch, settled: debouncedSearch } = useUrlSearchText();
+  const category = choiceFromParams(searchParams, "category", CATEGORY_FILTERS, "all");
+  const approval = choiceFromParams(searchParams, "approval", APPROVAL_FILTERS, "all");
+  const actorId = searchParams.get("actor") ?? "all";
+  const page = pageFromParams(searchParams);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const usersQuery = useApiQuery(qk.users({ all: true }), (api) => api.listUsers({ pageSize: 100 }));
 
@@ -92,10 +83,10 @@ function AuditPageInner() {
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center" role="search" aria-label="Audit filters">
         <div className="relative col-span-2 w-full sm:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search summary, actor, entity…" className="ps-8" aria-label="Search audit log" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search summary, actor, entity…" className="ps-8" aria-label="Search audit log" data-touch-target />
         </div>
-        <Select value={category} onValueChange={(v) => { setCategory(v); setPage(1); }}>
-          <SelectTrigger className="w-full sm:w-44" aria-label="Category filter">
+        <Select value={category} onValueChange={(v) => replaceParams({ category: v === "all" ? undefined : v })}>
+          <SelectTrigger className="w-full sm:w-44" aria-label="Category filter" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -105,8 +96,8 @@ function AuditPageInner() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={actorId} onValueChange={(v) => { setActorId(v); setPage(1); }}>
-          <SelectTrigger className="w-full sm:w-44" aria-label="Actor filter">
+        <Select value={actorId} onValueChange={(v) => replaceParams({ actor: v === "all" ? undefined : v })}>
+          <SelectTrigger className="w-full sm:w-44" aria-label="Actor filter" data-touch-target>
             <SelectValue placeholder="Anyone" />
           </SelectTrigger>
           <SelectContent>
@@ -116,8 +107,8 @@ function AuditPageInner() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={approval} onValueChange={(value) => { setApproval(value); setPage(1); }}>
-          <SelectTrigger className="w-full sm:w-44" aria-label="Approval filter">
+        <Select value={approval} onValueChange={(value) => replaceParams({ approval: value === "all" ? undefined : value })}>
+          <SelectTrigger className="w-full sm:w-44" aria-label="Approval filter" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -153,7 +144,7 @@ function AuditPageInner() {
           </ol>
         )}
       </div>
-      {data ? <DataPagination page={data} onPage={setPage} /> : null}
+      {data ? <DataPagination page={data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} /> : null}
     </div>
   );
 }
@@ -176,9 +167,9 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-[13px] font-medium">{event.summary}</span>
             <Badge variant="outline">{event.action}</Badge>
-            {approvalStatus === "pending" ? <Badge variant="warning">pending approval</Badge> : null}
-            {approvalStatus === "approved" ? <Badge variant="success">approved</Badge> : null}
-            {approvalStatus === "rejected" ? <Badge variant="signal">rejected</Badge> : null}
+            {approvalStatus === "pending" ? <Badge variant="warning">Pending approval</Badge> : null}
+            {approvalStatus === "approved" ? <Badge variant="success">Approved</Badge> : null}
+            {approvalStatus === "rejected" ? <Badge variant="signal">Rejected</Badge> : null}
           </span>
           <span className="mt-0.5 block text-[12px] text-ink-3">
             {event.actorName} · {event.actorRole} · {event.entityLabel}

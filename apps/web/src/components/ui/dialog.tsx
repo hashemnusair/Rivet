@@ -33,7 +33,10 @@ const DialogContent = forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-0 rounded-lg border border-line bg-surface shadow-dialog max-h-[calc(100vh-3rem)] overflow-y-auto data-[state=open]:animate-scale-in",
+        // dvh, not vh: on phones vh is the toolbar-hidden height, so a tall
+        // dialog sized by vh keeps its footer (Cancel/Submit) below the fold
+        // while the browser chrome or the keyboard is showing.
+        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-0 rounded-lg border border-line bg-surface shadow-dialog max-h-[calc(100dvh-3rem)] overflow-y-auto data-[state=open]:animate-scale-in",
         className,
       )}
       {...props}

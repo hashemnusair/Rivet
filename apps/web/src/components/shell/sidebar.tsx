@@ -10,15 +10,24 @@ import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/misc";
 import { ContextLabel } from "@/components/ui/typography";
 
+/** The route itself and its descendants, never a route that merely shares a prefix. */
+function isRouteOrChild(href: string, pathname: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 /** Active-route rule shared by the desktop sidebar and the mobile drawer. */
 export function navIsActive(href: string, pathname: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard" || pathname === "/";
-  if (href === "/payments") return pathname === "/payments" || pathname.startsWith("/payments/");
+  if (href === "/payments") return isRouteOrChild("/payments", pathname);
   // Lead detail pages live under /crm/leads but belong to the pipeline entry.
-  if (href === "/crm/pipeline") return pathname === "/crm/pipeline" || pathname.startsWith("/crm/pipeline/") || pathname.startsWith("/crm/leads");
-  // Match the route itself and descendants, but not similarly prefixed routes.
-  // Without the segment boundary, `/members` also activates `/memberships`.
-  return pathname === href || pathname.startsWith(`${href}/`);
+  if (href === "/crm/pipeline") return isRouteOrChild("/crm/pipeline", pathname) || pathname.startsWith("/crm/leads");
+  // Memberships and plans have no entry of their own; they are the Members
+  // workflow's commercial pages, so Members stays the selected destination.
+  if (href === "/members") return isRouteOrChild("/members", pathname) || isRouteOrChild("/memberships", pathname) || isRouteOrChild("/plans", pathname);
+  // Maintenance moved out of the Stock & purchasing tabs to its own page but
+  // is still that workspace's child (its header links back there).
+  if (href === "/operations") return isRouteOrChild("/operations", pathname) || isRouteOrChild("/maintenance", pathname);
+  return isRouteOrChild(href, pathname);
 }
 
 export function Sidebar() {

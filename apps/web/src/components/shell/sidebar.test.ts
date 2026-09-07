@@ -3,14 +3,28 @@ import { navIsActive } from "./sidebar";
 
 describe("navIsActive", () => {
   it("does not treat similarly prefixed routes as active", () => {
-    expect(navIsActive("/members", "/memberships")).toBe(false);
-    expect(navIsActive("/members", "/memberships/plan-1")).toBe(false);
+    expect(navIsActive("/reports", "/reportsx")).toBe(false);
+    expect(navIsActive("/classes", "/classesroom/1")).toBe(false);
+    expect(navIsActive("/pt", "/ptx")).toBe(false);
   });
 
   it("keeps the parent active for its own descendants", () => {
     expect(navIsActive("/members", "/members")).toBe(true);
     expect(navIsActive("/members", "/members/new")).toBe(true);
     expect(navIsActive("/members", "/members/member-1")).toBe(true);
+  });
+
+  it("keeps Members selected on the memberships and plans pages, which have no entry of their own", () => {
+    expect(navIsActive("/members", "/memberships")).toBe(true);
+    expect(navIsActive("/members", "/plans")).toBe(true);
+    expect(navIsActive("/classes", "/memberships")).toBe(false);
+    expect(navIsActive("/settings", "/plans")).toBe(false);
+  });
+
+  it("keeps Stock & purchasing selected on the maintenance page it links to", () => {
+    expect(navIsActive("/operations", "/maintenance")).toBe(true);
+    expect(navIsActive("/operations", "/operations/payables/payments/p-1")).toBe(true);
+    expect(navIsActive("/checklists", "/maintenance")).toBe(false);
   });
 
   it("keeps dashboard and payment route exceptions intact", () => {

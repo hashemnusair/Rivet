@@ -2,18 +2,18 @@
 
 import { FilterX, Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo } from "react";
 import { qk } from "@/lib/api/keys";
 import type { TransactionListQuery } from "@/lib/api/GymOSApi";
 import type { TransactionSummary } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { todayISODate, addDays } from "@/lib/utils/dates";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
-import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/misc";
@@ -25,32 +25,24 @@ import { FinanceNav } from "@/features/finance/finance-nav";
 import { money } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 
+const METHOD_FILTERS: readonly string[] = ["all", ...Object.keys(PAYMENT_METHOD_LABELS)];
+const TYPE_FILTERS = ["all", "payment", "refund"] as const;
+const RANGE_FILTERS = ["1", "7", "30", "all"] as const;
+
 function TransactionsPageInner() {
   const { session } = useApp();
   const { can } = usePermissions();
-  const router = useRouter();
-  const pathname = usePathname();
   const params = useSearchParams();
-  const [search, setSearch] = useState(params.get("q") ?? "");
-  const debounced = useDebouncedValue(search, 250);
-  const method = params.get("method") ?? "all";
-  const type = params.get("type") ?? "all";
-  const range = params.get("range") ?? "30";
-  const page = Math.max(1, Number(params.get("page")) || 1);
+  const replaceParams = useReplaceSearchParams();
+  // The ledger view is fully URL-backed: search, method, type, range and page
+  // survive a refresh and Back/Forward. Unknown URL values fall back to the
+  // defaults instead of reaching the query.
+  const { text: search, setText: setSearch, settled: debounced } = useUrlSearchText();
+  const method = choiceFromParams(params, "method", METHOD_FILTERS, "all");
+  const type = choiceFromParams(params, "type", TYPE_FILTERS, "all");
+  const range = choiceFromParams(params, "range", RANGE_FILTERS, "30");
+  const page = pageFromParams(params);
   const collectOpen = params.get("collect") === "1";
-
-  const replaceParams = (changes: Record<string, string | undefined>) => {
-    const next = new URLSearchParams(params.toString());
-    Object.entries(changes).forEach(([key, value]) => { if (value) next.set(key, value); else next.delete(key); });
-    if (!("page" in changes) && !("collect" in changes)) next.delete("page");
-    router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
-  };
-
-  useEffect(() => {
-    if ((params.get("q") ?? "") !== debounced) replaceParams({ q: debounced || undefined });
-    // Only settled search text drives this URL write.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced]);
 
   const query: TransactionListQuery = useMemo(
     () => ({
@@ -88,7 +80,7 @@ function TransactionsPageInner() {
         title="Payments"
         description="Every payment, refund and void — the immutable money trail."
         actions={
-          <Button onClick={() => replaceParams({ collect: "1" })}>
+          <Button onClick={() => replaceParams({ collect: "1" }, { keepPage: true })}>
             <Plus /> Collect payment
           </Button>
         }
@@ -99,10 +91,10 @@ function TransactionsPageInner() {
       <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:items-center">
         <div className="relative sm:col-span-3 lg:w-full lg:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search transactions" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search transactions" data-touch-target />
         </div>
         <Select value={method} onValueChange={(value) => replaceParams({ method: value === "all" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Method filter">
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Method filter" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -113,7 +105,7 @@ function TransactionsPageInner() {
           </SelectContent>
         </Select>
         <Select value={type} onValueChange={(value) => replaceParams({ type: value === "all" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Type filter">
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Type filter" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -123,7 +115,7 @@ function TransactionsPageInner() {
           </SelectContent>
         </Select>
         <Select value={range} onValueChange={(value) => replaceParams({ range: value === "30" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Date range">
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Date range" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -198,7 +190,7 @@ function TransactionsPageInner() {
                     )}
                     <span className="block font-mono text-[11px] text-ink-3">{p.memberNumber}</span>
                   </TableCell>
-                  <TableCell className="text-[12.5px] capitalize">{p.type}</TableCell>
+                  <TableCell className="text-[12.5px]">{TRANSACTION_TYPE_LABELS[p.type]}</TableCell>
                   <TableCell className="text-[12.5px]">{PAYMENT_METHOD_LABELS[p.method]}</TableCell>
                   <TableCell className="text-end">
                     <MoneyText money={p.amount} />
@@ -219,7 +211,7 @@ function TransactionsPageInner() {
 
       {data ? <DataPagination page={data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} /> : null}
 
-      <CollectPaymentMemberPicker open={collectOpen} onOpenChange={(open) => replaceParams({ collect: open ? "1" : undefined })} />
+      <CollectPaymentMemberPicker open={collectOpen} onOpenChange={(open) => replaceParams({ collect: open ? "1" : undefined }, { keepPage: true })} />
     </div>
   );
 }
@@ -237,7 +229,7 @@ function TransactionCompactRow({ transaction }: { transaction: TransactionSummar
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3 text-[12.5px] text-ink-2">
         <TransactionStatusChip status={transaction.status} />
-        <span className="capitalize">{transaction.type.replaceAll("_", " ")}</span>
+        <span>{TRANSACTION_TYPE_LABELS[transaction.type]}</span>
         <span>{PAYMENT_METHOD_LABELS[transaction.method]}</span>
         <span>By {transaction.collectedByName}</span>
         <Link href={receiptHref(transaction.receiptId)} className="ms-auto font-mono text-[12px] font-medium underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">{transaction.receiptNumber}</Link>

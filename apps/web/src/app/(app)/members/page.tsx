@@ -1,9 +1,9 @@
 "use client";
 
-import { Archive, Columns3, FileUp, GitMerge, Plus, Search, Tags } from "lucide-react";
+import { Archive, Columns3, FileUp, FilterX, GitMerge, Plus, Search, Tags } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DaysUntilText, MoneyText, RelativeText } from "@/components/shared/data-display";
 import { DataPagination, Gate, PageHeader } from "@/components/shared/chrome";
@@ -22,7 +22,7 @@ import type { MemberListQuery } from "@/lib/api/GymOSApi";
 import type { MemberSummary } from "@/lib/domain/types";
 import type { BulkOperationKind } from "@/lib/domain/qol";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { useApp } from "@/lib/providers/app-providers";
 
 type MemberColumn = "phone" | "branch" | "plan" | "status" | "expiry" | "balance" | "last_check_in";
@@ -34,11 +34,12 @@ const ALL_COLUMNS: Array<{ key: MemberColumn; label: string }> = [
 function MembersPageInner() {
   const { session } = useApp();
   const router = useRouter();
-  const pathname = usePathname();
   const params = useSearchParams();
+  const replaceParams = useReplaceSearchParams();
   const invalidate = useInvalidate();
-  const [search, setSearch] = useState(params.get("q") ?? "");
-  const debounced = useDebouncedValue(search, 250);
+  // Settled search text lives in the URL with the other filters; Back/Forward
+  // and a shared link refill the box instead of being overwritten by it.
+  const { text: search, setText: setSearch, settled: debounced } = useUrlSearchText();
   const [columns, setColumns] = useState<MemberColumn[]>(() => {
     const requested = params.get("columns")?.split(",").filter((item): item is MemberColumn => ALL_COLUMNS.some((column) => column.key === item));
     return requested?.length ? requested : ALL_COLUMNS.map((column) => column.key);
@@ -54,19 +55,12 @@ function MembersPageInner() {
   const membershipStatus = params.get("membership") ?? "all";
   const planId = params.get("plan") ?? "all";
   const sort = params.get("sort") ?? "fullName";
-  const page = Math.max(1, Number(params.get("page")) || 1);
-
-  const replaceParams = (changes: Record<string, string | undefined>) => {
-    const next = new URLSearchParams(params.toString());
-    Object.entries(changes).forEach(([key, value]) => { if (value) next.set(key, value); else next.delete(key); });
-    if (!("page" in changes)) next.delete("page");
-    router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
+  const page = pageFromParams(params);
+  const filtersActive = Boolean(debounced) || recordStatus !== "active" || membershipStatus !== "all" || planId !== "all";
+  const clearFilters = () => {
+    setSearch("");
+    replaceParams({ q: undefined, record: undefined, membership: undefined, plan: undefined });
   };
-  useEffect(() => {
-    if ((params.get("q") ?? "") !== debounced) replaceParams({ q: debounced || undefined });
-    // Only settled search text drives this URL write.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced]);
 
   const plansQuery = useApiQuery(qk.plans({}), (api) => api.listPlans({ pageSize: 50 }));
   const query: MemberListQuery = useMemo(() => ({ search: debounced || undefined, membershipStatus: membershipStatus === "all" ? undefined : membershipStatus as MemberListQuery["membershipStatus"], planId: planId === "all" ? undefined : planId, branchId: session?.activeBranchId, status: recordStatus, sort, page, pageSize: 20 }), [debounced, membershipStatus, page, planId, recordStatus, session?.activeBranchId, sort]);
@@ -106,6 +100,7 @@ function MembersPageInner() {
       <Select value={planId} onValueChange={(value) => replaceParams({ plan: value === "all" ? undefined : value })}><SelectTrigger sizeVariant="sm" className="h-11 min-[1180px]:h-8 min-[1180px]:w-24" aria-label="Plan filter"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All plans</SelectItem>{(plansQuery.data?.items ?? []).map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select>
       <Select value={sort} onValueChange={(value) => replaceParams({ sort: value === "fullName" ? undefined : value })}><SelectTrigger sizeVariant="sm" className="h-11 min-[1180px]:h-8 min-[1180px]:w-28" aria-label="Sort members"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="fullName">Name A–Z</SelectItem><SelectItem value="-createdAt">Newest first</SelectItem><SelectItem value="membershipEndDate">Expiry soonest</SelectItem><SelectItem value="-outstanding">Highest balance</SelectItem><SelectItem value="-lastCheckInAt">Recent check-in</SelectItem></SelectContent></Select>
       <Button size="sm" variant="secondary" className="h-11 w-full min-[1180px]:h-8 min-[1180px]:w-auto" onClick={() => setColumnsOpen(true)}><Columns3 /> Columns</Button>
+      {filtersActive ? <Button size="sm" variant="ghost" className="h-11 w-full min-[1180px]:h-8 min-[1180px]:w-auto" onClick={clearFilters} data-testid="member-clear-filters"><FilterX /> Clear filters</Button> : null}
       <SavedViewControls compact className="col-span-2 sm:col-span-2 min-[1180px]:col-span-1 min-[1180px]:shrink-0" surface="members" state={viewState} onApply={applyView} hasExplicitState={["q", "record", "membership", "plan", "sort", "columns"].some((key) => params.has(key))} />
     </div>
 
@@ -117,7 +112,11 @@ function MembersPageInner() {
       ) : members.isError ? (
         <div className="p-4"><ErrorState layout="section" onRetry={() => members.refetch()} /></div>
       ) : !members.data?.items.length ? (
-        <EmptyState layout="section" title="No members match" description={debounced ? `Nothing found for “${debounced}”. Check the spelling or filters.` : "Try widening the filters."} className="m-4" />
+        filtersActive ? (
+          <EmptyState layout="section" title="No members match" description={debounced ? `Nothing found for “${debounced}”. Check the spelling or filters.` : "Try widening the filters."} className="m-4" action={<Button variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button>} />
+        ) : (
+          <EmptyState layout="section" title="No members yet" description={session?.activeBranchId ? "This branch has no members yet. Add one, or import your list from a spreadsheet." : "Add the first member, or import your existing list from a spreadsheet."} className="m-4" action={<Gate permission="members.write"><Button asChild size="sm"><Link href="/members/new"><Plus /> Add member</Link></Button></Gate>} />
+        )
       ) : (
         <>
           <ul className="divide-y divide-line xl:hidden" aria-label="Members">

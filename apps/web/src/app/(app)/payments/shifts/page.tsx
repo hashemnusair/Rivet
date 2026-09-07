@@ -1,10 +1,12 @@
 "use client";
 
 import { Check, Lock, LockOpen, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { isoDateFromParams, pageFromParams, useReplaceSearchParams } from "@/lib/hooks/use-url-state";
 import type { CashShift } from "@/lib/domain/types";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
@@ -27,20 +29,30 @@ import { FinanceNav } from "@/features/finance/finance-nav";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
 
 export default function ShiftsPage() {
+  return <Suspense><ShiftsWorkspace /></Suspense>;
+}
+
+function ShiftsWorkspace() {
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
+  const params = useSearchParams();
+  const replaceParams = useReplaceSearchParams();
   const canPickBranch = session?.roles[0] === "owner" || session?.roles[0] === "manager";
-  const [branchId, setBranchId] = useState("");
-  useEffect(() => {
-    const activeBranchId = visibleBranchId(session?.branches, session?.activeBranchId);
-    setBranchId((current) => visibleBranchId(session?.branches, current) ?? activeBranchId ?? "");
-  }, [session?.activeBranchId, session?.branches]);
+  // Drawer branch, reconciliation date and history page live in the URL, so
+  // a refresh or Back/Forward returns to the same drawer and day. A branch
+  // the session cannot see falls back to the workspace branch; a malformed
+  // date falls back to today.
+  const sessionBranch = visibleBranchId(session?.branches, session?.activeBranchId);
   const effectiveBranch = canPickBranch
-    ? visibleBranchId(session?.branches, branchId)
-    : visibleBranchId(session?.branches, session?.activeBranchId);
-  const [date, setDate] = useState(() => todayISODate(session?.organization.timezone));
-  const [page, setPage] = useState(1);
+    ? visibleBranchId(session?.branches, params.get("branch")) ?? sessionBranch
+    : sessionBranch;
+  const setBranchId = (id: string) => replaceParams({ branch: id });
+  const today = todayISODate(session?.organization.timezone);
+  const date = isoDateFromParams(params, "date") ?? today;
+  const setDate = (next: string) => replaceParams({ date: next && next !== today ? next : undefined }, { keepPage: true });
+  const page = pageFromParams(params);
+  const setPage = (next: number) => replaceParams({ page: next === 1 ? undefined : String(next) });
   const [openShiftOpen, setOpenShiftOpen] = useState(false);
   const [closeShiftTarget, setCloseShiftTarget] = useState<CashShift | null>(null);
   const [varianceReview, setVarianceReview] = useState<{ shiftId: string; decision: "approved" | "rejected" } | null>(null);
@@ -78,7 +90,7 @@ export default function ShiftsPage() {
 
   const branchPicker = canPickBranch ? (
     <Select value={effectiveBranch ?? ""} onValueChange={setBranchId}>
-      <SelectTrigger sizeVariant="sm" className="w-48" aria-label="Branch">
+      <SelectTrigger sizeVariant="sm" className="w-48" aria-label="Branch" data-touch-target>
         <SelectValue placeholder="Choose branch" />
       </SelectTrigger>
       <SelectContent>
@@ -197,7 +209,7 @@ export default function ShiftsPage() {
         <section className="panel overflow-hidden">
           <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
             <h2 className="text-[13px] font-semibold">Daily reconciliation</h2>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-40" aria-label="Reconciliation date" />
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-40" aria-label="Reconciliation date" data-touch-target />
           </header>
           {reconQuery.isLoading ? (
             <div className="p-4">
@@ -321,15 +333,15 @@ export default function ShiftsPage() {
                   </TableCell>
                   <TableCell>
                     {s.status === "open" ? (
-                      <Badge variant="success" dot>open</Badge>
+                      <Badge variant="success" dot>Open</Badge>
                     ) : historyStatus === "variance_pending" ? (
-                      <Badge variant="warning">variance pending</Badge>
+                      <Badge variant="warning">Variance pending</Badge>
                     ) : historyStatus === "variance_approved" ? (
-                      <Badge variant="neutral">variance approved</Badge>
+                      <Badge variant="neutral">Variance approved</Badge>
                     ) : historyStatus === "variance_rejected" ? (
-                      <Badge variant="signal">variance rejected</Badge>
+                      <Badge variant="signal">Variance rejected</Badge>
                     ) : (
-                      <Badge variant="outline">balanced</Badge>
+                      <Badge variant="outline">Balanced</Badge>
                     )}
                   </TableCell>
                   <Gate permission="reconciliation.approve_variance">

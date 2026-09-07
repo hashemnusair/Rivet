@@ -194,7 +194,9 @@ test("audit questions are shareable and every row opens its evidence", async ({ 
   await expect(page).toHaveURL(/q=override/);
   await page.getByRole("combobox", { name: "Approval filter" }).click();
   await page.getByRole("option", { name: "Any approval state" }).click();
-  await expect(page).toHaveURL(/q=override&category=payments$/);
+  // The approval filter leaves the URL; search and category stay (the shared
+  // URL writer keeps existing keys in place, so their order is not asserted).
+  await expect(page).toHaveURL(/\/audit\?(?=.*\bq=override\b)(?=.*\bcategory=payments\b)(?!.*approval=)/);
 });
 
 test("exports read as one list and each request is recorded with its state", async ({ page }) => {

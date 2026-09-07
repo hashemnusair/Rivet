@@ -11,7 +11,7 @@ import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { toast } from "sonner";
 import { DateText, DateTimeText, DaysUntilText, MoneyText, RelativeText } from "@/components/shared/data-display";
 import { DataPagination } from "@/components/shared/chrome";
-import { CheckInDecisionChip, MembershipStatusChip, PaymentStatusChip, PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { CheckInDecisionChip, MembershipStatusChip, PaymentStatusChip, PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/misc";
@@ -97,7 +97,7 @@ export function TimelineTab({ memberId }: { memberId: UUID }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Timeline filter">
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Timeline filter">
         {TIMELINE_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -214,7 +214,7 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
                   </span>
                 ) : null}
                 {(m.upcomingAmount?.amount ?? 0) > 0 ? (
-                  <span className="block text-[11px] text-info tabular">
+                  <span className="block text-[11px] text-ink-3 tabular">
                     Upcoming invoice <MoneyText money={m.upcomingAmount!} /> · collectible {m.startDate}
                   </span>
                 ) : null}
@@ -338,7 +338,7 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
         </TableHeader>
         <TableBody>
           {items.map((p) => (
-            <TableRow key={p.id} interactive onClick={() => undefined} className="cursor-pointer">
+            <TableRow key={p.id}>
               <TableCell>
                 <Link
                   href={receiptHref(p.receiptId)}
@@ -350,7 +350,7 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
               <TableCell className="whitespace-nowrap text-[12.5px] text-ink-2">
                 <DateTimeText iso={p.occurredAt} />
               </TableCell>
-              <TableCell className="text-[12.5px] capitalize">{p.type}</TableCell>
+              <TableCell className="text-[12.5px]">{TRANSACTION_TYPE_LABELS[p.type]}</TableCell>
               <TableCell className="text-[12.5px]">{PAYMENT_METHOD_LABELS[p.method]}</TableCell>
               <TableCell className="text-end">
                 <MoneyText money={p.amount} />
@@ -372,7 +372,7 @@ function PaymentRecordRow({ transaction }: { transaction: TransactionSummary }) 
     <li className="space-y-3 px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[13.5px] font-semibold capitalize text-ink">{transaction.type.replaceAll("_", " ")}</p>
+          <p className="text-[13.5px] font-semibold text-ink">{TRANSACTION_TYPE_LABELS[transaction.type]}</p>
           <p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={transaction.occurredAt} /></p>
         </div>
         <MoneyText money={transaction.amount} className="text-[13.5px] font-semibold" />

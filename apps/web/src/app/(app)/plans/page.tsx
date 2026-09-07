@@ -1,10 +1,12 @@
 "use client";
 
 import { Archive, Pencil, Plus } from "lucide-react";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useReplaceSearchParams } from "@/lib/hooks/use-url-state";
 import type { MembershipPlan } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { MoneyText } from "@/components/shared/data-display";
@@ -17,11 +19,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PlanFormDialog } from "@/features/plans/plan-form-dialog";
 
 export default function PlansPage() {
+  return <Suspense><PlansWorkspace /></Suspense>;
+}
+
+function PlansWorkspace() {
   const { session } = useApp();
   const invalidate = useInvalidate();
+  const params = useSearchParams();
+  const replaceParams = useReplaceSearchParams();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<MembershipPlan | undefined>(undefined);
-  const [showArchived, setShowArchived] = useState(false);
+  // The archived view is URL-backed so a refresh or Back returns to it.
+  const showArchived = params.get("status") === "archived";
+  const setShowArchived = (archived: boolean) => replaceParams({ status: archived ? "archived" : undefined });
 
   const query = useApiQuery(qk.plans({ archived: showArchived }), (api) =>
     api.listPlans({ status: showArchived ? "archived" : "active", pageSize: 50 }),
@@ -60,7 +70,7 @@ export default function PlansPage() {
         }
       />
 
-      <div className="flex items-center gap-2" role="tablist" aria-label="Plan status">
+      <div className="flex items-center gap-2" role="group" aria-label="Plan status">
         {(["active", "archived"] as const).map((s) => (
           <button
             key={s}

@@ -3,14 +3,14 @@
 import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { MembershipListQuery } from "@/lib/api/GymOSApi";
 import type { MembershipSummary } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
 import { MembershipStatusChip, PaymentStatusChip } from "@/components/shared/status-chip";
@@ -21,18 +21,30 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 
+const STATUS_FILTERS = ["all", "active", "expiring", "expired", "frozen", "cancelled", "depleted", "scheduled"] as const;
+const PAYMENT_FILTERS = ["all", "paid", "partial", "unpaid", "refunded"] as const;
+
 export default function MembershipsPage() {
-  return <WorkspaceModuleBoundary moduleKey="revenue"><MembershipsWorkspace /></WorkspaceModuleBoundary>;
+  return <Suspense><WorkspaceModuleBoundary moduleKey="revenue"><MembershipsWorkspace /></WorkspaceModuleBoundary></Suspense>;
 }
 
 function MembershipsWorkspace() {
   const { session } = useApp();
   const router = useRouter();
-  const [search, setSearch] = useState("");
-  const debounced = useDebouncedValue(search, 250);
-  const [status, setStatus] = useState("all");
-  const [paymentStatus, setPaymentStatus] = useState("all");
-  const [page, setPage] = useState(1);
+  // Filters and the page live in the URL so a refresh, Back/Forward or a
+  // shared link reopen the same slice of the ledger. Unknown values fall
+  // back to the default instead of reaching the query.
+  const params = useSearchParams();
+  const replaceParams = useReplaceSearchParams();
+  const { text: search, setText: setSearch, settled: debounced } = useUrlSearchText();
+  const status = choiceFromParams(params, "status", STATUS_FILTERS, "all");
+  const paymentStatus = choiceFromParams(params, "payment", PAYMENT_FILTERS, "all");
+  const page = pageFromParams(params);
+  const filtersActive = Boolean(debounced) || status !== "all" || paymentStatus !== "all";
+  const clearFilters = () => {
+    setSearch("");
+    replaceParams({ q: undefined, status: undefined, payment: undefined });
+  };
 
   const query: MembershipListQuery = useMemo(
     () => ({
@@ -63,17 +75,15 @@ function MembershipsWorkspace() {
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
           <Input
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Member name or number…"
             className="ps-8"
             aria-label="Search memberships"
+            data-touch-target
           />
         </div>
-        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Status filter">
+        <Select value={status} onValueChange={(v) => replaceParams({ status: v === "all" ? undefined : v })}>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Status filter" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -87,8 +97,8 @@ function MembershipsWorkspace() {
             <SelectItem value="scheduled">Scheduled</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={paymentStatus} onValueChange={(v) => { setPaymentStatus(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Payment status filter">
+        <Select value={paymentStatus} onValueChange={(v) => replaceParams({ payment: v === "all" ? undefined : v })}>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Payment status filter" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -99,7 +109,7 @@ function MembershipsWorkspace() {
             <SelectItem value="refunded">Refunded</SelectItem>
           </SelectContent>
         </Select>
-        {(search || status !== "all" || paymentStatus !== "all") ? <Button variant="ghost" size="sm" className="justify-self-start lg:ms-1" onClick={() => { setSearch(""); setStatus("all"); setPaymentStatus("all"); setPage(1); }}>Clear filters</Button> : null}
+        {filtersActive ? <Button variant="ghost" size="sm" className="justify-self-start lg:ms-1" onClick={clearFilters}>Clear filters</Button> : null}
         {data ? <span className="justify-self-end text-[12px] text-ink-3 tabular lg:ms-auto">{data.totalItems} terms</span> : null}
       </div>
 
@@ -113,7 +123,11 @@ function MembershipsWorkspace() {
             <ErrorState onRetry={() => refetch()} />
           </div>
         ) : !data || data.items.length === 0 ? (
-          <EmptyState title="No memberships match" description="Try widening the filters or the search." className="border-0" />
+          filtersActive ? (
+            <EmptyState title="No memberships match" description="Try widening the filters or the search." className="border-0" action={<Button variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button>} />
+          ) : (
+            <EmptyState title="No memberships sold yet" description="Terms appear here as soon as a membership is sold from a member record or reception." className="border-0" />
+          )
         ) : (
           <>
           <ul className="divide-y divide-line lg:hidden" aria-label="Memberships">
@@ -162,7 +176,7 @@ function MembershipsWorkspace() {
                     {m.outstanding.amount > 0 ? (
                       <MoneyText money={m.outstanding} className="text-warning-deep" />
                     ) : (m.upcomingAmount?.amount ?? 0) > 0 ? (
-                      <span className="text-[11px] text-info"><MoneyText money={m.upcomingAmount!} /> upcoming · {m.startDate}</span>
+                      <span className="text-[11px] text-ink-3"><MoneyText money={m.upcomingAmount!} /> upcoming · {m.startDate}</span>
                     ) : (
                       <span className="text-[12px] tabular text-ink-4">—</span>
                     )}
@@ -176,7 +190,7 @@ function MembershipsWorkspace() {
         )}
       </div>
 
-      {data ? <DataPagination page={data} onPage={setPage} /> : null}
+      {data ? <DataPagination page={data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} /> : null}
     </div>
   );
 }

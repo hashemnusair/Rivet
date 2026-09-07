@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/button";
 import { ContextLabel } from "@/components/ui/typography";
@@ -73,9 +73,19 @@ export function DataPagination<T>({
   onPage: (page: number) => void;
   className?: string;
 }) {
+  // A page number past the end (a stale link, or filters that narrowed the
+  // set after the page was chosen) would otherwise show an empty page that
+  // reads like "no matches". Move to the last real page instead.
+  const pastEnd = page.totalItems > 0 && page.page > page.totalPages;
+  const lastPage = page.totalPages;
+  useEffect(() => {
+    if (pastEnd) onPage(Math.max(1, lastPage));
+    // onPage is a fresh closure on every render; the page facts are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastEnd, lastPage]);
   if (page.totalItems === 0) return null;
-  const from = (page.page - 1) * page.pageSize + 1;
   const to = Math.min(page.totalItems, page.page * page.pageSize);
+  const from = Math.min((page.page - 1) * page.pageSize + 1, to);
   return (
     <div className={cn("flex items-center justify-between gap-3 pt-3 text-[12.5px] text-ink-3", className)}>
       {/* Ranges and page ratios stay LTR so bidi cannot reverse them. */}
