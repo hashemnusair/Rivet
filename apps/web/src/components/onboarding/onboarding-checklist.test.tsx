@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { qk } from "@/lib/api/keys";
 import type { OnboardingExperience } from "@/lib/domain/qol";
 import { OnboardingChecklist } from "./onboarding-checklist";
 
@@ -13,15 +14,15 @@ const experience: OnboardingExperience = {
 };
 function show(compact = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><OnboardingChecklist audience="member" compact={compact} /></QueryClientProvider>);
+  return { ...render(<QueryClientProvider client={client}><OnboardingChecklist audience="member" compact={compact} /></QueryClientProvider>), client };
 }
 beforeEach(() => { vi.clearAllMocks(); mocks.get.mockResolvedValue(experience); });
 
 describe("onboarding completion", () => {
   it("hides the banner when required tasks are complete even without a saved completion timestamp", async () => {
     mocks.get.mockResolvedValue({ ...experience, tasks: [...experience.tasks, { ...experience.tasks[0], key: "optional", category: "optional", complete: false }] });
-    const { container } = show(true);
-    await waitFor(() => expect(mocks.get).toHaveBeenCalled());
+    const { container, client } = show(true);
+    await waitFor(() => expect(client.getQueryState(qk.onboarding("member"))?.status).toBe("success"));
     expect(container).toBeEmptyDOMElement();
   });
   it("keeps the full checklist available for review", async () => {
