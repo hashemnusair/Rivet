@@ -11460,6 +11460,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.retail.void":
     case "operations.low_stock.refresh":
     case "operations.low_stock.dismiss":
+    case "operations.purchase_order.delivery_date":
     case "operations.purchase_order.create":
     case "operations.purchase_order.approve":
     case "operations.purchase_order.receive":

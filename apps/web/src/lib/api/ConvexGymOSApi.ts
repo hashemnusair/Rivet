@@ -704,6 +704,7 @@ export class ConvexGymOSApi implements GymOSApi {
   refreshLowStockAlerts(input: { branchId?: T.UUID } = {}): Promise<T.LowStockAlert[]> { return this.mutate("operations.low_stock.refresh", input); }
   dismissLowStockAlert(input: { alertId: T.UUID; reason: string }): Promise<T.LowStockAlert> { return this.mutate("operations.low_stock.dismiss", input); }
   createPurchaseOrder(input: T.CreatePurchaseOrderInput): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.create", input); }
+  updatePurchaseOrderDeliveryDate(input: { purchaseOrderId: T.UUID; expectedDeliveryDate?: string }): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.delivery_date", input); }
   approvePurchaseOrder(purchaseOrderId: T.UUID, reason?: string): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.approve", { id: purchaseOrderId, reason }); }
   listPurchaseOrders(query: { branchId?: T.UUID; status?: T.PurchaseOrderStatus } = {}): Promise<T.PurchaseOrder[]> { return this.query("operations.purchase_orders.list", query); }
   receivePurchaseOrder(input: T.ReceivePurchaseOrderInput): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.receive", input); }

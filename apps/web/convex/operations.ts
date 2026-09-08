@@ -1,3 +1,5 @@
+import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "../src/lib/domain/purchase-orders";
+import { todayISODate } from "../src/lib/utils/dates";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -1379,7 +1381,7 @@ async function dismissLowStockAlert(ctx: MutationCtx, actor: ActorContext, input
 
 function purchaseOrderView(order: PurchaseOrder, organizationId: string, branchId: string, supplierId: string | undefined, products = new Map<string, string>(), approvedById?: string): Data {
   const sourceType = order.sourceType ?? (supplierId ? "supplier" : "private");
-  return { id: order.publicId, organizationId, branchId, sourceType, supplierId, supplierName: sourceType === "private" ? "Private purchase" : order.supplierName, lines: order.lines.map((line) => ({ productId: products.get(String(line.productId)) ?? String(line.productId), sku: line.sku, productName: line.productName, orderedQuantity: line.orderedQuantity, receivedQuantity: line.receivedQuantity, unitCost: { amount: line.unitCostMinor, currency: line.unitCostCurrency }, lineTotal: { amount: line.lineTotalMinor, currency: line.unitCostCurrency } })), status: order.status, currency: order.currency, total: { amount: order.totalMinor, currency: order.currency }, supplierInvoiceReference: order.supplierInvoiceReference, notes: order.notes, approvedAt: order.approvedAt ? iso(order.approvedAt) : undefined, approvedById: approvedById ?? (order.approvedByUserId ? String(order.approvedByUserId) : undefined), receivedAt: order.receivedAt ? iso(order.receivedAt) : undefined, createdAt: iso(order.createdAt), updatedAt: iso(order.updatedAt) };
+  return { id: order.publicId, organizationId, branchId, sourceType, supplierId, supplierName: sourceType === "private" ? "Private purchase" : order.supplierName, lines: order.lines.map((line) => ({ productId: products.get(String(line.productId)) ?? String(line.productId), sku: line.sku, productName: line.productName, orderedQuantity: line.orderedQuantity, receivedQuantity: line.receivedQuantity, unitCost: { amount: line.unitCostMinor, currency: line.unitCostCurrency }, lineTotal: { amount: line.lineTotalMinor, currency: line.unitCostCurrency } })), status: order.status, currency: order.currency, total: { amount: order.totalMinor, currency: order.currency }, supplierInvoiceReference: order.supplierInvoiceReference, expectedDeliveryDate: order.expectedDeliveryDate, notes: order.notes, approvedAt: order.approvedAt ? iso(order.approvedAt) : undefined, approvedById: approvedById ?? (order.approvedByUserId ? String(order.approvedByUserId) : undefined), receivedAt: order.receivedAt ? iso(order.receivedAt) : undefined, createdAt: iso(order.createdAt), updatedAt: iso(order.updatedAt) };
 }
 
 async function purchaseOrderViewResolved(ctx: ReadContext, actor: ActorContext, order: PurchaseOrder): Promise<Data> {
@@ -1395,7 +1397,7 @@ async function purchaseOrderViewResolved(ctx: ReadContext, actor: ActorContext, 
     if (tombstone) productMap.set(String(line.productId), tombstone.productPublicId);
   }
   const approvedBy = order.approvedByUserId ? await ctx.db.get(order.approvedByUserId) : undefined;
-  return purchaseOrderView(order, publicOrganizationId(actor.organization), publicBranchId(branch), supplier?.publicId, productMap, approvedBy ? publicUserId(approvedBy) : undefined);
+  return { ...purchaseOrderView(order, publicOrganizationId(actor.organization), publicBranchId(branch), supplier?.publicId, productMap, approvedBy ? publicUserId(approvedBy) : undefined), overdue: purchaseOrderIsOverdue(order, todayISODate(actor.organization.timezone)) };
 }
 
 async function listPurchaseOrders(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data[]> {
@@ -1413,6 +1415,7 @@ async function createPurchaseOrder(ctx: MutationCtx, actor: ActorContext, input:
   await requireOperations(ctx, actor);
   requireOperationsWrite(actor);
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
+  if (!validExpectedDeliveryDate(input.expectedDeliveryDate)) domainError("VALIDATION_ERROR", "Expected delivery must be a valid calendar date.", { correlationId: actor.correlationId });
   const requestedSource = optionalText(input.sourceType) ?? (optionalText(input.supplierId) ? "supplier" : "private");
   if (requestedSource !== "supplier" && requestedSource !== "private") domainError("VALIDATION_ERROR", "Purchase source is invalid.", { correlationId: actor.correlationId });
   const supplier = requestedSource === "supplier" ? await supplierByPublicId(ctx, actor, optionalText(input.supplierId)) : null;
@@ -1438,12 +1441,27 @@ async function createPurchaseOrder(ctx: MutationCtx, actor: ActorContext, input:
   const now = Date.now();
   const publicId = `po-${crypto.randomUUID()}`;
   const supplierName = supplier?.name ?? "Private purchase";
-  const id = await ctx.db.insert("purchaseOrders", { organizationId: actor.organization._id, publicId, branchId: branch._id, sourceType: requestedSource, supplierId: supplier?._id, supplierName, lines, status: "draft", currency, totalMinor, supplierInvoiceReference: optionalText(input.supplierInvoiceReference), notes: optionalText(input.notes), createdAt: now, updatedAt: now });
+  const id = await ctx.db.insert("purchaseOrders", { organizationId: actor.organization._id, publicId, branchId: branch._id, sourceType: requestedSource, supplierId: supplier?._id, supplierName, lines, status: "draft", currency, totalMinor, supplierInvoiceReference: optionalText(input.supplierInvoiceReference), expectedDeliveryDate: optionalText(input.expectedDeliveryDate), notes: optionalText(input.notes), createdAt: now, updatedAt: now });
   const created = await ctx.db.get(id);
   if (!created) domainError("NOT_FOUND", "Purchase order could not be created.", { correlationId: actor.correlationId });
   const createdView = await purchaseOrderViewResolved(ctx, actor, created);
   await audit(ctx, actor, { action: "operations.purchase_order.create", entityType: "purchase_order", entityId: created.publicId, entityLabel: `${supplierName} · ${created.publicId}`, summary: requestedSource === "private" ? "Private purchase order created" : "Purchase order created", branchId: publicBranchId(branch), after: createdView });
   return createdView;
+}
+
+async function updatePurchaseOrderDeliveryDate(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  await requireOperations(ctx, actor);
+  requireOperationsWrite(actor);
+  if (!validExpectedDeliveryDate(input.expectedDeliveryDate)) domainError("VALIDATION_ERROR", "Expected delivery must be a valid calendar date.", { correlationId: actor.correlationId });
+  const order = await ctx.db.query("purchaseOrders").withIndex("by_public_id", q => q.eq("organizationId", actor.organization._id).eq("publicId", String(input.purchaseOrderId))).unique();
+  if (!order) domainError("NOT_FOUND", "Purchase order not found.", { correlationId: actor.correlationId });
+  const before = await purchaseOrderViewResolved(ctx, actor, order);
+  if (!["draft", "approved", "partially_received"].includes(order.status)) domainError("CONFLICT", "Only an open order can change its expected delivery date.", { correlationId: actor.correlationId });
+  const expectedDeliveryDate = optionalText(input.expectedDeliveryDate);
+  if (order.expectedDeliveryDate === expectedDeliveryDate) return before;
+  await ctx.db.patch(order._id, { expectedDeliveryDate, updatedAt: Date.now() });
+  await audit(ctx, actor, { action: "operations.purchase_order.delivery_date", entityType: "purchase_order", entityId: order.publicId, entityLabel: order.supplierName, summary: "Expected delivery date updated", branchId: String(before.branchId), before: { expectedDeliveryDate: order.expectedDeliveryDate }, after: { expectedDeliveryDate } });
+  return purchaseOrderViewResolved(ctx, actor, (await ctx.db.get(order._id))!);
 }
 
 async function releaseLegacyCommitted(ctx: MutationCtx, actor: ActorContext, branchId: Id<"branches">, productId: Id<"products">, quantity: number): Promise<void> {
@@ -1969,6 +1987,7 @@ export async function operationsMutation(ctx: MutationCtx, actor: ActorContext, 
     case "operations.retail.void": return await voidRetailSale(ctx, actor, input);
     case "operations.low_stock.refresh": return await refreshLowStockAlerts(ctx, actor, input);
     case "operations.low_stock.dismiss": return await dismissLowStockAlert(ctx, actor, input);
+    case "operations.purchase_order.delivery_date": return await updatePurchaseOrderDeliveryDate(ctx, actor, input);
     case "operations.purchase_order.create": return await createPurchaseOrder(ctx, actor, input);
     case "operations.purchase_order.approve": return await approvePurchaseOrder(ctx, actor, input);
     case "operations.purchase_order.receive": return await receivePurchaseOrder(ctx, actor, input);

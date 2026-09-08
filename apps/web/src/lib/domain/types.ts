@@ -357,6 +357,8 @@ export interface PurchaseOrder {
   total: Money;
   supplierInvoiceReference?: string;
   notes?: string;
+  expectedDeliveryDate?: ISODate;
+  overdue?: boolean;
   approvedAt?: ISODateTime;
   approvedById?: UUID;
   receivedAt?: ISODateTime;
@@ -838,6 +840,7 @@ export interface CreatePurchaseOrderInput {
   lines: Array<{ productId: UUID; quantity: number; unitCost: Money }>;
   supplierInvoiceReference?: string;
   notes?: string;
+  expectedDeliveryDate?: ISODate;
 }
 
 export interface ReceivePurchaseOrderInput {

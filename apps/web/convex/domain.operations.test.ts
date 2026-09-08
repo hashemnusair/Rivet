@@ -28,6 +28,25 @@ async function seeded() {
 }
 
 describe("daily operations typed contracts", () => {
+  it("validates and audits delivery dates without changing receiving or money", async () => {
+    const { owner, manager, sales, t } = await seeded();
+    const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "DELIVERY", name: "Delivery stock", unit: "each", reorderPoint: 1 })) as { id: string };
+    const input = { branchId: "operations-branch-b", sourceType: "private", lines: [{ productId: product.id, quantity: 2, unitCost: { amount: 500, currency: "JOD" } }] };
+    await expectCode(owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { ...input, expectedDeliveryDate: "2026-02-30" })), "VALIDATION_ERROR");
+    const order = await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { ...input, expectedDeliveryDate: "2020-01-01" })) as { id: string };
+    const update = operation("operations.purchase_order.delivery_date", { purchaseOrderId: order.id, expectedDeliveryDate: "2020-01-02" });
+    await expectCode(manager.mutation(api.domain.mutate, update), "FORBIDDEN");
+    await expectCode(sales.mutation(api.domain.mutate, update), "FORBIDDEN");
+    expect(await owner.mutation(api.domain.mutate, update)).toMatchObject({ expectedDeliveryDate: "2020-01-02", overdue: false, total: { amount: 1000 } });
+    await owner.mutation(api.domain.mutate, operation("operations.purchase_order.approve", { id: order.id }));
+    expect(await owner.query(api.domain.query, operation("operations.purchase_orders.list", { branchId: "operations-branch-b" }))).toEqual([expect.objectContaining({ overdue: true })]);
+    expect(await owner.mutation(api.domain.mutate, operation("operations.purchase_order.receive", { purchaseOrderId: order.id, idempotencyKey: "delivery-receive" }))).toMatchObject({ status: "received", overdue: false, total: { amount: 1000 } });
+    await expectCode(owner.mutation(api.domain.mutate, update), "CONFLICT");
+    await t.run(async ctx => {
+      expect((await ctx.db.query("auditEvents").collect()).filter(row => row.action === "operations.purchase_order.delivery_date")).toHaveLength(1);
+    });
+  });
+
   it("reuses archived zone and retired equipment codes without deleting history", async () => {
     const { owner, t } = await seeded();
 

@@ -538,6 +538,7 @@ export default defineSchema({
     totalMinor: v.number(),
     supplierInvoiceReference: v.optional(v.string()),
     notes: v.optional(v.string()),
+    expectedDeliveryDate: v.optional(v.string()),
     approvedAt: v.optional(v.number()),
     approvedByUserId: v.optional(v.id("users")),
     receivedAt: v.optional(v.number()),

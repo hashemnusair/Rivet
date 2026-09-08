@@ -1,3 +1,4 @@
+import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
 import type {
   AuditQuery,
   DashboardQuery,
@@ -10083,6 +10084,7 @@ export class MockGymOSApi implements GymOSApi {
   createPurchaseOrder(input: T.CreatePurchaseOrderInput): Promise<T.PurchaseOrder> {
     return this.respond(() => {
       this.requireOperationsWrite();
+      if (!validExpectedDeliveryDate(input.expectedDeliveryDate)) throw ApiError.of(ERR.VALIDATION, "Expected delivery must be a valid calendar date.");
       const branch = this.operationsBranch(input.branchId);
       const sourceType = input.sourceType ?? (input.supplierId ? "supplier" : "private");
       if (sourceType !== "supplier" && sourceType !== "private") throw ApiError.of(ERR.VALIDATION, "Purchase source is invalid.");
@@ -10098,10 +10100,28 @@ export class MockGymOSApi implements GymOSApi {
         return { productId: product.id, sku: product.sku, productName: product.name, orderedQuantity: raw.quantity, receivedQuantity: 0, unitCost: { ...raw.unitCost }, lineTotal: { amount: raw.quantity * raw.unitCost.amount, currency: raw.unitCost.currency } };
       });
       const supplierName = supplier?.name ?? "Private purchase";
-      const order: T.PurchaseOrder = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, sourceType, supplierId: supplier?.id, supplierName, lines, status: "draft", currency: this.db.organization.currency, total: { amount: lines.reduce((sum, line) => sum + line.lineTotal.amount, 0), currency: this.db.organization.currency }, supplierInvoiceReference: input.supplierInvoiceReference, notes: input.notes, createdAt: nowISO(), updatedAt: nowISO() };
+      const order: T.PurchaseOrder = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, sourceType, supplierId: supplier?.id, supplierName, lines, status: "draft", currency: this.db.organization.currency, total: { amount: lines.reduce((sum, line) => sum + line.lineTotal.amount, 0), currency: this.db.organization.currency }, supplierInvoiceReference: input.supplierInvoiceReference, expectedDeliveryDate: input.expectedDeliveryDate || undefined, notes: input.notes, createdAt: nowISO(), updatedAt: nowISO() };
       this.db.purchaseOrders.unshift(order);
       this.audit({ category: "operations", action: "operations.purchase_order.create", entityType: "purchase_order", entityId: order.id, entityLabel: supplierName, summary: sourceType === "private" ? "Private purchase order created" : "Purchase order created", branchId: branch.id });
       return { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
+    });
+  }
+
+  updatePurchaseOrderDeliveryDate(input: { purchaseOrderId: T.UUID; expectedDeliveryDate?: string }): Promise<T.PurchaseOrder> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      if (!validExpectedDeliveryDate(input.expectedDeliveryDate)) throw ApiError.of(ERR.VALIDATION, "Expected delivery must be a valid calendar date.");
+      const order = this.db.purchaseOrders.find(candidate => candidate.id === input.purchaseOrderId && this.branchIsVisible(candidate.branchId));
+      if (!order) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
+      if (!["draft", "approved", "partially_received"].includes(order.status)) throw ApiError.of(ERR.CONFLICT, "Only an open order can change its expected delivery date.");
+      const expectedDeliveryDate = input.expectedDeliveryDate || undefined;
+      if (order.expectedDeliveryDate !== expectedDeliveryDate) {
+        const before = { expectedDeliveryDate: order.expectedDeliveryDate };
+        order.expectedDeliveryDate = expectedDeliveryDate;
+        order.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "operations.purchase_order.delivery_date", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Expected delivery date updated", branchId: order.branchId, before, after: { expectedDeliveryDate } });
+      }
+      return structuredClone({ ...order, overdue: purchaseOrderIsOverdue(order, this.today()) });
     });
   }
 
@@ -10127,7 +10147,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       this.requireOperationsRead();
       if (query.branchId) this.operationsBranch(query.branchId);
-      return this.db.purchaseOrders.filter((order) => (!query.branchId || order.branchId === query.branchId) && (!query.status || order.status === query.status) && this.branchIsVisible(order.branchId)).map((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } }));
+      return this.db.purchaseOrders.filter((order) => (!query.branchId || order.branchId === query.branchId) && (!query.status || order.status === query.status) && this.branchIsVisible(order.branchId)).map((order) => ({ ...order, overdue: purchaseOrderIsOverdue(order, this.today()), lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } }));
     });
   }
 

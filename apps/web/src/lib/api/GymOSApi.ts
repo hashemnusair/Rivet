@@ -1154,6 +1154,7 @@ export interface GymOSApi {
   refreshLowStockAlerts(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").LowStockAlert[]>;
   dismissLowStockAlert(input: { alertId: UUID; reason: string }): Promise<import("@/lib/domain/types").LowStockAlert>;
   createPurchaseOrder(input: import("@/lib/domain/types").CreatePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  updatePurchaseOrderDeliveryDate(input: { purchaseOrderId: UUID; expectedDeliveryDate?: string }): Promise<import("@/lib/domain/types").PurchaseOrder>;
   approvePurchaseOrder(purchaseOrderId: UUID, reason?: string): Promise<import("@/lib/domain/types").PurchaseOrder>;
   listPurchaseOrders(query?: { branchId?: UUID; status?: import("@/lib/domain/types").PurchaseOrderStatus }): Promise<import("@/lib/domain/types").PurchaseOrder[]>;
   receivePurchaseOrder(input: import("@/lib/domain/types").ReceivePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
