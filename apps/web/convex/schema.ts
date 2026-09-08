@@ -1359,6 +1359,8 @@ export default defineSchema({
     lastAttemptAt: v.optional(v.number()),
     lastErrorCode: v.optional(v.string()),
     nextAttemptAt: v.optional(v.number()),
+    // Optional for queued legacy rows; only the current worker may complete a lease.
+    leaseToken: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),

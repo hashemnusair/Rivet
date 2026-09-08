@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
+import { marketingSuppressionReason } from "./marketing";
+import { consentForRenewalChannel, renewalMessageSuppressionReason } from "./renewalPolicy";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
 import { MESSAGE_MAX_ATTEMPTS, MESSAGE_RETRY_MINUTES, parseMessagingAllowlist, resolveMessagingMode, routeMessage, twilioMessageParams, twilioMessagesUrl, twilioRetryable, type MessagingChannel } from "./messagingMode";
 import { OPT_OUT_FOOTER, catalogueTemplate, renderMessageTemplate } from "./messagingTemplates";
@@ -47,9 +49,12 @@ export interface LeasedMessage {
   language: "en" | "ar";
   body: string;
   attemptCount: number;
+  suppressionReason?: string;
 }
 
 async function organizationDeliveryLive(ctx: MutationCtx, organizationId: Id<"organizations">): Promise<boolean> {
+  const organization = await ctx.db.get(organizationId);
+  if (!organization || !["trial", "active", "past_due"].includes(organization.status)) return false;
   const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "settings").eq("publicId", "settings")).unique();
   return stringValue(value(value(settings?.data).notifications).automationDeliveryMode, "sandbox") === "live";
 }
@@ -129,7 +134,7 @@ function attentionHref(memberPublicId?: string, leadPublicId?: string): string {
   return memberPublicId ? `/members/${memberPublicId}` : leadPublicId ? `/crm/leads/${leadPublicId}` : "/settings?section=notifications";
 }
 
-async function memberVariables(ctx: MutationCtx, organizationId: Id<"organizations">, memberPublicId: string | undefined, leadPublicId: string | undefined): Promise<{ variables: Record<string, string>; phone?: string; language: "en" | "ar" }> {
+async function memberVariables(ctx: MutationCtx, organizationId: Id<"organizations">, memberPublicId: string | undefined, leadPublicId: string | undefined): Promise<{ variables: Record<string, string>; phone?: string; language: "en" | "ar"; recipient: Data }> {
   const record = memberPublicId
     ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "member").eq("publicId", memberPublicId)).unique()
     : leadPublicId
@@ -138,7 +143,7 @@ async function memberVariables(ctx: MutationCtx, organizationId: Id<"organizatio
   const data = value(record?.data);
   const name = stringValue(data.fullName) || stringValue(data.name) || "there";
   const language = stringValue(data.preferredLanguage) === "ar" ? "ar" as const : "en" as const;
-  return { variables: { member_name: name, end_date: stringValue(data.endDate), branch_name: stringValue(data.branchName) }, phone: optionalString(data.phone), language };
+  return { variables: { member_name: name, end_date: stringValue(data.endDate), branch_name: stringValue(data.branchName) }, phone: optionalString(data.phone), language, recipient: data };
 }
 
 async function automationBody(ctx: MutationCtx, organizationId: Id<"organizations">, message: Data, language: "en" | "ar", variables: Record<string, string>): Promise<string> {
@@ -171,6 +176,8 @@ export const leaseDue = internalMutation({
   handler: async (ctx, args): Promise<LeasedMessage[]> => {
     const now = Date.now();
     const leased: LeasedMessage[] = [];
+    const limit = Number.isSafeInteger(args.limit) ? Math.max(0, Math.min(args.limit, 50)) : 0;
+    if (limit === 0) return leased;
     const liveCache = new Map<string, boolean>();
     const isLive = async (organizationId: Id<"organizations">) => {
       const key = String(organizationId);
@@ -185,9 +192,9 @@ export const leaseDue = internalMutation({
         const due = typeof data.nextAttemptAt === "string" ? Date.parse(data.nextAttemptAt) : 0;
         const leaseExpired = typeof data.leaseExpiresAt === "number" && data.leaseExpiresAt <= now;
         return (status === "queued" || status === "retrying" || (status === "leased" && leaseExpired)) && data.channel !== "sandbox" && (Number.isNaN(due) || due <= now);
-      })
-      .slice(0, args.limit);
+      });
     for (const record of automationRows) {
+      if (leased.length >= limit) break;
       if (!(await isLive(record.organizationId))) continue;
       const data = value(record.data);
       const leaseToken = crypto.randomUUID();
@@ -195,21 +202,21 @@ export const leaseDue = internalMutation({
       const language = stringValue(data.language) === "ar" ? "ar" as const : member.language;
       const body = await automationBody(ctx, record.organizationId, data, language, member.variables);
       await ctx.db.patch(record._id, { data: { ...data, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS }, updatedAt: now });
-      leased.push({ source: "automation", id: String(record._id), publicId: record.publicId, organizationId: record.organizationId, leaseToken, channel: stringValue(data.requestedChannel, "whatsapp") === "sms" ? "sms" : "whatsapp", recipientPhone: optionalString(data.recipientPhone) ?? member.phone, language, body, attemptCount: Array.isArray(data.attempts) ? data.attempts.length : 0 });
+      leased.push({ source: "automation", id: String(record._id), publicId: record.publicId, organizationId: record.organizationId, leaseToken, channel: stringValue(data.requestedChannel, "whatsapp") === "sms" ? "sms" : "whatsapp", recipientPhone: optionalString(data.recipientPhone) ?? member.phone, language, body, attemptCount: Array.isArray(data.attempts) ? data.attempts.length : 0, suppressionReason: data.messageClass === "marketing" ? marketingSuppressionReason(member.recipient) : undefined });
     }
 
-    const renewalRows = (await ctx.db.query("renewalDeliveries").withIndex("by_status_next_attempt", (q) => q.eq("status", "queued")).collect())
-      .filter((row) => row.channel !== "staff_task" && (row.nextAttemptAt ?? 0) <= now)
-      .slice(0, Math.max(0, args.limit - leased.length));
+    const renewalRows = (await ctx.db.query("renewalDeliveries").withIndex("by_status_next_attempt", (q) => q.eq("status", "queued").lte("nextAttemptAt", now)).collect())
+      .filter((row) => row.channel !== "staff_task");
     for (const row of renewalRows) {
+      if (leased.length >= limit) break;
       if (!(await isLive(row.organizationId))) continue;
       const leaseToken = crypto.randomUUID();
       const memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", row.organizationId).eq("entityType", "member").eq("publicId", row.memberPublicId)).unique();
       const gymName = await organizationName(ctx, row.organizationId);
       // A lease is a short exclusive hold: the status stays queued but the
       // next attempt moves forward so a concurrent run skips the row.
-      await ctx.db.patch(row._id, { nextAttemptAt: now + LEASE_MS, updatedAt: now });
-      leased.push({ source: "renewal", id: String(row._id), publicId: row.publicId, organizationId: row.organizationId, leaseToken, channel: row.channel as MessagingChannel, recipientPhone: row.recipientPhone, language: row.language, body: renewalBody(gymName, row, value(memberRecord?.data), row.language), attemptCount: row.attempts.length });
+      await ctx.db.patch(row._id, { leaseToken, nextAttemptAt: now + LEASE_MS, updatedAt: now });
+      leased.push({ source: "renewal", id: String(row._id), publicId: row.publicId, organizationId: row.organizationId, leaseToken, channel: row.channel as MessagingChannel, recipientPhone: row.recipientPhone, language: row.language, body: renewalBody(gymName, row, value(memberRecord?.data), row.language), attemptCount: row.attempts.length, suppressionReason: renewalMessageSuppressionReason(consentForRenewalChannel(value(memberRecord?.data), row.channel as MessagingChannel).status, row.recipientPhone) });
     }
     return leased;
   },
@@ -237,7 +244,7 @@ export const recordAttempt = internalMutation({
       const record = await ctx.db.get(args.id as Id<"domainRecords">);
       if (!record || record.entityType !== "messageDelivery") return null;
       const data = value(record.data);
-      if (data.leaseToken !== args.leaseToken) return null;
+      if (data.status !== "leased" || data.leaseToken !== args.leaseToken) return null;
       const attempts = [...(Array.isArray(data.attempts) ? data.attempts : []), { attempt: (Array.isArray(data.attempts) ? data.attempts.length : 0) + 1, status: suppressed ? "suppressed" : args.accepted ? "sent" : "failed", occurredAt: new Date(now).toISOString(), reason: args.suppressionReason ?? args.errorCode, mode: args.mode, deliveredTo: args.deliveredTo, providerMessageId: args.providerMessageId, statusCode: args.statusCode }];
       const exhausted = attempts.length >= MESSAGE_MAX_ATTEMPTS;
       const status = suppressed ? "suppressed" : args.accepted ? "sent" : args.retryable && !exhausted ? "retrying" : "failed";
@@ -251,11 +258,11 @@ export const recordAttempt = internalMutation({
       return null;
     }
     const row = await ctx.db.get(args.id as Id<"renewalDeliveries">);
-    if (!row || row.status !== "queued") return null;
+    if (!row || row.status !== "queued" || row.leaseToken !== args.leaseToken) return null;
     const attempts = [...row.attempts, { attemptedAt: now, outcome: suppressed ? "suppressed" as const : args.accepted ? "accepted" as const : args.retryable ? "retryable_failure" as const : "terminal_failure" as const, statusCode: args.statusCode, errorCode: args.errorCode, providerMessageId: args.providerMessageId }];
     const exhausted = attempts.length >= MESSAGE_MAX_ATTEMPTS;
     const status: Renewal["status"] = suppressed ? "suppressed" : args.accepted ? "sent" : args.retryable && !exhausted ? "queued" : "failed";
-    await ctx.db.patch(row._id, { status, attempts, lastAttemptAt: now, lastErrorCode: args.errorCode, nextAttemptAt: status === "queued" ? now + (MESSAGE_RETRY_MINUTES[Math.min(attempts.length - 1, MESSAGE_RETRY_MINUTES.length - 1)] ?? 30) * 60_000 : undefined, sentAt: status === "sent" ? now : row.sentAt, suppressionReason: args.suppressionReason ?? row.suppressionReason, updatedAt: now });
+    await ctx.db.patch(row._id, { status, attempts, leaseToken: undefined, lastAttemptAt: now, lastErrorCode: args.errorCode, nextAttemptAt: status === "queued" ? now + (MESSAGE_RETRY_MINUTES[Math.min(attempts.length - 1, MESSAGE_RETRY_MINUTES.length - 1)] ?? 30) * 60_000 : undefined, sentAt: status === "sent" ? now : row.sentAt, suppressionReason: args.suppressionReason ?? row.suppressionReason, updatedAt: now });
     await ctx.db.insert("renewalDeliveryEvents", { publicId: `RENEWAL-EVENT-${crypto.randomUUID()}`, organizationId: row.organizationId, branchId: row.branchId, deliveryPublicId: row.publicId, membershipPublicId: row.membershipPublicId, memberPublicId: row.memberPublicId, eventType: "provider_attempt", beforeStatus: "queued", afterStatus: status, reason: args.suppressionReason ?? args.errorCode, details: { mode: args.mode, deliveredTo: args.deliveredTo, providerMessageId: args.providerMessageId, statusCode: args.statusCode, channel: row.channel }, source: "system", occurredAt: now });
     // The renewal journey gets the same visibility as automation messages: a
     // final failure reaches the managers, and every terminal outcome is on the
@@ -282,8 +289,8 @@ export const processDue = internalAction({
     let processed = 0;
     for (const message of messages) {
       const route = routeMessage({ mode: resolution.mode, channel: message.channel, recipient: message.recipientPhone, sandboxTo, allowlist, resolution });
-      if (route.decision === "drop") {
-        await ctx.runMutation(internal.messagingWorker.recordAttempt, { source: message.source, id: message.id, leaseToken: message.leaseToken, accepted: false, retryable: false, mode: resolution.mode, suppressionReason: route.reason });
+      if (message.suppressionReason || route.decision === "drop") {
+        await ctx.runMutation(internal.messagingWorker.recordAttempt, { source: message.source, id: message.id, leaseToken: message.leaseToken, accepted: false, retryable: false, mode: resolution.mode, suppressionReason: message.suppressionReason ?? (route.decision === "drop" ? route.reason : undefined) });
         processed += 1;
         continue;
       }

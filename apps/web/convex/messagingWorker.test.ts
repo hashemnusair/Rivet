@@ -10,6 +10,7 @@ const ENV_KEYS = ["RIVET_MESSAGING_MODE", "RIVET_MESSAGING_PROVIDER", "TWILIO_AC
 afterEach(() => {
   for (const key of ENV_KEYS) delete process.env[key];
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function twilioReady(mode: string) {
@@ -28,7 +29,7 @@ async function seed(options: { gymLive: boolean; quietHoursStart?: string; quiet
     const organizationId = await ctx.db.insert("organizations", { publicId: "msg-org", name: "Forge Fitness", slug: "forge", status: "active", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
     const branchId = await ctx.db.insert("branches", { organizationId, publicId: "msg-branch", name: "Abdoun", code: "ABD", active: true, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: { notifications: { managerAlerts: {}, automationDeliveryMode: options.gymLive ? "live" : "sandbox", quietHoursStart: options.quietHoursStart ?? "22:00", quietHoursEnd: options.quietHoursEnd ?? "08:00" } } });
-    await ctx.db.insert("domainRecords", { organizationId, entityType: "member", publicId: "member-1", branchId, memberPublicId: "member-1", createdAt: now, updatedAt: now, data: { id: "member-1", fullName: "Lina Haddad", phone: "079 555 0101", preferredLanguage: "en", status: "active", marketingOptIn: true } });
+    await ctx.db.insert("domainRecords", { organizationId, entityType: "member", publicId: "member-1", branchId, memberPublicId: "member-1", createdAt: now, updatedAt: now, data: { id: "member-1", fullName: "Lina Haddad", phone: "079 555 0101", preferredLanguage: "en", status: "active", marketingOptIn: true, marketingPreference: { status: "explicit_opt_in", source: "member_selected" } } });
     return { organizationId, branchId };
   });
   return { t, ...ids };
@@ -43,7 +44,91 @@ async function queueAutomationMessage(t: ReturnType<typeof convexTest>, organiza
   });
 }
 
+async function queueRenewalMessage(t: ReturnType<typeof convexTest>, organizationId: string, branchId: string) {
+  return await t.run(async (ctx) => {
+    const now = Date.now();
+    return await ctx.db.insert("renewalDeliveries", {
+      organizationId: organizationId as never, branchId: branchId as never,
+      publicId: `renewal-${crypto.randomUUID()}`, membershipPublicId: "membership-1", membershipEndDate: "2026-09-15", memberPublicId: "member-1",
+      checkpointDaysBefore: 7, checkpointKey: "7_day", channel: "whatsapp", templateVersion: "renewal-7-day-v1", policyVersion: "renewal-policy-v1",
+      dedupeKey: crypto.randomUUID(), recipientReference: "member-1", recipientPhone: "0795550101", language: "en",
+      consentStatus: "explicit_opt_in", channelOptedOut: false, status: "queued", attempts: [], nextAttemptAt: now - 1, createdAt: now, updatedAt: now,
+    });
+  });
+}
+
 describe("outbound messaging worker", () => {
+  it.each(["automation", "renewal"] as const)("leases eligible %s work after a disabled gym fills the batch", async (source) => {
+    const { t, organizationId, branchId } = await seed({ gymLive: false });
+    const queue = source === "automation" ? queueAutomationMessage : queueRenewalMessage;
+    await queue(t, organizationId, branchId);
+    const live = await t.run(async (ctx) => {
+      const now = Date.now();
+      const organizationId = await ctx.db.insert("organizations", { name: "Live", slug: "live", status: "active", timezone: "UTC", currency: "JOD", createdAt: now, updatedAt: now });
+      const branchId = await ctx.db.insert("branches", { organizationId, name: "Live", code: "LIVE", active: true, createdAt: now, updatedAt: now });
+      await ctx.db.insert("domainRecords", { organizationId, entityType: "settings", publicId: "settings", data: { notifications: { automationDeliveryMode: "live" } }, createdAt: now, updatedAt: now });
+      return { organizationId, branchId };
+    });
+    await queue(t, live.organizationId, live.branchId);
+    const leased = await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 });
+    expect(leased).toHaveLength(1);
+    expect(leased[0]?.organizationId).toBe(live.organizationId);
+  });
+
+  it("rejects stale and repeated renewal completions without changing the current attempt", async () => {
+    vi.useFakeTimers();
+    const { t, organizationId, branchId } = await seed({ gymLive: true });
+    const id = await queueRenewalMessage(t, organizationId, branchId);
+    const [first] = await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 });
+    expect(await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 })).toHaveLength(0);
+    vi.setSystemTime(Date.now() + 121_000);
+    const [second] = await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 });
+    expect(second.leaseToken).not.toBe(first.leaseToken);
+    const complete = (leaseToken: string, accepted: boolean) => t.mutation(internal.messagingWorker.recordAttempt, { source: "renewal", id: String(id), leaseToken, accepted, retryable: true, mode: "live" });
+    await complete(first.leaseToken, true);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(id)).toMatchObject({ status: "queued", attempts: [] });
+      expect(await ctx.db.query("renewalDeliveryEvents").collect()).toHaveLength(0);
+    });
+    await complete(second.leaseToken, false);
+    await complete(second.leaseToken, true);
+    await t.run(async (ctx) => {
+      const row = await ctx.db.get(id);
+      expect(row?.status).toBe("queued");
+      expect(row?.attempts).toHaveLength(1);
+      expect(await ctx.db.query("renewalDeliveryEvents").collect()).toHaveLength(1);
+    });
+  });
+
+  it.each(["automation", "renewal"] as const)("suppresses %s messages when consent is withdrawn after queueing", async (source) => {
+    twilioReady("live");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { t, organizationId, branchId } = await seed({ gymLive: true });
+    if (source === "automation") await queueAutomationMessage(t, organizationId, branchId);
+    else await queueRenewalMessage(t, organizationId, branchId);
+    await t.run(async (ctx) => {
+      const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "member").eq("publicId", "member-1")).unique();
+      await ctx.db.patch(member!._id, { data: { ...member!.data, marketingPreference: { status: "explicit_opt_out", source: "member_selected" } } });
+    });
+    expect(await t.action(internal.messagingWorker.processDue, {})).toEqual({ processed: 1, disabled: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await t.run(async (ctx) => {
+      const result = source === "automation"
+        ? (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "messageDelivery")).first())?.data
+        : await ctx.db.query("renewalDeliveries").first();
+      expect(result).toMatchObject({ status: "suppressed", suppressionReason: expect.any(String) });
+    });
+  });
+
+  it("does not lease messages for a suspended gym with a retained live setting", async () => {
+    const { t, organizationId, branchId } = await seed({ gymLive: true });
+    await queueAutomationMessage(t, organizationId, branchId);
+    await queueRenewalMessage(t, organizationId, branchId);
+    await t.run(async (ctx) => { await ctx.db.patch(organizationId, { status: "suspended" }); });
+    expect(await t.mutation(internal.messagingWorker.leaseDue, { limit: 25 })).toEqual([]);
+  });
+
   it("stays disabled while the global mode is off, even for a gym with external delivery on", async () => {
     const { t, organizationId, branchId } = await seed({ gymLive: true });
     await queueAutomationMessage(t, organizationId, branchId);
