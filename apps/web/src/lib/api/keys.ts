@@ -70,6 +70,7 @@ export const qk = {
   customerClasses: (membershipId: string) => ["customerClasses", membershipId] as const,
   analytics: (kind: string, params: Record<string, unknown>) => ["analytics", kind, params] as const,
   classCalendarBounds: ["classCalendarBounds"] as const,
+  checklistAssignees: (branchId: string) => ["checklistAssignees", branchId] as const,
   checklistTemplates: (branchId?: string) => ["checklistTemplates", branchId ?? "all"] as const,
   checklistDay: (branchId: string, date?: string) => ["checklistDay", branchId, date ?? "today"] as const,
 };
@@ -109,6 +110,9 @@ export const INVALIDATE_ALL = [
   "workspaceSearch",
   "workspaceRecents",
   "workspacePins",
+  "checklistAssignees",
+  "checklistTemplates",
+  "checklistDay",
   "classSessions",
   "classOccurrences",
   "customerClasses",

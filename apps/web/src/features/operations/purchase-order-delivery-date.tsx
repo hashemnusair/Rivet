@@ -1,5 +1,6 @@
 "use client";
 
+import { qk } from "@/lib/api/keys";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,7 @@ export function PurchaseOrderDeliveryDate({ order, editable }: { order: Purchase
   const invalidate = useInvalidate();
   const update = useApiMutation(api => api.updatePurchaseOrderDeliveryDate({ purchaseOrderId: order.id, expectedDeliveryDate: date || undefined }), {
     successMessage: "Expected delivery updated.",
-    onSuccess: async () => { setEditing(false); await invalidate(); },
+    onSuccess: async () => { setEditing(false); await invalidate([qk.operations()]); },
   });
   const canEdit = editable && ["draft", "approved", "partially_received"].includes(order.status);
   if (editing) return <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); update.mutate(); }}>

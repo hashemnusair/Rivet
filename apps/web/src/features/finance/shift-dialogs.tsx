@@ -1,5 +1,7 @@
 "use client";
 
+import { ChecklistHandover } from "@/features/checklists/checklist-handover";
+
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -180,6 +182,7 @@ export function CloseShiftDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
+          {open ? <ChecklistHandover branchId={shift.branchId} /> : null}
           {/* Expected story */}
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-5">
             <ExpectCell label="Float" minor={expected === undefined ? undefined : shift.openingFloat.amount} />
