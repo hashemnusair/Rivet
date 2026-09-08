@@ -408,7 +408,7 @@ function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: 
         ) : (
           <div className="mt-3">
             <Button className="w-full" loading={busy} disabled={!occurrence.canBook} onClick={onBook}>{full ? "Join waitlist" : "Book class"}</Button>
-            {occurrence.bookingBlockReason ? <p className="mt-2 text-[12px] leading-4 text-ink-2">{occurrence.bookingBlockReason}</p> : null}
+            {occurrence.status === "cancelled" && occurrence.cancelReason ? <p className="mt-2 text-[12px] leading-4 text-ink-2">Cancelled by the gym: {occurrence.cancelReason}</p> : occurrence.bookingBlockReason ? <p className="mt-2 text-[12px] leading-4 text-ink-2">{occurrence.bookingBlockReason}</p> : null}
           </div>
         )}
       </div>
