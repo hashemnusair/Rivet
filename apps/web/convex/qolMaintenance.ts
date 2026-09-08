@@ -15,7 +15,7 @@ export const purgeExpiredExports = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     const rows = await ctx.db.query("domainRecords")
-      .withIndex("by_type_export_expiry", (q) => q.eq("entityType", "exportJob").lte("exportExpiresAt", now))
+      .withIndex("by_type_export_expiry", (q) => q.eq("entityType", "exportJob").gt("exportExpiresAt", undefined).lte("exportExpiresAt", now))
       .take(BATCH_SIZE);
     let purged = 0;
     for (const row of rows) {

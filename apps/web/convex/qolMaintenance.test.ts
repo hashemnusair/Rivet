@@ -30,6 +30,23 @@ describe("QoL maintenance", () => {
     });
   });
 
+  it("advances past exports without an expiry and previously purged metadata", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const now = Date.now();
+      const organizationId = await ctx.db.insert("organizations", { name: "Cleanup", slug: "cleanup", status: "active", currency: "JOD", timezone: "UTC", createdAt: now, updatedAt: now });
+      for (let index = 0; index < 100; index += 1) {
+        await ctx.db.insert("domainRecords", { organizationId, entityType: "exportJob", publicId: `metadata-${index}`, data: { status: "completed" }, createdAt: now, updatedAt: now });
+      }
+      return await Promise.all([0, 1].map((index) => ctx.db.insert("domainRecords", { organizationId, entityType: "exportJob", publicId: `expired-${index}`, exportExpiresAt: now - 1, data: { content: "private CSV", rowCount: 1 }, createdAt: now, updatedAt: now })));
+    });
+    expect(await t.mutation(internal.qolMaintenance.purgeExpiredExports, {})).toBe(2);
+    expect(await t.mutation(internal.qolMaintenance.purgeExpiredExports, {})).toBe(0);
+    await t.run(async (ctx) => {
+      for (const id of ids) expect((await ctx.db.get(id))?.data).not.toHaveProperty("content");
+    });
+  });
+
   it("backfills pre-index identity projections and marks the migration complete", async () => {
     const t = convexTest(schema, modules);
     const rowId = await t.run(async (ctx) => {
