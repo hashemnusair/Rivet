@@ -951,6 +951,7 @@ export interface ClassOccurrence {
   imageAltText?: string;
   notes?: string;
   status: "scheduled" | "cancelled" | "completed";
+  cancelReason?: string;
   attendanceFinalizedAt?: ISODateTime;
   bookedCount: number;
   waitlistCount: number;

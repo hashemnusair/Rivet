@@ -61,7 +61,7 @@ import {
 } from "@/lib/domain/workspace-modules";
 import { DEFAULT_PUBLIC_PRICING_PLANS } from "@/lib/public/pricing";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
-import { classCancellationOutcome } from "@/lib/domain/class-booking";
+import { classCancellationOutcome, occurrenceCancellationBlock } from "@/lib/domain/class-booking";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "@/lib/members/lookup";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
@@ -11301,12 +11301,32 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  cancelClassOccurrence(input: { occurrenceId: T.UUID; reason: string }): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      this.requireReason(input.reason);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const block = occurrenceCancellationBlock({ status: occurrence.status, startsAt: Date.parse(occurrence.startsAt), finalized: Boolean(occurrence.attendanceFinalizedAt), hasAttendance: occurrence.roster.some(entry => entry.status === "attended" || entry.status === "no_show") });
+      if (block) throw ApiError.of(ERR.CONFLICT, block);
+      if (occurrence.status === "cancelled") return this.refreshClassOccurrence(occurrence);
+      occurrence.status = "cancelled";
+      occurrence.cancelReason = input.reason.trim();
+      for (const entry of occurrence.roster.filter(entry => ["booked", "waitlisted"].includes(entry.status))) {
+        entry.status = "cancelled";
+        this.activity({ memberId: entry.memberId, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, body: occurrence.cancelReason, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, cancelledByGym: true } });
+      }
+      this.audit({ category: "operations", action: "classes.occurrence.cancel", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `Cancelled ${occurrence.name} on ${occurrence.date}`, reason: occurrence.cancelReason });
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
   finalizeClassOccurrenceAttendance(input: { occurrenceId: T.UUID }): Promise<T.ClassOccurrence> {
     return this.respond(() => {
       // A manager or owner decision, matching Convex: it locks the roster and records no-shows.
       this.require("operations.manage");
       const occurrence = this.classOccurrenceById(input.occurrenceId);
       // Finalization happens once; a repeat returns the recorded roster untouched.
+      if (occurrence.status === "cancelled") throw ApiError.of(ERR.CONFLICT, "A cancelled class has no attendance to finalize.");
       if (occurrence.attendanceFinalizedAt) return this.refreshClassOccurrence(occurrence);
       if (Date.parse(occurrence.endsAt) > Date.now()) throw ApiError.of(ERR.VALIDATION, "Attendance can be finalized after the class ends.");
       occurrence.attendanceFinalizedAt = nowISO();

@@ -744,6 +744,7 @@ export class ConvexGymOSApi implements GymOSApi {
   addClassOccurrenceAttendee(input: T.ClassOccurrenceRosterInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.roster.add", input); }
   removeClassOccurrenceAttendee(input: { occurrenceId: T.UUID; bookingId: T.UUID; reason?: string }): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.roster.remove", input); }
   setClassOccurrenceAttendance(input: T.ClassOccurrenceAttendanceInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.attendance.set", input); }
+  cancelClassOccurrence(input: { occurrenceId: T.UUID; reason: string }): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.cancel", input); }
   finalizeClassOccurrenceAttendance(input: { occurrenceId: T.UUID }): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.attendance.finalize", input); }
   substituteClassOccurrenceCoach(input: T.SubstituteClassCoachInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.coach.substitute", input); }
   listClassCoaches(): Promise<T.ClassCoach[]> { return this.query("classes.coaches.list", {}); }

@@ -11481,6 +11481,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "classes.occurrence.roster.add":
     case "classes.occurrence.roster.remove":
     case "classes.occurrence.attendance.set":
+    case "classes.occurrence.cancel":
     case "classes.occurrence.attendance.finalize":
     case "classes.occurrence.coach.substitute":
     case "classes.coach.upsert":
