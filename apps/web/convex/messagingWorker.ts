@@ -203,22 +203,22 @@ export const leaseDue = internalMutation({
       }
       if (candidate.source === "automation") {
         const record = candidate.row;
-      const data = value(record.data);
-      const leaseToken = crypto.randomUUID();
-      const member = await memberVariables(ctx, record.organizationId, record.memberPublicId, record.leadPublicId);
-      const language = stringValue(data.language) === "ar" ? "ar" as const : member.language;
-      const body = await automationBody(ctx, record.organizationId, data, language, member.variables);
-      await ctx.db.patch(record._id, { data: { ...data, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS }, updatedAt: now });
-      leased.push({ source: "automation", id: String(record._id), publicId: record.publicId, organizationId: record.organizationId, leaseToken, channel: stringValue(data.requestedChannel, "whatsapp") === "sms" ? "sms" : "whatsapp", recipientPhone: optionalString(data.recipientPhone) ?? member.phone, language, body, attemptCount: Array.isArray(data.attempts) ? data.attempts.length : 0, suppressionReason: data.messageClass === "marketing" ? marketingSuppressionReason(member.recipient) : undefined });
+        const data = value(record.data);
+        const leaseToken = crypto.randomUUID();
+        const member = await memberVariables(ctx, record.organizationId, record.memberPublicId, record.leadPublicId);
+        const language = stringValue(data.language) === "ar" ? "ar" as const : member.language;
+        const body = await automationBody(ctx, record.organizationId, data, language, member.variables);
+        await ctx.db.patch(record._id, { data: { ...data, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS }, updatedAt: now });
+        leased.push({ source: "automation", id: String(record._id), publicId: record.publicId, organizationId: record.organizationId, leaseToken, channel: stringValue(data.requestedChannel, "whatsapp") === "sms" ? "sms" : "whatsapp", recipientPhone: optionalString(data.recipientPhone) ?? member.phone, language, body, attemptCount: Array.isArray(data.attempts) ? data.attempts.length : 0, suppressionReason: data.messageClass === "marketing" ? marketingSuppressionReason(member.recipient) : undefined });
       } else {
         const row = candidate.row;
-      const leaseToken = crypto.randomUUID();
-      const memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", row.organizationId).eq("entityType", "member").eq("publicId", row.memberPublicId)).unique();
-      const gymName = await organizationName(ctx, row.organizationId);
-      // A lease is a short exclusive hold: the status stays queued but the
-      // next attempt moves forward so a concurrent run skips the row.
-      await ctx.db.patch(row._id, { leaseToken, nextAttemptAt: now + LEASE_MS, updatedAt: now });
-      leased.push({ source: "renewal", id: String(row._id), publicId: row.publicId, organizationId: row.organizationId, leaseToken, channel: row.channel as MessagingChannel, recipientPhone: row.recipientPhone, language: row.language, body: renewalBody(gymName, row, value(memberRecord?.data), row.language), attemptCount: row.attempts.length, suppressionReason: renewalMessageSuppressionReason(consentForRenewalChannel(value(memberRecord?.data), row.channel as MessagingChannel).status, row.recipientPhone) });
+        const leaseToken = crypto.randomUUID();
+        const memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", row.organizationId).eq("entityType", "member").eq("publicId", row.memberPublicId)).unique();
+        const gymName = await organizationName(ctx, row.organizationId);
+        // A lease is a short exclusive hold: the status stays queued but the
+        // next attempt moves forward so a concurrent run skips the row.
+        await ctx.db.patch(row._id, { leaseToken, nextAttemptAt: now + LEASE_MS, updatedAt: now });
+        leased.push({ source: "renewal", id: String(row._id), publicId: row.publicId, organizationId: row.organizationId, leaseToken, channel: row.channel as MessagingChannel, recipientPhone: row.recipientPhone, language: row.language, body: renewalBody(gymName, row, value(memberRecord?.data), row.language), attemptCount: row.attempts.length, suppressionReason: renewalMessageSuppressionReason(consentForRenewalChannel(value(memberRecord?.data), row.channel as MessagingChannel).status, row.recipientPhone) });
       }
       nextSource = candidate.source === "automation" ? "renewal" : "automation";
     }

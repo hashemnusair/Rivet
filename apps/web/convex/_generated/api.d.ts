@@ -40,6 +40,7 @@ import type * as media from "../media.js";
 import type * as mediaSanitizer from "../mediaSanitizer.js";
 import type * as membershipJobs from "../membershipJobs.js";
 import type * as messagingMode from "../messagingMode.js";
+import type * as messagingQueue from "../messagingQueue.js";
 import type * as messagingTemplates from "../messagingTemplates.js";
 import type * as messagingWorker from "../messagingWorker.js";
 import type * as notificationDelivery from "../notificationDelivery.js";
@@ -110,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   mediaSanitizer: typeof mediaSanitizer;
   membershipJobs: typeof membershipJobs;
   messagingMode: typeof messagingMode;
+  messagingQueue: typeof messagingQueue;
   messagingTemplates: typeof messagingTemplates;
   messagingWorker: typeof messagingWorker;
   notificationDelivery: typeof notificationDelivery;
