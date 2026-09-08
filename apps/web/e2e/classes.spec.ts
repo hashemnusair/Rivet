@@ -26,6 +26,22 @@ test.describe("class calendar roles", () => {
     await expect(page.getByRole("button", { name: "Edit class" })).toHaveCount(0);
   });
 
+  test("cancels one upcoming date with a visible reason", async ({ page }) => {
+    await enterStaff(page, "owner");
+    await page.goto("/classes");
+    const row = page.getByTestId("class-agenda-row").filter({ has: page.getByRole("button", { name: "Cancel date", exact: true }) }).first();
+    const occurrenceId = await row.getAttribute("data-occurrence-id");
+    await row.getByRole("button", { name: "Cancel date", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Cancel this class date?" });
+    await expect(dialog.getByRole("button", { name: "Cancel this date", exact: true })).toBeDisabled();
+    await dialog.getByLabel("Cancellation reason").fill("Coach unavailable for this date");
+    await dialog.getByRole("button", { name: "Cancel this date", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const cancelled = page.locator(`[data-occurrence-id="${occurrenceId}"]`);
+    await expect(cancelled).toContainText("Cancelled: Coach unavailable for this date");
+    await expect(cancelled.getByRole("button", { name: "Cancel date", exact: true })).toHaveCount(0);
+  });
+
   test("keeps scheduling available to the owner", async ({ page }) => {
     await enterStaff(page, "owner");
     await page.goto("/classes");
