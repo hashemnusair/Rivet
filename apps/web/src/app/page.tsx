@@ -5,15 +5,14 @@ import {
   Check,
   Dumbbell,
   MapPin,
-  ScanLine,
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { CinematicHeader } from "@/components/marketing/cinematic-header";
-import { DecorativeQr } from "@/components/marketing/decorative-qr";
 import { HeroDevices } from "@/components/marketing/hero-devices";
 import styles from "@/components/marketing/landing-cinematic.module.css";
 import { LandingMotionController } from "@/components/marketing/landing-motion";
+import { EntryPassCard } from "@/components/marketing/product-screens";
 import {
   AccountabilityLedger,
   OperationalDay,
@@ -185,13 +184,13 @@ export default function LandingPage() {
                   id="member-title"
                   stacked
                   title="Their side of the counter."
-                  description="One account finds gyms, books a free trial and holds every membership, with receipts that survive a lost phone."
+                  description="One account finds gyms, books a free trial and holds every membership. At the door the member opens a short-lived entry QR, reception scans it, and the visit is on the record."
                 />
                 <ul className="mt-7 grid gap-3">
                   {[
                     "Membership status, expiry, visits and balance at a glance",
-                    "A QR identity for entry at the desk",
-                    "Arabic or English, per member",
+                    "An entry QR that expires on its own and refreshes in one tap",
+                    "Receipts that survive a lost phone, in Arabic or English",
                   ].map((item, index) => (
                     <li key={item}>
                       <Reveal delay={index * 80} className="group flex items-start gap-3 text-[14px] text-ink-2">
@@ -447,40 +446,15 @@ export default function LandingPage() {
 // ---------------------------------------------------------------------------
 
 /**
- * The member app as a card — the same surfaces the phone in the hero shows,
- * at reading size. Values stay non-numeric: this is the shape of the record,
- * not a claim about anyone's membership.
+ * The member's Entry QR, exactly as the app shows it at reception — the
+ * product's own dialog at reading size, with a sample code in place of a
+ * signed pass.
  */
 function MemberCard() {
   return (
-    <Reveal>
-      <div className="night-surface mx-auto w-full max-w-sm rounded-lg bg-night p-6 text-night-ink shadow-[0_24px_70px_rgb(27_26_21/0.22)]" aria-hidden>
-        <p className="border-b border-night-line pb-4 text-[12.5px] font-medium text-night-ink-3">RIVET member</p>
-        <h3 className="mt-6 text-[26px] font-semibold leading-tight tracking-tight">One verified member record</h3>
-        <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-md bg-night-line">
-          <div className="bg-night-2 p-4">
-            <p className="text-[12px] font-medium text-night-ink-3">Membership</p>
-            <p className="mt-2 text-[14px] font-semibold">Live gym status</p>
-          </div>
-          <div className="bg-night-2 p-4">
-            <p className="text-[12px] font-medium text-night-ink-3">Visits</p>
-            <p className="mt-2 text-[14px] font-semibold">Recorded check-ins</p>
-          </div>
-        </div>
-
-        {/* The entry code, with the desk's scan sweeping it — decorative only. */}
-        <div className="mt-5 rounded-md bg-night-2 p-4">
-          <div className="relative mx-auto w-full max-w-[168px] overflow-hidden rounded-sm bg-night-ink p-3 text-night">
-            <DecorativeQr />
-            <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] animate-qr-scan bg-signal" />
-          </div>
-          <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-[12px] font-semibold">
-            <ScanLine className="size-3.5 text-signal" /> Entry QR after activation
-          </p>
-          <p className="mt-1 text-center text-[11px] text-night-ink-3">
-            Issued only from an active membership, authorized by the gym.
-          </p>
-        </div>
+    <Reveal className="flex justify-center lg:justify-end">
+      <div className="w-full max-w-sm" aria-hidden>
+        <EntryPassCard />
       </div>
     </Reveal>
   );

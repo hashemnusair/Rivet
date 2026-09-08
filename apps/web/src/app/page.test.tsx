@@ -21,7 +21,6 @@ vi.mock("@/components/public/public-shell", () => ({
   PublicFooter: () => <footer aria-label="Public footer" />,
 }));
 
-vi.mock("@/components/marketing/decorative-qr", () => ({ DecorativeQr: () => <div aria-hidden /> }));
 vi.mock("@/components/marketing/hero-devices", () => ({ HeroDevices: () => <div aria-hidden /> }));
 vi.mock("@/components/marketing/reveal", () => ({ Reveal: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 vi.mock("@/components/marketing/scroll-progress", () => ({ ScrollProgress: () => <div aria-hidden /> }));
