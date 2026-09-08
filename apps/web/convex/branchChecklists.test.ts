@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
+import { addDays, todayISODate } from "../src/lib/utils/dates";
 import { api } from "./_generated/api";
 import schema from "./schema";
 
@@ -40,6 +41,36 @@ const TEMPLATE_INPUT = {
 };
 
 describe("branch checklists", () => {
+  it("validates branch staff, snapshots ownership, and carries unresolved work into handover", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-check" });
+    const reception = t.withIdentity({ subject: "clerk-reception-check" });
+    const managerB = t.withIdentity({ subject: "clerk-manager-b-check" });
+    const template = await owner.mutation(api.domain.mutate, operation("checklists.template.upsert", { ...TEMPLATE_INPUT, assignedUserId: "reception-check" })) as { id: string; items: Array<{ id: string }> };
+    await expectCode(owner.mutation(api.domain.mutate, operation("checklists.template.upsert", { ...TEMPLATE_INPUT, assignedUserId: "manager-b-check" })), "VALIDATION_ERROR");
+    await expectCode(owner.mutation(api.domain.mutate, operation("checklists.template.upsert", { ...TEMPLATE_INPUT, assignedUserId: "outside-tenant" })), "VALIDATION_ERROR");
+    const today = todayISODate("Asia/Amman");
+    const yesterday = addDays(today, -1);
+    const input = { templateId: template.id, date: yesterday, assignedUserId: "owner-check" };
+    await expectCode(reception.mutation(api.domain.mutate, operation("checklists.run.assign", input)), "FORBIDDEN");
+    await expectCode(managerB.mutation(api.domain.mutate, operation("checklists.run.assign", input)), "FORBIDDEN");
+    await expectCode(owner.mutation(api.domain.mutate, operation("checklists.run.assign", { ...input, date: "2026-02-30" })), "VALIDATION_ERROR");
+    await owner.mutation(api.domain.mutate, operation("checklists.item.set", { templateId: template.id, date: yesterday, itemId: template.items[0]!.id, status: "failed", reason: "Door is stuck" }));
+    const run = await owner.mutation(api.domain.mutate, operation("checklists.run.assign", input));
+    expect(run).toMatchObject({ assignedUserId: "owner-check", assignedUserName: "Owner Check", localDate: yesterday });
+    await owner.mutation(api.domain.mutate, operation("checklists.run.assign", input));
+    const day = await reception.query(api.domain.query, operation("checklists.day", { branchId: "branch-a", date: today })) as { runs: unknown[]; carryover: unknown[] };
+    expect(day.runs[0]).toMatchObject({ assignedUserId: "reception-check" });
+    expect(day.carryover).toEqual([expect.objectContaining({ assignedUserId: "owner-check", localDate: yesterday })]);
+    await t.run(async ctx => {
+      expect((await ctx.db.query("auditEvents").collect()).filter(event => event.action === "checklists.run.assign")).toHaveLength(1);
+      const user = await ctx.db.query("users").withIndex("by_public_id", q => q.eq("publicId", "reception-check")).unique();
+      await ctx.db.patch(user!._id, { status: "deactivated" });
+    });
+    await expectCode(owner.mutation(api.domain.mutate, operation("checklists.run.assign", { ...input, assignedUserId: "reception-check" })), "VALIDATION_ERROR");
+  });
+
   it("validates and audits template management, rejecting invalid role, time, zone, and cross-branch input", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

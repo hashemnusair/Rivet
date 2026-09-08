@@ -1,3 +1,4 @@
+import { isCalendarDate } from "@/lib/utils/dates";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
 import type {
   AuditQuery,
@@ -1122,6 +1123,8 @@ export class MockGymOSApi implements GymOSApi {
       name: template.name,
       dueTime: template.dueTime,
       assignedRole: template.assignedRole,
+      assignedUserId: template.assignedUserId,
+      assignedUserName: template.assignedUserName,
       items: [...template.items].sort((a, b) => a.order - b.order).map((item) => ({ itemId: item.id, label: item.label, instructions: item.instructions, required: item.required, order: item.order, zoneId: item.zoneId, offerMaintenance: item.offerMaintenance, status: "pending" as const })),
       progress: { done: 0, total: template.items.length, requiredPending: template.items.filter((item) => item.required).length, failedRequired: 0 },
       complete: template.items.every((item) => !item.required),
@@ -1129,6 +1132,38 @@ export class MockGymOSApi implements GymOSApi {
     };
     this.checklistRuns.push(run);
     return run;
+  }
+
+  private checklistAssignees(branchId: string): Array<{ id: string; name: string }> {
+    if (!this.branchIsVisible(branchId) || !this.db.branches.some(branch => branch.id === branchId && branch.status === "active")) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    return this.db.users.filter(user => user.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branchId))).map(user => ({ id: user.id, name: user.name }));
+  }
+
+  private checklistAssignment(branchId: string, assignedUserId?: string): { assignedUserId?: string; assignedUserName?: string } {
+    const assignee = this.checklistAssignees(branchId).find(user => user.id === assignedUserId);
+    if (assignedUserId && !assignee) throw ApiError.of(ERR.VALIDATION, "Choose active staff with access to this branch.");
+    return { assignedUserId: assignee?.id, assignedUserName: assignee?.name };
+  }
+
+  listChecklistAssignees(branchId: T.UUID): Promise<Array<{ id: T.UUID; name: string }>> {
+    return this.respond(() => { this.require("operations.manage"); return this.checklistAssignees(branchId); });
+  }
+
+  assignChecklistRun(input: { templateId: T.UUID; date?: string; assignedUserId?: T.UUID }): Promise<T.ChecklistRun> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      const template = this.checklistTemplateOrThrow(input.templateId);
+      const assigned = this.checklistAssignment(template.branchId, input.assignedUserId);
+      const date = input.date ?? this.today();
+      if (!isCalendarDate(date)) throw ApiError.of(ERR.VALIDATION, "Choose a valid checklist date.");
+      const run = this.ensureChecklistRun(template, date);
+      if (run.assignedUserId !== assigned.assignedUserId) {
+        const before = { assignedUserId: run.assignedUserId ?? null };
+        Object.assign(run, assigned);
+        this.audit({ category: "operations", action: "checklists.run.assign", entityType: "checklist_run", entityId: run.id, entityLabel: run.name, summary: "Checklist responsibility updated", branchId: run.branchId, before, after: { assignedUserId: assigned.assignedUserId ?? null } });
+      }
+      return this.checklistRunView(run);
+    });
   }
 
   listChecklistTemplates(input: { branchId?: T.UUID } = {}): Promise<T.ChecklistTemplate[]> {
@@ -1161,16 +1196,18 @@ export class MockGymOSApi implements GymOSApi {
         }
         return { id: raw.id ?? mockUuid(), label: label.slice(0, 120), instructions: raw.instructions?.trim() ? raw.instructions.trim().slice(0, 400) : undefined, required: raw.required !== false, order: index, zoneId: raw.zoneId, offerMaintenance: raw.offerMaintenance === true ? true : undefined };
       });
+      const assigned = this.checklistAssignment(input.branchId, input.assignedUserId);
       const active = input.active !== false;
       if (input.templateId) {
         const existing = this.checklistTemplateOrThrow(input.templateId);
         if (existing.branchId !== input.branchId) throw ApiError.of(ERR.VALIDATION, "A checklist cannot move between branches.");
         const beforeName = existing.name;
-        Object.assign(existing, { type: input.type, name: name.slice(0, 80), dueTime: input.dueTime, assignedRole: input.assignedRole, items, active, updatedAt: nowISO() });
-        this.audit({ category: "operations", action: "checklists.template.update", entityType: "checklist_template", entityId: existing.id, entityLabel: existing.name, summary: `Checklist "${existing.name}" updated`, before: { name: beforeName }, after: { name: existing.name }, branchId: existing.branchId });
+        const beforeAssignee = existing.assignedUserId ?? null;
+        Object.assign(existing, { type: input.type, name: name.slice(0, 80), dueTime: input.dueTime, assignedRole: input.assignedRole, ...assigned, items, active, updatedAt: nowISO() });
+        this.audit({ category: "operations", action: "checklists.template.update", entityType: "checklist_template", entityId: existing.id, entityLabel: existing.name, summary: `Checklist "${existing.name}" updated`, before: { name: beforeName, assignedUserId: beforeAssignee }, after: { name: existing.name, assignedUserId: existing.assignedUserId ?? null }, branchId: existing.branchId });
         return { ...existing, items: existing.items.map((item) => ({ ...item })) };
       }
-      const created: T.ChecklistTemplate = { id: mockUuid(), branchId: input.branchId, type: input.type, name: name.slice(0, 80), active, dueTime: input.dueTime, assignedRole: input.assignedRole, items, createdAt: nowISO(), updatedAt: nowISO() };
+      const created: T.ChecklistTemplate = { id: mockUuid(), branchId: input.branchId, type: input.type, name: name.slice(0, 80), active, dueTime: input.dueTime, assignedRole: input.assignedRole, ...assigned, items, createdAt: nowISO(), updatedAt: nowISO() };
       this.checklistTemplates.push(created);
       this.audit({ category: "operations", action: "checklists.template.create", entityType: "checklist_template", entityId: created.id, entityLabel: created.name, summary: `Checklist "${created.name}" created`, branchId: created.branchId });
       return { ...created, items: created.items.map((item) => ({ ...item })) };
@@ -1181,20 +1218,22 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       if (!this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
       const date = input.date ?? todayISODate(this.db.organization.timezone);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw ApiError.of(ERR.VALIDATION, "date must be a calendar date.");
+      if (!isCalendarDate(date)) throw ApiError.of(ERR.VALIDATION, "date must be a calendar date.");
       const runs = this.checklistTemplates
         .filter((template) => template.active && template.branchId === input.branchId)
         .map((template) => {
           const existing = this.checklistRuns.find((run) => run.templateId === template.id && run.localDate === date);
           if (existing) return this.checklistRunView(existing);
           return this.checklistRunView({
-            templateId: template.id, branchId: template.branchId, type: template.type, localDate: date, name: template.name, dueTime: template.dueTime, assignedRole: template.assignedRole,
+            templateId: template.id, branchId: template.branchId, type: template.type, localDate: date, name: template.name, dueTime: template.dueTime, assignedRole: template.assignedRole, assignedUserId: template.assignedUserId, assignedUserName: template.assignedUserName,
             items: template.items.map((item) => ({ itemId: item.id, label: item.label, instructions: item.instructions, required: item.required, order: item.order, zoneId: item.zoneId, offerMaintenance: item.offerMaintenance, status: "pending" as const })),
             progress: { done: 0, total: 0, requiredPending: 0, failedRequired: 0 }, complete: false, overdue: false,
           });
         })
         .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "opening" ? -1 : 1));
-      return { branchId: input.branchId, date, runs };
+      const carryover = this.checklistRuns.filter(run => run.branchId === input.branchId && run.localDate >= addDays(date, -7) && run.localDate < date && this.checklistTemplates.some(template => template.id === run.templateId && template.active) && run.items.some(item => item.status === "failed" || (item.required && item.status === "pending")))
+        .sort((a, b) => a.localDate.localeCompare(b.localDate)).map(run => this.checklistRunView(run));
+      return { branchId: input.branchId, date, runs, carryover };
     });
   }
 
@@ -4632,8 +4671,10 @@ export class MockGymOSApi implements GymOSApi {
       const checklistRole = currentRole(this.db) === "salesperson" ? "sales" : currentRole(this.db);
       for (const template of this.checklistTemplates) {
         if (!template.active || !queueBranchVisible(template.branchId)) continue;
-        if (checklistRole !== template.assignedRole && checklistRole !== "owner" && checklistRole !== "manager") continue;
+
         const run = this.checklistRuns.find((candidate) => candidate.templateId === template.id && candidate.localDate === today);
+        const assignedUserId = run ? run.assignedUserId : template.assignedUserId;
+        if (checklistRole !== "owner" && checklistRole !== "manager" && (assignedUserId ? assignedUserId !== this.actor().id : checklistRole !== template.assignedRole)) continue;
         const items = run ? run.items : template.items.map((item) => ({ required: item.required, status: "pending" as const }));
         const requiredPending = items.filter((item) => item.required && item.status === "pending").length;
         const failedRequired = items.filter((item) => item.required && item.status === "failed").length;
@@ -10116,10 +10157,10 @@ export class MockGymOSApi implements GymOSApi {
       if (!["draft", "approved", "partially_received"].includes(order.status)) throw ApiError.of(ERR.CONFLICT, "Only an open order can change its expected delivery date.");
       const expectedDeliveryDate = input.expectedDeliveryDate || undefined;
       if (order.expectedDeliveryDate !== expectedDeliveryDate) {
-        const before = { expectedDeliveryDate: order.expectedDeliveryDate };
+        const before = { expectedDeliveryDate: order.expectedDeliveryDate ?? null };
         order.expectedDeliveryDate = expectedDeliveryDate;
         order.updatedAt = nowISO();
-        this.audit({ category: "operations", action: "operations.purchase_order.delivery_date", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Expected delivery date updated", branchId: order.branchId, before, after: { expectedDeliveryDate } });
+        this.audit({ category: "operations", action: "operations.purchase_order.delivery_date", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Expected delivery date updated", branchId: order.branchId, before, after: { expectedDeliveryDate: expectedDeliveryDate ?? null } });
       }
       return structuredClone({ ...order, overdue: purchaseOrderIsOverdue(order, this.today()) });
     });
@@ -11361,6 +11402,7 @@ export class MockGymOSApi implements GymOSApi {
       this.require("operations.manage");
       this.requireReason(input.reason);
       const occurrence = this.classOccurrenceById(input.occurrenceId);
+      if (occurrence.status !== "scheduled") throw ApiError.of(ERR.CONFLICT, "Only a scheduled class can have a substitute.");
       const coach = this.classCoaches.find((candidate) => candidate.id === input.coachId);
       if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found.");
       occurrence.coachId = coach.id;

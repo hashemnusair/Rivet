@@ -671,6 +671,8 @@ export default defineSchema({
     dueTime: v.string(),
     /** Gym role expected to run this checklist. */
     assignedRole: v.string(),
+    assignedUserId: v.optional(v.string()),
+    assignedUserName: v.optional(v.string()),
     items: v.array(v.object({
       id: v.string(),
       label: v.string(),
@@ -699,6 +701,8 @@ export default defineSchema({
     templateName: v.string(),
     dueTime: v.string(),
     assignedRole: v.string(),
+    assignedUserId: v.optional(v.string()),
+    assignedUserName: v.optional(v.string()),
     items: v.array(v.object({
       itemId: v.string(),
       label: v.string(),

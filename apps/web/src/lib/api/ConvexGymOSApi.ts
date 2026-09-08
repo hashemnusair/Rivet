@@ -379,6 +379,8 @@ export class ConvexGymOSApi implements GymOSApi {
   getCollectionsReport(input: T.AnalyticsReportInput): Promise<T.CollectionsReport> { return this.query("analytics.collections", input); }
   getCrmFunnelReport(input: T.AnalyticsReportInput): Promise<T.CrmFunnelReport> { return this.query("analytics.crm_funnel", input); }
   getControlTrendsReport(input: T.AnalyticsReportInput): Promise<T.ControlTrendsReport> { return this.query("analytics.control_trends", input); }
+  listChecklistAssignees(branchId: T.UUID): Promise<Array<{ id: T.UUID; name: string }>> { return this.query("checklists.assignees.list", { branchId }); }
+  assignChecklistRun(input: { templateId: T.UUID; date?: string; assignedUserId?: T.UUID }): Promise<T.ChecklistRun> { return this.mutate("checklists.run.assign", input); }
   listChecklistTemplates(input: { branchId?: T.UUID } = {}): Promise<T.ChecklistTemplate[]> { return this.query("checklists.templates.list", input); }
   upsertChecklistTemplate(input: T.UpsertChecklistTemplateInput): Promise<T.ChecklistTemplate> { return this.mutate("checklists.template.upsert", input); }
   getChecklistDay(input: { branchId: T.UUID; date?: string }): Promise<T.ChecklistDay> { return this.query("checklists.day", input); }

@@ -6165,6 +6165,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "classes.occurrences.list":
     case "classes.coaches.list":
       return await classesQuery(ctx, actor, operation, input);
+    case "checklists.assignees.list":
     case "checklists.templates.list":
     case "checklists.day":
       return await checklistsQuery(ctx, actor, operation, input);
@@ -11489,6 +11490,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "classes.coach.remove":
       return await classesMutation(ctx, actor, operation, input);
     case "checklists.template.upsert":
+    case "checklists.run.assign":
     case "checklists.run.ensure":
     case "checklists.item.set":
     case "checklists.item.create_task":

@@ -861,6 +861,8 @@ export interface GymOSApi {
   getControlTrendsReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").ControlTrendsReport>;
 
   // --- Daily branch checklists ---
+  listChecklistAssignees(branchId: UUID): Promise<Array<{ id: UUID; name: string }>>;
+  assignChecklistRun(input: { templateId: UUID; date?: string; assignedUserId?: UUID }): Promise<import("@/lib/domain/types").ChecklistRun>;
   listChecklistTemplates(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").ChecklistTemplate[]>;
   upsertChecklistTemplate(input: import("@/lib/domain/types").UpsertChecklistTemplateInput): Promise<import("@/lib/domain/types").ChecklistTemplate>;
   getChecklistDay(input: { branchId: UUID; date?: string }): Promise<import("@/lib/domain/types").ChecklistDay>;

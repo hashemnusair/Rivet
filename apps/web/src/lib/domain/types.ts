@@ -3373,6 +3373,8 @@ export interface ChecklistTemplate {
   /** Branch-local due time, HH:MM. */
   dueTime: string;
   assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
+  assignedUserName?: string;
   items: ChecklistTemplateItem[];
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
@@ -3386,6 +3388,7 @@ export interface UpsertChecklistTemplateInput {
   active?: boolean;
   dueTime: string;
   assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
   items: Array<Pick<ChecklistTemplateItem, "label"> & Partial<Omit<ChecklistTemplateItem, "label" | "order">>>;
 }
 
@@ -3410,6 +3413,8 @@ export interface ChecklistRun {
   name: string;
   dueTime: string;
   assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
+  assignedUserName?: string;
   items: ChecklistRunItem[];
   progress: { done: number; total: number; requiredPending: number; failedRequired: number };
   complete: boolean;
@@ -3420,6 +3425,8 @@ export interface ChecklistDay {
   branchId: UUID;
   date: ISODate;
   runs: ChecklistRun[];
+  /** Persisted unresolved runs from the preceding seven local dates. */
+  carryover?: ChecklistRun[];
 }
 
 export interface SetChecklistItemInput {
