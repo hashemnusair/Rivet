@@ -12,10 +12,12 @@ The work is a refinement of the implemented product. It must preserve authorizat
 - [x] Pass 2: Sales, retention, and scheduling
 - [x] Pass 3: Branch operations
 - [x] Pass 4: Member mobile experience
-- [ ] Pass 5: Owner, finance, and oversight
-- [ ] Pass 6: Settings
-- [ ] Pass 7: Platform, authentication, and public product states
+- [x] Pass 5: Owner, finance, and oversight
+- [x] Pass 6: Settings
+- [x] Pass 7: Platform, authentication, and public product states
 - [ ] Final closure: Route, state, role, and device coverage
+
+The Pass 5–7 summary checkboxes were reconciled on 8 September 2026 with their existing Complete status, approval and integration evidence below. Final closure remains open. The later repository batch adds dated class cancellation, purchasing dates and checklist ownership; earlier references to those missing behaviors describe the product at that historical pass, not current code. This reconciliation does not claim a new hosted or real-device acceptance pass.
 
 ## Completion rules
 
