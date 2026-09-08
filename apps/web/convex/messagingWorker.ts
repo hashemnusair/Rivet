@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { dueMessageCandidates, type MessageSource } from "./messagingQueue";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
@@ -185,17 +186,23 @@ export const leaseDue = internalMutation({
       return liveCache.get(key)!;
     };
 
-    const automationRows = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "messageDelivery")).collect())
-      .filter((record) => {
-        const data = value(record.data);
-        const status = stringValue(data.status);
-        const due = typeof data.nextAttemptAt === "string" ? Date.parse(data.nextAttemptAt) : 0;
-        const leaseExpired = typeof data.leaseExpiresAt === "number" && data.leaseExpiresAt <= now;
-        return (status === "queued" || status === "retrying" || (status === "leased" && leaseExpired)) && data.channel !== "sandbox" && (Number.isNaN(due) || due <= now);
-      });
-    for (const record of automationRows) {
+    const state = await ctx.db.query("messagingWorkerState").withIndex("by_key", q => q.eq("key", "outbound")).unique();
+    let nextSource: MessageSource = state?.nextSource ?? "automation";
+    const candidates = await dueMessageCandidates(ctx, now, nextSource);
+    for (const candidate of candidates) {
       if (leased.length >= limit) break;
-      if (!(await isLive(record.organizationId))) continue;
+      if (!(await isLive(candidate.row.organizationId))) {
+        // Move disabled/quiet gyms out of the due window. Bounded scans can
+        // then reach later gyms without dropping or sending deferred work.
+        if (candidate.source === "automation") {
+          const data = value(candidate.row.data);
+          const deferred = now + 5 * 60_000;
+          await ctx.db.patch(candidate.row._id, { data: { ...data, ...(data.status === "leased" ? { leaseExpiresAt: deferred } : { nextAttemptAt: new Date(deferred).toISOString() }) } });
+        } else await ctx.db.patch(candidate.row._id, { nextAttemptAt: now + 5 * 60_000 });
+        continue;
+      }
+      if (candidate.source === "automation") {
+        const record = candidate.row;
       const data = value(record.data);
       const leaseToken = crypto.randomUUID();
       const member = await memberVariables(ctx, record.organizationId, record.memberPublicId, record.leadPublicId);
@@ -203,13 +210,8 @@ export const leaseDue = internalMutation({
       const body = await automationBody(ctx, record.organizationId, data, language, member.variables);
       await ctx.db.patch(record._id, { data: { ...data, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS }, updatedAt: now });
       leased.push({ source: "automation", id: String(record._id), publicId: record.publicId, organizationId: record.organizationId, leaseToken, channel: stringValue(data.requestedChannel, "whatsapp") === "sms" ? "sms" : "whatsapp", recipientPhone: optionalString(data.recipientPhone) ?? member.phone, language, body, attemptCount: Array.isArray(data.attempts) ? data.attempts.length : 0, suppressionReason: data.messageClass === "marketing" ? marketingSuppressionReason(member.recipient) : undefined });
-    }
-
-    const renewalRows = (await ctx.db.query("renewalDeliveries").withIndex("by_status_next_attempt", (q) => q.eq("status", "queued").lte("nextAttemptAt", now)).collect())
-      .filter((row) => row.channel !== "staff_task");
-    for (const row of renewalRows) {
-      if (leased.length >= limit) break;
-      if (!(await isLive(row.organizationId))) continue;
+      } else {
+        const row = candidate.row;
       const leaseToken = crypto.randomUUID();
       const memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", row.organizationId).eq("entityType", "member").eq("publicId", row.memberPublicId)).unique();
       const gymName = await organizationName(ctx, row.organizationId);
@@ -217,6 +219,12 @@ export const leaseDue = internalMutation({
       // next attempt moves forward so a concurrent run skips the row.
       await ctx.db.patch(row._id, { leaseToken, nextAttemptAt: now + LEASE_MS, updatedAt: now });
       leased.push({ source: "renewal", id: String(row._id), publicId: row.publicId, organizationId: row.organizationId, leaseToken, channel: row.channel as MessagingChannel, recipientPhone: row.recipientPhone, language: row.language, body: renewalBody(gymName, row, value(memberRecord?.data), row.language), attemptCount: row.attempts.length, suppressionReason: renewalMessageSuppressionReason(consentForRenewalChannel(value(memberRecord?.data), row.channel as MessagingChannel).status, row.recipientPhone) });
+      }
+      nextSource = candidate.source === "automation" ? "renewal" : "automation";
+    }
+    if (leased.length) {
+      if (state) await ctx.db.patch(state._id, { nextSource });
+      else await ctx.db.insert("messagingWorkerState", { key: "outbound", nextSource });
     }
     return leased;
   },

@@ -58,6 +58,31 @@ async function queueRenewalMessage(t: ReturnType<typeof convexTest>, organizatio
 }
 
 describe("outbound messaging worker", () => {
+  it("alternates sources across single-message leases under sustained automation load", async () => {
+    const { t, organizationId, branchId } = await seed({ gymLive: true });
+    await queueAutomationMessage(t, organizationId, branchId);
+    await queueAutomationMessage(t, organizationId, branchId);
+    await queueRenewalMessage(t, organizationId, branchId);
+    await queueRenewalMessage(t, organizationId, branchId);
+    const sources = [];
+    for (let i = 0; i < 4; i += 1) sources.push((await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 }))[0]?.source);
+    expect(sources).toEqual(["automation", "renewal", "automation", "renewal"]);
+  });
+
+  it("advances beyond a bounded page of disabled gyms without leasing future or terminal messages", async () => {
+    const { t, organizationId, branchId } = await seed({ gymLive: false });
+    for (let i = 0; i < 101; i += 1) await queueAutomationMessage(t, organizationId, branchId);
+    expect(await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 })).toHaveLength(0);
+    await t.run(async ctx => {
+      const settings = await ctx.db.query("domainRecords").withIndex("by_entity_type", q => q.eq("entityType", "settings")).first();
+      await ctx.db.patch(settings!._id, { data: { notifications: { automationDeliveryMode: "live" } } });
+    });
+    await queueAutomationMessage(t, organizationId, branchId, { status: "sent" });
+    await queueAutomationMessage(t, organizationId, branchId, { nextAttemptAt: new Date(Date.now() + 60_000).toISOString() });
+    expect(await t.mutation(internal.messagingWorker.leaseDue, { limit: 50 })).toHaveLength(1);
+    expect(await t.mutation(internal.messagingWorker.leaseDue, { limit: 50 })).toHaveLength(0);
+  });
+
   it.each(["automation", "renewal"] as const)("leases eligible %s work after a disabled gym fills the batch", async (source) => {
     const { t, organizationId, branchId } = await seed({ gymLive: false });
     const queue = source === "automation" ? queueAutomationMessage : queueRenewalMessage;
