@@ -49,6 +49,16 @@ describe("operational analytics queries", () => {
     await expectCode(owner.query(api.domain.query, operation("analytics.peak_hours", { from: "2020-01-01", to: "2026-06-01" })), "VALIDATION_ERROR");
   });
 
+  it("rejects impossible calendar dates before querying report records", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-analytics" });
+    for (const date of ["2026-02-29", "2026-02-30", "2026-04-31", "2026-13-01", "2026-00-01"]) {
+      await expectCode(owner.query(api.domain.query, operation("analytics.peak_hours", { from: date, to: date })), "VALIDATION_ERROR");
+    }
+    await expect(owner.query(api.domain.query, operation("analytics.peak_hours", { from: "2024-02-29", to: "2024-02-29" }))).resolves.toBeDefined();
+  });
+
   it("scopes rows to the actor's branches and honors an explicit branch filter", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
