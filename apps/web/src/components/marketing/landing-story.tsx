@@ -13,12 +13,12 @@ export const STACK_ITEMS = [
   },
   {
     label: "Memberships",
-    copy: "Plans, renewals, freezes, upgrades and family memberships, with expiries the desk sees before the member asks.",
+    copy: "Plans, renewals, freezes and upgrades, with expiries the desk sees before the member asks.",
     caps: ["Plans and renewals", "Freezes and transfers", "Access ends with the plan"],
   },
   {
     label: "Payments",
-    copy: "Cash, card, CliQ and installments, with a receipt for every payment and an outstanding balance on every member.",
+    copy: "Cash, card and CliQ payments, with a receipt for every payment and an outstanding balance on every member.",
     caps: ["Cash, card, CliQ", "Receipts and balances", "Drawer reconciled every shift"],
   },
   {
@@ -59,8 +59,8 @@ const DAY_EVENTS = [
   {
     time: "13:15",
     where: "Reception",
-    title: "Half now, half next month.",
-    copy: "An installment plan is created, a receipt is issued, and the balance shows on the member for everyone who needs to see it.",
+    title: "A partial payment, recorded.",
+    copy: "A partial payment is recorded, a receipt is issued, and the remaining balance stays visible on the member account.",
   },
   {
     time: "21:00",
@@ -78,10 +78,10 @@ const DAY_EVENTS = [
 
 const REGIONAL_SPECS = [
   ["Currency", "JOD to the fils. Three decimals wherever a number appears."],
-  ["Payments", "Cash, card, CliQ and installments, with a receipt for each."],
-  ["Language", "English and Arabic, with right-to-left layouts."],
+  ["Payments", "Cash, card and CliQ payments, with a receipt for each."],
+  ["Language", "English interface. Arabic names can be recorded; full Arabic and RTL support is planned."],
   ["Calendar", "Ramadan hours, Friday schedules and public holidays."],
-  ["Memberships", "Family plans, women's hours, freezes and transfers."],
+  ["Memberships", "Plans, renewals, freezes and transfers."],
   ["Branches", "One account across branches, in Amman or anywhere in the region."],
 ] as const;
 
