@@ -83,6 +83,7 @@ describe("outbound messaging worker", () => {
     expect(await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 })).toHaveLength(0);
     vi.setSystemTime(Date.now() + 121_000);
     const [second] = await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 });
+    if (!first || !second) throw new Error("Both lease generations must exist");
     expect(second.leaseToken).not.toBe(first.leaseToken);
     const complete = (leaseToken: string, accepted: boolean) => t.mutation(internal.messagingWorker.recordAttempt, { source: "renewal", id: String(id), leaseToken, accepted, retryable: true, mode: "live" });
     await complete(first.leaseToken, true);
