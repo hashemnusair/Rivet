@@ -15,6 +15,10 @@ export interface LegalSection {
  * technical label, the title and version line, a numbered contents list,
  * and one column of numbered sections at the document scale. The download
  * builds a PDF from exactly what is rendered here.
+ *
+ * On screen the sheet is drawn a little narrower than the A4 master page, so
+ * a line of the running text holds about eighty characters; the PDF keeps
+ * the page's own measure.
  */
 export function LegalDocument({ context, label, title, summary, version, sections, related }: { context?: string; label: string; title: string; summary: string; version: string; sections: LegalSection[]; related?: Array<{ label: string; href: string }> }) {
   const meta = `Version ${version} · Governed by the laws of the Hashemite Kingdom of Jordan`;
@@ -28,6 +32,7 @@ export function LegalDocument({ context, label, title, summary, version, section
         meta={meta}
         reference={`Version ${version.split(" ·")[0] ?? version}`}
         testId="legal-document"
+        className="max-w-[46rem]"
         actions={<DownloadDocumentButton target={target} label={label} title={title} meta={meta} reference={`Version ${version.split(" ·")[0] ?? version}`} version={version} />}
       >
         <p className="text-[14px] leading-[1.55] text-ink-2">{summary}</p>

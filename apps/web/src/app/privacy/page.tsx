@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
+import { PublicDocumentPage } from "@/components/public/public-document-page";
 import { PrivacyPolicy } from "@/features/legal/privacy-policy";
 
 export const metadata: Metadata = {
@@ -9,10 +9,8 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-paper text-ink">
-      <PublicHeader />
-      <main><PrivacyPolicy /></main>
-      <PublicFooter />
-    </div>
+    <PublicDocumentPage path="/privacy">
+      <PrivacyPolicy />
+    </PublicDocumentPage>
   );
 }

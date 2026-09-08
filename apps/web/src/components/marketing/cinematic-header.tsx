@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { LEGAL_LINKS } from "@/lib/rivet-contact";
 import { cn } from "@/lib/utils/cn";
 import styles from "./landing-cinematic.module.css";
 
@@ -34,6 +35,11 @@ export function resolveLandingHash(hash: string): string {
   return RETIRED_ANCHORS[hash] ?? hash;
 }
 
+/** Where a landing section link points from a page that is not the landing. */
+export function homeHref(hash: string): string {
+  return hash === "#top" ? "/" : `/${hash}`;
+}
+
 /** How long the menu takes to leave before the page underneath may move. */
 const MENU_EXIT_MS = 520;
 /** When the first menu link may take focus without pulling the plate in early. */
@@ -60,7 +66,22 @@ function goToHash(href: string, behavior: ScrollBehavior) {
   target.focus({ preventScroll: true });
 }
 
-export function CinematicHeader() {
+/**
+ * The public site's bar and menu. On the landing the section links scroll
+ * the page and the menu marks the section being read. On a document page
+ * (the terms, the privacy policy) the same bar and menu appear, the section
+ * links lead to the home page's sections, and the menu names the document.
+ */
+export function CinematicHeader({
+  page = "landing",
+  currentPath,
+}: {
+  /** Which kind of public page the bar sits on. */
+  page?: "landing" | "document";
+  /** A document page's own path, so the menu can mark it as the one open. */
+  currentPath?: string;
+}) {
+  const onLanding = page === "landing";
   const [open, setOpen] = useState(false);
   const [activeHref, setActiveHref] = useState<string>("#top");
   const menuRef = useRef<HTMLDivElement>(null);
@@ -68,8 +89,10 @@ export function CinematicHeader() {
   const focusTimerRef = useRef(0);
   const navigationTimerRef = useRef(0);
 
-  // Which section the reader is in, for the menu's red mark.
+  // Which section the reader is in, for the menu's red mark. Only the
+  // landing has the sections; a document page marks nothing.
   useEffect(() => {
+    if (!onLanding) return;
     let frame = 0;
 
     const readPage = () => {
@@ -99,13 +122,15 @@ export function CinematicHeader() {
       window.removeEventListener("resize", requestRead);
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [onLanding]);
 
   // A deep link is answered by the browser before fonts and the sticky
   // measurements settle, which leaves the section a few lines off. Once the
   // page is steady the anchor is re-aimed, unless the reader has already
   // started moving on their own. Retired anchors are redirected here too.
+  // A document's own hashes (its contents list) are left to the browser.
   useEffect(() => {
+    if (!onLanding) return;
     let cancelled = false;
     let interacted = false;
     const markInteraction = () => {
@@ -143,10 +168,11 @@ export function CinematicHeader() {
       window.removeEventListener("touchstart", markInteraction);
       window.removeEventListener("keydown", markInteraction);
     };
-  }, []);
+  }, [onLanding]);
 
   // Open state: lock the page, make everything behind the menu inert, keep
-  // focus inside, and put all of it back exactly as it was.
+  // focus inside, and put all of it back exactly as it was — including when
+  // the page changes underneath an open menu and the bar unmounts.
   useEffect(() => {
     const root = document.documentElement;
     const body = document.body;
@@ -205,6 +231,7 @@ export function CinematicHeader() {
     toggleRef.current?.focus({ preventScroll: true });
   };
 
+  // On the landing a section link scrolls the page once the menu has left.
   const navigate = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
     // Modified clicks and middle clicks belong to the browser: new tab, new window.
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -223,15 +250,19 @@ export function CinematicHeader() {
     navigationTimerRef.current = window.setTimeout(go, reducedMotion() ? 0 : MENU_EXIT_MS);
   };
 
+  // On a document page the links are ordinary navigation; the menu closes so
+  // a link to the page already open does not leave it standing.
+  const close = () => setOpen(false);
+
   return (
     <>
-      <header className={cn(styles.header, open && styles.headerOpen)}>
+      <header className={cn(styles.header, "marketing-body", open && styles.headerOpen)}>
         <Link
-          href="#top"
+          href={onLanding ? "#top" : "/"}
           className={styles.brand}
-          aria-label="RIVET, back to top"
+          aria-label={onLanding ? "RIVET, back to top" : "RIVET, home"}
           inert={open}
-          onClick={(event) => navigate(event, "#top")}
+          onClick={onLanding ? (event) => navigate(event, "#top") : undefined}
         >
           <Image src={open ? "/brand/rivet-lockup-rev.png" : "/brand/rivet-lockup.png"} alt="RIVET" width={122} height={31} priority />
         </Link>
@@ -257,7 +288,7 @@ export function CinematicHeader() {
       <div
         id="rivet-landing-menu"
         ref={menuRef}
-        className={cn(styles.menu, open && styles.menuOpen)}
+        className={cn(styles.menu, "marketing-body", open && styles.menuOpen)}
         aria-hidden={!open}
         role="dialog"
         aria-modal="true"
@@ -265,15 +296,15 @@ export function CinematicHeader() {
       >
         <button type="button" className={styles.menuScrim} aria-label="Close navigation" onClick={dismiss} />
         <div className={styles.menuPlate}>
-          <nav className={styles.menuPrimary} aria-label="Landing page sections">
+          <nav className={styles.menuPrimary} aria-label={onLanding ? "Landing page sections" : "Home page sections"}>
             <ol className={styles.menuList}>
               {NAV_ITEMS.map((item, index) => (
                 <li key={item.href} className={cn(styles.menuItem, NAV_DELAYS[index])}>
                   <Link
-                    href={item.href}
+                    href={onLanding ? item.href : homeHref(item.href)}
                     className={styles.menuLink}
-                    aria-current={activeHref === item.href ? "true" : undefined}
-                    onClick={(event) => navigate(event, item.href)}
+                    aria-current={onLanding && activeHref === item.href ? "true" : undefined}
+                    onClick={onLanding ? (event) => navigate(event, item.href) : close}
                   >
                     <span className={styles.menuIndex}>{item.index}</span>
                     <span className={styles.menuMask}>
@@ -285,7 +316,7 @@ export function CinematicHeader() {
             </ol>
           </nav>
 
-          <div className={styles.menuMeta}>
+          <div className={cn(styles.menuMeta, !onLanding && styles.menuMetaDocument)}>
             <div>
               <span className={styles.metaKey}>Contact</span>
               <a href="mailto:hello@rivet.jo">hello@rivet.jo</a>
@@ -294,10 +325,29 @@ export function CinematicHeader() {
               <span className={styles.metaKey}>Based in</span>
               <span>Amman, Jordan</span>
             </div>
-            <div>
-              <span className={styles.metaKey}>Interface</span>
-              <span>English · <span lang="ar">العربية</span></span>
-            </div>
+            {onLanding ? (
+              <div className={styles.menuInterface}>
+                <span className={styles.metaKey}>Interface</span>
+                <span>English · <span lang="ar">العربية</span></span>
+              </div>
+            ) : (
+              <div className={styles.menuLegal}>
+                <span className={styles.metaKey}>Legal</span>
+                <span className={styles.menuLegalLinks}>
+                  {LEGAL_LINKS.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={styles.menuDocLink}
+                      aria-current={currentPath === item.href ? "page" : undefined}
+                      onClick={close}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </span>
+              </div>
+            )}
             <div className={styles.menuAuth}>
               <Link href="/login" className={styles.menuSignIn}>Sign in</Link>
               <Link href="/signup" className={styles.menuCta}>Send gym application</Link>

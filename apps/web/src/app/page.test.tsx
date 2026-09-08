@@ -16,10 +16,7 @@ vi.mock("@/lib/providers/experience-provider", () => ({
   useMarketplaceGyms: () => [],
 }));
 
-vi.mock("@/components/public/public-shell", () => ({
-  PublicHeader: () => <header aria-label="Public header" />,
-  PublicFooter: () => <footer aria-label="Public footer" />,
-}));
+vi.mock("@/components/public/public-footer", () => ({ PublicFooter: () => <footer aria-label="Public footer" /> }));
 
 vi.mock("@/components/marketing/hero-devices", () => ({ HeroDevices: () => <div aria-hidden /> }));
 vi.mock("@/components/marketing/reveal", () => ({ Reveal: ({ children }: { children: ReactNode }) => <div>{children}</div> }));

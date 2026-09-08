@@ -406,6 +406,57 @@
   font-weight: 500;
 }
 
+/* A document page names the legal documents in place of the interface note
+   and marks the one open; the sign-in column keeps its own width. */
+.menuMetaDocument {
+  grid-template-columns: repeat(3, auto) minmax(max-content, 1fr);
+}
+
+.menuLegalLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.1rem;
+}
+
+/* The links sit on the meta row's text line; the hit area extends beyond it. */
+.menuDocLink {
+  display: inline-flex;
+  align-items: center;
+  padding-block: 0.5rem;
+  margin-block: -0.5rem;
+  color: #c6c3b8;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-color: rgb(198 195 184 / 0.35);
+  text-underline-offset: 0.3rem;
+  transition: color 220ms ease, text-decoration-color 220ms ease;
+}
+
+.menuDocLink:hover,
+.menuDocLink:focus-visible {
+  color: #ffffff;
+  text-decoration-color: #e5262e;
+}
+
+.menuDocLink:focus-visible {
+  outline: 2px solid #e5262e;
+  outline-offset: 4px;
+}
+
+.menuDocLink[aria-current="page"] {
+  color: #f5f4ef;
+  text-decoration: none;
+}
+
+.menuDocLink[aria-current="page"]::before {
+  content: "";
+  width: 0.85rem;
+  height: 2px;
+  margin-right: 0.5rem;
+  border-radius: 1px;
+  background: #e5262e;
+}
+
 .menuCta {
   padding: 0.95rem 1.25rem;
   border-radius: 0.28rem;
@@ -514,6 +565,17 @@
   opacity: var(--landing-hero-opacity, 1);
   transform-origin: 58% 32%;
   will-change: transform, opacity;
+}
+
+/* --------------------------------------------------------------- documents */
+
+/*
+  A document page (the terms, the privacy policy) reserves the fixed bar's
+  height once, here; the document's own margins below it are reading space,
+  not a second allowance. None of the landing's motion runs on these pages.
+*/
+.documentMain {
+  padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
 }
 
 /* ------------------------------------------------------------- the stack */
@@ -1030,8 +1092,14 @@
 
 /* ------------------------------------------------------------------ region */
 
+/*
+  Built for here and For members sit on one paper surface with no sheet edge
+  between them, so the break between them is one budget: a short outgoing
+  margin here and the incoming margin on the member section, about 7rem
+  together at desktop and under 6rem on a phone.
+*/
 .regionSection {
-  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(6rem, 12vh, 10rem);
+  padding: clamp(5rem, 10vh, 8.5rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(2.5rem, 5vh, 3.5rem);
 }
 
 .regionInner {
@@ -1101,6 +1169,16 @@
   color: #565449;
   font-size: 0.9rem;
   line-height: 1.55;
+}
+
+/* ----------------------------------------------------------------- members */
+
+/* The incoming half of the break above. The text column and the Entry QR
+   card start on this line together; the card is no longer centred against
+   the shorter column. */
+.memberSection {
+  padding-top: clamp(3.5rem, 8vh, 5.5rem);
+  padding-bottom: clamp(4rem, 9vh, 6rem);
 }
 
 /* ----------------------------------------------------------------- pricing */
@@ -1255,7 +1333,8 @@
   .menuLabel { line-height: 0.96; }
   .menuLink { gap: 0.6rem; padding-block: 0.45rem; }
   .menuMeta { grid-template-columns: 1fr 1fr; gap: 1.1rem; }
-  .menuMeta > div:nth-child(3) { display: none; }
+  .menuMeta > .menuInterface { display: none; }
+  .menuMeta > .menuLegal { grid-column: 1 / -1; }
   .menuMeta > .menuAuth { grid-column: 1 / -1; flex-wrap: wrap; }
 
   .paperSheet,
@@ -1325,6 +1404,9 @@
   .regionArabic { font-size: clamp(2.8rem, 12vw, 4.25rem); text-align: left; }
   .regionBody { margin-top: 2.5rem; }
   .regionSpec { grid-template-columns: 1fr; gap: 0.45rem; }
+
+  .memberSection { padding-top: 3rem; padding-bottom: 3.5rem; }
+  .documentMain { padding-top: calc(4.25rem + env(safe-area-inset-top, 0px)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -23,7 +23,7 @@ import {
 } from "@/components/marketing/landing-story";
 import { Reveal } from "@/components/marketing/reveal";
 import { ScrollProgress } from "@/components/marketing/scroll-progress";
-import { PublicFooter } from "@/components/public/public-shell";
+import { PublicFooter } from "@/components/public/public-footer";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
@@ -174,10 +174,13 @@ export default function LandingPage() {
           id="member"
           data-landing-theme="paper"
           aria-labelledby="member-title"
-          className={`${styles.coverSheet} ${styles.layer7} bg-paper px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+          className={`${styles.coverSheet} ${styles.layer7} ${styles.memberSection} bg-paper px-5 sm:px-8 lg:px-12`}
         >
           <div className="mx-auto max-w-[1344px]">
-            <div className="grid gap-12 lg:grid-cols-[1fr_0.85fr] lg:items-center lg:gap-14">
+            {/* The text and the Entry QR card start on the same line. Centring
+                the shorter column against the taller card left a blank stage
+                above the heading and floated the card above it. */}
+            <div className="grid gap-10 lg:grid-cols-[1fr_0.85fr] lg:items-start lg:gap-14">
               <div>
                 <StoryMarker label="For members" />
                 <SectionIntro
