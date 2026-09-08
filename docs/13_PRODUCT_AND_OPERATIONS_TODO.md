@@ -16,6 +16,12 @@ consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
+## Backend integrity, 8 September 2026
+
+- [x] Reject impossible analytics dates, unblock expiry cleanup behind undated export/media rows, enforce renewal lease ownership, and check messaging eligibility/consent when leasing. See `CURRENT_STATE.md` for commits and focused regression evidence.
+- [ ] Separately authorize and verify the Convex release, including the optional renewal lease field and draining in-flight workers, following docs/12. No deployment is claimed by this code pass.
+- [ ] Review the legacy customer-membership identity backfill's progress when missing-user rows contain only a profile ID or no resolvable identity. Do not repair shared data without a separately reviewed recovery plan.
+
 ## Current release index — 3 September 2026
 
 ### Product UI system refinement — 3 September 2026

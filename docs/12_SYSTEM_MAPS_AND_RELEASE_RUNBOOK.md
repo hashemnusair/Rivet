@@ -3,6 +3,16 @@
 Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
 daily-checklist Production release at application tip `fdd6dac`.
 
+## Backend integrity release requirements, 8 September 2026
+
+The backend integrity commits listed in `CURRENT_STATE.md` are code changes only. No Convex deployment or provider activation was performed. Main publication remains separate from backend release; the inspected GitHub workflow runs checks and credential-gated codegen, while Vercel builds with `pnpm build`.
+
+For a later authorized release, first verify the exact target and exercise the changes with synthetic data in an independently owned, non-production runtime. Have the operator drain in-flight messaging actions using the existing delivery controls before replacing worker code. Deploy schema and functions together through `pnpm convex:deploy`, then verify attempt ownership, opt-out suppression and cleanup progress before restoring the previous delivery settings. Do not use live messages to prove the change.
+
+`renewalDeliveries.leaseToken` is optional, so existing rows validate without a migration. A legacy queued row receives its token when next leased. In-flight workers from old code have no stored token, so their late completion is rejected; draining them avoids unnecessarily repeating an ambiguous provider request. No indexes or public API operations change, and no generated files need regeneration for this schema-only type addition.
+
+Rollback must keep the optional field accepted while stored rows contain it. An application rollback alone neither rolls back Convex nor restores expired files/CSV bodies removed by cleanup. Suppressed messages, attempt events and member timelines are durable facts; do not erase or replay them automatically. No historical financial repair is part of this release.
+
 ## Purpose
 
 This is the orientation and release-control document for RIVET. Use it to answer four questions:
