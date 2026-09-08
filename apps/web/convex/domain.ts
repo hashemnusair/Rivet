@@ -2596,7 +2596,7 @@ async function syncCustomerProfileToMemberRecord(
   return true;
 }
 
-const CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY = "customer_membership_identity_v1";
+const CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY = "customer_membership_identity_v2";
 
 async function customerMembershipRowsForIdentity(
   ctx: ReadContext,
