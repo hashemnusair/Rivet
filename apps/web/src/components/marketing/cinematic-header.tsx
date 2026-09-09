@@ -268,6 +268,10 @@ export function CinematicHeader({
         </Link>
 
         <div className={styles.headerActions}>
+          <Link href="/login/member" className={styles.memberLink} inert={open} aria-label="Member sign in">
+            <span className={styles.memberLinkLong} aria-hidden>Member sign in</span>
+            <span className={styles.memberLinkShort} aria-hidden>Sign in</span>
+          </Link>
           <Link href="/signup" className={styles.apply} inert={open}>
             Apply for access
           </Link>

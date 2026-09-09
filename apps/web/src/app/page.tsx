@@ -7,7 +7,7 @@ import {
   MapPin,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type PointerEvent } from "react";
 import { CinematicHeader } from "@/components/marketing/cinematic-header";
 import { HeroDevices } from "@/components/marketing/hero-devices";
 import styles from "@/components/marketing/landing-cinematic.module.css";
@@ -17,8 +17,8 @@ import {
   AccountabilityLedger,
   OperationalDay,
   RegionProof,
-  ScrollStackStory,
   SheetUnder,
+  StackStory,
   StoryMarker,
 } from "@/components/marketing/landing-story";
 import { Reveal } from "@/components/marketing/reveal";
@@ -49,8 +49,30 @@ const HERO_STEP = {
   facts: 440,
 } as const;
 
-/** Two full swells across the wave, so a half-width shift loops seamlessly. */
-const WAVE_PATH = "M0 12 C 33 0 67 0 100 12 C 133 24 167 24 200 12 C 233 0 267 0 300 12 C 333 24 367 24 400 12 V 24 H 0 Z";
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+/**
+ * Anchors a pricing tier's liquid to the point where the pointer came in, and
+ * sizes it to reach the card's farthest corner from there. A pointer that
+ * comes back while the last bloom is still draining keeps that bloom's point,
+ * so the liquid never jumps.
+ */
+function anchorBloom(event: PointerEvent<HTMLDivElement>) {
+  const card = event.currentTarget;
+  const bloom = card.querySelector<HTMLElement>("[data-bloom]");
+  if (bloom) {
+    const matrix = getComputedStyle(bloom).transform;
+    const [a = 0, b = 0] = matrix.startsWith("matrix(") ? matrix.slice(7, -1).split(",").map(Number) : [];
+    if (Math.hypot(a, b) > 0.04) return;
+  }
+  const rect = card.getBoundingClientRect();
+  const x = clamp(event.clientX - rect.left, 0, rect.width);
+  const y = clamp(event.clientY - rect.top, 0, rect.height);
+  const reach = Math.hypot(Math.max(x, rect.width - x), Math.max(y, rect.height - y));
+  card.style.setProperty("--bloom-x", `${x.toFixed(1)}px`);
+  card.style.setProperty("--bloom-y", `${y.toFixed(1)}px`);
+  card.style.setProperty("--bloom-size", `${Math.ceil(reach * 2.35)}px`);
+}
 
 export default function LandingPage() {
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
@@ -155,7 +177,7 @@ export default function LandingPage() {
 
         {/* ------------------------------------------------------------- The stack */}
         <SheetUnder tone="paper" />
-        <ScrollStackStory />
+        <StackStory />
 
         {/* --------------------------------------------------------- A day on RIVET */}
         <SheetUnder tone="stack" />
@@ -182,7 +204,9 @@ export default function LandingPage() {
                 above the heading and floated the card above it. */}
             <div className="grid gap-10 lg:grid-cols-[1fr_0.85fr] lg:items-start lg:gap-14">
               <div>
-                <StoryMarker label="For members" />
+                <Reveal still>
+                  <StoryMarker label="For members" drawn />
+                </Reveal>
                 <SectionIntro
                   id="member-title"
                   stacked
@@ -216,6 +240,12 @@ export default function LandingPage() {
                     <Link href="/customer/discover">Find a gym</Link>
                   </Button>
                 </div>
+                <p className="mt-4 text-[13px] text-ink-3">
+                  Already a member?{" "}
+                  <Link href="/login/member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">
+                    Sign in
+                  </Link>
+                </p>
               </div>
 
               <MemberCard />
@@ -225,13 +255,18 @@ export default function LandingPage() {
                 page carries the full loading, empty and error states; the
                 landing simply does not advertise a listing it cannot show. */}
             {liveGyms.length > 0 ? (
-              <div className="mt-16 border-t border-ink/10 pt-10">
-                <Reveal className="flex flex-wrap items-end justify-between gap-4">
+              <Reveal still className={styles.gymsPanel}>
+                {/* A stone panel framed at its corners, the way a QR carries its finders. */}
+                <span className={cn(styles.gymsCorner, styles.gymsCornerTl)} aria-hidden />
+                <span className={cn(styles.gymsCorner, styles.gymsCornerTr)} aria-hidden />
+                <span className={cn(styles.gymsCorner, styles.gymsCornerBl)} aria-hidden />
+                <span className={cn(styles.gymsCorner, styles.gymsCornerBr)} aria-hidden />
+                <div className="flex flex-wrap items-end justify-between gap-4">
                   <h3 className="text-[19px] font-semibold tracking-tight">Gyms on RIVET</h3>
                   <Link href="/customer/discover" className="text-[13.5px] font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">
                     See every gym
                   </Link>
-                </Reveal>
+                </div>
                 <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   {liveGyms.map((gym, index) => (
                     <Reveal key={gym.id} delay={index * 80} className="h-full">
@@ -270,7 +305,7 @@ export default function LandingPage() {
                     </Reveal>
                   ))}
                 </div>
-              </div>
+              </Reveal>
             ) : null}
           </div>
         </section>
@@ -336,12 +371,12 @@ export default function LandingPage() {
                       isNight ? styles.tierNight : isSignal ? styles.tierSignal : styles.tierPaper,
                       isNight && "night-surface",
                     )}
+                    onPointerEnter={anchorBloom}
                   >
-                    {/* The liquid that fills the card on hover — see `.tierLiquid`. */}
+                    {/* The liquid that blooms from where the pointer came in — see `.tierBloom`. */}
                     <span className={styles.tierLiquid} aria-hidden>
-                      <svg className={styles.tierWave} viewBox="0 0 400 24" preserveAspectRatio="none">
-                        <path d={WAVE_PATH} />
-                      </svg>
+                      <span className={styles.tierBloom} data-bloom />
+                      <span className={cn(styles.tierBloom, styles.tierBloomEcho)} />
                     </span>
                     <div className={styles.tierBody}>
                       <div className="flex items-center justify-between gap-3">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent } from "react";
 import { Reveal } from "@/components/marketing/reveal";
 import { cn } from "@/lib/utils/cn";
 import styles from "./landing-cinematic.module.css";
@@ -37,11 +37,6 @@ export const STACK_ITEMS = [
     caps: ["Attendance history", "Inactivity flags", "Renewal at the right time"],
   },
 ] as const;
-
-export const STACK_FINALE = {
-  title: "All six, on one record.",
-  copy: "A payment taken at reception is already on the member, already in the ledger and already in the daily close. Nothing is copied across.",
-} as const;
 
 const DAY_EVENTS = [
   {
@@ -114,7 +109,21 @@ const smoothstep = (value: number) => {
   return progress * progress * (3 - 2 * progress);
 };
 
-export function StoryMarker({ label, dark = false }: { label: string; dark?: boolean }) {
+/**
+ * The section marker: a rule, a short red dash and the label. The `drawn`
+ * variant is for a boundary with no sheet edge of its own — its red rule draws
+ * across the whole width as the section arrives, then settles into the dash.
+ * Wrap it in a still `Reveal` so it knows when it has come into view.
+ */
+export function StoryMarker({ label, dark = false, drawn = false }: { label: string; dark?: boolean; drawn?: boolean }) {
+  if (drawn) {
+    return (
+      <div className={styles.markerDrawn}>
+        <span className={styles.markerRule} aria-hidden />
+        <span className={styles.markerDrawnLabel}>{label}</span>
+      </div>
+    );
+  }
   return (
     <div className={`group flex items-center gap-3 border-t pt-4 ${dark ? "border-night-line" : "border-ink/10"}`}>
       <span className="h-[3px] w-7 origin-left rounded-sm bg-signal transition-transform duration-500 group-hover:scale-x-150" aria-hidden />
@@ -149,278 +158,429 @@ export const RIG = {
   stub: { x: 286, width: 24, bottom: 104 },
   plate: { left: 92, narrowRight: 310, wideRight: 396, height: 54, pitch: 62, top: 190, narrowCount: 3 },
   hole: { inset: 22, radius: 7 },
-  pin: { rod: 56, rodHeight: 12, collar: 12, collarHeight: 26, ringRadius: 16, ringStroke: 11, clearance: 14 },
+  /**
+   * The rod runs straight into the ring, one piece. `clearance` is how far
+   * the rod's tip stops from a plate's opening when the pin is withdrawn —
+   * the same for every plate, whatever its width.
+   */
+  pin: { rod: 56, rodHeight: 12, ringRadius: 17, ringStroke: 12, clearance: 14 },
   /** How far each plate's lower face shows below it, to read as an iron slab. */
   plateDepth: 4,
-  /** How far the load rises toward the stub in the finale. */
-  lift: 32,
 } as const;
 
-/**
- * The scroll timeline, as fractions of the track. The pin starts home in the
- * first plate, rests in each plate for a read, then withdraws, travels and
- * inserts into the next one. What is left after the last plate lifts the stack.
- */
-export const STACK_TIMELINE = { lead: 0.03, dwell: 0.09, move: 0.07 } as const;
+/** How long the pin rests in a plate before it moves on to the next. */
+export const STACK_DWELL_MS = 4000;
+/** The pin's pace in viewBox units per millisecond, and the bounds one move may take. */
+export const STACK_PACE = { unitsPerMs: 0.42, minMs: 380, maxMs: 1250 } as const;
 
-export interface StackPose {
-  /** Plate the pin is aligned with: the one it is leaving, or the one it is entering. */
-  plate: number;
-  /** Plate whose description is showing. */
-  engaged: number;
-  /** True while the pin is fully home in `plate`. */
-  seated: boolean;
+export interface PinPose {
   /** The rod's tip, in viewBox units; the pin group is drawn from this point. */
   tipX: number;
-  /** Vertical centre of the pin before the lift, in viewBox units. */
+  /** The pin's centre line. */
   y: number;
-  /** Vertical offset of the lifted load, in viewBox units (negative is up). */
-  lift: number;
-  /** Progress through the finale, 0 until the last plate has been read. */
-  finale: number;
 }
 
 export const plateRight = (index: number) => (index < RIG.plate.narrowCount ? RIG.plate.narrowRight : RIG.plate.wideRight);
-export const plateCentre = (index: number) => RIG.plate.top + index * RIG.plate.pitch + RIG.plate.height / 2;
-/** The rod is fully inside the plate when the collar meets the plate's edge. */
+export const plateTop = (index: number) => RIG.plate.top + index * RIG.plate.pitch;
+export const plateCentre = (index: number) => plateTop(index) + RIG.plate.height / 2;
+/** The rod is fully inside the plate when the ring meets the plate's edge. */
 export const seatedTip = (index: number) => plateRight(index) - RIG.pin.rod;
-/** Where the tip rests while the pin travels: clear of the widest plate. */
-export const travelTip = () => RIG.plate.wideRight + RIG.pin.clearance;
+/** Where the tip rests once withdrawn from a plate: the same distance from every plate's opening. */
+export const clearTip = (index: number) => plateRight(index) + RIG.pin.clearance;
+export const seatedPose = (index: number): PinPose => ({ tipX: seatedTip(index), y: plateCentre(index) });
 
-/**
- * The pin's pose for a scroll progress. A pure function of the progress, so
- * scrolling back plays the same motion in reverse and reloading mid-section
- * lands on exactly the pose the reader left.
- *
- * Between plates the pin withdraws until its rod clears the widest plate,
- * travels straight down that clear lane, then inserts. One eased sweep is
- * spread over the whole path in proportion to distance, so the pin moves at a
- * steady pace and the three legs join without a jump.
- *
- * The description switches at the moment the rod's tip meets the edge of the
- * plate it is entering; in reverse, at the moment it leaves. The plate lights
- * at the same instant, and its hole shows the rod once the pin is home.
- */
-export function stackPoseAt(progress: number): StackPose {
-  const out = travelTip();
-  const finish = (raw: { plate: number; from: number; tipX: number; y: number; lift: number; finale: number }): StackPose => {
-    const inside = raw.tipX <= plateRight(raw.plate) + 0.5;
-    return {
-      plate: raw.plate,
-      engaged: inside ? raw.plate : raw.from,
-      seated: raw.plate === raw.from && raw.tipX <= seatedTip(raw.plate) + 0.5,
-      tipX: raw.tipX,
-      y: raw.y,
-      lift: raw.lift,
-      finale: raw.finale,
-    };
-  };
-  const home = (index: number) => finish({ plate: index, from: index, tipX: seatedTip(index), y: plateCentre(index), lift: 0, finale: 0 });
+const near = (a: number, b: number, tolerance = 0.5) => Math.abs(a - b) <= tolerance;
 
-  const { lead, dwell, move } = STACK_TIMELINE;
-  let cursor = lead;
-  if (progress < cursor) return home(0);
+/** The plate whose row the pin is on, if it is on one. */
+export function plateAtRow(y: number): number | null {
   for (let index = 0; index < PLATE_COUNT; index += 1) {
-    if (progress < cursor + dwell) return home(index);
-    cursor += dwell;
-    if (index === PLATE_COUNT - 1) break;
-    if (progress < cursor + move) {
-      const withdraw = out - seatedTip(index);
-      const travel = plateCentre(index + 1) - plateCentre(index);
-      const insert = out - seatedTip(index + 1);
-      const distance = smoothstep((progress - cursor) / move) * (withdraw + travel + insert);
-      if (distance <= withdraw) {
-        return finish({ plate: index, from: index, tipX: seatedTip(index) + distance, y: plateCentre(index), lift: 0, finale: 0 });
-      }
-      if (distance <= withdraw + travel) {
-        return finish({ plate: index, from: index, tipX: out, y: plateCentre(index) + (distance - withdraw), lift: 0, finale: 0 });
-      }
-      return finish({ plate: index + 1, from: index, tipX: out - (distance - withdraw - travel), y: plateCentre(index + 1), lift: 0, finale: 0 });
-    }
-    cursor += move;
+    if (near(y, plateCentre(index))) return index;
   }
-  const last = PLATE_COUNT - 1;
-  const finale = clamp((progress - cursor) / Math.max(0.001, 1 - cursor), 0, 1);
-  return finish({ plate: last, from: last, tipX: seatedTip(last), y: plateCentre(last), lift: -smoothstep(finale / 0.7) * RIG.lift, finale });
+  return null;
 }
 
-/** The scene is pinned only where the whole composition fits; the stylesheet mirrors this query. */
-const STATIC_STACK_QUERY = "(prefers-reduced-motion: reduce), (max-height: 600px)";
+/**
+ * The lane the pin travels along between two rows: clear of every plate whose
+ * row it crosses, by the same clearance from each plate's edge. Between two
+ * narrow plates that is a short withdrawal; wherever a wide plate lies on the
+ * way, the pin withdraws further to pass it. A pin that is already further
+ * out stays where it is rather than moving in first.
+ */
+export function laneFor(from: PinPose, target: number): number {
+  const yTo = plateCentre(target);
+  const low = Math.min(from.y, yTo) - RIG.pin.rodHeight / 2;
+  const high = Math.max(from.y, yTo) + RIG.pin.rodHeight / 2;
+  let widest = 0;
+  for (let index = 0; index < PLATE_COUNT; index += 1) {
+    const top = plateTop(index);
+    if (top <= high && top + RIG.plate.height >= low) widest = Math.max(widest, plateRight(index));
+  }
+  return Math.max(widest + RIG.pin.clearance, from.tipX);
+}
 
-export function ScrollStackStory() {
-  const sectionRef = useRef<HTMLElement>(null);
+/**
+ * The pin's path from wherever it is to home in a plate: withdraw until the
+ * rod is clear of every plate it will pass, travel along that lane, insert.
+ * On the same row it simply slides home. The path starts at `from`, so a
+ * plate chosen mid-move continues from the pin's current position instead of
+ * competing with the move under way.
+ */
+export function pinPath(from: PinPose, target: number): PinPose[] {
+  const to = seatedPose(target);
+  if (near(from.y, to.y)) return near(from.tipX, to.tipX) ? [from] : [from, to];
+  const lane = laneFor(from, target);
+  const points: PinPose[] = [from];
+  if (from.tipX < lane - 0.01) points.push({ tipX: lane, y: from.y });
+  points.push({ tipX: lane, y: to.y }, to);
+  return points;
+}
+
+export function pathLength(points: PinPose[]): number {
+  let length = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    if (a && b) length += Math.hypot(b.tipX - a.tipX, b.y - a.y);
+  }
+  return length;
+}
+
+/** The pose `distance` units along the path, walking its legs in order. */
+export function poseAlong(points: PinPose[], distance: number): PinPose {
+  let remaining = Math.max(0, distance);
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1];
+    const b = points[index];
+    if (!a || !b) break;
+    const leg = Math.hypot(b.tipX - a.tipX, b.y - a.y);
+    if (remaining <= leg || index === points.length - 1) {
+      const t = leg === 0 ? 1 : Math.min(1, remaining / leg);
+      return { tipX: a.tipX + (b.tipX - a.tipX) * t, y: a.y + (b.y - a.y) * t };
+    }
+    remaining -= leg;
+  }
+  return points[points.length - 1] ?? { tipX: 0, y: 0 };
+}
+
+/** One eased sweep over the whole path, paced by its length: a long trip takes longer, but never drags. */
+export function moveDuration(length: number): number {
+  return clamp(length / STACK_PACE.unitsPerMs, STACK_PACE.minMs, STACK_PACE.maxMs);
+}
+
+type PauseKey = "focus" | "hidden" | "offscreen";
+
+interface StackEngine {
+  select(index: number): void;
+  pause(key: PauseKey, value: boolean): void;
+  destroy(): void;
+}
+
+/**
+ * Drives the pin. One move runs at a time: choosing a plate cancels the move
+ * under way and plans a fresh path from the pin's current position. When the
+ * pin seats, a timer moves it on after the dwell; the timer is held while a
+ * keyboard user has focus in the section, while the tab is hidden or the rig
+ * is off screen, and never runs for a reader who prefers reduced motion, for
+ * whom every move is instant. A click or a tap simply resets the dwell.
+ */
+function createStackEngine(
+  pin: SVGGElement,
+  notify: { selected(index: number): void; engaged(index: number): void; seated(value: boolean): void },
+): StackEngine {
+  let pose: PinPose = seatedPose(0);
+  let engaged = 0;
+  let seated = true;
+  let move: { frame: number; start: number; duration: number; points: PinPose[]; length: number; target: number } | null = null;
+  let timer = 0;
+  const paused: Record<PauseKey, boolean> = { focus: false, hidden: false, offscreen: true };
+  const reduced = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+
+  const paint = (next: PinPose) => {
+    pose = next;
+    pin.style.transform = `translate(${next.tipX.toFixed(2)}px, ${next.y.toFixed(2)}px)`;
+    // The plate and its description switch the moment the rod's tip meets the
+    // edge of the plate it is entering; leaving a plate changes nothing until then.
+    const row = plateAtRow(next.y);
+    if (row !== null && row !== engaged && next.tipX <= plateRight(row) + 0.5) {
+      engaged = row;
+      notify.engaged(row);
+    }
+    const home = row !== null && row === engaged && next.tipX <= seatedTip(row) + 0.5;
+    if (home !== seated) {
+      seated = home;
+      notify.seated(home);
+    }
+  };
+
+  const clearTimer = () => {
+    if (timer) window.clearTimeout(timer);
+    timer = 0;
+  };
+  const isPaused = () => paused.focus || paused.hidden || paused.offscreen;
+  const stop = () => {
+    if (move) window.cancelAnimationFrame(move.frame);
+    move = null;
+  };
+
+  const schedule = () => {
+    clearTimer();
+    if (move || reduced?.matches || isPaused()) return;
+    timer = window.setTimeout(() => {
+      timer = 0;
+      select((engaged + 1) % PLATE_COUNT);
+    }, STACK_DWELL_MS);
+  };
+
+  const step = (now: number) => {
+    if (!move) return;
+    const t = clamp((now - move.start) / move.duration, 0, 1);
+    paint(poseAlong(move.points, smoothstep(t) * move.length));
+    if (t < 1) {
+      move.frame = window.requestAnimationFrame(step);
+      return;
+    }
+    const { target } = move;
+    move = null;
+    paint(seatedPose(target));
+    schedule();
+  };
+
+  function select(index: number) {
+    clearTimer();
+    if (move?.target === index) return;
+    notify.selected(index);
+    stop();
+    const points = pinPath(pose, index);
+    const length = pathLength(points);
+    if (length < 0.01 || reduced?.matches) {
+      paint(seatedPose(index));
+      schedule();
+      return;
+    }
+    move = { frame: 0, start: performance.now(), duration: moveDuration(length), points, length, target: index };
+    move.frame = window.requestAnimationFrame(step);
+  }
+
+  const onMotionPreferenceChange = () => {
+    if (reduced?.matches && move) {
+      const { target } = move;
+      stop();
+      paint(seatedPose(target));
+    }
+    schedule();
+  };
+  reduced?.addEventListener("change", onMotionPreferenceChange);
+  paint(pose);
+
+  return {
+    select,
+    pause(key, value) {
+      if (paused[key] === value) return;
+      paused[key] = value;
+      if (isPaused()) clearTimer();
+      else schedule();
+    },
+    destroy() {
+      stop();
+      clearTimer();
+      reduced?.removeEventListener("change", onMotionPreferenceChange);
+    },
+  };
+}
+
+const PLATE_KEYS: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
+
+export function StackStory() {
+  const gridRef = useRef<HTMLDivElement>(null);
+  const figureRef = useRef<HTMLDivElement>(null);
   const pinRef = useRef<SVGGElement>(null);
-  const loadRef = useRef<SVGGElement>(null);
+  const plateRefs = useRef<Array<SVGGElement | null>>([]);
+  const engineRef = useRef<StackEngine | null>(null);
+  const [selected, setSelected] = useState(0);
   const [engaged, setEngaged] = useState(0);
   const [seated, setSeated] = useState(true);
-  const [finale, setFinale] = useState(false);
 
   useEffect(() => {
-    const section = sectionRef.current;
     const pin = pinRef.current;
-    const load = loadRef.current;
-    if (!section || !pin || !load) return;
+    const figure = figureRef.current;
+    if (!pin || !figure) return;
 
-    const paint = (progress: number) => {
-      const pose = stackPoseAt(progress);
-      pin.style.transform = `translate(${pose.tipX.toFixed(2)}px, ${(pose.y + pose.lift).toFixed(2)}px)`;
-      load.style.transform = `translate(0px, ${pose.lift.toFixed(2)}px)`;
-      section.style.setProperty("--stack-progress", `${(progress * 100).toFixed(2)}%`);
-      // The bar has done its job once the stack lifts; fading it keeps the seam
-      // with the next sheet clean.
-      section.style.setProperty("--stack-progress-opacity", (1 - smoothstep((progress - 0.9) / 0.08)).toFixed(3));
-      const showFinale = pose.finale > 0.02;
-      setEngaged((current) => (current === pose.engaged ? current : pose.engaged));
-      setSeated((current) => (current === pose.seated ? current : pose.seated));
-      setFinale((current) => (current === showFinale ? current : showFinale));
-    };
+    const engine = createStackEngine(pin, { selected: setSelected, engaged: setEngaged, seated: setSeated });
+    engineRef.current = engine;
 
-    const readProgress = () => {
-      const rect = section.getBoundingClientRect();
-      const range = Math.max(1, section.offsetHeight - window.innerHeight);
-      return clamp(-rect.top / range, 0, 1);
-    };
+    const onVisibility = () => engine.pause("hidden", document.hidden);
+    onVisibility();
+    document.addEventListener("visibilitychange", onVisibility);
 
-    // Test and legacy environments have no matchMedia; they get the scrolling scene.
-    const staticQuery = typeof window.matchMedia === "function" ? window.matchMedia(STATIC_STACK_QUERY) : null;
-    const isStatic = () => staticQuery?.matches ?? false;
-    let readyFrame = 0;
-    let following = false;
+    // The pin only works while the rig can be seen.
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver === "function") {
+      observer = new IntersectionObserver(([entry]) => engine.pause("offscreen", !entry?.isIntersecting), { threshold: 0.4 });
+      observer.observe(figure);
+    } else {
+      engine.pause("offscreen", false);
+    }
 
-    // Scroll events already arrive at most once a frame; painting straight
-    // from them keeps the pin on the reader's hand with no loop of its own.
-    const follow = () => paint(readProgress());
-    const settle = () => paint(isStatic() ? 1 : readProgress());
-
-    const start = () => {
-      if (following) return;
-      following = true;
-      window.addEventListener("scroll", follow, { passive: true });
-      window.addEventListener("resize", settle, { passive: true });
-    };
-    const stop = () => {
-      if (!following) return;
-      following = false;
-      window.removeEventListener("scroll", follow);
-      window.removeEventListener("resize", settle);
-    };
-
-    const apply = () => {
-      // The first pose is written without a transition so a reload mid-section
-      // shows the pin where it belongs instead of sliding it in from the top.
-      delete section.dataset.stackReady;
-      if (readyFrame) window.cancelAnimationFrame(readyFrame);
-      settle();
-      if (isStatic()) {
-        stop();
-        return;
-      }
-      start();
-      readyFrame = window.requestAnimationFrame(() => {
-        readyFrame = 0;
-        section.dataset.stackReady = "";
-      });
-    };
-
-    apply();
-    staticQuery?.addEventListener("change", apply);
     return () => {
-      staticQuery?.removeEventListener("change", apply);
-      stop();
-      if (readyFrame) window.cancelAnimationFrame(readyFrame);
-      delete section.dataset.stackReady;
+      document.removeEventListener("visibilitychange", onVisibility);
+      observer?.disconnect();
+      engine.destroy();
+      engineRef.current = null;
     };
   }, []);
 
+  const choose = (index: number) => engineRef.current?.select(index);
+
+  const onPlateKeyDown = (event: KeyboardEvent<SVGGElement>, index: number) => {
+    let next: number | null = null;
+    const delta = PLATE_KEYS[event.key];
+    if (delta !== undefined) next = (index + delta + PLATE_COUNT) % PLATE_COUNT;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = PLATE_COUNT - 1;
+    else if (event.key === "Enter" || event.key === " ") next = index;
+    if (next === null) return;
+    event.preventDefault();
+    plateRefs.current[next]?.focus();
+    choose(next);
+  };
+
+  // Keyboard focus inside the section holds the pin where it is, so a plate
+  // is not taken away from under a reader working through the tabs. Focus
+  // that a click or a tap leaves behind does not count: that reader has just
+  // chosen a plate and expects the loop to carry on from it.
+  const onFocus = (event: FocusEvent<HTMLDivElement>) => {
+    let keyboard = true;
+    try {
+      keyboard = event.target.matches(":focus-visible");
+    } catch {
+      keyboard = true;
+    }
+    if (keyboard) engineRef.current?.pause("focus", true);
+  };
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) engineRef.current?.pause("focus", false);
+  };
+
   const { view, upright, bar, stub, plate, hole, pin } = RIG;
+  const ringOuter = pin.ringRadius + pin.ringStroke / 2;
 
   return (
-    <section ref={sectionRef} id="product" data-landing-theme="dark" className={styles.stackStory} aria-labelledby="stack-title">
-      <div className={styles.stackTrack}>
-        <div className={styles.stackStage}>
-          <div className={styles.stackGrid}>
-            <div className={styles.stackHeader}>
-              <div>
-                <StoryMarker label="The stack" dark />
-                <h2 id="stack-title">Six plates. One pin.</h2>
-              </div>
-              <p className={styles.stackLead}>
-                Six parts of running a gym, kept on one member record. Each plate is a module; the pin marks the one you are reading about.
-              </p>
-            </div>
-
-            {/* The written version of the scene, for readers who do not scroll it. */}
-            <ol className="sr-only">
-              {STACK_ITEMS.map((item) => (
-                <li key={item.label}>
-                  {item.label}. {item.copy} {item.caps.join(". ")}.
-                </li>
-              ))}
-              <li>{STACK_FINALE.title} {STACK_FINALE.copy}</li>
-            </ol>
-
-            <div className={styles.stackFigure} aria-hidden>
-              <svg
-                className={styles.rig}
-                viewBox={`0 0 ${view.width} ${view.height}`}
-                width={view.width}
-                height={view.height}
-                focusable="false"
-              >
-                {/* frame: upright, crossbar, return stub */}
-                <rect className={styles.rigFrame} x={upright.x} y={0} width={upright.width} height={view.height} rx={6} />
-                <rect className={styles.rigFrame} x={upright.x} y={0} width={bar.right - upright.x} height={bar.height} rx={6} />
-                <rect className={styles.rigFrame} x={stub.x} y={0} width={stub.width} height={stub.bottom} rx={6} />
-
-                {/* the pin, drawn under the plates so its rod disappears inside one */}
-                <g ref={pinRef} className={styles.rigPin} data-stack-pin>
-                  <rect className={styles.rigPinPart} x={0} y={-pin.rodHeight / 2} width={pin.rod + 2} height={pin.rodHeight} rx={pin.rodHeight / 2} />
-                  <rect className={styles.rigPinPart} x={pin.rod} y={-pin.collarHeight / 2} width={pin.collar} height={pin.collarHeight} rx={4} />
-                  <circle className={styles.rigPinRing} cx={pin.rod + pin.collar + pin.ringRadius + pin.ringStroke / 2} cy={0} r={pin.ringRadius} />
-                </g>
-
-                {/* the load: every plate, lifted together in the finale */}
-                <g ref={loadRef} className={styles.rigLoad}>
-                  {STACK_ITEMS.map((item, index) => {
-                    const top = plate.top + index * plate.pitch;
-                    const right = plateRight(index);
-                    const lit = index <= engaged;
-                    return (
-                      <g
-                        key={item.label}
-                        data-stack-plate={index}
-                        className={cn(styles.rigPlateGroup, lit && styles.rigPlateGroupLit, seated && index === engaged && styles.rigPlateGroupSeated)}
-                      >
-                        <rect className={styles.rigPlateSide} x={plate.left} y={top + RIG.plateDepth} width={right - plate.left} height={plate.height} rx={7} />
-                        <rect className={styles.rigPlate} x={plate.left} y={top} width={right - plate.left} height={plate.height} rx={7} />
-                        <text className={styles.rigPlateLabel} x={plate.left + 18} y={top + plate.height / 2} dominantBaseline="central">
-                          {item.label}
-                        </text>
-                        <circle className={styles.rigHole} cx={right - hole.inset} cy={top + plate.height / 2} r={hole.radius} />
-                      </g>
-                    );
-                  })}
-                </g>
-              </svg>
-            </div>
-
-            <div className={styles.stackCopy} aria-hidden>
-              {STACK_ITEMS.map((item, index) => (
-                <div key={item.label} className={cn(styles.stackState, !finale && engaged === index && styles.stackStateActive)}>
-                  <h3>{item.label}</h3>
-                  <p>{item.copy}</p>
-                  <ul className={styles.stackCaps}>
-                    {item.caps.map((cap) => <li key={cap}>{cap}</li>)}
-                  </ul>
-                </div>
-              ))}
-              <div className={cn(styles.stackState, finale && styles.stackStateActive)}>
-                <h3>{STACK_FINALE.title}</h3>
-                <p>{STACK_FINALE.copy}</p>
-              </div>
-            </div>
+    <section id="product" data-landing-theme="dark" className={styles.stackStory} aria-labelledby="stack-title">
+      <div ref={gridRef} className={styles.stackGrid} onFocus={onFocus} onBlur={onBlur}>
+        <div className={styles.stackHeader}>
+          <div>
+            <StoryMarker label="The stack" dark />
+            <h2 id="stack-title">Six plates. One pin.</h2>
           </div>
-          <div className={styles.stackProgress} aria-hidden><span /></div>
+          <p className={styles.stackLead}>
+            Six modules on one member record: a payment taken at reception is already on the member, in the ledger and in the daily close. Tap a plate, or let the pin work through them.
+          </p>
+        </div>
+
+        <div ref={figureRef} className={styles.stackFigure}>
+          <svg
+            className={styles.rig}
+            viewBox={`0 0 ${view.width} ${view.height}`}
+            width={view.width}
+            height={view.height}
+            focusable="false"
+          >
+            <defs>
+              {/* Matte shading: a touch lighter along the top of the pin, darker underneath. */}
+              <linearGradient id="stack-pin-shade" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#ec3f46" />
+                <stop offset="0.55" stopColor="#e5262e" />
+                <stop offset="1" stopColor="#c9202a" />
+              </linearGradient>
+              {/* The hole's rim: a dark upper lip, a lit lower one, so it reads as cut into the face. */}
+              <linearGradient id="stack-hole-rim" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#000000" stopOpacity="0.55" />
+                <stop offset="0.5" stopColor="#000000" stopOpacity="0.1" />
+                <stop offset="1" stopColor="#f2f0e6" stopOpacity="0.3" />
+              </linearGradient>
+              <filter id="stack-plate-shadow" x="-10%" y="-60%" width="120%" height="260%">
+                <feGaussianBlur stdDeviation="3" />
+              </filter>
+            </defs>
+
+            {/* frame: upright, crossbar, return stub */}
+            <g aria-hidden>
+              <rect className={styles.rigFrame} x={upright.x} y={0} width={upright.width} height={view.height} rx={6} />
+              <rect className={styles.rigFrame} x={upright.x} y={0} width={bar.right - upright.x} height={bar.height} rx={6} />
+              <rect className={styles.rigFrame} x={stub.x} y={0} width={stub.width} height={stub.bottom} rx={6} />
+            </g>
+
+            {/* each plate's soft shadow on the one beneath, drawn before any face */}
+            <g aria-hidden>
+              {STACK_ITEMS.map((item, index) => (
+                <rect
+                  key={item.label}
+                  className={styles.rigPlateShadow}
+                  x={plate.left + 5}
+                  y={plateTop(index) + plate.height - 1}
+                  width={plateRight(index) - plate.left - 10}
+                  height={10}
+                  rx={5}
+                  filter="url(#stack-plate-shadow)"
+                />
+              ))}
+            </g>
+
+            {/* the pin, drawn under the plates so its rod disappears inside one */}
+            <g ref={pinRef} className={styles.rigPin} data-stack-pin aria-hidden>
+              <rect className={styles.rigPinRod} x={0} y={-pin.rodHeight / 2} width={pin.rod + pin.ringStroke / 2} height={pin.rodHeight} rx={pin.rodHeight / 2} />
+              <circle className={styles.rigPinRing} cx={pin.rod + ringOuter} cy={0} r={pin.ringRadius} />
+            </g>
+
+            {/* the plates: each one a tab the pin can be sent to */}
+            <g role="tablist" aria-label="Modules" aria-orientation="vertical">
+              {STACK_ITEMS.map((item, index) => {
+                const top = plateTop(index);
+                const right = plateRight(index);
+                const width = right - plate.left;
+                const isSelected = selected === index;
+                return (
+                  <g
+                    key={item.label}
+                    ref={(node) => { plateRefs.current[index] = node; }}
+                    id={`stack-tab-${index}`}
+                    role="tab"
+                    aria-selected={isSelected}
+                    aria-controls="stack-panel"
+                    aria-label={item.label}
+                    tabIndex={isSelected ? 0 : -1}
+                    data-stack-plate={index}
+                    className={cn(styles.rigPlateGroup, engaged === index && styles.rigPlateGroupLit, seated && engaged === index && styles.rigPlateGroupSeated)}
+                    onClick={() => choose(index)}
+                    onKeyDown={(event) => onPlateKeyDown(event, index)}
+                  >
+                    {/* the whole pitch answers a tap, not just the face */}
+                    <rect className={styles.rigPlateHit} x={plate.left - 6} y={top - (plate.pitch - plate.height) / 2} width={width + 18} height={plate.pitch} />
+                    <rect className={styles.rigPlateSide} x={plate.left} y={top + RIG.plateDepth} width={width} height={plate.height} rx={7} />
+                    <rect className={styles.rigPlate} x={plate.left} y={top} width={width} height={plate.height} rx={7} />
+                    <rect className={styles.rigPlateEdge} x={plate.left + 7} y={top + 1} width={width - 14} height={1.5} rx={0.75} />
+                    <text className={styles.rigPlateLabel} x={plate.left + 18} y={top + plate.height / 2} dominantBaseline="central">
+                      {item.label}
+                    </text>
+                    <circle className={styles.rigHole} cx={right - hole.inset} cy={top + plate.height / 2} r={hole.radius} />
+                    <circle className={styles.rigHoleRim} cx={right - hole.inset} cy={top + plate.height / 2} r={hole.radius} />
+                  </g>
+                );
+              })}
+            </g>
+          </svg>
+        </div>
+
+        <div id="stack-panel" role="tabpanel" aria-labelledby={`stack-tab-${selected}`} className={styles.stackCopy}>
+          {STACK_ITEMS.map((item, index) => (
+            <div key={item.label} className={cn(styles.stackState, engaged === index && styles.stackStateActive)} aria-hidden={engaged !== index}>
+              <h3>{item.label}</h3>
+              <p>{item.copy}</p>
+              <ul className={styles.stackCaps}>
+                {item.caps.map((cap) => <li key={cap}>{cap}</li>)}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
     </section>

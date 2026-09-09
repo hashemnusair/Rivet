@@ -9,6 +9,8 @@ describe("CinematicHeader", () => {
     render(<CinematicHeader />);
 
     expect(screen.getByRole("link", { name: "RIVET, back to top" })).toHaveAttribute("href", "#top");
+    expect(screen.getByRole("link", { name: "Member sign in" })).toHaveAttribute("href", "/login/member");
+    expect(screen.getByRole("link", { name: "Apply for access" })).toHaveAttribute("href", "/signup");
     await user.click(screen.getByRole("button", { name: "Menu" }));
 
     const menu = screen.getByRole("dialog", { name: "RIVET navigation" });

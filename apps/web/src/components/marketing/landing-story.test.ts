@@ -1,77 +1,121 @@
 import { describe, expect, it } from "vitest";
 import { resolveLandingHash } from "./cinematic-header";
-import { RIG, STACK_ITEMS, STACK_TIMELINE, plateCentre, plateRight, seatedTip, stackPoseAt, travelTip } from "./landing-story";
+import {
+  RIG,
+  STACK_ITEMS,
+  STACK_PACE,
+  clearTip,
+  moveDuration,
+  pathLength,
+  pinPath,
+  plateCentre,
+  plateRight,
+  plateTop,
+  poseAlong,
+  seatedPose,
+  seatedTip,
+  type PinPose,
+} from "./landing-story";
 
 const last = STACK_ITEMS.length - 1;
+const narrowLast = RIG.plate.narrowCount - 1;
+const firstWide = RIG.plate.narrowCount;
 
-describe("stack pin pose", () => {
-  it("starts home in the first plate and ends home in the last, lifted toward the stub", () => {
-    const start = stackPoseAt(0);
-    expect(start).toMatchObject({ plate: 0, engaged: 0, seated: true, lift: 0, finale: 0 });
-    expect(start.tipX).toBe(seatedTip(0));
-    expect(start.y).toBe(plateCentre(0));
+/** Poses at even steps along a path. */
+function sample(points: PinPose[], steps = 2000): PinPose[] {
+  const length = pathLength(points);
+  return Array.from({ length: steps + 1 }, (_, index) => poseAlong(points, (length * index) / steps));
+}
 
-    const end = stackPoseAt(1);
-    expect(end).toMatchObject({ plate: last, engaged: last, seated: true, finale: 1 });
-    expect(end.tipX).toBe(seatedTip(last));
-    expect(end.lift).toBeCloseTo(-RIG.lift);
-    // The lifted load still clears the return stub.
-    expect(RIG.plate.top + end.lift).toBeGreaterThan(RIG.stub.bottom);
-  });
+/** The rows a plate occupies, widened by the rod's half height. */
+function plateBand(index: number): [number, number] {
+  const top = plateTop(index);
+  return [top - RIG.pin.rodHeight / 2, top + RIG.plate.height + RIG.pin.rodHeight / 2];
+}
 
-  it("moves continuously: no leg of the path joins with a jump, forwards or backwards", () => {
-    const samples = 6000;
-    let previous = stackPoseAt(0);
-    let largestStep = 0;
-    for (let index = 1; index <= samples; index += 1) {
-      const pose = stackPoseAt(index / samples);
-      largestStep = Math.max(largestStep, Math.abs(pose.tipX - previous.tipX), Math.abs(pose.y + pose.lift - (previous.y + previous.lift)));
-      previous = pose;
-    }
-    // The longest move covers about 370 viewBox units over 7% of the track, so
-    // a 1/6000 step is well under two units; anything larger is a teleport.
-    expect(largestStep).toBeLessThan(2.5);
-    // A pure function of progress reads the same in reverse.
-    expect(stackPoseAt(0.4321)).toEqual(stackPoseAt(0.4321));
-  });
-
-  it("only travels down the clear lane: the rod tip never crosses a plate between rows", () => {
-    for (let index = 0; index <= 4000; index += 1) {
-      const pose = stackPoseAt(index / 4000);
-      const onRow = STACK_ITEMS.some((_, plate) => Math.abs(pose.y - plateCentre(plate)) < 0.01);
-      if (!onRow) expect(pose.tipX).toBeGreaterThanOrEqual(travelTip() - 0.01);
-    }
-  });
-
-  it("switches the description exactly when the rod tip meets the plate it is entering", () => {
-    let previous = stackPoseAt(0);
-    const switches: number[] = [];
-    for (let index = 1; index <= 8000; index += 1) {
-      const pose = stackPoseAt(index / 8000);
-      if (pose.engaged !== previous.engaged) {
-        expect(pose.engaged).toBe(previous.engaged + 1);
-        expect(pose.tipX).toBeLessThanOrEqual(plateRight(pose.engaged) + 0.5);
-        expect(previous.tipX).toBeGreaterThan(plateRight(pose.engaged) - 3);
-        switches.push(index / 8000);
-      }
-      previous = pose;
-    }
-    expect(switches).toHaveLength(last);
-  });
-
-  it("rests in every plate for the whole dwell, with the rod home in the hole", () => {
-    const { lead, dwell, move } = STACK_TIMELINE;
+describe("stack pin path", () => {
+  it("rests home in every plate with the hole under the hidden rod", () => {
     for (let plate = 0; plate <= last; plate += 1) {
-      const start = lead + plate * (dwell + move);
-      for (const at of [start + 0.001, start + dwell / 2, start + dwell - 0.001]) {
-        const pose = stackPoseAt(at);
-        expect(pose).toMatchObject({ plate, engaged: plate, seated: true });
-        // The hole sits under the hidden rod.
-        const holeX = plateRight(plate) - RIG.hole.inset;
-        expect(holeX).toBeGreaterThan(pose.tipX);
-        expect(holeX).toBeLessThan(pose.tipX + RIG.pin.rod);
+      const pose = seatedPose(plate);
+      expect(pose.tipX).toBe(plateRight(plate) - RIG.pin.rod);
+      expect(pose.y).toBe(plateCentre(plate));
+      const holeX = plateRight(plate) - RIG.hole.inset;
+      expect(holeX).toBeGreaterThan(pose.tipX);
+      expect(holeX).toBeLessThan(pose.tipX + RIG.pin.rod);
+    }
+  });
+
+  it("withdraws the same distance from a narrow plate's opening as from a wide one's", () => {
+    const narrow = pinPath(seatedPose(0), 1);
+    const wide = pinPath(seatedPose(firstWide), firstWide + 1);
+    expect(narrow[1]).toEqual({ tipX: clearTip(0), y: plateCentre(0) });
+    expect(wide[1]).toEqual({ tipX: clearTip(firstWide), y: plateCentre(firstWide) });
+    expect(narrow[1]!.tipX - narrow[0]!.tipX).toBe(wide[1]!.tipX - wide[0]!.tipX);
+    expect(clearTip(0) - plateRight(0)).toBe(RIG.pin.clearance);
+    expect(clearTip(firstWide) - plateRight(firstWide)).toBe(RIG.pin.clearance);
+    // The narrow lane is well inside the wide plates' edge: it is not one fixed lane for the stack.
+    expect(clearTip(0)).toBeLessThan(plateRight(firstWide));
+  });
+
+  it("retracts further to pass a wider plate when crossing between the narrow and wide groups", () => {
+    const down = pinPath(seatedPose(narrowLast), firstWide);
+    expect(down[1]!.tipX).toBe(clearTip(firstWide));
+    const up = pinPath(seatedPose(firstWide), narrowLast);
+    expect(up[1]!.tipX).toBe(clearTip(firstWide));
+    // Wide to wide needs no more than the wide clearance itself.
+    expect(pinPath(seatedPose(firstWide), last)[1]!.tipX).toBe(clearTip(firstWide));
+  });
+
+  it("goes withdraw, travel, insert, with the rod clear of every plate it passes", () => {
+    const cases: Array<[number, number]> = [[0, 1], [narrowLast, firstWide], [last, 0], [1, 4], [5, 2], [0, last]];
+    for (const [from, to] of cases) {
+      const points = pinPath(seatedPose(from), to);
+      expect(points).toHaveLength(4);
+      expect(points[1]!.y).toBe(plateCentre(from));
+      expect(points[2]!.tipX).toBe(points[1]!.tipX);
+      expect(points[2]!.y).toBe(plateCentre(to));
+      expect(points[3]).toEqual(seatedPose(to));
+      for (const pose of sample(points)) {
+        for (let plate = 0; plate <= last; plate += 1) {
+          if (plate === from || plate === to) continue;
+          const [top, bottom] = plateBand(plate);
+          if (pose.y >= top && pose.y <= bottom) {
+            expect(pose.tipX).toBeGreaterThanOrEqual(plateRight(plate) + RIG.pin.clearance - 0.01);
+          }
+        }
       }
     }
+  });
+
+  it("continues from wherever the pin is when another plate is chosen mid-move", () => {
+    // Mid-travel in the wide lane, asked for a plate above: no second withdrawal.
+    const midTravel = { tipX: clearTip(last), y: (plateCentre(2) + plateCentre(3)) / 2 };
+    const back = pinPath(midTravel, 1);
+    expect(back[0]).toEqual(midTravel);
+    expect(back).toHaveLength(3);
+    expect(back[1]).toEqual({ tipX: clearTip(last), y: plateCentre(1) });
+    expect(back[2]).toEqual(seatedPose(1));
+    // Half withdrawn from a plate and sent back into it: straight home.
+    const halfOut = { tipX: seatedTip(0) + 30, y: plateCentre(0) };
+    expect(pinPath(halfOut, 0)).toEqual([halfOut, seatedPose(0)]);
+    // Already home: nothing to do.
+    expect(pathLength(pinPath(seatedPose(4), 4))).toBe(0);
+  });
+
+  it("paces a move by its length and moves without a jump between legs", () => {
+    const short = pathLength(pinPath(seatedPose(0), 1));
+    const long = pathLength(pinPath(seatedPose(last), 0));
+    expect(long).toBeGreaterThan(short * 2);
+    expect(moveDuration(short)).toBeGreaterThanOrEqual(STACK_PACE.minMs);
+    expect(moveDuration(short)).toBeLessThan(moveDuration(long));
+    expect(moveDuration(long)).toBe(STACK_PACE.maxMs);
+
+    const poses = sample(pinPath(seatedPose(last), 0));
+    let largest = 0;
+    for (let index = 1; index < poses.length; index += 1) {
+      largest = Math.max(largest, Math.hypot(poses[index]!.tipX - poses[index - 1]!.tipX, poses[index]!.y - poses[index - 1]!.y));
+    }
+    expect(largest).toBeLessThan(long / 2000 + 0.01);
   });
 });
 

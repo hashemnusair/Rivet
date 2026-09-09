@@ -15,11 +15,14 @@ export function Reveal({
   children,
   className,
   delay = 0,
+  still = false,
 }: {
   children: ReactNode;
   className?: string;
   /** Stagger, in ms, for siblings that should arrive in sequence. */
   delay?: number;
+  /** Report the state without moving anything: the children draw their own entrance from it. */
+  still?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [shown, setShown] = useState(false);
@@ -66,12 +69,12 @@ export function Reveal({
       ref={ref}
       data-reveal-state={shown ? "shown" : "hidden"}
       className={cn(
-        "transition-[opacity,transform] duration-[850ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-        shown ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0",
-        "motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
+        !still && "transition-[opacity,transform] duration-[850ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+        !still && (shown ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"),
+        !still && "motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none",
         className,
       )}
-      style={{ transitionDelay: shown ? `${delay}ms` : "0ms" }}
+      style={still ? undefined : { transitionDelay: shown ? `${delay}ms` : "0ms" }}
     >
       {children}
     </div>

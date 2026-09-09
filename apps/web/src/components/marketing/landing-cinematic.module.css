@@ -120,9 +120,56 @@
   letter-spacing: -0.015em;
 }
 
+/* The member's own way in, beside the gym application: quieter, but there
+   without opening the menu. On phones it keeps a short label. */
+.memberLink {
+  position: relative;
+  padding-block: 0.35rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #565449;
+  transition: color 220ms ease;
+}
+
+.memberLink::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 350ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.memberLink:hover,
+.memberLink:focus-visible {
+  color: #1b1a15;
+}
+
+.memberLink:hover::after,
+.memberLink:focus-visible::after {
+  transform: scaleX(1);
+}
+
+.headerOpen .memberLink {
+  color: #b3b0a4;
+}
+
+.headerOpen .memberLink:hover,
+.headerOpen .memberLink:focus-visible {
+  color: #f5f4ef;
+}
+
+.memberLinkShort {
+  display: none;
+}
+
 .menuToggle:focus-visible,
 .brand:focus-visible,
-.apply:focus-visible {
+.apply:focus-visible,
+.memberLink:focus-visible {
   outline: 2px solid #d9232b;
   outline-offset: 5px;
 }
@@ -586,29 +633,16 @@
   border-radius: 1.5rem 1.5rem 0 0;
   background: #1c1b16;
   color: #f2f0e6;
-  scroll-margin-top: calc(-4.5rem - env(safe-area-inset-top, 0px));
-}
-
-.stackTrack {
-  height: 600svh;
-}
-
-.stackStage {
-  position: sticky;
-  top: 0;
-  height: 100svh;
-  overflow: hidden;
+  padding: clamp(4.5rem, 9vh, 7rem) clamp(1.25rem, 3.35vw, 3.5rem) clamp(5rem, 10vh, 7.5rem);
 }
 
 .stackGrid {
   display: grid;
-  height: 100%;
   max-width: 90rem;
   margin-inline: auto;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: auto minmax(0, 1fr);
   column-gap: clamp(1.25rem, 3vw, 3.25rem);
-  padding: calc(4.5rem + env(safe-area-inset-top, 0px) + 1.5rem) clamp(1.25rem, 3.35vw, 3.5rem) 2.5rem;
+  row-gap: clamp(2.5rem, 5vh, 4rem);
 }
 
 .stackHeader {
@@ -629,7 +663,7 @@
 }
 
 .stackLead {
-  max-width: 27rem;
+  max-width: 29rem;
   justify-self: end;
   color: #aaa698;
   font-size: 0.95rem;
@@ -639,18 +673,19 @@
 .stackFigure {
   display: flex;
   grid-column: 1 / span 6;
-  min-height: 0;
   align-items: center;
   justify-content: center;
 }
 
-/* Sized by the column, then capped by the room left under the header row;
-   the drawing keeps its own proportions from the viewBox. */
+/* Sized by the column; the drawing keeps its own proportions from the viewBox. */
 .rig {
   display: block;
-  width: min(94%, 34rem, calc((100svh - 17rem) * 0.946));
+  width: min(94%, 34rem);
   height: auto;
   overflow: visible;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
 }
 
 .rigFrame {
@@ -658,40 +693,57 @@
 }
 
 /*
-  The pin is drawn under the plates so its rod disappears when it is home.
-  Its position is written from the scroll position on every scroll event; the
-  short transition runs on the compositor and only rounds off wheel steps, so
-  the pin follows the reader's hand without an animation loop of its own.
+  The pin is drawn under the plates so its rod disappears when it is home. Its
+  position is written by the animation on every frame, so it carries no
+  transition of its own. The rod runs straight into the ring, and one vertical
+  shade over both gives the pin a little thickness without any gloss.
 */
-.rigPin,
-.rigLoad {
+.rigPin {
   transform-box: view-box;
+  will-change: transform;
 }
 
-.stackStory[data-stack-ready] .rigPin,
-.stackStory[data-stack-ready] .rigLoad {
-  transition: transform 140ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.rigPinPart {
-  fill: #e5262e;
+.rigPinRod {
+  fill: url(#stack-pin-shade);
 }
 
 .rigPinRing {
   fill: none;
-  stroke: #e5262e;
-  stroke-width: 10;
+  stroke: url(#stack-pin-shade);
+  stroke-width: 12;
 }
 
-/* Plates are solid iron: dark until the pin has taken them, cream once it has.
-   A lower face shows under each one so the stack has thickness. */
+/*
+  Plates are matte iron: dark until the pin takes one, cream while it has it.
+  Each face shows a hairline of light along its top edge, a lower face below
+  it, and a soft shadow on the plate beneath — enough for thickness, no more.
+*/
+.rigPlateShadow {
+  fill: #000000;
+  opacity: 0.34;
+}
+
+.rigPlateGroup {
+  cursor: pointer;
+  outline: none;
+}
+
+.rigPlateGroupLit {
+  cursor: default;
+}
+
+.rigPlateHit {
+  fill: none;
+  pointer-events: all;
+}
+
 .rigPlateSide {
   fill: #12110d;
   transition: fill 160ms ease;
 }
 
 .rigPlateGroupLit .rigPlateSide {
-  fill: #bdb9a9;
+  fill: #b9b5a5;
 }
 
 .rigPlate {
@@ -701,59 +753,81 @@
   transition: fill 160ms ease, stroke 160ms ease;
 }
 
+@media (hover: hover) {
+  .rigPlateGroup:hover .rigPlate {
+    fill: #34322a;
+    stroke: rgb(242 240 230 / 0.3);
+  }
+}
+
+.rigPlateGroup:focus-visible .rigPlate {
+  stroke: #e5262e;
+  stroke-width: 2;
+}
+
+.rigPlateGroupLit .rigPlate,
+.rigPlateGroupLit:hover .rigPlate {
+  fill: #f2f0e6;
+  stroke: #f2f0e6;
+}
+
+.rigPlateEdge {
+  fill: rgb(255 255 255 / 0.07);
+  pointer-events: none;
+  transition: fill 160ms ease;
+}
+
+.rigPlateGroupLit .rigPlateEdge {
+  fill: rgb(255 255 255 / 0.65);
+}
+
 .rigPlateLabel {
   fill: #9c998c;
   font-family: var(--font-archivo), sans-serif;
   font-size: 21px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  pointer-events: none;
   transition: fill 160ms ease;
-}
-
-/* Every plate carries the pin's hole on the edge the pin enters from. */
-.rigHole {
-  fill: #15140f;
-  stroke: rgb(242 240 230 / 0.18);
-  stroke-width: 1.5;
-  transition: fill 160ms ease, stroke 160ms ease;
-}
-
-.rigPlateGroupLit .rigPlate {
-  fill: #f2f0e6;
-  stroke: #f2f0e6;
 }
 
 .rigPlateGroupLit .rigPlateLabel {
   fill: #1c1b16;
 }
 
-.rigPlateGroupLit .rigHole {
-  fill: #1c1b16;
-  stroke: rgb(27 26 21 / 0.4);
+/* Every plate carries the pin's hole on the edge the pin enters from, cut into
+   the face: a dark upper lip and a lit lower one make it recede. */
+.rigHole {
+  fill: #100f0b;
+  transition: fill 160ms ease;
+}
+
+.rigHoleRim {
+  fill: none;
+  stroke: url(#stack-hole-rim);
+  stroke-width: 1.5;
+  pointer-events: none;
 }
 
 /* The hole shows the rod's end while the pin is home in it. */
 .rigPlateGroupSeated .rigHole {
-  fill: #e5262e;
-  stroke: #e5262e;
-}
-
-.stackCopy {
-  position: relative;
-  display: flex;
-  grid-column: 7 / span 6;
-  min-height: 0;
-  align-items: center;
+  fill: url(#stack-pin-shade);
 }
 
 /*
-  One state is on screen at a time: the leaving state is dropped at once and
-  the arriving one plays a short entrance, so fast scrolling never stacks two
-  descriptions on top of each other.
+  One description is on screen at a time. Every state sits in the same grid
+  cell, so the column keeps the height of the tallest one and nothing below
+  moves as the pin changes plate; the leaving state is dropped at once and the
+  arriving one plays a short entrance.
 */
+.stackCopy {
+  display: grid;
+  grid-column: 7 / span 6;
+  align-content: center;
+}
+
 .stackState {
-  position: absolute;
-  inset: auto 0;
+  grid-area: 1 / 1;
   max-width: 34rem;
   visibility: hidden;
 }
@@ -799,21 +873,6 @@
   width: 0.85rem;
   height: 2px;
   flex: none;
-  background: #e5262e;
-}
-
-.stackProgress {
-  position: absolute;
-  inset: auto 0 0;
-  height: 3px;
-  background: rgb(242 240 230 / 0.08);
-  opacity: var(--stack-progress-opacity, 1);
-}
-
-.stackProgress span {
-  display: block;
-  width: var(--stack-progress, 0%);
-  height: 100%;
   background: #e5262e;
 }
 
@@ -1181,13 +1240,100 @@
   padding-bottom: clamp(4rem, 9vh, 6rem);
 }
 
+/*
+  The one boundary on this page with no sheet edge of its own. Its marker's
+  red rule draws across the full width as the section comes into view, then
+  gathers into the marker's dash and drops into place beside the label.
+*/
+.markerDrawn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid rgb(27 26 21 / 0.1);
+  padding-top: 1rem;
+  --marker-drop: calc(1rem + 0.62rem);
+}
+
+.markerRule {
+  position: absolute;
+  top: -1.5px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: #e5262e;
+  clip-path: inset(0 calc(100% - 1.75rem) 0 0 round 2px);
+  transform: translateY(var(--marker-drop));
+}
+
+.markerDrawnLabel {
+  padding-left: calc(1.75rem + 0.75rem);
+  color: #1b1a15;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+[data-reveal-state="hidden"] .markerRule {
+  clip-path: inset(0 100% 0 0 round 2px);
+  transform: translateY(0);
+}
+
+[data-reveal-state="shown"] .markerRule {
+  animation: markerDraw 1500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes markerDraw {
+  0% { clip-path: inset(0 100% 0 0 round 2px); transform: translateY(0); }
+  46% { clip-path: inset(0 0 0 0 round 2px); transform: translateY(0); }
+  72% { clip-path: inset(0 calc(100% - 1.75rem) 0 0 round 2px); transform: translateY(0); }
+  100% { clip-path: inset(0 calc(100% - 1.75rem) 0 0 round 2px); transform: translateY(var(--marker-drop)); }
+}
+
+/*
+  Gyms on RIVET sit on a stone panel inside the paper section, framed at the
+  corners the way a QR carries its finders. The marks arrive one after
+  another as the panel comes into view; that is all the motion it has.
+*/
+.gymsPanel {
+  position: relative;
+  margin-top: clamp(3rem, 6vh, 4.5rem);
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  border-radius: 1rem;
+  background: #edece5;
+}
+
+.gymsCorner {
+  position: absolute;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid #1b1a15;
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity 480ms ease,
+    transform 640ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.gymsCornerTl { top: 0.7rem; left: 0.7rem; border-right: 0; border-bottom: 0; transform-origin: 0 0; }
+.gymsCornerTr { top: 0.7rem; right: 0.7rem; border-left: 0; border-bottom: 0; transform-origin: 100% 0; transition-delay: 90ms; }
+.gymsCornerBl { bottom: 0.7rem; left: 0.7rem; border-right: 0; border-top: 0; transform-origin: 0 100%; transition-delay: 180ms; }
+.gymsCornerBr { bottom: 0.7rem; right: 0.7rem; border-left: 0; border-top: 0; transform-origin: 100% 100%; transition-delay: 270ms; }
+
+.gymsPanel[data-reveal-state="shown"] .gymsCorner {
+  opacity: 0.55;
+  transform: none;
+}
+
 /* ----------------------------------------------------------------- pricing */
 
 /*
-  A pricing tier fills like a vessel on hover: a tinted liquid rises from the
-  bottom edge with a slow surface swell, then drains when the pointer leaves.
-  Transform-only, so it composites without repainting the card's text, and it
-  never sits between the reader and a control.
+  A pricing tier fills with a tinted liquid on hover. The liquid blooms from
+  the point where the pointer came in — anchored there, not chased — spreads
+  with a slightly uneven edge, swells past the last corner and settles into
+  the filled state; when the pointer leaves it draws back to the same point.
+  Transform-only on two blob layers, so it composites without repainting the
+  card's text, and it never sits between the reader and a control.
 */
 .tier {
   position: relative;
@@ -1196,6 +1342,9 @@
   flex-direction: column;
   overflow: hidden;
   isolation: isolate;
+  --bloom-x: 50%;
+  --bloom-y: 50%;
+  --bloom-size: 240%;
   transition:
     border-color 320ms ease,
     box-shadow 520ms ease;
@@ -1241,35 +1390,42 @@
   position: absolute;
   inset: 0;
   z-index: -1;
+  overflow: hidden;
   pointer-events: none;
-  background: var(--tier-liquid);
-  /* Parked below the card by more than the wave's height, so no crest shows at rest. */
-  transform: translate3d(0, calc(100% + 2.5rem), 0);
-  transition: transform 1000ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.tier:hover .tierLiquid,
-.tier:focus-within .tierLiquid {
-  transform: translate3d(0, 0, 0);
-  transition-duration: 1100ms;
-}
-
-.tierWave {
+/* Two uneven blobs, grown from the entry point at slightly different rates
+   and turns, so the boundary ripples as it spreads and the two merge into one
+   flat fill once they cover the card. */
+.tierBloom {
   position: absolute;
-  top: 0;
-  left: 0;
-  display: block;
-  width: 200%;
-  height: 1.5rem;
-  fill: var(--tier-liquid);
-  transform: translate3d(0, -96%, 0);
+  top: var(--bloom-y);
+  left: var(--bloom-x);
+  width: var(--bloom-size);
+  height: var(--bloom-size);
+  border-radius: 46% 54% 51% 49% / 55% 43% 57% 45%;
+  background: var(--tier-liquid);
+  transform: translate(-50%, -50%) scale(0) rotate(0turn);
+  transition: transform 380ms cubic-bezier(0.4, 0, 0.7, 1);
+  will-change: transform;
 }
 
-@media (hover: hover) {
-  .tier:hover .tierWave,
-  .tier:focus-within .tierWave {
-    animation: tierWave 2.8s linear infinite;
-  }
+.tierBloomEcho {
+  border-radius: 53% 47% 44% 56% / 46% 57% 43% 54%;
+  transition-duration: 320ms;
+}
+
+.tier:hover .tierBloom,
+.tier:focus-within .tierBloom {
+  transform: translate(-50%, -50%) scale(1) rotate(0.07turn);
+  transition: transform 640ms cubic-bezier(0.3, 0.55, 0.25, 1.06);
+}
+
+.tier:hover .tierBloomEcho,
+.tier:focus-within .tierBloomEcho {
+  transform: translate(-50%, -50%) scale(1) rotate(-0.06turn);
+  transition-duration: 720ms;
+  transition-delay: 40ms;
 }
 
 .tierBody {
@@ -1278,11 +1434,6 @@
   flex: 1;
   flex-direction: column;
   padding: 1.5rem;
-}
-
-@keyframes tierWave {
-  from { transform: translate3d(0, -96%, 0); }
-  to { transform: translate3d(-50%, -96%, 0); }
 }
 
 @keyframes dayTick {
@@ -1302,10 +1453,10 @@
   .menuMeta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .menuMeta > .menuAuth { justify-self: start; }
   .stackHeader { grid-template-columns: 1fr; }
-  .stackLead { display: none; }
+  .stackLead { justify-self: start; }
   .stackFigure { grid-column: 1 / span 5; }
   .stackCopy { grid-column: 6 / span 7; }
-  .rig { width: min(100%, 24rem, calc((100svh - 16rem) * 0.946)); }
+  .rig { width: min(100%, 26rem); }
   .dayGrid { grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr); gap: 2rem; }
   .dayTime { font-size: clamp(3rem, 6.4vw, 5.5rem); }
   .accountBody { grid-template-columns: 1fr; }
@@ -1320,6 +1471,9 @@
   .header { height: calc(4.25rem + env(safe-area-inset-top, 0px)); }
   .progress { top: calc(4.25rem + env(safe-area-inset-top, 0px) - 2px); }
   .apply { display: none; }
+  .headerActions { gap: 1.1rem; }
+  .memberLinkLong { display: none; }
+  .memberLinkShort { display: inline; }
   .brand img { width: 7rem; }
   .menuPlate {
     width: 100%;
@@ -1341,26 +1495,18 @@
   .inkSheet,
   .stackStory { border-radius: 1.1rem 1.1rem 0 0; }
 
-  .stackStory { scroll-margin-top: calc(-4.25rem - env(safe-area-inset-top, 0px)); }
-  .stackTrack { height: 540svh; }
-  .stackGrid {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(9rem, 36svh) minmax(0, 1fr);
-    padding-top: calc(4.25rem + env(safe-area-inset-top, 0px) + 1.25rem);
-    padding-bottom: 1.5rem;
-  }
+  .stackStory { padding-top: clamp(3.5rem, 8vh, 5rem); padding-bottom: clamp(4rem, 9vh, 6rem); }
+  .stackGrid { grid-template-columns: 1fr; row-gap: 2rem; }
   .stackHeader h2 { margin-top: 0.8rem; font-size: clamp(1.6rem, 7.5vw, 2.3rem); }
   .stackHeader,
   .stackFigure,
   .stackCopy { grid-column: 1; }
-  .stackFigure { grid-row: 2; align-items: center; padding-top: 1rem; }
-  .rig { width: min(72vw, calc(34svh * 0.946)); }
-  .rigPlateLabel { font-size: 26px; letter-spacing: -0.03em; }
-  .stackCopy { grid-row: 3; align-items: start; padding-top: 1.25rem; }
-  .stackState { inset: 1.25rem 0 auto; }
+  .rig { width: min(100%, 24rem); }
+  .rigPlateLabel { font-size: 24px; letter-spacing: -0.03em; }
+  .stackCopy { align-content: start; }
   .stackState h3 { font-size: clamp(1.9rem, 8vw, 2.6rem); }
   .stackState p { margin-top: 0.8rem; font-size: 0.92rem; line-height: 1.5; }
-  .stackCaps { display: none; }
+  .stackCaps { margin-top: 1.1rem; gap: 0.5rem; font-size: 0.9rem; }
 
   .regionBilingual,
   .regionBody { grid-template-columns: 1fr; }
@@ -1420,13 +1566,13 @@
   .heroMotion,
   .rigPlate,
   .rigPlateSide,
+  .rigPlateEdge,
   .rigPlateLabel,
   .rigHole,
-  .rigPin,
-  .rigLoad,
   .dayMoment,
   .trailRow,
-  .tierLiquid {
+  .tierBloom,
+  .gymsCorner {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
   }
@@ -1434,7 +1580,7 @@
   .stackStateActive,
   .dayTime,
   .dayWhere,
-  .tierWave {
+  .markerRule {
     animation: none !important;
   }
 
@@ -1442,34 +1588,4 @@
     position: relative;
     top: auto;
   }
-}
-
-/*
-  Where the pinned scene cannot be read as one composition — a short window, a
-  phone on its side, or a reader who has asked for less motion — the stage is
-  released into the flow and every description is printed in order. The
-  component reads the same query, so the pin is drawn seated in the last plate.
-*/
-@media (prefers-reduced-motion: reduce), (max-height: 600px) {
-  .stackTrack { height: auto; }
-  .stackStage { position: relative; height: auto; overflow: visible; }
-  .stackGrid { height: auto; padding-bottom: 4rem; }
-  .stackFigure { align-items: start; padding-top: 1rem; }
-  .rig { width: min(100%, 22rem); }
-  .stackCopy { display: grid; align-content: start; gap: 2.25rem; }
-  .stackState { position: static; visibility: visible; animation: none; }
-  .stackState h3 { font-size: clamp(1.6rem, 2.4vw, 2.2rem); }
-  .stackState p { margin-top: 0.7rem; font-size: 0.95rem; }
-  .stackCaps { margin-top: 0.9rem; gap: 0.45rem; font-size: 0.88rem; }
-  .stackProgress { display: none; }
-  .rigPin,
-  .rigLoad { transition: none; }
-}
-
-@media (max-width: 720px) and (prefers-reduced-motion: reduce), (max-width: 720px) and (max-height: 600px) {
-  .stackGrid { grid-template-rows: auto auto auto; padding-top: calc(4.25rem + env(safe-area-inset-top, 0px) + 1.25rem); }
-  .rig { width: min(72vw, 17rem); }
-  .stackCopy { padding-top: 0.5rem; }
-  .stackState { inset: auto; }
-  .stackCaps { display: grid; }
 }
