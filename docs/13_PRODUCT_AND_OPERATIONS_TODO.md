@@ -16,6 +16,30 @@ consolidates the former
 `docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
 values, applicant details, and provider credentials out of this file.
 
+## Current coding backlog, reconciled 8 September 2026
+
+The entries below are current. Older dated sections retain their historical verification and release evidence; an old unchecked item is not automatically an unimplemented feature. `CURRENT_STATE.md` owns the implementation matrix and docs/12 owns release verification.
+
+- [x] Fix customer identity backfill progress past unresolved/profile-only rows, with checkpoint and regression tests.
+- [x] Replace messaging history scans with bounded due indexes and fair source leasing. Provider completion is still deferred.
+- [x] Hide completed onboarding banners and show success only after a saved mutation.
+- [x] Cancel a single future class date with atomic booking/waitlist resolution, server authorization, audit, member timeline, and staff/member UI.
+- [x] Add validated expected delivery dates, audited changes, and an overdue purchasing filter.
+- [x] Add responsible staff to checklist templates and dated runs, preserve ownership snapshots, and show recent unresolved work at handover.
+- [x] Correct marketing claims for family accounts, installment schedules and full Arabic/RTL.
+- [x] Reconcile the living documentation while preserving `FRONTEND_HANDOFF.md`.
+- [ ] Release the combined additive Convex schema/functions and frontend, then verify the exact deployed revisions using docs/12. Code generation is not a release.
+- [ ] Obtain a clean uninterrupted full browser run and investigate the remaining development-server navigation/script flakiness; keep snapshot tolerances and page-error checks intact. Targeted workflow and isolated operations tests pass.
+- [ ] Hashem and his partner perform the authenticated business-day and real-device walkthrough when ready.
+- [ ] Last: messaging provider callbacks/opt-out handling, approved templates and allowlist acceptance; actual push delivery; supplier notification provider if required.
+- [ ] Separately scope family accounts, repayment schedules and full Arabic localization before advertising them as shipped.
+
+## Backend integrity, 8 September 2026
+
+- [x] Reject impossible analytics dates, unblock expiry cleanup behind undated export/media rows, enforce renewal lease ownership, and check messaging eligibility/consent when leasing. See `CURRENT_STATE.md` for commits and focused regression evidence.
+- [ ] Separately authorize and verify the Convex release, including the optional renewal lease field and draining in-flight workers, following docs/12. No deployment is claimed by this code pass.
+- [x] Fix legacy customer-membership identity backfill progress. The v2 cursor and per-record issue markers are implemented; production execution/inspection remains part of the release checklist, not a completed data repair.
+
 ## Current release index — 3 September 2026
 
 ### Product UI system refinement — 3 September 2026

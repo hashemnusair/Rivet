@@ -861,6 +861,8 @@ export interface GymOSApi {
   getControlTrendsReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").ControlTrendsReport>;
 
   // --- Daily branch checklists ---
+  listChecklistAssignees(branchId: UUID): Promise<Array<{ id: UUID; name: string }>>;
+  assignChecklistRun(input: { templateId: UUID; date?: string; assignedUserId?: UUID }): Promise<import("@/lib/domain/types").ChecklistRun>;
   listChecklistTemplates(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").ChecklistTemplate[]>;
   upsertChecklistTemplate(input: import("@/lib/domain/types").UpsertChecklistTemplateInput): Promise<import("@/lib/domain/types").ChecklistTemplate>;
   getChecklistDay(input: { branchId: UUID; date?: string }): Promise<import("@/lib/domain/types").ChecklistDay>;
@@ -1154,6 +1156,7 @@ export interface GymOSApi {
   refreshLowStockAlerts(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").LowStockAlert[]>;
   dismissLowStockAlert(input: { alertId: UUID; reason: string }): Promise<import("@/lib/domain/types").LowStockAlert>;
   createPurchaseOrder(input: import("@/lib/domain/types").CreatePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  updatePurchaseOrderDeliveryDate(input: { purchaseOrderId: UUID; expectedDeliveryDate?: string }): Promise<import("@/lib/domain/types").PurchaseOrder>;
   approvePurchaseOrder(purchaseOrderId: UUID, reason?: string): Promise<import("@/lib/domain/types").PurchaseOrder>;
   listPurchaseOrders(query?: { branchId?: UUID; status?: import("@/lib/domain/types").PurchaseOrderStatus }): Promise<import("@/lib/domain/types").PurchaseOrder[]>;
   receivePurchaseOrder(input: import("@/lib/domain/types").ReceivePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
@@ -1204,6 +1207,7 @@ export interface GymOSApi {
   addClassOccurrenceAttendee(input: import("@/lib/domain/types").ClassOccurrenceRosterInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
   removeClassOccurrenceAttendee(input: { occurrenceId: UUID; bookingId: UUID; reason?: string }): Promise<import("@/lib/domain/types").ClassOccurrence>;
   setClassOccurrenceAttendance(input: import("@/lib/domain/types").ClassOccurrenceAttendanceInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  cancelClassOccurrence(input: { occurrenceId: UUID; reason: string }): Promise<import("@/lib/domain/types").ClassOccurrence>;
   finalizeClassOccurrenceAttendance(input: { occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassOccurrence>;
   substituteClassOccurrenceCoach(input: import("@/lib/domain/types").SubstituteClassCoachInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
   listClassCoaches(): Promise<import("@/lib/domain/types").ClassCoach[]>;

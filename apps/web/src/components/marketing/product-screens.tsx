@@ -119,7 +119,7 @@ const QUEUE: ReadonlyArray<{
   { icon: ListChecks, kind: "Cash", branch: "Forge — Abdoun", title: "Review Forge — Abdoun cash variance", detail: "Closed by the evening shift", amount: "−JOD 7.000", when: "2 hours ago", action: "Review", urgent: true },
   { icon: CalendarClock, kind: "Follow-up", branch: "Forge — Abdoun", title: "Follow up — trial from Tuesday", detail: "Walk-in lead · assigned to sales", when: "today", action: "Done", done: true },
   { icon: ClipboardCheck, kind: "Renewal", branch: "Forge — Sweifieh", title: "Renewal due — 6-Month All Access", detail: "Expires in 5 days", amount: "JOD 180.000", when: "today", action: "Renew" },
-  { icon: Banknote, kind: "Balance", branch: "Forge — Abdoun", title: "Collect outstanding JOD 42.750", detail: "Installment 2 of 2", when: "yesterday", action: "Done", done: true },
+  { icon: Banknote, kind: "Balance", branch: "Forge — Abdoun", title: "Collect outstanding JOD 42.750", detail: "Remaining membership balance", when: "yesterday", action: "Done", done: true },
 ];
 
 /** The owner dashboard at 1440 × 900, as `/dashboard` renders it. */

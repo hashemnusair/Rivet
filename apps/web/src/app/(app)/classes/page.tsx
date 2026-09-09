@@ -1,5 +1,7 @@
 "use client";
 
+import { CancelOccurrenceDialog } from "@/features/classes/cancel-occurrence-dialog";
+
 import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
 
 import { Check, ImagePlus, Plus, Printer, Trash2, UserPlus, Users, X, Pencil } from "lucide-react";
@@ -136,6 +138,7 @@ function ClassesWorkspace() {
   const [detailsId, setDetailsId] = useState<string>();
   const [deleteTarget, setDeleteTarget] = useState<ClassSession>();
   const [deleteReason, setDeleteReason] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<ClassOccurrence>();
   const [coachesOpen, setCoachesOpen] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const normalizedMemberSearch = memberSearch.trim();
@@ -358,10 +361,10 @@ function ClassesWorkspace() {
       {sessionsQuery.isBackgroundError ? <ErrorState layout="inline" title="Timetable could not refresh" onRetry={() => sessionsQuery.refetch()} /> : null}
       {view === "agenda" ? <section className="panel overflow-hidden print:hidden" aria-label="Upcoming classes">
         {occurrencesQuery.isBackgroundError ? <ErrorState layout="inline" title="Classes could not refresh" onRetry={() => occurrencesQuery.refetch()} /> : null}
-        {!branchId ? <EmptyState layout="section" title="No branch available" description="Ask your manager to assign a branch before opening its classes." className="m-4" /> : occurrencesQuery.isLoading && !occurrencesQuery.data ? <div className="space-y-3 p-4"><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></div> : occurrencesQuery.isError && !occurrencesQuery.data ? <ErrorState layout="section" title="Classes could not be loaded" onRetry={() => occurrencesQuery.refetch()} className="m-4" /> : !occurrencesQuery.data?.length ? <EmptyState layout="section" title="No classes in these seven days" description="Choose another week or check the weekly timetable." className="m-4" /> : <ul className="divide-y divide-line">{occurrencesQuery.data.map((occurrence) => <li key={occurrence.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[132px_minmax(0,1fr)] xl:grid-cols-[132px_minmax(0,1fr)_auto]" data-testid="class-agenda-row">
+        {!branchId ? <EmptyState layout="section" title="No branch available" description="Ask your manager to assign a branch before opening its classes." className="m-4" /> : occurrencesQuery.isLoading && !occurrencesQuery.data ? <div className="space-y-3 p-4"><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></div> : occurrencesQuery.isError && !occurrencesQuery.data ? <ErrorState layout="section" title="Classes could not be loaded" onRetry={() => occurrencesQuery.refetch()} className="m-4" /> : !occurrencesQuery.data?.length ? <EmptyState layout="section" title="No classes in these seven days" description="Choose another week or check the weekly timetable." className="m-4" /> : <ul className="divide-y divide-line">{occurrencesQuery.data.map((occurrence) => <li key={occurrence.id} className="grid gap-3 px-4 py-4 sm:grid-cols-[132px_minmax(0,1fr)] xl:grid-cols-[132px_minmax(0,1fr)_auto]" data-testid="class-agenda-row" data-occurrence-id={occurrence.id}>
           <div className="text-[13px]" dir="ltr"><p className="font-semibold">{formatDate(occurrence.date)}</p><p className="mt-1 tabular-nums text-ink-2">{new Intl.DateTimeFormat("en-JO", { hour: "numeric", minute: "2-digit", timeZone: session?.organization.timezone }).format(new Date(occurrence.startsAt))}</p></div>
-          <div className="min-w-0"><h2 className="text-[15px] font-semibold break-words">{occurrence.name}</h2><p className="mt-1 text-[13px] text-ink-2">{occurrence.coachName ?? "Coach not assigned"} · {AUDIENCE_LABEL[occurrence.audience]}</p><p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-2"><span dir="ltr">{occurrence.bookedCount}/{occurrence.capacity} booked</span><span dir="ltr">{occurrence.waitlistCount} waiting</span><span>{occurrence.status === "cancelled" ? "Cancelled" : occurrence.attendanceFinalizedAt ? "Attendance finalized" : Date.parse(occurrence.endsAt) <= Date.now() ? "Ended · attendance not finalized" : Date.parse(occurrence.startsAt) <= Date.now() ? "In progress · attendance open" : "Attendance open"}</span></p></div>
-          <div className="flex flex-wrap items-center gap-2 sm:col-start-2 xl:col-start-auto">{occurrence.status !== "cancelled" && canRoster ? <Button variant="secondary" onClick={() => { setManageOccurrenceId(occurrence.id); setMemberSearch(""); }}>Who booked</Button> : null}<Button variant="ghost" onClick={() => setDetailsId(occurrence.templateId)}>Class details</Button></div>
+          <div className="min-w-0"><h2 className="text-[15px] font-semibold break-words">{occurrence.name}</h2><p className="mt-1 text-[13px] text-ink-2">{occurrence.coachName ?? "Coach not assigned"} · {AUDIENCE_LABEL[occurrence.audience]}</p><p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-2"><span dir="ltr">{occurrence.bookedCount}/{occurrence.capacity} booked</span><span dir="ltr">{occurrence.waitlistCount} waiting</span><span>{occurrence.status === "cancelled" ? `Cancelled${occurrence.cancelReason ? `: ${occurrence.cancelReason}` : ""}` : occurrence.attendanceFinalizedAt ? "Attendance finalized" : Date.parse(occurrence.endsAt) <= Date.now() ? "Ended · attendance not finalized" : Date.parse(occurrence.startsAt) <= Date.now() ? "In progress · attendance open" : "Attendance open"}</span></p></div>
+          <div className="flex flex-wrap items-center gap-2 sm:col-start-2 xl:col-start-auto">{occurrence.status !== "cancelled" && canRoster ? <Button variant="secondary" onClick={() => { setManageOccurrenceId(occurrence.id); setMemberSearch(""); }}>Who booked</Button> : null}<Button variant="ghost" onClick={() => setDetailsId(occurrence.templateId)}>Class details</Button>{canManage && occurrence.status === "scheduled" && Date.parse(occurrence.startsAt) > Date.now() ? <Button variant="ghost" onClick={() => setCancelTarget(occurrence)}>Cancel date</Button> : null}</div>
         </li>)}</ul>}
       </section> : null}
       <div className={cn(view === "agenda" && "hidden print:block")}>
@@ -548,6 +551,8 @@ function ClassesWorkspace() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {cancelTarget ? <CancelOccurrenceDialog key={cancelTarget.id} occurrence={cancelTarget} onClose={() => setCancelTarget(undefined)} onSaved={refresh} /> : null}
 
         <Dialog open={finalizeOpen} onOpenChange={setFinalizeOpen}>
           <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Finalize attendance?</DialogTitle><DialogDescription>Unmarked confirmed bookings will be recorded as no-shows. Check the roster before continuing. Attendance cannot be edited after finalization.</DialogDescription></DialogHeader><DialogFooter><Button variant="secondary" onClick={() => setFinalizeOpen(false)}>Review roster</Button><Button loading={finalizeOccurrence.isPending} onClick={() => finalizeOccurrence.mutate()}>Confirm attendance</Button></DialogFooter></DialogContent>

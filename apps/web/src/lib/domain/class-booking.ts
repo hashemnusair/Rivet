@@ -62,3 +62,11 @@ export function classCancellationPreview(input: {
   }
   return { outcome: "cancelled", freeUntil, text: "Your place is released and offered to the waitlist." };
 }
+
+/** Gym cancellation is distinct from a member leaving a booking. */
+export function occurrenceCancellationBlock(input: { status: string; startsAt: number; finalized: boolean; hasAttendance: boolean; now?: number }): string | undefined {
+  if (input.status === "cancelled") return undefined;
+  if (input.finalized || input.hasAttendance || input.status !== "scheduled") return "A class with recorded attendance cannot be cancelled.";
+  if (input.startsAt <= (input.now ?? Date.now())) return "Only a class that has not started can be cancelled.";
+  return undefined;
+}

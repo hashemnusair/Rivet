@@ -538,6 +538,7 @@ export default defineSchema({
     totalMinor: v.number(),
     supplierInvoiceReference: v.optional(v.string()),
     notes: v.optional(v.string()),
+    expectedDeliveryDate: v.optional(v.string()),
     approvedAt: v.optional(v.number()),
     approvedByUserId: v.optional(v.id("users")),
     receivedAt: v.optional(v.number()),
@@ -670,6 +671,8 @@ export default defineSchema({
     dueTime: v.string(),
     /** Gym role expected to run this checklist. */
     assignedRole: v.string(),
+    assignedUserId: v.optional(v.string()),
+    assignedUserName: v.optional(v.string()),
     items: v.array(v.object({
       id: v.string(),
       label: v.string(),
@@ -698,6 +701,8 @@ export default defineSchema({
     templateName: v.string(),
     dueTime: v.string(),
     assignedRole: v.string(),
+    assignedUserId: v.optional(v.string()),
+    assignedUserName: v.optional(v.string()),
     items: v.array(v.object({
       itemId: v.string(),
       label: v.string(),
@@ -1099,10 +1104,17 @@ export default defineSchema({
     .index("by_user_organization", ["userId", "organizationId"])
     .index("by_user_organization_target", ["userId", "organizationId", "targetKey"]),
 
+  messagingWorkerState: defineTable({
+    key: v.string(),
+    nextSource: v.union(v.literal("automation"), v.literal("renewal")),
+  }).index("by_key", ["key"]),
+
   maintenanceState: defineTable({
     key: v.string(),
     status: v.union(v.literal("pending"), v.literal("completed")),
     processedCount: v.number(),
+    skippedCount: v.optional(v.number()),
+    cursor: v.optional(v.string()),
     updatedAt: v.number(),
     completedAt: v.optional(v.number()),
   }).index("by_key", ["key"]),
@@ -1359,6 +1371,8 @@ export default defineSchema({
     lastAttemptAt: v.optional(v.number()),
     lastErrorCode: v.optional(v.string()),
     nextAttemptAt: v.optional(v.number()),
+    // Optional for queued legacy rows; only the current worker may complete a lease.
+    leaseToken: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -1368,7 +1382,8 @@ export default defineSchema({
     .index("by_organization", ["organizationId"])
     .index("by_organization_membership", ["organizationId", "membershipPublicId"])
     .index("by_organization_member", ["organizationId", "memberPublicId"])
-    .index("by_status_next_attempt", ["status", "nextAttemptAt"]),
+    .index("by_status_next_attempt", ["status", "nextAttemptAt"])
+    .index("by_status_channel_due", ["status", "channel", "nextAttemptAt"]),
 
   // Renewal decisions are append-only facts. The delivery row is the
   // current projection; this table preserves every system decision without
@@ -1733,6 +1748,7 @@ export default defineSchema({
     leadPublicId: v.optional(v.string()),
     customerUserPublicId: v.optional(v.string()),
     customerProfilePublicId: v.optional(v.string()),
+    customerIdentityBackfillIssue: v.optional(v.union(v.literal("profile_only"), v.literal("missing_identity"))),
     exportExpiresAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -1749,7 +1765,9 @@ export default defineSchema({
     .index("by_organization_lead_type", ["organizationId", "leadPublicId", "entityType"])
     .index("by_type_customer_user", ["entityType", "customerUserPublicId"])
     .index("by_type_customer_profile", ["entityType", "customerProfilePublicId"])
-    .index("by_type_export_expiry", ["entityType", "exportExpiresAt"]),
+    .index("by_type_export_expiry", ["entityType", "exportExpiresAt"])
+    .index("by_message_due", ["entityType", "data.status", "data.channel", "data.nextAttemptAt"])
+    .index("by_message_lease", ["entityType", "data.status", "data.channel", "data.leaseExpiresAt"]),
 
   auditEvents: defineTable({
     organizationId: v.id("organizations"),

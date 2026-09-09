@@ -12,7 +12,7 @@ import {
 } from "./security";
 import { deriveServerMembershipStatus } from "./invariants";
 import { addDays, diffDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
-import { classCancellationOutcome } from "../src/lib/domain/class-booking";
+import { classCancellationOutcome, occurrenceCancellationBlock } from "../src/lib/domain/class-booking";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -618,6 +618,7 @@ function persistedOccurrenceData(row: ClassOccurrence, branch: Branch): Data {
     imageAssetId: row.imageAssetId,
     notes: row.notes,
     status: row.status,
+    cancelReason: row.cancelReason,
     attendanceFinalizedAt: row.attendanceFinalizedAt,
     persistedId: row._id,
   };
@@ -656,6 +657,7 @@ async function occurrenceView(
     ...image,
     notes: optionalText(source.notes),
     status: String(source.status ?? "scheduled"),
+    cancelReason: optionalText(source.cancelReason),
     attendanceFinalizedAt: source.attendanceFinalizedAt ? new Date(Number(source.attendanceFinalizedAt)).toISOString() : undefined,
     bookedCount: activeRoster.length,
     waitlistCount: waitlist.length,
@@ -1000,12 +1002,39 @@ async function setOccurrenceAttendance(ctx: MutationCtx, actor: ActorContext, in
   return await occurrenceView(ctx, actor.organization, persistedOccurrenceData(occurrence, branch!), all);
 }
 
+async function cancelClassOccurrence(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  requirePermission(actor, "operations.manage");
+  requireReason(input.reason, actor.correlationId);
+  const reason = input.reason.trim();
+  const occurrence = await occurrenceFromInput(ctx, actor.organization, input.occurrenceId);
+  if (actor.branchScope !== "all" && !actor.branchIds.includes(occurrence.branchId)) domainError("FORBIDDEN", "Your role cannot manage this class.", { correlationId: actor.correlationId });
+  const bookings = await ctx.db.query("classBookings").withIndex("by_occurrence", q => q.eq("organizationId", actor.organization._id).eq("occurrenceId", occurrence._id)).collect();
+  const block = occurrenceCancellationBlock({ status: occurrence.status, startsAt: occurrence.startsAt, finalized: Boolean(occurrence.attendanceFinalizedAt), hasAttendance: bookings.some(booking => booking.status === "attended" || booking.status === "no_show") });
+  if (block) domainError("CONFLICT", block, { correlationId: actor.correlationId });
+  if (occurrence.status !== "cancelled") {
+    const now = Date.now();
+    await ctx.db.patch(occurrence._id, { status: "cancelled", cancelReason: reason, updatedAt: now });
+    // Do not call member cancellation: a gym cancellation neither applies a
+    // late mark nor promotes somebody into a class that will not take place.
+    for (const booking of bookings.filter(booking => ACTIVE_BOOKING_STATUSES.has(booking.status))) {
+      await ctx.db.patch(booking._id, { status: "cancelled", cancelledAt: now, updatedAt: now });
+      await insertClassTimeline(ctx, { organization: actor.organization, branchId: occurrence.branchId, memberId: booking.memberPublicId, actor: actor.user, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, body: reason, meta: { occurrenceId: occurrence.publicId, bookingId: booking.publicId, cancelledByGym: true } });
+    }
+    await occurrenceAudit(ctx, { organization: actor.organization, branchId: occurrence.branchId, actor: actor.user, actorRole: actor.role, correlationId: actor.correlationId, action: "classes.occurrence.cancel", occurrence, summary: `Cancelled ${occurrence.name} on ${occurrence.date}`, reason, before: { status: occurrence.status }, after: { status: "cancelled", affectedBookings: bookings.filter(booking => ACTIVE_BOOKING_STATUSES.has(booking.status)).length } });
+  }
+  const updated = (await ctx.db.get(occurrence._id))!;
+  const branch = (await ctx.db.get(occurrence.branchId))!;
+  const current = await ctx.db.query("classBookings").withIndex("by_occurrence", q => q.eq("organizationId", actor.organization._id).eq("occurrenceId", occurrence._id)).collect();
+  return occurrenceView(ctx, actor.organization, persistedOccurrenceData(updated, branch), current);
+}
+
 async function finalizeOccurrenceAttendance(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
   // Finalizing turns unmarked bookings into no-shows and locks the roster: a
   // manager or owner decision, as the policy states and the UI already implies.
   requirePermission(actor, "operations.manage");
   const occurrence = await occurrenceFromInput(ctx, actor.organization, input.occurrenceId);
   if (actor.branchScope !== "all" && !actor.branchIds.includes(occurrence.branchId)) domainError("FORBIDDEN", "Your role cannot manage this class.", { correlationId: actor.correlationId });
+  if (occurrence.status === "cancelled") domainError("CONFLICT", "A cancelled class has no attendance to finalize.", { correlationId: actor.correlationId });
   if (occurrence.endsAt > Date.now()) domainError("CONFLICT", "Attendance can be finalized after the class ends.", { correlationId: actor.correlationId });
   if (occurrence.attendanceFinalizedAt) {
     const branch = await ctx.db.get(occurrence.branchId);
@@ -1035,6 +1064,8 @@ async function substituteOccurrenceCoach(ctx: MutationCtx, actor: ActorContext, 
   requirePermission(actor, "operations.manage");
   requireReason(input.reason, actor.correlationId);
   const occurrence = await occurrenceFromInput(ctx, actor.organization, input.occurrenceId);
+  if (actor.branchScope !== "all" && !actor.branchIds.includes(occurrence.branchId)) domainError("FORBIDDEN", "Your role cannot manage this class.", { correlationId: actor.correlationId });
+  if (occurrence.status !== "scheduled") domainError("CONFLICT", "Only a scheduled class can have a substitute.", { correlationId: actor.correlationId });
   const coachId = requiredText(input.coachId, "Substitute coach", actor);
   const coach = await coachByPublicId(ctx, actor, coachId);
   const snapshot = valueData(coach.data);
@@ -1122,6 +1153,7 @@ export async function classesMutation(ctx: MutationCtx, actor: ActorContext, ope
     case "classes.occurrence.roster.add": return await addOccurrenceAttendee(ctx, actor, input);
     case "classes.occurrence.roster.remove": return await removeOccurrenceAttendee(ctx, actor, input);
     case "classes.occurrence.attendance.set": return await setOccurrenceAttendance(ctx, actor, input);
+    case "classes.occurrence.cancel": return await cancelClassOccurrence(ctx, actor, input);
     case "classes.occurrence.attendance.finalize": return await finalizeOccurrenceAttendance(ctx, actor, input);
     case "classes.occurrence.coach.substitute": return await substituteOccurrenceCoach(ctx, actor, input);
     case "classes.coach.upsert": return await upsertCoach(ctx, actor, input);

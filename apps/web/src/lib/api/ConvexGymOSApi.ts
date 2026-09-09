@@ -379,6 +379,8 @@ export class ConvexGymOSApi implements GymOSApi {
   getCollectionsReport(input: T.AnalyticsReportInput): Promise<T.CollectionsReport> { return this.query("analytics.collections", input); }
   getCrmFunnelReport(input: T.AnalyticsReportInput): Promise<T.CrmFunnelReport> { return this.query("analytics.crm_funnel", input); }
   getControlTrendsReport(input: T.AnalyticsReportInput): Promise<T.ControlTrendsReport> { return this.query("analytics.control_trends", input); }
+  listChecklistAssignees(branchId: T.UUID): Promise<Array<{ id: T.UUID; name: string }>> { return this.query("checklists.assignees.list", { branchId }); }
+  assignChecklistRun(input: { templateId: T.UUID; date?: string; assignedUserId?: T.UUID }): Promise<T.ChecklistRun> { return this.mutate("checklists.run.assign", input); }
   listChecklistTemplates(input: { branchId?: T.UUID } = {}): Promise<T.ChecklistTemplate[]> { return this.query("checklists.templates.list", input); }
   upsertChecklistTemplate(input: T.UpsertChecklistTemplateInput): Promise<T.ChecklistTemplate> { return this.mutate("checklists.template.upsert", input); }
   getChecklistDay(input: { branchId: T.UUID; date?: string }): Promise<T.ChecklistDay> { return this.query("checklists.day", input); }
@@ -704,6 +706,7 @@ export class ConvexGymOSApi implements GymOSApi {
   refreshLowStockAlerts(input: { branchId?: T.UUID } = {}): Promise<T.LowStockAlert[]> { return this.mutate("operations.low_stock.refresh", input); }
   dismissLowStockAlert(input: { alertId: T.UUID; reason: string }): Promise<T.LowStockAlert> { return this.mutate("operations.low_stock.dismiss", input); }
   createPurchaseOrder(input: T.CreatePurchaseOrderInput): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.create", input); }
+  updatePurchaseOrderDeliveryDate(input: { purchaseOrderId: T.UUID; expectedDeliveryDate?: string }): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.delivery_date", input); }
   approvePurchaseOrder(purchaseOrderId: T.UUID, reason?: string): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.approve", { id: purchaseOrderId, reason }); }
   listPurchaseOrders(query: { branchId?: T.UUID; status?: T.PurchaseOrderStatus } = {}): Promise<T.PurchaseOrder[]> { return this.query("operations.purchase_orders.list", query); }
   receivePurchaseOrder(input: T.ReceivePurchaseOrderInput): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.receive", input); }
@@ -744,6 +747,7 @@ export class ConvexGymOSApi implements GymOSApi {
   addClassOccurrenceAttendee(input: T.ClassOccurrenceRosterInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.roster.add", input); }
   removeClassOccurrenceAttendee(input: { occurrenceId: T.UUID; bookingId: T.UUID; reason?: string }): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.roster.remove", input); }
   setClassOccurrenceAttendance(input: T.ClassOccurrenceAttendanceInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.attendance.set", input); }
+  cancelClassOccurrence(input: { occurrenceId: T.UUID; reason: string }): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.cancel", input); }
   finalizeClassOccurrenceAttendance(input: { occurrenceId: T.UUID }): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.attendance.finalize", input); }
   substituteClassOccurrenceCoach(input: T.SubstituteClassCoachInput): Promise<T.ClassOccurrence> { return this.mutate("classes.occurrence.coach.substitute", input); }
   listClassCoaches(): Promise<T.ClassCoach[]> { return this.query("classes.coaches.list", {}); }

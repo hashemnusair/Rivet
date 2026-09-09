@@ -2596,7 +2596,7 @@ async function syncCustomerProfileToMemberRecord(
   return true;
 }
 
-const CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY = "customer_membership_identity_v1";
+const CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY = "customer_membership_identity_v2";
 
 async function customerMembershipRowsForIdentity(
   ctx: ReadContext,
@@ -6165,6 +6165,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "classes.occurrences.list":
     case "classes.coaches.list":
       return await classesQuery(ctx, actor, operation, input);
+    case "checklists.assignees.list":
     case "checklists.templates.list":
     case "checklists.day":
       return await checklistsQuery(ctx, actor, operation, input);
@@ -11460,6 +11461,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "operations.retail.void":
     case "operations.low_stock.refresh":
     case "operations.low_stock.dismiss":
+    case "operations.purchase_order.delivery_date":
     case "operations.purchase_order.create":
     case "operations.purchase_order.approve":
     case "operations.purchase_order.receive":
@@ -11481,12 +11483,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "classes.occurrence.roster.add":
     case "classes.occurrence.roster.remove":
     case "classes.occurrence.attendance.set":
+    case "classes.occurrence.cancel":
     case "classes.occurrence.attendance.finalize":
     case "classes.occurrence.coach.substitute":
     case "classes.coach.upsert":
     case "classes.coach.remove":
       return await classesMutation(ctx, actor, operation, input);
     case "checklists.template.upsert":
+    case "checklists.run.assign":
     case "checklists.run.ensure":
     case "checklists.item.set":
     case "checklists.item.create_task":

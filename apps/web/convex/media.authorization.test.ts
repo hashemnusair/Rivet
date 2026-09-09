@@ -9,6 +9,30 @@ const modules = import.meta.glob("./**/*.ts");
 const expectCode = async (request: Promise<unknown>, code: string) => { await expect(request).rejects.toMatchObject({ data: expect.objectContaining({ code }) }); };
 
 describe("media authorization boundary", () => {
+  it.each(["pending", "scheduled_for_deletion"] as const)("cleans due %s media after undated assets fill the scan prefix", async (status) => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const now = Date.now();
+      const organizationId = await ctx.db.insert("organizations", { name: "Cleanup", slug: "media-cleanup", status: "active", timezone: "UTC", currency: "JOD", createdAt: now, updatedAt: now });
+      const retainedStorageId = await ctx.storage.store(new NodeBlob(["retain"], { type: "image/png" }) as unknown as Blob);
+      const expiredStorageId = await ctx.storage.store(new NodeBlob(["expire"], { type: "image/png" }) as unknown as Blob);
+      const asset = { organizationId, ownerType: "member_photo" as const, ownerPublicId: "synthetic-member", contentType: "image/png" as const, sizeBytes: 6, visibility: "private" as const, status, createdAt: now, updatedAt: now };
+      for (let index = 0; index < 100; index += 1) {
+        await ctx.db.insert("mediaAssets", { ...asset, publicId: `undated-${index}`, storageId: retainedStorageId });
+      }
+      const expiredId = await ctx.db.insert("mediaAssets", { ...asset, publicId: "expired", storageId: expiredStorageId, deleteAfter: now - 1 });
+      await ctx.db.insert("mediaAssets", { ...asset, publicId: "future", storageId: retainedStorageId, deleteAfter: now + 86_400_000 });
+      return { expiredId, expiredStorageId, retainedStorageId };
+    });
+    expect(await t.mutation(internal.media.cleanupExpired, {})).toBe(1);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.get(ids.expiredId)).toMatchObject({ status: "replaced" });
+      expect(await ctx.storage.get(ids.expiredStorageId)).toBeNull();
+      expect(await ctx.storage.get(ids.retainedStorageId)).not.toBeNull();
+    });
+    expect(await t.mutation(internal.media.cleanupExpired, {})).toBe(0);
+  });
+
   it("separates private member photos from publishable gym/trainer media and hides foreign targets", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {

@@ -1,5 +1,7 @@
 "use client";
 
+import { ChecklistRunAssignment } from "@/features/checklists/checklist-assignment";
+
 import { isApiError } from "@/lib/api/errors";
 
 import { Check, CircleAlert, ClipboardCheck, Moon, Sun, Wrench } from "lucide-react";
@@ -78,13 +80,15 @@ export default function ChecklistsPage() {
         ) : (
           <div className="space-y-5">
             {dayQuery.error ? <p role="status" className="text-[12px] text-warning-deep">The checklist could not refresh. Showing the last loaded run. <Button size="sm" variant="ghost" onClick={() => void dayQuery.refetch()}>Retry</Button></p> : null}
-            {[...day.runs].sort((a, b) => Number(b.items.some((item) => item.status === "failed")) - Number(a.items.some((item) => item.status === "failed"))).map((run) => (
+            {day.carryover?.length ? <p className="text-sm text-warning-deep" role="status">Handover: {day.carryover.length} unresolved checklist{day.carryover.length === 1 ? "" : "s"} from the previous seven days.</p> : null}
+            {[...(day.carryover ?? []), ...day.runs].sort((a, b) => Number(b.items.some((item) => item.status === "failed")) - Number(a.items.some((item) => item.status === "failed"))).map((run) => (
               <RunCard
                 key={`${run.templateId}:${run.localDate}`}
                 run={run}
+                canAssign={canEscalate}
                 branchId={branchId}
                 busy={setItem.isPending}
-                onComplete={(item) => setItem.mutate({ templateId: run.templateId, itemId: item.itemId, status: "completed" })}
+                onComplete={(item) => setItem.mutate({ templateId: run.templateId, date: run.localDate, itemId: item.itemId, status: "completed" })}
                 onProblem={(item) => setProblem({ run, item, mode: "problem" })}
                 onCorrect={(item) => setProblem({ run, item, mode: "correct" })}
                 onEscalate={canEscalate ? (item) => setEscalate({ run, item }) : undefined}
@@ -99,9 +103,10 @@ export default function ChecklistsPage() {
   );
 }
 
-function RunCard({ run, branchId, busy, onComplete, onProblem, onCorrect, onEscalate }: {
+function RunCard({ run, branchId, canAssign, busy, onComplete, onProblem, onCorrect, onEscalate }: {
   run: ChecklistRun;
   branchId: string;
+  canAssign: boolean;
   busy: boolean;
   onComplete: (item: ChecklistRunItem) => void;
   onProblem: (item: ChecklistRunItem) => void;
@@ -116,11 +121,12 @@ function RunCard({ run, branchId, busy, onComplete, onProblem, onCorrect, onEsca
         <span className="flex size-8 items-center justify-center rounded-md bg-sunken"><Icon className="size-4 text-ink-2" aria-hidden /></span>
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-semibold">{run.name}</h2>
-          <p className="text-[12px] text-ink-3">{run.type === "opening" ? "Opening" : "Closing"} · due {run.dueTime}</p>
+          <p className="text-[12px] text-ink-3">{run.localDate} · {run.type === "opening" ? "Opening" : "Closing"} · due {run.dueTime} · {run.assignedUserName ?? run.assignedRole}</p>
         </div>
         {failedCount > 0 ? <Badge variant="danger">{failedCount} failed</Badge> : run.complete ? <Badge variant="success">Required items recorded</Badge> : run.overdue ? <Badge variant="warning">Overdue</Badge> : null}
         <span className="tabular-nums text-[12px] text-ink-3">{run.progress.done}/{run.progress.total}</span>
       </header>
+      {canAssign ? <ChecklistRunAssignment run={run} /> : null}
       <ul className="divide-y divide-line">
         {run.items.map((item) => {
           const done = item.status !== "pending";
@@ -210,7 +216,7 @@ function ProblemDialog({ state, onClose, onDone }: { state?: ProblemDialogState;
           <Button
             loading={mutate.isPending}
             disabled={!state || (needsReason && reason.trim().length < 3)}
-            onClick={() => state && mutate.mutate({ templateId: state.run.templateId, itemId: state.item.itemId, status, reason: reason.trim() || undefined })}
+            onClick={() => state && mutate.mutate({ templateId: state.run.templateId, date: state.run.localDate, itemId: state.item.itemId, status, reason: reason.trim() || undefined })}
           >
             Save
           </Button>
@@ -224,7 +230,7 @@ function EscalateDialog({ state, branchId, onClose, onDone }: { state?: Escalate
   const [zoneId, setZoneId] = useState<string>("");
   const zonesQuery = useApiQuery(["zones", branchId ?? ""], (api) => api.listZones({ branchId }), { enabled: Boolean(state && branchId && !state.item.zoneId) });
   const zones = zonesQuery.data ?? [];
-  const mutate = useApiMutation((api, input: { templateId: string; itemId: string; zoneId?: string }) => api.createChecklistMaintenanceTask(input), {
+  const mutate = useApiMutation((api, input: { templateId: string; date?: string; itemId: string; zoneId?: string }) => api.createChecklistMaintenanceTask(input), {
     successMessage: "Maintenance task created.",
     onSuccess: async () => { onClose(); setZoneId(""); await onDone(); },
   });
@@ -253,7 +259,7 @@ function EscalateDialog({ state, branchId, onClose, onDone }: { state?: Escalate
         ) : null}
         <DialogFooter>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button loading={mutate.isPending} disabled={!state || !effectiveZone} onClick={() => state && mutate.mutate({ templateId: state.run.templateId, itemId: state.item.itemId, zoneId: effectiveZone })}>Create task</Button>
+          <Button loading={mutate.isPending} disabled={!state || !effectiveZone} onClick={() => state && mutate.mutate({ templateId: state.run.templateId, date: state.run.localDate, itemId: state.item.itemId, zoneId: effectiveZone })}>Create task</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

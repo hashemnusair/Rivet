@@ -3,6 +3,29 @@
 Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
 daily-checklist Production release at application tip `fdd6dac`.
 
+## Repository workflow release requirements, 8 September 2026
+
+This section supersedes the earlier integrity-only statement that no new indexes or public operations are required. The full coding batch in `CURRENT_STATE.md` has not been released to Convex by this task. The deploy command remains `pnpm convex:deploy`; never use raw deploy or verbose output.
+
+1. Verify the exact Git SHA and target environment before release. Drain in-flight messaging actions using the existing controls. The new code still includes the earlier renewal lease-token protection.
+2. Deploy additive schema/indexes and backend functions together before allowing the new frontend actions. New indexes are `domainRecords.by_message_due`, `domainRecords.by_message_lease`, and `renewalDeliveries.by_status_channel_due`. Convex builds them over existing records; there are no duplicate queue-projection columns or custom messaging data migrations. The singleton `messagingWorkerState` table records source rotation.
+3. New optional fields cover purchase expected delivery dates, checklist assignee snapshots, identity backfill issue markers, and maintenance cursors/skipped counts. Existing records validate without invented delivery dates or staff assignments. The new operations are dated class cancellation, purchase delivery-date update, checklist assignee listing and dated assignment.
+4. The existing 15-minute identity maintenance cron now uses `customer_membership_identity_v2` and visits 100 records per run through a stable cursor. Member reads retain compatibility scanning until v2 completes. Inspect only safe counts/status plus synthetic fixture outcomes; `skippedCount` includes profile-only and identity-less records, whose per-record issue markers allow a separate recovery review. Completion means the scan finished, not that every historical identity was repairable.
+5. In a synthetic runtime, verify cancellation twice, cancelled-date booking refusal, next-week availability, purchase-date edits through receiving, branch-ineligible assignment refusal, and correcting a previous-day checklist without modifying today. Confirm both queue sources make progress, expired leases are reclaimed, disabled gyms advance behind the due window, and the identity cursor reaches later records.
+6. Release the corresponding frontend and record its SHA plus backend/environment verification. Restore messaging controls only after safe checks. Hashem's joint business-day walkthrough and live-provider activation remain explicitly deferred.
+
+Rollback must keep all stored optional fields and the new table accepted. A frontend rollback cannot undo recorded cancellations, reassignment audits, receipt/stock facts or backfill projections. Do not erase those records or automatically replay provider requests. No historical money repair is included.
+
+## Backend integrity release requirements, 8 September 2026
+
+The backend integrity commits listed in `CURRENT_STATE.md` are code changes only. No Convex deployment or provider activation was performed. Main publication remains separate from backend release; the inspected GitHub workflow runs checks and credential-gated codegen, while Vercel builds with `pnpm build`.
+
+For a later authorized release, first verify the exact target and exercise the changes with synthetic data in an independently owned, non-production runtime. Have the operator drain in-flight messaging actions using the existing delivery controls before replacing worker code. Deploy schema and functions together through `pnpm convex:deploy`, then verify attempt ownership, opt-out suppression and cleanup progress before restoring the previous delivery settings. Do not use live messages to prove the change.
+
+`renewalDeliveries.leaseToken` is optional, so existing rows validate without a migration. A legacy queued row receives its token when next leased. In-flight workers from old code have no stored token, so their late completion is rejected; draining them avoids unnecessarily repeating an ambiguous provider request. No indexes or public API operations change, and no generated files need regeneration for this schema-only type addition.
+
+Rollback must keep the optional field accepted while stored rows contain it. An application rollback alone neither rolls back Convex nor restores expired files/CSV bodies removed by cleanup. Suppressed messages, attempt events and member timelines are durable facts; do not erase or replay them automatically. No historical financial repair is part of this release.
+
 ## Purpose
 
 This is the orientation and release-control document for RIVET. Use it to answer four questions:

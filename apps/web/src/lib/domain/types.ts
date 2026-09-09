@@ -357,6 +357,8 @@ export interface PurchaseOrder {
   total: Money;
   supplierInvoiceReference?: string;
   notes?: string;
+  expectedDeliveryDate?: ISODate;
+  overdue?: boolean;
   approvedAt?: ISODateTime;
   approvedById?: UUID;
   receivedAt?: ISODateTime;
@@ -838,6 +840,7 @@ export interface CreatePurchaseOrderInput {
   lines: Array<{ productId: UUID; quantity: number; unitCost: Money }>;
   supplierInvoiceReference?: string;
   notes?: string;
+  expectedDeliveryDate?: ISODate;
 }
 
 export interface ReceivePurchaseOrderInput {
@@ -951,6 +954,7 @@ export interface ClassOccurrence {
   imageAltText?: string;
   notes?: string;
   status: "scheduled" | "cancelled" | "completed";
+  cancelReason?: string;
   attendanceFinalizedAt?: ISODateTime;
   bookedCount: number;
   waitlistCount: number;
@@ -3369,6 +3373,8 @@ export interface ChecklistTemplate {
   /** Branch-local due time, HH:MM. */
   dueTime: string;
   assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
+  assignedUserName?: string;
   items: ChecklistTemplateItem[];
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
@@ -3382,6 +3388,7 @@ export interface UpsertChecklistTemplateInput {
   active?: boolean;
   dueTime: string;
   assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
   items: Array<Pick<ChecklistTemplateItem, "label"> & Partial<Omit<ChecklistTemplateItem, "label" | "order">>>;
 }
 
@@ -3406,6 +3413,8 @@ export interface ChecklistRun {
   name: string;
   dueTime: string;
   assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
+  assignedUserName?: string;
   items: ChecklistRunItem[];
   progress: { done: number; total: number; requiredPending: number; failedRequired: number };
   complete: boolean;
@@ -3416,6 +3425,8 @@ export interface ChecklistDay {
   branchId: UUID;
   date: ISODate;
   runs: ChecklistRun[];
+  /** Persisted unresolved runs from the preceding seven local dates. */
+  carryover?: ChecklistRun[];
 }
 
 export interface SetChecklistItemInput {

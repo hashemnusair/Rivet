@@ -67,7 +67,7 @@ const SECTIONS: Section[] = [
   { id: "spaces", label: "Gym spaces", ready: async (page) => { await expect(page.getByRole("heading", { name: /^Spaces in / })).toBeVisible(); } },
   { id: "agreement", label: "Agreement", ready: async (page) => { await expect(page.getByTestId("agreement-record")).toBeVisible(); } },
   { id: "subscription", label: "Subscription & invoices", ready: async (page) => { await expect(page.getByTestId("subscription-summary")).toBeVisible(); await expect(page.getByRole("heading", { name: "Invoices", exact: true })).toBeVisible(); } },
-  { id: "users", label: "Users", ready: async (page) => { await expect(page.getByText("Omar Al-Khatib", { exact: true }).locator("visible=true").first()).toBeVisible(); } },
+  { id: "users", label: "Users", ready: async (page) => { await expect(page.getByRole("button", { name: "Invite user", exact: true })).toBeVisible(); await expect(page.locator("main").getByText("Omar Al-Khatib", { exact: true }).locator("visible=true").first()).toBeVisible(); } },
   { id: "roles", label: "Roles & permissions", ready: async (page) => { await expect(page.getByRole("switch").first()).toBeVisible(); } },
   { id: "payments", label: "Payments", ready: async (page) => { await expect(page.getByRole("switch", { name: "Cash" })).toBeVisible(); await expect(page.getByLabel("Manager discount limit")).toHaveValue(/./); } },
   { id: "receipts", label: "Receipts & tax", ready: async (page) => { await expect(page.getByLabel("Receipt prefix")).toHaveValue(/./); } },

@@ -411,9 +411,9 @@ export const cleanupExpired = internalMutation({
     const now = Date.now();
     // Keep each run bounded. The cron invokes this mutation repeatedly, so a
     // large tenant cannot make one transaction scan or delete unbounded rows.
-    const pending = await ctx.db.query("mediaAssets").withIndex("by_cleanup", (q) => q.eq("status", "pending")).take(100);
-    const scheduled = await ctx.db.query("mediaAssets").withIndex("by_cleanup", (q) => q.eq("status", "scheduled_for_deletion")).take(100);
-    const due = [...pending, ...scheduled].filter((asset) => (asset.deleteAfter ?? Number.POSITIVE_INFINITY) <= now).slice(0, 50);
+    const pending = await ctx.db.query("mediaAssets").withIndex("by_cleanup", (q) => q.eq("status", "pending").gt("deleteAfter", undefined).lte("deleteAfter", now)).take(50);
+    const scheduled = await ctx.db.query("mediaAssets").withIndex("by_cleanup", (q) => q.eq("status", "scheduled_for_deletion").gt("deleteAfter", undefined).lte("deleteAfter", now)).take(50);
+    const due = [...pending, ...scheduled].slice(0, 50);
     for (const asset of due) {
       if (asset.visibility === "public" && asset.ownerType.startsWith("gym_") && await isReferencedByPublishedProfile(ctx, asset)) {
         await ctx.db.patch(asset._id, { status: "active", deleteAfter: undefined, updatedAt: now });

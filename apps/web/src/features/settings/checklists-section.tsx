@@ -1,5 +1,7 @@
 "use client";
 
+import { ChecklistAssigneeSelect } from "@/features/checklists/checklist-assignment";
+
 import { ArrowDown, ArrowUp, ClipboardCheck, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +45,7 @@ interface Draft {
   name: string;
   dueTime: string;
   assignedRole: ChecklistRole;
+  assignedUserId?: string;
   active: boolean;
   items: DraftItem[];
 }
@@ -58,6 +61,7 @@ function draftFrom(template: ChecklistTemplate | undefined, branchId: string, ty
     name: template.name,
     dueTime: template.dueTime,
     assignedRole: template.assignedRole,
+    assignedUserId: template.assignedUserId,
     active: template.active,
     items: template.items.map((item) => ({ id: item.id, label: item.label, instructions: item.instructions ?? "", required: item.required, zoneId: item.zoneId ?? "", offerMaintenance: item.offerMaintenance === true })),
   };
@@ -91,6 +95,7 @@ export function ChecklistsSection() {
       name: draft.name,
       dueTime: draft.dueTime,
       assignedRole: draft.assignedRole,
+      assignedUserId: draft.assignedUserId,
       active: draft.active,
       items: draft.items
         .filter((item) => item.label.trim())
@@ -146,7 +151,7 @@ export function ChecklistsSection() {
                       <Badge variant="neutral">{template.type === "opening" ? "Opening" : "Closing"}</Badge>
                       {!template.active ? <Badge variant="outline">Disabled</Badge> : null}
                     </div>
-                    <p className="mt-0.5 text-[12.5px] text-ink-3">Due <span className="tabular">{template.dueTime}</span> · {ROLE_LABELS[template.assignedRole]} · {template.items.length} item{template.items.length === 1 ? "" : "s"}</p>
+                    <p className="mt-0.5 text-[12.5px] text-ink-3">Due <span className="tabular">{template.dueTime}</span> · {template.assignedUserName ?? ROLE_LABELS[template.assignedRole]} · {template.items.length} item{template.items.length === 1 ? "" : "s"}</p>
                   </div>
                   <Button size="sm" variant="secondary" data-touch-target aria-label={`Edit ${template.name}`} onClick={() => setDraft(draftFrom(template, branchId, template.type))}>Edit</Button>
                 </li>
@@ -179,6 +184,7 @@ export function ChecklistsSection() {
                     <SelectContent>{(Object.keys(ROLE_LABELS) as ChecklistRole[]).map((role) => <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>)}</SelectContent>
                   </Select>
                 </Field>
+                <ChecklistAssigneeSelect branchId={draft.branchId} value={draft.assignedUserId} onChange={assignedUserId => setDraft({ ...draft, assignedUserId })} />
               </FieldGrid>
 
               <div>

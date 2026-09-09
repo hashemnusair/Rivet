@@ -41,6 +41,37 @@ async function seed(t: TestConvex<typeof schema>) {
 afterEach(() => vi.useRealTimers());
 
 describe("dated class booking", () => {
+  it("cancels one date atomically without waitlist promotion, late marks, or repeat audit events", async () => {
+    const t = convexTest(schema, modules);
+    const fixture = await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-class-booking" });
+    const reception = t.withIdentity({ subject: "clerk-reception-class-booking" });
+    const member = t.withIdentity({ subject: "clerk-customer-class-a" });
+    const other = t.withIdentity({ subject: "clerk-customer-class-b" });
+    const date = addDays(fixture.today, 2);
+    const template = await owner.mutation(api.domain.mutate, operation("classes.session.upsert", { branchId: "branch-class-booking", name: "Small group", dayOfWeek: new Date(`${date}T12:00:00Z`).getUTCDay(), startMinute: 1080, durationMinutes: 60, capacity: 1, audience: "mixed" })) as { id: string };
+    const occurrenceId = `occ:${template.id}:${date}`;
+    await member.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-a", occurrenceId }));
+    await other.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-b", occurrenceId }));
+    const cancel = operation("classes.occurrence.cancel", { occurrenceId, reason: "Coach unavailable" });
+    await expectCode(reception.mutation(api.domain.mutate, cancel), "FORBIDDEN");
+    await expectCode(owner.mutation(api.domain.mutate, operation("classes.occurrence.cancel", { occurrenceId, reason: "" })), "VALIDATION_ERROR");
+    expect(await owner.mutation(api.domain.mutate, cancel)).toMatchObject({ status: "cancelled", cancelReason: "Coach unavailable", bookedCount: 0, waitlistCount: 0 });
+    await owner.mutation(api.domain.mutate, cancel);
+    await expectCode(member.mutation(api.domain.mutate, operation("customer.classes.book", { membershipId: "membership-class-a", occurrenceId })), "CONFLICT");
+    await expectCode(owner.mutation(api.domain.mutate, operation("classes.occurrence.attendance.finalize", { occurrenceId })), "CONFLICT");
+    const calendar = await member.query(api.domain.query, operation("customer.classes", { membershipId: "membership-class-a" })) as { upcoming: Array<{ id: string }> };
+    expect(calendar.upcoming.find(row => row.id === occurrenceId)).toMatchObject({ status: "cancelled", cancelReason: "Coach unavailable", canBook: false, booking: { status: "cancelled" } });
+    await t.run(async ctx => {
+      expect((await ctx.db.query("classBookings").collect()).map(row => row.status)).toEqual(["cancelled", "cancelled"]);
+      expect(await ctx.db.query("operationalNotifications").collect()).toHaveLength(0);
+      expect((await ctx.db.query("auditEvents").collect()).filter(row => row.action === "classes.occurrence.cancel")).toHaveLength(1);
+      expect((await ctx.db.query("classSessions").collect())[0]?.status).toBe("scheduled");
+    });
+    // The following week's occurrence remains open.
+    expect(await owner.query(api.domain.query, operation("classes.occurrences.list", { branchId: "branch-class-booking", fromDate: addDays(date, 7), toDate: addDays(date, 7) }))).toEqual([expect.objectContaining({ status: "scheduled" })]);
+  });
+
   it("books atomically, waitlists at capacity, promotes FIFO, and enforces ownership", async () => {
     const t = convexTest(schema, modules);
     const fixture = await seed(t);

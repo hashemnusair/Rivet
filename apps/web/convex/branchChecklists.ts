@@ -1,3 +1,4 @@
+import { addDays, isCalendarDate } from "../src/lib/utils/dates";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import {
@@ -36,6 +37,12 @@ function localToday(timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.now());
 }
 
+function checklistDate(input: unknown, timezone: string, actor: ActorContext): string {
+  const date = input === undefined ? localToday(timezone) : input;
+  if (!isCalendarDate(date)) domainError("VALIDATION_ERROR", "Choose a valid checklist date.", { correlationId: actor.correlationId });
+  return date;
+}
+
 function localTimeNow(timezone: string): string {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false }).format(Date.now());
   return parts === "24:00" ? "00:00" : parts;
@@ -49,6 +56,22 @@ async function branchOf(ctx: ReadContext, actor: ActorContext, branchPublicIdInp
     domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
   }
   return branch;
+}
+
+async function assignableStaff(ctx: ReadContext, actor: ActorContext, branch: Doc<"branches">): Promise<Array<{ id: string; name: string }>> {
+  const memberships = (await ctx.db.query("organizationMemberships").withIndex("by_organization", q => q.eq("organizationId", actor.organization._id)).collect())
+    .filter(row => row.active && row.invitationStatus !== "pending" && row.invitationStatus !== "revoked" && (row.branchScope === "all" || row.branchIds.includes(branch._id)));
+  const users = await Promise.all(memberships.map(row => ctx.db.get(row.userId)));
+  return users.filter((user): user is Doc<"users"> => Boolean(user && user.status === "active"))
+    .map(user => ({ id: publicUserId(user), name: user.fullName })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function assignment(ctx: ReadContext, actor: ActorContext, branch: Doc<"branches">, input: unknown): Promise<{ assignedUserId?: string; assignedUserName?: string }> {
+  const id = optionalText(input);
+  if (!id) return { assignedUserId: undefined, assignedUserName: undefined };
+  const user = (await assignableStaff(ctx, actor, branch)).find(user => user.id === id);
+  if (!user) domainError("VALIDATION_ERROR", "Choose active staff with access to this branch.", { correlationId: actor.correlationId });
+  return { assignedUserId: user.id, assignedUserName: user.name };
 }
 
 async function templateByPublicId(ctx: ReadContext, actor: ActorContext, id: unknown): Promise<Template> {
@@ -93,6 +116,8 @@ function templateView(template: Template, branchPublic: string): Data {
     active: template.active,
     dueTime: template.dueTime,
     assignedRole: template.assignedRole,
+    assignedUserId: template.assignedUserId,
+    assignedUserName: template.assignedUserName,
     items: template.items.map((item) => ({ ...item })),
     createdAt: new Date(template.createdAt).toISOString(),
     updatedAt: new Date(template.updatedAt).toISOString(),
@@ -121,6 +146,8 @@ function runView(run: Run, branchPublic: string, timezone: string): Data {
     name: run.templateName,
     dueTime: run.dueTime,
     assignedRole: run.assignedRole,
+    assignedUserId: run.assignedUserId,
+    assignedUserName: run.assignedUserName,
     items: [...run.items].sort((a, b) => a.order - b.order).map((item) => ({ ...item })),
     progress,
     complete: progress.requiredPending === 0,
@@ -165,6 +192,8 @@ async function ensureRun(ctx: MutationCtx, actor: ActorContext, template: Templa
     templateName: template.name,
     dueTime: template.dueTime,
     assignedRole: template.assignedRole,
+    assignedUserId: template.assignedUserId,
+    assignedUserName: template.assignedUserName,
     items: [...template.items].sort((a, b) => a.order - b.order).map((item) => ({
       itemId: item.id,
       label: item.label,
@@ -184,6 +213,10 @@ async function ensureRun(ctx: MutationCtx, actor: ActorContext, template: Templa
 export async function checklistsQuery(ctx: ReadContext, actor: ActorContext, operation: string, input: Data): Promise<unknown> {
   const timezone = actor.organization.timezone || TZ_FALLBACK;
   switch (operation) {
+    case "checklists.assignees.list": {
+      requirePermission(actor, "operations.manage");
+      return assignableStaff(ctx, actor, await branchOf(ctx, actor, input.branchId));
+    }
     case "checklists.templates.list": {
       requirePermission(actor, "operations.manage");
       const branchFilter = optionalText(input.branchId) ? await branchOf(ctx, actor, input.branchId) : undefined;
@@ -199,8 +232,7 @@ export async function checklistsQuery(ctx: ReadContext, actor: ActorContext, ope
 
     case "checklists.day": {
       const branch = await branchOf(ctx, actor, input.branchId);
-      const date = optionalText(input.date) ?? localToday(timezone);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) domainError("VALIDATION_ERROR", "date must be a calendar date.", { correlationId: actor.correlationId });
+      const date = checklistDate(input.date, timezone, actor);
       const templates = (await ctx.db.query("checklistTemplates").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect())
         .filter((template) => template.active);
       const runs = await ctx.db.query("checklistRuns").withIndex("by_branch_date", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("localDate", date)).collect();
@@ -223,13 +255,18 @@ export async function checklistsQuery(ctx: ReadContext, actor: ActorContext, ope
           name: template.name,
           dueTime: template.dueTime,
           assignedRole: template.assignedRole,
+    assignedUserId: template.assignedUserId,
+    assignedUserName: template.assignedUserName,
           items: virtual.items.map((item) => ({ ...item })),
           progress,
           complete: progress.requiredPending === 0,
           overdue: pastDue && progress.requiredPending > 0,
         };
       });
-      return { branchId: branchPublic, date, runs: views.sort((a, b) => (a.type === b.type ? String(a.name).localeCompare(String(b.name)) : a.type === "opening" ? -1 : 1)) };
+      const previous = await ctx.db.query("checklistRuns").withIndex("by_branch_date", q => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).gte("localDate", addDays(date, -7)).lt("localDate", date)).collect();
+      const carryover = previous.filter(run => templates.some(template => template._id === run.templateId) && run.items.some(item => item.status === "failed" || (item.required && item.status === "pending")))
+        .sort((a, b) => a.localDate.localeCompare(b.localDate)).map(run => runView(run, branchPublic, timezone));
+      return { branchId: branchPublic, date, carryover, runs: views.sort((a, b) => (a.type === b.type ? String(a.name).localeCompare(String(b.name)) : a.type === "opening" ? -1 : 1)) };
     }
 
     default:
@@ -258,6 +295,7 @@ export async function checklistsMutation(ctx: MutationCtx, actor: ActorContext, 
           domainError("VALIDATION_ERROR", "A linked gym space must belong to this branch.", { correlationId: actor.correlationId });
         }
       }
+      const assigned = await assignment(ctx, actor, branch, input.assignedUserId);
       const active = input.active !== false;
       const now = Date.now();
       const existingId = optionalText(input.templateId);
@@ -265,24 +303,37 @@ export async function checklistsMutation(ctx: MutationCtx, actor: ActorContext, 
         const existing = await templateByPublicId(ctx, actor, existingId);
         if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A checklist cannot move between branches.", { correlationId: actor.correlationId });
         const before = templateView(existing, publicBranchId(branch));
-        await ctx.db.patch(existing._id, { type, name, dueTime, assignedRole, items, active, updatedAt: now });
+        await ctx.db.patch(existing._id, { type, name, dueTime, assignedRole, ...assigned, items, active, updatedAt: now });
         const updated = (await ctx.db.get(existing._id))!;
         const after = templateView(updated, publicBranchId(branch));
         await checklistAudit(ctx, actor, { action: "checklists.template.update", branchId: branch._id, entityType: "checklist_template", entityId: existing.publicId, entityLabel: name, summary: `Checklist "${name}" updated`, before, after });
         return after;
       }
       const publicId = crypto.randomUUID();
-      const templateId = await ctx.db.insert("checklistTemplates", { organizationId: actor.organization._id, publicId, branchId: branch._id, type, name, active, dueTime, assignedRole, items, createdAt: now, updatedAt: now });
+      const templateId = await ctx.db.insert("checklistTemplates", { organizationId: actor.organization._id, publicId, branchId: branch._id, type, name, active, dueTime, assignedRole, ...assigned, items, createdAt: now, updatedAt: now });
       const created = templateView((await ctx.db.get(templateId))!, publicBranchId(branch));
       await checklistAudit(ctx, actor, { action: "checklists.template.create", branchId: branch._id, entityType: "checklist_template", entityId: publicId, entityLabel: name, summary: `Checklist "${name}" created`, after: created });
       return created;
     }
 
+    case "checklists.run.assign": {
+      requirePermission(actor, "operations.manage");
+      const template = await templateByPublicId(ctx, actor, input.templateId);
+      const branch = await branchOf(ctx, actor, publicBranchId((await ctx.db.get(template.branchId))!));
+      const assigned = await assignment(ctx, actor, branch, input.assignedUserId);
+      const date = checklistDate(input.date, timezone, actor);
+      const run = await ensureRun(ctx, actor, template, date);
+      if (run.assignedUserId !== assigned.assignedUserId) {
+        await ctx.db.patch(run._id, { ...assigned, updatedAt: Date.now() });
+        await checklistAudit(ctx, actor, { action: "checklists.run.assign", branchId: branch._id, entityType: "checklist_run", entityId: run.publicId, entityLabel: run.templateName, summary: "Checklist responsibility updated", before: { assignedUserId: run.assignedUserId }, after: assigned });
+      }
+      return runView((await ctx.db.get(run._id))!, publicBranchId(branch), timezone);
+    }
+
     case "checklists.run.ensure": {
       const template = await templateByPublicId(ctx, actor, input.templateId);
       if (!template.active) domainError("VALIDATION_ERROR", "This checklist is disabled.", { correlationId: actor.correlationId });
-      const date = optionalText(input.date) ?? localToday(timezone);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) domainError("VALIDATION_ERROR", "date must be a calendar date.", { correlationId: actor.correlationId });
+      const date = checklistDate(input.date, timezone, actor);
       const run = await ensureRun(ctx, actor, template, date);
       const branch = (await ctx.db.get(template.branchId))!;
       return runView(run, publicBranchId(branch), timezone);
@@ -290,8 +341,7 @@ export async function checklistsMutation(ctx: MutationCtx, actor: ActorContext, 
 
     case "checklists.item.set": {
       const template = await templateByPublicId(ctx, actor, input.templateId);
-      const date = optionalText(input.date) ?? localToday(timezone);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) domainError("VALIDATION_ERROR", "date must be a calendar date.", { correlationId: actor.correlationId });
+      const date = checklistDate(input.date, timezone, actor);
       if (!template.active) domainError("VALIDATION_ERROR", "This checklist is disabled.", { correlationId: actor.correlationId });
       const status = String(input.status ?? "");
       if (!RUN_STATUSES.includes(status as (typeof RUN_STATUSES)[number])) domainError("VALIDATION_ERROR", "Unknown item status.", { correlationId: actor.correlationId });
@@ -338,7 +388,7 @@ export async function checklistsMutation(ctx: MutationCtx, actor: ActorContext, 
       // Escalation reuses the existing facility-task contract end to end, so
       // authorization, validation, and auditing stay owned by operations.
       const template = await templateByPublicId(ctx, actor, input.templateId);
-      const date = optionalText(input.date) ?? localToday(timezone);
+      const date = checklistDate(input.date, timezone, actor);
       const run = await ensureRun(ctx, actor, template, date);
       const itemId = requiredText(input.itemId, "itemId", actor);
       const index = run.items.findIndex((item) => item.itemId === itemId);
@@ -386,10 +436,12 @@ export async function checklistTodayQueueItems(ctx: ReadContext, actor: ActorCon
   for (const template of templates) {
     // Role-safe queue: only the responsible role sees its checklist, plus
     // owner/manager oversight. A coach is never nagged about the desk's list.
-    if (actor.role !== template.assignedRole && actor.role !== "owner" && actor.role !== "manager") continue;
     const branch = branches.get(template.branchId);
     if (!branch || !branchVisible(branch.publicId)) continue;
     const run = await ctx.db.query("checklistRuns").withIndex("by_template_date", (q) => q.eq("organizationId", actor.organization._id).eq("templateId", template._id).eq("localDate", today)).unique();
+    const assignedUserId = run ? run.assignedUserId : template.assignedUserId;
+    const assignedUserName = run ? run.assignedUserName : template.assignedUserName;
+    if (actor.role !== "owner" && actor.role !== "manager" && (assignedUserId ? assignedUserId !== publicUserId(actor.user) : actor.role !== template.assignedRole)) continue;
     const progress = run ? runProgress(run) : runProgress({ items: template.items.map((item) => ({ itemId: item.id, label: item.label, required: item.required, order: item.order, status: "pending" as const })) });
     const pastDue = nowTime > template.dueTime;
     if (progress.failedRequired > 0) {
@@ -398,7 +450,7 @@ export async function checklistTodayQueueItems(ctx: ReadContext, actor: ActorCon
         kind: "branch_checklist",
         priority: "urgent",
         title: `Fix ${progress.failedRequired} failed ${template.name} item${progress.failedRequired === 1 ? "" : "s"}`,
-        detail: `${branch.name} · ${template.type} checklist`,
+        detail: `${branch.name} · ${assignedUserName ?? template.assignedRole} · ${template.type} checklist`,
         branchName: branch.name,
         href: `/checklists?branch=${encodeURIComponent(branch.publicId)}`,
         action: { kind: "navigate", label: "Review" },
@@ -410,7 +462,7 @@ export async function checklistTodayQueueItems(ctx: ReadContext, actor: ActorCon
         kind: "branch_checklist",
         priority: pastDue ? "high" : "normal",
         title: `${pastDue ? "Overdue" : "Due"}: ${template.name}`,
-        detail: `${branch.name} · ${progress.done}/${progress.total} done · due ${template.dueTime}`,
+        detail: `${branch.name} · ${assignedUserName ?? template.assignedRole} · ${progress.done}/${progress.total} done · due ${template.dueTime}`,
         branchName: branch.name,
         overdue: pastDue,
         href: `/checklists?branch=${encodeURIComponent(branch.publicId)}`,
