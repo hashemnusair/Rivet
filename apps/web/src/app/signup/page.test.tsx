@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import GymApplicationPage from "./page";
 
@@ -18,7 +19,7 @@ vi.mock("@/lib/providers/experience-provider", () => ({
   }),
 }));
 
-vi.mock("@/components/public/public-shell", () => ({ PublicHeader: () => <header aria-label="Public header" /> }));
+vi.mock("@/components/public/public-document-page", () => ({ PublicDocumentPage: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 vi.mock("@/lib/api/client", () => ({
   getApi: () => ({ submitGymApplication: state.submitGymApplication }),
 }));

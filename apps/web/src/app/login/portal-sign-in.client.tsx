@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { SignedInGuard } from "@/components/public/signed-in-guard";
 import { Button } from "@/components/ui/button";
 import { Monogram } from "@/components/ui/misc";
 import { ROLE_LABELS } from "@/lib/domain/permissions";
@@ -28,7 +29,6 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { IdentityPanel, UnavailableGymEntry } from "./identity-panels.client";
 import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
-import { PasswordSignIn } from "./password-sign-in.client";
 import { PORTALS, type Audience } from "./portals";
 import { ProfileCompletionGate } from "./profile-completion.client";
 
@@ -159,6 +159,9 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
       }
     >
       <div className="animate-fade-up">
+        {/* A signed-in visitor has no business on a door; the resolver at
+            /login reads the role instead, so only demo personas leave it. */}
+        <SignedInGuard demoOnly={audience === "account"} />
         {audience !== "account" ? (
           <Link href="/login" className="flex min-h-8 w-fit items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
             <ArrowLeft className="size-3.5" aria-hidden /> Back to sign in
@@ -175,7 +178,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
 
         {!DEMO_AUTH_BYPASS && audience === "account" ? (
           !clerkLoaded || !clerkSignedIn ? (
-            <PasswordSignIn redirectUrl={redirectUrl} />
+            <DoorChooser next={searchParams.get("next")} />
           ) : (
             <ProfileCompletionGate>
               {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
@@ -264,8 +267,6 @@ function ClerkPanel({ audience, mode, redirectUrl }: { audience: Audience; mode:
     );
   }
 
-  if (audience === "account") return <PasswordSignIn />;
-
   return (
     <div className="mt-6">
       <SignIn
@@ -284,7 +285,45 @@ function safeInternalRedirect(value: string | null, fallback: string): string {
   return value;
 }
 
-/** The real build has one Clerk form; these links exist only in mock preview mode. */
+/**
+ * The two doors. A gym team and a member never share a sign-in page: each
+ * door carries its own form and its own words, and the account's role still
+ * decides where it lands once it is through.
+ */
+function DoorChooser({ next }: { next: string | null }) {
+  const query = next ? `?next=${encodeURIComponent(next)}` : "";
+  return (
+    <div className="mt-7 grid gap-3">
+      {(["staff", "member"] as const).map((id) => {
+        const portal = PORTALS[id];
+        return (
+          <Link
+            key={id}
+            href={`${portal.href}${query}`}
+            className="group flex items-center gap-4 rounded-lg border border-line-2 bg-surface p-4 transition-colors hover:border-ink"
+          >
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper" aria-hidden>
+              <portal.icon className="size-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-medium text-ink">{portal.title}</span>
+              <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-3">{portal.blurb}</span>
+            </span>
+            <ArrowRight className="size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-0.5" aria-hidden />
+          </Link>
+        );
+      })}
+      <p className="mt-2 text-center text-[12px] text-ink-3">
+        RIVET staff:{" "}
+        <Link href={`/login/admin${query}`} className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">
+          Platform administration
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+/** Mock preview mode has no Clerk form; these links stand in for the doors. */
 function PreviewAccountOptions() {
   return (
     <div className="mt-7 grid gap-2">

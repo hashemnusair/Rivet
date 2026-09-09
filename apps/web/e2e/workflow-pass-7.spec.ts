@@ -307,7 +307,7 @@ test("the gym application validates before sending and ends on a receipt", async
   await submit.click();
   await expect(page.getByRole("heading", { level: 1, name: /be in touch soon/ })).toBeVisible();
   await expect(page.getByText("omar.qa@example.com")).toBeVisible();
-  await expect(page.getByRole("status").getByRole("link", { name: /Sign in/ })).toHaveAttribute("href", "/login");
+  await expect(page.getByRole("status").getByRole("link", { name: /Gym sign in/ })).toHaveAttribute("href", "/login/gym");
 });
 
 test("the not-found page keeps the visitor's place and offers a role-safe way in", async ({ page }) => {

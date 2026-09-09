@@ -9,7 +9,11 @@ const state = vi.hoisted(() => ({
   saasPlans: [] as PlatformSaasPlan[],
   experienceStatus: "ready" as "loading" | "ready" | "error",
   experienceError: undefined as string | undefined,
+  viewer: { status: "signed-out" } as Record<string, unknown>,
 }));
+
+vi.mock("@/lib/auth/public-viewer", () => ({ usePublicViewer: () => state.viewer }));
+vi.mock("@/components/public/signed-in-guard", () => ({ SignedInGuard: () => null }));
 
 vi.mock("@/lib/providers/experience-provider", () => ({
   useExperience: () => ({ ...state, retryExperience: vi.fn() }),
@@ -28,17 +32,53 @@ describe("landing-page pricing", () => {
     state.saasPlans = [];
     state.experienceStatus = "ready";
     state.experienceError = undefined;
+    state.viewer = { status: "signed-out" };
   });
 
-  it("keeps gym application and existing-account entry points in the cinematic navigation", async () => {
+  it("offers both doors and the application to a signed-out visitor", async () => {
     const user = userEvent.setup();
     render(<LandingPage />);
 
+    expect(screen.getByRole("link", { name: "Member sign in" })).toHaveAttribute("href", "/login/member");
+    expect(screen.getByRole("link", { name: "Apply for access" })).toHaveAttribute("href", "/signup");
+    for (const link of screen.getAllByRole("link", { name: /Send a gym application/ })) expect(link).toHaveAttribute("href", "/signup");
+    expect(screen.getByRole("link", { name: /Create a free account/ })).toHaveAttribute("href", "/login/member/create");
+    expect(screen.getByRole("link", { name: "Already have access? Gym sign in" })).toHaveAttribute("href", "/login/gym");
     await user.click(screen.getByRole("button", { name: "Menu" }));
 
     const navigation = screen.getByRole("dialog", { name: "RIVET navigation" });
-    expect(within(navigation).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(within(navigation).getByRole("link", { name: "Gym sign in" })).toHaveAttribute("href", "/login/gym");
     expect(within(navigation).getByRole("link", { name: "Send gym application" })).toHaveAttribute("href", "/signup");
+  });
+
+  it("offers a signed-in owner nothing but their dashboard", async () => {
+    const user = userEvent.setup();
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    state.viewer = { status: "signed-in", destination: { area: "gym", href: "/dashboard", label: "Dashboard", verb: "Open your dashboard" }, signOut };
+    render(<LandingPage />);
+
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getAllByRole("link", { name: /Open your dashboard/ }).length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByRole("link", { name: "Member sign in" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Apply for access" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Send (a )?gym application/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Create a free account/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Find a gym" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Already a member\?/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Menu" }));
+
+    const navigation = screen.getByRole("dialog", { name: "RIVET navigation" });
+    expect(within(navigation).queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
+    await user.click(within(navigation).getByRole("button", { name: "Sign out" }));
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the marketplace link for a signed-in member", () => {
+    state.viewer = { status: "signed-in", destination: { area: "member", href: "/customer/my-gyms", label: "My gyms", verb: "Open your gyms" }, signOut: vi.fn() };
+    render(<LandingPage />);
+
+    expect(screen.getByRole("link", { name: "My gyms" })).toHaveAttribute("href", "/customer/my-gyms");
+    expect(screen.getByRole("link", { name: "Find a gym" })).toHaveAttribute("href", "/customer/discover");
   });
 
   it("shows all four tiers and defaults to monthly billing", () => {

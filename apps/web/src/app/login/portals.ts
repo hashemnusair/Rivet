@@ -30,7 +30,7 @@ export const PORTALS: Record<Audience, Portal> = {
     href: "/login",
     icon: LogIn,
     title: "Sign in to RIVET",
-    blurb: "Use your account once. RIVET will open the workspace assigned to you.",
+    blurb: "Choose your door: the gym team's workspace, or your memberships as a member.",
     audience: "Members · Gym teams · Platform administrators",
     destination: "/login",
     signUpUrl: "/login/member/create",

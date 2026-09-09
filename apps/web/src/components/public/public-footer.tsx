@@ -1,13 +1,49 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
+import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 
 /**
  * The public site's footer — the site map lives here, so every area is one
- * click away. Plain markup with no hooks, so the landing and the document
- * pages share it without carrying the member shell's account machinery.
+ * click away. Signed out it names both doors; signed in it names the
+ * visitor's own area and offers sign-out, and drops the application and
+ * account-creation links. No hooks beyond the viewer, so the landing and the
+ * document pages share it without carrying the member shell's machinery.
  */
 export function PublicFooter() {
+  const viewer = usePublicViewer();
+  const signedIn = viewer.status === "signed-in" ? viewer : null;
+  const [signingOut, setSigningOut] = useState(false);
+
+  const signOut = async () => {
+    if (!signedIn || signingOut) return;
+    setSigningOut(true);
+    try {
+      await signedIn.signOut();
+    } catch {
+      setSigningOut(false);
+      return;
+    }
+    setSigningOut(false);
+  };
+
+  const productLinks: Array<[string, string]> = [
+    ["Overview", "/#product"],
+    ["For members", "/#member"],
+    ["Pricing", "/#pricing"],
+  ];
+  if (!signedIn) productLinks.push(["Send gym application", "/signup"]);
+
+  const memberLinks: Array<[string, string]> = [["Find a gym", "/customer/discover"]];
+  if (signedIn) {
+    if (signedIn.destination.area === "member") memberLinks.push(["My gyms", signedIn.destination.href]);
+  } else {
+    memberLinks.push(["Create a member account", "/login/member/create"]);
+  }
+
   return (
     <footer className="night-surface bg-night text-night-ink">
       <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:grid-cols-2 sm:px-8 lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr] lg:px-12">
@@ -18,29 +54,34 @@ export function PublicFooter() {
           </p>
           <p className="mt-6 text-[12px] font-medium text-night-ink-3">صُنع في عمّان · Made in Amman</p>
         </div>
-        <FooterColumn
-          title="Product"
-          links={[
-            ["Overview", "/#product"],
-            ["For members", "/#member"],
-            ["Pricing", "/#pricing"],
-            ["Send gym application", "/signup"],
-          ]}
-        />
-        <FooterColumn
-          title="Members"
-          links={[
-            ["Find a gym", "/customer/discover"],
-            ["Create a member account", "/login/member/create"],
-            ["My dashboard", "/customer/my-gyms"],
-          ]}
-        />
-        <FooterColumn
-          title="Sign in"
-          links={[
-            ["Sign in to RIVET", "/login"],
-          ]}
-        />
+        <FooterColumn title="Product" links={productLinks} />
+        <FooterColumn title="Members" links={memberLinks} />
+        {signedIn ? (
+          <nav aria-label="Your account">
+            <p className="text-[12px] font-medium text-night-ink-3">Your account</p>
+            <div className="mt-4 grid gap-3">
+              <Link href={signedIn.destination.href} className="text-[13px] text-night-ink-2 transition-colors hover:text-night-ink">
+                {signedIn.destination.verb}
+              </Link>
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                disabled={signingOut}
+                className="w-fit cursor-pointer text-start text-[13px] text-night-ink-2 transition-colors hover:text-night-ink disabled:cursor-default disabled:text-night-ink-3"
+              >
+                {signingOut ? "Signing out…" : "Sign out"}
+              </button>
+            </div>
+          </nav>
+        ) : (
+          <FooterColumn
+            title="Sign in"
+            links={[
+              ["Gym sign in", "/login/gym"],
+              ["Member sign in", "/login/member"],
+            ]}
+          />
+        )}
         <nav aria-label="Contact RIVET">
           <p className="text-[12px] font-medium text-night-ink-3">Contact</p>
           <div className="mt-4 grid gap-3 text-[13px]">
@@ -66,7 +107,7 @@ export function PublicFooter() {
 
 function FooterColumn({ title, links }: { title: string; links: Array<[string, string]> }) {
   return (
-    <nav>
+    <nav aria-label={title}>
       <p className="text-[12px] font-medium text-night-ink-3">{title}</p>
       <div className="mt-4 grid gap-3">
         {links.map(([label, href]) => (

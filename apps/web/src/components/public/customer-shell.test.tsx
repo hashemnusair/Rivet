@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CustomerShell } from "./public-shell";
@@ -27,6 +27,12 @@ vi.mock("@/lib/providers/experience-provider", () => ({
   useExperience: () => ({ customerSignedIn: state.customerSignedIn, platformAdminSignedIn: false, signOutCustomer: vi.fn() }),
   useCustomerPersona: () => (state.customerSignedIn ? { id: "customer-lina", name: "Lina Haddad", email: "lina@example.com" } : undefined),
 }));
+vi.mock("@/lib/auth/public-viewer", () => ({
+  usePublicViewer: () => (state.customerSignedIn
+    ? { status: "signed-in", destination: { area: "member", href: "/customer/my-gyms", label: "My gyms", verb: "Open your gyms" }, signOut: vi.fn() }
+    : { status: "signed-out" }),
+}));
+vi.mock("@/components/public/signed-in-guard", () => ({ SignedInGuard: () => null }));
 vi.mock("@/components/onboarding/onboarding-banner", () => ({ OnboardingBanner: () => null }));
 vi.mock("@/components/pwa/member-pwa", () => ({ MemberPwaManager: () => null }));
 
@@ -63,12 +69,15 @@ describe("CustomerShell", () => {
     expect(screen.queryByRole("menuitem", { name: /Payments and receipts/ })).not.toBeInTheDocument();
   });
 
-  it("shows visitors the sign-in actions and the public footer without a dock", () => {
+  it("shows visitors the site's bar with the member door, and the site footer, without a dock", () => {
     state.customerSignedIn = false;
     state.pathname = "/customer/discover";
     render(<CustomerShell><p>content</p></CustomerShell>);
-    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
-    expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/login/member/create");
+    const bar = within(screen.getByRole("banner"));
+    expect(bar.getByRole("link", { name: "Member sign in" })).toHaveAttribute("href", "/login/member");
+    expect(bar.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/login/member/create");
+    expect(screen.queryByRole("link", { name: "Apply for access" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();
     expect(screen.getByRole("contentinfo")).toBeInTheDocument();
     expect(document.querySelector(".member-bottom-nav")).toBeNull();
     expect(screen.queryByRole("link", { name: /Payments/ })).not.toBeInTheDocument();

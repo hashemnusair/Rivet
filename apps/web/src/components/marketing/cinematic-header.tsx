@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { LEGAL_LINKS } from "@/lib/rivet-contact";
 import { cn } from "@/lib/utils/cn";
 import styles from "./landing-cinematic.module.css";
@@ -69,19 +70,32 @@ function goToHash(href: string, behavior: ScrollBehavior) {
 /**
  * The public site's bar and menu. On the landing the section links scroll
  * the page and the menu marks the section being read. On a document page
- * (the terms, the privacy policy) the same bar and menu appear, the section
- * links lead to the home page's sections, and the menu names the document.
+ * (the terms, the privacy policy, the application, a gym's page) the same
+ * bar and menu appear, the section links lead to the home page's sections,
+ * and the menu names the document.
+ *
+ * Signed out, the bar offers the two doors: member sign-in and, for the
+ * gym audience, the application (a member page offers account creation
+ * instead). Signed in, it offers one thing — the visitor's own area — and
+ * the menu adds sign-out.
  */
 export function CinematicHeader({
   page = "landing",
   currentPath,
+  audience = "gym",
 }: {
   /** Which kind of public page the bar sits on. */
   page?: "landing" | "document";
   /** A document page's own path, so the menu can mark it as the one open. */
   currentPath?: string;
+  /** Whose page this is: a gym-facing page leads to the application, a member page to account creation. */
+  audience?: "gym" | "member";
 }) {
   const onLanding = page === "landing";
+  const viewer = usePublicViewer();
+  const signedIn = viewer.status === "signed-in" ? viewer : null;
+  const signedOut = viewer.status === "signed-out";
+  const [signingOut, setSigningOut] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeHref, setActiveHref] = useState<string>("#top");
   const menuRef = useRef<HTMLDivElement>(null);
@@ -254,6 +268,21 @@ export function CinematicHeader({
   // a link to the page already open does not leave it standing.
   const close = () => setOpen(false);
 
+  const signOut = async () => {
+    if (!signedIn || signingOut) return;
+    setSigningOut(true);
+    try {
+      await signedIn.signOut();
+    } catch {
+      setSigningOut(false);
+      return;
+    }
+    // The page stays mounted when the route is replaced in demo mode, so the
+    // menu is closed here rather than left standing over the signed-out site.
+    setOpen(false);
+    setSigningOut(false);
+  };
+
   return (
     <>
       <header className={cn(styles.header, "marketing-body", open && styles.headerOpen)}>
@@ -268,13 +297,27 @@ export function CinematicHeader({
         </Link>
 
         <div className={styles.headerActions}>
-          <Link href="/login/member" className={styles.memberLink} inert={open} aria-label="Member sign in">
-            <span className={styles.memberLinkLong} aria-hidden>Member sign in</span>
-            <span className={styles.memberLinkShort} aria-hidden>Sign in</span>
-          </Link>
-          <Link href="/signup" className={styles.apply} inert={open}>
-            Apply for access
-          </Link>
+          {signedOut ? (
+            <>
+              <Link href="/login/member" className={styles.memberLink} inert={open} aria-label="Member sign in">
+                <span className={styles.memberLinkLong} aria-hidden>Member sign in</span>
+                <span className={styles.memberLinkShort} aria-hidden>Sign in</span>
+              </Link>
+              {audience === "member" ? (
+                <Link href="/login/member/create" className={styles.apply} inert={open}>
+                  Create account
+                </Link>
+              ) : (
+                <Link href="/signup" className={styles.apply} inert={open}>
+                  Apply for access
+                </Link>
+              )}
+            </>
+          ) : signedIn ? (
+            <Link href={signedIn.destination.href} className={styles.apply} inert={open}>
+              {signedIn.destination.label}
+            </Link>
+          ) : null}
           <button
             ref={toggleRef}
             type="button"
@@ -353,8 +396,19 @@ export function CinematicHeader({
               </div>
             )}
             <div className={styles.menuAuth}>
-              <Link href="/login" className={styles.menuSignIn}>Sign in</Link>
-              <Link href="/signup" className={styles.menuCta}>Send gym application</Link>
+              {signedIn ? (
+                <>
+                  <button type="button" className={styles.menuSignIn} onClick={() => void signOut()} disabled={signingOut}>
+                    {signingOut ? "Signing out…" : "Sign out"}
+                  </button>
+                  <Link href={signedIn.destination.href} className={styles.menuCta} onClick={close}>{signedIn.destination.verb}</Link>
+                </>
+              ) : signedOut ? (
+                <>
+                  <Link href="/login/gym" className={styles.menuSignIn} onClick={close}>Gym sign in</Link>
+                  <Link href="/signup" className={styles.menuCta} onClick={close}>Send gym application</Link>
+                </>
+              ) : null}
             </div>
           </div>
         </div>

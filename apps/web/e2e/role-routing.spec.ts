@@ -12,7 +12,24 @@ const VISIBLE_ROLE_LABELS: Record<VisibleStaffRole, RegExp> = {
   receptionist: /Reception Hala Qasem/i,
 };
 
+/**
+ * The demo session is sticky, and a signed-in persona is sent away from the
+ * doors to its own area, so every entry in this matrix starts signed out.
+ */
+async function leaveDemoSession(page: Page) {
+  await page
+    .evaluate(() => {
+      try {
+        window.sessionStorage.clear();
+      } catch {
+        // about:blank has no storage to clear.
+      }
+    })
+    .catch(() => undefined);
+}
+
 async function enterVisibleStaff(page: Page, role: VisibleStaffRole) {
+  await leaveDemoSession(page);
   await page.goto("/login/gym");
   await page.getByRole("radio", { name: VISIBLE_ROLE_LABELS[role] }).click();
   await page.getByTestId("sign-in-button").click();
@@ -24,10 +41,10 @@ async function enterHiddenStaff(page: Page, role: HiddenStaffRole, destination: 
   // not account-chooser shortcuts. The preview's existing sessionStorage seam
   // lets this matrix exercise their real route guards without introducing a
   // second auth path or a Production bypass.
+  await leaveDemoSession(page);
   await page.goto("/login/gym");
   await page.evaluate(({ key, value }) => window.sessionStorage.setItem(key, value), { key: DEMO_PERSONA_KEY, value: role });
-  await page.reload();
-  await expect(page.getByRole("button", { name: /Open Omar.s workspace/i })).toBeVisible();
+  // A signed-in persona no longer sees the door, so the guarded destination is opened directly.
   await page.goto(destination);
   await expect(page).toHaveURL(new RegExp(`${destination.replace("/", "\\/")}$`));
 }
@@ -38,6 +55,7 @@ async function expectGymWorkspace(page: Page, destination: "/dashboard" | "/rece
 }
 
 async function enterMember(page: Page) {
+  await leaveDemoSession(page);
   await page.goto("/login/member");
   await page.getByRole("radio", { name: /Lina Haddad/i }).click();
   await page.getByRole("button", { name: /Continue as Lina/i }).click();
@@ -91,7 +109,8 @@ test.describe("credential-free role routing", () => {
   test("redirects gym staff away from the platform console", async ({ page }) => {
     await enterVisibleStaff(page, "owner");
     await page.goto("/platform");
-    await expect(page).toHaveURL(/\/login$/);
+    // The resolver at /login reads the persona and opens the owner's own area.
+    await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole("heading", { name: "Platform overview" })).toHaveCount(0);
   });
 
@@ -103,7 +122,7 @@ test.describe("credential-free role routing", () => {
     await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
 
     await page.goto("/platform");
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/\/customer\/my-gyms$/);
     await expect(page.getByRole("heading", { name: "Platform overview" })).toHaveCount(0);
   });
 

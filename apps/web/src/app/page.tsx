@@ -25,7 +25,9 @@ import { Reveal } from "@/components/marketing/reveal";
 import { ScrollProgress } from "@/components/marketing/scroll-progress";
 import { PublicFooter } from "@/components/public/public-footer";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
+import { SignedInGuard } from "@/components/public/signed-in-guard";
 import { Button } from "@/components/ui/button";
+import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { cn } from "@/lib/utils/cn";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import {
@@ -81,8 +83,17 @@ export default function LandingPage() {
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   const liveGyms = experienceStatus === "ready" ? marketplaceGyms : [];
 
+  // Signed in, every call to action on the page leads to the visitor's own
+  // area and nothing offers them a sign-in or an application. Above the fold
+  // the buttons wait for the answer; further down the signed-out set stands
+  // in until it arrives.
+  const viewer = usePublicViewer();
+  const signedIn = viewer.status === "signed-in" ? viewer.destination : null;
+  const signedOut = viewer.status === "signed-out";
+
   return (
     <div className={`${styles.pageShell} marketing-body min-h-screen bg-paper text-ink`}>
+      <SignedInGuard directEntryOnly />
       <LandingMotionController />
       <ScrollProgress />
       <CinematicHeader />
@@ -129,26 +140,37 @@ export default function LandingPage() {
               </p>
 
               <div
-                className="mt-8 flex animate-rise-in flex-wrap gap-3"
+                className="mt-8 flex min-h-12 animate-rise-in flex-wrap gap-3"
                 style={{ animationDelay: `${HERO_STEP.actions}ms` }}
               >
-                <Button asChild variant="signal" size="lg" className="group">
-                  <Link href="/signup">
-                    Send a gym application{" "}
-                    <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                  </Link>
-                </Button>
+                {signedIn ? (
+                  <Button asChild variant="signal" size="lg" className="group">
+                    <Link href={signedIn.href}>
+                      {signedIn.verb}{" "}
+                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                    </Link>
+                  </Button>
+                ) : signedOut ? (
+                  <Button asChild variant="signal" size="lg" className="group">
+                    <Link href="/signup">
+                      Send a gym application{" "}
+                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                    </Link>
+                  </Button>
+                ) : null}
                 <Button asChild variant="secondary" size="lg">
                   <Link href="#product">See how it works</Link>
                 </Button>
               </div>
 
-              <p
-                className="mt-4 animate-rise-in text-[12.5px] text-ink-3"
-                style={{ animationDelay: `${HERO_STEP.note}ms` }}
-              >
-                Gym access is issued after application review and operator onboarding.
-              </p>
+              {signedIn ? null : (
+                <p
+                  className="mt-4 animate-rise-in text-[12.5px] text-ink-3"
+                  style={{ animationDelay: `${HERO_STEP.note}ms` }}
+                >
+                  Gym access is issued after application review and operator onboarding.
+                </p>
+              )}
 
               <dl
                 className="mt-10 grid max-w-2xl animate-rise-in grid-cols-2 gap-x-8 gap-y-5 border-t border-ink/10 pt-7 xl:grid-cols-4"
@@ -229,23 +251,36 @@ export default function LandingPage() {
                     </li>
                   ))}
                 </ul>
-                <div className="mt-8 flex flex-wrap gap-3">
-                  <Button asChild size="lg" className="group">
-                    <Link href="/login/member/create">
-                      Create a free account{" "}
-                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                    </Link>
-                  </Button>
-                  <Button asChild variant="secondary" size="lg">
-                    <Link href="/customer/discover">Find a gym</Link>
-                  </Button>
+                <div className="mt-8 flex min-h-12 flex-wrap gap-3">
+                  {signedIn ? (
+                    <Button asChild size="lg" className="group">
+                      <Link href={signedIn.href}>
+                        {signedIn.verb}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      </Link>
+                    </Button>
+                  ) : signedOut ? (
+                    <Button asChild size="lg" className="group">
+                      <Link href="/login/member/create">
+                        Create a free account{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      </Link>
+                    </Button>
+                  ) : null}
+                  {!signedIn || signedIn.area === "member" ? (
+                    <Button asChild variant="secondary" size="lg">
+                      <Link href="/customer/discover">Find a gym</Link>
+                    </Button>
+                  ) : null}
                 </div>
-                <p className="mt-4 text-[13px] text-ink-3">
-                  Already a member?{" "}
-                  <Link href="/login/member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">
-                    Sign in
-                  </Link>
-                </p>
+                {signedOut ? (
+                  <p className="mt-4 text-[13px] text-ink-3">
+                    Already a member?{" "}
+                    <Link href="/login/member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">
+                      Sign in
+                    </Link>
+                  </p>
+                ) : null}
               </div>
 
               <MemberCard />
@@ -410,16 +445,18 @@ export default function LandingPage() {
                           </li>
                         ))}
                       </ul>
-                      <div className="mt-auto pt-8">
-                        <Button
-                          asChild
-                          variant={isNight ? "night" : isSignal ? "signal" : "secondary"}
-                          size="lg"
-                          className="w-full"
-                        >
-                          <Link href={pricingSignupHref(plan.name, billingInterval)}>Send gym application</Link>
-                        </Button>
-                      </div>
+                      {signedIn ? null : (
+                        <div className="mt-auto pt-8">
+                          <Button
+                            asChild
+                            variant={isNight ? "night" : isSignal ? "signal" : "secondary"}
+                            size="lg"
+                            className="w-full"
+                          >
+                            <Link href={pricingSignupHref(plan.name, billingInterval)}>Send gym application</Link>
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Reveal>
@@ -457,15 +494,26 @@ export default function LandingPage() {
               </Reveal>
               <Reveal delay={120}>
                 <div className="flex flex-wrap items-center gap-5 lg:justify-end">
-                  <Button asChild variant="signal" size="lg" className="group">
-                    <Link href="/signup">
-                      Send a gym application{" "}
-                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                    </Link>
-                  </Button>
-                  <Link href="/login" className="py-2 text-[13.5px] font-medium text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink hover:decoration-night-ink-2">
-                    Already have access? Sign in
-                  </Link>
+                  {signedIn ? (
+                    <Button asChild variant="signal" size="lg" className="group">
+                      <Link href={signedIn.href}>
+                        {signedIn.verb}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <>
+                      <Button asChild variant="signal" size="lg" className="group">
+                        <Link href="/signup">
+                          Send a gym application{" "}
+                          <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                        </Link>
+                      </Button>
+                      <Link href="/login/gym" className="py-2 text-[13.5px] font-medium text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink hover:decoration-night-ink-2">
+                        Already have access? Gym sign in
+                      </Link>
+                    </>
+                  )}
                 </div>
               </Reveal>
             </div>

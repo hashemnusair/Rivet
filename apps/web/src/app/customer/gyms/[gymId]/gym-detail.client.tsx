@@ -306,7 +306,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                 <p className="text-[13.5px] font-medium">{confirmedBranch?.name ?? "Selected branch"}</p>
                 <p className="mt-1 text-[12.5px] text-ink-2">{referralToken ? "The member referral is attached to this request. The reward is considered only after your first membership is sold." : customerSignedIn ? "Your request is saved under My Gyms." : "Sign in or create a member account to keep future bookings under your name."}</p>
               </div>
-              <Button asChild className="mt-4 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login"}>{customerSignedIn ? "Open My Gyms" : "Sign in to RIVET"}</Link></Button>
+              <Button asChild className="mt-4 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login/member"}>{customerSignedIn ? "Open My Gyms" : "Sign in as a member"}</Link></Button>
             </div>
           ) : (
             <>

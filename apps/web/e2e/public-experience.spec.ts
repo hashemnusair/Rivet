@@ -116,7 +116,7 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
     await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
     await expect(page.getByText(/Sign in or create a member account to keep future bookings under your name/i)).toBeVisible();
-    await expect(page.getByRole("link", { name: /Sign in to RIVET/i })).toHaveAttribute("href", "/login");
+    await expect(page.getByRole("link", { name: /Sign in as a member/i })).toHaveAttribute("href", "/login/member");
   });
 
   test("keeps entry QR hidden until requested and closes the short-lived pass", async ({ page }) => {
@@ -193,9 +193,10 @@ test.describe("RIVET gym applications", () => {
 
     // Preview behavior is intentionally session-scoped, so this cold public
     // navigation exercises the same first-snapshot failure path a visitor can
-    // hit after a deployment refresh.
-    await page.goto("/");
-    await expect(page).toHaveURL(/\/$/);
+    // hit after a deployment refresh. A signed-in owner arriving directly is
+    // sent to the dashboard, so the site is asked for explicitly.
+    await page.goto("/?site");
+    await expect(page).toHaveURL(/\/\?site$/);
     await expect(page.getByText(/Showing the last known RIVET data/i)).toBeVisible();
 
     await page.getByRole("button", { name: "Retry" }).click();

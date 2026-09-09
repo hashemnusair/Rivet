@@ -1,13 +1,13 @@
 "use client";
 
-import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
-import { ArrowRight, ChevronDown, GraduationCap, Home, LogOut, Menu, MessageSquare, ReceiptText, Search, UserRound, X } from "lucide-react";
+import { useClerk } from "@clerk/nextjs";
+import { ChevronDown, GraduationCap, Home, LogOut, MessageSquare, ReceiptText, Search, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
 import { AuthTransition } from "@/components/auth/auth-transition";
+import { PublicDocumentPage } from "@/components/public/public-document-page";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,151 +22,12 @@ import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
-import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { MemberPwaManager } from "@/components/pwa/member-pwa";
 
-const MARKETING_NAV = [
-  { href: "/#product", label: "Product" },
-  { href: "/#member", label: "For members" },
-  { href: "/#pricing", label: "Pricing" },
-  { href: "/customer/discover", label: "Find a gym" },
-];
-
 // ---------------------------------------------------------------------------
-// Marketing header — the public site
-// ---------------------------------------------------------------------------
-export function PublicHeader() {
-  const pathname = usePathname();
-  const [open, setOpen] = useState(false);
-
-  return (
-    <header className="sticky top-0 z-50 border-b border-ink/10 bg-paper/90 backdrop-blur-md">
-      <div className="mx-auto flex h-[68px] max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
-        <Link href="/" className="flex items-center" aria-label="RIVET home">
-          <Image src="/brand/rivet-lockup.png" alt="RIVET" width={132} height={34} priority />
-        </Link>
-
-        <nav className="hidden items-center gap-8 lg:flex" aria-label="Primary">
-          {MARKETING_NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "text-[13.5px] font-medium text-ink-2 transition-colors hover:text-ink",
-                pathname === item.href && "text-ink",
-              )}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        {/* Sign-in lives at /login and nowhere else — no modal, so there is one
-            place to authenticate and one place that decides which portal. */}
-        <div className="hidden min-w-[246px] items-center justify-end gap-2 lg:flex">
-          {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions /> : <ClerkMarketingActions />}
-        </div>
-
-        <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen((value) => !value)} aria-label="Toggle navigation">
-          {open ? <X /> : <Menu />}
-        </Button>
-      </div>
-
-      {open ? (
-        <div className="border-t border-line bg-paper px-5 py-4 lg:hidden">
-          <nav className="grid gap-0.5" aria-label="Mobile">
-            {MARKETING_NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className="rounded-md px-3 py-2.5 text-[14px] font-medium hover:bg-sunken"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="mt-3 grid gap-2 border-t border-line pt-3">
-            {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions mobile onClose={() => setOpen(false)} /> : <ClerkMarketingActions mobile onClose={() => setOpen(false)} />}
-          </div>
-        </div>
-      ) : null}
-    </header>
-  );
-}
-
-function PreviewMarketingSignedOutActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
-  return (
-    <>
-      <Button asChild variant={mobile ? "secondary" : "ghost"} size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/login">Sign in</Link>
-      </Button>
-      <Button asChild variant="signal" size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/signup">{mobile ? "Send gym application" : <>Send gym application <ArrowRight /></>}</Link>
-      </Button>
-    </>
-  );
-}
-
-function ClerkMarketingActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
-  const { isLoaded, isSignedIn } = useAuth();
-  const identity = useRivetIdentity();
-
-  // Paint the public actions on the server and first client frame. Clerk's
-  // previous <Show> boundary painted nothing until hydration, which pulled the
-  // entire navbar sideways on every refresh.
-  if (!isLoaded || !isSignedIn) {
-    return <MarketingSignedOutActions mobile={mobile} onClose={onClose} />;
-  }
-
-  const resolving = identity.status === "loading" || identity.status === "pending";
-  const destination = identity.status === "ready" ? destinationFor(identity).href : "/login";
-
-  if (mobile) {
-    return (
-      <>
-        <Button asChild={!resolving} variant="signal" onClick={onClose} disabled={resolving}>
-          {resolving ? <span>Preparing your account…</span> : <Link href={destination}>Open RIVET</Link>}
-        </Button>
-        <div className="flex justify-center py-2">
-          <UserButton />
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <Button asChild={!resolving} variant="signal" size="sm" disabled={resolving}>
-        {resolving ? (
-          <span>Preparing account…</span>
-        ) : (
-          <Link href={destination}>
-            Open RIVET <ArrowRight />
-          </Link>
-        )}
-      </Button>
-      <UserButton />
-    </>
-  );
-}
-
-function MarketingSignedOutActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
-  return (
-    <>
-      <Button asChild variant={mobile ? "secondary" : "ghost"} size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/login">Sign in</Link>
-      </Button>
-      <Button asChild variant="signal" size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/signup">{mobile ? "Send gym application" : <>Send gym application <ArrowRight /></>}</Link>
-      </Button>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Member shell — the signed-in member area and the gym marketplace
+// Member shell — the signed-in member area; signed out, the marketplace and a
+// gym's page are public-site pages and wear the site's chrome instead.
 // ---------------------------------------------------------------------------
 const MEMBER_NAV = [
   { href: "/customer/my-gyms", label: "Home", shortLabel: "Home", icon: Home, requiresAuth: true },
@@ -262,20 +123,30 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
   if (elevatedDestination) return <AuthTransition title="Opening your workspace" detail="Taking you to the right RIVET area…" />;
 
+  // A visitor who is not signed in as a member is on the public site: the
+  // marketplace and a gym's page wear the site's own bar and footer, with the
+  // member door and account creation where the site otherwise offers the
+  // gym application.
+  if (!customerSignedIn) {
+    return (
+      <PublicDocumentPage path={pathname} audience="member">
+        {children}
+      </PublicDocumentPage>
+    );
+  }
+
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <div className={cn("flex min-h-dvh flex-col bg-paper", customerSignedIn && "member-app-shell sm:pb-0")}>
-      {customerSignedIn ? <MemberPwaManager /> : null}
+    <div className="member-app-shell flex min-h-dvh flex-col bg-paper sm:pb-0">
+      <MemberPwaManager />
       <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
-          <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
+          <Link href="/customer/my-gyms" className="flex shrink-0 items-center gap-3" aria-label="RIVET">
             <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={29} priority />
-            {customerSignedIn ? (
-              <span className="hidden border-s border-line-2 ps-3 text-[12px] font-medium text-ink-3 sm:block">
-                Member
-              </span>
-            ) : null}
+            <span className="hidden border-s border-line-2 ps-3 text-[12px] font-medium text-ink-3 sm:block">
+              Member
+            </span>
           </Link>
 
           <nav className="hidden items-center gap-1 sm:flex" aria-label="Member navigation">
@@ -299,7 +170,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="ms-auto flex items-center gap-2">
-            {customerSignedIn && customer ? (
+            {customer ? (
               <div className="hidden sm:block">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -318,40 +189,16 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-            ) : (
-              <>
-                <Button asChild variant="ghost" size="sm">
-                  <Link href="/login">Sign in</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link href="/login/member/create">Create account</Link>
-                </Button>
-              </>
-            )}
+            ) : null}
           </div>
         </div>
       </header>
 
-      {customerSignedIn && customer ? <OnboardingBanner audience="member" /> : null}
+      {customer ? <OnboardingBanner audience="member" /> : null}
 
       <div className="flex-1">{children}</div>
 
-      {!customerSignedIn ? (
-        <footer className="border-t border-line bg-surface">
-          <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-4 py-5 text-[12px] text-ink-3 sm:px-6 lg:px-8">
-            <span className="text-[12px] font-medium">© 2026 RIVET · Amman</span>
-            <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">
-              <Link href="/" className="transition-colors hover:text-ink">RIVET for gyms</Link>
-              <Link href="/customer/discover" className="transition-colors hover:text-ink">Find a gym</Link>
-              <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="transition-colors hover:text-ink" dir="ltr">WhatsApp {RIVET_CONTACT.phoneDisplay}</a>
-              <a href={RIVET_CONTACT.instagramHref} target="_blank" rel="noreferrer" className="transition-colors hover:text-ink" dir="ltr">{RIVET_CONTACT.instagramHandle}</a>
-              {LEGAL_LINKS.map((item) => <Link key={item.href} href={item.href} className="transition-colors hover:text-ink">{item.label}</Link>)}
-            </nav>
-          </div>
-        </footer>
-      ) : null}
-
-      {customerSignedIn && customer ? (
+      {customer ? (
         <nav
           className="member-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 backdrop-blur-sm sm:hidden"
           aria-label="Member navigation"

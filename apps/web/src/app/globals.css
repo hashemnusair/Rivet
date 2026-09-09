@@ -208,9 +208,19 @@ html.landing-motion-ready {
   scroll-snap-type: y mandatory;
 }
 
+/* The stale-data notice sticks to the top of the document; on the landing
+   that is under the fixed bar, so it rests below the bar instead. */
+html.landing-motion-ready [data-experience-notice] {
+  top: calc(4.5rem + env(safe-area-inset-top, 0px));
+}
+
 @media (max-width: 720px) {
   html.landing-motion-ready {
     scroll-padding-top: calc(4.25rem + env(safe-area-inset-top, 0px));
+  }
+
+  html.landing-motion-ready [data-experience-notice] {
+    top: calc(4.25rem + env(safe-area-inset-top, 0px));
   }
 }
 

@@ -518,6 +518,10 @@
 
 .menuSignIn {
   padding: 0.75rem 0.25rem;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
   color: #c6c3b8;
   font-size: 0.82rem;
   font-weight: 600;
@@ -531,6 +535,11 @@
 .menuSignIn:focus-visible {
   color: #ffffff;
   text-decoration-color: #e5262e;
+}
+
+.menuSignIn:disabled {
+  cursor: default;
+  color: #8c897d;
 }
 
 .menuCta:hover,
