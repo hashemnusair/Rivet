@@ -29,6 +29,7 @@ The entries below are current. Older dated sections retain their historical veri
 - [x] Correct marketing claims for family accounts, installment schedules and full Arabic/RTL.
 - [x] Reconcile the living documentation while preserving `FRONTEND_HANDOFF.md`.
 - [ ] Release the combined additive Convex schema/functions and frontend, then verify the exact deployed revisions using docs/12. Code generation is not a release.
+- [ ] Obtain a clean uninterrupted full browser run and investigate the remaining development-server navigation/script flakiness; keep snapshot tolerances and page-error checks intact. Targeted workflow and isolated operations tests pass.
 - [ ] Hashem and his partner perform the authenticated business-day and real-device walkthrough when ready.
 - [ ] Last: messaging provider callbacks/opt-out handling, approved templates and allowlist acceptance; actual push delivery; supplier notification provider if required.
 - [ ] Separately scope family accounts, repayment schedules and full Arabic localization before advertising them as shipped.

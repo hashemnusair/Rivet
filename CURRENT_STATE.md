@@ -1,5 +1,34 @@
 # GymOS / RIVET current implementation state
 
+## Repository workflow completion, 8 September 2026
+
+This entry is the current code-status handoff and supersedes earlier open-item descriptions for the eight tasks below. Work started from synchronized `main` at `555f114`; the existing frontend and partner changes are preserved. `FRONTEND_HANDOFF.md` remains frozen.
+
+| Task | Implemented behavior | Read first |
+| --- | --- | --- |
+| Identity backfill | Stable cursor, v2 checkpoint, skipped-record reasons/counts, idempotent completed runs | `apps/web/convex/qolMaintenance.ts` |
+| Messaging queue | Bounded nested-field indexes, fair source rotation even for one-message batches, disabled-gym deferral | `apps/web/convex/messagingQueue.ts`, `messagingWorker.ts` |
+| Onboarding | Completed required tasks hide the compact banner; success follows persistence | `apps/web/src/components/onboarding/onboarding-checklist.tsx` |
+| Dated class cancellation | Authorized, atomic booking/waitlist cancellation with reason, audit and timelines; staff/member UI | `apps/web/convex/classes.ts`, `src/features/classes/cancel-occurrence-dialog.tsx` |
+| Purchasing dates | Optional gym-local expected delivery date, audited updates, overdue approved/partially received orders | `apps/web/convex/operations.ts`, `src/lib/domain/purchase-orders.ts` |
+| Checklist ownership | Eligible active branch staff, template defaults, dated overrides, handover at daily checklist and shift close | `apps/web/convex/branchChecklists.ts`, `src/features/checklists/` |
+| Marketing | Removed family-account and installment-schedule claims; qualified Arabic support | `apps/web/src/components/marketing/landing-story.tsx` |
+| Backlog | Reconciled current code completion with historical UI-pass records | `docs/13_PRODUCT_AND_OPERATIONS_TODO.md`, `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` |
+
+Verification: both TypeScript checks, canonical lint/secret audit, Convex code generation, all 242 Vitest files / 1,463 tests, the canonical production build, and the production dependency audit passed (no known vulnerabilities). Six targeted browser journeys passed across the initial run and selector-corrected rerun, including dated cancellation, delivery-date updates and individual assignment. Visual-baseline verification is recorded below. Stale ignored Next route-type caches referencing the deleted customer-signup layout were moved outside the repo; no source route was restored.
+
+Visual verification, 9 September: the selected Linux run finished with 13 passing, four flaky and one failing journey; the remaining desktop operations journey passed in isolation with snapshot updates disabled and the original tolerance. The broad Mac run was not clean across the session interruption. Eighty-six populated common captures compared within the existing 4% tolerance; the Linux Users loading-only capture was rejected and that view was recaptured locally. Its readiness check now waits for the Users action and staff content inside main, rather than the account name in the shell. The final desktop Settings run also passed (all 16 sections). The broad browser suite still needs a clean uninterrupted run; no complete CI or hosted acceptance claim is made.
+
+Decisions and limits:
+
+- Gym cancellation is available before a class starts, without recorded attendance. It cancels confirmed and waitlisted bookings without late marks or promotion; repeat calls retain the first reason. Cancelled dates cannot be finalized into attendance. There is no fee or refund because this booking flow does not create a class charge. External messages remain deferred; members see the state/reason in Rivet.
+- Purchase delivery dates are separate from supplier invoice due dates. Past dates are accepted for recording overdue orders. Draft, received and cancelled orders are never overdue; completed orders cannot change their promised date. Date changes do not alter stock or financial records.
+- A responsible person supplements the role and must be active with access to that gym branch. A template edit affects future materialization; dated runs retain their snapshot and can be reassigned explicitly. Assignment does not restrict other authorized branch staff from helping. Handover includes persisted unresolved runs from active templates in the preceding seven local dates plus today's work. It is not an all-history exception report; no retention policy was added.
+- Queue scans read at most 100 candidates per status/channel index. Disabled or quiet-hour gyms move five minutes into the future so subsequent bounded runs reach later records. Invalid/noncanonical historical send timestamps still require a separate data review; producers write canonical UTC ISO timestamps. Provider calls are not exactly once.
+- Shared calendar validation, cancellation policy, due-work selection and small UI components keep the new logic out of page bodies and avoid separate mock/server business rules. No dependencies were added.
+- The full authenticated business-day walkthrough is deferred to Hashem and his partner. Live messaging, callbacks, opt-out webhooks and push delivery remain last. No live provider activation or historical financial repair was performed. Git push is not evidence that Convex is released; see docs/12 for additive schema/index ordering and backfill checks.
+
+
 
 ## Backend integrity pass, 8 September 2026
 
