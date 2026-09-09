@@ -21,6 +21,7 @@ async function leaveDemoSession(page: Page) {
     .evaluate(() => {
       try {
         window.sessionStorage.clear();
+        window.localStorage.clear();
       } catch {
         // about:blank has no storage to clear.
       }

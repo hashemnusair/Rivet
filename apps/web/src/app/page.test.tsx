@@ -39,15 +39,17 @@ describe("landing-page pricing", () => {
     const user = userEvent.setup();
     render(<LandingPage />);
 
-    expect(screen.getByRole("link", { name: "Member sign in" })).toHaveAttribute("href", "/login/member");
+    expect(within(screen.getByRole("banner")).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    // The member section's own "Sign in" leads straight to the member door.
+    expect(screen.getAllByRole("link", { name: "Sign in" }).map((link) => link.getAttribute("href"))).toEqual(["/login", "/login/member"]);
     expect(screen.getByRole("link", { name: "Apply for access" })).toHaveAttribute("href", "/signup");
     for (const link of screen.getAllByRole("link", { name: /Send a gym application/ })) expect(link).toHaveAttribute("href", "/signup");
     expect(screen.getByRole("link", { name: /Create a free account/ })).toHaveAttribute("href", "/login/member/create");
-    expect(screen.getByRole("link", { name: "Already have access? Gym sign in" })).toHaveAttribute("href", "/login/gym");
+    expect(screen.getByRole("link", { name: "Already have access? Sign in" })).toHaveAttribute("href", "/login/gym");
     await user.click(screen.getByRole("button", { name: "Menu" }));
 
     const navigation = screen.getByRole("dialog", { name: "RIVET navigation" });
-    expect(within(navigation).getByRole("link", { name: "Gym sign in" })).toHaveAttribute("href", "/login/gym");
+    expect(within(navigation).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
     expect(within(navigation).getByRole("link", { name: "Send gym application" })).toHaveAttribute("href", "/signup");
   });
 
@@ -59,7 +61,7 @@ describe("landing-page pricing", () => {
 
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
     expect(screen.getAllByRole("link", { name: /Open your dashboard/ }).length).toBeGreaterThanOrEqual(3);
-    expect(screen.queryByRole("link", { name: "Member sign in" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Apply for access" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Send (a )?gym application/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Create a free account/ })).not.toBeInTheDocument();

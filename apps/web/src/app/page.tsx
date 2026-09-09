@@ -510,7 +510,7 @@ export default function LandingPage() {
                         </Link>
                       </Button>
                       <Link href="/login/gym" className="py-2 text-[13.5px] font-medium text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink hover:decoration-night-ink-2">
-                        Already have access? Gym sign in
+                        Already have access? Sign in
                       </Link>
                     </>
                   )}

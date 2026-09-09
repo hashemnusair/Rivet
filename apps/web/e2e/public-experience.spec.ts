@@ -116,7 +116,7 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
     await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
     await expect(page.getByText(/Sign in or create a member account to keep future bookings under your name/i)).toBeVisible();
-    await expect(page.getByRole("link", { name: /Sign in as a member/i })).toHaveAttribute("href", "/login/member");
+    await expect(page.locator("main").getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/login/member");
   });
 
   test("keeps entry QR hidden until requested and closes the short-lived pass", async ({ page }) => {

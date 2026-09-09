@@ -1,6 +1,6 @@
 "use client";
 
-import { Show, SignIn, SignUp, useAuth, useClerk, useUser } from "@clerk/nextjs";
+import { Show, useAuth, useClerk, useUser } from "@clerk/nextjs";
 import {
   ArrowLeft,
   ArrowRight,
@@ -29,6 +29,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { IdentityPanel, UnavailableGymEntry } from "./identity-panels.client";
 import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
+import { PasswordSignIn } from "./password-sign-in.client";
 import { PORTALS, type Audience } from "./portals";
 import { ProfileCompletionGate } from "./profile-completion.client";
 
@@ -205,84 +206,14 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
 }
 
 /**
- * Clerk ships its own stylesheet, so the overrides that fight it need `!` to win
- * the cascade. The portal already states who is signing in, so Clerk's header is
- * removed rather than duplicated.
+ * Each door carries RIVET's own email-and-password form rather than Clerk's
+ * boxed, adaptive widget, so both fields are always on screen with their
+ * placeholders and nothing is cut off. The role read after sign-in still
+ * decides where the account lands. Only the member door offers account
+ * creation.
  */
-const CLERK_APPEARANCE = {
-  // Clerk 7 renamed several appearance variables, so the palette is applied
-  // through element classes; only the stable ones are set here.
-  variables: {
-    colorPrimary: "#1b1a15",
-    colorBackground: "#f5f4ef",
-    colorDanger: "#b3261e",
-    borderRadius: "0.375rem",
-    fontFamily: "var(--font-manrope)",
-  },
-  elements: {
-    rootBox: "w-full",
-    cardBox: "w-full !border-none !bg-transparent !shadow-none",
-    card: "w-full !bg-transparent !px-0 !py-0 !shadow-none !border-none",
-    header: "!hidden",
-    main: "!gap-4",
-    socialButtonsBlockButton: "!border-line-2 !bg-surface !text-ink !shadow-none hover:!bg-sunken !transition-colors",
-    socialButtonsBlockButtonText: "!text-[13.5px] !font-medium !text-ink",
-    dividerLine: "!bg-line-2",
-    dividerText: "!text-ink-3 !text-[12px] !font-medium",
-    formFieldLabel: "!text-ink-2 !text-[13px] !font-medium",
-    formFieldInput: "!border-line-2 !bg-surface !text-ink !shadow-none !h-9 !rounded-md",
-    // Clerk paints a gradient sheen through ::after on its primary button.
-    formButtonPrimary:
-      "!bg-ink !bg-none !text-paper !shadow-none hover:!bg-[#33312a] !text-[13.5px] !normal-case !font-medium !h-9 !rounded-md [&::after]:!hidden",
-    // The footer's grey comes from a background-image, not a colour.
-    footer: "!bg-transparent !bg-none !border-none !shadow-none",
-    footerItem: "!bg-transparent",
-    footerAction: "!bg-transparent",
-    footerActionText: "!text-ink-3 !text-[12px]",
-    footerActionLink: "!text-ink !font-semibold !text-[12px]",
-    identityPreviewText: "!text-ink",
-    formResendCodeLink: "!text-ink",
-  },
-} as const;
-
-function ClerkPanel({ audience, mode, redirectUrl }: { audience: Audience; mode: AuthMode; redirectUrl: string }) {
-  const portal = PORTALS[audience];
-  const appearance = audience === "staff" || audience === "admin"
-    ? { ...CLERK_APPEARANCE, elements: { ...CLERK_APPEARANCE.elements, footerAction: "!hidden" } }
-    : CLERK_APPEARANCE;
-
-  // Each portal owns a route, so Clerk is free to use the hash for its own
-  // multi-step flow (factor-one, verify-email, reset password, …).
-  if (mode === "sign-up") {
-    return (
-      <div className="mt-6">
-        <SignUp
-          routing="hash"
-          signInUrl={portal.href}
-          forceRedirectUrl={redirectUrl}
-          fallbackRedirectUrl={redirectUrl}
-          appearance={appearance}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-6">
-      <SignIn
-        routing="hash"
-        signUpUrl={portal.signUpUrl}
-        forceRedirectUrl={redirectUrl}
-        fallbackRedirectUrl={redirectUrl}
-        appearance={appearance}
-      />
-    </div>
-  );
-}
-
-function safeInternalRedirect(value: string | null, fallback: string): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return fallback;
-  return value;
+function ClerkPanel({ audience, redirectUrl }: { audience: Audience; mode: AuthMode; redirectUrl: string }) {
+  return <PasswordSignIn redirectUrl={redirectUrl} signUp={audience === "member"} />;
 }
 
 /**
@@ -323,7 +254,12 @@ function DoorChooser({ next }: { next: string | null }) {
   );
 }
 
-/** Mock preview mode has no Clerk form; these links stand in for the doors. */
+function safeInternalRedirect(value: string | null, fallback: string): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return fallback;
+  return value;
+}
+
+/** The real build has one Clerk form; these links exist only in mock preview mode. */
 function PreviewAccountOptions() {
   return (
     <div className="mt-7 grid gap-2">

@@ -8,7 +8,7 @@ import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 
 /**
  * The public site's footer — the site map lives here, so every area is one
- * click away. Signed out it names both doors; signed in it names the
+ * click away. Signed out it offers sign-in; signed in it names the
  * visitor's own area and offers sign-out, and drops the application and
  * account-creation links. No hooks beyond the viewer, so the landing and the
  * document pages share it without carrying the member shell's machinery.
@@ -74,13 +74,7 @@ export function PublicFooter() {
             </div>
           </nav>
         ) : (
-          <FooterColumn
-            title="Sign in"
-            links={[
-              ["Gym sign in", "/login/gym"],
-              ["Member sign in", "/login/member"],
-            ]}
-          />
+          <FooterColumn title="Sign in" links={[["Sign in to RIVET", "/login"]]} />
         )}
         <nav aria-label="Contact RIVET">
           <p className="text-[12px] font-medium text-night-ink-3">Contact</p>

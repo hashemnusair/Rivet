@@ -120,8 +120,7 @@
   letter-spacing: -0.015em;
 }
 
-/* The member's own way in, beside the gym application: quieter, but there
-   without opening the menu. On phones it keeps a short label. */
+/* Sign-in beside the gym application: quieter, but there without opening the menu. */
 .memberLink {
   position: relative;
   padding-block: 0.35rem;
@@ -160,10 +159,6 @@
 .headerOpen .memberLink:hover,
 .headerOpen .memberLink:focus-visible {
   color: #f5f4ef;
-}
-
-.memberLinkShort {
-  display: none;
 }
 
 .menuToggle:focus-visible,
@@ -1508,8 +1503,6 @@
   .progress { top: calc(4.25rem + env(safe-area-inset-top, 0px) - 2px); }
   .apply { display: none; }
   .headerActions { gap: 1.1rem; }
-  .memberLinkLong { display: none; }
-  .memberLinkShort { display: inline; }
   .brand img { width: 7rem; }
   .menuPlate {
     width: 100%;

@@ -74,8 +74,8 @@ function goToHash(href: string, behavior: ScrollBehavior) {
  * bar and menu appear, the section links lead to the home page's sections,
  * and the menu names the document.
  *
- * Signed out, the bar offers the two doors: member sign-in and, for the
- * gym audience, the application (a member page offers account creation
+ * Signed out, the bar offers sign-in (which leads to the two doors) and, for
+ * the gym audience, the application (a member page offers account creation
  * instead). Signed in, it offers one thing — the visitor's own area — and
  * the menu adds sign-out.
  */
@@ -299,9 +299,8 @@ export function CinematicHeader({
         <div className={styles.headerActions}>
           {signedOut ? (
             <>
-              <Link href="/login/member" className={styles.memberLink} inert={open} aria-label="Member sign in">
-                <span className={styles.memberLinkLong} aria-hidden>Member sign in</span>
-                <span className={styles.memberLinkShort} aria-hidden>Sign in</span>
+              <Link href="/login" className={styles.memberLink} inert={open}>
+                Sign in
               </Link>
               {audience === "member" ? (
                 <Link href="/login/member/create" className={styles.apply} inert={open}>
@@ -405,7 +404,7 @@ export function CinematicHeader({
                 </>
               ) : signedOut ? (
                 <>
-                  <Link href="/login/gym" className={styles.menuSignIn} onClick={close}>Gym sign in</Link>
+                  <Link href="/login" className={styles.menuSignIn} onClick={close}>Sign in</Link>
                   <Link href="/signup" className={styles.menuCta} onClick={close}>Send gym application</Link>
                 </>
               ) : null}

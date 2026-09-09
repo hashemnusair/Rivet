@@ -74,7 +74,7 @@ describe("CustomerShell", () => {
     state.pathname = "/customer/discover";
     render(<CustomerShell><p>content</p></CustomerShell>);
     const bar = within(screen.getByRole("banner"));
-    expect(bar.getByRole("link", { name: "Member sign in" })).toHaveAttribute("href", "/login/member");
+    expect(bar.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
     expect(bar.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/login/member/create");
     expect(screen.queryByRole("link", { name: "Apply for access" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Menu" })).toBeInTheDocument();

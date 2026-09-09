@@ -184,7 +184,7 @@ export default function GymApplicationPage() {
                   {formError ? <p className="mt-4 rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
                   <Button type="submit" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-6 w-full">Send gym application <ArrowRight /></Button>
                   <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4 hover:text-ink">Terms of service</Link> and <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">Privacy policy</Link>. The subscription agreement is signed later, inside RIVET, by the gym owner.</p>
-                  <p className="mt-3 text-center text-[12.5px] text-ink-3">Already have RIVET access? <Link href="/login/gym" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">Gym sign in</Link>.</p>
+                  <p className="mt-3 text-center text-[12.5px] text-ink-3">Already have RIVET access? <Link href="/login/gym" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">Sign in</Link>.</p>
                 </section>
               </form>
             </>
@@ -204,7 +204,7 @@ function ApplicationReceived({ result, gymName, email }: { result: SubmitGymAppl
       <p className="mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>. We sent a confirmation to <strong className="text-ink">{email}</strong> and our team will contact you after review.</p>
       {result.duplicate ? <p className="mt-3 text-[12.5px] text-ink-3">This application is already in our review queue.</p> : null}
       <div className="mt-6 grid gap-2 sm:grid-cols-2">
-        <Button asChild size="lg"><Link href="/login/gym">Gym sign in <ArrowRight /></Link></Button>
+        <Button asChild size="lg"><Link href="/login/gym">Sign in <ArrowRight /></Link></Button>
         <Button asChild variant="secondary" size="lg"><Link href="/">Return home</Link></Button>
       </div>
       <p className="mt-4 text-[12.5px] text-ink-3">Gym accounts are created and issued by RIVET after approval.</p>

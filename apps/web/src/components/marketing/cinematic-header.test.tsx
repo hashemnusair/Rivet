@@ -16,7 +16,7 @@ describe("CinematicHeader", () => {
     render(<CinematicHeader />);
 
     expect(screen.getByRole("link", { name: "RIVET, back to top" })).toHaveAttribute("href", "#top");
-    expect(screen.getByRole("link", { name: "Member sign in" })).toHaveAttribute("href", "/login/member");
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
     expect(screen.getByRole("link", { name: "Apply for access" })).toHaveAttribute("href", "/signup");
     await user.click(screen.getByRole("button", { name: "Menu" }));
 
@@ -39,7 +39,7 @@ describe("CinematicHeader", () => {
     expect(within(menu).queryAllByRole("link", { current: "true" })).toHaveLength(0);
     expect(within(menu).getByRole("link", { name: "Terms of service" })).toHaveAttribute("aria-current", "page");
     expect(within(menu).getByRole("link", { name: "Privacy policy" })).not.toHaveAttribute("aria-current");
-    expect(within(menu).getByRole("link", { name: "Gym sign in" })).toHaveAttribute("href", "/login/gym");
+    expect(within(menu).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
   });
 
   it("offers a member page account creation instead of the application", () => {
@@ -56,7 +56,7 @@ describe("CinematicHeader", () => {
 
     expect(screen.getByRole("link", { name: "Platform" })).toHaveAttribute("href", "/platform");
     expect(screen.queryByRole("link", { name: "Apply for access" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Member sign in" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Menu" }));
     const menu = screen.getByRole("dialog", { name: "RIVET navigation" });
     expect(within(menu).getByRole("link", { name: "Open the platform" })).toHaveAttribute("href", "/platform");
