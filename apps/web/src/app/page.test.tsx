@@ -45,11 +45,11 @@ describe("landing-page pricing", () => {
     expect(screen.getByRole("link", { name: "Apply for access" })).toHaveAttribute("href", "/signup");
     for (const link of screen.getAllByRole("link", { name: /Send a gym application/ })) expect(link).toHaveAttribute("href", "/signup");
     expect(screen.getByRole("link", { name: /Create a free account/ })).toHaveAttribute("href", "/login/member/create");
-    expect(screen.getByRole("link", { name: "Already have access? Sign in" })).toHaveAttribute("href", "/login/gym");
     await user.click(screen.getByRole("button", { name: "Menu" }));
 
+    // The bar already offers sign-in; the menu carries only the application.
     const navigation = screen.getByRole("dialog", { name: "RIVET navigation" });
-    expect(within(navigation).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(within(navigation).queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
     expect(within(navigation).getByRole("link", { name: "Send gym application" })).toHaveAttribute("href", "/signup");
   });
 

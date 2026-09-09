@@ -39,7 +39,8 @@ describe("CinematicHeader", () => {
     expect(within(menu).queryAllByRole("link", { current: "true" })).toHaveLength(0);
     expect(within(menu).getByRole("link", { name: "Terms of service" })).toHaveAttribute("aria-current", "page");
     expect(within(menu).getByRole("link", { name: "Privacy policy" })).not.toHaveAttribute("aria-current");
-    expect(within(menu).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(within(menu).queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
+    expect(within(menu).getByRole("link", { name: "Send gym application" })).toHaveAttribute("href", "/signup");
   });
 
   it("offers a member page account creation instead of the application", () => {

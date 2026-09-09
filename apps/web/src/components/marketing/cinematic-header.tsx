@@ -403,10 +403,7 @@ export function CinematicHeader({
                   <Link href={signedIn.destination.href} className={styles.menuCta} onClick={close}>{signedIn.destination.verb}</Link>
                 </>
               ) : signedOut ? (
-                <>
-                  <Link href="/login" className={styles.menuSignIn} onClick={close}>Sign in</Link>
-                  <Link href="/signup" className={styles.menuCta} onClick={close}>Send gym application</Link>
-                </>
+                <Link href="/signup" className={styles.menuCta} onClick={close}>Send gym application</Link>
               ) : null}
             </div>
           </div>

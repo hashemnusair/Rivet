@@ -809,7 +809,7 @@
 }
 
 .rigPlateLabel {
-  fill: #9c998c;
+  fill: #f2f0e6;
   font-family: var(--font-archivo), sans-serif;
   font-size: 21px;
   font-weight: 600;
@@ -1360,14 +1360,8 @@
 
 /* ----------------------------------------------------------------- pricing */
 
-/*
-  A pricing tier fills with a tinted liquid on hover. The liquid blooms from
-  the point where the pointer came in — anchored there, not chased — spreads
-  with a slightly uneven edge, swells past the last corner and settles into
-  the filled state; when the pointer leaves it draws back to the same point.
-  Transform-only on two blob layers, so it composites without repainting the
-  card's text, and it never sits between the reader and a control.
-*/
+/* A pricing tier lifts a little on hover: the border firms up and a soft
+   shadow appears. Nothing moves inside the card. */
 .tier {
   position: relative;
   display: flex;
@@ -1375,9 +1369,6 @@
   flex-direction: column;
   overflow: hidden;
   isolation: isolate;
-  --bloom-x: 50%;
-  --bloom-y: 50%;
-  --bloom-size: 240%;
   transition:
     border-color 320ms ease,
     box-shadow 520ms ease;
@@ -1386,20 +1377,17 @@
 .tierPaper {
   border: 1px solid #e3e1d6;
   background: #ffffff;
-  --tier-liquid: #edece5;
 }
 
 .tierSignal {
   border: 2px solid #d9232b;
   background: #ffffff;
-  --tier-liquid: #fbeeee;
 }
 
 .tierNight {
   border: 1px solid #2e2c22;
   background: #15140f;
   color: #f2f0e6;
-  --tier-liquid: #24221b;
 }
 
 .tierPaper:hover,
@@ -1417,48 +1405,6 @@
 .tierNight:focus-within {
   border-color: #4a4738;
   box-shadow: 0 24px 48px -28px rgb(0 0 0 / 0.7);
-}
-
-.tierLiquid {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-/* Two uneven blobs, grown from the entry point at slightly different rates
-   and turns, so the boundary ripples as it spreads and the two merge into one
-   flat fill once they cover the card. */
-.tierBloom {
-  position: absolute;
-  top: var(--bloom-y);
-  left: var(--bloom-x);
-  width: var(--bloom-size);
-  height: var(--bloom-size);
-  border-radius: 46% 54% 51% 49% / 55% 43% 57% 45%;
-  background: var(--tier-liquid);
-  transform: translate(-50%, -50%) scale(0) rotate(0turn);
-  transition: transform 380ms cubic-bezier(0.4, 0, 0.7, 1);
-  will-change: transform;
-}
-
-.tierBloomEcho {
-  border-radius: 53% 47% 44% 56% / 46% 57% 43% 54%;
-  transition-duration: 320ms;
-}
-
-.tier:hover .tierBloom,
-.tier:focus-within .tierBloom {
-  transform: translate(-50%, -50%) scale(1) rotate(0.07turn);
-  transition: transform 640ms cubic-bezier(0.3, 0.55, 0.25, 1.06);
-}
-
-.tier:hover .tierBloomEcho,
-.tier:focus-within .tierBloomEcho {
-  transform: translate(-50%, -50%) scale(1) rotate(-0.06turn);
-  transition-duration: 720ms;
-  transition-delay: 40ms;
 }
 
 .tierBody {
@@ -1602,7 +1548,6 @@
   .rigHole,
   .dayMoment,
   .trailRow,
-  .tierBloom,
   .gymsCorner {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;

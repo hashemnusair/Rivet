@@ -7,7 +7,7 @@ import {
   MapPin,
 } from "lucide-react";
 import Link from "next/link";
-import { useState, type PointerEvent } from "react";
+import { useState } from "react";
 import { CinematicHeader } from "@/components/marketing/cinematic-header";
 import { HeroDevices } from "@/components/marketing/hero-devices";
 import styles from "@/components/marketing/landing-cinematic.module.css";
@@ -50,31 +50,6 @@ const HERO_STEP = {
   note: 380,
   facts: 440,
 } as const;
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-/**
- * Anchors a pricing tier's liquid to the point where the pointer came in, and
- * sizes it to reach the card's farthest corner from there. A pointer that
- * comes back while the last bloom is still draining keeps that bloom's point,
- * so the liquid never jumps.
- */
-function anchorBloom(event: PointerEvent<HTMLDivElement>) {
-  const card = event.currentTarget;
-  const bloom = card.querySelector<HTMLElement>("[data-bloom]");
-  if (bloom) {
-    const matrix = getComputedStyle(bloom).transform;
-    const [a = 0, b = 0] = matrix.startsWith("matrix(") ? matrix.slice(7, -1).split(",").map(Number) : [];
-    if (Math.hypot(a, b) > 0.04) return;
-  }
-  const rect = card.getBoundingClientRect();
-  const x = clamp(event.clientX - rect.left, 0, rect.width);
-  const y = clamp(event.clientY - rect.top, 0, rect.height);
-  const reach = Math.hypot(Math.max(x, rect.width - x), Math.max(y, rect.height - y));
-  card.style.setProperty("--bloom-x", `${x.toFixed(1)}px`);
-  card.style.setProperty("--bloom-y", `${y.toFixed(1)}px`);
-  card.style.setProperty("--bloom-size", `${Math.ceil(reach * 2.35)}px`);
-}
 
 export default function LandingPage() {
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
@@ -406,13 +381,7 @@ export default function LandingPage() {
                       isNight ? styles.tierNight : isSignal ? styles.tierSignal : styles.tierPaper,
                       isNight && "night-surface",
                     )}
-                    onPointerEnter={anchorBloom}
                   >
-                    {/* The liquid that blooms from where the pointer came in — see `.tierBloom`. */}
-                    <span className={styles.tierLiquid} aria-hidden>
-                      <span className={styles.tierBloom} data-bloom />
-                      <span className={cn(styles.tierBloom, styles.tierBloomEcho)} />
-                    </span>
                     <div className={styles.tierBody}>
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-[15px] font-semibold tracking-[-0.01em]">{plan.name}</p>
@@ -502,17 +471,12 @@ export default function LandingPage() {
                       </Link>
                     </Button>
                   ) : (
-                    <>
-                      <Button asChild variant="signal" size="lg" className="group">
-                        <Link href="/signup">
-                          Send a gym application{" "}
-                          <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                        </Link>
-                      </Button>
-                      <Link href="/login/gym" className="py-2 text-[13.5px] font-medium text-night-ink-2 underline decoration-night-line underline-offset-8 transition-colors hover:text-night-ink hover:decoration-night-ink-2">
-                        Already have access? Sign in
+                    <Button asChild variant="signal" size="lg" className="group">
+                      <Link href="/signup">
+                        Send a gym application{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
                       </Link>
-                    </>
+                    </Button>
                   )}
                 </div>
               </Reveal>
