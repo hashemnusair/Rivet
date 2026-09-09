@@ -204,6 +204,8 @@
    class is set by the landing's motion controller, so no other page is moved. */
 html.landing-motion-ready {
   scroll-padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
+  /* Section by section: each landing section snaps in under the bar. */
+  scroll-snap-type: y mandatory;
 }
 
 @media (max-width: 720px) {

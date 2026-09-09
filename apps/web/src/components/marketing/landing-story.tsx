@@ -465,16 +465,11 @@ export function StackStory() {
   const ringOuter = pin.ringRadius + pin.ringStroke / 2;
 
   return (
-    <section id="product" data-landing-theme="dark" className={styles.stackStory} aria-labelledby="stack-title">
+    <section id="product" data-landing-theme="dark" className={cn(styles.stackStory, styles.snapStart)} aria-labelledby="stack-title">
       <div ref={gridRef} className={styles.stackGrid} onFocus={onFocus} onBlur={onBlur}>
         <div className={styles.stackHeader}>
-          <div>
-            <StoryMarker label="The stack" dark />
-            <h2 id="stack-title">Six plates. One pin.</h2>
-          </div>
-          <p className={styles.stackLead}>
-            Six modules on one member record: a payment taken at reception is already on the member, in the ledger and in the daily close. Tap a plate, or let the pin work through them.
-          </p>
+          <StoryMarker label="The stack" dark />
+          <h2 id="stack-title">Six plates. One pin.</h2>
         </div>
 
         <div ref={figureRef} className={styles.stackFigure}>
@@ -571,16 +566,21 @@ export function StackStory() {
           </svg>
         </div>
 
-        <div id="stack-panel" role="tabpanel" aria-labelledby={`stack-tab-${selected}`} className={styles.stackCopy}>
-          {STACK_ITEMS.map((item, index) => (
-            <div key={item.label} className={cn(styles.stackState, engaged === index && styles.stackStateActive)} aria-hidden={engaged !== index}>
-              <h3>{item.label}</h3>
-              <p>{item.copy}</p>
-              <ul className={styles.stackCaps}>
-                {item.caps.map((cap) => <li key={cap}>{cap}</li>)}
-              </ul>
-            </div>
-          ))}
+        <div className={styles.stackCopy}>
+          <div id="stack-panel" role="tabpanel" aria-labelledby={`stack-tab-${selected}`} className={styles.stackStates}>
+            {STACK_ITEMS.map((item, index) => (
+              <div key={item.label} className={cn(styles.stackState, engaged === index && styles.stackStateActive)} aria-hidden={engaged !== index}>
+                <h3>{item.label}</h3>
+                <p>{item.copy}</p>
+                <ul className={styles.stackCaps}>
+                  {item.caps.map((cap) => <li key={cap}>{cap}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <p className={styles.stackNote}>
+            Six modules on one member record: a payment taken at reception is already on the member, in the ledger and in the daily close. Tap a plate, or let the pin work through them.
+          </p>
         </div>
       </div>
     </section>
@@ -649,7 +649,7 @@ export function OperationalDay() {
       id="day"
       data-landing-theme="paper"
       aria-labelledby="day-title"
-      className={cn(styles.coverSheet, styles.paperSheet, styles.layer4, styles.daySection)}
+      className={cn(styles.coverSheet, styles.paperSheet, styles.layer4, styles.daySection, styles.snapStart)}
     >
       <div className={styles.dayGrid}>
         <aside className={styles.dayAside}>
@@ -743,7 +743,7 @@ export function RegionProof() {
       id="region"
       data-landing-theme="paper"
       aria-labelledby="region-title"
-      className={cn(styles.coverSheet, styles.paperSheet, styles.layer6, styles.regionSection)}
+      className={cn(styles.coverSheet, styles.paperSheet, styles.layer6, styles.regionSection, styles.snapStart)}
     >
       <div className={styles.regionInner}>
         <StoryMarker label="Built for here" />
