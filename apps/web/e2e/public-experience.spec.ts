@@ -152,30 +152,30 @@ test.describe("RIVET member experience", () => {
   });
 
   test("lets a member book and cancel a dated class from My Gyms", async ({ page }) => {
+    // Keep Lina's dated membership valid and the first Saturday class ahead.
+    await page.clock.setFixedTime(new Date("2026-08-01T03:00:00+03:00"));
     await page.goto("/login/member");
     await page.getByRole("radio", { name: /Lina Haddad/i }).click();
     await page.getByRole("button", { name: /Continue as Lina/i }).click();
+    await expect(page).toHaveURL(/\/customer\/my-gyms$/);
     await page.goto("/customer/my-gyms/membership-lina-forge");
 
     await page.getByRole("tab", { name: "Classes" }).click();
     await expect(page.getByRole("tablist", { name: "Classes views" })).toBeVisible();
-    const book = page.getByRole("button", { name: "Book class" }).first();
+    const card = page.getByRole("tabpanel", { name: "Classes", exact: true }).getByRole("article").first();
+    const book = card.getByRole("button", { name: "Book class", exact: true });
     await expect(book).toBeEnabled();
     await book.click();
     await expect(page.getByText("Class booked.", { exact: true })).toBeVisible();
-    await expect(page.getByText("Booked", { exact: true }).first()).toBeVisible();
+    await expect(card.getByText("Booked", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "Cancel" }).first().click();
-    // Cancelling is confirmed first: the dialog states the outcome before
-    // anything is recorded. The seeded class is a fixed weekly slot, so
-    // depending on the time of day the cancellation lands inside the late
-    // window. Both outcomes are the honest result of the same flow; only the
-    // wording differs.
+    await card.getByRole("button", { name: "Cancel", exact: true }).click();
+    // The fixed clock keeps this cancellation before the cutoff.
     const confirmation = page.getByRole("dialog", { name: /^Cancel .+\?$/ });
     await expect(confirmation.getByRole("status")).toBeVisible();
     await confirmation.getByRole("button", { name: "Cancel booking" }).click();
-    await expect(page.getByText(/^(Class booking cancelled\.|Late cancellation recorded\.)/)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Book class" }).first()).toBeEnabled();
+    await expect(page.getByText("Class booking cancelled.", { exact: true })).toBeVisible();
+    await expect(book).toBeEnabled();
   });
 });
 
