@@ -76,7 +76,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { session } = useApp();
-  const { customerSignedIn, platformAdminSignedIn, signOutCustomer } = useExperience();
+  const { customerSignedIn, platformAdminSignedIn, previewSessionReady, signOutCustomer } = useExperience();
   const identity = useRivetIdentity();
   const { signOut: signOutClerk } = useClerk();
   const customer = useCustomerPersona();
@@ -119,6 +119,11 @@ export function CustomerShell({ children }: { children: ReactNode }) {
       setSigningOut(false);
     }
   };
+
+  // A cold preview restores its member from sessionStorage after hydration.
+  // Mounting the public layout first would replace the page when that finishes,
+  // discarding an early tab selection or input focus along with its subtree.
+  if (!previewSessionReady) return <AuthTransition title="Loading your session" detail="Preparing your RIVET pages…" />;
 
   if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
   if (elevatedDestination) return <AuthTransition title="Opening your workspace" detail="Taking you to the right RIVET area…" />;

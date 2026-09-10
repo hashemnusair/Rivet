@@ -6,6 +6,7 @@ import { CustomerShell } from "./public-shell";
 const state = vi.hoisted(() => ({
   pathname: "/customer/my-gyms",
   customerSignedIn: true,
+  previewSessionReady: true,
   replace: vi.fn(),
 }));
 
@@ -24,7 +25,7 @@ vi.mock("@/lib/auth/rivet-identity", async (importOriginal) => {
 });
 vi.mock("@/lib/providers/app-providers", () => ({ useApp: () => ({ session: undefined }) }));
 vi.mock("@/lib/providers/experience-provider", () => ({
-  useExperience: () => ({ customerSignedIn: state.customerSignedIn, platformAdminSignedIn: false, signOutCustomer: vi.fn() }),
+  useExperience: () => ({ customerSignedIn: state.customerSignedIn, previewSessionReady: state.previewSessionReady, platformAdminSignedIn: false, signOutCustomer: vi.fn() }),
   useCustomerPersona: () => (state.customerSignedIn ? { id: "customer-lina", name: "Lina Haddad", email: "lina@example.com" } : undefined),
 }));
 vi.mock("@/lib/auth/public-viewer", () => ({
@@ -40,6 +41,21 @@ describe("CustomerShell", () => {
   beforeEach(() => {
     state.pathname = "/customer/my-gyms";
     state.customerSignedIn = true;
+    state.previewSessionReady = true;
+  });
+
+  it("waits for the saved session before mounting interactive member content", () => {
+    state.customerSignedIn = false;
+    state.previewSessionReady = false;
+    const { rerender } = render(<CustomerShell><button>Book class</button></CustomerShell>);
+    expect(screen.queryByRole("button", { name: "Book class" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
+
+    state.customerSignedIn = true;
+    state.previewSessionReady = true;
+    rerender(<CustomerShell><button>Book class</button></CustomerShell>);
+    expect(screen.getByRole("button", { name: "Book class" })).toBeInTheDocument();
+    expect(document.querySelector(".member-bottom-nav")).toBeInTheDocument();
   });
 
   it("gives a signed-in member one dock with Home, Payments, Explore and Account", () => {
