@@ -151,9 +151,14 @@ test("the phone dock clears the home indicator, yields to the keyboard and keeps
 
   // A focused text field hands the bottom of the screen to the keyboard.
   await page.goto("/customer/discover");
-  await page.getByRole("searchbox", { name: "Search gyms" }).focus();
+  const search = page.getByRole("searchbox", { name: "Search gyms" });
+  await search.fill("Forge");
+  await expect(search).toBeFocused();
+  await expect(page).toHaveURL(/\/customer\/discover\?q=Forge$/);
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue("Forge");
   await expect.poll(() => dock.evaluate((element) => getComputedStyle(element).display)).toBe("none");
-  await page.getByRole("searchbox", { name: "Search gyms" }).blur();
+  await search.blur();
   await expect(dock).toBeVisible();
 
   const pages = context.pages().length;
