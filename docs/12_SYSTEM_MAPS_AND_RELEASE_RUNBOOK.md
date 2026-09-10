@@ -3,6 +3,17 @@
 Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
 daily-checklist Production release at application tip `fdd6dac`.
 
+## Before Hashem and Elias's walkthrough
+
+1. Pick the test environment and a disposable gym. Record the site URL, Vercel project, Convex deployment and Clerk instance. Keep the existing live messaging pause in place.
+2. Agree on the release commit. From a clean main checkout, run `git pull --ff-only` and `git rev-parse HEAD`. In GitHub Actions, open the run for that exact commit and inspect every job. A successful build or code-generation job alone does not establish a passing browser suite or a deployment.
+3. In Vercel, open the deployment serving the walkthrough domain. Check its source commit, Ready status, environment and domain assignment. Check each separately deployed app/console domain that the walkthrough uses. An unrelated Ready preview does not prove that the intended domain serves the chosen commit.
+4. Have Elias confirm the Convex target and successful release from the agreed checkout. Use the guarded `pnpm convex:deploy` workflow and the additive ordering below if that release is still pending. Record the source SHA, deployment name, time and deploy result. Convex code generation and the frontend Git SHA do not prove backend deployment; do not assume the dashboard exposes a matching Git SHA automatically.
+5. Confirm that the frontend points to that Convex target and that its Clerk instance matches the backend authentication configuration. Compare target names/URLs and instance identities in provider dashboards; do not copy secret values into chat, logs or this document. The existing safe environment-name command can establish presence, not verify secret values.
+6. Use separate real staff/member browser sessions. Verify the new class cancellation, purchase-date update and checklist assignment once on synthetic records, then run the business-day scenario below. Record expected versus actual behavior and the exact release identifiers for each failure.
+
+Deployment confirmation is a separate step from this code change. No new Convex release or live-provider activation is claimed here.
+
 ## Repository workflow release requirements, 8 September 2026
 
 This section supersedes the earlier integrity-only statement that no new indexes or public operations are required. The full coding batch in `CURRENT_STATE.md` has not been released to Convex by this task. The deploy command remains `pnpm convex:deploy`; never use raw deploy or verbose output.
