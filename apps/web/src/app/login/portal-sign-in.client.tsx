@@ -112,6 +112,10 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
   const previewReady = !DEMO_AUTH_BYPASS || (!sessionLoading && experienceReady);
   const identityReady = (DEMO_AUTH_BYPASS || clerkLoaded) && previewReady;
   const redirectUrl = safeInternalRedirect(searchParams.get("next"), portal.href);
+  // On the resolver a signed-in account is being opened, not asked to sign
+  // in: no heading and no doors until Clerk has said who this is.
+  const accountResolver = !DEMO_AUTH_BYPASS && audience === "account";
+  const resolvingAccount = accountResolver && (!clerkLoaded || clerkSignedIn);
 
   useEffect(() => {
     if (DEMO_AUTH_BYPASS || mode !== "sign-up" || redirectUrl === portal.href || !clerkLoaded || !clerkSignedIn) return;
@@ -171,16 +175,20 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
           </Link>
         ) : null}
 
-        <div className={audience === "account" ? undefined : "mt-6"}>
-          <PortalHeading portal={portal} mode={mode} />
-        </div>
+        {resolvingAccount ? null : (
+          <div className={audience === "account" ? undefined : "mt-6"}>
+            <PortalHeading portal={portal} mode={mode} />
+          </div>
+        )}
 
         {!identityReady && audience !== "account" ? <LoginLoading /> : null}
 
         {identityReady && DEMO_AUTH_BYPASS ? unavailablePreview ? <UnavailableGymEntry /> : accounts : null}
 
-        {!DEMO_AUTH_BYPASS && audience === "account" ? (
-          !clerkLoaded || !clerkSignedIn ? (
+        {accountResolver ? (
+          !clerkLoaded ? (
+            <LoginLoading />
+          ) : !clerkSignedIn ? (
             <DoorChooser next={searchParams.get("next")} />
           ) : (
             <ProfileCompletionGate>

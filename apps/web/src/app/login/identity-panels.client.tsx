@@ -49,7 +49,23 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
   return <IdentityHostGate identity={identity}><IdentityEntries identity={identity} audience={audience} /></IdentityHostGate>;
 }
 
-/** Resolve the host before branch/member setup, whose browser state is origin-scoped. */
+/**
+ * Where an already-authorized account can open directly on its own host: the
+ * gym, member and platform shells hydrate a Clerk session from Convex on their
+ * own, so the resolver's browser bootstrap is not needed there. Selected-branch
+ * staff, an account with several gyms and an unavailable gym still go through
+ * the resolver on the destination host, which asks or explains.
+ */
+export function directEntryPath(identity: RivetIdentity): string | null {
+  const destination = destinationFor(identity);
+  if (destination.area === "platform" || destination.area === "member") return destination.href;
+  if (destination.area === "gym" && identity.memberships[0]?.branchScope !== "selected") return destination.href;
+  return null;
+}
+
+/** Resolve the host before branch/member setup, whose browser state is origin-scoped.
+ * An account arriving from another host (the landing, an old link) opens its
+ * page there in one hop rather than through a second sign-in screen. */
 function IdentityHostGate({ identity, children }: { identity: RivetIdentity; children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const destination = destinationFor(identity);
@@ -57,11 +73,14 @@ function IdentityHostGate({ identity, children }: { identity: RivetIdentity; chi
     : destination.area === "member" ? RIVET_HOSTS.member : RIVET_HOSTS.gym;
   useEffect(() => {
     if (isRivetHost(window.location.hostname) && window.location.hostname !== host) {
-      window.location.replace(`https://${host}/login${window.location.search}`);
+      const direct = directEntryPath(identity);
+      window.location.replace(direct
+        ? `https://${host}${postSignInPath(direct, window.location.search)}`
+        : `https://${host}/login${window.location.search}`);
       return;
     }
     setReady(true);
-  }, [host]);
+  }, [host, identity]);
   return ready ? children : <AutomaticEntry label="Opening your account" />;
 }
 

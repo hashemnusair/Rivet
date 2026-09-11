@@ -77,20 +77,26 @@ describe("IdentityPanel", () => {
     } as import("@/lib/auth/rivet-identity").RivetIdentity;
   });
 
+  const gymMembership = (branchScope: "all" | "selected", branches = 1) => ({
+    organizationId: "org-1", organizationName: "Gym", organizationSlug: "gym", role: "owner" as const,
+    branchScope, branches: Array.from({ length: branches }, (_, index) => ({ id: `branch-${index + 1}`, name: `Branch ${index + 1}`, code: `B${index + 1}` })),
+  });
+
   it.each([
-    ["platform", "platform.rivetjo.com"],
-    ["gym", "dashboard.rivetjo.com"],
-    ["member", "app.rivetjo.com"],
-  ])("moves %s identity to its host before initializing browser state", (area, hostname) => {
-    state.identity.platformAdmin = area === "platform";
-    if (area === "gym") state.identity.memberships = [{
-      organizationId: "org-1", organizationName: "Gym", organizationSlug: "gym", role: "owner",
-      branchScope: "selected", branches: [{ id: "branch-1", name: "Main", code: "MAIN" }],
-    }];
+    ["platform", "https://platform.rivetjo.com/platform"],
+    ["all-branch gym", "https://dashboard.rivetjo.com/members"],
+    ["member", "https://app.rivetjo.com/customer/my-gyms"],
+    ["selected-branch gym", "https://dashboard.rivetjo.com/login?next=%2Fmembers"],
+    ["multi-gym", "https://dashboard.rivetjo.com/login?next=%2Fmembers"],
+  ])("moves a %s identity from another host to its own in one hop, keeping an in-area continuation", (kind, expected) => {
+    state.identity.platformAdmin = kind === "platform";
+    if (kind === "all-branch gym") state.identity.memberships = [gymMembership("all")];
+    if (kind === "selected-branch gym") state.identity.memberships = [gymMembership("selected", 2)];
+    if (kind === "multi-gym") state.identity.memberships = [gymMembership("all"), { ...gymMembership("all"), organizationId: "org-2" }];
     const location = { href: "https://www.rivetjo.com/login", origin: "https://www.rivetjo.com", hostname: "www.rivetjo.com", search: "?next=%2Fmembers", replace: vi.fn() };
     vi.stubGlobal("window", new Proxy(window, { get: (target, key) => key === "location" ? location : Reflect.get(target, key) }));
     render(<IdentityPanel />);
-    expect(location.replace).toHaveBeenCalledWith(`https://${hostname}/login?next=%2Fmembers`);
+    expect(location.replace).toHaveBeenCalledWith(expected);
     expect(state.signIn).not.toHaveBeenCalled();
     expect(state.signInAsIdentity).not.toHaveBeenCalled();
     expect(state.signInPlatformAdmin).not.toHaveBeenCalled();
