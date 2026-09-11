@@ -113,7 +113,7 @@ describe("route ownership", () => {
   it("preserves deep-link parameters and fragments across hosts and aliases", () => {
     expect(canonicalHref("/members/a?tab=payments#balance", RIVET_HOSTS.public)).toBe("https://dashboard.rivetjo.com/members/a?tab=payments#balance");
     expect(canonicalHref("/signup?returnTo=%2Fcustomer%2Fmy-gyms", RIVET_HOSTS.member)).toBe("https://app.rivetjo.com/login/member/create?returnTo=%2Fcustomer%2Fmy-gyms");
-    expect(publicSiteHref(RIVET_HOSTS.gym)).toBe("https://www.rivetjo.com/?site");
+    expect(publicSiteHref(RIVET_HOSTS.gym)).toBe("https://www.rivetjo.com/");
     expect(publicSiteHref("localhost")).toBe("/");
   });
 

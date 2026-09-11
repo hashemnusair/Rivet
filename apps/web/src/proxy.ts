@@ -41,18 +41,14 @@ function routeByHost(request: NextRequest) {
   return applyHostDecision(request, decideHostRouting(hostOf(request), request.nextUrl.pathname));
 }
 
-/** Signed-in doors hand off to the shared resolver. Production landing pages
- * remain public; app roots initialize Clerk before their internal rewrites. */
+/** Signed-in doors and the landing hand off to the shared resolver, which
+ * opens the account's own area. App roots initialize Clerk before their
+ * internal rewrites. */
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   const decision = decideHostRouting(hostOf(request), request.nextUrl.pathname);
   if (decision.kind !== "next") return applyHostDecision(request, decision);
 
-  const target = signedInRedirectTarget({
-    pathname: request.nextUrl.pathname,
-    searchParams: request.nextUrl.searchParams,
-    referer: request.headers.get("referer"),
-    host: hostOf(request),
-  });
+  const target = signedInRedirectTarget({ pathname: request.nextUrl.pathname });
   if (target) {
     const { userId } = await auth();
     if (userId) {

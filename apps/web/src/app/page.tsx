@@ -68,7 +68,7 @@ export default function LandingPage() {
 
   return (
     <div className={`${styles.pageShell} marketing-body min-h-screen bg-paper text-ink`}>
-      <SignedInGuard directEntryOnly />
+      <SignedInGuard />
       <LandingMotionController />
       <ScrollProgress />
       <CinematicHeader />

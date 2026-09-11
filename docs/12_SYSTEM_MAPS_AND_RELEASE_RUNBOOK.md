@@ -10,7 +10,7 @@ All four hosts serve the same `rivet-web` Next.js deployment. Route ownership is
 | Host | Entry and owned routes |
 | --- | --- |
 | `rivetjo.com` | Permanent redirect to `www`, or directly to the owner of an old app URL |
-| `www.rivetjo.com` | Landing, gym application `/signup`, terms and privacy. Landing stays visible when signed in. |
+| `www.rivetjo.com` | Landing, gym application `/signup`, terms and privacy. The landing is never shown to a signed-in account: it hands off to `/login`, which opens `dashboard`, `app` or `platform` by role. Terms and privacy stay readable when signed in. |
 | `dashboard.rivetjo.com` | Root opens `/dashboard`; all gym workspace routes, `/login/gym` and invitation acceptance. Includes employed trainers. |
 | `app.rivetjo.com` | Root opens `/customer/discover`; `/customer/*`, member login/signup and public offers. `/signup` redirects to `/login/member/create`. Includes member PT booking. |
 | `platform.rivetjo.com` | Root opens `/platform`; `/platform/*` and `/login/admin`. Convex platform-admin authorization remains required. |

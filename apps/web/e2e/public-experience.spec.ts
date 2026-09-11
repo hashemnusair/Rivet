@@ -193,10 +193,13 @@ test.describe("RIVET gym applications", () => {
 
     // Preview behavior is intentionally session-scoped, so this cold public
     // navigation exercises the same first-snapshot failure path a visitor can
-    // hit after a deployment refresh. A signed-in owner arriving directly is
-    // sent to the dashboard, so the site is asked for explicitly.
-    await page.goto("/?site");
-    await expect(page).toHaveURL(/\/\?site$/);
+    // hit after a deployment refresh. The landing is never shown to a
+    // signed-in account, so the owner signs out first.
+    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByRole("menuitem", { name: "Sign out of demo" }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/$/);
     await expect(page.getByText(/Showing the last known RIVET data/i)).toBeVisible();
 
     await page.getByRole("button", { name: "Retry" }).click();
@@ -356,7 +359,11 @@ test.describe("RIVET platform administration", () => {
 
     // Public discovery and the landing-page network section must both consume
     // the filtered marketplace projection, never the platform tenant array.
-    await page.getByRole("link", { name: /Public site/i }).click();
+    // The landing is never shown to a signed-in account, so the administrator
+    // signs out and reaches the site from the sign-in page's brand link.
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await page.getByRole("link", { name: "RIVET home" }).click();
     await expect(page).toHaveURL(/\/$/);
     await page.getByRole("link", { name: "Find a gym", exact: true }).first().click();
     await expect(page).toHaveURL(/\/customer\/discover$/);

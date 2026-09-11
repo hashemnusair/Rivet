@@ -1,5 +1,11 @@
 # GymOS / RIVET current implementation state
 
+## Landing closed to signed-in accounts, 11 September 2026
+
+- Decision by Elias: `rivetjo.com` and `www.rivetjo.com` never show the landing to a signed-in account. The apex still canonicalizes to `www`; the middleware then sends any signed-in visitor on `/` to the `/login` resolver, which opens `dashboard`, `app` or `platform` by role. `signedInRedirectTarget` in `src/lib/routing/signed-in-routing.ts` is now a plain path set (`/`, `/signup` and the four doors); the `?site` escape, the same-site-referer exception and the production-host exemption are removed. `SignedInGuard` lost its `directEntryOnly` mode and covers demo mode and cached client navigation with the same rule.
+- Terms, privacy, member discovery and gym pages remain readable when signed in. The "Public site" entries in the gym account menu and the platform sidebar are removed because they would only bounce back; `publicSiteHref` no longer appends `?site`, and sign-out still returns to the signed-out `www` landing. Marketing header and footer links that lead to the landing now resolve to the visitor's own area when signed in.
+- Verification: web typecheck, canonical lint/secret-output audit, 20 unit files / 97 tests across routing, proxy, public, shell and platform suites (the proxy suite now proves a signed-in `www/` request is redirected to `/login` and a signed-out one is not), and all 24 `public-experience`, `host-routing` and `role-routing` browser journeys with retries disabled. The two journeys that used the landing while signed in now sign out first and reach it from the sign-in page's brand link. No Convex or provider change is needed; Vercel deploys the frontend from `main`.
+
 ## Convex Production release for the walkthrough, 11 September 2026
 
 - Elias released backend head `db43d7d` (local `main` fast-forwarded to `origin/main`, clean tree) to Convex Production `descriptive-meerkat-589` through the guarded `pnpm convex:deploy` path at 16:21 UTC. The `--dry-run --yes` pass first confirmed the exact Production target, clean schema validation and no index deletions; the deploy then added the four additive indexes `domainRecords.by_message_due`, `domainRecords.by_message_lease`, `messagingWorkerState.by_key` and `renewalDeliveries.by_status_channel_due`. No seed, import, restore or tenant-data mutation was run.

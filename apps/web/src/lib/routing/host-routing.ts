@@ -85,7 +85,7 @@ export function canonicalHref(href: string, hostname: string): string {
 }
 
 export function publicSiteHref(hostname: string): string {
-  return isRivetHost(hostname) ? `https://${RIVET_HOSTS.public}/?site` : "/";
+  return isRivetHost(hostname) ? `https://${RIVET_HOSTS.public}/` : "/";
 }
 
 /** A continuation cannot override the account's area or return to a login loop. */

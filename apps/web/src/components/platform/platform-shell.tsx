@@ -1,9 +1,8 @@
 "use client";
 
 import { loginHref } from "@/lib/routing/host-routing";
-import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, ExternalLink, FileSignature, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
+import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -158,7 +157,6 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 }
 
 function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
-  const publicHref = usePublicSiteHref();
   return (
     <>
       <div className="px-5 pb-6 pt-5">
@@ -192,14 +190,6 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
         </div>
       </nav>
       <div className="border-t border-night-line p-3">
-        <Link
-          href={publicHref}
-          onClick={onNavigate}
-          data-touch-target
-          className="flex h-8 items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink"
-        >
-          <ExternalLink className="size-4" aria-hidden /> Public site
-        </Link>
         <Link
           href="/dashboard"
           onClick={onNavigate}
