@@ -47,6 +47,12 @@ describe("production host proxy", () => {
     expect(response?.headers.get("location")).toBe("https://www.rivetjo.com/login");
   });
 
+  it("drops Clerk handshake parameters from the resolver redirect but keeps the continuation", async () => {
+    state.userId = "test-identity";
+    const response = await request("/?__clerk_handshake_nonce=abc&next=%2Fmembers", "www.rivetjo.com");
+    expect(response?.headers.get("location")).toBe("https://www.rivetjo.com/login?next=%2Fmembers");
+  });
+
   it("leaves the landing to signed-out visitors", async () => {
     const response = await request("/", "www.rivetjo.com");
     expect(response?.headers.get("location")).toBeNull();

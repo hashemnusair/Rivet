@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { HostRouteGuard } from "@/components/auth/host-route-guard";
-import { RIVET_ORIGINS } from "@/lib/routing/host-routing";
+import { RIVET_HOSTS, RIVET_ORIGINS } from "@/lib/routing/host-routing";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans_Arabic, Instrument_Sans, Manrope } from "next/font/google";
 import { RivetIdentityProvider } from "@/lib/auth/rivet-identity";
@@ -86,10 +86,31 @@ export const viewport: Viewport = {
   themeColor: "#f5f4ef",
 };
 
+/**
+ * Runs while the document is still parsing, before anything paints, on the
+ * landing only (`/` on a host that serves it; app hosts alias `/` to their
+ * own page). Clerk keeps its signed-in marker (`__client_uat`, non-zero when
+ * a session exists) on the root domain, readable on every host. The
+ * middleware normally redirects a signed-in account before the landing is
+ * served; when its Clerk handshake cannot complete, the page would otherwise
+ * render and wait for Clerk's browser script to notice the session. This
+ * closes that gap: a visitor carrying the marker never sees the landing. The
+ * document is hidden until the replacement navigation commits and shown
+ * again if the browser ever restores it from its back/forward cache.
+ */
+const APP_HOSTS = JSON.stringify([RIVET_HOSTS.gym, RIVET_HOSTS.member, RIVET_HOSTS.platform]);
+const PRE_PAINT_SIGNED_IN_GUARD =
+  `(function(){try{if(location.pathname!=="/"||${APP_HOSTS}.indexOf(location.hostname)!==-1)return;` +
+  'var m=document.cookie.match(/(?:^|; )__client_uat(?:_[A-Za-z0-9]+)?=([^;]*)/);if(!m||!m[1]||m[1]==="0")return;' +
+  'document.documentElement.style.visibility="hidden";' +
+  'addEventListener("pageshow",function(e){if(e.persisted)document.documentElement.style.visibility="";});' +
+  'location.replace("/login"+location.search);}catch(e){}})();';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" dir="ltr" data-scroll-behavior="smooth" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
+        <script dangerouslySetInnerHTML={{ __html: PRE_PAINT_SIGNED_IN_GUARD }} />
         <ClerkProvider allowedRedirectOrigins={RIVET_ORIGINS} signInUrl="/login" signUpUrl="/login/member/create" signInFallbackRedirectUrl="/login" signUpFallbackRedirectUrl="/login">
           <HostRouteGuard />
           <ConvexClientProvider>

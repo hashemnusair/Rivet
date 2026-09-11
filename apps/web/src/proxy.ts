@@ -54,7 +54,12 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
     if (userId) {
       const destination = request.nextUrl.clone();
       destination.pathname = target;
-      // Keep invitation/continuation parameters through the identity resolver.
+      // Keep invitation/continuation parameters through the identity resolver,
+      // but not Clerk's one-time handshake parameters: replaying a consumed
+      // nonce on the next request only produces a failed resolution.
+      for (const key of [...destination.searchParams.keys()]) {
+        if (key.startsWith("__clerk_")) destination.searchParams.delete(key);
+      }
       return NextResponse.redirect(destination);
     }
   }
