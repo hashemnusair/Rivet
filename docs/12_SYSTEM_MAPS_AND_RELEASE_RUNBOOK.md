@@ -35,7 +35,7 @@ No Convex deployment or DNS change is required for this frontend release. Do not
 1. Pick the test environment and a disposable gym. Record the site URL, Vercel project, Convex deployment and Clerk instance. Keep the existing live messaging pause in place.
 2. Agree on the release commit. From a clean main checkout, run `git pull --ff-only` and `git rev-parse HEAD`. In GitHub Actions, open the run for that exact commit and inspect every job. A successful build or code-generation job alone does not establish a passing browser suite or a deployment.
 3. In Vercel, open the deployment serving the walkthrough domain. Check its source commit, Ready status, environment and domain assignment. Check each separately deployed app/console domain that the walkthrough uses. An unrelated Ready preview does not prove that the intended domain serves the chosen commit.
-4. Have Elias confirm the Convex target and successful release from the agreed checkout. Use the guarded `pnpm convex:deploy` workflow and the additive ordering below if that release is still pending. Record the source SHA, deployment name, time and deploy result. Convex code generation and the frontend Git SHA do not prove backend deployment; do not assume the dashboard exposes a matching Git SHA automatically.
+4. Have Elias confirm the Convex target and successful release from the agreed checkout. Done for `db43d7d` on 11 September 2026; repeat for any later backend commit. Use the guarded `pnpm convex:deploy` workflow and the additive ordering below if that release is still pending. Record the source SHA, deployment name, time and deploy result. Convex code generation and the frontend Git SHA do not prove backend deployment; do not assume the dashboard exposes a matching Git SHA automatically.
 5. Confirm that the frontend points to that Convex target and that its Clerk instance matches the backend authentication configuration. Compare target names/URLs and instance identities in provider dashboards; do not copy secret values into chat, logs or this document. The existing safe environment-name command can establish presence, not verify secret values.
 6. Use separate real staff/member browser sessions. Verify the new class cancellation, purchase-date update and checklist assignment once on synthetic records, then run the business-day scenario below. Record expected versus actual behavior and the exact release identifiers for each failure.
 
@@ -1103,8 +1103,9 @@ Complete this phase before asking an agent to run staging or production checks. 
 - [x] Confirm the selected deployment is Production, not the linked development deployment.
 - [x] Confirm its deployment URL is the one referenced by Vercel Production `NEXT_PUBLIC_CONVEX_URL`.
 - [x] Confirm the current safety-gated schema/functions are deployed. Exact
-  repository head `d06021e` was deployed through the guarded operator path on
-  29 August 2026.
+  repository head `db43d7d` was deployed through the guarded operator path on
+  11 September 2026 (additive indexes only; see `CURRENT_STATE.md`). Earlier
+  guarded releases: `fdd6dac` on 31 August and `d06021e` on 29 August 2026.
 - [ ] Confirm `CLERK_FRONTEND_API_URL` exists and points to the Clerk Production issuer.
 - [ ] Confirm `CLERK_SECRET_KEY` exists and is a production key.
 - [ ] Confirm `ENTRY_PASS_SIGNING_SECRET` exists and is unique to Production.
