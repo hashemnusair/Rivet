@@ -1,5 +1,6 @@
 "use client";
 
+import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
@@ -10,10 +11,11 @@ import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
  * The public site's footer — the site map lives here, so every area is one
  * click away. Signed out it offers sign-in; signed in it names the
  * visitor's own area and offers sign-out, and drops the application and
- * account-creation links. No hooks beyond the viewer, so the landing and the
- * document pages share it without carrying the member shell's machinery.
+ * account-creation links. The public origin keeps landing links correct on
+ * member discovery and signup pages.
  */
 export function PublicFooter() {
+  const publicHref = usePublicSiteHref();
   const viewer = usePublicViewer();
   const signedIn = viewer.status === "signed-in" ? viewer : null;
   const [signingOut, setSigningOut] = useState(false);
@@ -31,11 +33,11 @@ export function PublicFooter() {
   };
 
   const productLinks: Array<[string, string]> = [
-    ["Overview", "/#product"],
-    ["For members", "/#member"],
-    ["Pricing", "/#pricing"],
+    ["Overview", `${publicHref}#product`],
+    ["For members", `${publicHref}#member`],
+    ["Pricing", `${publicHref}#pricing`],
   ];
-  if (!signedIn) productLinks.push(["Send gym application", "/signup"]);
+  if (!signedIn) productLinks.push(["Send gym application", `${publicHref.split("?")[0]}signup`]);
 
   const memberLinks: Array<[string, string]> = [["Find a gym", "/customer/discover"]];
   if (signedIn) {

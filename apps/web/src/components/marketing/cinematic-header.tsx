@@ -309,7 +309,7 @@ export function CinematicHeader({
                   Create account
                 </Link>
               ) : (
-                <Link href="/signup" className={styles.apply} inert={open}>
+                <Link href={`${publicHref.split("?")[0]}signup`} className={styles.apply} inert={open}>
                   Apply for access
                 </Link>
               )}
@@ -405,7 +405,7 @@ export function CinematicHeader({
                   <Link href={signedIn.destination.href} className={styles.menuCta} onClick={close}>{signedIn.destination.verb}</Link>
                 </>
               ) : signedOut ? (
-                <Link href="/signup" className={styles.menuCta} onClick={close}>Send gym application</Link>
+                <Link href={`${publicHref.split("?")[0]}signup`} className={styles.menuCta} onClick={close}>Send gym application</Link>
               ) : null}
             </div>
           </div>

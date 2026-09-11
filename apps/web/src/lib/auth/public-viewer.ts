@@ -1,5 +1,6 @@
 "use client";
 
+import { publicSiteHref } from "@/lib/routing/host-routing";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
@@ -96,7 +97,7 @@ export function usePublicViewer(): PublicViewer {
     return {
       status: "signed-in",
       destination: destinationForIdentity(identity),
-      signOut: () => clerkSignOut({ redirectUrl: "/" }),
+      signOut: () => clerkSignOut({ redirectUrl: publicSiteHref(window.location.hostname) }),
     };
   }, [clerkSignOut, customerSignedIn, experienceReady, identity, isLoaded, isSignedIn, platformAdminSignedIn, router, session, sessionLoading, signOutCustomer, signOutGym, signOutPlatformAdmin]);
 }
