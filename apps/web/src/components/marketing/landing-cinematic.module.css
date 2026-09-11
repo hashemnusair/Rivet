@@ -601,13 +601,12 @@
 .sheetUnderSunken { background: #edece5; }
 .sheetUnderStack { background: #1c1b16; }
 
-/* Scrolling moves section by section: each one snaps in under the bar, a
-   section taller than the screen can still be read through, and the footer
-   is the page's last resting place. The snap type itself is set on the
-   document in globals.css, only while the landing is mounted. */
+/* Sections are snap points, not stops: one that comes to rest near the bar
+   is pulled in under it, a fling can pass several, and the viewport may sit
+   between two of them. The snap type itself is set on the document in
+   globals.css (proximity, not mandatory), only while the landing is mounted. */
 .snapStart {
   scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 
 .snapEnd {

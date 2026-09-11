@@ -204,8 +204,9 @@
    class is set by the landing's motion controller, so no other page is moved. */
 html.landing-motion-ready {
   scroll-padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
-  /* Section by section: each landing section snaps in under the bar. */
-  scroll-snap-type: y mandatory;
+  /* A weak magnet: a section that ends up near the bar is pulled in under
+     it, but the page can still rest anywhere between two sections. */
+  scroll-snap-type: y proximity;
 }
 
 /* The stale-data notice sticks to the top of the document; on the landing
