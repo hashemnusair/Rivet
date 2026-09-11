@@ -1,12 +1,11 @@
-import { normalizeHostname } from "./host-routing";
+import { normalizeHostname, RIVET_HOSTS } from "./host-routing";
 
 /**
  * Pages that exist only for people who are signed out: the gym application
  * and the sign-in doors. A signed-in visitor who opens one is sent to the
  * resolver instead, which reads the account's role and opens the right area.
- * The landing is the same, but only for a direct arrival — typed, bookmarked
- * or linked from elsewhere. Navigating to it from inside RIVET, or with the
- * explicit `?site` flag, keeps the site open.
+ * Production marketing hosts always keep the landing open. Local previews
+ * retain their direct-arrival resolver and explicit `?site` behavior.
  */
 export const RESOLVER_PATH = "/login";
 export const SITE_PARAM = "site";
@@ -37,6 +36,7 @@ export function signedInRedirectTarget(input: {
   const { pathname, searchParams, referer, host } = input;
   if (SIGNED_OUT_ONLY_PATHS.has(pathname)) return RESOLVER_PATH;
   if (pathname !== "/") return null;
+  if (["rivetjo.com", RIVET_HOSTS.public].includes(normalizeHostname(host))) return null;
   if (searchParams.has(SITE_PARAM)) return null;
   if (isSameSiteReferer(referer, host)) return null;
   return RESOLVER_PATH;

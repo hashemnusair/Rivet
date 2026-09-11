@@ -143,7 +143,7 @@ describe("PasswordSignIn", () => {
     fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "secret-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
-    await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith("/customer/gyms/forge?branchId=abdoun"));
+    await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith("/login?next=%2Fcustomer%2Fgyms%2Fforge%3FbranchId%3Dabdoun"));
   });
 
   it("handles Clerk Client Trust without replacing the whole form", async () => {

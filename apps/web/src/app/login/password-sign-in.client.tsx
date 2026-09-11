@@ -1,9 +1,10 @@
 "use client";
 
+import { loginHref, safeInternalRedirect } from "@/lib/routing/host-routing";
 import { useSignIn } from "@clerk/nextjs";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -33,20 +34,20 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
     if (!signIn || signIn.status !== "complete") return false;
     setFinishing(true);
     try {
-      let decoratedRedirect = redirectUrl;
+      const continuation = safeInternalRedirect(redirectUrl, "/login");
+      const resolver = continuation.startsWith("/login") ? "/login" : loginHref(continuation);
+      let decoratedRedirect = resolver;
       const { error } = await signIn.finalize({
         navigate: async ({ decorateUrl }) => {
-          decoratedRedirect = decorateUrl(redirectUrl);
+          decoratedRedirect = decorateUrl(resolver);
         },
       });
       if (error) {
         setLocalError(messageFrom(error, "Your session could not be started. Please try again."));
         return false;
       }
-      if (redirectUrl !== "/login") {
-        if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
-        else router.replace(decoratedRedirect);
-      }
+      if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
+      else router.replace(decoratedRedirect);
       return true;
     } catch (error) {
       setLocalError(messageFrom(error, "Your session could not be started. Please try again."));

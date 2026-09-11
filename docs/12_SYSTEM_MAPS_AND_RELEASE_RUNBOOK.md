@@ -3,6 +3,33 @@
 Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
 daily-checklist Production release at application tip `fdd6dac`.
 
+## Domain routing release, 11 September 2026
+
+All four hosts serve the same `rivet-web` Next.js deployment. Route ownership is enforced in `src/lib/routing/host-routing.ts`, before Clerk redirects in `src/proxy.ts`, and on cached browser navigation by `HostRouteGuard`.
+
+| Host | Entry and owned routes |
+| --- | --- |
+| `rivetjo.com` | Permanent redirect to `www`, or directly to the owner of an old app URL |
+| `www.rivetjo.com` | Landing, gym application `/signup`, terms and privacy. Landing stays visible when signed in. |
+| `dashboard.rivetjo.com` | Root opens `/dashboard`; all gym workspace routes, `/login/gym` and invitation acceptance. Includes employed trainers. |
+| `app.rivetjo.com` | Root opens `/customer/discover`; `/customer/*`, member login/signup and public offers. `/signup` redirects to `/login/member/create`. Includes member PT booking. |
+| `platform.rivetjo.com` | Root opens `/platform`; `/platform/*` and `/login/admin`. Convex platform-admin authorization remains required. |
+| `admin.rivetjo.com` | Legacy alias, redirects to the canonical route owner. |
+
+`/login` is a shared identity resolver. A successful password sign-in always goes through it. It reads the Convex role, opens `/login` on the account's destination host before initializing member/branch state, and then opens the workspace. A `next` continuation survives when it belongs to that account's area. Browser-normalized external paths, auth loops and requests for another area use the role's default instead. Deep-link query strings are retained; explicit browser handoffs retain fragments. Generic login, API endpoints, Clerk handshakes and assets remain local on the four canonical hosts. Localhost and Vercel preview URLs do not redirect to production.
+
+Clerk uses the existing production instance for the root domain. [Clerk supports shared sessions across subdomains by default](https://clerk.com/docs/guides/dashboard/dns-domains/subdomain-allowlist); this setup does not require satellite domains. The provider explicitly allows redirects among the four origins and apex. If Clerk's Allowed Subdomains restriction is enabled, it must contain `www`, `dashboard`, `app` and `platform` under `rivetjo.com`. No cookies or tokens are copied through application URLs or browser storage.
+
+Release checks:
+
+- Run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`.
+- Run `CI=1 PLAYWRIGHT_PORT=3123 pnpm --filter web exec playwright test e2e/host-routing.spec.ts e2e/role-routing.spec.ts --retries=0`. The hostname tests send production host headers to the local mock server. Client handoffs have unit coverage; role journeys run on localhost because Clerk development initialization is not a production-domain session test.
+- Check that the same Ready production deployment serves all four canonical hosts.
+- Verify `www/login/gym` → `dashboard/login/gym`, `www/customer/my-gyms` → `app/customer/my-gyms`, `www/platform` → `platform/platform`, and `app/signup` → `app/login/member/create`. Use HTTPS URLs and check preserved query strings without credentials.
+- In a real signed-in browser, test owner/manager/receptionist, member and platform-admin role handoffs, branch selection, sign-out and opening an old URL. Provider session checks require an existing authorized account; mock-role tests do not establish Clerk production session continuity.
+
+No Convex deployment or DNS change is required for this frontend release. Do not deploy unrelated backend work to release these routing changes. Deployment evidence and test outcomes are recorded in `CURRENT_STATE.md`.
+
 ## Before Hashem and Elias's walkthrough
 
 1. Pick the test environment and a disposable gym. Record the site URL, Vercel project, Convex deployment and Clerk instance. Keep the existing live messaging pause in place.

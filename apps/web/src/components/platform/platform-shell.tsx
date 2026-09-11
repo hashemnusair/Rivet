@@ -1,10 +1,13 @@
 "use client";
 
+import { loginHref } from "@/lib/routing/host-routing";
+import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, ExternalLink, FileSignature, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
@@ -56,7 +59,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   // The console is reachable only through the hidden administrator sign-in.
   useEffect(() => {
     if (identityReady && previewSessionReady && experienceReady && (!identitySignedIn || !authorized || !platformAdminSignedIn))
-      router.replace("/login");
+      router.replace(DEMO_AUTH_BYPASS ? "/login" : loginHref(`${window.location.pathname}${window.location.search}${window.location.hash}`));
   }, [authorized, experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, previewSessionReady, router]);
 
   // The phone drawer closes on Escape and whenever the route changes.
@@ -155,6 +158,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 }
 
 function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
+  const publicHref = usePublicSiteHref();
   return (
     <>
       <div className="px-5 pb-6 pt-5">
@@ -189,7 +193,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
       </nav>
       <div className="border-t border-night-line p-3">
         <Link
-          href="/"
+          href={publicHref}
           onClick={onNavigate}
           data-touch-target
           className="flex h-8 items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink"

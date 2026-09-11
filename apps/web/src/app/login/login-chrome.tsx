@@ -1,5 +1,6 @@
 "use client";
 
+import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { ArrowLeft } from "lucide-react";
 import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import Image from "next/image";
@@ -48,12 +49,13 @@ export function LoginLayout({
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  const publicHref = usePublicSiteHref();
   const copy = BRAND_COPY[portal?.id ?? "chooser"];
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[42%_58%]">
       <div className="night-surface relative hidden flex-col justify-between bg-night p-10 text-night-ink lg:flex">
-        <Link href="/" aria-label="RIVET home">
+        <Link href={publicHref} aria-label="RIVET home">
           <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={149} height={38} priority />
         </Link>
 
@@ -74,7 +76,7 @@ export function LoginLayout({
 
       <div className="flex flex-col bg-paper px-5 py-8 sm:px-8">
         <div className="flex items-center justify-between">
-          <Link href="/" className="flex min-h-8 items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
+          <Link href={publicHref} className="flex min-h-8 items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
             <ArrowLeft className="size-3.5" aria-hidden /> rivet.jo
           </Link>
           {/* Members can create accounts here; gym access is issued by RIVET

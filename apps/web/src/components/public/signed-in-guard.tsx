@@ -1,7 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useRef } from "react";
+import { RIVET_HOSTS } from "@/lib/routing/host-routing";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { isSameSiteReferer, SITE_PARAM } from "@/lib/routing/signed-in-routing";
@@ -13,6 +14,7 @@ import { isSameSiteReferer, SITE_PARAM } from "@/lib/routing/signed-in-routing";
  * is a reader who chose the site.
  */
 function isDirectEntry(): boolean {
+  if (["rivetjo.com", RIVET_HOSTS.public].includes(window.location.hostname)) return false;
   if (new URLSearchParams(window.location.search).has(SITE_PARAM)) return false;
   const [entry] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
   if (entry?.type === "back_forward") return false;

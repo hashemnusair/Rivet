@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { LEGAL_LINKS } from "@/lib/rivet-contact";
@@ -92,6 +93,7 @@ export function CinematicHeader({
   audience?: "gym" | "member";
 }) {
   const onLanding = page === "landing";
+  const publicHref = usePublicSiteHref();
   const viewer = usePublicViewer();
   const signedIn = viewer.status === "signed-in" ? viewer : null;
   const signedOut = viewer.status === "signed-out";
@@ -287,7 +289,7 @@ export function CinematicHeader({
     <>
       <header className={cn(styles.header, "marketing-body", open && styles.headerOpen)}>
         <Link
-          href={onLanding ? "#top" : "/"}
+          href={onLanding ? "#top" : publicHref}
           className={styles.brand}
           aria-label={onLanding ? "RIVET, back to top" : "RIVET, home"}
           inert={open}
@@ -347,7 +349,7 @@ export function CinematicHeader({
               {NAV_ITEMS.map((item, index) => (
                 <li key={item.href} className={cn(styles.menuItem, NAV_DELAYS[index])}>
                   <Link
-                    href={onLanding ? item.href : homeHref(item.href)}
+                    href={onLanding ? item.href : `${publicHref}${item.href === "#top" ? "" : item.href}`}
                     className={styles.menuLink}
                     aria-current={onLanding && activeHref === item.href ? "true" : undefined}
                     onClick={onLanding ? (event) => navigate(event, item.href) : close}

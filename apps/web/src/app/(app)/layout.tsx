@@ -1,7 +1,8 @@
 "use client";
 
+import { loginHref } from "@/lib/routing/host-routing";
 import { useAuth } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useRef, useState } from "react";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -70,9 +71,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!identityReady || sessionLoading || identityStillResolving) return;
     if (!identitySignedIn) {
-      // Straight to the gym portal — the chooser would throw away the fact that
-      // we already know which side of the product they were trying to reach.
-      router.replace("/login");
+      // Keep the requested page while the resolver authenticates this account.
+      router.replace(DEMO_AUTH_BYPASS ? "/login" : loginHref(`${window.location.pathname}${window.location.search}${window.location.hash}`));
       return;
     }
     if (identity.status === "error" || identity.status === "anonymous") {

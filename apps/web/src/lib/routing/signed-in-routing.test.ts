@@ -5,9 +5,10 @@ const at = (pathname: string, search = "", referer: string | null = null, host =
   signedInRedirectTarget({ pathname, searchParams: new URLSearchParams(search), referer, host });
 
 describe("signed-in routing", () => {
-  it("sends a direct arrival on the landing to the resolver", () => {
-    expect(at("/")).toBe("/login");
-    expect(at("/", "", "https://www.google.com/")).toBe("/login");
+  it("keeps the production landing open for signed-in visitors", () => {
+    expect(at("/")).toBeNull();
+    expect(at("/", "", "https://www.google.com/")).toBeNull();
+    expect(at("/", "", null, "localhost")).toBe("/login");
   });
 
   it("keeps the landing open when it was reached from inside the site or asked for explicitly", () => {

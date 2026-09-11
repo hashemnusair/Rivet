@@ -1,5 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IdentityPanel } from "./identity-panels.client";
 
 const state = vi.hoisted(() => ({
@@ -54,6 +54,7 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 }));
 
 describe("IdentityPanel", () => {
+  afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     vi.useFakeTimers();
     state.replace.mockReset();
@@ -74,6 +75,25 @@ describe("IdentityPanel", () => {
       gymAccessUnavailable: false,
       memberships: [],
     } as import("@/lib/auth/rivet-identity").RivetIdentity;
+  });
+
+  it.each([
+    ["platform", "platform.rivetjo.com"],
+    ["gym", "dashboard.rivetjo.com"],
+    ["member", "app.rivetjo.com"],
+  ])("moves %s identity to its host before initializing browser state", (area, hostname) => {
+    state.identity.platformAdmin = area === "platform";
+    if (area === "gym") state.identity.memberships = [{
+      organizationId: "org-1", organizationName: "Gym", organizationSlug: "gym", role: "owner",
+      branchScope: "selected", branches: [{ id: "branch-1", name: "Main", code: "MAIN" }],
+    }];
+    const location = { href: "https://www.rivetjo.com/login", origin: "https://www.rivetjo.com", hostname: "www.rivetjo.com", search: "?next=%2Fmembers", replace: vi.fn() };
+    vi.stubGlobal("window", new Proxy(window, { get: (target, key) => key === "location" ? location : Reflect.get(target, key) }));
+    render(<IdentityPanel />);
+    expect(location.replace).toHaveBeenCalledWith(`https://${hostname}/login?next=%2Fmembers`);
+    expect(state.signIn).not.toHaveBeenCalled();
+    expect(state.signInAsIdentity).not.toHaveBeenCalled();
+    expect(state.signInPlatformAdmin).not.toHaveBeenCalled();
   });
 
   it("finishes the platform handoff after the branded transition", () => {

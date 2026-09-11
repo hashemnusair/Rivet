@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { HostRouteGuard } from "@/components/auth/host-route-guard";
+import { RIVET_ORIGINS } from "@/lib/routing/host-routing";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Archivo, IBM_Plex_Mono, IBM_Plex_Sans_Arabic, Instrument_Sans, Manrope } from "next/font/google";
 import { RivetIdentityProvider } from "@/lib/auth/rivet-identity";
@@ -88,7 +90,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" dir="ltr" data-scroll-behavior="smooth" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
-        <ClerkProvider>
+        <ClerkProvider allowedRedirectOrigins={RIVET_ORIGINS} signInUrl="/login" signUpUrl="/login/member/create" signInFallbackRedirectUrl="/login" signUpFallbackRedirectUrl="/login">
+          <HostRouteGuard />
           <ConvexClientProvider>
             <RivetIdentityProvider>
               <AppProviders>

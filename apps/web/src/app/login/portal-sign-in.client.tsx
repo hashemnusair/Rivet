@@ -14,9 +14,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { safeInternalRedirect } from "@/lib/routing/host-routing";
 import { SignedInGuard } from "@/components/public/signed-in-guard";
 import { Button } from "@/components/ui/button";
 import { Monogram } from "@/components/ui/misc";
@@ -252,11 +254,6 @@ function DoorChooser({ next }: { next: string | null }) {
       </p>
     </div>
   );
-}
-
-function safeInternalRedirect(value: string | null, fallback: string): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return fallback;
-  return value;
 }
 
 /** The real build has one Clerk form; these links exist only in mock preview mode. */

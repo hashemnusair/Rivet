@@ -1,5 +1,5 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { decideHostRouting, type HostRoutingDecision } from "@/lib/routing/host-routing";
 import { signedInRedirectTarget } from "@/lib/routing/signed-in-routing";
@@ -30,6 +30,7 @@ function applyHostDecision(request: NextRequest, decision: HostRoutingDecision) 
     destination.protocol = "https:";
     destination.hostname = decision.hostname;
     destination.port = "";
+    if (decision.pathname) destination.pathname = decision.pathname;
     return NextResponse.redirect(destination, decision.status);
   }
 
@@ -40,12 +41,8 @@ function routeByHost(request: NextRequest) {
   return applyHostDecision(request, decideHostRouting(hostOf(request), request.nextUrl.pathname));
 }
 
-/**
- * With a Clerk session, the public site's signed-out pages are not shown: a
- * direct arrival on the landing, the gym application and the sign-in doors go
- * to the resolver, which opens the account's own area. Hostname rewrites
- * (the app and console hosts) are decided first and never redirected.
- */
+/** Signed-in doors hand off to the shared resolver. Production landing pages
+ * remain public; app roots initialize Clerk before their internal rewrites. */
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   const decision = decideHostRouting(hostOf(request), request.nextUrl.pathname);
   if (decision.kind !== "next") return applyHostDecision(request, decision);
@@ -61,7 +58,7 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
     if (userId) {
       const destination = request.nextUrl.clone();
       destination.pathname = target;
-      destination.search = "";
+      // Keep invitation/continuation parameters through the identity resolver.
       return NextResponse.redirect(destination);
     }
   }
@@ -69,7 +66,12 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
   return NextResponse.next();
 });
 
-export default DEMO_AUTH_BYPASS ? routeByHost : clerkProxy;
+export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  // Canonical redirects precede Clerk so an old host never starts a handshake.
+  const decision = decideHostRouting(hostOf(request), request.nextUrl.pathname);
+  if (decision.kind === "redirect") return applyHostDecision(request, decision);
+  return DEMO_AUTH_BYPASS ? routeByHost(request) : clerkProxy(request, event);
+}
 
 export const config = {
   matcher: [

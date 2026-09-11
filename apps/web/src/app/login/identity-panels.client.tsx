@@ -1,10 +1,11 @@
 "use client";
 
+import { isRivetHost, RIVET_HOSTS, postSignInPath } from "@/lib/routing/host-routing";
 import { useAction } from "convex/react";
 import { useClerk } from "@clerk/nextjs";
 import { CircleAlert, LogOut } from "lucide-react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,26 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
 
   if (identity.status !== "ready") return null;
 
+  return <IdentityHostGate identity={identity}><IdentityEntries identity={identity} audience={audience} /></IdentityHostGate>;
+}
+
+/** Resolve the host before branch/member setup, whose browser state is origin-scoped. */
+function IdentityHostGate({ identity, children }: { identity: RivetIdentity; children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  const destination = destinationFor(identity);
+  const host = destination.area === "platform" ? RIVET_HOSTS.platform
+    : destination.area === "member" ? RIVET_HOSTS.member : RIVET_HOSTS.gym;
+  useEffect(() => {
+    if (isRivetHost(window.location.hostname) && window.location.hostname !== host) {
+      window.location.replace(`https://${host}/login${window.location.search}`);
+      return;
+    }
+    setReady(true);
+  }, [host]);
+  return ready ? children : <AutomaticEntry label="Opening your account" />;
+}
+
+function IdentityEntries({ identity, audience }: { identity: RivetIdentity; audience: Audience }) {
   if (audience === "staff") {
     if (identity.memberships.length > 0) {
       const staffDestination = destinationFor(identity);
@@ -139,7 +160,7 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
     try {
       await selectOrganization(organizationId);
       const selected = identity.memberships.find((membership) => membership.organizationId === organizationId);
-      if (selected) router.replace(selected.role === "receptionist" ? "/reception" : "/dashboard");
+      if (selected) router.replace(postSignInPath(selected.role === "receptionist" ? "/reception" : "/dashboard", window.location.search));
     } catch {
       setBusy(undefined);
       setError(true);
@@ -225,7 +246,7 @@ function BranchSelection({ identity, membership }: { identity: RivetIdentity; me
         }),
         holdTransition(),
       ]);
-      router.replace(destination.href);
+      router.replace(postSignInPath(destination.href, window.location.search));
     } catch {
       setBusy(undefined);
       setFailed(true);
@@ -270,7 +291,7 @@ function AutomaticGymEntry({ identity, membership }: { identity: RivetIdentity; 
       }),
       holdTransition(),
     ])
-      .then(() => router.replace(destination.href))
+      .then(() => router.replace(postSignInPath(destination.href, window.location.search)))
       .catch(() => {
         setFailed(true);
         toast.error("Could not open the workspace.");
@@ -302,7 +323,7 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
       signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" }),
       holdTransition(),
     ])
-      .then(() => router.replace("/customer/my-gyms"))
+      .then(() => router.replace(postSignInPath("/customer/my-gyms", window.location.search)))
       .catch(() => setFailed(true));
   }, [identity.email, identity.fullName, router, signInAsIdentity]);
 
@@ -332,7 +353,7 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
     if (!identity.platformAdmin || started.current) return;
     started.current = true;
     signInPlatformAdminRef.current();
-    const timer = window.setTimeout(() => router.replace("/platform"), ENTRY_TRANSITION_MS);
+    const timer = window.setTimeout(() => router.replace(postSignInPath("/platform", window.location.search)), ENTRY_TRANSITION_MS);
     return () => window.clearTimeout(timer);
   }, [identity.platformAdmin, router]);
 

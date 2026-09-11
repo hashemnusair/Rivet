@@ -1,5 +1,6 @@
 "use client";
 
+import { publicSiteHref } from "@/lib/routing/host-routing";
 import { useClerk } from "@clerk/nextjs";
 import { Beaker, Building2, Check, ChevronDown, ExternalLink, GraduationCap, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -302,7 +303,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               <Building2 /> Organization settings
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/getting-started")}><GraduationCap /> Getting started</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push("/")}>
+            <DropdownMenuItem onClick={() => { window.location.assign(publicSiteHref(window.location.hostname)); }}>
               <ExternalLink /> Public site
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => void handleSignOut()}>
