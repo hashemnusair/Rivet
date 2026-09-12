@@ -205,7 +205,7 @@ export function toWesternDigits(text: string): string {
     .replace(/[−–—]/g, "-");
 }
 
-const CURRENCY_WORD = /[$€£]|[A-Za-z]+|[ء-ي][ء-ي.]*/g;
+const CURRENCY_WORD = /US\$|[$€£]|[A-Za-z]+|[ء-ي][ء-ي.]*/gi;
 const GROUPED_WITH_SPACES = /^-?\d{1,3}( \d{3})+(\.\d*)?$/;
 const GROUPED_WITH_COMMAS = /^-?(\d{1,3}(,\d{3})+|\d+)?(\.\d*)?$/;
 
@@ -229,9 +229,14 @@ export function readMoneyInput(raw: string, currency = "JOD"): MoneyInputResult 
 
   let mismatch: string | undefined;
   let unreadable = false;
-  text = text.replace(CURRENCY_WORD, (word) => {
+  text = text.replace(CURRENCY_WORD, (word: string, offset: number, source: string) => {
     const owner = ALIAS_TO_CURRENCY.get(word.toUpperCase());
-    if (owner === code) return " ";
+    if (owner === code) {
+      // Currency labels may surround the amount, but must never join digits
+      // into a thousands group (for example, "1JOD250" becoming "1 250").
+      if (/\d/.test(source.slice(0, offset)) && /\d/.test(source.slice(offset + word.length))) unreadable = true;
+      return " ";
+    }
     if (owner) mismatch = owner;
     else unreadable = true;
     return " ";

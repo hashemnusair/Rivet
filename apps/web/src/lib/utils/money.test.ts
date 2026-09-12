@@ -154,6 +154,8 @@ describe("readMoneyInput policy", () => {
 
   it("strips the gym's own currency however it was typed", () => {
     expect(parseMoneyInput("JD 40")).toEqual({ amount: 40_000, currency: "JOD" });
+    expect(parseMoneyInput("JOD40")).toEqual({ amount: 40_000, currency: "JOD" });
+    expect(parseMoneyInput("40JOD")).toEqual({ amount: 40_000, currency: "JOD" });
     expect(parseMoneyInput("40 jod")).toEqual({ amount: 40_000, currency: "JOD" });
     expect(parseMoneyInput("40 د.ا")).toEqual({ amount: 40_000, currency: "JOD" });
     expect(parseMoneyInput("$ 40", "USD")).toEqual({ amount: 4_000, currency: "USD" });
@@ -168,6 +170,19 @@ describe("readMoneyInput policy", () => {
     }
     expect(parseMoneyInput("$40")).toBeNull();
   });
+
+  it("reads the complete US dollar alias as one currency label", () => {
+    expect(parseMoneyInput("US$40.50", "USD")).toEqual({ amount: 4_050, currency: "USD" });
+    expect(parseMoneyInput("40.50 us$", "USD")).toEqual({ amount: 4_050, currency: "USD" });
+    expect(readMoneyInput("US$40.50", "JOD")).toMatchObject({ ok: false, problem: "currency_mismatch" });
+  });
+
+  it.each(["1JOD250", "1 JOD 250", "١د.ا٢٥٠", "40JOD.500", "1$250", "1US$250"])(
+    "rejects a currency label inside the number: %s",
+    (raw) => {
+      expect(readMoneyInput(raw, raw.includes("$") ? "USD" : "JOD")).toMatchObject({ ok: false, problem: "not_a_number" });
+    },
+  );
 
   it("refuses the separators it cannot read rather than guessing", () => {
     for (const raw of ["1,2", "1.250,000", "1,2500", "1.250.000", "1 25"]) {
