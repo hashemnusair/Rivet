@@ -35,4 +35,17 @@ describe("human-readable CSV exports", () => {
     expect(formatMinorUnits(1_050, "USD")).toBe("10.50");
     expect(csvCell(false)).toBe("No");
   });
+
+  it.each(["\n=2+2", "\r\n@SUM(1)", "\t\n+2+2", "\u00a0-2+2"])(
+    "neutralizes formulas after leading whitespace: %j",
+    (value) => {
+      const escaped = `'${value}`;
+      expect(csvCell(value)).toBe(/[\r\n]/.test(value) ? `"${escaped}"` : escaped);
+    },
+  );
+
+  it("preserves ordinary multiline text and escapes formula quotes", () => {
+    expect(csvCell("First line\nSecond line")).toBe('"First line\nSecond line"');
+    expect(csvCell('\n="quoted"')).toBe('"\'\n=""quoted"""');
+  });
 });

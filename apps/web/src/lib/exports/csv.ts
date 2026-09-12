@@ -13,7 +13,7 @@ export interface CsvSection {
 }
 
 const UTF8_BOM = "\uFEFF";
-const FORMULA_PREFIX = /^[\t\r ]*[=+\-@]/;
+const FORMULA_PREFIX = /^\s*[=+\-@]/;
 const CURRENCY_EXPONENTS: Record<string, number> = {
   AED: 2,
   BHD: 3,

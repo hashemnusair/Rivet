@@ -20,6 +20,8 @@ values, applicant details, and provider credentials out of this file.
 
 The entries below are current. Older dated sections retain their historical verification and release evidence; an old unchecked item is not automatically an unimplemented feature. `CURRENT_STATE.md` owns the implementation matrix and docs/12 owns release verification.
 
+- [x] 12 September: reject currency labels embedded inside money inputs, recognize the existing `US$` alias, and neutralize CSV formula prefixes after leading newlines or nonbreaking spaces. See `CURRENT_STATE.md` for scope and verification.
+- [ ] Unify currency formatting for newly written audit, timeline and notification text in both adapters. Several paths still divide minor units by 1,000 or label amounts JOD regardless of currency; USD 4,000 minor units can be displayed as USD 4.000 instead of USD 40.00. Reconcile the money/export exponent tables, cover JOD and two-decimal currencies with adapter regressions, and preserve immutable historical events.
 - [x] Fix customer identity backfill progress past unresolved/profile-only rows, with checkpoint and regression tests.
 - [x] Replace messaging history scans with bounded due indexes and fair source leasing. Provider completion is still deferred.
 - [x] Hide completed onboarding banners and show success only after a saved mutation.
