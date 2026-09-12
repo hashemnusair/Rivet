@@ -1,15 +1,18 @@
-import type { Money } from "@/lib/domain/types";
+import type { Money } from "../domain/money";
 
 /** ISO 4217 minor-unit exponents for the currencies we care about. */
 const EXPONENTS: Record<string, number> = {
   JOD: 3,
   USD: 2,
   EUR: 2,
+  GBP: 2,
+  IQD: 3,
   SAR: 2,
   AED: 2,
   KWD: 3,
   BHD: 3,
   OMR: 3,
+  TND: 3,
 };
 
 export function exponentFor(currency: string): number {
@@ -230,7 +233,8 @@ export function readMoneyInput(raw: string, currency = "JOD"): MoneyInputResult 
   let mismatch: string | undefined;
   let unreadable = false;
   text = text.replace(CURRENCY_WORD, (word: string, offset: number, source: string) => {
-    const owner = ALIAS_TO_CURRENCY.get(word.toUpperCase());
+    const label = word.toUpperCase();
+    const owner = label === code ? code : ALIAS_TO_CURRENCY.get(label);
     if (owner === code) {
       // Currency labels may surround the amount, but must never join digits
       // into a thousands group (for example, "1JOD250" becoming "1 250").

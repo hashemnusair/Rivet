@@ -1,13 +1,19 @@
 # GymOS / RIVET current implementation state
 
+## Shared currency precision, 12 September 2026
+
+- Consolidated CSV amount formatting onto the shared money helper and retained the export currency set. IQD and TND inputs and UI formatting now use the same three decimal places as their exports. Explicit codes for the configured currency, including GBP, IQD and TND, no longer require an entry in the colloquial-alias list to parse successfully.
+- Added regressions for regional precision, configured-code prefixes/suffixes, embedded-label rejection, negative exported amounts, and unavailable export values. Read `apps/web/src/lib/utils/money.ts` and `apps/web/src/lib/exports/csv.ts` first. No stored amounts or currency settings change.
+- Verification: money, CSV, member-import and Convex-export suites passed all 61 tests. Zero-warning ESLint for the changed code and `git diff --check` passed.
+
 ## Repository review and input/export fixes, 12 September 2026
 
 - Fixed the shared money parser accepting embedded currency labels as thousands separators. `1JOD250`, its Arabic equivalent, and `1$250` now fail validation instead of becoming 1,250 major units. Currency prefixes and suffixes remain supported; the existing `US$` alias now parses as one token and still rejects a different target currency.
 - Extended CSV formula neutralization to all leading whitespace, including LF, CRLF and nonbreaking spaces. Ordinary multiline text and quote escaping remain intact. Added regressions for both helpers, first reproducing the failures against the original implementation.
 - Scope: focused code fixes after reviewing current handoffs, scripts, routing, imports, money helpers and export consumers. No visual redesign, dependency changes, schema changes, production data changes or deployment. `FRONTEND_HANDOFF.md` remains unchanged. Historical audit records are not rewritten.
-- Verification: the final full suite passed 247 files / 1,521 tests plus all 14 repository-safety tests. Both web and Convex TypeScript checks, canonical lint with the secret-output audit, and `git diff --check` passed. The money-input and CSV changes are split into separate commits at the user's request; push and release verification follow integration with current `origin/main`.
+- Verification: after preserving six incoming commits through `661a8c5`, the integrated full suite passed 248 files / 1,525 tests plus all 14 repository-safety tests. Both TypeScript checks, canonical lint with the secret-output audit, production build and `git diff --check` passed. Pushed separate money-input (`9e87d41`) and CSV (`c62ad64`) commits to `main` without force. GitHub CI run 34680155561 was in progress at the first check. No Convex deployment was run in this session.
 - Remaining: audit/timeline/notification text in both adapters still contains fixed JOD labels or division by 1,000. Currency precision tables also differ between money and export helpers. Follow up through the canonical backlog before claiming consistent non-JOD output. Large adapter modules are candidates for incremental extraction with parity tests, not a wholesale rewrite.
-- Read first: `apps/web/src/lib/utils/money.ts`, `apps/web/src/lib/exports/csv.ts`, and their adjacent tests. Verification commands: `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `git diff --check`. Build and browser checks are outside this helper-only pass.
+- Read first: `apps/web/src/lib/utils/money.ts`, `apps/web/src/lib/exports/csv.ts`, and their adjacent tests. Verification commands: `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, `git diff --check`. Browser checks were not rerun locally for these helpers.
 
 ## Landing asks Clerk before it paints, 12 September 2026
 

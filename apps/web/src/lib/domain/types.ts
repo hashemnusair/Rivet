@@ -1,4 +1,6 @@
 import type { LeadProgressFacts } from "@/lib/crm/lead-progression";
+import type { Money } from "./money";
+export type { Money } from "./money";
 
 /**
  * RIVET / GymOS domain types.
@@ -18,12 +20,6 @@ import type { LeadProgressFacts } from "@/lib/crm/lead-progression";
 export type UUID = string;
 export type ISODateTime = string;
 export type ISODate = string;
-
-export interface Money {
-  /** Integer minor units. JOD has 3 decimal places: 40_000 = JOD 40.000 */
-  amount: number;
-  currency: string; // ISO 4217, e.g. "JOD"
-}
 
 export interface Page<T> {
   items: T[];

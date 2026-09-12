@@ -1,3 +1,5 @@
+import { toMajorString } from "../utils/money";
+
 export type CsvValue = string | number | boolean | null | undefined;
 
 export interface CsvMetadataItem {
@@ -14,19 +16,6 @@ export interface CsvSection {
 
 const UTF8_BOM = "\uFEFF";
 const FORMULA_PREFIX = /^\s*[=+\-@]/;
-const CURRENCY_EXPONENTS: Record<string, number> = {
-  AED: 2,
-  BHD: 3,
-  EUR: 2,
-  GBP: 2,
-  IQD: 3,
-  JOD: 3,
-  KWD: 3,
-  OMR: 3,
-  SAR: 2,
-  TND: 3,
-  USD: 2,
-};
 
 /**
  * Escapes one spreadsheet cell and prevents values from being interpreted as
@@ -111,8 +100,7 @@ export function formatExportDateTime(value: string | number | Date | undefined, 
 
 export function formatMinorUnits(amountMinor: number | undefined, currency = "JOD"): string {
   if (amountMinor === undefined || !Number.isFinite(amountMinor)) return "";
-  const exponent = CURRENCY_EXPONENTS[currency.toUpperCase()] ?? 2;
-  return (amountMinor / 10 ** exponent).toFixed(exponent);
+  return toMajorString({ amount: amountMinor, currency });
 }
 
 export function exportStatusLabel(value: string | undefined): string {

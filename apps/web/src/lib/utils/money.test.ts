@@ -35,6 +35,12 @@ describe("currency exponents", () => {
     expect(exponentFor("jod")).toBe(3);
     expect(exponentFor("XYZ")).toBe(2);
   });
+
+  it.each(["IQD", "TND"])("uses the same three-decimal precision as exports for %s", (currency) => {
+    expect(exponentFor(currency)).toBe(3);
+    expect(toMajorString(money(40_125, currency))).toBe("40.125");
+    expect(parseMoneyInput("40.125", currency)).toEqual(money(40_125, currency));
+  });
 });
 
 describe("minor/major conversion", () => {
@@ -175,6 +181,13 @@ describe("readMoneyInput policy", () => {
     expect(parseMoneyInput("US$40.50", "USD")).toEqual({ amount: 4_050, currency: "USD" });
     expect(parseMoneyInput("40.50 us$", "USD")).toEqual({ amount: 4_050, currency: "USD" });
     expect(readMoneyInput("US$40.50", "JOD")).toMatchObject({ ok: false, problem: "currency_mismatch" });
+  });
+
+  it.each(["GBP", "IQD", "TND"])("accepts the configured currency code %s without requiring an alias", (currency) => {
+    const expected = parseMoneyInput("40", currency);
+    expect(parseMoneyInput(`${currency} 40`, currency)).toEqual(expected);
+    expect(parseMoneyInput(`40 ${currency.toLowerCase()}`, currency)).toEqual(expected);
+    expect(parseMoneyInput(`1${currency}250`, currency)).toBeNull();
   });
 
   it.each(["1JOD250", "1 JOD 250", "١د.ا٢٥٠", "40JOD.500", "1$250", "1US$250"])(

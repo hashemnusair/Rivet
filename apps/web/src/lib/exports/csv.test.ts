@@ -36,6 +36,16 @@ describe("human-readable CSV exports", () => {
     expect(csvCell(false)).toBe("No");
   });
 
+  it("preserves regional currency precision and blank unavailable amounts", () => {
+    expect(formatMinorUnits(40_125, "IQD")).toBe("40.125");
+    expect(formatMinorUnits(-40_125, "tnd")).toBe("-40.125");
+    expect(formatMinorUnits(4_050, "GBP")).toBe("40.50");
+    expect(formatMinorUnits(0, "USD")).toBe("0.00");
+    expect(formatMinorUnits(undefined)).toBe("");
+    expect(formatMinorUnits(Number.NaN)).toBe("");
+    expect(formatMinorUnits(Number.POSITIVE_INFINITY)).toBe("");
+  });
+
   it.each(["\n=2+2", "\r\n@SUM(1)", "\t\n+2+2", "\u00a0-2+2"])(
     "neutralizes formulas after leading whitespace: %j",
     (value) => {
