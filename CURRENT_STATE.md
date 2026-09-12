@@ -1,9 +1,17 @@
 # GymOS / RIVET current implementation state
 
+## Supplier payment currency text, 12 September 2026
+
+- Replaced fixed division by 1,000 in supplier-payment and reversal audit summaries and overpayment errors in both Convex and the mock adapter. USD 4,000 minor units now reads USD 40.00; JOD still uses three decimal places. The code writes corrected text for new events and preserves historical audit events, stored amounts, allocation policy and authorization.
+- Added JOD/USD payment-and-reversal regressions for both adapters. They verify the overpayment message, persisted amount, both audit summaries and restored payable balance. Both payables suites passed all 15 tests after first reproducing the USD failures.
+- Final local validation for the currency and supplier-payment commits: full suite passed 248 files / 1,535 tests plus all 14 repository-safety tests; web and Convex typechecks, canonical lint/secret-output audit, production build and `git diff --check` passed. The earlier input/export push passed GitHub's static and generated-code jobs; its browser job was still running at the last check. Browser tests were not rerun locally for this pass.
+- Read `apps/web/convex/payables.ts`, `apps/web/src/lib/mock/MockGymOSApi.ts`, and their payables tests first. No schema change is required. The Convex function changes need the guarded backend release procedure before Production uses the new wording; this session only pushes repository commits.
+
 ## Shared currency precision, 12 September 2026
 
 - Consolidated CSV amount formatting onto the shared money helper and retained the export currency set. IQD and TND inputs and UI formatting now use the same three decimal places as their exports. Explicit codes for the configured currency, including GBP, IQD and TND, no longer require an entry in the colloquial-alias list to parse successfully.
 - Added regressions for regional precision, configured-code prefixes/suffixes, embedded-label rejection, negative exported amounts, and unavailable export values. Read `apps/web/src/lib/utils/money.ts` and `apps/web/src/lib/exports/csv.ts` first. No stored amounts or currency settings change.
+- Moved the existing `Money` interface to `apps/web/src/lib/domain/money.ts` and re-exported it from the original domain-types module. This keeps the newly shared helper compatible with Convex's independent TypeScript project without changing consumer imports or the data contract.
 - Verification: money, CSV, member-import and Convex-export suites passed all 61 tests. Zero-warning ESLint for the changed code and `git diff --check` passed.
 
 ## Repository review and input/export fixes, 12 September 2026

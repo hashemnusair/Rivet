@@ -12,11 +12,11 @@ const JOD = (amount: number) => ({ amount, currency: "JOD" });
 type PayablesPage = { items: Array<{ id: string; status: string; original: { amount: number }; paid: { amount: number }; remaining: { amount: number }; ageDays: number; supplierName: string; dueDate?: string }>; matchedCount: number; nextCursor?: string; totals: { outstanding: { amount: number }; openCount: number }; supplierTotals: Array<{ supplierName: string; outstanding: { amount: number } }>; aging: Array<{ bucket: string; outstanding: { amount: number }; count: number }> };
 type PaymentDetail = { id: string; status: string; method: string; amount: { amount: number }; shiftId?: string; allocations: Array<{ payableId: string; amount: { amount: number } }>; supplierRemaining: { amount: number }; ledgerPostingStatus: string; reversal?: { reason: string; shiftId?: string; ledgerPostingStatus: string }; payables: Array<{ payableId: string; remaining: { amount: number }; status: string }> };
 
-async function seeded() {
+async function seeded(currency = "JOD") {
   const t = convexTest(schema, modules);
   await t.run(async (ctx) => {
     const now = Date.now();
-    const organization = await ctx.db.insert("organizations", { publicId: "payables-org-a", name: "Payables A", slug: "payables-a", status: "active", subscriptionPlan: "Pro", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
+    const organization = await ctx.db.insert("organizations", { publicId: "payables-org-a", name: "Payables A", slug: "payables-a", status: "active", subscriptionPlan: "Pro", timezone: "Asia/Amman", currency, createdAt: now, updatedAt: now });
     const branchA = await ctx.db.insert("branches", { organizationId: organization, publicId: "payables-branch-a", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
     const branchB = await ctx.db.insert("branches", { organizationId: organization, publicId: "payables-branch-b", name: "Second", code: "SECOND", active: true, status: "active", createdAt: now, updatedAt: now });
     const owner = await ctx.db.insert("users", { publicId: "payables-owner", authSubject: "clerk-payables-owner", email: "owner@payables.example", fullName: "Payables Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
@@ -41,16 +41,35 @@ async function seeded() {
 }
 
 /** Seeds JOD 1,650.000 owed to one supplier through a fully received order. */
-async function seededPayable(owner: ReturnType<ReturnType<typeof convexTest>["withIdentity"]>, branchId = "payables-branch-a", tag = "a") {
+async function seededPayable(owner: ReturnType<ReturnType<typeof convexTest>["withIdentity"]>, branchId = "payables-branch-a", tag = "a", currency = "JOD") {
   const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: `PAY-${tag.toUpperCase()}`, name: `Whey protein ${tag}`, unit: "each", reorderPoint: 1 })) as { id: string };
   const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: `Jordan Sports Supply ${tag}`, branchIds: [branchId] })) as { id: string; name: string };
-  const order = await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { branchId, sourceType: "supplier", supplierId: supplier.id, lines: [{ productId: product.id, quantity: 33, unitCost: JOD(50_000) }], supplierInvoiceReference: `JSS-INV-${tag}` })) as { id: string };
+  const order = await owner.mutation(api.domain.mutate, operation("operations.purchase_order.create", { branchId, sourceType: "supplier", supplierId: supplier.id, lines: [{ productId: product.id, quantity: 33, unitCost: { amount: 50_000, currency } }], supplierInvoiceReference: `JSS-INV-${tag}` })) as { id: string };
   await owner.mutation(api.domain.mutate, operation("operations.purchase_order.approve", { id: order.id }));
   await owner.mutation(api.domain.mutate, operation("operations.purchase_order.receive", { purchaseOrderId: order.id, idempotencyKey: `receive-${tag}` }));
   return { product, supplier, order, payableId: `purchase_order:${order.id}` };
 }
 
 describe("supplier payables and supplier payments", () => {
+  it.each([
+    { currency: "JOD", paymentText: "4.000", balanceText: "1650.000" },
+    { currency: "USD", paymentText: "40.00", balanceText: "16500.00" },
+  ])("keeps $currency payment and reversal audit text consistent with stored amounts", async ({ currency, paymentText, balanceText }) => {
+    const { owner, t } = await seeded(currency);
+    const { supplier, payableId } = await seededPayable(owner, "payables-branch-a", "currency", currency);
+    const input = (amount: number, idempotencyKey: string) => ({ supplierId: supplier.id, branchId: "payables-branch-a", method: "bank_transfer", reference: "CURRENCY-TEST", amount: { amount, currency }, allocations: [{ payableId, amount: { amount, currency } }], idempotencyKey });
+    await expect(owner.mutation(api.domain.mutate, operation("operations.supplier_payment.record", input(1_650_001, "overpay")))).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT", message: expect.stringContaining(`${currency} ${balanceText} outstanding`) }) });
+
+    const payment = await owner.mutation(api.domain.mutate, operation("operations.supplier_payment.record", input(4_000, "pay"))) as PaymentDetail;
+    expect(payment.amount).toEqual({ amount: 4_000, currency });
+    await owner.mutation(api.domain.mutate, operation("operations.supplier_payment.reverse", { paymentId: payment.id, reason: "Wrong supplier reference", idempotencyKey: "reverse" }));
+    const audits = await t.run(async (ctx) => (await ctx.db.query("auditEvents").collect()).filter((event) => event.entityPublicId === payment.id));
+    expect(audits.find((event) => event.action === "operations.supplier_payment.record")?.summary).toBe(`Paid ${supplier.name} ${currency} ${paymentText} by bank transfer`);
+    expect(audits.find((event) => event.action === "operations.supplier_payment.reverse")?.summary).toBe(`Reversed ${supplier.name} payment of ${currency} ${paymentText} (bank transfer)`);
+    const restored = await owner.query(api.domain.query, operation("operations.payables.list")) as PayablesPage;
+    expect(restored.items[0]?.remaining.amount).toBe(1_650_000);
+  });
+
   it("projects a received order as an aged, unpaid payable and settles it with cash then a bank transfer", async () => {
     const { owner, t } = await seeded();
     const { supplier, order, payableId } = await seededPayable(owner);

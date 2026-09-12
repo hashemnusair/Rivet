@@ -10478,7 +10478,7 @@ export class MockGymOSApi implements GymOSApi {
         if (!payable) throw ApiError.of(ERR.NOT_FOUND, `Payable ${allocation.payableId} is not an open supplier balance you can see.`);
         if (payable.supplierId !== supplier.id) throw ApiError.of(ERR.VALIDATION, `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. One payment settles one supplier.`);
         if (payable.status === "paid" || payable.status === "reversed") throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { details: { payableId: payable.id, status: payable.status } });
-        if (allocation.amountMinor > payable.remaining.amount) throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} has only ${currency} ${(payable.remaining.amount / 1000).toFixed(3)} outstanding; the allocation would overpay it.`, { details: { payableId: payable.id, remainingMinor: payable.remaining.amount, requestedMinor: allocation.amountMinor } });
+        if (allocation.amountMinor > payable.remaining.amount) throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remaining.amount, currency)} outstanding; the allocation would overpay it.`, { details: { payableId: payable.id, remainingMinor: payable.remaining.amount, requestedMinor: allocation.amountMinor } });
       }
       let shiftId: T.UUID | undefined;
       if (method === "cash") {
@@ -10511,7 +10511,7 @@ export class MockGymOSApi implements GymOSApi {
         updatedAt: now,
       };
       this.db.supplierPayments.unshift(payment);
-      this.audit({ category: "operations", action: "operations.supplier_payment.record", entityType: "supplier_payment", entityId: payment.id, entityLabel: supplier.name, summary: `Paid ${supplier.name} ${currency} ${(amountMinor / 1000).toFixed(3)} by ${method.replace("_", " ")}`, after: { amountMinor, currency, method, reference: reference ?? null, shiftId: shiftId ?? null, allocations: allocations.map((allocation) => `${allocation.payableId}=${allocation.amountMinor}`).join(", ") }, branchId: branch.id });
+      this.audit({ category: "operations", action: "operations.supplier_payment.record", entityType: "supplier_payment", entityId: payment.id, entityLabel: supplier.name, summary: `Paid ${supplier.name} ${currency} ${formatMinorUnits(amountMinor, currency)} by ${method.replace("_", " ")}`, after: { amountMinor, currency, method, reference: reference ?? null, shiftId: shiftId ?? null, allocations: allocations.map((allocation) => `${allocation.payableId}=${allocation.amountMinor}`).join(", ") }, branchId: branch.id });
       const detail = this.supplierPaymentDetail(payment);
       this.operationsIdempotency.set(`supplier_payment.record:${idempotencyKey}`, { signature, result: detail });
       return detail;
@@ -10542,7 +10542,7 @@ export class MockGymOSApi implements GymOSApi {
       payment.status = "reversed";
       payment.reversal = { reason, reversedAt: now, reversedById: this.actor().id, reversedByName: this.actor().name, shiftId: reversalShiftId, ledgerPostingStatus: "not_posted" };
       payment.updatedAt = now;
-      this.audit({ category: "operations", action: "operations.supplier_payment.reverse", entityType: "supplier_payment", entityId: payment.id, entityLabel: payment.supplierName, summary: `Reversed ${payment.supplierName} payment of ${payment.amount.currency} ${(payment.amount.amount / 1000).toFixed(3)} (${payment.method.replace("_", " ")})`, reason, before: { status: "recorded" }, after: { status: "reversed", reversalShiftId: reversalShiftId ?? null, reopenedAllocations: payment.allocations.map((allocation) => `${allocation.payableId}=${allocation.amount.amount}`).join(", ") }, branchId: payment.branchId });
+      this.audit({ category: "operations", action: "operations.supplier_payment.reverse", entityType: "supplier_payment", entityId: payment.id, entityLabel: payment.supplierName, summary: `Reversed ${payment.supplierName} payment of ${payment.amount.currency} ${formatMinorUnits(payment.amount.amount, payment.amount.currency)} (${payment.method.replace("_", " ")})`, reason, before: { status: "recorded" }, after: { status: "reversed", reversalShiftId: reversalShiftId ?? null, reopenedAllocations: payment.allocations.map((allocation) => `${allocation.payableId}=${allocation.amount.amount}`).join(", ") }, branchId: payment.branchId });
       const detail = this.supplierPaymentDetail(payment);
       this.operationsIdempotency.set(`supplier_payment.reverse:${idempotencyKey}`, { signature, result: detail });
       return detail;

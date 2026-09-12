@@ -1,3 +1,4 @@
+import { formatMinorUnits } from "../src/lib/exports/csv";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -642,7 +643,7 @@ async function recordSupplierPayment(ctx: MutationCtx, actor: ActorContext, inpu
     if (payable.supplierId !== supplier._id) domainError("VALIDATION_ERROR", `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. One payment settles one supplier.`, { correlationId: actor.correlationId });
     if (payable.currency !== currency) domainError("VALIDATION_ERROR", "Payables in another currency cannot be settled here.", { correlationId: actor.correlationId });
     if (payable.status === "paid" || payable.status === "reversed") domainError("CONFLICT", `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { correlationId: actor.correlationId, details: { payableId: payable.id, status: payable.status } });
-    if (allocation.amountMinor > payable.remainingMinor) domainError("CONFLICT", `${payable.sourceLabel} has only ${currency} ${(payable.remainingMinor / 1000).toFixed(3)} outstanding; the allocation would overpay it.`, { correlationId: actor.correlationId, details: { payableId: payable.id, remainingMinor: payable.remainingMinor, requestedMinor: allocation.amountMinor } });
+    if (allocation.amountMinor > payable.remainingMinor) domainError("CONFLICT", `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remainingMinor, currency)} outstanding; the allocation would overpay it.`, { correlationId: actor.correlationId, details: { payableId: payable.id, remainingMinor: payable.remainingMinor, requestedMinor: allocation.amountMinor } });
     payableSourceTypes.set(allocation.payableId, payable.sourceType);
   }
 
@@ -683,7 +684,7 @@ async function recordSupplierPayment(ctx: MutationCtx, actor: ActorContext, inpu
     entityType: "supplier_payment",
     entityId: publicId,
     entityLabel: supplier.name,
-    summary: `Paid ${supplier.name} ${currency} ${(amountMinor / 1000).toFixed(3)} by ${method.replace("_", " ")}`,
+    summary: `Paid ${supplier.name} ${currency} ${formatMinorUnits(amountMinor, currency)} by ${method.replace("_", " ")}`,
     after: { amountMinor, currency, method, reference, shiftId: shiftPublicId, allocations: allocations.map((allocation) => ({ payableId: allocation.payableId, amountMinor: allocation.amountMinor })) },
     branchId: publicBranchId(branch),
   });
@@ -735,7 +736,7 @@ async function reverseSupplierPayment(ctx: MutationCtx, actor: ActorContext, inp
     entityType: "supplier_payment",
     entityId: row.publicId,
     entityLabel: row.supplierName,
-    summary: `Reversed ${row.supplierName} payment of ${row.currency} ${(row.amountMinor / 1000).toFixed(3)} (${row.method.replace("_", " ")})`,
+    summary: `Reversed ${row.supplierName} payment of ${row.currency} ${formatMinorUnits(row.amountMinor, row.currency)} (${row.method.replace("_", " ")})`,
     reason,
     before: { status: "recorded" },
     after: { status: "reversed", reversalShiftId: reversalShiftPublicId, reopenedAllocations: row.allocations.map((allocation) => ({ payableId: allocation.payableId, amountMinor: allocation.amountMinor })) },

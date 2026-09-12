@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ERR } from "@/lib/api/errors";
 import { MockGymOSApi } from "./MockGymOSApi";
+import { buildSeed } from "./seed";
 
 let api: MockGymOSApi;
 const JOD = (amount: number) => ({ amount, currency: "JOD" });
@@ -18,6 +19,35 @@ beforeEach(async () => {
 });
 
 describe("mock supplier payables parity", () => {
+  it.each([
+    { currency: "JOD", paymentText: "4.000", balanceText: "8.000" },
+    { currency: "USD", paymentText: "40.00", balanceText: "80.00" },
+  ])("keeps $currency payment and reversal audit text consistent with stored amounts", async ({ currency, paymentText, balanceText }) => {
+    const db = buildSeed();
+    db.organization.currency = currency;
+    db.purchaseOrders = [];
+    api = new MockGymOSApi(db);
+    api.setBehavior({ latencyMs: 0 });
+    await api.switchDemoRole("owner");
+    const branchId = (await api.getSession()).branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "CURRENCY-TEST", name: "Currency test stock", unit: "each", reorderPoint: 1 });
+    const supplier = await api.upsertSupplier({ name: "Currency test supplier", branchIds: [branchId] });
+    const order = await api.createPurchaseOrder({ branchId, sourceType: "supplier", supplierId: supplier.id, lines: [{ productId: product.id, quantity: 2, unitCost: { amount: 4_000, currency } }] });
+    await api.approvePurchaseOrder(order.id);
+    await api.receivePurchaseOrder({ purchaseOrderId: order.id, idempotencyKey: "receive" });
+    const payableId = `purchase_order:${order.id}`;
+    const input = (amount: number, idempotencyKey: string) => ({ supplierId: supplier.id, branchId, method: "bank_transfer" as const, reference: "CURRENCY-TEST", amount: { amount, currency }, allocations: [{ payableId, amount: { amount, currency } }], idempotencyKey });
+    await expect(api.recordSupplierPayment(input(8_001, "overpay"))).rejects.toMatchObject({ code: ERR.CONFLICT, message: expect.stringContaining(`${currency} ${balanceText} outstanding`) });
+
+    const payment = await api.recordSupplierPayment(input(4_000, "pay"));
+    expect(payment.amount).toEqual({ amount: 4_000, currency });
+    await api.reverseSupplierPayment({ paymentId: payment.id, reason: "Wrong supplier reference", idempotencyKey: "reverse" });
+    const audits = (await api.listAuditEvents({ entityId: payment.id })).items;
+    expect(audits.find((event) => event.action === "operations.supplier_payment.record")?.summary).toBe(`Paid ${supplier.name} ${currency} ${paymentText} by bank transfer`);
+    expect(audits.find((event) => event.action === "operations.supplier_payment.reverse")?.summary).toBe(`Reversed ${supplier.name} payment of ${currency} ${paymentText} (bank transfer)`);
+    expect((await api.listPayables()).items[0]?.remaining.amount).toBe(8_000);
+  });
+
   it("projects the seeded received order as one aged payable with readable totals", async () => {
     const page = await api.listPayables();
     expect(page.items).toHaveLength(1);
