@@ -16,7 +16,8 @@ import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { useState } from "react";
 import { BookingOutcomeConfirmation } from "@/features/personal-training/booking-outcome-confirmation";
-import { ptBookingAwaitsOutcome, ptBookingIsOpen } from "@/lib/domain/personal-training";
+import { ptBookingAwaitsOutcome, ptBookingIsOpen, ptTrainerSetupState } from "@/lib/domain/personal-training";
+import { TrainerSetupNotice } from "@/features/personal-training/trainer-setup-notice";
 import { formatDate } from "@/lib/utils/dates";
 
 export function TrainerDashboard() {
@@ -34,8 +35,12 @@ export function TrainerDashboard() {
     { onSuccess: async (_, input) => { await invalidate(); setBookingAction(undefined); toast.success(input.result === "completed" ? "PT session completed." : "PT no-show recorded."); } },
   );
 
-  if (workspace.isError) return <ErrorState title="Trainer dashboard could not be loaded" onRetry={() => workspace.refetch()} />;
+  if (workspace.isError && !workspace.data) return <ErrorState title="Trainer dashboard could not be loaded" onRetry={() => workspace.refetch()} />;
 
+  // Profile linking, publication and weekly hours all have to exist before a
+  // single session can be booked; say which one is missing instead of an
+  // empty calendar that looks like a quiet day.
+  const setup = ptTrainerSetupState(workspace.data?.trainers ?? [], session?.user.id);
   const active = (workspace.data?.bookings ?? []).filter(ptBookingIsOpen);
   const timezone = session?.organization.timezone ?? "Asia/Amman";
   const now = Date.now();
@@ -58,6 +63,9 @@ export function TrainerDashboard() {
       actions={<Button asChild><Link href="/pt">Open full PT calendar <ArrowRight /></Link></Button>}
     />
 
+    {workspace.isBackgroundError ? <ErrorState layout="inline" title="Your calendar could not refresh" onRetry={() => workspace.refetch()} /> : null}
+    {workspace.data ? <TrainerSetupNotice state={setup} /> : null}
+
     <section className="panel grid grid-cols-2 divide-x divide-line sm:grid-cols-4">
       <Metric label="Sessions today" value={todayBookings.length} loading={workspace.isLoading} />
       <Metric label="Upcoming" value={active.filter((booking) => Date.parse(booking.startsAt) > Date.now()).length} loading={workspace.isLoading} />
@@ -76,7 +84,7 @@ export function TrainerDashboard() {
             <Badge variant={started ? "warning" : "outline"}>{started ? "Awaiting outcome" : booking.status}</Badge>
             <div className="flex gap-1"><Button size="sm" variant="secondary" disabled={!started || outcome.isPending} onClick={() => setBookingAction({ booking, action: "completed" })}><CheckCircle2 /> Complete</Button><Button size="sm" variant="ghost" disabled={!started || outcome.isPending} onClick={() => setBookingAction({ booking, action: "no_show" })}><XCircle /> No-show</Button></div>
           </article>;
-        })}</div> : <div className="px-5 py-12 text-center"><CheckCircle2 className="mx-auto size-5 text-success" /><p className="mt-3 text-[12px] font-medium">No PT sessions today</p><p className="mt-1 text-[12px] text-ink-3">This reflects your current assigned calendar.</p></div>}
+        })}</div> : <div className="px-5 py-12 text-center"><CheckCircle2 className="mx-auto size-5 text-success" /><p className="mt-3 text-[12px] font-medium">No PT sessions today</p><p className="mt-1 text-[12px] text-ink-3">{setup.kind === "ready" ? "Sessions the front desk or a member books with you appear here." : "Bookings open once your profile and hours are set up."}</p></div>}
       </section>
 
       <section className="panel overflow-hidden">

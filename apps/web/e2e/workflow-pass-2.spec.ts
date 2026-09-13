@@ -156,9 +156,12 @@ for (const role of ["Manager", "Trainer"]) {
     } else {
       await expect(page.getByRole("button", { name: "Book session", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Package", exact: true })).toHaveCount(0);
-      // The preview adapter still requires reports permission here. Convex
-      // trainer scoping and the actual trainer UI are covered separately.
-      await expect(page.getByRole("heading", { name: "Not allowed for this role" })).toBeVisible();
+      // The preview adapter scopes the workspace the way Convex does: the
+      // trainer sees their own profile and controls, never the gym's catalogue.
+      await expect(page.getByRole("heading", { name: "Your trainer profile" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Availability" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "PT packages" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Not allowed for this role" })).toHaveCount(0);
     }
   });
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ptAvailableCredits, ptBookingAwaitsOutcome, ptBookingBeforeCutoff, ptBookingCreditConsequence, ptBookingIsOpen, ptCancellationResult, ptIntervalsOverlap, ptNextBooking, ptPackageLadderIsValid, ptPackageSuggestedPriceMinor, ptPackageUnitPriceMinor, ptRefundMinor, selectPtEntitlement } from "./personal-training";
-import type { PtEntitlement, PtPackage } from "./types";
+import { ptAvailableCredits, ptBookingAwaitsOutcome, ptBookingBeforeCutoff, ptBookingCreditConsequence, ptBookingIsOpen, ptCancellationResult, ptIntervalsOverlap, ptNextBooking, ptPackageLadderIsValid, ptPackageSuggestedPriceMinor, ptPackageUnitPriceMinor, ptRefundMinor, ptTrainerSetupState, selectPtEntitlement } from "./personal-training";
+import type { PtEntitlement, PtPackage, PtTrainerProfile } from "./types";
 
 const money = (amount: number) => ({ amount, currency: "JOD" });
 const pkg = (sessionCount: number, amount: number): PtPackage => ({ id: String(sessionCount), organizationId: "org", name: `${sessionCount} sessions`, sessionCount, totalPrice: money(amount), validityDays: 90, branchAccess: "all", branchIds: [], status: "active", createdAt: "2026-08-11T00:00:00.000Z", updatedAt: "2026-08-11T00:00:00.000Z" });
@@ -89,5 +89,21 @@ describe("personal training booking timing", () => {
     const now = Date.parse("2026-09-08T10:00:00.000Z");
     expect(ptBookingBeforeCutoff({ startsAt: "2026-09-08T22:00:00.000Z" }, 12, now)).toBe(true);
     expect(ptBookingBeforeCutoff({ startsAt: "2026-09-08T21:59:00.000Z" }, 12, now)).toBe(false);
+  });
+});
+
+describe("trainer setup state", () => {
+  const profile: PtTrainerProfile = { id: "profile", organizationId: "gym", userId: "fadi", displayName: "Fadi", specialties: [], languages: ["en"], branchIds: ["branch"], status: "published", availabilityRules: [{ id: "rule", trainerProfileId: "profile", branchId: "branch", weekday: "mon", startMinute: 480, endMinute: 1020, active: true }], createdAt: "2026-09-01T09:00:00Z", updatedAt: "2026-09-01T09:00:00Z" };
+
+  it("walks the gym's steps in order: link a profile, publish it, then save hours", () => {
+    expect(ptTrainerSetupState([], "fadi")).toEqual({ kind: "no_profile" });
+    expect(ptTrainerSetupState([profile], undefined)).toEqual({ kind: "no_profile" });
+    expect(ptTrainerSetupState([{ ...profile, userId: "someone-else" }], "fadi")).toEqual({ kind: "no_profile" });
+    expect(ptTrainerSetupState([{ ...profile, status: "draft" }], "fadi").kind).toBe("unpublished");
+    expect(ptTrainerSetupState([{ ...profile, status: "archived" }], "fadi").kind).toBe("unpublished");
+    expect(ptTrainerSetupState([{ ...profile, availabilityRules: [] }], "fadi").kind).toBe("no_hours");
+    expect(ptTrainerSetupState([{ ...profile, availabilityRules: [{ ...profile.availabilityRules![0]!, active: false }] }], "fadi").kind).toBe("no_hours");
+    expect(ptTrainerSetupState([{ ...profile, availabilityRules: undefined }], "fadi").kind).toBe("no_hours");
+    expect(ptTrainerSetupState([profile], "fadi")).toEqual({ kind: "ready", profile });
   });
 });

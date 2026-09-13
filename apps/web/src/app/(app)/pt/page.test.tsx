@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, ERR } from "@/lib/api/errors";
@@ -55,6 +55,72 @@ describe("PT workspace states", () => {
     render(<PersonalTrainingPage />);
     expect(screen.getByRole("heading", { name: "Not allowed for this role" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+});
+
+describe("PT workspace trainer guidance", () => {
+  const publishedWithHours = { ...workspace.trainers[0]!, availabilityRules: [{ id: "rule", trainerProfileId: "trainer", branchId: "branch", weekday: "mon" as const, startMinute: 480, endMinute: 1020, active: true }] };
+  beforeEach(() => { Object.assign(state, { data: workspace, isError: false, isBackgroundError: false, error: undefined, permissions: ["pt.schedule.self", "pt.outcome.self"] }); });
+
+  it("tells a trainer without a linked profile who has to create it and hides the gym's catalogue", () => {
+    state.data = { ...workspace, trainers: [] };
+    render(<PersonalTrainingPage />);
+    expect(screen.getByTestId("trainer-setup-notice")).toHaveTextContent("Your trainer profile is not set up yet");
+    expect(screen.getByTestId("trainer-setup-notice")).toHaveTextContent("An owner or manager links a profile");
+    expect(screen.queryByRole("button", { name: "Set availability" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your trainer profile" })).toBeInTheDocument();
+    expect(screen.getByText("No profile is linked to your account")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "PT packages" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pending package orders" })).not.toBeInTheDocument();
+  });
+
+  it("lets a trainer with a draft profile set hours now and says publication is the gym's step", async () => {
+    state.data = { ...workspace, trainers: [{ ...workspace.trainers[0]!, status: "draft" }] };
+    render(<PersonalTrainingPage />);
+    expect(screen.getByTestId("trainer-setup-notice")).toHaveTextContent("Your trainer profile is still a draft");
+    await userEvent.click(screen.getByRole("button", { name: "Set availability" }));
+    expect(screen.getByRole("dialog", { name: "Fadi Khoury availability" })).toBeInTheDocument();
+  });
+
+  it("asks a published trainer without hours to add them, and stays quiet once they exist", () => {
+    const { unmount } = render(<PersonalTrainingPage />);
+    expect(screen.getByTestId("trainer-setup-notice")).toHaveTextContent("Add your weekly hours");
+    unmount();
+    state.data = { ...workspace, trainers: [publishedWithHours] };
+    render(<PersonalTrainingPage />);
+    expect(screen.queryByTestId("trainer-setup-notice")).not.toBeInTheDocument();
+    expect(screen.getByText("No upcoming PT sessions")).toBeInTheDocument();
+    expect(screen.getByText(/Sessions the front desk or a member books with you/)).toBeInTheDocument();
+  });
+
+  it("lets a trainer cancel only their own upcoming session", () => {
+    const now = Date.now();
+    const base = { organizationId: "gym", memberId: "member", branchId: "branch", branchName: "Main", entitlementId: "entitlement", status: "reserved" as const, createdAt: "2026-09-01T09:00:00Z", updatedAt: "2026-09-01T09:00:00Z", startsAt: new Date(now + 3 * 3_600_000).toISOString(), endsAt: new Date(now + 4 * 3_600_000).toISOString() };
+    state.data = { ...workspace, trainers: [publishedWithHours], bookings: [
+      { ...base, id: "own", memberName: "Aya Own", trainerProfileId: "trainer", trainerName: "Fadi Khoury" },
+      { ...base, id: "other", memberName: "Basel Other", trainerProfileId: "other-trainer", trainerName: "Nour" },
+    ] };
+    render(<PersonalTrainingPage />);
+    const rows = screen.getAllByTestId("pt-booking-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("Aya Own");
+    expect(rows[0]!.querySelector("button")).toHaveTextContent("Cancel");
+    expect(rows[1]).toHaveTextContent("Basel Other");
+    expect(rows[1]!.querySelector("button")).toBeNull();
+  });
+
+  it("keeps the catalogue, orders and setup notice off a manager's page and explains an empty trainer picker", async () => {
+    state.permissions = ["pt.manage", "pt.reports.read", "pt.book_for_member", "payments.collect"];
+    state.data = { ...workspace, trainers: [] };
+    render(<PersonalTrainingPage />);
+    expect(screen.queryByTestId("trainer-setup-notice")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "PT packages" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pending package orders" })).toBeInTheDocument();
+    expect(screen.getByText("No trainer profiles")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Trainer" }));
+    const dialog = screen.getByRole("dialog", { name: "Add a trainer profile" });
+    expect(within(dialog).getByRole("status")).toHaveTextContent("No active trainer accounts yet.");
+    expect(within(dialog).getByRole("link", { name: "Settings → Users" })).toHaveAttribute("href", "/settings?section=users");
   });
 });
 

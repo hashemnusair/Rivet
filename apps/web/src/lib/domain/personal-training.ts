@@ -1,4 +1,4 @@
-import type { PtBooking, PtEntitlement, PtPackage } from "./types";
+import type { PtBooking, PtEntitlement, PtPackage, PtTrainerProfile } from "./types";
 
 export type PtBookingOutcomeAction = "completed" | "no_show" | "cancelled";
 
@@ -160,4 +160,24 @@ export function selectPtEntitlement<T extends Pick<PtEntitlement, "source" | "ex
       if (left.source === right.source) return 0;
       return left.source === "included" ? -1 : 1;
     })[0];
+}
+
+export type PtTrainerSetupState =
+  | { kind: "no_profile" }
+  | { kind: "unpublished"; profile: PtTrainerProfile }
+  | { kind: "no_hours"; profile: PtTrainerProfile }
+  | { kind: "ready"; profile: PtTrainerProfile };
+
+/**
+ * What still stands between a trainer account and a bookable schedule, in the
+ * order it has to be resolved: the gym links a profile, publishes it, and the
+ * trainer (or a manager) saves weekly hours. Bookings are impossible until all
+ * three are done, so each state names who can fix it.
+ */
+export function ptTrainerSetupState(trainers: PtTrainerProfile[], userId: string | undefined): PtTrainerSetupState {
+  const profile = userId ? trainers.find((trainer) => trainer.userId === userId) : undefined;
+  if (!profile) return { kind: "no_profile" };
+  if (profile.status !== "published") return { kind: "unpublished", profile };
+  if (!profile.availabilityRules?.some((rule) => rule.active)) return { kind: "no_hours", profile };
+  return { kind: "ready", profile };
 }

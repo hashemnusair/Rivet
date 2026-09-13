@@ -19,7 +19,7 @@ import { LEAD_SOURCE_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState, QueryErrorState } from "@/components/ui/states";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { NewLeadDialog } from "@/features/crm/new-lead-dialog";
@@ -106,7 +106,7 @@ function PipelinePageInner() {
   );
   const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: PIPELINE_LEAD_STAGES }), [query]);
   const leadQueryKey = useMemo(() => qk.leads(leadQuery), [leadQuery]);
-  const { data, isLoading, isError, isBackgroundError, refetch } = useRealtimeApiQuery({
+  const { data, isLoading, isError, isBackgroundError, error, refetch } = useRealtimeApiQuery({
     queryKey: leadQueryKey,
     query: (api) => api.listLeads(leadQuery),
     subscribe: (api, onValue, onError) => api.subscribeLeads(leadQuery, onValue, onError),
@@ -248,7 +248,9 @@ function PipelinePageInner() {
           ))}
         </div>
       ) : isError && !data ? (
-        <ErrorState onRetry={() => refetch()} />
+        // A role without CRM access lands here by direct URL; say so instead
+        // of offering a retry that can never succeed.
+        <QueryErrorState error={error} onRetry={() => refetch()} forbiddenDescription="Leads need the CRM permission that sales, managers and owners have." />
       ) : view === "list" ? (
         <LeadListView
           leads={leads}
