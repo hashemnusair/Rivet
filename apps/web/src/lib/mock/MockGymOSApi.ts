@@ -5254,24 +5254,35 @@ export class MockGymOSApi implements GymOSApi {
   // personal training
   getPtWorkspace(): Promise<T.PtWorkspace> {
     return this.respond(() => {
-      this.require("pt.reports.read");
+      // Same contract as Convex `pt.workspace`: a reports reader sees the whole
+      // gym, while a trainer with only their own-schedule permission sees their
+      // own profile and sessions, no packages, no orders and no revenue.
+      const canReadReports = permissionsFor(this.db, currentRole(this.db)).includes("pt.reports.read");
+      if (!canReadReports) this.require("pt.schedule.self");
+      const actor = this.actor();
+      const ownTrainer = this.ptTrainers.find((item) => item.userId === actor.id);
+      const visibleTrainers = canReadReports ? this.ptTrainers : ownTrainer ? [ownTrainer] : [];
+      const visibleTrainerIds = new Set(visibleTrainers.map((item) => item.id));
+      const visibleBookings = this.ptBookings.filter((item) => visibleTrainerIds.has(item.trainerProfileId) && (actor.branchScope === "all" || actor.branchIds.includes(item.branchId)));
+      const visibleEntitlementIds = new Set(visibleBookings.map((item) => item.entitlementId));
+      const visibleEntitlements = canReadReports ? this.ptEntitlements : this.ptEntitlements.filter((item) => visibleEntitlementIds.has(item.id));
       const paidOrderIds = new Set(this.ptOrders.filter((order) => order.status !== "pending_payment" && order.status !== "cancelled").map((order) => order.id));
-      const packageRevenue = this.ptOrders.reduce((total, order) => {
+      const packageRevenue = canReadReports ? this.ptOrders.reduce((total, order) => {
         if (!paidOrderIds.has(order.id)) return total;
         return total + (order.totalPriceSnapshot?.amount ?? this.ptPackages.find((item) => item.id === order.packageId)?.totalPrice.amount ?? 0);
-      }, 0);
+      }, 0) : 0;
       return {
         cancellationCutoffHours: this.db.operationalPolicies.personalTraining.cancellationCutoffHours,
-        trainers: this.ptTrainers.map((item) => ({ ...this.ptTrainerView(item), availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
-        packages: this.ptPackages.map((item) => ({ ...item })),
-        bookings: [...this.ptBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
-        pendingOrders: this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member", packageName: item.packageNameSnapshot ?? this.ptPackages.find((pkg) => pkg.id === item.packageId)?.name ?? "PT package", paymentReference: `PT order ${item.id.slice(-6).toUpperCase()}` })),
+        trainers: visibleTrainers.map((item) => ({ ...this.ptTrainerView(item), availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
+        packages: canReadReports ? this.ptPackages.map((item) => ({ ...item })) : [],
+        bookings: [...visibleBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
+        pendingOrders: canReadReports ? this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member", packageName: item.packageNameSnapshot ?? this.ptPackages.find((pkg) => pkg.id === item.packageId)?.name ?? "PT package", paymentReference: `PT order ${item.id.slice(-6).toUpperCase()}` })) : [],
         metrics: {
           packageRevenue: money(packageRevenue),
-          sessionsUsed: this.ptEntitlements.reduce((total, item) => total + item.consumed, 0),
-          sessionsReserved: this.ptEntitlements.reduce((total, item) => total + item.reserved, 0),
-          upcomingBookings: this.ptBookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && Date.parse(item.startsAt) > Date.now()).length,
-          noShows: this.ptBookings.filter((item) => item.status === "no_show").length,
+          sessionsUsed: visibleEntitlements.reduce((total, item) => total + item.consumed, 0),
+          sessionsReserved: visibleEntitlements.reduce((total, item) => total + item.reserved, 0),
+          upcomingBookings: visibleBookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && Date.parse(item.startsAt) > Date.now()).length,
+          noShows: visibleBookings.filter((item) => item.status === "no_show").length,
         },
       };
     });
@@ -5380,6 +5391,10 @@ export class MockGymOSApi implements GymOSApi {
       if (!profile) throw ApiError.of(ERR.NOT_FOUND, "Trainer profile not found.");
       const actor = this.actor();
       if (profile.userId !== actor.id) this.require("pt.manage"); else this.require("pt.schedule.self");
+      // Convex: hours and time off can only be set at a branch the trainer works at.
+      for (const entry of [...input.rules, ...input.exceptions]) {
+        if (!profile.branchIds.includes(entry.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Trainer branch not found.");
+      }
       for (const rule of input.rules) {
         if (rule.startMinute < 0 || rule.endMinute > 1440 || rule.endMinute - rule.startMinute < 60) throw ApiError.of(ERR.VALIDATION, "Availability windows must contain at least one 60-minute session.");
         if (input.rules.some((other) => other !== rule && other.branchId === rule.branchId && other.weekday === rule.weekday && rule.startMinute < other.endMinute && other.startMinute < rule.endMinute)) throw ApiError.of(ERR.CONFLICT, "Availability windows cannot overlap.");
@@ -5387,7 +5402,9 @@ export class MockGymOSApi implements GymOSApi {
       this.ptRules = this.ptRules.filter((item) => item.trainerProfileId !== profile.id).concat(input.rules.map((rule) => ({ ...rule, id: mockUuid(), trainerProfileId: profile.id })));
       this.ptExceptions = this.ptExceptions.filter((item) => item.trainerProfileId !== profile.id).concat(input.exceptions.map((exception) => ({ ...exception, id: mockUuid(), trainerProfileId: profile.id })));
       this.audit({ category: "settings", action: "pt.availability.replace", entityType: "pt_trainer", entityId: profile.id, entityLabel: profile.displayName, summary: "Updated trainer availability" });
-      return { ...profile };
+      // Convex returns the saved schedule with the profile, so the caller can
+      // render it without a second workspace read.
+      return { ...this.ptTrainerView(profile), availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === profile.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === profile.id).map((exception) => ({ ...exception })) };
     });
   }
 
@@ -5423,6 +5440,18 @@ export class MockGymOSApi implements GymOSApi {
   createPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> {
     return this.respond(async () => {
       this.require("pt.book_for_member");
+      return await this.reservePtBooking(input);
+    });
+  }
+
+  // The member portal reserves against its own membership; staff booking on a
+  // member's behalf is the same reservation behind an extra permission.
+  createCustomerPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> {
+    return this.respond(async () => await this.reservePtBooking(input));
+  }
+
+  private async reservePtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> {
+    {
       const existing = this.ptBookings.find((item) => item.id === input.idempotencyKey);
       if (existing) return { ...existing };
       const membership = this.db.memberships.find((item) => item.id === input.membershipId);
@@ -5444,16 +5473,36 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({ memberId: member.id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, meta: { bookingId: booking.id } });
       this.audit({ category: "memberships", action: "pt.booking.create", entityType: "pt_booking", entityId: booking.id, entityLabel: `${member.fullName} · ${trainer.displayName}`, summary: "Reserved one PT credit", branchId: branch.id });
       return { ...booking };
-    });
+    }
   }
-
-  createCustomerPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> { return this.createPtBooking(input); }
 
   cancelPtBooking(bookingId: T.UUID, input: { reason: string; cancelledByGym?: boolean }): Promise<T.PtBooking> {
     return this.respond(() => {
       this.requireReason(input.reason);
       const booking = this.ptBookings.find((item) => item.id === bookingId);
       if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      // Convex: a trainer may cancel their own session; anyone else needs the
+      // member-booking permission, and only inside their branch scope.
+      const actor = this.actor();
+      if (actor.branchScope !== "all" && !actor.branchIds.includes(booking.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      const trainer = this.ptTrainers.find((item) => item.id === booking.trainerProfileId);
+      if (trainer?.userId === actor.id) this.require("pt.outcome.self"); else this.require("pt.book_for_member");
+      return this.releasePtBooking(booking, input);
+    });
+  }
+
+  cancelCustomerPtBooking(bookingId: T.UUID, reason: string): Promise<T.PtBooking> {
+    return this.respond(() => {
+      this.requireReason(reason);
+      const booking = this.ptBookings.find((item) => item.id === bookingId);
+      if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      return this.releasePtBooking(booking, { reason });
+    });
+  }
+
+  private releasePtBooking(booking: T.PtBooking, input: { reason: string; cancelledByGym?: boolean }): T.PtBooking {
+    {
+      const bookingId = booking.id;
       const policy = this.db.operationalPolicies.personalTraining;
       const result = ptCancellationResult({ startsAt: Date.parse(booking.startsAt), cancelledAt: Date.now(), cutoffHours: policy.cancellationCutoffHours, cancelledByGym: Boolean(input.cancelledByGym) });
       const entitlement = this.ptEntitlements.find((item) => item.id === booking.entitlementId)!;
@@ -5463,13 +5512,23 @@ export class MockGymOSApi implements GymOSApi {
       booking.status = result.status; booking.cancellationReason = input.reason.trim(); booking.updatedAt = nowISO();
       this.activity({ memberId: booking.memberId, type: "pt_booking_cancelled", title: result.restoreCredit ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: input.reason, meta: { bookingId } });
       return { ...booking };
-    });
+    }
   }
-
-  cancelCustomerPtBooking(bookingId: T.UUID, reason: string): Promise<T.PtBooking> { return this.cancelPtBooking(bookingId, { reason }); }
 
   reschedulePtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> {
     return this.respond(async () => {
+      // Convex: rescheduling is a staff booking action, never a trainer-only one.
+      this.require("pt.book_for_member");
+      return await this.movePtBooking(input);
+    });
+  }
+
+  rescheduleCustomerPtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> {
+    return this.respond(async () => await this.movePtBooking(input));
+  }
+
+  private async movePtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> {
+    {
       this.requireReason(input.reason);
       const booking = this.ptBookings.find((item) => item.id === input.bookingId);
       if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
@@ -5489,10 +5548,8 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({ memberId: booking.memberId, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: input.reason, meta: { bookingId: booking.id, startsAt: booking.startsAt } });
       this.audit({ category: "memberships", action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.id, entityLabel: booking.memberName, summary: "Rescheduled PT booking without changing credit balance", reason: input.reason, branchId: branch.id });
       return { ...booking };
-    });
+    }
   }
-
-  rescheduleCustomerPtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> { return this.reschedulePtBooking(input); }
 
   completePtBooking(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.finishPtBooking(bookingId, "completed", input.reason); }
   markPtBookingNoShow(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.finishPtBooking(bookingId, "no_show", input.reason); }
@@ -11721,6 +11778,15 @@ export class MockGymOSApi implements GymOSApi {
       if (!user) throw ApiError.of(ERR.NOT_FOUND, "User not found.");
       if (user.id === this.actor().id && input.status === "deactivated") {
         throw ApiError.of(ERR.VALIDATION, "You cannot deactivate your own account.");
+      }
+      // Convex refuses to strand a member's reserved credit: a trainer with
+      // upcoming sessions must have them cancelled or reassigned first.
+      if (input.status === "deactivated") {
+        const profile = this.ptTrainers.find((item) => item.userId === user.id);
+        const now = Date.now();
+        if (profile && this.ptBookings.some((booking) => booking.trainerProfileId === profile.id && ["reserved", "confirmed"].includes(booking.status) && Date.parse(booking.startsAt) >= now)) {
+          throw ApiError.of(ERR.CONFLICT, "Reassign or cancel this trainer's future PT bookings before deactivating the account.");
+        }
       }
       const nextRole = input.role ?? user.role;
       if (nextRole === "owner" && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only an owner can grant the owner role.");

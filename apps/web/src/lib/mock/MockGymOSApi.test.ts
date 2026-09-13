@@ -2940,6 +2940,121 @@ describe("PT outcomes and reserved credits", () => {
   });
 });
 
+describe("trainer journey in the preview adapter", () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function firstOpenSlot(trainerProfileId: string, branchId: string): Promise<T.PtAvailableSlot> {
+    let date = addDays(todayISODate("Asia/Amman"), 1);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const slots = await api.listPtAvailableSlots({ trainerProfileId, branchId, from: date, to: date });
+      if (slots[0]) return slots[0];
+      date = addDays(date, 1);
+    }
+    throw new Error("The seeded trainer should have an open slot within ten days.");
+  }
+
+  async function activateSecondTrainer(): Promise<{ profile: T.PtTrainerProfile; branchId: string }> {
+    const invited = await api.inviteUser({ name: "Nour Coach", email: "nour@forgefitness.jo", role: "trainer", branchScope: "selected", branchIds: [BRANCH_ABD] });
+    expect(invited.status).toBe("invited");
+    // An invited account cannot carry a profile until it becomes active.
+    await expect(api.upsertPtTrainerProfile({ userId: invited.id, displayName: "Nour", specialties: [], languages: ["en"], branchIds: [BRANCH_ABD], status: "draft" }))
+      .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION);
+    await api.updateUserAccess(invited.id, { status: "active" });
+    const profile = await api.upsertPtTrainerProfile({ userId: invited.id, displayName: "Nour", specialties: ["Mobility"], languages: ["en"], branchIds: [BRANCH_ABD], status: "published" });
+    await api.replacePtAvailability({ trainerProfileId: profile.id, rules: (["sun", "mon", "tue", "wed", "thu"] as T.WeekdayKey[]).map((weekday) => ({ branchId: BRANCH_ABD, weekday, startMinute: 8 * 60, endMinute: 17 * 60, active: true })), exceptions: [] });
+    return { profile, branchId: BRANCH_ABD };
+  }
+
+  it("shows a trainer only their own profile, sessions and credit counters, never the gym's packages or money", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the trainer workspace test", idempotencyKey: "intro-mock-trainer-scope" });
+    const gymView = await api.getPtWorkspace();
+    const fadi = gymView.trainers[0]!;
+    const branchId = fadi.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    const slot = await firstOpenSlot(fadi.id, branchId);
+    const booking = await api.createPtBooking({ membershipId: member!.membershipId, trainerProfileId: fadi.id, branchId, startsAt: slot.startsAt, idempotencyKey: "mock-trainer-scope-booking" });
+    expect(gymView.packages.length).toBeGreaterThan(0);
+
+    await api.switchDemoRole("trainer");
+    const session = await api.getSession();
+    const workspace = await api.getPtWorkspace();
+    expect(workspace.trainers.map((item) => item.userId)).toEqual([session.user.id]);
+    expect(workspace.trainers[0]?.availabilityRules?.length).toBeGreaterThan(0);
+    expect(workspace.packages).toEqual([]);
+    expect(workspace.pendingOrders).toEqual([]);
+    expect(workspace.metrics.packageRevenue.amount).toBe(0);
+    expect(workspace.bookings.map((item) => item.id)).toEqual([booking.id]);
+    expect(workspace.metrics).toMatchObject({ sessionsReserved: 1, upcomingBookings: 1 });
+  });
+
+  it("lets a trainer manage their own schedule and sessions but not another trainer's", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the trainer isolation test", idempotencyKey: "intro-mock-trainer-isolation" });
+    const gymView = await api.getPtWorkspace();
+    const fadi = gymView.trainers[0]!;
+    const fadiBranch = fadi.branchIds[0]!;
+    const other = await activateSecondTrainer();
+    const [first, second] = await membersWithActiveMemberships(2);
+    const ownSlot = await firstOpenSlot(fadi.id, fadiBranch);
+    const ownBooking = await api.createPtBooking({ membershipId: first!.membershipId, trainerProfileId: fadi.id, branchId: fadiBranch, startsAt: ownSlot.startsAt, idempotencyKey: "mock-own-booking" });
+    const otherSlot = await firstOpenSlot(other.profile.id, other.branchId);
+    const otherBooking = await api.createPtBooking({ membershipId: second!.membershipId, trainerProfileId: other.profile.id, branchId: other.branchId, startsAt: otherSlot.startsAt, idempotencyKey: "mock-other-booking" });
+
+    await api.switchDemoRole("trainer");
+    const workspace = await api.getPtWorkspace();
+    expect(workspace.trainers.map((item) => item.id)).toEqual([fadi.id]);
+    expect(workspace.bookings.map((item) => item.id)).toEqual([ownBooking.id]);
+
+    const forbidden = (error: unknown) => isApiError(error) && error.code === ERR.FORBIDDEN;
+    const hours = (["sun", "mon", "tue", "wed", "thu"] as T.WeekdayKey[]).map((weekday) => ({ branchId: fadiBranch, weekday, startMinute: 9 * 60, endMinute: 15 * 60, active: true }));
+    const own = await api.replacePtAvailability({ trainerProfileId: fadi.id, rules: hours, exceptions: [{ branchId: fadiBranch, date: addDays(todayISODate("Asia/Amman"), 20), reason: "Leave" }] });
+    expect(own.availabilityRules).toHaveLength(5);
+    expect(own.availabilityExceptions).toHaveLength(1);
+    await expect(api.replacePtAvailability({ trainerProfileId: other.profile.id, rules: hours.map((rule) => ({ ...rule, branchId: other.branchId })), exceptions: [] })).rejects.toSatisfy(forbidden);
+    await expect(api.reschedulePtBooking({ bookingId: ownBooking.id, trainerProfileId: fadi.id, branchId: fadiBranch, startsAt: ownSlot.startsAt, reason: "Trainer asked to move it", idempotencyKey: "mock-trainer-move" })).rejects.toSatisfy(forbidden);
+    await expect(api.cancelPtBooking(otherBooking.id, { reason: "Not my session", cancelledByGym: true })).rejects.toSatisfy(forbidden);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Math.max(Date.parse(ownBooking.startsAt), Date.parse(otherBooking.startsAt)) + 10 * 60_000));
+    await expect(api.completePtBooking(otherBooking.id)).rejects.toSatisfy(forbidden);
+    await expect(api.markPtBookingNoShow(otherBooking.id, { reason: "Member did not arrive" })).rejects.toSatisfy(forbidden);
+    expect((await api.completePtBooking(ownBooking.id)).status).toBe("completed");
+    expect((await api.getPtWorkspace()).metrics.sessionsUsed).toBe(1);
+  });
+
+  it("lets a trainer cancel their own upcoming session as a gym cancellation that returns the credit", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the trainer cancellation test", idempotencyKey: "intro-mock-trainer-cancel" });
+    const fadi = (await api.getPtWorkspace()).trainers[0]!;
+    const branchId = fadi.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    const slot = await firstOpenSlot(fadi.id, branchId);
+    const booking = await api.createPtBooking({ membershipId: member!.membershipId, trainerProfileId: fadi.id, branchId, startsAt: slot.startsAt, idempotencyKey: "mock-trainer-cancel-booking" });
+    const before = await api.getPtMemberExperience(member!.membershipId);
+
+    await api.switchDemoRole("trainer");
+    const cancelled = await api.cancelPtBooking(booking.id, { reason: "Trainer unavailable", cancelledByGym: true });
+    expect(cancelled.status).toBe("gym_cancelled");
+    const after = await api.getPtMemberExperience(member!.membershipId);
+    expect(after.availableSessions).toBe(before.availableSessions + 1);
+    expect(after.reservedSessions).toBe(before.reservedSessions - 1);
+  });
+
+  it("keeps a trainer with upcoming sessions from being deactivated, then refuses the deactivated persona", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the deactivation test", idempotencyKey: "intro-mock-trainer-deactivate" });
+    const fadi = (await api.getPtWorkspace()).trainers[0]!;
+    const branchId = fadi.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    const slot = await firstOpenSlot(fadi.id, branchId);
+    const booking = await api.createPtBooking({ membershipId: member!.membershipId, trainerProfileId: fadi.id, branchId, startsAt: slot.startsAt, idempotencyKey: "mock-trainer-deactivate-booking" });
+
+    await expect(api.updateUserAccess(fadi.userId, { status: "deactivated" })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.CONFLICT);
+    await api.cancelPtBooking(booking.id, { reason: "Trainer leaving", cancelledByGym: true });
+    expect((await api.updateUserAccess(fadi.userId, { status: "deactivated" })).status).toBe("deactivated");
+    await expect(api.switchDemoRole("trainer")).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
+    // The gym keeps the profile for history, and the trainer picker no longer offers the account.
+    expect((await api.listUsers({ role: "trainer", status: "active", pageSize: 10 })).items.some((user) => user.id === fadi.userId)).toBe(false);
+  });
+});
+
 describe("moving a class to another weekday", () => {
   it("refuses while a member holds one of its dates", async () => {
     const session = await api.getSession();
