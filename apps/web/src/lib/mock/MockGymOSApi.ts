@@ -4090,6 +4090,27 @@ export class MockGymOSApi implements GymOSApi {
     return entitlement;
   }
 
+  /**
+   * Convex activates a pending package order in the same transaction that
+   * fully pays its charge: a dated entitlement is granted and the order
+   * becomes active. Partial payment grants nothing. The preview mirrors that
+   * here so purchased credits can actually be booked.
+   */
+  private activatePtOrderForCharge(chargeId: T.UUID): void {
+    const order = this.ptOrders.find((item) => item.chargeId === chargeId && item.status === "pending_payment");
+    if (!order) return;
+    const ptPackage = this.ptPackages.find((item) => item.id === order.packageId);
+    const sessions = order.sessionCountSnapshot ?? ptPackage?.sessionCount ?? 0;
+    const validityDays = order.validityDaysSnapshot ?? ptPackage?.validityDays ?? 90;
+    if (sessions <= 0) return;
+    const now = nowISO();
+    const entitlement: T.PtEntitlement = { id: mockUuid(), organizationId: this.db.organization.id, memberId: order.memberId, source: "package", packageOrderId: order.id, granted: sessions, reserved: 0, consumed: 0, revoked: 0, available: sessions, startsAt: now, expiresAt: `${addDays(this.today(), validityDays)}T23:59:59.999Z`, status: "active", createdAt: now, updatedAt: now };
+    this.ptEntitlements.push(entitlement);
+    order.status = "active"; order.entitlementId = entitlement.id; order.paidAt = now; order.updatedAt = now;
+    this.activity({ memberId: order.memberId, type: "pt_credit_granted", title: `${sessions} PT session${sessions === 1 ? "" : "s"} activated`, meta: { orderId: order.id, entitlementId: entitlement.id } });
+    this.audit({ category: "memberships", action: "pt.package.activate", entityType: "pt_package_order", entityId: order.id, entityLabel: order.packageNameSnapshot ?? ptPackage?.name ?? "PT package", summary: `Activated ${sessions} PT session${sessions === 1 ? "" : "s"} after full payment` });
+  }
+
   private ptBookingView(booking: T.PtBooking): T.PtBooking {
     return { ...booking };
   }
@@ -7488,6 +7509,7 @@ export class MockGymOSApi implements GymOSApi {
     charge.paidAmount = money(charge.paidAmount.amount + amount, charge.total.currency);
     charge.outstandingAmount = money(charge.outstandingAmount.amount - amount, charge.total.currency);
     charge.status = charge.outstandingAmount.amount <= 0 ? "paid" : "partial";
+    if (charge.status === "paid") this.activatePtOrderForCharge(charge.id);
 
     const event = this.activity({
       memberId: member.id,

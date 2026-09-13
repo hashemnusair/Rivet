@@ -3168,6 +3168,95 @@ describe("adapter text follows the stored currency", () => {
   });
 });
 
+describe("PT credit conservation in the preview adapter", () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function conserved(membershipId: string) {
+    const experience = await api.getPtMemberExperience(membershipId);
+    let available = 0; let reserved = 0;
+    for (const row of experience.entitlements) {
+      expect(row.consumed + row.reserved + row.revoked, `${row.source} never overspends`).toBeLessThanOrEqual(row.granted);
+      expect(row.available).toBe(Math.max(0, row.granted - row.reserved - row.consumed - row.revoked));
+      available += row.available; reserved += row.reserved;
+    }
+    expect(experience.availableSessions).toBe(available);
+    expect(experience.reservedSessions).toBe(reserved);
+    return experience;
+  }
+
+  it("keeps granted = available + reserved + consumed + revoked through every cancellation kind, outcomes, refunds and a race for the last credit", async () => {
+    const trainer = (await api.getPtWorkspace()).trainers[0]!;
+    const branchId = trainer.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    const membershipId = member!.membershipId;
+    const ptPackage = (await api.getPtWorkspace()).packages[0]!;
+    const order = await api.requestPtPackage({ membershipId, packageId: ptPackage.id, idempotencyKey: "conserve-order" });
+    await api.createPayment({ memberId: member!.memberId, chargeId: order.chargeId, amount: money(Math.floor(ptPackage.totalPrice.amount / 2)), method: "card", externalReference: "POS-C1" }, "conserve-pay-1");
+    expect((await conserved(membershipId)).orders[0]?.status).toBe("pending_payment");
+    await api.createPayment({ memberId: member!.memberId, chargeId: order.chargeId, amount: money(ptPackage.totalPrice.amount - Math.floor(ptPackage.totalPrice.amount / 2)), method: "card", externalReference: "POS-C2" }, "conserve-pay-2");
+    const start = await conserved(membershipId);
+    expect(start.orders[0]?.status).toBe("active");
+    const granted = start.availableSessions;
+    expect(granted).toBeGreaterThanOrEqual(ptPackage.sessionCount);
+
+    const slotsOn = async (day: number) => {
+      const date = addDays(todayISODate("Asia/Amman"), day);
+      return await api.listPtAvailableSlots({ trainerProfileId: trainer.id, branchId, from: date, to: date });
+    };
+    let day = 1; let slots: T.PtAvailableSlot[] = [];
+    while (day < 10 && slots.length < 4) { slots = await slotsOn(day); if (slots.length < 4) day += 1; }
+    expect(slots.length).toBeGreaterThanOrEqual(4);
+
+    const gym = await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[0]!.startsAt, idempotencyKey: "conserve-gym" });
+    const late = await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[1]!.startsAt, idempotencyKey: "conserve-late" });
+    const noShow = await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[2]!.startsAt, idempotencyKey: "conserve-no-show" });
+    const done = await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[3]!.startsAt, idempotencyKey: "conserve-done" });
+    expect((await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[3]!.startsAt, idempotencyKey: "conserve-done" })).id).toBe(done.id);
+    expect((await conserved(membershipId)).reservedSessions).toBe(4);
+
+    expect((await api.cancelPtBooking(gym.id, { reason: "Trainer unavailable", cancelledByGym: true })).status).toBe("gym_cancelled");
+    await expect(api.cancelPtBooking(gym.id, { reason: "Again", cancelledByGym: true })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.parse(late.startsAt) - 3_600_000));
+    expect((await api.cancelCustomerPtBooking(late.id, "Cancelled by member")).status).toBe("late_cancelled");
+    let experience = await conserved(membershipId);
+    expect(experience).toMatchObject({ availableSessions: granted - 3, reservedSessions: 2 });
+
+    vi.setSystemTime(new Date(Date.parse(done.startsAt) + 15 * 60_000));
+    expect((await api.markPtBookingNoShow(noShow.id, { reason: "Did not arrive" })).status).toBe("no_show");
+    expect((await api.completePtBooking(done.id)).status).toBe("completed");
+    await expect(api.completePtBooking(done.id)).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
+    experience = await conserved(membershipId);
+    expect(experience).toMatchObject({ availableSessions: granted - 3, reservedSessions: 0 });
+    expect(experience.entitlements.reduce((total, row) => total + row.consumed, 0)).toBe(3);
+
+    const unusedPackageCredits = experience.entitlements.find((row) => row.source === "package")!.available;
+    const refunded = await api.refundPtPackage(order.id, { sessions: unusedPackageCredits - 1, reason: "Member relocating; unused sessions refunded" });
+    expect(refunded.refundedSessions).toBe(unusedPackageCredits - 1);
+    await expect(api.refundPtPackage(order.id, { sessions: 5, reason: "Over-refund attempt" })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION);
+    experience = await conserved(membershipId);
+    const remaining = experience.availableSessions;
+    expect(remaining).toBeGreaterThanOrEqual(1);
+
+    // Spend down to the last credit, then race two reservations for it.
+    vi.useRealTimers();
+    let later = await slotsOn(day + 1);
+    for (let index = 0; remaining - index > 1 && index < later.length; index += 1) {
+      await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[index]!.startsAt, idempotencyKey: `conserve-drain-${index}` });
+    }
+    experience = await conserved(membershipId);
+    expect(experience.availableSessions).toBe(1);
+    later = await slotsOn(day + 2);
+    const race = await Promise.allSettled([
+      api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[0]!.startsAt, idempotencyKey: "conserve-final-a" }),
+      api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[1]!.startsAt, idempotencyKey: "conserve-final-b" }),
+    ]);
+    expect(race.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    experience = await conserved(membershipId);
+    expect(experience.availableSessions).toBe(0);
+  });
+});
+
 describe("moving a class to another weekday", () => {
   it("refuses while a member holds one of its dates", async () => {
     const session = await api.getSession();
