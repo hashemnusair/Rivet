@@ -39,6 +39,8 @@ export function ptBookingBeforeCutoff(booking: Pick<PtBooking, "startsAt">, cuto
  * but these anchors make the intended volume discount visible and give new
  * packages a sensible starting price.
  */
+/** The ladder is a JOD reference. Gyms in another currency see it labelled as such and get no converted suggestion. */
+export const PT_PACKAGE_PRICE_GUIDE_CURRENCY = "JOD";
 export const PT_PACKAGE_PRICE_GUIDE = [
   { sessionCount: 12, totalPriceMinor: 240_000 },
   { sessionCount: 20, totalPriceMinor: 300_000 },

@@ -5,11 +5,14 @@ import { ApiError, ERR } from "@/lib/api/errors";
 import type { PtWorkspace } from "@/lib/domain/types";
 import PersonalTrainingPage from "./page";
 
-const session = { user: { id: "trainer-user" }, branches: [{ id: "branch", name: "Main", status: "active" }] };
+const session = { user: { id: "trainer-user" }, organization: { currency: "JOD" }, branches: [{ id: "branch", name: "Main", status: "active" }] };
 const state = vi.hoisted(() => ({
   data: undefined as PtWorkspace | undefined,
   isError: false, isBackgroundError: false, error: undefined as unknown,
   refetch: vi.fn(), permissions: ["pt.schedule.self", "pt.outcome.self"],
+  // Every adapter method a dialog might call resolves to nothing; individual
+  // tests assert the arguments the dialog hands over.
+  api: new Proxy({} as Record<string, ReturnType<typeof vi.fn>>, { get: (target, key: string) => (target[key] ??= vi.fn().mockResolvedValue({})) }),
 }));
 vi.mock("@/lib/providers/app-providers", () => ({
   useApp: () => ({ session }),
@@ -17,7 +20,7 @@ vi.mock("@/lib/providers/app-providers", () => ({
 }));
 vi.mock("@/lib/hooks/use-api", () => ({
   useApiQuery: () => ({ data: [], isLoading: false }),
-  useApiMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useApiMutation: (fn: (api: unknown, input?: unknown) => unknown) => ({ mutate: (input?: unknown) => { void fn(state.api, input); }, isPending: false }),
   useInvalidate: () => vi.fn(),
 }));
 vi.mock("@/lib/hooks/use-realtime-api", () => ({ useRealtimeApiQuery: () => state }));
@@ -121,6 +124,89 @@ describe("PT workspace trainer guidance", () => {
     const dialog = screen.getByRole("dialog", { name: "Add a trainer profile" });
     expect(within(dialog).getByRole("status")).toHaveTextContent("No active trainer accounts yet.");
     expect(within(dialog).getByRole("link", { name: "Settings → Users" })).toHaveAttribute("href", "/settings?section=users");
+  });
+});
+
+describe("PT package editor money handling", () => {
+  const manager = ["pt.manage", "pt.reports.read", "pt.book_for_member", "payments.collect"];
+  beforeEach(() => { Object.assign(state, { data: workspace, isError: false, isBackgroundError: false, error: undefined, permissions: manager }); session.organization.currency = "JOD"; state.api.upsertPtPackage.mockClear(); });
+
+  async function openCreate() {
+    render(<PersonalTrainingPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Package" }));
+    return screen.getByRole("dialog", { name: "Create a PT package" });
+  }
+
+  it("prefills a JOD gym from the JOD guide and saves the parsed amount in JOD", async () => {
+    const dialog = await openCreate();
+    const price = within(dialog).getByLabelText(/Total price \(JOD\)/);
+    expect(price).toHaveValue("240.000");
+    expect(within(dialog).getByText("Guide total").parentElement).toHaveTextContent("JOD 240.000");
+    await userEvent.clear(price);
+    await userEvent.type(price, "٢٤٠٫٥٠٠");
+    expect(dialog).toHaveTextContent("Current rate: JOD 20.042 / session");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save package" }));
+    expect(state.api.upsertPtPackage).toHaveBeenCalledWith(expect.objectContaining({ sessionCount: 12, totalPrice: { amount: 240_500, currency: "JOD" } }));
+  });
+
+  it("names a malformed, over-precise or empty price inline and keeps the typed draft", async () => {
+    const dialog = await openCreate();
+    const price = within(dialog).getByLabelText(/Total price \(JOD\)/);
+    await userEvent.clear(price);
+    await userEvent.type(price, "1,2");
+    expect(dialog).not.toHaveTextContent("Use a dot for decimals");
+    await userEvent.tab();
+    expect(within(dialog).getByText(/Use a dot for decimals/)).toBeInTheDocument();
+    expect(price).toHaveValue("1,2");
+    expect(price).toHaveAttribute("aria-invalid", "true");
+    await userEvent.clear(price);
+    await userEvent.type(price, "240.0005");
+    await userEvent.tab();
+    expect(within(dialog).getByText("JOD amounts use up to 3 decimal places.")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save package" }));
+    expect(state.api.upsertPtPackage).not.toHaveBeenCalled();
+    expect(price).toHaveValue("240.0005");
+    await userEvent.clear(price);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save package" }));
+    expect(within(dialog).getByText("Enter an amount.")).toBeInTheDocument();
+    expect(state.api.upsertPtPackage).not.toHaveBeenCalled();
+  });
+
+  it("labels a USD gym in USD, keeps the guide in JOD without converting, and saves USD minor units", async () => {
+    session.organization.currency = "USD";
+    const dialog = await openCreate();
+    const price = within(dialog).getByLabelText(/Total price \(USD\)/);
+    expect(price).toHaveValue("");
+    expect(price).toHaveAttribute("placeholder", "240.00");
+    expect(dialog).toHaveTextContent("The reference ladder is priced in JOD; this gym sells in USD");
+    expect(within(dialog).queryByText("Guide total")).not.toBeInTheDocument();
+    expect(dialog).toHaveTextContent("JOD 240.000");
+    expect(dialog).not.toHaveTextContent("USD 240");
+    await userEvent.type(price, "45.50");
+    expect(dialog).toHaveTextContent("Current rate: USD 3.79 / session");
+    expect(dialog).not.toHaveTextContent("Guide rate");
+    await userEvent.type(price, "5");
+    await userEvent.tab();
+    expect(within(dialog).getByText("USD amounts use up to 2 decimal places.")).toBeInTheDocument();
+    await userEvent.clear(price);
+    await userEvent.type(price, "45.50");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save package" }));
+    expect(state.api.upsertPtPackage).toHaveBeenCalledWith(expect.objectContaining({ totalPrice: { amount: 4_550, currency: "USD" } }));
+  });
+
+  it("edits an existing package at its own currency's precision", async () => {
+    session.organization.currency = "USD";
+    state.data = { ...workspace, packages: [{ id: "pkg", organizationId: "gym", name: "10 PT sessions", sessionCount: 10, totalPrice: { amount: 4_800, currency: "USD" }, validityDays: 90, branchAccess: "all", branchIds: [], status: "active", createdAt: "2026-09-01T09:00:00Z", updatedAt: "2026-09-01T09:00:00Z" }] };
+    render(<PersonalTrainingPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Edit 10 PT sessions" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit PT package" });
+    const price = within(dialog).getByLabelText(/Total price \(USD\)/);
+    expect(price).toHaveValue("48.00");
+    expect(dialog).toHaveTextContent("Current rate: USD 4.80 / session");
+    await userEvent.clear(price);
+    await userEvent.type(price, "USD 50");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save package" }));
+    expect(state.api.upsertPtPackage).toHaveBeenCalledWith(expect.objectContaining({ id: "pkg", totalPrice: { amount: 5_000, currency: "USD" } }));
   });
 });
 

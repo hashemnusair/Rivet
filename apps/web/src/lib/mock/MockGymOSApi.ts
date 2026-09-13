@@ -5353,6 +5353,8 @@ export class MockGymOSApi implements GymOSApi {
   upsertPtPackage(input: T.UpsertPtPackageInput): Promise<T.PtPackage> {
     return this.respond(() => {
       this.require("pt.manage");
+      // Convex refuses a package priced in a currency other than the gym's.
+      if (input.totalPrice.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Package currency does not match the organization.");
       if (!Number.isSafeInteger(input.sessionCount) || input.sessionCount < 1 || input.sessionCount > 1_000 || !Number.isSafeInteger(input.totalPrice.amount) || input.totalPrice.amount <= 0 || input.validityDays < 1) throw ApiError.of(ERR.VALIDATION, "Package sessions, price, and validity must be positive.");
       const existing = input.id ? this.ptPackages.find((item) => item.id === input.id) : undefined;
       const now = nowISO();

@@ -6,6 +6,7 @@ import type { AccountingSourcePosting, MemberSummary, OperationalPolicies, Payme
 import type * as T from "@/lib/domain/types";
 import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
+import { ptPackageUnitPriceMinor } from "@/lib/domain/personal-training";
 import { MockGymOSApi } from "./MockGymOSApi";
 import { BRANCH_ABD } from "./seed";
 import type { MockDb } from "./store";
@@ -3052,6 +3053,28 @@ describe("trainer journey in the preview adapter", () => {
     await expect(api.switchDemoRole("trainer")).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
     // The gym keeps the profile for history, and the trainer picker no longer offers the account.
     expect((await api.listUsers({ role: "trainer", status: "active", pageSize: 10 })).items.some((user) => user.id === fadi.userId)).toBe(false);
+  });
+});
+
+describe("PT package pricing in the gym's currency", () => {
+  it("stores the package in the configured currency, refuses another one, and keeps order snapshots on later edits", async () => {
+    const internals = api as unknown as { db: MockDb };
+    internals.db.organization.currency = "USD";
+    await expect(api.upsertPtPackage({ name: "5 PT sessions", sessionCount: 5, totalPrice: money(100_000, "JOD"), validityDays: 60, branchAccess: "all", branchIds: [], status: "active" }))
+      .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION && /currency/i.test(error.message));
+    // The seeded JOD ladder is not part of a USD gym's active catalogue.
+    for (const seeded of (await api.getPtWorkspace()).packages) await api.upsertPtPackage({ ...seeded, totalPrice: money(seeded.totalPrice.amount, "USD"), status: "archived" });
+    const created = await api.upsertPtPackage({ name: "5 PT sessions", sessionCount: 5, totalPrice: money(4_550, "USD"), validityDays: 60, branchAccess: "all", branchIds: [], status: "active" });
+    expect(created.totalPrice).toEqual({ amount: 4_550, currency: "USD" });
+    expect(ptPackageUnitPriceMinor(created.totalPrice.amount, created.sessionCount)).toBe(910);
+
+    const [member] = await membersWithActiveMemberships(1);
+    const order = await api.requestPtPackage({ membershipId: member!.membershipId, packageId: created.id, idempotencyKey: "usd-package-order" });
+    expect(order.totalPriceSnapshot).toEqual({ amount: 4_550, currency: "USD" });
+    const edited = await api.upsertPtPackage({ ...created, totalPrice: money(4_000, "USD") });
+    expect(edited.totalPrice).toEqual({ amount: 4_000, currency: "USD" });
+    const orders = (await api.getPtWorkspace()).pendingOrders;
+    expect(orders.find((item) => item.id === order.id)?.totalPriceSnapshot).toEqual({ amount: 4_550, currency: "USD" });
   });
 });
 
