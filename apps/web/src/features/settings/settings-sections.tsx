@@ -557,7 +557,9 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
     onSuccess: async () => {
       toast.success("Invitation created. Its current status is available in the staff list.");
       onOpenChange(false);
-      await invalidate();
+      // The staff list is not part of the default invalidation set, so the
+      // new "invited" row must be requested explicitly.
+      await invalidate([qk.users()]);
     },
     onError: (e) => toast.error(errorMessage(e, "Invite failed.")),
   });
