@@ -11383,6 +11383,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         if (trainerProfile) {
           const futureBookings = await ctx.db.query("ptBookings").withIndex("by_trainer_start", (q) => q.eq("trainerProfileId", trainerProfile._id).gte("startsAt", Date.now())).collect();
           if (futureBookings.some((booking) => ["reserved", "confirmed"].includes(booking.status))) domainError("CONFLICT", "Reassign or cancel this trainer's future PT bookings before deactivating the account.", { correlationId: actor.correlationId });
+          // A deactivated account must not stay bookable: the profile is
+          // archived with the access change, so members and the public
+          // page stop offering the trainer the moment access ends.
+          if (trainerProfile.status !== "archived") {
+            await ctx.db.patch(trainerProfile._id, { status: "archived", updatedAt: Date.now() });
+            await insertAudit(ctx, actor, { category: "users", action: "pt.trainer.archive", entityType: "pt_trainer", entityId: trainerProfile.publicId, entityLabel: trainerProfile.displayName, summary: "Trainer profile archived with account deactivation", before: { status: trainerProfile.status }, after: { status: "archived" } });
+          }
         }
       }
       if (membership.role === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Only an owner can change owner access.", { correlationId: actor.correlationId });

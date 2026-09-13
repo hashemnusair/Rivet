@@ -3050,6 +3050,10 @@ describe("trainer journey in the preview adapter", () => {
     await expect(api.updateUserAccess(fadi.userId, { status: "deactivated" })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.CONFLICT);
     await api.cancelPtBooking(booking.id, { reason: "Trainer leaving", cancelledByGym: true });
     expect((await api.updateUserAccess(fadi.userId, { status: "deactivated" })).status).toBe("deactivated");
+    // The profile is archived with the account, so nobody can book the departed trainer.
+    expect((await api.getPtWorkspace()).trainers.find((item) => item.id === fadi.id)?.status).toBe("archived");
+    await expect(api.listPtAvailableSlots({ trainerProfileId: fadi.id, branchId, from: addDays(todayISODate("Asia/Amman"), 1), to: addDays(todayISODate("Asia/Amman"), 1) })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
+    expect((await api.getPtMemberExperience(member!.membershipId)).trainers.some((item) => item.id === fadi.id)).toBe(false);
     await expect(api.switchDemoRole("trainer")).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
     // The gym keeps the profile for history, and the trainer picker no longer offers the account.
     expect((await api.listUsers({ role: "trainer", status: "active", pageSize: 10 })).items.some((user) => user.id === fadi.userId)).toBe(false);

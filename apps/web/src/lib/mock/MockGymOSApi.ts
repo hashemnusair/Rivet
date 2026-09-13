@@ -11801,6 +11801,13 @@ export class MockGymOSApi implements GymOSApi {
         if (profile && this.ptBookings.some((booking) => booking.trainerProfileId === profile.id && ["reserved", "confirmed"].includes(booking.status) && Date.parse(booking.startsAt) >= now)) {
           throw ApiError.of(ERR.CONFLICT, "Reassign or cancel this trainer's future PT bookings before deactivating the account.");
         }
+        // As in Convex, the profile is archived with the access change so the
+        // deactivated trainer disappears from member and public booking.
+        if (profile && profile.status !== "archived") {
+          const archived: T.PtTrainerProfile = { ...profile, status: "archived", updatedAt: nowISO() };
+          this.ptTrainers.splice(this.ptTrainers.indexOf(profile), 1, archived);
+          this.audit({ category: "users", action: "pt.trainer.archive", entityType: "pt_trainer", entityId: profile.id, entityLabel: profile.displayName, summary: "Trainer profile archived with account deactivation", before: { status: profile.status }, after: { status: "archived" } });
+        }
       }
       const nextRole = input.role ?? user.role;
       if (nextRole === "owner" && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only an owner can grant the owner role.");
