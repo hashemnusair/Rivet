@@ -82,7 +82,7 @@ import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLea
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
 import { deriveRetentionRisks } from "@/lib/retention/at-risk";
 import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits, type CsvValue } from "@/lib/exports/csv";
-import { exponentFor, money, zeroMoney } from "@/lib/utils/money";
+import { exponentFor, money, toMajorString, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
 import { manualJournalRequestFingerprint, reversalRequestFingerprint } from "../../../convex/accountingLedger";
@@ -3758,6 +3758,16 @@ export class MockGymOSApi implements GymOSApi {
     return currentUser(this.db);
   }
 
+  /**
+   * "USD 40.00" / "JOD 40.000" for audit, timeline and notification text. A
+   * bare minor amount is read in the gym's currency; a Money value keeps its
+   * own, so a record's text always matches the amount stored beside it.
+   */
+  private amountText(value: number | T.Money): string {
+    const amount = typeof value === "number" ? money(value, this.db.organization.currency) : value;
+    return `${amount.currency} ${toMajorString(amount)}`;
+  }
+
   private validateLeadOwner(ownerId: T.UUID): void {
     const owner = this.db.users.find((user) => user.id === ownerId && user.organizationId === this.db.organization.id);
     if (!owner) throw ApiError.of(ERR.NOT_FOUND, "Lead owner not found.");
@@ -5786,6 +5796,8 @@ export class MockGymOSApi implements GymOSApi {
       if (overlap) throw ApiError.of(ERR.CONFLICT, "This member already has a membership covering part of the selected term.");
     }
     const recordId = mockUuid();
+    // New sale amounts are denominated in the gym's currency, never a fixed one.
+    const saleCurrency = this.db.organization.currency;
     const record: MembershipRecord = {
       id: recordId,
       organizationId: this.db.organization.id,
@@ -5796,8 +5808,8 @@ export class MockGymOSApi implements GymOSApi {
       endDate,
       totalVisits: plan.kind === "visits" ? plan.visitAllowance : undefined,
       remainingVisits: plan.kind === "visits" ? plan.visitAllowance : undefined,
-      salePrice: money(priceMinor),
-      discount: money(discountMinor),
+      salePrice: money(priceMinor, saleCurrency),
+      discount: money(discountMinor, saleCurrency),
       discountReason: args.discountReason,
       discountApprovalStatus: discountMinor > 0 ? (approvalPending ? "pending" : "approved") : "none",
       soldById: args.soldBy,
@@ -5826,12 +5838,12 @@ export class MockGymOSApi implements GymOSApi {
       memberId: member.id,
       membershipId: record.id,
       description: `${plan.name} membership`,
-      subtotal: money(priceMinor),
-      discount: money(discountMinor),
-      tax: money(0),
-      total: money(totalMinor),
-      paidAmount: money(0),
-      outstandingAmount: money(totalMinor),
+      subtotal: money(priceMinor, saleCurrency),
+      discount: money(discountMinor, saleCurrency),
+      tax: money(0, saleCurrency),
+      total: money(totalMinor, saleCurrency),
+      paidAmount: money(0, saleCurrency),
+      outstandingAmount: money(totalMinor, saleCurrency),
       status: totalMinor === 0 ? "paid" : "unpaid",
       issueDate: this.today(),
       dueDate: args.startDate > this.today() ? args.startDate : this.today(),
@@ -7454,7 +7466,7 @@ export class MockGymOSApi implements GymOSApi {
       memberId: member.id,
       chargeId: charge.id,
       type: "payment",
-      amount: money(amount),
+      amount: money(amount, charge.total.currency),
       method: args.method,
       status: "completed",
       receiptId: "",
@@ -7473,14 +7485,14 @@ export class MockGymOSApi implements GymOSApi {
     this.db.payments.push(payment);
     this.db.receipts.push(receipt);
 
-    charge.paidAmount = money(charge.paidAmount.amount + amount);
-    charge.outstandingAmount = money(charge.outstandingAmount.amount - amount);
+    charge.paidAmount = money(charge.paidAmount.amount + amount, charge.total.currency);
+    charge.outstandingAmount = money(charge.outstandingAmount.amount - amount, charge.total.currency);
     charge.status = charge.outstandingAmount.amount <= 0 ? "paid" : "partial";
 
     const event = this.activity({
       memberId: member.id,
       type: "payment_collected",
-      title: `Payment collected — JOD ${(amount / 1000).toFixed(3)} ${args.method.replace("_", " ")}`,
+      title: `Payment collected — ${this.amountText(amount)} ${args.method.replace("_", " ")}`,
       actorId: this.actor().id,
       actorName: this.actor().name,
       meta: { receiptNumber, receiptId: receipt.id },
@@ -7757,7 +7769,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "payment",
         entityId: payment.id,
         entityLabel: `${payment.receiptNumber} · ${this.db.members.find((m) => m.id === payment.memberId)?.fullName ?? ""}`,
-        summary: `Collected JOD ${(payment.amount.amount / 1000).toFixed(3)} (${payment.method.replace("_", " ")})`,
+        summary: `Collected ${this.amountText(payment.amount)} (${payment.method.replace("_", " ")})`,
         after: { amount: payment.amount.amount, method: payment.method },
         branchId: payment.branchId,
       });
@@ -7805,7 +7817,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: original.memberId,
         chargeId: original.chargeId,
         type: "refund",
-        amount: money(-amount),
+        amount: money(-amount, original.amount.currency),
         method: original.method,
         status: "completed",
         receiptId: "",
@@ -7823,14 +7835,14 @@ export class MockGymOSApi implements GymOSApi {
       this.db.payments.push(refund);
       this.db.receipts.push(receipt);
 
-      original.refundedAmount = money(alreadyRefunded + amount);
+      original.refundedAmount = money(alreadyRefunded + amount, original.amount.currency);
       original.refundReason = input.reason;
       original.status = alreadyRefunded + amount >= original.amount.amount ? "refunded" : "partially_refunded";
 
       const charge = this.db.charges.find((c) => c.id === original.chargeId);
       if (charge) {
-        charge.paidAmount = money(Math.max(0, charge.paidAmount.amount - amount));
-        charge.outstandingAmount = money(charge.total.amount - charge.paidAmount.amount);
+        charge.paidAmount = money(Math.max(0, charge.paidAmount.amount - amount), charge.total.currency);
+        charge.outstandingAmount = money(charge.total.amount - charge.paidAmount.amount, charge.total.currency);
         charge.status = charge.paidAmount.amount <= 0 ? "refunded" : "partial";
       }
 
@@ -7842,7 +7854,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "payment",
         entityId: original.id,
         entityLabel: `${original.receiptNumber} · ${member.fullName}`,
-        summary: `Refunded JOD ${(amount / 1000).toFixed(3)} (${original.method.replace("_", " ")})`,
+        summary: `Refunded ${this.amountText(money(amount, original.amount.currency))} (${original.method.replace("_", " ")})`,
         reason: input.reason,
         before: { paymentStatus: "completed", chargePaid: original.amount.amount },
         after: { paymentStatus: original.status, refunded: alreadyRefunded + amount },
@@ -7852,7 +7864,7 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({
         memberId: original.memberId,
         type: "payment_refunded",
-        title: `Payment refunded — JOD ${(amount / 1000).toFixed(3)}`,
+        title: `Payment refunded — ${this.amountText(money(amount, original.amount.currency))}`,
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -7895,8 +7907,8 @@ export class MockGymOSApi implements GymOSApi {
       original.voidReason = input.reason;
       const charge = this.db.charges.find((c) => c.id === original.chargeId);
       if (charge) {
-        charge.paidAmount = money(Math.max(0, charge.paidAmount.amount - original.amount.amount));
-        charge.outstandingAmount = money(charge.total.amount - charge.paidAmount.amount);
+        charge.paidAmount = money(Math.max(0, charge.paidAmount.amount - original.amount.amount), charge.total.currency);
+        charge.outstandingAmount = money(charge.total.amount - charge.paidAmount.amount, charge.total.currency);
         charge.status = charge.paidAmount.amount <= 0 ? "unpaid" : "partial";
       }
       const member = this.db.members.find((m) => m.id === original.memberId)!;
@@ -7906,7 +7918,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "payment",
         entityId: original.id,
         entityLabel: `${original.receiptNumber} · ${member.fullName}`,
-        summary: `Voided JOD ${(original.amount.amount / 1000).toFixed(3)} (${original.method.replace("_", " ")})`,
+        summary: `Voided ${this.amountText(original.amount)} (${original.method.replace("_", " ")})`,
         reason: input.reason,
         before: { status: "completed" },
         after: { status: "voided" },

@@ -3078,6 +3078,39 @@ describe("PT package pricing in the gym's currency", () => {
   });
 });
 
+describe("adapter text follows the stored currency", () => {
+  /** Re-denominate the seeded gym without touching any historical record's text. */
+  function useCurrency(currency: string) {
+    const internals = api as unknown as { db: MockDb };
+    internals.db.organization.currency = currency;
+    for (const plan of internals.db.plans) plan.basePrice = money(plan.basePrice.amount, currency);
+  }
+
+  it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: sale, payment, refund and void text matches the stored minor amounts", async (currency, unit, decimals) => {
+    useCurrency(currency);
+    const member = await freshMemberForSale();
+    const plan = (await api.listPlans({ pageSize: 1 })).items[0]!;
+    const sale = await api.createMembershipSale({ memberId: member.id, planId: plan.id, startDate: todayISODate("Asia/Amman"), payment: { amount: plan.basePrice, method: "card", externalReference: "POS-TXT" } });
+    expect(sale.charge.total.currency).toBe(currency);
+    expect(sale.payment?.amount.currency).toBe(currency);
+    const refundMinor = 15 * unit + 5;
+    await api.refundPayment(sale.payment!.id, { amount: money(refundMinor, currency), reason: "Approved partial refund for the currency test", idempotencyKey: `text-refund-${currency}` });
+    const locker = await api.createPayment({ memberId: member.id, amount: money(7 * unit, currency), method: "cash" }, `text-locker-${currency}`);
+    const keyed = await api.createPayment({ memberId: member.id, amount: money(3 * unit, currency), method: "cash" }, `text-keyed-${currency}`);
+    await api.voidPayment(keyed.payment.id, { reason: "Keyed against the wrong member", idempotencyKey: `text-void-${currency}` });
+    const major = (minor: number) => (minor / unit).toFixed(decimals);
+    const audit = (await api.listAuditEvents({ pageSize: 60 })).items.map((event) => event.summary);
+    const timeline = (await api.listMemberTimeline(member.id, { pageSize: 50 })).items.map((event) => event.title);
+    expect(locker.payment.amount).toEqual(money(7 * unit, currency));
+    expect(audit).toContain(`Collected ${currency} ${major(7 * unit)} (cash)`);
+    expect(audit).toContain(`Refunded ${currency} ${major(refundMinor)} (card)`);
+    expect(audit).toContain(`Voided ${currency} ${major(3 * unit)} (cash)`);
+    expect(timeline).toContain(`Payment collected — ${currency} ${major(plan.basePrice.amount)} card`);
+    expect(timeline).toContain(`Payment refunded — ${currency} ${major(refundMinor)}`);
+    for (const line of [...audit, ...timeline]) expect(line, line).not.toMatch(currency === "USD" ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
+  });
+});
+
 describe("moving a class to another weekday", () => {
   it("refuses while a member holds one of its dates", async () => {
     const session = await api.getSession();
