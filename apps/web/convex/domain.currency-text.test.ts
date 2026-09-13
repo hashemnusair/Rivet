@@ -49,11 +49,14 @@ describe("member payment text follows the stored currency", () => {
     const manager = t.withIdentity({ subject: "clerk-text-manager" });
     const major = (minor: number) => (minor / unit).toFixed(unit === 1_000 ? 3 : 2);
 
-    await manager.mutation(api.domain.mutate, operation("shifts.open", { branchId: "text-branch", openingFloat: { amount: 5 * unit, currency } })) as { id: string };
+    const shift = await manager.mutation(api.domain.mutate, operation("shifts.open", { branchId: "text-branch", openingFloat: { amount: 5 * unit, currency } })) as { id: string };
     const paid = await manager.mutation(api.domain.mutate, operation("payments.create", { memberId: "text-member", chargeId: "text-charge", amount: { amount: 40 * unit, currency }, method: "card", externalReference: "POS-1", idempotencyKey: "text-pay-1" })) as { payment: { id: string } };
     const locker = await manager.mutation(api.domain.mutate, operation("payments.create", { memberId: "text-member", chargeId: "text-charge-2", amount: { amount: 7 * unit, currency }, method: "cash", idempotencyKey: "text-pay-2" })) as { payment: { id: string } };
     await manager.mutation(api.domain.mutate, operation("payments.refund", { paymentId: paid.payment.id, amount: { amount: 15 * unit + 5, currency }, reason: "Approved partial service refund", idempotencyKey: "text-refund-1" }));
     await manager.mutation(api.domain.mutate, operation("payments.void", { paymentId: locker.payment.id, reason: "Keyed against the wrong member", idempotencyKey: "text-void-1" }));
+    // With the cash payment voided the drawer holds the float; one extra minor
+    // unit is a variance the audit and the supervisor notice must spell out.
+    await manager.mutation(api.domain.mutate, operation("shifts.close", { shiftId: shift.id, countedCash: { amount: 5 * unit + 1, currency }, varianceExplanation: "One coin found above the expected drawer total" }));
 
     const written = await writtenText(t);
     expect(written.audit).toContain(`Collected ${text(major(40 * unit))} (card)`);
@@ -63,6 +66,8 @@ describe("member payment text follows the stored currency", () => {
     expect(written.timeline.some((line) => line.startsWith(`Payment refunded — ${text(major(15 * unit + 5))}`))).toBe(true);
     expect(written.notifications).toContain(`${text(major(15 * unit + 5))} · Text Manager`);
     expect(written.notifications).toContain(`${text(major(7 * unit))} · Text Manager`);
+    expect(written.audit).toContain(`Cash shift closed with variance ${text(major(1))}`);
+    expect(written.notifications).toContain(`${text(major(1))} · Text Manager`);
     for (const line of [...written.audit, ...written.timeline, ...written.notifications]) {
       expect(line, line).not.toMatch(unit === 100 ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
     }

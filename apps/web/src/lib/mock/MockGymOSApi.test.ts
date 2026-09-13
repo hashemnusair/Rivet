@@ -3148,6 +3148,20 @@ describe("adapter text follows the stored currency", () => {
     expect(timeline).toContain(`Payment refunded — ${currency} ${major(refundMinor)}`);
     for (const line of [...audit, ...timeline]) expect(line, line).not.toMatch(currency === "USD" ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
   });
+
+  it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: cash shift variance text and stored drawer amounts share the currency", async (currency, unit, decimals) => {
+    useCurrency(currency);
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const open = await api.getCurrentCashShift(branchId);
+    if (open) await api.closeCashShift(open.id, { countedCash: money(open.expectedCash?.amount ?? 0, currency), varianceExplanation: "Handover before the currency test" });
+    const shift = await api.openCashShift({ branchId, openingFloat: money(5 * unit, currency) });
+    const closed = await api.closeCashShift(shift.id, { countedCash: money(5 * unit - 3, currency), varianceExplanation: "Three coins short after the recount" });
+    expect(closed.expectedCash).toEqual(money(5 * unit, currency));
+    expect(closed.variance).toEqual(money(-3, currency));
+    const audit = (await api.listAuditEvents({ pageSize: 20 })).items.map((event) => event.summary);
+    expect(audit).toContain(`Shift closed with shortage of ${currency} ${(3 / unit).toFixed(decimals)}`);
+  });
 });
 
 describe("moving a class to another weekday", () => {

@@ -8097,9 +8097,9 @@ export class MockGymOSApi implements GymOSApi {
       shift.status = "closed";
       shift.closedAt = nowISO();
       shift.closedById = this.actor().id;
-      shift.expectedCash = money(expected);
+      shift.expectedCash = money(expected, this.db.organization.currency);
       shift.countedCash = input.countedCash;
-      shift.variance = money(variance);
+      shift.variance = money(variance, this.db.organization.currency);
       shift.varianceExplanation = input.varianceExplanation;
       shift.varianceApprovalStatus = variance === 0 ? "none" : "pending";
       if (variance !== 0) {
@@ -8110,7 +8110,7 @@ export class MockGymOSApi implements GymOSApi {
           entityType: "cash_shift",
           entityId: shift.id,
           entityLabel: `${branch.name} · shift ${todayISODate(TZ, new Date(shift.openedAt))}`,
-          summary: `Shift closed with ${variance < 0 ? "shortage" : "surplus"} of JOD ${(Math.abs(variance) / 1000).toFixed(3)}`,
+          summary: `Shift closed with ${variance < 0 ? "shortage" : "surplus"} of ${this.amountText(Math.abs(variance))}`,
           reason: input.varianceExplanation,
           before: { expectedCash: expected },
           after: { countedCash: input.countedCash.amount },
