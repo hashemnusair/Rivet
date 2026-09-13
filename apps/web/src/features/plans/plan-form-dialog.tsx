@@ -8,7 +8,8 @@ import { isApiError } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
 import type { MembershipPlan } from "@/lib/domain/types";
-import { fromMajor, toMajor } from "@/lib/utils/money";
+import { money, parseMoneyInput, readMoneyInput, toMajorString } from "@/lib/utils/money";
+import { useApp } from "@/lib/providers/app-providers";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/switch";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -52,8 +53,14 @@ export function PlanFormDialog({
   const branchesQuery = useApiQuery(qk.branches, (api) => api.listBranches(), { enabled: open });
   const [serverError, setServerError] = useState<string | null>(null);
 
+  const { session } = useApp();
+  // Prices are typed and stored in the gym's currency at its own precision.
+  const currency = plan?.basePrice.currency ?? session?.organization.currency ?? "JOD";
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema.superRefine((value, context) => {
+      const read = readMoneyInput(value.priceMajor, currency);
+      if (!read.ok) context.addIssue({ code: "custom", path: ["priceMajor"], message: read.message });
+    })),
     defaultValues: {
       name: "",
       code: "",
@@ -78,7 +85,7 @@ export function PlanFormDialog({
               durationDays: plan.durationDays,
               visitAllowance: plan.visitAllowance,
               visitValidityDays: plan.visitValidityDays,
-              priceMajor: toMajor(plan.basePrice).toFixed(3),
+              priceMajor: toMajorString(plan.basePrice),
               branchAccess: plan.branchAccess,
               branchIds: plan.branchIds,
               freezeAllowanceDays: plan.freezeAllowanceDays,
@@ -103,7 +110,7 @@ export function PlanFormDialog({
         durationDays: v.kind === "time" ? v.durationDays : undefined,
         visitAllowance: v.kind === "visits" ? v.visitAllowance : undefined,
         visitValidityDays: v.kind === "visits" ? v.visitValidityDays : undefined,
-        basePrice: fromMajor(Number(v.priceMajor)),
+        basePrice: parseMoneyInput(v.priceMajor, currency) ?? money(0, currency),
         branchAccess: v.branchAccess,
         branchIds: v.branchAccess === "selected" ? v.branchIds : [],
         freezeAllowanceDays: v.freezeAllowanceDays,
@@ -172,8 +179,8 @@ export function PlanFormDialog({
                   </Field>
                 </>
               )}
-              <Field label="Price (JOD)" required error={form.formState.errors.priceMajor?.message}>
-                <Input inputMode="decimal" placeholder="0.000" {...form.register("priceMajor")} />
+              <Field label={`Price (${currency})`} required error={form.formState.errors.priceMajor?.message}>
+                <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(money(0, currency))} aria-invalid={form.formState.errors.priceMajor ? true : undefined} {...form.register("priceMajor")} />
               </Field>
               <Field label="Freeze allowance (days)">
                 <Input type="number" min={0} {...form.register("freezeAllowanceDays")} />

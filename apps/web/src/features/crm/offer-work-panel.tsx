@@ -13,7 +13,7 @@ import { qk } from "@/lib/api/keys";
 import type { MembershipPlan, Offer } from "@/lib/domain/types";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { formatDateTime } from "@/lib/utils/dates";
-import { formatMoney, fromMajor, toMajor } from "@/lib/utils/money";
+import { formatMoney, money, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { WhatsAppHandoff } from "./whatsapp-handoff";
 
 interface OfferWorkPanelProps {
@@ -39,11 +39,13 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
     if (!open || !activePlans.length) return;
     const selected = activePlans.find((plan) => plan.id === planId) ?? activePlans[0]!;
     setPlanId(selected.id);
-    setPrice(String(toMajor(selected.basePrice)));
+    setPrice(toMajorString(selected.basePrice));
   }, [activePlans, open, planId]);
 
+  const priceRead = readMoneyInput(price, props.currency);
+  const priceProblem = !priceRead.ok && priceRead.problem !== "empty" ? priceRead.message : undefined;
   const create = useApiMutation(
-    (api) => api.createOffer({ leadId: props.leadId, planId, price: fromMajor(Number(price), props.currency), expiresInDays: Number(expiresInDays) }),
+    (api) => api.createOffer({ leadId: props.leadId, planId, price: priceRead.ok ? priceRead.money : money(0, props.currency), expiresInDays: Number(expiresInDays) }),
     {
       onSuccess: async () => {
         toast.success("Offer link created. Share it, then confirm when it has actually been sent.");
@@ -76,17 +78,17 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
           </DialogHeader>
           <DialogBody className="space-y-4">
             <Field label="Membership plan" required>
-              <Select value={planId} onValueChange={(value) => { setPlanId(value); const plan = activePlans.find((item) => item.id === value); if (plan) setPrice(String(toMajor(plan.basePrice))); }}>
+              <Select value={planId} onValueChange={(value) => { setPlanId(value); const plan = activePlans.find((item) => item.id === value); if (plan) setPrice(toMajorString(plan.basePrice)); }}>
                 <SelectTrigger aria-label="Offer membership plan"><SelectValue placeholder="Choose a plan" /></SelectTrigger>
                 <SelectContent>{activePlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · {formatMoney(plan.basePrice)}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
             <FieldGrid alignFrom="base" className="grid-cols-2">
-              <Field label={`Offer price (${props.currency})`} required><Input type="number" min="0" step="0.001" value={price} onChange={(event) => setPrice(event.target.value)} /></Field>
+              <Field label={`Offer price (${props.currency})`} required error={priceProblem}><Input inputMode="decimal" dir="ltr" value={price} aria-invalid={priceProblem ? true : undefined} onChange={(event) => setPrice(event.target.value)} /></Field>
               <Field label="Expires after" hint="1–60 days"><Input type="number" min="1" max="60" value={expiresInDays} onChange={(event) => setExpiresInDays(event.target.value)} /></Field>
             </FieldGrid>
           </DialogBody>
-          <DialogFooter><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" loading={create.isPending} disabled={!planId || !price || Number(price) < 0 || Number(expiresInDays) < 1 || Number(expiresInDays) > 60} onClick={() => create.mutate()}><Link2 /> Create link</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" loading={create.isPending} disabled={!planId || !priceRead.ok || Number(expiresInDays) < 1 || Number(expiresInDays) > 60} onClick={() => create.mutate()}><Link2 /> Create link</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </section>

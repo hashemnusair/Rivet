@@ -16,9 +16,9 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
-import { fromMajor, toMajor } from "@/lib/utils/money";
+import { exponentFor, money, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { Breadcrumbs } from "@/components/shared/chrome";
-import { DateTimeText, RelativeText } from "@/components/shared/data-display";
+import { DateTimeText, MoneyText, RelativeText } from "@/components/shared/data-display";
 import { LEAD_SOURCE_LABELS, LeadStageChip } from "@/components/shared/status-chip";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { Badge } from "@/components/ui/badge";
@@ -356,6 +356,10 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   const [startDate, setStartDate] = useState("");
   const [customName, setCustomName] = useState("");
   const [customPrice, setCustomPrice] = useState("");
+  const currency = session?.organization.currency ?? "JOD";
+  const customPriceRead = readMoneyInput(customPrice, currency);
+  // A malformed price is named beside the field while the draft stays as typed.
+  const customPriceProblem = !customPriceRead.ok && customPriceRead.problem !== "empty" ? customPriceRead.message : undefined;
   const [customDurationDays, setCustomDurationDays] = useState("30");
   const [customPtSessions, setCustomPtSessions] = useState("0");
   const [idempotencyKey, setIdempotencyKey] = useState("");
@@ -397,7 +401,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
       idempotencyKey,
       membership: mode === "existing"
         ? { mode: "existing", planId }
-        : { mode: "custom", name: customName.trim(), price: fromMajor(Number(customPrice)), durationDays: Number(customDurationDays), includedPtSessions: Number(customPtSessions) },
+        : { mode: "custom", name: customName.trim(), price: customPriceRead.ok ? customPriceRead.money : money(0, currency), durationDays: Number(customDurationDays), includedPtSessions: Number(customPtSessions) },
       });
     },
     {
@@ -421,7 +425,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
     },
   );
 
-  const customValid = customName.trim().length >= 2 && customPrice.trim().length > 0 && Number(customPrice) >= 0 && Number.isInteger(Number(customDurationDays)) && Number(customDurationDays) >= 1 && Number(customDurationDays) <= 730 && Number.isInteger(Number(customPtSessions)) && Number(customPtSessions) >= 0 && Number(customPtSessions) <= 100;
+  const customValid = customName.trim().length >= 2 && customPriceRead.ok && Number.isInteger(Number(customDurationDays)) && Number(customDurationDays) >= 1 && Number(customDurationDays) <= 730 && Number.isInteger(Number(customPtSessions)) && Number(customPtSessions) >= 0 && Number(customPtSessions) <= 100;
   const canSubmit = Boolean(homeBranchId && gender && startDate && idempotencyKey && (mode === "existing" ? planId : customValid));
 
   return (
@@ -487,7 +491,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
             <div className="space-y-3 rounded-md border border-line bg-sunken/40 p-3">
               <Field label="Membership name" required><Input value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="e.g. 8-week transformation" /></Field>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Price (JOD)" required><Input inputMode="decimal" value={customPrice} onChange={(event) => setCustomPrice(event.target.value)} placeholder="120.000" /></Field>
+                <Field label={`Price (${currency})`} required error={customPriceProblem}><Input inputMode="decimal" dir="ltr" value={customPrice} aria-invalid={customPriceProblem ? true : undefined} onChange={(event) => setCustomPrice(event.target.value)} placeholder={toMajorString(money(120 * 10 ** exponentFor(currency), currency))} /></Field>
                 <Field label="Duration (days)" required><Input type="number" min={1} max={730} value={customDurationDays} onChange={(event) => setCustomDurationDays(event.target.value)} /></Field>
                 <Field label="PT sessions"><Input type="number" min={0} max={100} value={customPtSessions} onChange={(event) => setCustomPtSessions(event.target.value)} /></Field>
               </div>
@@ -505,7 +509,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
 }
 
 function PlanSummary({ plan }: { plan: MembershipPlan }) {
-  return <div className="grid grid-cols-3 divide-x divide-line rounded-md border border-line bg-sunken text-center text-[12px]"><div className="p-2"><p className="text-ink-3">Price</p><p className="mt-0.5 font-medium">JOD {toMajor(plan.basePrice).toFixed(3)}</p></div><div className="p-2"><p className="text-ink-3">Duration</p><p className="mt-0.5 font-medium">{plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits`}</p></div><div className="p-2"><p className="text-ink-3">PT</p><p className="mt-0.5 font-medium">{plan.includedPtSessions} sessions</p></div></div>;
+  return <div className="grid grid-cols-3 divide-x divide-line rounded-md border border-line bg-sunken text-center text-[12px]"><div className="p-2"><p className="text-ink-3">Price</p><p className="mt-0.5 font-medium"><MoneyText money={plan.basePrice} /></p></div><div className="p-2"><p className="text-ink-3">Duration</p><p className="mt-0.5 font-medium">{plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits`}</p></div><div className="p-2"><p className="text-ink-3">PT</p><p className="mt-0.5 font-medium">{plan.includedPtSessions} sessions</p></div></div>;
 }
 
 function ContextRow({ label, children }: { label: string; children: React.ReactNode }) {

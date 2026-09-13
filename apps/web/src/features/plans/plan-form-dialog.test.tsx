@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { PlanFormDialog } from "./plan-form-dialog";
 
+vi.mock("@/lib/providers/app-providers", () => ({ useApp: () => ({ session: { organization: { currency: "JOD" } } }) }));
 vi.mock("@/lib/hooks/use-api", () => ({
   useInvalidate: () => vi.fn(async () => undefined),
   useApiQuery: () => ({

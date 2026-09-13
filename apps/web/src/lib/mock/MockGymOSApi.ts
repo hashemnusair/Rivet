@@ -5233,7 +5233,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "plan",
         entityId: plan.id,
         entityLabel: plan.name,
-        summary: `Plan created — JOD ${(plan.basePrice.amount / 1000).toFixed(3)}`,
+        summary: `Plan created — ${this.amountText(plan.basePrice)}`,
       });
       return this.toPlan(plan);
     });
@@ -5874,8 +5874,8 @@ export class MockGymOSApi implements GymOSApi {
         entityId: record.id,
         entityLabel: `${member.fullName} · ${member.memberNumber}`,
         summary: approvalPending
-          ? `Discount of JOD ${(discountMinor / 1000).toFixed(3)} exceeds limit — approval requested`
-          : `Discount of JOD ${(discountMinor / 1000).toFixed(3)} applied`,
+          ? `Discount of ${this.amountText(discountMinor)} exceeds limit — approval requested`
+          : `Discount of ${this.amountText(discountMinor)} applied`,
         reason: args.discountReason,
         before: { price: priceMinor, discount: 0, approvalStatus: "none" },
         after: { price: priceMinor, discount: discountMinor, approvalStatus: approvalPending ? "pending" : "approved" },
@@ -5891,7 +5891,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "membership",
         entityId: record.id,
         entityLabel: `${member.fullName} · ${member.memberNumber}`,
-        summary: `Price override: JOD ${(priceMinor / 1000).toFixed(3)}`,
+        summary: `Price override: ${this.amountText(priceMinor)}`,
         reason: args.overrideReason,
         before: { price: plan.basePrice.amount },
         after: { price: priceMinor },
@@ -5936,7 +5936,7 @@ export class MockGymOSApi implements GymOSApi {
       entityType: "membership",
       entityId: record.id,
       entityLabel: `${member.fullName} · ${member.memberNumber}`,
-      summary: `${plan.name} — JOD ${(totalMinor / 1000).toFixed(3)}`,
+      summary: `${plan.name} — ${this.amountText(totalMinor)}`,
       after: { startDate: record.startDate, endDate: record.endDate, total: totalMinor },
       branchId: member.homeBranchId,
     });
@@ -6722,7 +6722,7 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({
         leadId: lead.id,
         type: "offer_drafted",
-        title: `Offer drafted — ${plan.name} at JOD ${(input.price.amount / 1000).toFixed(3)}`,
+        title: `Offer drafted — ${plan.name} at ${this.amountText(input.price)}`,
         actorId: this.actor().id,
         actorName: this.actor().name,
         meta: { offerId: offer.id },

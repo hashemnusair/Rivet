@@ -29,6 +29,7 @@ async function seed(t: TestConvex<typeof schema>, currency: string) {
     await ctx.db.insert("organizationMemberships", { organizationId, userId: managerId, role: "manager", branchIds: [branchId], branchScope: "all", active: true, createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId, entityType: "member", publicId: "text-member", branchId, memberPublicId: "text-member", createdAt: now, updatedAt: now, data: { id: "text-member", fullName: "Text Member", email: "member@text.example", phone: "+962790000009", memberNumber: "MAIN-1", homeBranchId: "text-branch", status: "active", createdAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId, entityType: "charge", publicId: "text-charge", branchId, memberPublicId: "text-member", createdAt: now, updatedAt: now, data: { id: "text-charge", memberId: "text-member", branchId: "text-branch", description: "Membership", total: { amount: 40 * (currency === "JOD" ? 1_000 : 100), currency }, paidAmount: { amount: 0, currency }, outstandingAmount: { amount: 40 * (currency === "JOD" ? 1_000 : 100), currency }, discount: { amount: 0, currency }, status: "unpaid", createdAt: new Date(now).toISOString() } });
+    await ctx.db.insert("domainRecords", { organizationId, entityType: "plan", publicId: "text-plan", branchId, createdAt: now, updatedAt: now, data: { id: "text-plan", name: "Monthly", code: "M1", kind: "time", durationDays: 30, basePrice: { amount: 40 * (currency === "JOD" ? 1_000 : 100), currency }, branchAccess: "all", branchIds: [], freezeAllowanceDays: 7, includedPtSessions: 0, status: "active" } });
     await ctx.db.insert("domainRecords", { organizationId, entityType: "charge", publicId: "text-charge-2", branchId, memberPublicId: "text-member", createdAt: now, updatedAt: now, data: { id: "text-charge-2", memberId: "text-member", branchId: "text-branch", description: "Locker", total: { amount: 7 * (currency === "JOD" ? 1_000 : 100), currency }, paidAmount: { amount: 0, currency }, outstandingAmount: { amount: 7 * (currency === "JOD" ? 1_000 : 100), currency }, discount: { amount: 0, currency }, status: "unpaid", createdAt: new Date(now).toISOString() } });
   });
 }
@@ -65,5 +66,21 @@ describe("member payment text follows the stored currency", () => {
     for (const line of [...written.audit, ...written.timeline, ...written.notifications]) {
       expect(line, line).not.toMatch(unit === 100 ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
     }
+  });
+});
+
+describe("membership sale text follows the stored currency", () => {
+  it.each(CASES)("$currency: sale total, discount and price override read at the currency's precision", async ({ currency, unit, text }) => {
+    const t = convexTest(schema, modules);
+    await seed(t, currency);
+    const manager = t.withIdentity({ subject: "clerk-text-manager" });
+    const major = (minor: number) => (minor / unit).toFixed(unit === 1_000 ? 3 : 2);
+    const today = new Date().toISOString().slice(0, 10);
+    await manager.mutation(api.domain.mutate, operation("memberships.sale", { memberId: "text-member", planId: "text-plan", startDate: today, priceOverride: { amount: 35 * unit + 5, currency }, overrideReason: "Approved hardship price.", discount: { amount: 5 * unit, currency }, discountReason: "Referral thank-you" }));
+    const written = await writtenText(t);
+    expect(written.audit).toContain(`Price override: ${text(major(35 * unit + 5))}`);
+    expect(written.audit).toContain(`Discount applied: ${text(major(5 * unit))}`);
+    expect(written.audit).toContain(`Monthly — ${text(major(30 * unit + 5))}`);
+    for (const line of written.audit) expect(line, line).not.toMatch(unit === 100 ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
   });
 });

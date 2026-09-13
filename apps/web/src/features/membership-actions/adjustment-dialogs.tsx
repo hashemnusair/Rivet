@@ -1,5 +1,7 @@
 "use client";
 
+import { toMajorString } from "@/lib/utils/money";
+
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -478,7 +480,7 @@ export function ChangeMembershipPlanDialog({
             <Field label="New plan" required error={form.formState.errors.planId?.message}>
               <Select value={form.watch("planId")} onValueChange={(value) => form.setValue("planId", value, { shouldValidate: true })}>
                 <SelectTrigger aria-label="New membership plan"><SelectValue placeholder={plansQuery.isLoading ? "Loading plans…" : "Select plan"} /></SelectTrigger>
-                <SelectContent>{plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · {plan.basePrice.currency} {(plan.basePrice.amount / 1000).toFixed(3)}</SelectItem>)}</SelectContent>
+                <SelectContent>{plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · {plan.basePrice.currency} {toMajorString(plan.basePrice)}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
             <Field label="Effective date" required error={form.formState.errors.effectiveDate?.message}>
@@ -491,7 +493,7 @@ export function ChangeMembershipPlanDialog({
               </Select>
             </Field>
             {effectiveDate === "immediate" ? <p className="rounded-md border border-warning/30 bg-warning-bg p-3 text-[12.5px] text-warning-deep">Immediate changes end the current term and start the new plan today. The existing charge is preserved; any credit or refund must be handled separately.</p> : null}
-            {selectedPlan ? <BeforeAfter rows={[{ label: "Plan", before: membership.planName, after: selectedPlan.name }, { label: "New term starts", before: "—", after: effectiveDate === "immediate" ? todayISODate() : nextRenewalDate }, { label: "Price", before: "Existing term", after: `${selectedPlan.basePrice.currency} ${(selectedPlan.basePrice.amount / 1000).toFixed(3)} · full charge` }]} /> : null}
+            {selectedPlan ? <BeforeAfter rows={[{ label: "Plan", before: membership.planName, after: selectedPlan.name }, { label: "New term starts", before: "—", after: effectiveDate === "immediate" ? todayISODate() : nextRenewalDate }, { label: "Price", before: "Existing term", after: `${selectedPlan.basePrice.currency} ${toMajorString(selectedPlan.basePrice)} · full charge` }]} /> : null}
             <Field label="Reason" required error={form.formState.errors.reason?.message}>
               <Textarea placeholder="e.g. Member moving to unlimited access at next renewal" {...form.register("reason")} />
             </Field>

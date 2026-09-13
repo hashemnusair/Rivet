@@ -3086,6 +3086,25 @@ describe("adapter text follows the stored currency", () => {
     for (const plan of internals.db.plans) plan.basePrice = money(plan.basePrice.amount, currency);
   }
 
+  it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: plan, offer, sale, discount and override text matches the stored minor amounts", async (currency, unit, decimals) => {
+    useCurrency(currency);
+    const major = (minor: number) => (minor / unit).toFixed(decimals);
+    const session = await api.getSession();
+    const plan = await api.createPlan({ name: "Text plan", code: "TXT", kind: "time", durationDays: 30, basePrice: money(40 * unit + 5, currency), branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, includedPtSessions: 0 });
+    const lead = await api.createLead({ fullName: "Text Lead", phone: "+962 79 900 0177", branchId: session.branches[0]!.id, source: "walk_in" });
+    await api.createOffer({ leadId: lead.id, planId: plan.id, price: money(38 * unit, currency), expiresInDays: 7 });
+    const member = await freshMemberForSale();
+    await api.createMembershipSale({ memberId: member.id, planId: plan.id, startDate: todayISODate("Asia/Amman"), priceOverride: money(35 * unit + 5, currency), overrideReason: "Approved hardship price.", discount: money(5 * unit, currency), discountReason: "Referral thank-you" });
+    const audit = (await api.listAuditEvents({ pageSize: 60 })).items.map((event) => event.summary);
+    const leadTimeline = (await api.getLead(lead.id)).activities.map((activity) => activity.title);
+    expect(audit).toContain(`Plan created — ${currency} ${major(40 * unit + 5)}`);
+    expect(audit).toContain(`Price override: ${currency} ${major(35 * unit + 5)}`);
+    expect(audit).toContain(`Discount of ${currency} ${major(5 * unit)} applied`);
+    expect(audit).toContain(`Text plan — ${currency} ${major(30 * unit + 5)}`);
+    expect(leadTimeline).toContain(`Offer drafted — Text plan at ${currency} ${major(38 * unit)}`);
+    for (const line of [...audit, ...leadTimeline]) expect(line, line).not.toMatch(currency === "USD" ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
+  });
+
   it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: sale, payment, refund and void text matches the stored minor amounts", async (currency, unit, decimals) => {
     useCurrency(currency);
     const member = await freshMemberForSale();

@@ -10,6 +10,7 @@ import type { MembershipListQuery } from "@/lib/api/GymOSApi";
 import type { MembershipSummary } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
+import { money } from "@/lib/utils/money";
 import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
@@ -218,6 +219,7 @@ function MembershipCompactRow({ membership, onOpen }: { membership: MembershipSu
 }
 
 function FreezeRequestsPanel() {
+  const { session } = useApp();
   const invalidate = useInvalidate();
   const requestsQuery = useApiQuery(["freezeRequests", "pending"] as const, (api) => api.listFreezeRequests({ status: "pending" }));
   const [denyId, setDenyId] = useState<string>();
@@ -247,7 +249,7 @@ function FreezeRequestsPanel() {
           <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2.5">
             <div className="min-w-0 text-[12.5px]">
               <p className="font-semibold">{request.memberName}</p>
-              <p className="text-ink-3">{request.days} days from {request.startDate} · “{request.reason}” · {request.expectedFeeMinor > 0 ? `fee JOD ${(request.expectedFeeMinor / 1000).toFixed(3)}` : "free under policy"}</p>
+              <p className="text-ink-3">{request.days} days from {request.startDate} · “{request.reason}” · {request.expectedFeeMinor > 0 ? <>fee <MoneyText money={money(request.expectedFeeMinor, session?.organization.currency ?? "JOD")} /></> : "free under policy"}</p>
             </div>
             <div className="flex gap-1.5">
               <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>Approve</Button>

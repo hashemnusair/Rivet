@@ -9,6 +9,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { PERMISSIONS, PERMISSION_LABELS, ROLE_LABELS } from "@/lib/domain/permissions";
 import type { Branch, NotificationSettings, PaymentMethod, RoleKey, StaffUser, Zone, ZoneKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
+import { money, parseMoneyInput, toMajorString } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 import { formatDateTime } from "@/lib/utils/dates";
 import { RelativeText } from "@/components/shared/data-display";
@@ -832,21 +833,21 @@ const PAYMENTS_DESCRIPTION = "Which payment methods the desk can use, and how mu
 
 type PaymentsForm = { methods: PaymentMethod[]; limits: Record<string, string> };
 
-function limitsFromRoles(roles: Array<{ key: RoleKey; discountLimitMinor: number }>): Record<string, string> {
+function limitsFromRoles(roles: Array<{ key: RoleKey; discountLimitMinor: number }>, currency: string): Record<string, string> {
   const next: Record<string, string> = {};
-  for (const r of roles) next[r.key] = (r.discountLimitMinor / 1000).toFixed(3);
+  for (const r of roles) next[r.key] = toMajorString(money(r.discountLimitMinor, currency));
   return next;
 }
 
-function parseLimit(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const amount = Number(trimmed);
-  return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 1000) : null;
+/** A discount limit in the gym's currency, read under the shared amount policy; zero is a valid limit. */
+function parseLimit(value: string, currency: string): number | null {
+  return parseMoneyInput(value, currency)?.amount ?? null;
 }
 
 export function PaymentsSection() {
   const invalidate = useInvalidate();
+  const { session } = useApp();
+  const currency = session?.organization.currency ?? "JOD";
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const [form, setForm] = useState<PaymentsForm | null>(null);
   const [baseline, setBaseline] = useState<PaymentsForm | null>(null);
@@ -858,10 +859,10 @@ export function PaymentsSection() {
 
   useEffect(() => {
     if (!settingsQuery.data || dirtyRef.current) return;
-    const next: PaymentsForm = { methods: settingsQuery.data.paymentMethods.map((m) => ({ ...m })), limits: limitsFromRoles(limitRoles) };
+    const next: PaymentsForm = { methods: settingsQuery.data.paymentMethods.map((m) => ({ ...m })), limits: limitsFromRoles(limitRoles, currency) };
     setForm(next);
     setBaseline(next);
-  }, [limitRoles, settingsQuery.data]);
+  }, [currency, limitRoles, settingsQuery.data]);
 
   const save = useApiMutation(async (api) => {
     if (!form || !baseline) return;
@@ -877,11 +878,11 @@ export function PaymentsSection() {
     }
     for (const role of limitRoles) {
       if (form.limits[role.key] === baseline.limits[role.key]) continue;
-      const minor = parseLimit(form.limits[role.key] ?? "");
+      const minor = parseLimit(form.limits[role.key] ?? "", currency);
       if (minor === null) continue;
       try {
         await api.updateRolePermissions(role.key, { discountLimitMinor: minor });
-        saved.limits[role.key] = (minor / 1000).toFixed(3);
+        saved.limits[role.key] = toMajorString(money(minor, currency));
       } catch (error) {
         failures.push(`${role.label} limit: ${errorMessage(error, "not saved")}`);
       }
@@ -900,7 +901,7 @@ export function PaymentsSection() {
   if (settingsQuery.isLoading || !form || !baseline) return <SettingsSection title="Payments" description={PAYMENTS_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
   if (settingsQuery.isError) return <SettingsSection title="Payments" description={PAYMENTS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
-  const invalidLimit = limitRoles.some((role) => parseLimit(form.limits[role.key] ?? "") === null);
+  const invalidLimit = limitRoles.some((role) => parseLimit(form.limits[role.key] ?? "", currency) === null);
   const noMethod = form.methods.every((m) => !m.enabled);
   const saveDisabledReason = invalidLimit ? "Enter a discount limit of 0 or more for every role." : noMethod ? "Keep at least one payment method enabled." : undefined;
 
@@ -924,13 +925,13 @@ export function PaymentsSection() {
         <SettingsPanel title="Discount approval limits" description="Discounts beyond a role's limit are recorded as pending manager approval." bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
             {limitRoles.map((r) => {
-              const invalid = parseLimit(form.limits[r.key] ?? "") === null;
+              const invalid = parseLimit(form.limits[r.key] ?? "", currency) === null;
               return (
                 <div key={r.key} className="flex min-h-11 items-center justify-between gap-4 py-2.5">
                   <label htmlFor={`discount-limit-${r.key}`} className="text-[13.5px] font-medium text-ink">{r.label}</label>
                   <SettingsUnitInput
                     id={`discount-limit-${r.key}`}
-                    unit="JOD"
+                    unit={currency}
                     className="w-36"
                     inputMode="decimal"
                     aria-label={`${r.label} discount limit`}

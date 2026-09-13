@@ -14,6 +14,7 @@ import { qk } from "@/lib/api/keys";
 import type { OperationalPolicies, WeekdayKey } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
+import { exponentFor } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 
 const WEEKDAY_ROWS: Array<{ key: WeekdayKey; label: string }> = [
@@ -220,6 +221,8 @@ const RULES_DESCRIPTION = "The rules the desk, the member app and the automation
 
 export function OperationalRulesSection() {
   const invalidate = useInvalidate();
+  const { session: rulesSession } = useApp();
+  const currency = rulesSession?.organization.currency ?? "JOD";
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
   const { settingsQuery, policies, setPolicies, dirty, discard, markSaved } = useOperationalPoliciesDraft();
   const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
@@ -381,7 +384,7 @@ export function OperationalRulesSection() {
               <Governed enabled={policies.memberFreezes.requestsEnabled}>
                 <FieldGrid className="sm:grid-cols-2">
                   <NumberSetting label="Free allowance" unit="freezes" min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} onChange={(event) => updateFreezes("freeFreezesPerWindow", Number(event.target.value))} />
-                  <NumberSetting label="Fee after allowance" unit="JOD" min={0} max={1000} step={0.5} value={policies.memberFreezes.extraFreezeFeeMinor / 1000} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(event.target.value) * 1000))} />
+                  <NumberSetting label="Fee after allowance" unit={currency} min={0} max={1000} step={1 / 10 ** exponentFor(currency)} value={policies.memberFreezes.extraFreezeFeeMinor / 10 ** exponentFor(currency)} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(event.target.value) * 10 ** exponentFor(currency)))} />
                   <NumberSetting label="Maximum length" unit="days" min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} onChange={(event) => updateFreezes("maxDaysPerFreeze", Number(event.target.value))} />
                   <NumberSetting label="Allowance resets after" unit="days" min={30} max={730} value={policies.memberFreezes.windowDays} onChange={(event) => updateFreezes("windowDays", Number(event.target.value))} />
                 </FieldGrid>
