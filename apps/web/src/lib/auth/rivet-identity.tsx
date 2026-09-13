@@ -69,6 +69,8 @@ export interface RivetIdentity {
   platformAdmin: boolean;
   /** The account has an active gym-team row, but that gym cannot be entered. */
   gymAccessUnavailable: boolean;
+  /** The RIVET account itself was deactivated by a gym administrator. */
+  accountDeactivated?: boolean;
   /** A pending staff invitation may be reconciled through provider verification once. */
   invitationClaimEligible?: boolean;
   /** More than one routable gym is available and a user choice is required. */
@@ -203,6 +205,16 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
     value = {
       status: "error",
       errorMessage: "RIVET could not verify this account with Convex.",
+      platformAdmin: false,
+      gymAccessUnavailable: false,
+      organizationSelectionRequired: false,
+      memberships: [],
+    };
+  } else if ("deactivated" in result && result.deactivated) {
+    value = {
+      status: "error",
+      accountDeactivated: true,
+      errorMessage: "This RIVET account was deactivated by your gym. Ask the gym owner or manager to restore your access, or sign out and use another account.",
       platformAdmin: false,
       gymAccessUnavailable: false,
       organizationSelectionRequired: false,

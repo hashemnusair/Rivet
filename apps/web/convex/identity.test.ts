@@ -198,11 +198,16 @@ describe("identity routing projection", () => {
     });
   });
 
-  it("does not advertise role or memberships for a deactivated operator", async () => {
+  it("tells a deactivated operator only that the account is closed, never its former role or gyms", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
 
-    await expect(t.withIdentity({ subject: "clerk-identity-disabled-admin" }).query(api.identity.current, {})).resolves.toBeNull();
+    await expect(t.withIdentity({ subject: "clerk-identity-disabled-admin" }).query(api.identity.current, {})).resolves.toEqual({
+      pending: false,
+      deactivated: true,
+      user: null,
+      memberships: [],
+    });
   });
 
   it("does not advertise an unclaimed invited operator", async () => {

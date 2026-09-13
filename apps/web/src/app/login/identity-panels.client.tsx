@@ -36,7 +36,7 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
   if (identity.status === "error") {
     return (
       <NotEntitled
-        title="Your role could not be loaded"
+        title={identity.accountDeactivated ? "This account was deactivated" : "Your role could not be loaded"}
         body={identity.errorMessage ?? "You are signed in, but RIVET could not read your account's role. Please try signing in again."}
       />
     );

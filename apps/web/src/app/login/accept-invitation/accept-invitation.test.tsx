@@ -54,8 +54,11 @@ describe("accept gym invitation", () => {
     expect(invitationAccountSchema.parse({ firstName: " Elias ", lastName: " Hreish ", password: "password-1", confirmPassword: "password-1" })).toMatchObject({ firstName: "Elias", lastName: "Hreish" });
   });
 
-  it("creates and finalizes a ticket-based owner account", async () => {
+  it("creates and finalizes a ticket-based account without assuming the invitee's role", async () => {
     render(<AcceptInvitation />);
+    // Owners and staff share this door; the invitation already carries the role.
+    expect(screen.getByRole("heading", { name: "Create your RIVET account" })).toBeInTheDocument();
+    expect(screen.queryByText(/owner account/i)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/First name/), { target: { value: "Elias" } });
     fireEvent.change(screen.getByLabelText(/Last name/), { target: { value: "Hreish" } });
     fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "password-1" } });

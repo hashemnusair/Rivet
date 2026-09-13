@@ -188,7 +188,7 @@ function InvitationFlow({ ticket, status }: { ticket: string; status: "sign_in" 
         <div className="animate-fade-up">
           <div className="flex items-start gap-3.5">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper" aria-hidden><ShieldCheck className="size-5" /></span>
-            <div><h1 className="font-display text-[23px] font-semibold leading-tight tracking-tight">Create your owner account</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">Your invitation is verified. Set a password to open the gym workspace.</p></div>
+            <div><h1 className="font-display text-[23px] font-semibold leading-tight tracking-tight">Create your RIVET account</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">Your invitation is verified. Set a password to open your gym workspace; your role and branches were set by the person who invited you.</p></div>
           </div>
           <form className="mt-7 grid gap-4" onSubmit={(event) => void submit(event)} noValidate>
             <div className="grid gap-4 sm:grid-cols-2">

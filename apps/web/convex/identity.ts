@@ -46,8 +46,18 @@ export const current = query({
     // Keep deactivated accounts from learning their former role or tenant
     // memberships through this routing projection. The operation guards still
     // enforce this server-side, but identity.current must not advertise access
-    // that requireAuthenticated will reject.
-    if (user.status === "deactivated" || user.status === "invited") return null;
+    // that requireAuthenticated will reject. The person is told only that the
+    // account itself is closed, which is theirs to know, so the sign-in page
+    // can say so instead of reporting a verification failure.
+    if (user.status === "deactivated") {
+      return {
+        pending: false as const,
+        deactivated: true as const,
+        user: null,
+        memberships: [],
+      };
+    }
+    if (user.status === "invited") return null;
 
     const rows = await ctx.db
       .query("organizationMemberships")

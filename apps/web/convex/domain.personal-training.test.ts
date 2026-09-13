@@ -268,6 +268,69 @@ describe("Convex personal-training lifecycle", () => {
   });
 });
 
+describe("Convex trainer account boundaries", () => {
+  async function seedSecondTrainer(t: TestConvex<typeof schema>) {
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = (await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-pt")).unique())!;
+      const branch = (await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "pt-branch")).unique())!;
+      const other = await ctx.db.insert("users", { publicId: "pt-other-trainer", authSubject: "clerk-pt-other-trainer", email: "other@pt.example", fullName: "Other Trainer", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: other, role: "trainer", branchIds: [branch._id], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
+      const profile = await ctx.db.insert("ptTrainerProfiles", { organizationId: organization._id, publicId: "other-profile", userId: other, displayName: "Coach Omar", specialties: [], languages: ["en"], branchIds: [branch._id], status: "published", createdAt: now, updatedAt: now });
+      const invited = await ctx.db.insert("users", { publicId: "pt-invited-trainer", authSubject: "invite:invited@pt.example", email: "invited@pt.example", fullName: "Invited Trainer", platformAdmin: false, status: "invited", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: invited, role: "trainer", branchIds: [branch._id], branchScope: "selected", active: true, invitationStatus: "pending", clerkInvitationId: "inv_pending", createdAt: now, updatedAt: now });
+      const bookingDate = dateInDays(3);
+      const weekday = weekdays[new Date(`${bookingDate}T12:00:00Z`).getUTCDay()]!;
+      await ctx.db.insert("ptAvailabilityRules", { organizationId: organization._id, publicId: "availability-other", trainerProfileId: profile, branchId: branch._id, weekday, startMinute: 8 * 60, endMinute: 11 * 60, active: true, createdAt: now, updatedAt: now });
+    });
+  }
+
+  it("refuses to link a profile to an invited account that has never signed in", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await seedSecondTrainer(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    await expectCode(owner.mutation(api.domain.mutate, operation("pt.trainer.upsert", { userId: "pt-invited-trainer", displayName: "Invited Trainer", specialties: [], languages: ["en"], branchIds: ["pt-branch"], status: "draft" })), "VALIDATION_ERROR");
+    const linked = await owner.mutation(api.domain.mutate, operation("pt.trainer.upsert", { id: "other-profile", userId: "pt-other-trainer", displayName: "Coach Omar", specialties: ["Boxing"], languages: ["en"], branchIds: ["pt-branch"], status: "published" })) as { id: string; specialties: string[] };
+    expect(linked).toMatchObject({ id: "other-profile", specialties: ["Boxing"] });
+  });
+
+  it("keeps another trainer's schedule and sessions out of a trainer's reach while their own stay editable", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await seedSecondTrainer(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    const trainer = t.withIdentity({ subject: "clerk-pt-trainer" });
+    await owner.mutation(api.domain.mutate, operation("pt.introductory.apply", { sessionCount: 2, reason: "Pilot introduction approved by owner", idempotencyKey: "intro-boundary" }));
+    const otherDate = dateInDays(3);
+    const otherSlots = await owner.query(api.domain.query, operation("pt.slots", { trainerProfileId: "other-profile", branchId: "pt-branch", from: otherDate, to: otherDate })) as Array<{ startsAt: string }>;
+    const otherBooking = await owner.mutation(api.domain.mutate, operation("pt.booking.create", { membershipId: "pt-membership", trainerProfileId: "other-profile", branchId: "pt-branch", startsAt: otherSlots[0]!.startsAt, idempotencyKey: "other-booking" })) as { id: string };
+
+    const workspace = await trainer.query(api.domain.query, operation("pt.workspace")) as { trainers: Array<{ id: string }>; bookings: Array<{ id: string }> };
+    expect(workspace.trainers.map((item) => item.id)).toEqual(["trainer-profile"]);
+    expect(workspace.bookings.map((item) => item.id)).not.toContain(otherBooking.id);
+
+    const hours = [{ branchId: "pt-branch", weekday: "mon", startMinute: 9 * 60, endMinute: 12 * 60, active: true }];
+    await expectCode(trainer.mutation(api.domain.mutate, operation("pt.availability.replace", { trainerProfileId: "other-profile", rules: hours, exceptions: [] })), "FORBIDDEN");
+    await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.cancel", { bookingId: otherBooking.id, reason: "Not my session", cancelledByGym: true })), "FORBIDDEN");
+    await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.reschedule", { bookingId: otherBooking.id, trainerProfileId: "other-profile", branchId: "pt-branch", startsAt: otherSlots[0]!.startsAt, reason: "Move it", idempotencyKey: "move-other" })), "FORBIDDEN");
+    const own = await trainer.mutation(api.domain.mutate, operation("pt.availability.replace", { trainerProfileId: "trainer-profile", rules: hours, exceptions: [{ branchId: "pt-branch", date: dateInDays(10), reason: "Leave" }] })) as { availabilityRules: unknown[]; availabilityExceptions: unknown[] };
+    expect(own.availabilityRules).toHaveLength(1);
+    expect(own.availabilityExceptions).toHaveLength(1);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.parse(otherSlots[0]!.startsAt) + 15 * 60_000));
+    try {
+      await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.complete", { bookingId: otherBooking.id })), "FORBIDDEN");
+      await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.no_show", { bookingId: otherBooking.id, reason: "Member did not arrive" })), "FORBIDDEN");
+      const completed = await t.withIdentity({ subject: "clerk-pt-other-trainer" }).mutation(api.domain.mutate, operation("pt.booking.complete", { bookingId: otherBooking.id })) as { status: string };
+      expect(completed.status).toBe("completed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("Convex personal-training outcome context", () => {
   it("keeps a started session visible with its reserved credit until an outcome is recorded, once", async () => {
     const t = convexTest(schema, modules);

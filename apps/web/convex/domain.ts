@@ -18,6 +18,7 @@ import {
   type OrganizationRole,
   type StoredOrganizationRole,
   type RequestArgs,
+  membershipInvitationAccepted,
 } from "./security";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, roleDiscountLimit, rolePermissions, toFrontendRole } from "./permissions";
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
@@ -9669,7 +9670,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const user = await userByPublicId(ctx, actor.organization._id, recordId(input.userId));
       if (!user || user.status === "deactivated") domainError("NOT_FOUND", "Active trainer account not found.", { correlationId: actor.correlationId });
       const staffMembership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
-      if (!staffMembership?.active || staffMembership.role !== "trainer") domainError("VALIDATION_ERROR", "Trainer profiles must link to an active staff member with the trainer role.", { correlationId: actor.correlationId });
+      // An invitation that has not been accepted is not staff yet: the same
+      // rule the mock and the trainer picker apply, so a profile cannot be
+      // published (and booked) for someone who has never signed in.
+      if (!staffMembership?.active || staffMembership.role !== "trainer" || user.status !== "active" || !membershipInvitationAccepted(staffMembership)) domainError("VALIDATION_ERROR", "Trainer profiles must link to an active staff member with the trainer role.", { correlationId: actor.correlationId });
       const requestedBranchIds = arrayValue(input.branchIds).map(String);
       if (requestedBranchIds.length === 0) domainError("VALIDATION_ERROR", "Select at least one trainer branch.", { correlationId: actor.correlationId });
       const branches = await Promise.all(requestedBranchIds.map((id) => branchByPublicId(ctx, actor.organization._id, id)));

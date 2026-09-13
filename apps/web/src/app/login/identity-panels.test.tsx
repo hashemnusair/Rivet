@@ -179,6 +179,21 @@ describe("IdentityPanel", () => {
     expect(state.replace).toHaveBeenCalledWith("/reception");
   });
 
+  it("tells a deactivated account it was closed instead of reporting a verification failure", () => {
+    state.identity = {
+      status: "error",
+      accountDeactivated: true,
+      errorMessage: "This RIVET account was deactivated by your gym. Ask the gym owner or manager to restore your access, or sign out and use another account.",
+      platformAdmin: false,
+      gymAccessUnavailable: false,
+      memberships: [],
+    };
+    render(<IdentityPanel audience="staff" />);
+    expect(screen.getByText("This account was deactivated")).toBeInTheDocument();
+    expect(screen.getByText(/restore your access/)).toBeInTheDocument();
+    expect(screen.queryByText("Your role could not be loaded")).not.toBeInTheDocument();
+  });
+
   it("keeps a staff portal account without a gym team out of member bootstrap", () => {
     state.identity = {
       status: "ready",
