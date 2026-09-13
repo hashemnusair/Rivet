@@ -3105,6 +3105,26 @@ describe("adapter text follows the stored currency", () => {
     for (const line of [...audit, ...leadTimeline]) expect(line, line).not.toMatch(currency === "USD" ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
   });
 
+  it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: retail sale and refund text matches the stored minor amounts", async (currency, unit, decimals) => {
+    useCurrency(currency);
+    const major = (minor: number) => (minor / unit).toFixed(decimals);
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "TXT-DRINK", name: "Protein drink", unit: "each", reorderPoint: 1, retailPrice: money(2 * unit + 5, currency) });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 3, unitCost: money(unit, currency), idempotencyKey: `text-retail-opening-${currency}` });
+    const member = await freshMemberForSale();
+    const sale = await api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "VISA-TXT", idempotencyKey: `text-retail-${currency}` });
+    expect(sale.retailSale.total).toEqual(money(4 * unit + 10, currency));
+    await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Returned unopened", idempotencyKey: `text-retail-refund-${currency}` });
+    const audit = (await api.listAuditEvents({ pageSize: 60 })).items.map((event) => event.summary);
+    const timeline = (await api.listMemberTimeline(member.id, { pageSize: 50 })).items.map((event) => event.title);
+    expect(audit.some((line) => line.startsWith("Retail sale ") && line.endsWith(`· ${currency} ${major(4 * unit + 10)}`))).toBe(true);
+    expect(audit).toContain(`Refunded ${currency} ${major(2 * unit + 5)} from retail sale`);
+    expect(timeline).toContain(`Retail sale — ${currency} ${major(4 * unit + 10)}`);
+    expect(timeline).toContain(`Retail sale refunded — ${currency} ${major(2 * unit + 5)}`);
+    for (const line of [...audit, ...timeline]) expect(line, line).not.toMatch(currency === "USD" ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
+  });
+
   it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: sale, payment, refund and void text matches the stored minor amounts", async (currency, unit, decimals) => {
     useCurrency(currency);
     const member = await freshMemberForSale();

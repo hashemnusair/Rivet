@@ -23,7 +23,7 @@ const CASES: Case[] = [
 async function seed(t: TestConvex<typeof schema>, currency: string) {
   await t.run(async (ctx) => {
     const now = Date.now();
-    const organizationId = await ctx.db.insert("organizations", { publicId: "text-org", name: "Text Gym", slug: "text-gym", status: "active", timezone: "Asia/Amman", currency, receiptPrefix: "TXT", nextReceiptNumber: 1, createdAt: now, updatedAt: now });
+    const organizationId = await ctx.db.insert("organizations", { publicId: "text-org", name: "Text Gym", slug: "text-gym", status: "active", subscriptionPlan: "Pro", timezone: "Asia/Amman", currency, receiptPrefix: "TXT", nextReceiptNumber: 1, createdAt: now, updatedAt: now });
     const branchId = await ctx.db.insert("branches", { organizationId, publicId: "text-branch", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
     const managerId = await ctx.db.insert("users", { publicId: "text-manager", authSubject: "clerk-text-manager", email: "manager@text.example", fullName: "Text Manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId, userId: managerId, role: "manager", branchIds: [branchId], branchScope: "all", active: true, createdAt: now, updatedAt: now });
@@ -82,5 +82,24 @@ describe("membership sale text follows the stored currency", () => {
     expect(written.audit).toContain(`Discount applied: ${text(major(5 * unit))}`);
     expect(written.audit).toContain(`Monthly — ${text(major(30 * unit + 5))}`);
     for (const line of written.audit) expect(line, line).not.toMatch(unit === 100 ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
+  });
+});
+
+describe("retail text follows the stored currency", () => {
+  it.each(CASES)("$currency: retail sale and refund text read at the currency's precision", async ({ currency, unit, text }) => {
+    const t = convexTest(schema, modules);
+    await seed(t, currency);
+    const manager = t.withIdentity({ subject: "clerk-text-manager" });
+    const major = (minor: number) => (minor / unit).toFixed(unit === 1_000 ? 3 : 2);
+    const product = await manager.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "TXT-DRINK", name: "Protein drink", unit: "each", reorderPoint: 1, retailPrice: { amount: 2 * unit + 5, currency } })) as { id: string };
+    await manager.mutation(api.domain.mutate, operation("operations.stock_movement.record", { branchId: "text-branch", productId: product.id, type: "receive", quantity: 3, unitCost: { amount: unit, currency }, idempotencyKey: "text-retail-opening" }));
+    const sale = await manager.mutation(api.domain.mutate, operation("operations.retail.checkout", { branchId: "text-branch", memberId: "text-member", lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "VISA-TXT", idempotencyKey: "text-retail-sale" })) as { retailSale: { id: string; total: { amount: number; currency: string } } };
+    expect(sale.retailSale.total).toEqual({ amount: 4 * unit + 10, currency });
+    await manager.mutation(api.domain.mutate, operation("operations.retail.refund", { saleId: sale.retailSale.id, lines: [{ productId: product.id, quantity: 1 }], reason: "Returned unopened", idempotencyKey: "text-retail-refund" }));
+    const written = await writtenText(t);
+    expect(written.audit.some((line) => line?.startsWith("Retail sale ") && line.endsWith(`· ${text(major(4 * unit + 10))}`))).toBe(true);
+    expect(written.audit.some((line) => line?.startsWith(`Refunded ${text(major(2 * unit + 5))} from retail sale `))).toBe(true);
+    expect(written.timeline.some((line) => line.startsWith(`Retail sale — ${text(major(4 * unit + 10))}`))).toBe(true);
+    for (const line of [...written.audit, ...written.timeline]) expect(line, line).not.toMatch(unit === 100 ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
   });
 });
