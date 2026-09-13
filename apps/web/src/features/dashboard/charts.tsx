@@ -4,23 +4,25 @@ import { useMemo } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import type { DashboardData } from "@/lib/domain/types";
 import { formatDateShort } from "@/lib/utils/dates";
-import { formatMoney, money } from "@/lib/utils/money";
+import { exponentFor, formatMoney, money } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
 
 /**
  * Revenue over the last 30 days. Answers: "is collection trending up or down,
  * and which days were unusually strong/weak?" Today is marked in signal red.
  */
-export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] }) {
+export function RevenueChart({ data, currency = "JOD" }: { data: DashboardData["revenueSeries"]; currency?: string }) {
+  // Bars are drawn in major units of the gym's currency; totals stay in minor units.
+  const scale = 10 ** exponentFor(currency);
   const chartData = useMemo(
     () =>
       data.map((p) => ({
         date: p.date,
         label: formatDateShort(p.date),
-        collected: p.collected / 1000,
-        refunds: p.refunds / 1000,
+        collected: p.collected / scale,
+        refunds: p.refunds / scale,
       })),
-    [data],
+    [data, scale],
   );
   const today = chartData[chartData.length - 1]?.date;
   const total = data.reduce((s, p) => s + p.collected, 0);
@@ -32,9 +34,9 @@ export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] })
         <div>
           <p className="context-label">Collected — last 30 days</p>
           <p className="mt-1 text-[22px] font-medium tabular">
-            <MoneyText money={money(total)} compact />
+            <MoneyText money={money(total, currency)} compact />
             <span className="ms-2 text-[12px] text-ink-3">
-              avg <MoneyText money={money(avg)} className="text-ink-3" /> / day
+              avg <MoneyText money={money(avg, currency)} className="text-ink-3" /> / day
             </span>
           </p>
         </div>
@@ -57,7 +59,7 @@ export function RevenueChart({ data }: { data: DashboardData["revenueSeries"] })
                 return (
                   <div className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] shadow-pop">
                     <p className="context-label">{p.label}</p>
-                    <p className="mt-1 tabular">{formatMoney(money(p.collected * 1000))}</p>
+                    <p className="mt-1 tabular">{formatMoney(money(Math.round(p.collected * scale), currency))}</p>
                     {p.refunds > 0 ? (
                       <p className="tabular text-danger">−{formatMoney(money(p.refunds * 1000))} refunded</p>
                     ) : null}

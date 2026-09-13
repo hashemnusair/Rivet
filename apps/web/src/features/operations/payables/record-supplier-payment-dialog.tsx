@@ -8,7 +8,7 @@ import { MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, SUPPLIER_PAYMENT_METHOD_LABELS, 
 import type { Payable, RecordSupplierPaymentInput, Session, Supplier, SupplierPaymentDetail, SupplierPaymentMethod } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
 import { isApiError } from "@/lib/api/errors";
-import { fromMajor, money, toMajor } from "@/lib/utils/money";
+import { money, parseMoneyInput, toMajorString } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 import { DateText, MoneyText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
@@ -29,13 +29,9 @@ function newIdempotencyKey(): string {
   return `supplier-payment-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Typed amounts follow the shared money policy in the supplier's currency; an unreadable draft counts as no amount. */
 function parseMajor(value: string, currency: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  const major = Number(trimmed);
-  if (!Number.isFinite(major) || major < 0) return undefined;
-  const minor = fromMajor(major, currency).amount;
-  return Number.isSafeInteger(minor) ? minor : undefined;
+  return parseMoneyInput(value, currency)?.amount;
 }
 
 export interface RecordSupplierPaymentDialogProps {
@@ -76,10 +72,10 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
     setSupplierId(initialSupplierId && activeSuppliers.some((supplier) => supplier.id === initialSupplierId) ? initialSupplierId : activeSuppliers.length === 1 ? activeSuppliers[0]!.id : "");
     setBranchId(initialBranchId && branches.some((branch) => branch.id === initialBranchId) ? initialBranchId : fallbackBranch);
     setMethod("cash");
-    setAmountText(initialPayable ? toMajor(initialPayable.remaining).toFixed(3) : "");
+    setAmountText(initialPayable ? toMajorString(initialPayable.remaining) : "");
     setReference("");
     setNotes("");
-    setAllocationText(initialPayable ? { [initialPayable.id]: toMajor(initialPayable.remaining).toFixed(3) } : {});
+    setAllocationText(initialPayable ? { [initialPayable.id]: toMajorString(initialPayable.remaining) } : {});
     setManualAllocation(Boolean(initialPayable));
     setIdempotencyKey(newIdempotencyKey());
     setError(null);
@@ -93,7 +89,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
   useEffect(() => {
     if (!open || manualAllocation) return;
     const suggestion = suggestPayableAllocations(openPayables, amountMinor ?? 0);
-    setAllocationText(Object.fromEntries(suggestion.allocations.map((allocation) => [allocation.payableId, toMajor(money(allocation.amountMinor, currency)).toFixed(3)])));
+    setAllocationText(Object.fromEntries(suggestion.allocations.map((allocation) => [allocation.payableId, toMajorString(money(allocation.amountMinor, currency))])));
   }, [open, manualAllocation, openPayables, amountMinor, currency]);
 
   const allocations = useMemo(() => openPayables.map((payable) => ({ payable, amountMinor: parseMajor(allocationText[payable.id] ?? "", currency) ?? 0 })), [openPayables, allocationText, currency]);

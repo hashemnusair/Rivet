@@ -11,7 +11,7 @@ import { useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { downloadTextFile } from "@/lib/exports/download";
 import { formatDateTime } from "@/lib/utils/dates";
-import { toMajor } from "@/lib/utils/money";
+import { toMajorString } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,9 +89,9 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
                   const payable = detail.payables.find((candidate) => candidate.payableId === allocation.payableId);
                   return (
                     <tr key={allocation.payableId} className="border-t border-line-2">
-                      <td className="py-2 pe-2 align-top">{allocation.sourceLabel}{payable ? <span className="block text-[12px] text-ink-3">{PAYABLE_STATUS_LABELS[payable.status]} · total {toMajor(payable.original).toFixed(3)}</span> : null}</td>
-                      <td className="whitespace-nowrap py-2 ps-3 text-end align-top tabular" dir="ltr">{toMajor(allocation.amount).toFixed(3)}</td>
-                      <td className="whitespace-nowrap py-2 ps-3 text-end align-top tabular" dir="ltr">{payable ? toMajor(payable.remaining).toFixed(3) : "—"}</td>
+                      <td className="py-2 pe-2 align-top">{allocation.sourceLabel}{payable ? <span className="block text-[12px] text-ink-3">{PAYABLE_STATUS_LABELS[payable.status]} · total {toMajorString(payable.original)}</span> : null}</td>
+                      <td className="whitespace-nowrap py-2 ps-3 text-end align-top tabular" dir="ltr">{toMajorString(allocation.amount)}</td>
+                      <td className="whitespace-nowrap py-2 ps-3 text-end align-top tabular" dir="ltr">{payable ? toMajorString(payable.remaining) : "—"}</td>
                     </tr>
                   );
                 })}

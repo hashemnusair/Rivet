@@ -131,7 +131,7 @@ export function OwnerDashboard() {
       {/* Revenue + branch context */}
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
         <section className="panel p-4">
-          {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} />}
+          {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} currency={session?.organization.currency} />}
         </section>
         <section className="panel p-4">
           <ContextLabel className="mb-3">Revenue by branch · 30 days</ContextLabel>
