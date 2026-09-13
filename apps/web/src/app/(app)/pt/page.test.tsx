@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(), permissions: ["pt.schedule.self", "pt.outcome.self"],
   // Every adapter method a dialog might call resolves to nothing; individual
   // tests assert the arguments the dialog hands over.
-  api: new Proxy({} as Record<string, ReturnType<typeof vi.fn>>, { get: (target, key: string) => (target[key] ??= vi.fn().mockResolvedValue({})) }),
+  api: new Proxy({} as Record<string, ReturnType<typeof vi.fn>>, { get: (target, key: string) => (target[key] ??= vi.fn().mockResolvedValue({})) }) as { upsertPtPackage: ReturnType<typeof vi.fn> } & Record<string, ReturnType<typeof vi.fn>>,
 }));
 vi.mock("@/lib/providers/app-providers", () => ({
   useApp: () => ({ session }),
