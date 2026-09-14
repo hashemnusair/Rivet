@@ -363,7 +363,8 @@ export interface PurchaseOrder {
 }
 
 // ---------------------------------------------------------------------------
-// Outbound messaging (WhatsApp / SMS)
+// Outbound messaging (WhatsApp only; the sms channel value survives on
+// historical rows and is refused by the router)
 // ---------------------------------------------------------------------------
 export type MessagingMode = "off" | "sandbox" | "allowlist" | "live";
 
@@ -372,7 +373,6 @@ export interface MessagingStatus {
   mode: MessagingMode;
   provider: "twilio" | "none";
   whatsappReady: boolean;
-  smsReady: boolean;
   sandboxConfigured: boolean;
   allowlistSize: number;
   warning?: string;

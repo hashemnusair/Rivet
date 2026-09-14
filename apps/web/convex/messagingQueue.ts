@@ -7,6 +7,9 @@ type Candidate = { source: "automation"; row: Doc<"domainRecords"> } | { source:
 
 /** Index existing nested fields so deployment backfills indexes, not duplicate data. */
 export async function dueMessageCandidates(ctx: MutationCtx, now: number, first: MessageSource): Promise<Candidate[]> {
+  // The retired sms channel is still leased so rows queued before the
+  // 14 September 2026 decision drain with a recorded refusal instead of
+  // waiting forever; the router never sends them.
   const channels = ["whatsapp", "sms"] as const;
   const automationPages = await Promise.all(channels.flatMap(channel => [
     ...(["queued", "retrying"] as const).map(status => ctx.db.query("domainRecords")

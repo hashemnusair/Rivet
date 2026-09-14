@@ -18,7 +18,6 @@ function twilioReady(mode: string) {
   process.env.RIVET_MESSAGING_PROVIDER = "twilio";
   process.env.TWILIO_ACCOUNT_SID = "AC123";
   process.env.TWILIO_AUTH_TOKEN = "secret";
-  process.env.TWILIO_MESSAGING_SERVICE_SID = "MG123";
   process.env.TWILIO_WHATSAPP_FROM = "whatsapp:+14155238886";
 }
 
@@ -190,12 +189,31 @@ describe("outbound messaging worker", () => {
     expect(fetchMock).not.toHaveBeenCalled();
 
     const liveGym = await seed({ gymLive: true });
-    await queueAutomationMessage(liveGym.t, liveGym.organizationId, liveGym.branchId, { requestedChannel: "sms", channel: "sms" });
+    await queueAutomationMessage(liveGym.t, liveGym.organizationId, liveGym.branchId);
     await liveGym.t.action(internal.messagingWorker.processDue, {});
     const body = new URLSearchParams(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body));
-    expect(body.get("To")).toBe("+962778378608");
-    expect(body.get("MessagingServiceSid")).toBe("MG123");
+    expect(body.get("To")).toBe("whatsapp:+962778378608");
+    expect(body.get("From")).toBe("whatsapp:+14155238886");
+    expect(body.get("MessagingServiceSid")).toBeNull();
     expect(body.get("Body")).toMatch(/^\[sandbox → \+962795550101\]/);
+  });
+
+  it("refuses a row still queued on the retired SMS channel without calling the provider, and says why on the row", async () => {
+    twilioReady("live");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { t, organizationId, branchId } = await seed({ gymLive: true });
+    const messageId = await queueAutomationMessage(t, organizationId, branchId, { requestedChannel: "sms", channel: "sms" });
+
+    expect(await t.action(internal.messagingWorker.processDue, {})).toEqual({ processed: 1, disabled: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const row = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "messageDelivery")).collect()).find((record) => record.publicId === messageId));
+    const data = row?.data as { status: string; suppressionReason?: string; attempts?: Array<{ outcome: string }> };
+    expect(data.status).toBe("suppressed");
+    expect(data.suppressionReason).toMatch(/SMS was retired/);
+    // The row drained: nothing is left for the next worker tick.
+    expect(await t.action(internal.messagingWorker.processDue, {})).toEqual({ processed: 0, disabled: false });
   });
 
   it("suppresses recipients outside the allowlist with a reason and retries provider outages with backoff", async () => {
@@ -270,7 +288,7 @@ describe("outbound messaging worker", () => {
       const manager = await ctx.db.insert("users", { publicId: "msg-manager", authSubject: "clerk-msg-manager", email: "manager@forge.example", fullName: "Forge Manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
       await ctx.db.insert("organizationMemberships", { organizationId, userId: manager, role: "manager", branchIds: [branchId], branchScope: "all", active: true, createdAt: now, updatedAt: now });
     });
-    const messageId = await queueAutomationMessage(t, organizationId, branchId, { requestedChannel: "sms", channel: "sms" });
+    const messageId = await queueAutomationMessage(t, organizationId, branchId);
 
     await t.action(internal.messagingWorker.processDue, {});
 
@@ -279,6 +297,6 @@ describe("outbound messaging worker", () => {
     const notifications = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());
     expect(notifications).toEqual([expect.objectContaining({ kind: "message_delivery_failed", href: "/members/member-1" })]);
     const timeline = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "timeline")).collect()).map((record) => record.data as Record<string, unknown>));
-    expect(timeline).toContainEqual(expect.objectContaining({ type: "message", memberId: "member-1", title: "SMS message failed", meta: expect.objectContaining({ deliveryState: "failed", source: "automation" }) }));
+    expect(timeline).toContainEqual(expect.objectContaining({ type: "message", memberId: "member-1", title: "WhatsApp message failed", meta: expect.objectContaining({ deliveryState: "failed", source: "automation" }) }));
   });
 });

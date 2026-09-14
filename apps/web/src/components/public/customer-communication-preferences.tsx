@@ -45,7 +45,7 @@ export function CustomerCommunicationPreferences() {
       </div>
       <p className="mt-3 text-[12.5px] text-ink-3">
         {preference.status === "unknown" || preference.source === "system_default"
-          ? "No marketing choice is recorded. Promotional email, SMS, and WhatsApp are suppressed until you choose."
+          ? "No marketing choice is recorded. Promotional email and WhatsApp messages are suppressed until you choose."
           : `Last changed ${formatDate(preference.changedAt)}.`}
       </p>
       {saveMessage ? <p className="mt-2 text-[12.5px] text-ink-2" role="status">{saveMessage}</p> : null}

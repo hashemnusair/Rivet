@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { parseMessagingAllowlist, phoneAllowed, resolveMessagingMode, routeMessage, toE164, twilioMessageParams } from "./messagingMode";
+import { RETIRED_CHANNEL_REASON, parseMessagingAllowlist, phoneAllowed, resolveMessagingMode, routeMessage, toE164, twilioMessageParams } from "./messagingMode";
 import { MESSAGE_TEMPLATE_CATALOGUE, renderMessageTemplate } from "./messagingTemplates";
 
-const twilio = { RIVET_MESSAGING_PROVIDER: "twilio", TWILIO_ACCOUNT_SID: "AC123", TWILIO_AUTH_TOKEN: "secret", TWILIO_MESSAGING_SERVICE_SID: "MG123", TWILIO_WHATSAPP_FROM: "whatsapp:+14155238886" };
+const twilio = { RIVET_MESSAGING_PROVIDER: "twilio", TWILIO_ACCOUNT_SID: "AC123", TWILIO_AUTH_TOKEN: "secret", TWILIO_WHATSAPP_FROM: "whatsapp:+962778378608" };
 
 describe("messaging go-live flag", () => {
-  it("defaults to off with no provider and reports readiness per channel", () => {
-    expect(resolveMessagingMode({})).toMatchObject({ mode: "off", provider: "none", whatsappReady: false, smsReady: false });
-    expect(resolveMessagingMode({ RIVET_MESSAGING_MODE: "live", ...twilio })).toMatchObject({ mode: "live", provider: "twilio", whatsappReady: true, smsReady: true });
-    expect(resolveMessagingMode({ RIVET_MESSAGING_MODE: "live", ...twilio, TWILIO_WHATSAPP_FROM: "" })).toMatchObject({ whatsappReady: false, smsReady: true });
+  it("defaults to off with no provider and reports WhatsApp sender readiness", () => {
+    expect(resolveMessagingMode({})).toMatchObject({ mode: "off", provider: "none", whatsappReady: false });
+    expect(resolveMessagingMode({ RIVET_MESSAGING_MODE: "live", ...twilio })).toMatchObject({ mode: "live", provider: "twilio", whatsappReady: true });
+    expect(resolveMessagingMode({ RIVET_MESSAGING_MODE: "live", ...twilio, TWILIO_WHATSAPP_FROM: "" })).toMatchObject({ provider: "twilio", whatsappReady: false });
+    // An SMS messaging service no longer counts as a sender of anything.
+    expect(resolveMessagingMode({ RIVET_MESSAGING_MODE: "live", ...twilio, TWILIO_WHATSAPP_FROM: "", TWILIO_MESSAGING_SERVICE_SID: "MG123" })).toMatchObject({ whatsappReady: false });
+    expect(resolveMessagingMode({ RIVET_MESSAGING_MODE: "live", ...twilio })).not.toHaveProperty("smsReady");
     expect(resolveMessagingMode({ RIVET_MESSAGING_MODE: "yes" })).toMatchObject({ mode: "off", warning: expect.stringMatching(/not one of/) });
   });
 
@@ -34,20 +37,30 @@ describe("messaging go-live flag", () => {
     const resolution = resolveMessagingMode({ RIVET_MESSAGING_MODE: "sandbox", ...twilio });
     expect(routeMessage({ mode: "off", channel: "whatsapp", recipient: "0795550101", resolution })).toMatchObject({ decision: "drop", reason: expect.stringMatching(/mode is off/) });
     expect(routeMessage({ mode: "sandbox", channel: "whatsapp", recipient: "0795550101", sandboxTo: "0778378608", resolution })).toEqual({ decision: "redirect", to: "+962778378608", originalRecipient: "+962795550101" });
-    expect(routeMessage({ mode: "sandbox", channel: "sms", recipient: "0795550101", resolution })).toMatchObject({ decision: "drop", reason: expect.stringMatching(/SANDBOX_TO/) });
-    expect(routeMessage({ mode: "allowlist", channel: "sms", recipient: "0795550101", allowlist: ["+96279*"], resolution })).toEqual({ decision: "send", to: "+962795550101" });
-    expect(routeMessage({ mode: "allowlist", channel: "sms", recipient: "0785550101", allowlist: ["+96279*"], resolution })).toMatchObject({ decision: "drop" });
-    expect(routeMessage({ mode: "live", channel: "whatsapp", recipient: "0795550101", resolution: { whatsappReady: false, smsReady: true } })).toMatchObject({ decision: "drop", reason: expect.stringMatching(/WhatsApp sender/) });
-    expect(routeMessage({ mode: "live", channel: "sms", recipient: "not a phone", resolution })).toMatchObject({ decision: "drop", reason: expect.stringMatching(/missing or not a valid/) });
+    expect(routeMessage({ mode: "sandbox", channel: "whatsapp", recipient: "0795550101", resolution })).toMatchObject({ decision: "drop", reason: expect.stringMatching(/SANDBOX_TO/) });
+    expect(routeMessage({ mode: "allowlist", channel: "whatsapp", recipient: "0795550101", allowlist: ["+96279*"], resolution })).toEqual({ decision: "send", to: "+962795550101" });
+    expect(routeMessage({ mode: "allowlist", channel: "whatsapp", recipient: "0785550101", allowlist: ["+96279*"], resolution })).toMatchObject({ decision: "drop" });
+    expect(routeMessage({ mode: "live", channel: "whatsapp", recipient: "0795550101", resolution: { whatsappReady: false } })).toMatchObject({ decision: "drop", reason: expect.stringMatching(/WhatsApp sender/) });
+    expect(routeMessage({ mode: "live", channel: "whatsapp", recipient: "not a phone", resolution })).toMatchObject({ decision: "drop", reason: expect.stringMatching(/missing or not a valid/) });
   });
 
-  it("builds Twilio parameters per channel", () => {
-    const whatsapp = twilioMessageParams({ channel: "whatsapp", to: "+962795550101", body: "Hi", env: twilio });
+  it("refuses the retired SMS channel in every mode, before any other check", () => {
+    const resolution = resolveMessagingMode({ RIVET_MESSAGING_MODE: "live", ...twilio });
+    for (const mode of ["off", "sandbox", "allowlist", "live"] as const) {
+      expect(routeMessage({ mode, channel: "sms", recipient: "0795550101", sandboxTo: "0778378608", allowlist: ["+96279*"], resolution })).toEqual({ decision: "drop", reason: RETIRED_CHANNEL_REASON });
+    }
+    expect(routeMessage({ mode: "live", channel: "sms", recipient: "not a phone", resolution })).toEqual({ decision: "drop", reason: RETIRED_CHANNEL_REASON });
+  });
+
+  it("builds Twilio parameters for a WhatsApp message from the RIVET sender", () => {
+    const whatsapp = twilioMessageParams({ to: "+962795550101", body: "Hi", env: twilio });
     expect(whatsapp.get("To")).toBe("whatsapp:+962795550101");
-    expect(whatsapp.get("From")).toBe("whatsapp:+14155238886");
-    const sms = twilioMessageParams({ channel: "sms", to: "+962795550101", body: "Hi", env: twilio });
-    expect(sms.get("MessagingServiceSid")).toBe("MG123");
-    expect(sms.get("From")).toBeNull();
+    expect(whatsapp.get("From")).toBe("whatsapp:+962778378608");
+    expect(whatsapp.get("MessagingServiceSid")).toBeNull();
+  });
+
+  it("offers every catalogue template on WhatsApp only", () => {
+    for (const template of MESSAGE_TEMPLATE_CATALOGUE) expect(template.channels).toEqual(["whatsapp"]);
   });
 
   it("ships a bilingual utility catalogue whose variables all render", () => {

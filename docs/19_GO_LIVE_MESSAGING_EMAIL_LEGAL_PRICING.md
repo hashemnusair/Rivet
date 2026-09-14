@@ -8,7 +8,27 @@ must be true before the switch is flipped. Decisions marked **[decide]**
 need Elias or Hashem to sign the table at the end. Keep secret values,
 provider credentials and applicant details out of this file.
 
-## 1. WhatsApp and SMS reminders
+### Decisions recorded on 14 September 2026 (Elias)
+
+- **Channel: WhatsApp only.** RIVET does not send SMS. The sender is RIVET's
+  own business number, +962 77 837 8608 (`RIVET_CONTACT.phoneE164`), which
+  is registered with WhatsApp Business. The code retired the SMS channel the
+  same day (section 1).
+- **Operational email sends from `noreply@rivetjo.com`.** Clerk keeps
+  sending its own sign-in and invitation emails from its configured sender;
+  every RIVET operational email uses the Resend sender above (section 2).
+- **Convex capacity is resolved** as reported by Elias; the earlier
+  Free-plan warning is no longer a launch gate.
+- **The Production test gym is to be removed** and Production started
+  fresh. The guarded purge procedure is in
+  `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`; nothing was deleted by the
+  session that recorded this decision.
+- Still open from the lists below: who pays message costs per tier, the
+  Friday prayer window, the pricing table in section 4, and the WhatsApp
+  Business Platform steps (Meta verification, template approval, inbound
+  STOP webhook).
+
+## 1. WhatsApp reminders
 
 ### What the product does today
 
@@ -22,12 +42,21 @@ provider credentials and applicant details out of this file.
      redirects every message to `RIVET_MESSAGING_SANDBOX_TO`; `allowlist`
      sends only to `RIVET_MESSAGING_ALLOWLIST`; `live` sends to members).
   2. The gym's own **Settings → Notifications → External delivery** switch.
-- The provider seam is **Twilio** (`RIVET_MESSAGING_PROVIDER=twilio`,
-  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID`
-  for SMS, `TWILIO_WHATSAPP_FROM` for WhatsApp). A minute worker leases due
-  rows for live gyms, renders the body, calls Twilio, and records the
-  provider id, the mode and the number actually used. Transient failures
-  retry at 1, 5 and 30 minutes; a final failure notifies the gym's managers.
+- The provider seam is **Twilio's WhatsApp sender** (`RIVET_MESSAGING_PROVIDER=twilio`,
+  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, which
+  should be `whatsapp:+962778378608` once the number is registered as an API
+  sender). A minute worker leases due rows for live gyms, renders the body,
+  calls Twilio, and records the provider id, the mode and the number actually
+  used. Transient failures retry at 1, 5 and 30 minutes; a final failure
+  notifies the gym's managers.
+- **WhatsApp only, since 14 September 2026.** There is no SMS sender and no
+  `TWILIO_MESSAGING_SERVICE_SID`. The catalogue templates are WhatsApp-only,
+  the renewal journey always picks WhatsApp (or the one-day staff call task),
+  and any row still queued on the `sms` channel from before that date is
+  leased, refused with the recorded reason "SMS was retired on 14 September
+  2026; RIVET sends WhatsApp only", and written to the member's timeline as
+  not sent. Staff can still record by hand that they texted someone from a
+  phone; that is a contact note, not a RIVET message.
 - **Quiet hours** are per gym (default 22:00–08:00, gym timezone). A
   message that falls inside the window is deferred to the end of the window,
   never dropped, for live and sandbox gyms alike, so the sandbox ledger shows
@@ -47,15 +76,15 @@ provider credentials and applicant details out of this file.
 
 | Key | Family | Channels | Variables |
 |---|---|---|---|
-| `renewal_7d` | Renewal, 7 days before | WhatsApp, SMS | member_name, gym_name, end_date, branch_name |
-| `renewal_3d` | Renewal, 3 days before | WhatsApp, SMS | member_name, gym_name, end_date |
-| `renewal_today` | Renewal, ends today | WhatsApp, SMS | member_name, gym_name, branch_name |
-| `renewal_expired_3d` | Renewal, 3 days after expiry | WhatsApp, SMS | member_name, gym_name, end_date |
-| `payment_due_3d` | Payment due in 3 days | WhatsApp, SMS | member_name, gym_name, amount, due_date |
-| `payment_due_today` | Payment due today | WhatsApp, SMS | member_name, gym_name, amount |
-| `payment_overdue_3d` | Payment 3 days overdue | WhatsApp, SMS | member_name, gym_name, amount |
-| `class_booking_confirmation` | Class booked | WhatsApp, SMS | member_name, gym_name, class_name, class_time, branch_name |
-| `class_reminder` | Class in 2 hours | WhatsApp, SMS | member_name, gym_name, class_name, class_time |
+| `renewal_7d` | Renewal, 7 days before | WhatsApp | member_name, gym_name, end_date, branch_name |
+| `renewal_3d` | Renewal, 3 days before | WhatsApp | member_name, gym_name, end_date |
+| `renewal_today` | Renewal, ends today | WhatsApp | member_name, gym_name, branch_name |
+| `renewal_expired_3d` | Renewal, 3 days after expiry | WhatsApp | member_name, gym_name, end_date |
+| `payment_due_3d` | Payment due in 3 days | WhatsApp | member_name, gym_name, amount, due_date |
+| `payment_due_today` | Payment due today | WhatsApp | member_name, gym_name, amount |
+| `payment_overdue_3d` | Payment 3 days overdue | WhatsApp | member_name, gym_name, amount |
+| `class_booking_confirmation` | Class booked | WhatsApp | member_name, gym_name, class_name, class_time, branch_name |
+| `class_reminder` | Class in 2 hours | WhatsApp | member_name, gym_name, class_name, class_time |
 | `entry_pass` | Entry pass | WhatsApp | member_name, gym_name, pass_link |
 
 All ten are Meta **utility** templates (operational, no marketing consent
@@ -64,17 +93,21 @@ needed) in Arabic and English. The catalogue version is
 
 ### Decisions needed
 
-- **[decide] Provider.** Twilio is implemented because one vendor covers
-  SMS and WhatsApp with one API and one bill. The alternative is the Meta
-  Cloud API for WhatsApp (cheaper per message, more setup) plus a local SMS
-  aggregator. Switching later means implementing one more `send` function
-  behind the same seam; the ledger does not change.
-- **[decide] WhatsApp Business account.** Meta business verification of the
-  RIVET legal entity, the display name, and template approval for the ten
-  catalogue templates (submit both languages). Budget two to three weeks.
-- **[decide] Inbound STOP / إيقاف.** SMS: enable Twilio Advanced Opt-Out on
-  the messaging service (carrier-level). WhatsApp: needs an inbound webhook
-  that marks the member `whatsappOptedOut`; not built in this release.
+- **Provider: decided 14 September 2026.** WhatsApp only, through the
+  implemented Twilio WhatsApp sender; no SMS aggregator. The Meta Cloud API
+  stays available as a later swap behind the same seam (one more `send`
+  function; the ledger does not change).
+- **[decide] WhatsApp Business Platform onboarding.** The number is already a
+  WhatsApp Business account. Sending through Twilio or the Cloud API means
+  registering it as a WhatsApp Business *Platform* sender under Meta business
+  verification of the RIVET legal entity, with the display name and template
+  approval for the ten catalogue templates (submit both languages). Check
+  first whether Meta's app-and-API coexistence is available to the account;
+  without it, API registration moves the number off the WhatsApp Business
+  app on the phone. Budget two to three weeks.
+- **[decide] Inbound STOP / إيقاف.** WhatsApp is the only channel, so the
+  inbound webhook that marks the member `whatsappOptedOut` is now required
+  before `live`; it is not built yet. There is no SMS opt-out to configure.
 - **[decide] Who pays message costs** per tier (included, capped, or passed
   through). The Terms say "included or passed through as stated in the
   subscription agreement"; the agreement quote must state it.
@@ -83,13 +116,14 @@ needed) in Arabic and English. The catalogue version is
 
 ### Before flipping `RIVET_MESSAGING_MODE` to `live`
 
-- [ ] Twilio production account, messaging service and approved WhatsApp
-  sender; credentials in the Convex environment, never in the repository
+- [ ] Twilio production account and the approved WhatsApp sender
+  (+962 77 837 8608); credentials in the Convex environment, never in the
+  repository
 - [ ] Ten catalogue templates approved by Meta in Arabic and English
 - [ ] `sandbox` for one week against RIVET's own numbers, then `allowlist`
   with RIVET staff plus one pilot gym for two weeks with zero unexplained
   failures in the delivery ledger
-- [ ] Inbound STOP handling live for the channels in use
+- [ ] Inbound WhatsApp STOP handling live
 - [ ] Twilio status webhook (delivered / failed) wired to the attempt
   history, or accept "accepted by provider" as the final state (documented)
 - [ ] Pilot gym has consent facts on its members and has switched External
@@ -116,8 +150,14 @@ needed) in Arabic and English. The catalogue version is
 
 ### Before flipping `RIVET_EMAIL_MODE` to `live`
 
-- [ ] **[decide]** sending domain (normally `noreply@rivetjo.com`), with
-  SPF, DKIM and DMARC (`p=quarantine` at minimum) published and verified
+- [x] **Decided 14 September 2026:** the sending address is
+  `noreply@rivetjo.com` (`RESEND_FROM_EMAIL`). Clerk's own sign-in and
+  invitation emails stay on Clerk's configured sender.
+- [ ] SPF, DKIM and DMARC published and verified. Public DNS on 14 September
+  2026 showed the Resend DKIM selector (`resend._domainkey`) and the
+  `send.rivetjo.com` return-path records published, the root SPF pointing at
+  the mailbox provider, and DMARC still at `p=none`; raise it to
+  `p=quarantine` at minimum before `live`.
 - [ ] Resend production key in the Convex environment; webhook secret set
 - [ ] Bounce and complaint webhooks handled (already recorded as delivery
   events); a hard bounce must mark the address bad before go-live
@@ -133,8 +173,8 @@ needed) in Arabic and English. The catalogue version is
 
 | Document | Where | Status |
 |---|---|---|
-| Privacy policy | `/privacy` | Draft 1.0 · 3 September 2026 |
-| Terms of service with the data processing addendum | `/terms` | Draft 1.0 · 3 September 2026 |
+| Privacy policy | `/privacy` | Draft 1.1 · 14 September 2026 (WhatsApp-only wording) |
+| Terms of service with the data processing addendum | `/terms` | Draft 1.1 · 14 September 2026 (WhatsApp-only wording) |
 | Subscription agreement, signed at onboarding | blocking modal in the app shell (owner); copy under `/settings?section=agreement`; `/platform/agreements` (RIVET) | Draft 1.1 · 3 September 2026 |
 
 All three are consistent with each other (14-day payment terms, 7-day

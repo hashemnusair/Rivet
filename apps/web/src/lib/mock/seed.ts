@@ -1603,7 +1603,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
     {
       id: TEMPLATE_IDS.payment,
       name: "Outstanding balance",
-      channel: "sms",
+      channel: "whatsapp",
       bodyEn: "{{gym_name}}: Hi {{member_name}}, a balance of JOD {{amount}} is outstanding on your account. You can settle it at the {{branch_name}} desk. Thank you!",
       bodyAr: "{{gym_name}}: مرحباً {{member_name}}، يوجد رصيد متبقٍ بقيمة {{amount}} دينار على حسابك. يمكنك تسديده في فرع {{branch_name}}. شكراً لك!",
       variables: ["member_name", "amount", "branch_name", "gym_name"],

@@ -71,13 +71,6 @@ function cleanPhone(input: unknown): string | undefined {
   return phone && phone.length <= 40 ? phone : undefined;
 }
 
-function preferredChannel(member: Data): "whatsapp" | "sms" {
-  const candidate = [member.renewalChannel, member.preferredRenewalChannel, member.preferredContactChannel, member.contactChannel]
-    .map((entry) => stringValue(entry).toLowerCase())
-    .find((entry) => entry === "whatsapp" || entry === "sms");
-  return candidate === "sms" ? "sms" : "whatsapp";
-}
-
 function terminalReason(membership: Data, member: Data | undefined, today: string, hasSuccessor: boolean): string | undefined {
   if (!member) return "member_not_found";
   return renewalStopReason({ membership, member, today, hasSuccessor });
@@ -475,7 +468,8 @@ async function processOrganization(ctx: MutationCtx, organization: Doc<"organiza
     if (!checkpoint) continue;
     const branchId = await branchForMembership(ctx, organization._id, membershipRecord, membership);
     const customerUserId = await customerUserIdForMember(ctx, organization._id, memberId);
-    const channel = checkpoint.key === "1_day_call" ? "staff_task" as const : preferredChannel(member);
+    // RIVET sends WhatsApp only; a stored SMS preference no longer picks a channel.
+    const channel = checkpoint.key === "1_day_call" ? "staff_task" as const : "whatsapp" as const;
     const checkpointRows = await ctx.db.query("renewalDeliveries").withIndex("by_organization_membership", (q) => q.eq("organizationId", organization._id).eq("membershipPublicId", membershipId)).collect();
     const equivalent = checkpointRows.find((row) => row.checkpointKey === checkpoint.key && row.membershipEndDate === endDate && (checkpoint.key === "1_day_call" ? row.channel === "staff_task" : row.channel === "whatsapp" || row.channel === "sms"));
     if (equivalent) {

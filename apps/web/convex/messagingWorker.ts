@@ -10,7 +10,11 @@ import { MESSAGE_MAX_ATTEMPTS, MESSAGE_RETRY_MINUTES, parseMessagingAllowlist, r
 import { OPT_OUT_FOOTER, catalogueTemplate, renderMessageTemplate } from "./messagingTemplates";
 
 /**
- * Outbound WhatsApp / SMS worker.
+ * Outbound WhatsApp worker.
+ *
+ * RIVET sends WhatsApp only. Rows still carrying the retired `sms` channel
+ * are leased like any other so they drain, but the router refuses them and
+ * the refusal is recorded on the row and the member's timeline.
  *
  * Two queues feed it: automation `messageDelivery` records (marketing and
  * operational rules the gym configured) and `renewalDeliveries` (the
@@ -312,7 +316,7 @@ export const processDue = internalAction({
         const response = await fetch(twilioMessagesUrl(accountSid), {
           method: "POST",
           headers: { Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
-          body: twilioMessageParams({ channel: message.channel, to: route.to, body }).toString(),
+          body: twilioMessageParams({ to: route.to, body }).toString(),
         });
         statusCode = response.status;
         accepted = response.ok;

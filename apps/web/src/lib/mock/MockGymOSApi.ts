@@ -9080,7 +9080,7 @@ export class MockGymOSApi implements GymOSApi {
         providers: [
           { key: "internal_tasks", label: "Internal tasks and manager alerts", configured: true, live: false, detail: "Configured, but held by the global pause." },
           { key: "email", label: "Operational email", configured: false, live: false, detail: "Provider credentials are not configured in preview mode." },
-          { key: "sms_whatsapp", label: "SMS and WhatsApp", configured: false, live: false, detail: "No production SMS or WhatsApp provider is connected." },
+          { key: "sms_whatsapp", label: "WhatsApp", configured: false, live: false, detail: "No WhatsApp provider is connected in preview mode." },
         ],
       };
     });
@@ -10920,7 +10920,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const resolution = resolveMessagingMode(typeof process === "undefined" ? {} : process.env);
       const notifications = this.db.notificationSettings;
-      return { mode: resolution.mode, provider: resolution.provider, whatsappReady: resolution.whatsappReady, smsReady: resolution.smsReady, sandboxConfigured: resolution.sandboxConfigured, allowlistSize: resolution.allowlistSize, warning: resolution.warning, gymDeliveryMode: notifications.automationDeliveryMode, quietHoursStart: notifications.quietHoursStart ?? "22:00", quietHoursEnd: notifications.quietHoursEnd ?? "08:00", catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION };
+      return { mode: resolution.mode, provider: resolution.provider, whatsappReady: resolution.whatsappReady, sandboxConfigured: resolution.sandboxConfigured, allowlistSize: resolution.allowlistSize, warning: resolution.warning, gymDeliveryMode: notifications.automationDeliveryMode, quietHoursStart: notifications.quietHoursStart ?? "22:00", quietHoursEnd: notifications.quietHoursEnd ?? "08:00", catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION };
     });
   }
 

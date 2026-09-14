@@ -5520,7 +5520,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         mode: resolution.mode,
         provider: resolution.provider,
         whatsappReady: resolution.whatsappReady,
-        smsReady: resolution.smsReady,
         sandboxConfigured: resolution.sandboxConfigured,
         allowlistSize: resolution.allowlistSize,
         warning: resolution.warning,
@@ -6038,6 +6037,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const statuses = executions.map((execution) => stringValue(execution.status));
       const globallyPaused = automationsGloballyPaused();
       const emailConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
+      const messaging = resolveMessagingMode();
+      const whatsappConfigured = messaging.provider === "twilio" && messaging.whatsappReady;
       return {
         globallyPaused,
         pauseReason: globallyPaused ? AUTOMATIONS_PAUSE_REASON : "Automation delivery is enabled for this environment.",
@@ -6065,10 +6066,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
           },
           {
             key: "sms_whatsapp",
-            label: "SMS and WhatsApp",
-            configured: false,
-            live: false,
-            detail: "No production SMS or WhatsApp provider is connected. Queued messages cannot leave RIVET.",
+            label: "WhatsApp",
+            configured: whatsappConfigured,
+            live: !globallyPaused && whatsappConfigured && messaging.mode === "live",
+            detail: whatsappConfigured ? `WhatsApp sender configured; RIVET messaging mode is ${messaging.mode}.` : "No WhatsApp provider is connected. Queued messages cannot leave RIVET.",
           },
         ],
       };

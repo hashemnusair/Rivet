@@ -1111,7 +1111,7 @@ export function NotificationsSection() {
             />
             <SettingsToggleRow
               label="External delivery"
-              hint={form.automationDeliveryMode === "live" ? "On. Queued WhatsApp and SMS reminders are handed to RIVET's provider, subject to RIVET's global messaging mode above." : "Off. Reminders stay in the sandbox ledger and no member receives a message."}
+              hint={form.automationDeliveryMode === "live" ? "On. Queued WhatsApp reminders are handed to RIVET's provider, subject to RIVET's global messaging mode above." : "Off. Reminders stay in the sandbox ledger and no member receives a message."}
               checked={form.automationDeliveryMode === "live"}
               onCheckedChange={(enabled) => update({ automationDeliveryMode: enabled ? "live" : "sandbox" })}
             />
@@ -1156,7 +1156,7 @@ function MessagingStatusPanel() {
     <div className="my-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-sunken/60 px-3 py-2 text-[12.5px] text-ink-2" data-testid="messaging-status">
       <span className="text-ink-3">RIVET messaging</span>
       <Badge variant={value.mode === "live" ? "success" : value.mode === "off" ? "neutral" : "warning"} dot>{MESSAGING_MODE_LABELS[value.mode] ?? value.mode}</Badge>
-      <span className="text-ink-3">{value.provider === "twilio" ? `Provider connected · WhatsApp ${value.whatsappReady ? "ready" : "not configured"} · SMS ${value.smsReady ? "ready" : "not configured"}` : "No provider connected; nothing leaves the sandbox."}</span>
+      <span className="text-ink-3">{value.provider === "twilio" ? `Provider connected · WhatsApp sender ${value.whatsappReady ? "ready" : "not configured"}` : "No provider connected; nothing leaves the sandbox."}</span>
       {value.warning ? <span className="text-warning-deep">{value.warning}</span> : null}
     </div>
   );

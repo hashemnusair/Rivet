@@ -1,13 +1,17 @@
 /**
- * WhatsApp / SMS go-live flag and provider seam.
+ * WhatsApp go-live flag and provider seam.
  *
  *   RIVET_MESSAGING_MODE = off | sandbox | allowlist | live   (default off)
  *   RIVET_MESSAGING_PROVIDER = twilio                          (only provider)
  *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
- *   TWILIO_MESSAGING_SERVICE_SID   sender for SMS
- *   TWILIO_WHATSAPP_FROM           "whatsapp:+1415..." sender for WhatsApp
+ *   TWILIO_WHATSAPP_FROM           "whatsapp:+962..." the RIVET WhatsApp Business sender
  *   RIVET_MESSAGING_SANDBOX_TO     E.164 number that receives every sandbox message
  *   RIVET_MESSAGING_ALLOWLIST      comma list of E.164 numbers or prefixes
+ *
+ * RIVET sends WhatsApp only (decision of 14 September 2026). The `sms`
+ * channel value survives on rows queued before that date so the ledger
+ * stays readable, but the router refuses it with a recorded reason and no
+ * SMS sender is configured anywhere.
  *
  * Two switches must both be on before a member receives a message: this
  * global mode, and the gym's own "External delivery" setting
@@ -18,6 +22,9 @@
 export const MESSAGING_MODES = ["off", "sandbox", "allowlist", "live"] as const;
 export type MessagingMode = (typeof MESSAGING_MODES)[number];
 export type MessagingChannel = "whatsapp" | "sms";
+/** The only channel RIVET offers. Rows on any other channel are refused, never sent. */
+export const OFFERED_MESSAGING_CHANNEL: MessagingChannel = "whatsapp";
+export const RETIRED_CHANNEL_REASON = "SMS was retired on 14 September 2026; RIVET sends WhatsApp only";
 
 type Env = Record<string, string | undefined>;
 
@@ -25,7 +32,6 @@ export interface MessagingModeResolution {
   mode: MessagingMode;
   provider: "twilio" | "none";
   whatsappReady: boolean;
-  smsReady: boolean;
   sandboxConfigured: boolean;
   allowlistSize: number;
   warning?: string;
@@ -46,7 +52,6 @@ export function resolveMessagingMode(env: Env = process.env): MessagingModeResol
     mode,
     provider,
     whatsappReady: provider === "twilio" && Boolean(env.TWILIO_WHATSAPP_FROM?.trim()),
-    smsReady: provider === "twilio" && Boolean(env.TWILIO_MESSAGING_SERVICE_SID?.trim()),
     sandboxConfigured: Boolean(env.RIVET_MESSAGING_SANDBOX_TO?.trim()),
     allowlistSize: parseMessagingAllowlist(env.RIVET_MESSAGING_ALLOWLIST).length,
     warning,
@@ -86,25 +91,28 @@ export type MessageRoute =
   | { decision: "redirect"; to: string; originalRecipient: string }
   | { decision: "drop"; reason: string };
 
-export function routeMessage(input: { mode: MessagingMode; channel: MessagingChannel; recipient: string | undefined; sandboxTo?: string; allowlist?: readonly string[]; resolution: Pick<MessagingModeResolution, "whatsappReady" | "smsReady"> }): MessageRoute {
+export function routeMessage(input: { mode: MessagingMode; channel: MessagingChannel; recipient: string | undefined; sandboxTo?: string; allowlist?: readonly string[]; resolution: Pick<MessagingModeResolution, "whatsappReady"> }): MessageRoute {
+  // A retired channel is refused before anything else so the ledger names
+  // the real reason, whatever the mode or the recipient.
+  if (input.channel !== OFFERED_MESSAGING_CHANNEL) return { decision: "drop", reason: RETIRED_CHANNEL_REASON };
   const to = toE164(input.recipient);
   if (!to) return { decision: "drop", reason: "Recipient phone number is missing or not a valid number" };
-  const ready = input.channel === "whatsapp" ? input.resolution.whatsappReady : input.resolution.smsReady;
+  const ready = input.resolution.whatsappReady;
   switch (input.mode) {
     case "off":
       return { decision: "drop", reason: "Messaging mode is off (RIVET_MESSAGING_MODE)" };
     case "sandbox": {
       const sandboxTo = toE164(input.sandboxTo);
       if (!sandboxTo) return { decision: "drop", reason: "Messaging mode is sandbox but RIVET_MESSAGING_SANDBOX_TO is not set" };
-      if (!ready) return { decision: "drop", reason: `The ${input.channel === "whatsapp" ? "WhatsApp" : "SMS"} sender is not configured` };
+      if (!ready) return { decision: "drop", reason: "The WhatsApp sender is not configured" };
       return { decision: "redirect", to: sandboxTo, originalRecipient: to };
     }
     case "allowlist":
-      if (!ready) return { decision: "drop", reason: `The ${input.channel === "whatsapp" ? "WhatsApp" : "SMS"} sender is not configured` };
+      if (!ready) return { decision: "drop", reason: "The WhatsApp sender is not configured" };
       if (!phoneAllowed(to, input.allowlist ?? [])) return { decision: "drop", reason: "Recipient is not on RIVET_MESSAGING_ALLOWLIST (allowlist mode)" };
       return { decision: "send", to };
     case "live":
-      if (!ready) return { decision: "drop", reason: `The ${input.channel === "whatsapp" ? "WhatsApp" : "SMS"} sender is not configured` };
+      if (!ready) return { decision: "drop", reason: "The WhatsApp sender is not configured" };
       return { decision: "send", to };
   }
 }
@@ -112,17 +120,12 @@ export function routeMessage(input: { mode: MessagingMode; channel: MessagingCha
 export const MESSAGE_RETRY_MINUTES = [1, 5, 30] as const;
 export const MESSAGE_MAX_ATTEMPTS = MESSAGE_RETRY_MINUTES.length + 1;
 
-/** Twilio request body for one message; the worker adds credentials. */
-export function twilioMessageParams(input: { channel: MessagingChannel; to: string; body: string; env?: Env }): URLSearchParams {
+/** Twilio request body for one WhatsApp message; the worker adds credentials. */
+export function twilioMessageParams(input: { to: string; body: string; env?: Env }): URLSearchParams {
   const env = input.env ?? process.env;
   const params = new URLSearchParams();
-  if (input.channel === "whatsapp") {
-    params.set("To", `whatsapp:${input.to}`);
-    params.set("From", env.TWILIO_WHATSAPP_FROM?.trim() ?? "");
-  } else {
-    params.set("To", input.to);
-    params.set("MessagingServiceSid", env.TWILIO_MESSAGING_SERVICE_SID?.trim() ?? "");
-  }
+  params.set("To", `whatsapp:${input.to}`);
+  params.set("From", env.TWILIO_WHATSAPP_FROM?.trim() ?? "");
   params.set("Body", input.body);
   return params;
 }

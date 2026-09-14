@@ -95,7 +95,7 @@ const SECTIONS: LegalSection[] = [
     title: "Messages we send for gyms",
     body: (
       <>
-        <p>Gyms use RIVET to send operational messages to their own members over WhatsApp and SMS: renewal reminders, payment reminders, class booking confirmations and notices such as changed opening hours. When we send these, we do so on the gym’s instructions, using the numbers the gym has on record.</p>
+        <p>Gyms use RIVET to send operational messages to their own members over WhatsApp: renewal reminders, payment reminders, class booking confirmations and notices such as changed opening hours. When we send these, we do so on the gym’s instructions, using the numbers the gym has on record.</p>
         <p>Every message names the gym it comes from.</p>
         <p>We keep quiet hours. Each gym sets its own window (by default 22:00 to 08:00 Amman time); reminders that fall inside it wait until it ends, unless a member has explicitly asked for a message at a particular time.</p>
         <p>You can stop messages from a gym at any time by replying STOP or إيقاف, or by telling the gym. The gym sees the opt-out and RIVET enforces it.</p>
@@ -110,7 +110,7 @@ const SECTIONS: LegalSection[] = [
       <>
         <p>We do not sell personal data. We share it only with:</p>
         <LegalList items={[
-          "Service providers who work for us under contract and only on our instructions: cloud hosting and backups, WhatsApp and SMS delivery providers, email delivery, identity and sign-in, payment and invoicing partners, and secure storage for signed agreements.",
+          "Service providers who work for us under contract and only on our instructions: cloud hosting and backups, WhatsApp delivery providers, email delivery, identity and sign-in, payment and invoicing partners, and secure storage for signed agreements.",
           "Professional advisers such as accountants, auditors and lawyers, where necessary.",
           "Authorities, where the law, a court order or a competent authority requires it.",
           "A successor, if RIVET is sold or merged, in which case this policy continues to apply and you will be told.",

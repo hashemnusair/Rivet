@@ -51,7 +51,7 @@ const SECTIONS: LegalSection[] = [
         <p>Fees are billed in advance, monthly or yearly as chosen in the subscription agreement, from the contract start date. Onboarding is included; hardware such as computers, card readers and printers is not.</p>
         <p>Invoices are payable within 14 days by bank transfer, CliQ, card or another method we agree in writing. If an invoice is more than 14 days overdue we may suspend access after giving 7 days’ written notice, and restore it once payment is received. Suspension does not shorten the term or reduce the Fees.</p>
         <p>Limits attached to a Plan, such as the number of branches or staff accounts, are those stated in the subscription agreement. If usage exceeds them, we will offer the appropriate Plan; the higher Fees apply from the next billing period after the Customer agrees or continues to exceed the limits.</p>
-        <p>Message costs for WhatsApp and SMS reminders are included or passed through as stated in the subscription agreement.</p>
+        <p>Message costs for WhatsApp reminders are included or passed through as stated in the subscription agreement.</p>
         <p>We may change Fees for a renewal term by giving at least 60 days’ written notice before the current term ends. Fees do not change during a term.</p>
       </>
     ),
