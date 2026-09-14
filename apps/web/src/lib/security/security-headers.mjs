@@ -12,7 +12,9 @@ export function buildSecurityHeaders({ production = false } = {}) {
       key: "Content-Security-Policy",
       value: [
         "default-src 'self'",
-        `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${CLERK_ORIGINS}`,
+        // Next's dev runtime needs eval; production bundles and Clerk's
+        // browser script do not, so eval is only allowed outside production.
+        `script-src 'self' 'unsafe-inline'${production ? "" : " 'unsafe-eval'"} ${CLERK_ORIGINS}`,
         "style-src 'self' 'unsafe-inline' https:",
         `img-src 'self' data: blob: ${CLERK_ORIGINS} ${CONVEX_ORIGINS}`,
         `font-src 'self' data: ${CLERK_ORIGINS}`,

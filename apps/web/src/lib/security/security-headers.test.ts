@@ -27,6 +27,13 @@ describe("security headers", () => {
     expect(headerValue(headers, "Strict-Transport-Security")).toBeUndefined();
   });
 
+  it("allows eval only outside production", () => {
+    const csp = (production: boolean) => buildSecurityHeaders({ production }).find((header) => header.key === "Content-Security-Policy")!.value;
+    expect(csp(false)).toContain("'unsafe-eval'");
+    expect(csp(true)).not.toContain("'unsafe-eval'");
+    expect(csp(true)).toContain("script-src 'self' 'unsafe-inline' https://clerk.com");
+  });
+
   it("adds HSTS only to production responses", () => {
     const headers = buildSecurityHeaders({ production: true });
     expect(headerValue(headers, "Strict-Transport-Security")).toBe("max-age=31536000; includeSubDomains");
