@@ -116,8 +116,12 @@ test.describe("RIVET platform subscription entitlements", () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Stock & purchasing", exact: true })).toBeVisible();
 
-    await page.goto("/login/admin");
-    await page.getByRole("button", { name: /Open platform console/i }).click();
+    // A signed-in persona is sent away from every sign-in door, so the
+    // console is entered through the preview's own session flag while the
+    // gym persona stays in the same runtime; this is the point of the test.
+    await page.evaluate(() => window.sessionStorage.setItem("rivet.demo.platformAdmin", "1"));
+    await page.goto("/platform");
+    await expect(page.getByRole("heading", { name: "Platform overview" })).toBeVisible();
     await returnToBilling(page);
 
     await changeSubscriptionFromBilling(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.", { assertBillingPreview: true });

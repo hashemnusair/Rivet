@@ -5,6 +5,9 @@ test.describe("member file import", () => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /owner/i }).click();
     await page.getByRole("button", { name: /Open .+ workspace/i }).click();
+    // The persona is stored once the sign-in resolves; jumping to a deep
+    // route before that leaves the workspace guard waiting for nobody.
+    await expect(page).toHaveURL(/\/dashboard$/);
     await page.goto("/members/import");
 
     await expect(page.getByRole("heading", { name: "Import members" })).toBeVisible();

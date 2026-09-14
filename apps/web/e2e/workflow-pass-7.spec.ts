@@ -99,8 +99,8 @@ const SIGN_IN_ROUTES: Route[] = [
   { path: "/login/accept-invitation", slug: "invitation-invalid", ready: (page) => page.getByText("Invitation link not recognized") },
   { path: "/login/accept-invitation?__clerk_status=expired&__clerk_ticket=demo", slug: "invitation-expired", ready: (page) => page.getByText("Invitation expired") },
   { path: "/login/accept-invitation?__clerk_status=complete&__clerk_ticket=demo", slug: "invitation-complete", ready: (page) => page.getByText("This invitation was already accepted"), shoot: true },
-  // With a Convex URL (local, Preview) the owner form renders; CI's mock run has no backend and shows the truthful notice.
-  { path: "/login/accept-invitation?__clerk_status=sign_up&__clerk_ticket=demo", slug: "invitation-signup", ready: (page) => page.getByText(/Create your owner account|Invitations need the connected RIVET backend/) },
+  // With a Convex URL (local, Preview) the account form renders; CI's mock run has no backend and shows the truthful notice.
+  { path: "/login/accept-invitation?__clerk_status=sign_up&__clerk_ticket=demo", slug: "invitation-signup", ready: (page) => page.getByText(/Create your RIVET account|Invitations need the connected RIVET backend/) },
 ];
 
 const PUBLIC_ROUTES: Route[] = [

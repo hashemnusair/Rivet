@@ -32,6 +32,13 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Restore the Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: nextjs-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/convex/**') }}
+          restore-keys: |
+            nextjs-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
       - name: Typecheck web and Convex
         run: |
           pnpm typecheck
@@ -50,8 +57,58 @@ jobs:
         run: test -z "$(git status --porcelain=v1)"
 
   browser:
-    name: Credential-free Playwright
+    name: Credential-free Playwright (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    # On one runner against the dev server the preview suite took ~48 minutes,
+    # most of it compiling each route on first visit. Each shard now builds
+    # the mock preview once as an approved preview bundle and serves it with
+    # `next start`, which cut the two heaviest screenshot specs from ~17 to
+    # ~6 minutes locally; four shards keep each job near a quarter of the
+    # rest. A shard failure fails the workflow.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      NEXT_PUBLIC_RIVET_DEMO_AUTH: "1"
+      NEXT_PUBLIC_DATA_MODE: mock
+      # The bundle refuses mock data unless it is marked as a preview; this
+      # marker is never set on a Vercel Production build.
+      NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS: preview
+      NEXT_DIST_DIR: .next-playwright
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium and required system dependencies
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Build the mock preview bundle
+        run: pnpm --filter web exec next build --webpack
+      - name: Run credential-free browser suite against the built bundle
+        env:
+          PLAYWRIGHT_SERVER_MODE: start
+          PLAYWRIGHT_DIST_DIR: .next-playwright
+        run: pnpm test:e2e -- --shard=${{ matrix.shard }}/4
+      - name: Check patch formatting
+        run: git diff --check
+      - name: Assert clean worktree after Playwright
+        run: test -z "$(git status --porcelain=v1)"
+
+  gallery:
+    name: Design gallery captures (dev server)
+    runs-on: ubuntu-latest
+    # /dev/design-system exists only on the dev server, so its three capture
+    # specs keep a small dev-mode job; every other journey runs on the bundle.
     env:
       NEXT_PUBLIC_RIVET_DEMO_AUTH: "1"
       NEXT_PUBLIC_DATA_MODE: mock
@@ -71,8 +128,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install Chromium and required system dependencies
         run: pnpm --filter web exec playwright install --with-deps chromium
-      - name: Run credential-free browser suite
-        run: pnpm test:e2e
+      - name: Run the gallery capture specs on the dev server
+        run: pnpm test:e2e -- e2e/design-system-checkpoint.spec.ts e2e/design-system-visual.spec.ts e2e/workflow-pass-1-visual.spec.ts
       - name: Check patch formatting
         run: git diff --check
       - name: Assert clean worktree after Playwright

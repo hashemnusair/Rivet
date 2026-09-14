@@ -5,6 +5,9 @@ test.describe("stock and purchasing workflows", () => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /owner/i }).click();
     await page.getByRole("button", { name: /Open .+ workspace/i }).click();
+    // The persona is stored once the sign-in resolves; jumping to a deep
+    // route before that leaves the workspace guard waiting for nobody.
+    await expect(page).toHaveURL(/\/dashboard$/);
     await page.goto("/operations");
     await expect(page.getByTestId("operations-command-center")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Stock & purchasing" })).toBeVisible();
