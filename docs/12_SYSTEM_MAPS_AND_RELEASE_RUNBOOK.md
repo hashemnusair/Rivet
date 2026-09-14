@@ -3,6 +3,135 @@
 Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
 daily-checklist Production release at application tip `fdd6dac`.
 
+## Fresh start: removing the Production test gyms, 14 September 2026
+
+Elias decided on 14 September 2026 to delete the Production test gym and start
+Production fresh. **Nothing has been deleted yet.** This section is the
+procedure; the tooling behind it is the set of internal Convex functions in
+`apps/web/convex/tenantPurge.ts` (tests in `tenantPurge.test.ts`). The web app
+cannot reach them: they run only from the Convex dashboard's function runner
+or `convex run` by an operator who holds the Production deployment.
+
+What "fresh" means here. A test organization is removed with everything it
+owns: every row in every table that carries an `organizationId` (the test
+verifies that list against the schema), its stored media files, and the gym
+applications that provisioned it. Its Clerk organization is deleted and the
+pending RIVET invitations that pointed at it are revoked. Afterwards the
+accounts that belong to no gym and are not platform administrators, and any
+leftover applications, are listed and removed only by explicit choice.
+Platform administrators, the platform audit trail, the plan catalogue and the
+global configuration rows stay. `platformAuditEvents` receives a start event
+with the reason, a completion event with per-table counts, and the Clerk
+outcome for every purge, so the trail explains why a gym disappeared.
+
+### Before you start
+
+1. Release the current `main` through the guarded flow (`pnpm convex:deploy
+   -- --dry-run --yes`, then `pnpm convex:deploy -- --yes`). The purge
+   functions must be on Production before they can be run; they were not
+   deployed by the session that wrote them.
+2. Take a fresh snapshot export from the Convex dashboard (Settings → Backup
+   & Restore) and note its time. It is the only way back.
+3. Confirm `RIVET_MESSAGING_MODE` and `RIVET_EMAIL_MODE` are not `live` (the
+   names-only check: `pnpm convex:env:names -- --prod` proves presence, not
+   value; the dashboard shows the value). Nothing about a deleted gym should
+   be mid-delivery while its rows disappear.
+4. Decide which accounts must survive. Everyone who will use Production
+   afterwards, Elias and Hashem included, must either be a platform
+   administrator or simply not be passed to the residue deletion in step 6.
+   The purge itself never deletes a user.
+
+### Procedure
+
+Run every command from `apps/web` in a shell where no `CONVEX_DEPLOY_KEY` is
+exported, so `--prod` selects the Production deployment of the linked project
+(the CLI warns when a deploy key overrides it). Never add `--verbose`; the
+secret-safe command policy below still applies. Results contain counts,
+slugs and masked emails only; they are safe to paste into the handoff.
+
+1. List the organizations and note the exact `slug` and `name` of each test
+   gym (the two known ones are the Elias and Hashem test gyms):
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:listOrganizations --prod
+   ```
+
+2. Inventory one gym (read-only, repeatable): per-table counts, the linked
+   applications, and whether a Clerk organization id is recorded.
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:inventory '{"slug":"<slug>"}' --prod
+   ```
+
+3. Purge that gym. All four guards must match: the slug, the organization's
+   exact name, a reason of at least ten characters, and the acknowledgement
+   sentence verbatim. `clerk: "delete"` also removes the Clerk organization
+   and revokes its pending invitations; `"keep"` leaves Clerk untouched.
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:purge '{"slug":"<slug>","confirmName":"<exact name>","reason":"Retiring the Production test gym before launch","acknowledge":"permanently delete this organization and everything it owns","clerk":"delete"}' --prod
+   ```
+
+   The result lists rows deleted per table, stored files deleted, linked
+   applications deleted, and the Clerk outcome (`completed`, `skipped: …`,
+   `partial: …` or `failed: …`). Rows are removed in bounded pages (100 per
+   transaction by default; add `"batch":25` if a table with very large rows,
+   such as exports, trips a transaction limit). A run that stops part-way is
+   re-run with the same arguments and continues; once the organization row is
+   gone the slug no longer resolves. If the Clerk outcome is not `completed`,
+   finish it in the Clerk dashboard (Organizations → delete; Invitations →
+   revoke) and record that.
+
+4. Repeat steps 2 and 3 for the other test gym.
+
+5. List the residue: the organizations left (none, if both test gyms are
+   gone), the platform administrator count, the accounts attached to no gym
+   (masked email, and whether a Clerk user exists behind the account or it is
+   a placeholder that never signed in), and the applications.
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:listResidue --prod
+   ```
+
+6. Delete only the accounts and applications you choose. Each account is
+   re-checked at deletion time (platform administrators and accounts that
+   meanwhile joined a gym are skipped and reported); `clerk: "delete"` also
+   deletes the matching Clerk users.
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:deleteResidue '{"userPublicIds":["<publicId>","…"],"applicationPublicIds":["<publicId>","…"],"reason":"Fresh start before launch","acknowledge":"permanently delete these accounts and applications","clerk":"delete"}' --prod
+   ```
+
+7. Verify: `tenantPurge:listOrganizations` returns `[]`, `tenantPurge:listResidue`
+   shows only the accounts you kept, `health:check` returns `ok`, the public
+   gym directory is empty, the platform console lists no gyms, a kept account
+   signs in and lands on its area, and Clerk's Organizations page no longer
+   shows the test gyms.
+
+8. Record the value-free results (counts and outcomes, the snapshot time, the
+   Production deployment name) in `CURRENT_STATE.md`, and close the
+   "two test gyms are publicly listed" and "restore the test gym" items in
+   docs/13.
+
+### What survives on purpose
+
+- Global rows without tenant data: `platformAuditEvents` (including the purge
+  events), `publicRequestGuards`, `publicRequestIdempotency`,
+  `marketingPreferenceMigrations`, `messagingWorkerState`,
+  `maintenanceState`, `operationalEmailWebhookEvents`.
+- Users with `platformAdmin: true`, always. Other users only go through
+  `deleteResidue`, by the ids you pass.
+
+### Do not
+
+- Do not clear tables from the dashboard or import an empty snapshot instead:
+  that also removes platform administrators, role catalogues and the audit
+  trail, and leaves the Clerk organizations behind.
+- Do not run `seed:seedDemoTenant` on Production afterwards; a fresh
+  Production gets its first gym through a real application and provisioning.
+- Do not run any of this against Production from an agent session. The
+  session that built the tool ran it only against the in-memory test harness.
+
 ## Domain routing release, 11 September 2026
 
 All four hosts serve the same `rivet-web` Next.js deployment. Route ownership is enforced in `src/lib/routing/host-routing.ts`, before Clerk redirects in `src/proxy.ts`, and on cached browser navigation by `HostRouteGuard`.
@@ -32,7 +161,7 @@ No Convex deployment or DNS change is required for this frontend release. Do not
 
 ## Before Hashem and Elias's walkthrough
 
-1. Pick the test environment and a disposable gym. Record the site URL, Vercel project, Convex deployment and Clerk instance. Keep the existing live messaging pause in place.
+1. Pick the test environment and a disposable gym. Record the site URL, Vercel project, Convex deployment and Clerk instance. Keep the existing live messaging pause in place. Note that the Production test gyms are scheduled for removal (see "Fresh start" above); after that removal the walkthrough gym must come from a real application and provisioning.
 2. Agree on the release commit. From a clean main checkout, run `git pull --ff-only` and `git rev-parse HEAD`. In GitHub Actions, open the run for that exact commit and inspect every job. A successful build or code-generation job alone does not establish a passing browser suite or a deployment.
 3. In Vercel, open the deployment serving the walkthrough domain. Check its source commit, Ready status, environment and domain assignment. Check each separately deployed app/console domain that the walkthrough uses. An unrelated Ready preview does not prove that the intended domain serves the chosen commit.
 4. Have Elias confirm the Convex target and successful release from the agreed checkout. Done for `db43d7d` on 11 September 2026. Since then the backend commits `7687434`, `65f3858`, `c53666a`, `eba4696`, `936da61`, `8c83f47`, `05d3f65` and `7948027` (payables precision, trainer-account rule and deactivated identity projection, currency text in audit/timeline/notifications, trainer profile archived on deactivation) are on `main` but not released; the guarded dry run from `bef1656` on 14 September 2026 confirmed the Production target `descriptive-meerkat-589`, clean schema validation and no index deletions, and Elias then deployed those commits through the guarded flow on 14 September 2026; a later read-only dry run showed no remaining schema or index change. Repeat the dry run and deploy for any later backend commit. Use the guarded `pnpm convex:deploy` workflow and the additive ordering below if that release is still pending. Record the source SHA, deployment name, time and deploy result. Convex code generation and the frontend Git SHA do not prove backend deployment; do not assume the dashboard exposes a matching Git SHA automatically.
@@ -576,6 +705,8 @@ smoke, rollback, capacity/headroom, and backup/recovery gates remain open.
   require an authorized restoration of that test gym or another active owner.
 - Convex warned that the projects are above the Free-plan limits. Capacity or
   billing must be resolved before pilot launch to avoid service interruption.
+  Resolved: Elias reported on 14 September 2026 that Convex capacity is in
+  order.
   Credential-complete staging also remains gated on the documented role
   storage states.
 - Provider-removal local gates passed: both typechecks, zero-warning lint and
@@ -1113,10 +1244,10 @@ Complete this phase before asking an agent to run staging or production checks. 
 - [x] Confirm `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` is unset or `0` in Production.
 - [x] Confirm `RIVET_SITE_URL` is `https://www.rivetjo.com`.
 - [ ] Confirm `RESEND_API_KEY` exists.
-- [ ] Confirm `RESEND_FROM_EMAIL` is a verified sender, normally `noreply@rivetjo.com`.
+- [x] Confirm `RESEND_FROM_EMAIL` is a verified sender, normally `noreply@rivetjo.com`. Elias confirmed on 14 September 2026 that every operational email sends from `noreply@rivetjo.com`; Clerk keeps its own sender for sign-in and invitation emails.
 - [ ] Confirm `RIVET_APPLICATION_RECIPIENTS` contains the intended RIVET operators.
 - [ ] Confirm `RIVET_EMAIL_MODE` is `allowlist` (with `RIVET_EMAIL_ALLOWLIST` = RIVET staff and the pilot gym) until the email go-live checklist in docs/19 is complete, then `live`.
-- [ ] Confirm `RIVET_MESSAGING_MODE` is `off` or `allowlist`; never `live` before the WhatsApp templates are approved and the docs/19 checklist is complete.
+- [ ] Confirm `RIVET_MESSAGING_MODE` is `off` or `allowlist`; never `live` before the WhatsApp templates are approved and the docs/19 checklist is complete. RIVET sends WhatsApp only (decided 14 September 2026); there is no SMS sender variable.
 - [ ] Confirm the 8 August 2026 production backup/export still exists or create a fresh backup before pilot mutations.
 - [x] Do not run `seed:seedDemoTenant`.
 - [x] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.
@@ -1133,8 +1264,8 @@ Complete this phase before asking an agent to run staging or production checks. 
 
 #### A3. Resend
 
-- [ ] Confirm `rivetjo.com` is verified.
-- [ ] Confirm `noreply@rivetjo.com` is allowed as a sender.
+- [ ] Confirm `rivetjo.com` is verified. Public DNS on 14 September 2026 showed the Resend DKIM selector and the `send.rivetjo.com` return-path records published, and DMARC at `p=none` (docs/19 asks for `p=quarantine` before `live`).
+- [x] Confirm `noreply@rivetjo.com` is allowed as a sender. Elias confirmed on 14 September 2026.
 - [ ] Confirm the API key used by Convex Production is active and appropriately scoped.
 - [ ] Confirm the partner-recipient addresses are prepared to receive a disposable application.
 

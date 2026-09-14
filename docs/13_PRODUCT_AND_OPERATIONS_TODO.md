@@ -32,9 +32,9 @@ The entries below are current. Older dated sections retain their historical veri
 - [x] Correct marketing claims for family accounts, installment schedules and full Arabic/RTL.
 - [x] Reconcile the living documentation while preserving `FRONTEND_HANDOFF.md`.
 - [ ] Release the combined additive Convex schema/functions and frontend, then verify the exact deployed revisions using docs/12. Code generation is not a release.
-- [ ] Obtain a clean uninterrupted full browser run and investigate the remaining development-server navigation/script flakiness; keep snapshot tolerances and page-error checks intact. Targeted workflow and isolated operations tests pass.
+- [x] Obtain a clean uninterrupted full browser run and investigate the remaining development-server navigation/script flakiness; keep snapshot tolerances and page-error checks intact. Closed 14 September 2026: CI runs the whole credential-free suite on a built preview bundle in eight shards, green on every push since `5e1c837` (see `CURRENT_STATE.md`).
 - [ ] Hashem and his partner perform the authenticated business-day and real-device walkthrough when ready.
-- [ ] Last: messaging provider callbacks/opt-out handling, approved templates and allowlist acceptance; actual push delivery; supplier notification provider if required.
+- [ ] Last: WhatsApp provider callbacks and inbound STOP handling, approved templates and allowlist acceptance (WhatsApp only, decided 14 September 2026); actual push delivery; supplier notification provider if required.
 - [ ] Separately scope family accounts, repayment schedules and full Arabic localization before advertising them as shipped.
 
 ## Backend integrity, 8 September 2026
@@ -474,7 +474,10 @@ seeded, imported, rewritten, or deleted by this release.
 - [x] Read the public landing, gym directory, and one gym detail in Production
   without console errors. Two test gyms were publicly listed at that checkpoint;
   the subsequent closure above hid Hashem Test through the audited listing
-  control while preserving its history, and left Elias Test visible.
+  control while preserving its history, and left Elias Test visible. On
+  14 September 2026 Elias decided to remove both test gyms and start
+  Production fresh; the guarded procedure is in docs/12 ("Fresh start") and
+  has not been run yet.
 
 The final application/code verification tip for this sprint is `3c99fc7`;
 the final pushed history also includes this documentation reconciliation. The verified
@@ -518,13 +521,21 @@ Convex or mutate Production data.
   credential-gated browser journeys, with disposable identities and cleanup.
 - [ ] Complete authenticated mobile Production acceptance. Active-owner desktop
   and platform-owner desktop acceptance are complete.
-- [ ] Resolve Convex Production database I/O (1.65 GB used against the 1 GB
-  Free-plan allowance). A current exact-target snapshot export now exists, but
-  the operator intentionally deferred any plan or PAYG purchase.
-- [ ] Decide provider/product policy and activation for operational email,
-  subscription reconciliation, messaging, packaging, accounting, and billing.
-- [ ] Resolve Convex capacity/billing, backups/recovery, WAF, monitoring, and
-  operator ownership before pilot expansion.
+- [x] Resolve Convex Production database I/O (1.65 GB used against the 1 GB
+  Free-plan allowance). Elias reported on 14 September 2026 that Convex
+  capacity is in order.
+- [x] Decide the messaging channel and the email sender: WhatsApp only from
+  RIVET's business number, and every operational email from
+  `noreply@rivetjo.com` (Elias, 14 September 2026; docs/19).
+- [ ] Decide product policy and activation for subscription reconciliation,
+  packaging and pricing, accounting, and billing (docs/19 section 4 is still
+  unsigned), plus who pays WhatsApp message costs per tier and the Friday
+  prayer window.
+- [ ] Resolve backups/recovery, WAF, monitoring, and operator ownership before
+  pilot expansion.
+- [ ] Remove the Production test gyms and start fresh, following the guarded
+  procedure in docs/12 ("Fresh start"): backend release, snapshot, purge per
+  gym with Clerk cleanup, residue review, verification, record.
 - [ ] Keep Arabic/final performance work, provider-backed WhatsApp/SMS,
   supplier marketplaces, autonomous purchasing, statutory accounting, and
   other separately scoped features outside this sprint. Provider-free
@@ -613,7 +624,7 @@ repository-hardening head is deployed to Convex or Vercel Production.
 - [x] Prevent that unavailable owner identity from initializing member registration, subscriptions, or member-shell APIs.
 - [x] Replace the same-route **Back to sign-in options** link with a Clerk-backed **Sign out and use another account** recovery action.
 - [x] Deploy and verify the affected Production session: truthful unavailable-workspace copy rendered, no member mutation ran, and no page or console errors remained.
-- [ ] Restore the test gym only after an authorized platform administrator confirms the exact organization and records the operational reason; then complete the active-owner Five Pillars acceptance pass.
+- [x] Superseded 14 September 2026: the test gyms are to be removed, not restored (docs/12, "Fresh start"). The active-owner acceptance pass will run on the first real gym provisioned afterwards.
 
 ## Latest simplification slice — core CRM pilot — released 17 August 2026
 
@@ -1296,7 +1307,7 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 ### TODO-002 — Activate and verify operational messaging safely
 
 - Status: **Live worker deployed disabled-by-default; activation and credentialed delivery evidence remain release-gated**.
-- Evidence: operational email now shares one durable Resend boundary with leases, provider IDs, idempotency keys, verified webhook outcomes, redacted failures, and bilingual lifecycle templates. WhatsApp/SMS remain disabled, and email stays suppressed unless every activation boundary permits it.
+- Evidence: operational email now shares one durable Resend boundary with leases, provider IDs, idempotency keys, verified webhook outcomes, redacted failures, and bilingual lifecycle templates. WhatsApp remains disabled (SMS was retired on 14 September 2026; the seam, templates and renewal journey are WhatsApp-only), and email stays suppressed unless every activation boundary permits it.
 - Risk: renewal reminders, trial confirmations, payment receipts, expiry alerts, and retry behavior are not yet a real-gym communication system.
 - Fix/acceptance: configure the exact staging sender/webhook, obtain owner category confirmation, activate selected essential categories, and prove accepted/delivered/transient-retry/terminal-failure paths without replaying historical suppressed attempts. Production activation still requires explicit approval.
 
@@ -1546,3 +1557,4 @@ When closing an item, add one line here with the issue ID, date, commit SHA, tes
 | Trainer account journey audit | 2026-09-14 | `3c58988`, `0300366`, `afc4c91`, `994fded`, `c2e022b` | Mock PT workspace/cancel/reschedule/deactivation parity with Convex, trainer setup guidance on `/pt` and the dashboard, own-session cancel, invitation list refresh, Convex active-trainer profile rule and deactivated identity projection, role-neutral invitation copy. 249 unit files / 1,531 tests, both typechecks, zero-warning lint; 24 `trainer-journey`/`role-routing`/`workflow-pass-2` browser journeys passed with retries disabled. Operator action still required: guarded `pnpm convex:deploy` for the identity/domain change, and a real Clerk staff invitation acceptance plus the credentialed staging trainer journeys. |
 | Currency text and amount-entry cleanup | 2026-09-14 | `aaa7ab5`, `c53666a`, `eba4696`, `936da61`, `8c83f47`, `05d3f65`, `2cea04d` | Payment, membership, retail, PT-refund and cash-shift audit/timeline/notification text formats at the record currency's precision in both adapters; every amount-entry form (PT package, plan, custom plan, offer, discount limits, freeze fee, opening float, supplier payment) reads through the shared parser with inline errors; JOD/USD regressions in Convex and the mock compare written text with stored amounts. 250 files / 1,572 unit tests, both typechecks, lint, production build. Operator action still required: guarded `pnpm convex:deploy` for the Convex text changes. Intentional JOD-only platform pricing, marketing and seed history were left as they are. |
 | Release status reconciliation, 14 September 2026 | 2026-09-14 | `bef1656` | Frontend Production established at `3894f1e` via GitHub deployment status; Convex Production still at `db43d7d` with eight unreleased backend commits named in the runbook and a guarded dry run confirming the target, schema validation and no index deletions (no deploy executed). 30 credential-free business-day preview journeys and 33 Convex denial tests passed. Operator action still required: guarded Convex deploy for `bef1656`, and the credentialed isolated-staging business day, which was blocked here for lack of storage-state files. |
+| WhatsApp-only messaging and the guarded tenant purge tool | 2026-09-14 | `d38b6c1`, `34c37a3` | The SMS channel is retired at the provider seam, worker, templates and renewal journey; legal drafts 1.1; docs/19 records Elias's decisions (WhatsApp only from RIVET's number, `noreply@rivetjo.com`, Convex capacity resolved, test gyms to be removed). Internal `tenantPurge` functions with schema-derived table coverage, guards, Clerk cleanup and residue deletion are tested (8 tests) but not run: Production still holds both test gyms pending the docs/12 "Fresh start" procedure after a backend release and snapshot. Full suite 253 files / 1,603 tests, both typechecks, lint and `git diff --check` passed. |
