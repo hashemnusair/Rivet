@@ -15,8 +15,62 @@ env:
   NODE_VERSION: 22
 
 jobs:
-  static:
-    name: Typecheck, lint, unit tests, build
+  # The static gate is split so each part runs in parallel; the slowest of
+  # them (unit tests, sharded) sets the floor at a few minutes.
+  typecheck-lint:
+    name: Typecheck, lint, repository safety
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck web and Convex
+        run: |
+          pnpm typecheck
+          pnpm convex:typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Repository safety scripts
+        run: pnpm --filter web exec node --test scripts/safe-convex-cli.test.mjs scripts/validate-vercel-env.test.mjs
+      - name: Check patch formatting
+        run: git diff --check
+
+  unit:
+    name: Unit and component tests (${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Vitest shard
+        run: pnpm --filter web exec vitest run --shard=${{ matrix.shard }}/2
+
+  build:
+    name: Production build and dependency audit
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -39,36 +93,26 @@ jobs:
           key: nextjs-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/convex/**') }}
           restore-keys: |
             nextjs-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
-      - name: Typecheck web and Convex
-        run: |
-          pnpm typecheck
-          pnpm convex:typecheck
-      - name: Lint
-        run: pnpm lint
-      - name: Unit and component tests
-        run: pnpm test
       - name: Production build
         run: pnpm build
       - name: Production dependency audit
         run: pnpm audit --prod
-      - name: Check patch formatting
-        run: git diff --check
       - name: Assert clean worktree after build
         run: test -z "$(git status --porcelain=v1)"
 
   browser:
-    name: Credential-free Playwright (${{ matrix.shard }}/4)
+    name: Credential-free Playwright (${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
     # On one runner against the dev server the preview suite took ~48 minutes,
-    # most of it compiling each route on first visit. Each shard now builds
-    # the mock preview once as an approved preview bundle and serves it with
-    # `next start`, which cut the two heaviest screenshot specs from ~17 to
-    # ~6 minutes locally; four shards keep each job near a quarter of the
-    # rest. A shard failure fails the workflow.
+    # most of it compiling each route on first visit. Each shard builds the
+    # mock preview once as an approved preview bundle and serves it with
+    # `next start`; two workers share the bundle. The dev-only design gallery
+    # is served by that bundle too (RIVET_DESIGN_PREVIEW), so no dev-server
+    # job remains. A shard failure fails the workflow.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
       NEXT_PUBLIC_RIVET_DEMO_AUTH: "1"
       NEXT_PUBLIC_DATA_MODE: mock
@@ -90,6 +134,11 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Restore the Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Chromium and required system dependencies
         run: pnpm --filter web exec playwright install --with-deps chromium
       - name: Build the mock preview bundle
@@ -98,38 +147,8 @@ jobs:
         env:
           PLAYWRIGHT_SERVER_MODE: start
           PLAYWRIGHT_DIST_DIR: .next-playwright
-        run: pnpm test:e2e -- --shard=${{ matrix.shard }}/4
-      - name: Check patch formatting
-        run: git diff --check
-      - name: Assert clean worktree after Playwright
-        run: test -z "$(git status --porcelain=v1)"
-
-  gallery:
-    name: Design gallery captures (dev server)
-    runs-on: ubuntu-latest
-    # /dev/design-system exists only on the dev server, so its three capture
-    # specs keep a small dev-mode job; every other journey runs on the bundle.
-    env:
-      NEXT_PUBLIC_RIVET_DEMO_AUTH: "1"
-      NEXT_PUBLIC_DATA_MODE: mock
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Install Chromium and required system dependencies
-        run: pnpm --filter web exec playwright install --with-deps chromium
-      - name: Run the gallery capture specs on the dev server
-        run: pnpm test:e2e -- e2e/design-system-checkpoint.spec.ts e2e/design-system-visual.spec.ts e2e/workflow-pass-1-visual.spec.ts
+          PLAYWRIGHT_WORKERS: "2"
+        run: pnpm test:e2e -- --shard=${{ matrix.shard }}/8
       - name: Check patch formatting
         run: git diff --check
       - name: Assert clean worktree after Playwright

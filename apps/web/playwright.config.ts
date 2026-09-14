@@ -14,12 +14,11 @@ const distDir = process.env.PLAYWRIGHT_DIST_DIR ?? ".next-playwright";
 
 export default defineConfig({
   testDir: "./e2e",
-  // The design gallery lives under /dev and is a dev-server route; a built
-  // bundle has no such page, so its capture specs run in the dev-mode job.
-  testIgnore: serveBuiltBundle ? [/design-system-.*\.spec\.ts$/, /workflow-pass-1-visual\.spec\.ts$/] : [],
   timeout: 60_000,
   retries: process.env.CI ? 2 : 0,
-  workers: 1,
+  // One worker on the dev server (route compiles contend); a built bundle
+  // serves concurrent journeys fine, so CI shards may raise this.
+  workers: Number(process.env.PLAYWRIGHT_WORKERS ?? 1),
   reporter: [["list"]],
   snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{ext}",
   // GitHub's first navigation can include a cold Next.js dev-route compile.
@@ -46,7 +45,9 @@ export default defineConfig({
       NEXT_PUBLIC_DATA_MODE: convexBrowserMode ? "convex" : "mock",
       // A built bundle refuses mock data unless it was built as an approved
       // preview; the same marker must be present when it is served.
-      ...(serveBuiltBundle && !convexBrowserMode ? { NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS: "preview" } : {}),
+      // RIVET_DESIGN_PREVIEW lets that preview bundle serve the /dev gallery
+      // the capture specs read; the gate still refuses any production class.
+      ...(serveBuiltBundle && !convexBrowserMode ? { NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS: "preview", RIVET_DESIGN_PREVIEW: "1" } : {}),
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

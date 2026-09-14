@@ -8,8 +8,10 @@ test.use({
 });
 
 async function disableFrameworkChrome(page: Page) {
+  // The dev indicator exists only on the dev server; a built bundle answers
+  // 404 and has no framework chrome to hide.
   const response = await page.request.post("/__nextjs_disable_dev_indicator");
-  expect(response.ok()).toBe(true);
+  expect(response.ok() || response.status() === 404).toBe(true);
 }
 
 async function signIn(page: Page, persona: "Owner" | "Reception") {
