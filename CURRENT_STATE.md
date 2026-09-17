@@ -1,5 +1,13 @@
 # GymOS / RIVET current implementation state
 
+## Convex Production release, snapshot and pre-purge inventory, 17 September 2026
+
+- On Elias's instruction, this session released `0d938f5` (the WhatsApp-only worker, the `tenantPurge` functions and the public-surface guard test) to Convex Production `descriptive-meerkat-589` through the guarded wrapper: the dry run reported the exact Production target, "No indexes are deleted" and "Schema validation complete" with only the Node.js server-version note, the deploy succeeded, and the read-only `health:check` returned `status: ok` afterwards. No schema or index change. The frontend was already at this commit on Vercel.
+- Snapshot taken before any purge: `convex export --prod --include-file-storage` wrote `~/rivet-backups/rivet-production-2026-09-17.zip` (3.1 MB) at 18:56 local time on Elias's machine. It is outside the repository and is the way back if the purge removes something wanted.
+- Read-only inventory of Production (`tenantPurge:listOrganizations`, `inventory`, `listResidue`): five organizations exist, all test or demo tenants: `forge-fitness` (the seeded demo tenant, 15 rows, no Clerk organization), `elias-gym-aa87cea8990b` (suspended, 13 rows), `rivet-qa-gym-20260808-8dcc74222ced` (suspended, 10 rows), `hashem-test-5fb83293ee76` (active, 54 rows) and `elias-test-gym-1-2159fbd31f08` (active, 979 rows across 37 tables, including 2 media files and 4 subscription agreements). Each provisioned tenant has one linked approved application; one rejected application ("Test 123") is unlinked. Two platform-administrator accounts exist and are protected by the purge; five other accounts are attached to these tenants and will appear in the residue after the purges; there are no orphan accounts today.
+- Nothing was deleted. The purge and the residue deletion are the operator's to run; the exact commands with the real slugs and names are in the runbook's "Fresh start" section and were handed to Elias in chat.
+- Read first: the "Fresh start" section in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` and `apps/web/convex/tenantPurge.ts`.
+
 ## Operator decisions, WhatsApp-only messaging and the tenant purge tool, 14 September 2026
 
 - Decisions Elias recorded today: RIVET sends WhatsApp only, from its own business number (+962 77 837 8608, the number already printed in the footers and legal pages), and no SMS; every operational email goes from `noreply@rivetjo.com` while Clerk keeps sending its own sign-in and invitation emails; Convex capacity is in order; the Production test gym is to be deleted and Production started fresh. docs/19 carries the decision block and docs/13's open gates are reconciled to it.

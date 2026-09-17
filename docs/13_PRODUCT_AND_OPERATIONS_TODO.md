@@ -535,7 +535,10 @@ Convex or mutate Production data.
   pilot expansion.
 - [ ] Remove the Production test gyms and start fresh, following the guarded
   procedure in docs/12 ("Fresh start"): backend release, snapshot, purge per
-  gym with Clerk cleanup, residue review, verification, record.
+  gym with Clerk cleanup, residue review, verification, record. Done on
+  17 September 2026: release of `0d938f5`, snapshot, read-only inventory of
+  the five test tenants. Pending: the purges, the residue deletion and the
+  verification, which the operator runs.
 - [ ] Keep Arabic/final performance work, provider-backed WhatsApp/SMS,
   supplier marketplaces, autonomous purchasing, statutory accounting, and
   other separately scoped features outside this sprint. Provider-free
