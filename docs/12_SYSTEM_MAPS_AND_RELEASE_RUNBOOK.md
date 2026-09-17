@@ -6,8 +6,9 @@ daily-checklist Production release at application tip `fdd6dac`.
 ## Fresh start: removing the Production test gyms, 14 September 2026
 
 Elias decided on 14 September 2026 to delete the Production test gym and start
-Production fresh. **Nothing has been deleted yet.** This section is the
-procedure; the tooling behind it is the set of internal Convex functions in
+Production fresh. **Executed by Elias on 17 September 2026** (results in
+`CURRENT_STATE.md`); the procedure stays here for any future test tenant.
+The tooling behind it is the set of internal Convex functions in
 `apps/web/convex/tenantPurge.ts` (tests in `tenantPurge.test.ts`). The web app
 cannot reach them: they run only from the Convex dashboard's function runner
 or `convex run` by an operator who holds the Production deployment.
@@ -510,7 +511,8 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
   console errors. Two test gyms are publicly listed, and one exposes
   disposable-verification copy and test membership data. Exact-target content
   cleanup or unpublishing is required before launch. No tenant record was
-  changed during this read-only verification.
+  changed during this read-only verification. Closed on 17 September 2026:
+  every test tenant was purged through the "Fresh start" procedure.
 
 - The approved topology is Next.js App Router on Vercel, Clerk for identity,
   and Convex for tenant/branch-scoped data and business rules. `GymOSApi` is

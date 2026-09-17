@@ -476,8 +476,8 @@ seeded, imported, rewritten, or deleted by this release.
   the subsequent closure above hid Hashem Test through the audited listing
   control while preserving its history, and left Elias Test visible. On
   14 September 2026 Elias decided to remove both test gyms and start
-  Production fresh; the guarded procedure is in docs/12 ("Fresh start") and
-  has not been run yet.
+  Production fresh; the guarded procedure in docs/12 ("Fresh start") was run
+  on 17 September 2026 and removed every test tenant.
 
 The final application/code verification tip for this sprint is `3c99fc7`;
 the final pushed history also includes this documentation reconciliation. The verified
@@ -533,12 +533,12 @@ Convex or mutate Production data.
   prayer window.
 - [ ] Resolve backups/recovery, WAF, monitoring, and operator ownership before
   pilot expansion.
-- [ ] Remove the Production test gyms and start fresh, following the guarded
-  procedure in docs/12 ("Fresh start"): backend release, snapshot, purge per
-  gym with Clerk cleanup, residue review, verification, record. Done on
-  17 September 2026: release of `0d938f5`, snapshot, read-only inventory of
-  the five test tenants. Pending: the purges, the residue deletion and the
-  verification, which the operator runs.
+- [x] Remove the Production test gyms and start fresh, following the guarded
+  procedure in docs/12 ("Fresh start"). Done on 17 September 2026: release of
+  `0d938f5`, snapshot, inventory, then Elias purged all five test tenants
+  with Clerk cleanup and deleted the five leftover accounts and one rejected
+  application; verification found no organization, no member data and only
+  the two platform administrators (see `CURRENT_STATE.md`).
 - [ ] Keep Arabic/final performance work, provider-backed WhatsApp/SMS,
   supplier marketplaces, autonomous purchasing, statutory accounting, and
   other separately scoped features outside this sprint. Provider-free
