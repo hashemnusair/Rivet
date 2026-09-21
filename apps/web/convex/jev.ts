@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import { canonicalJson, jevStateBytes, jevStateHash, sanitizeJevSubject } from "./jevAnswers";
-import { jevStateLoader } from "./jevLoaders";
+import { jevPlatformStateLoader, jevStateLoader } from "./jevLoaders";
 import { gateJevRequest, resolveJevMode, utcDay, type JevGate, type JevModeResolution } from "./jevMode";
 import { JEV_FEATURES, JEV_QUESTIONS, getJevQuestion } from "./jevQuestions";
 import {
@@ -22,7 +22,7 @@ import {
   type JevStatusView,
 } from "./jevRegistry";
 import { PERMISSIONS, type Permission } from "./permissions";
-import { domainError, hasPermission, publicOrganizationId, publicUserId, requireActor, requirePermission, type ActorContext, type ReadCtx } from "./security";
+import { domainError, hasPermission, publicOrganizationId, publicUserId, requireActor, requirePermission, requirePlatformAdmin, type ActorContext, type ReadCtx } from "./security";
 
 /**
  * Jev judgments, default runtime side: who may ask, whether anything may be
@@ -61,6 +61,8 @@ export interface JevPreparedRequest {
   zeroDataRetention: boolean;
   simulate?: JevSimulation;
 }
+
+type JevLoadedStateResult = { state: JevState; candidates?: JevCandidate[]; scopeKey: string; sourceVersion: string };
 
 export type JevPrepareResult = { status: "prepared"; request: JevPreparedRequest } | { status: "resolved"; result: JevJudgeResult };
 export type JevBeginResult = { status: "started"; requestId: Id<"jevRequests"> } | { status: "resolved"; result: JevJudgeResult };
@@ -124,8 +126,12 @@ async function gateContext(ctx: ReadCtx, organizationId: Id<"organizations">, fe
 }
 
 async function statusView(ctx: ReadCtx, actor: ActorContext): Promise<JevStatusView> {
+  return await statusViewFor(ctx, actor.organization._id, hasPermission(actor, "settings.manage"));
+}
+
+async function statusViewFor(ctx: ReadCtx, organizationId: Id<"organizations">, canManage: boolean): Promise<JevStatusView> {
   const now = Date.now();
-  const context = await gateContext(ctx, actor.organization._id, undefined, now);
+  const context = await gateContext(ctx, organizationId, undefined, now);
   const { resolution, preference, breaker } = context;
   const updatedBy = preference ? await ctx.db.get(preference.updatedByUserId) : null;
   const features: JevFeatureStatus[] = JEV_FEATURES.map((feature) => {
@@ -143,6 +149,7 @@ async function statusView(ctx: ReadCtx, actor: ActorContext): Promise<JevStatusV
         description: question.description,
         kind: question.kind,
         version: question.version,
+        scope: question.scope ?? "tenant",
         permission: question.permission,
         synthetic: question.synthetic,
         cacheTtlMs: question.cacheTtlMs,
@@ -168,7 +175,7 @@ async function statusView(ctx: ReadCtx, actor: ActorContext): Promise<JevStatusV
     blockedReason: context.gate.allowed ? (readyFeature ? undefined : "feature_off") : context.gate.reason,
     blockedMessage: context.gate.allowed ? (readyFeature ? undefined : "No feature is enabled for live Jev calls in this environment.") : context.gate.message,
     warnings: resolution.warnings,
-    canManage: hasPermission(actor, "settings.manage"),
+    canManage,
   };
 }
 
@@ -179,6 +186,22 @@ export const status = query({
   handler: async (ctx, args): Promise<JevStatusView> => {
     const actor = await requireActor(ctx, args);
     return await statusView(ctx, actor);
+  },
+});
+
+/**
+ * The same view for a platform administrator reading one gym's case: whether
+ * that gym has Jev on and which features could answer. Never lets the
+ * console change the gym's switch.
+ */
+export const platformStatus = query({
+  args: { organizationId: v.string(), correlationId: v.string() },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<JevStatusView> => {
+    const admin = await requirePlatformAdmin(ctx, args.correlationId);
+    const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", args.organizationId.trim())).unique();
+    if (!organization) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
+    return await statusViewFor(ctx, organization._id, false);
   },
 });
 
@@ -244,23 +267,53 @@ export const prepare = internalQuery({
   args: { ...scopedArgs, questionKey: v.string(), subject: v.optional(v.any()) },
   returns: v.any(),
   handler: async (ctx, args): Promise<JevPrepareResult> => {
-    const actor = await requireActor(ctx, args);
     const question = getJevQuestion(args.questionKey);
-    const permission = question ? permissionOf(question) : undefined;
-    if (!question || !permission) return resolved({ status: "blocked", reason: "unknown_question", message: "This suggestion is not registered." });
-    requirePermission(actor, permission);
-    const now = Date.now();
-    const context = await gateContext(ctx, actor.organization._id, question.feature, now);
-    if (!context.gate.allowed) return resolved(blockedResult(context.gate));
-    const loader = jevStateLoader(question.key);
-    if (!loader) return resolved({ status: "blocked", reason: "unknown_question", message: "This suggestion has no state loader." });
+    if (!question) return resolved({ status: "blocked", reason: "unknown_question", message: "This suggestion is not registered." });
     const subject = sanitizeJevSubject(args.subject);
     const simulate = question.synthetic && typeof subject.simulate === "string" && (JEV_SIMULATIONS as readonly string[]).includes(subject.simulate) ? (subject.simulate as JevSimulation) : undefined;
-    const loaded = await loader(ctx, actor, subject);
+    // Who may ask, and which gym the judgment belongs to. Tenant questions
+    // resolve a gym actor; platform questions resolve an administrator and
+    // let the loader name the gym from the record it found.
+    const now = Date.now();
+    let organizationDocId: Id<"organizations">;
+    let userId: Id<"users">;
+    let correlationId: string;
+    let loaded: JevLoadedStateResult;
+    let context: GateContext;
+    if (question.scope === "platform") {
+      const admin = await requirePlatformAdmin(ctx, args.correlationId);
+      const loader = jevPlatformStateLoader(question.key);
+      if (!loader) return resolved({ status: "blocked", reason: "unknown_question", message: "This suggestion has no state loader." });
+      // The environment switches are checked before the case is read; the
+      // gym's own switch and counters follow once the loader has named it.
+      const environmentGate = gateJevRequest({ resolution: resolveJevMode(process.env, now), featureKey: question.feature, tenantEnabled: true, breakerTripped: false, globalRequestsToday: 0, tenantRequestsToday: 0 });
+      if (!environmentGate.allowed) return resolved(blockedResult(environmentGate));
+      const platformLoaded = await loader(ctx, admin, subject);
+      organizationDocId = platformLoaded.organizationDocId;
+      userId = admin.user._id;
+      correlationId = admin.correlationId;
+      loaded = platformLoaded;
+      context = await gateContext(ctx, organizationDocId, question.feature, now);
+      if (!context.gate.allowed) return resolved(blockedResult(context.gate));
+    } else {
+      const actor = await requireActor(ctx, args);
+      const permission = permissionOf(question);
+      if (!permission) return resolved({ status: "blocked", reason: "unknown_question", message: "This suggestion is not registered." });
+      requirePermission(actor, permission);
+      const loader = jevStateLoader(question.key);
+      if (!loader) return resolved({ status: "blocked", reason: "unknown_question", message: "This suggestion has no state loader." });
+      organizationDocId = actor.organization._id;
+      userId = actor.user._id;
+      correlationId = actor.correlationId;
+      // The gate runs before any tenant state is read.
+      context = await gateContext(ctx, organizationDocId, question.feature, now);
+      if (!context.gate.allowed) return resolved(blockedResult(context.gate));
+      loaded = await loader(ctx, actor, subject);
+    }
     if (jevStateBytes(canonicalJson(loaded.state)) > JEV_MAX_STATE_BYTES) return resolved({ status: "blocked", reason: "state_too_large", message: "This record is too large to send for a suggestion." });
     const stateHash = jevStateHash({ questionKey: question.key, questionVersion: question.version, sourceVersion: loaded.sourceVersion, state: loaded.state, candidates: loaded.candidates });
     if (question.cacheTtlMs > 0 && !simulate) {
-      const cached = await cachedJudgment(ctx, actor.organization._id, question, loaded.scopeKey, stateHash, context.gate.mode, now);
+      const cached = await cachedJudgment(ctx, organizationDocId, question, loaded.scopeKey, stateHash, context.gate.mode, now);
       if (cached) {
         return resolved({
           status: "ready",
@@ -272,15 +325,15 @@ export const prepare = internalQuery({
           stateHash,
           latencyMs: 0,
           createdAt: iso(cached.createdAt),
-          correlationId: actor.correlationId,
+          correlationId,
         });
       }
     }
     return {
       status: "prepared",
       request: {
-        organizationDocId: actor.organization._id,
-        userId: actor.user._id,
+        organizationDocId,
+        userId,
         questionKey: question.key,
         mode: context.gate.mode,
         state: loaded.state,
@@ -380,14 +433,18 @@ export const complete = internalMutation({
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<JevJudgeResult> => {
-    const actor = await requireActor(ctx, args);
-    const request = await ctx.db.get(args.requestId);
-    if (!request || request.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Suggestion request not found.", { correlationId: args.correlationId });
-    const now = Date.now();
     const question = getJevQuestion(args.questionKey);
+    const platformScoped = question?.scope === "platform";
+    const admin = platformScoped ? await requirePlatformAdmin(ctx, args.correlationId) : undefined;
+    const actor = platformScoped ? undefined : await requireActor(ctx, args);
+    const request = await ctx.db.get(args.requestId);
+    if (!request || (actor && request.organizationId !== actor.organization._id) || (admin && request.requestedByUserId !== admin.user._id)) domainError("NOT_FOUND", "Suggestion request not found.", { correlationId: args.correlationId });
+    const organizationDocId = request.organizationId;
+    const userId = actor ? actor.user._id : admin!.user._id;
+    const now = Date.now();
     const judgment = args.judgment as JevJudgment | undefined;
 
-    const usage = await tenantUsage(ctx, actor.organization._id, utcDay(now));
+    const usage = await tenantUsage(ctx, organizationDocId, utcDay(now));
     if (usage) {
       await ctx.db.patch(usage._id, {
         inputTokens: usage.inputTokens + (args.inputTokens ?? 0),
@@ -410,8 +467,17 @@ export const complete = internalMutation({
       return { status: "unavailable", reason: "invalid_output", message: "The model answer could not be used.", retryable: false, correlationId: args.correlationId };
     }
 
-    const loader = jevStateLoader(question.key);
-    const loaded = loader ? await loader(ctx, actor, sanitizeJevSubject(args.subject)) : undefined;
+    // Load again with the same authority the request was prepared under, so a
+    // record that changed (or moved to another gym) is rejected as stale.
+    let loaded: JevLoadedStateResult | undefined;
+    if (admin) {
+      const loader = jevPlatformStateLoader(question.key);
+      const platformLoaded = loader ? await loader(ctx, admin, sanitizeJevSubject(args.subject)) : undefined;
+      loaded = platformLoaded && platformLoaded.organizationDocId === organizationDocId ? platformLoaded : undefined;
+    } else if (actor) {
+      const loader = jevStateLoader(question.key);
+      loaded = loader ? await loader(ctx, actor, sanitizeJevSubject(args.subject)) : undefined;
+    }
     const currentHash = loaded ? jevStateHash({ questionKey: question.key, questionVersion: question.version, sourceVersion: loaded.sourceVersion, state: loaded.state, candidates: loaded.candidates }) : undefined;
     if (!loaded || currentHash !== args.stateHash) {
       await ctx.db.patch(request._id, { status: "stale", finishedAt: now, latencyMs: args.latencyMs, inputTokens: args.inputTokens, outputTokens: args.outputTokens, reportedCostUsd: args.reportedCostUsd });
@@ -420,7 +486,7 @@ export const complete = internalMutation({
 
     if (question.cacheTtlMs > 0) {
       await ctx.db.insert("jevJudgments", {
-        organizationId: actor.organization._id,
+        organizationId: organizationDocId,
         questionKey: question.key,
         questionVersion: question.version,
         registryVersion: JEV_REGISTRY_VERSION,
@@ -435,7 +501,7 @@ export const complete = internalMutation({
         outputTokens: args.outputTokens,
         reportedCostUsd: args.reportedCostUsd,
         latencyMs: args.latencyMs,
-        requestedByUserId: actor.user._id,
+        requestedByUserId: userId,
         correlationId: args.correlationId,
         createdAt: now,
         expiresAt: now + question.cacheTtlMs,

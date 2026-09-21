@@ -32,6 +32,7 @@ import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { CreateTaskDialog } from "@/features/members/create-task-dialog";
 import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
+import { ResolutionWorkspace } from "@/features/resolution/resolution-workspace";
 
 export default function MemberDetailPageClient() {
   const { memberId } = useParams<{ memberId: string }>();
@@ -95,6 +96,8 @@ export default function MemberDetailPageClient() {
 
       <MemberHeader member={member} currentMembership={currentMembership} renewalTarget={renewalTarget} upcomingMembership={upcomingMembership} branchName={branchName} />
 
+      <ResolutionWorkspace memberId={member.id} memberName={member.fullName} onCreateTask={can("crm.write") ? () => setTaskOpen(true) : undefined} />
+
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Tabs className="min-w-0" value={activeTab} onValueChange={(tab) => {
           const params = new URLSearchParams(searchParams.toString());
@@ -129,7 +132,7 @@ export default function MemberDetailPageClient() {
             <CheckInsTab memberId={member.id} />
           </TabsContent>
           <TabsContent value="pt">
-            <PersonalTrainingTab membershipId={currentMembership?.id} />
+            <PersonalTrainingTab membershipId={currentMembership?.id} preselectTrainerId={searchParams.get("trainer") ?? undefined} openBookingOnMount={searchParams.get("book") === "1"} />
           </TabsContent>
         </Tabs>
 

@@ -977,6 +977,8 @@ export interface GymOSApi {
   logMemberContactAttempt(memberId: UUID, input: ContactAttemptInput): Promise<TimelineEvent>;
   /** The deterministic follow-up context for one member: renewal target, journey status, consent and suppression, quiet hours, queued reminders with truthful wording, recorded evidence and open work. */
   getMemberFollowUpContext(memberId: UUID): Promise<import("@/lib/domain/types").MemberFollowUpContext>;
+  /** The member resolution workspace: charges and payments by service, current term, PT orders and credits, typed evidence, open work, plan terms, joinable classes and available trainers. */
+  getMemberResolutionContext(memberId: UUID): Promise<import("@/lib/domain/types").MemberResolutionContext>;
 
   // Plans
   listPlans(query: PlanListQuery): Promise<Page<MembershipPlan>>;
@@ -1206,6 +1208,12 @@ export interface GymOSApi {
   getAssistStatus(): Promise<import("@/lib/domain/types").AssistStatus>;
   updateAssistPreference(input: import("@/lib/domain/types").UpdateAssistPreferenceInput): Promise<import("@/lib/domain/types").AssistStatus>;
   requestAssistJudgment(input: import("@/lib/domain/types").AssistJudgmentRequest): Promise<import("@/lib/domain/types").AssistJudgmentResult>;
+  /** The same status for one gym, read by a platform administrator on the support inbox; never changes the gym's switch. */
+  getPlatformAssistStatus(gymId: string): Promise<import("@/lib/domain/types").AssistStatus>;
+  /** One support case cut into addressable passages beside the gym's recorded billing and public-page facts. Platform administrators only. */
+  getPlatformSupportReviewContext(caseId: string): Promise<import("@/lib/domain/types").SupportReviewContext>;
+  /** The saved public-page draft cut into passages beside what the gym's records say. Needs profiles.manage. */
+  getGymProfileReviewContext(): Promise<import("@/lib/domain/types").GymProfileReviewContext>;
 
   // Subscription agreement (e-signature at onboarding)
   getSubscriptionAgreementContext(): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
@@ -1299,6 +1307,8 @@ export interface MockBehavior {
   agreementUnsigned?: boolean;
   /** Preview seam for Jev suggestions: fixture answers (default) or switched off. */
   assistMode?: "off" | "fixture";
+  /** Preview seam: the demo gym's own Jev switch, persisted so it survives a full navigation in the preview. */
+  assistEnabled?: boolean;
 }
 
 export const DEFAULT_BEHAVIOR: MockBehavior = {

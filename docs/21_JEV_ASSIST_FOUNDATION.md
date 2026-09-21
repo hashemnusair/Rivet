@@ -1,6 +1,6 @@
 # Jev-assisted workflows: the shared foundation
 
-_Status: foundation, member import assistance, intent-aware navigation and connected staff follow-up assistance implemented on `main` on 21 September 2026 (working tree). Live connectivity and model accuracy are **not** verified; see "What is verified"._
+_Status: foundation, member import assistance, intent-aware navigation, connected staff follow-up assistance and the member resolution workspace implemented on `main` on 21 September 2026 (the first four committed as `068aad2`; the workspace in the working tree). Live connectivity and model accuracy are **not** verified; see "What is verified"._
 
 ## What Jev is for in RIVET
 
@@ -32,6 +32,25 @@ discarded, and a reported cost trips a breaker that stops live calls.
 | `apps/web/convex/jevQuestionsNavigation.ts` | The `navigation` feature: `navigation.intent`, `navigation.next_step`, `navigation.report_view`. |
 | `apps/web/convex/followupAssist.ts` | Pure follow-up logic shared by loaders, the preview adapter and the pages: note candidates and readings, consequence preview, related-task candidates, the member follow-up context projection (evidence classification, delivery wording, consent, quiet hours), renewal-context and template candidates with their deterministic gates, reason actions and levels, and every preview resolver. |
 | `apps/web/convex/jevQuestionsFollowup.ts` | The `followup` feature: `followup.contact_outcome`, `followup.related_task`, `followup.renewal_context`, `followup.reminder_template`, `followup.reason_check`. |
+| `apps/web/convex/resolutionAssist.ts` | Pure member-resolution logic: approved panels and clarifications with permission rules, the context types, service derivation for charges and payments, `readTrainingPayment`, typed evidence selection, `classEligibility`, plan attributes and `comparePlans`, state builders and preview resolvers for the four questions. |
+| `apps/web/convex/jevQuestionsResolution.ts` | The `resolution` feature: `resolution.intent`, `resolution.plan_priority`, `resolution.class_pick`, `resolution.trainer_pick`. |
+| `apps/web/convex/assistPassages.ts` | Shared review infrastructure: sentence-sized verbatim passages (`splitPassages`, `locatePassage`), script-aware normalisation, digit and count parsing, token overlap. |
+| `apps/web/convex/supportAssist.ts` | Pure support-inbox logic: case passages with validated ids, categories with existing console destinations, recorded billing facts, the review context, and the five states, resolvers, readings and evidence notes. |
+| `apps/web/convex/jevQuestionsSupport.ts` | The platform-scoped `support` feature: `support.category`, `support.invoice_match`, `support.clarification`, `support.unanswered`, `support.claim_check`. |
+| `apps/web/convex/profileAssist.ts` | Pure public-page review logic: draft passages per field and language, recorded services, bilingual concept families, the claim-conflict and language-gap states, resolvers, readings, evidence and the unchecked (unknown) list. |
+| `apps/web/convex/jevQuestionsProfile.ts` | The `profile` feature: `profile.claim_check`, `profile.language_gap` (`profiles.manage`). |
+| `apps/web/src/features/support-review/support-triage.tsx` | "Triage with Jev" on the platform inbox: category with destination, matched invoice, one clarification inserted into the reply draft. |
+| `apps/web/src/features/support-review/support-closure-check.tsx` | "Check before closing" inside the Resolve dialog: unanswered requests and unsupported claims quoted by passage, with "Show in conversation". |
+| `apps/web/src/features/support-review/support-passages.tsx` | `HighlightedMessageBody`: marks flagged passages in the thread only where their exact text is still found. |
+| `apps/web/src/features/profile-review/profile-draft-review.tsx` | "Draft review" panel on the public-profile editor: recorded services, claim findings with evidence, unchecked claims, language gaps, "Locate in editor". |
+| `apps/web/convex/branchOpsAssist.ts` | Pure branch-operations logic: existing report kinds and branch-only machine/space candidates, related repair history by record, handover items and record-relationship groups, notification entities and groups, the five states/resolvers/readings and `evaluateGrouping`. |
+| `apps/web/convex/jevQuestionsBranchOps.ts` | The `branchops` feature: `branchops.report_category`, `branchops.report_target`, `branchops.same_fault`, `branchops.handover_related`, `branchops.notification_topic`. |
+| `apps/web/src/features/branch-ops/report-intake.tsx` | "Describe what you found" on the equipment tab: report kind and machine/space suggestion, filing through the existing issue form prefilled or the maintenance-task shortcut. |
+| `apps/web/src/features/branch-ops/repair-history.tsx` | Related repair history for the selected machine with "Compare with Jev" per similarly worded earlier report. |
+| `apps/web/src/features/branch-ops/handover-groups.tsx` | Grouped and flat handover views of unresolved checklist work, with "Check with Jev" per wording-similar pair. |
+| `apps/web/src/features/branch-ops/notification-groups.tsx` | The grouped reading of the notification bell: mandatory alerts first, record and kind groups, singles with "Suggest a group". |
+| `apps/web/src/features/resolution/resolution-workspace.tsx` | The "Resolve" area on the member page: goal input, deterministic unresolved facts, the intent card, panel chips, show all and standard view. |
+| `apps/web/src/features/resolution/resolution-panels.tsx` | The seven panels: training payment, balance, membership terms, plan comparison, classes (with the stale re-check before the roster mutation), trainers and open work. |
 | `apps/web/src/features/followup/contact-note-review.tsx` | "Review note" in the contact form: the reading, the consequence preview and the accept action that sets only the outcome. |
 | `apps/web/src/features/followup/related-task-check.tsx` | Open work for a person plus "Is this the same work?" with keep / follow-on / separate actions and the changed-task refusal. |
 | `apps/web/src/features/followup/follow-up-context.tsx` | `useMemberFollowUpContext`, `FollowUpContextPanel`, `RenewalContextHighlight`, `ReminderTemplateSuggestion`, `evidenceHref`. |
@@ -40,7 +59,7 @@ discarded, and a reported cost trips a breaker that stops live calls.
 | `apps/web/convex/jevLoaders.ts` | Server-side state loaders, one per question: re-check access, build the bounded state, name `scopeKey` and `sourceVersion`. |
 | `apps/web/convex/jevAnswers.ts` | Pure: SDK request building, scoped candidate ids, answer validation, canonical JSON, SHA-256 state hashing, fixture evaluation (also used by the preview adapter). |
 | `apps/web/convex/jevMode.ts` | Pure: environment switches, free-terms date gate, caps, `gateJevRequest`, block copy. |
-| `apps/web/convex/jev.ts` | Default runtime: `status` query, `updateTenantPreference` mutation (audited), internal `prepare` / `begin` / `complete` / `fail` / `resetBreaker` / `cleanupExpired`. Cache, leases, usage counters, breaker. |
+| `apps/web/convex/jev.ts` | Default runtime: `status` query, `platformStatus` query (an administrator reading one gym's switch), `updateTenantPreference` mutation (audited), internal `prepare` / `begin` / `complete` / `fail` / `resetBreaker` / `cleanupExpired`. Cache, leases, usage counters, breaker. |
 | `apps/web/convex/jevAdapter.ts` (`"use node"`) | The one place that calls the model: timeout, `maxRetries: 1`, provider pin, model check, validation, cost read, error classification. Injectable model/evaluate for tests. |
 | `apps/web/convex/jevInference.ts` (`"use node"`) | The public `judge` action: prepare → begin → adapter or fixture → complete/fail. |
 | `apps/web/convex/schema.ts` | Tables `jevJudgments`, `jevRequests`, `jevUsage`, `jevTenantPreferences` (tenant-scoped, in `tenantPurge.TENANT_TABLES`) and `jevControlState` (breaker, global counter). |
@@ -289,6 +308,229 @@ picks is applied until a person accepts it through the normal mutation.
   through the deterministic resolvers, validates `relatedTaskId` like Convex,
   and applies the same opt-out refusal.
 
+## Member resolution workspace (`RIVET_JEV_FEATURES=resolution`)
+
+A stable, optional area at the top of the member page ("Resolve"). Staff
+write what they are helping the member with; Jev may pick one approved
+panel, ask a prepared clarification, or say nothing fits. "Show all" opens
+every panel the server allows, "Standard view" folds the area away, and the
+tabs and the full history stay untouched. The typed goal is a draft that
+nothing rewrites, focus never moves, and no panel executes an action by
+itself.
+
+- **One projection** (`members.resolution` / `getMemberResolutionContext`,
+  `members.read`; `buildMemberResolutionContext` in `resolutionAssist.ts`):
+  charges with their **service** derived from their own links (a charge
+  behind a PT package order is personal training, a charge on a term is
+  membership; never from the amount), payments matched to the charge they
+  were recorded against (listed only with `reports.financial.read`, the
+  same rule as the Payments tab), the current term (freeze allowance used,
+  visits, payment status), PT orders and credits, typed evidence read from
+  the whole timeline (payments, membership changes, PT events; never the
+  first page of the overview), open work with its follow-on links and recent
+  task events, every active plan's full terms, the classes at the member's
+  branch for the next 14 days with `classEligibility` applied (booking
+  policy, membership usable on the date, plan branch cover, audience against
+  the recorded gender, active-booking limit, capacity and waitlist room,
+  schedule), and the published trainers at the branch with what their
+  profile records plus their first open slot in the next 14 days
+  (`ptSlots`). `panels` and `access` are decided on the server.
+- **Which panel** (`resolution.intent`, subject `{ memberId, goal }`).
+  Candidates are the permitted panels (`panel.training_payment`,
+  `panel.balance`, `panel.membership_terms`, `panel.plan_compare`,
+  `panel.classes`, `panel.trainers`, `panel.open_work` with `crm.read`),
+  the clarifications whose options are both permitted (`clarify.payment`,
+  `clarify.session`, `clarify.plan`) and `no_match`. The page opens the one
+  panel a judgment names (once), shows the question for a clarification,
+  and says so for no match; anything outside the permitted list reads as no
+  match.
+- **"I already paid for training"** (`readTrainingPayment`): the PT
+  payments and orders sit beside the membership charges still open, each
+  with its service, dates, receipt and timeline links, under the sentence
+  that a payment settles only the charge it was recorded against. Nothing
+  is netted and no balance changes; the existing "Collect payment" deep
+  link and the Payments and PT tabs are the actions.
+- **Plan comparison** (`resolution.plan_priority`): the stated priority
+  maps to one of `attr.branch_access`, `attr.freeze`, `attr.included_pt`,
+  `attr.visits`, `attr.duration`, `attr.price` (or none); the page turns
+  emphasis chips on only when the person accepts, and `comparePlans` always
+  shows every attribute and price for every plan, current plan first.
+- **Classes** (`resolution.class_pick`): only joinable classes are offered;
+  "Add to class" re-reads the context first and refuses a class that filled
+  or was cancelled since the suggestion, then calls the existing roster
+  mutation, which enforces the same rules again. With no joinable class the
+  loader refuses (nothing to ask) and the page shows the deterministic
+  "none".
+- **Trainers** (`resolution.trainer_pick`): only published trainers with an
+  open slot are offered, described by what their profile records; an empty
+  language list is "not recorded" and the resolver never matches a language
+  request against it. Booking goes through the existing PT tab dialog with
+  the trainer preselected (`?tab=pt&trainer=<id>&book=1`); with no usable PT
+  credit the action is replaced by the reason.
+- **Preview.** `MockGymOSApi` builds the same context from the seeded
+  records (including class occurrences and trainer hours) and answers the
+  four questions through the deterministic resolvers.
+
+## Support and content review (`RIVET_JEV_FEATURES=support,profile`)
+
+Two separate feature modules on the shared infrastructure in
+`assistPassages.ts`: the application cuts text into sentence-sized, verbatim
+passages with stable ids (`<messageId>:<index>` for a case,
+`<lang>:<field>:<index>` for a draft), Jev chooses among those ids, and a
+finding is shown only when the id still resolves to the same text. Nothing in
+either module rewrites, translates, sends, publishes, closes or reprioritises.
+
+### Platform scope
+
+`support.*` questions carry `scope: "platform"` and `permission:
+"platform.admin"`. `prepare` resolves a platform administrator instead of a gym
+actor, checks the environment switches before reading anything, then lets the
+loader (`JEV_PLATFORM_STATE_LOADERS`) find the case across tenants and name the
+gym it belongs to (`organizationDocId`). That gym's own switch, daily cap,
+cache rows and request rows apply: a gym that keeps Jev off is never sent
+anywhere, not even by the support team reading its case, and the requester
+never sees a review projection (`platform.support.review` and every
+`support.*` question are `FORBIDDEN` for gym staff). `complete` re-runs the
+platform loader under the administrator who prepared the request and rejects a
+request another user prepared or a case that moved. `api.jev.platformStatus`
+gives the console the gym's status read-only (`canManage: false`); the hook's
+`platformGymId` option routes the status read there.
+
+### Support inbox (platform team)
+
+- **Context** (`platform.support.review` / `getPlatformSupportReviewContext`,
+  `buildSupportReviewContext`): the case's passages (gym and platform, ordered
+  by time, bounded), the recorded facts about the gym (subscription plan and
+  cadence, period end, active branches, every platform invoice with status,
+  amount, dates and `paidAt`, the public page's published and draft versions),
+  the categories with their destinations and the prepared clarifications.
+- **Category** (`support.category`): one of `invoice_dispute` (an invoice that
+  exists), `billing_schedule` (when or how often the gym is billed),
+  `feature_upgrade`, `public_page`, `account_access`, `technical_issue`,
+  `other`. A structured plan request reads as an upgrade. The reading shows
+  alternatives that carry weight, so a case that straddles two categories says
+  so. Destinations are existing console pages only (`supportDestination`): the
+  gym record, the ledger with the invoice focused
+  (`/platform/billing?invoice=<id>&case=<caseId>`), or Billing for the gym
+  (`?bill=<gymId>&case=<caseId>`); the billing page shows which case sent the
+  operator and the way back.
+- **Invoice** (`support.invoice_match`): the gym's recorded invoices plus
+  `none`; the loader refuses when none is recorded and the page keeps the
+  deterministic line.
+- **One clarification** (`support.clarification`, subject may carry the
+  suggested category): the prepared questions relevant to the category plus
+  `none`; "Insert into reply" appends to the operator's reply draft (never
+  replaces it) and nothing is sent until they press Send.
+- **Before closing** (inside the Resolve dialog, on request):
+  `support.unanswered` offers the gym's explicit request passages
+  (`supportRequestPassages`) with every platform reply and the closing summary
+  being written, and flags the ones nothing addresses; `support.claim_check`
+  offers outcome-asserting passages (`supportClaimPassages`) with the recorded
+  facts and flags what those facts contradict or do not cover. Each finding
+  quotes the passage and, for claims, a deterministic evidence note from the
+  facts (`supportClaimEvidence`: "invoice X is recorded as open", "the recorded
+  plan is Growth, not Pro", "draft v3 is still awaiting review", or "no
+  recorded evidence covers this; a reply alone does not show the fix
+  happened"). "Show in conversation" highlights the passage in the thread.
+  Both loaders refuse resolved cases. Urgency, assignment, the required
+  summary and the Resolve button are unchanged.
+
+### Public page draft review (gym editors, `profiles.manage`)
+
+- **Context** (`profiles.gym.review` / `getGymProfileReviewContext`,
+  `buildGymProfileReviewContext`): the saved draft's tagline and description in
+  both languages as passages, and the recorded services (active branches,
+  published trainer profiles, active PT packages, active plans with whether any
+  allows freezing or grants every branch, scheduled classes, chosen amenities,
+  audience, category). Unsaved edits are not reviewed: the action is disabled
+  until the editor saves or discards.
+- **Claims** (`profile.claim_check`): only a contradiction counts. Code checks
+  branch and trainer counts, women-only or men-only against the audience,
+  freezing against plan terms, and "every branch" access against plan terms;
+  anything the records do not cover (parking, sauna, pool, hours, nutrition,
+  kids…) is listed by code as unknown, never false. Findings quote the passage
+  with `profileClaimEvidence` and "Locate in editor" focuses and selects the
+  passage in its field.
+- **Languages** (`profile.language_gap`): both languages' passages plus
+  `none`; a passage is flagged when it states a concept family or a number the
+  other language's text does not (`languageGapEvidence`); paraphrases, order,
+  tone and idiom are not differences. With no Arabic text the loader refuses
+  and the panel says so.
+- Nothing is rewritten, translated or published, and no finding blocks Save
+  draft, Publish draft or Send to RIVET.
+
+### Preview
+
+`MockGymOSApi` answers every question through the deterministic resolvers,
+builds both contexts from the seeded records (the demo tenant's invoices,
+plan, branches and draft state), seeds one case (`SUP-219`) with a real
+conversation for the inbox, and persists the gym's Jev switch in the preview
+behaviour seam so it survives the full navigation into the platform console.
+
+## Branch operations (`RIVET_JEV_FEATURES=branchops`)
+
+Three connected improvements on the equipment tab, the checklist handover and
+the notification bell, all built on record relationships first and on
+`assistPassages.ts` text helpers. Groups are presentation aids: every original
+item, owner, branch, date, unread state and safety flag stays; nothing is
+merged, closed, reassigned, marked read or hidden, and Jev never declares a
+machine safe.
+
+- **Filing a description** (`branchops.report_category`, static options;
+  `branchops.report_target`, candidates). "Describe what you found" on the
+  equipment tab sends the typed text with the branch's registered machines
+  (code, name, make, model, location) and active spaces. The category is one
+  of the existing report kinds (machine issue, cleaning, inspection,
+  incident) or unclear; the target is one machine, one space or none, and two
+  equally plausible machines split the probability so the page shows
+  "uncertain" with the alternatives. A same-named machine at another branch
+  is never a candidate. "File machine issue" opens the existing issue form
+  with the machine preselected and the description prefilled; severity and
+  safety start neutral for the person; cleaning, inspection and incident go
+  to the maintenance page through its existing zone shortcut.
+- **Related repair history** (`relatedRepairHistory`, `branchops.same_fault`).
+  For the selected machine, every other report on that one machine (the
+  record relationship) with its linked work orders, newest first, plus a
+  disclosure of how far the history reaches and that other machines and
+  branches are excluded. Shared wording marks a report "similar wording"
+  and offers "Compare with Jev"; the loader refuses any pair that is not on
+  the same machine. The verdict is same fault (strong answers count as a
+  recurrence), similar but separate, or unclear. `recurringSummary` states
+  that recurrence changes nothing by itself: severity, safety status and the
+  repair decision (`getEquipmentRecommendation`) stay with the responsible
+  person and the recorded rules.
+- **Handover** (`handoverItems`, `handoverGroups`, `branchops.handover_related`).
+  Unresolved work in the seven-day window (failed items and required items
+  still pending; completed, skipped and optional items are not obligations)
+  grouped by the same checklist item on several days (recurring), the same
+  linked maintenance task, then the same gym space; an "All items" view is one
+  click away and both views show every item with its checklist, date,
+  responsible person, status, overdue and task-linked flags. Wording overlap
+  only proposes a comparison; "Check with Jev" may read two items as the same
+  problem, which adds a "Same problem as" line to both rows and nothing else.
+- **Notifications** (`groupNotifications`, `branchops.notification_topic`).
+  The bell gains a "Grouped" reading when a group would form: mandatory kinds
+  (`MANDATORY_NOTIFICATION_KINDS`: access denial, incident, delivery failure,
+  past-due invoice, cash variance, automation attention) always stay
+  individually visible on top; a group needs two notifications about the same
+  record (from the notification's own link or dedupe key) or of the same kind
+  family; everything else stays single. Rows are the plain list's rows with
+  their own open and read/unread controls, group counts are sums, the badge
+  is unchanged, and "Suggest a group" on a single is an explicit ask whose
+  answer is shown as a suggested placement only.
+- **Refresh.** Every ask is explicit (a button) and cached by state hash; the
+  pages re-read only when their existing queries or subscriptions deliver a
+  changed record. No polling was added.
+- **Measurement.** `evaluateGrouping` scores useful pairs, false pairs,
+  missed pairs and hidden items separately; the pure tests report the
+  handover fixture at 2 useful / 0 false / 0 missed / 0 hidden and the
+  notification fixture with every notification shown exactly once.
+- **Preview.** `MockGymOSApi` answers the five questions through the
+  deterministic resolvers from the seeded machines, spaces, checklist runs and
+  the owner persona's seeded notifications (two about one PT booking, two
+  member follow-ups, a support reply, a maintenance escalation and an access
+  denial).
+
 ## Adding a feature question (later agents)
 
 1. Create `apps/web/convex/jevQuestions<Feature>.ts` exporting a `JevFeature`
@@ -338,6 +580,9 @@ picks is applied until a person accepts it through the normal mutation.
   preserved, clarification, no-match, model failure with keyword fallback,
   receptionist never offered a setting) and a Playwright journey.
 - Follow-up assistance is covered by pure tests (note readings in English and Arabic, third party, contradictions, consequence previews, related-work matching and unrelated similar tasks, evidence tags, consent and suppression, quiet hours, delivery wording, agreed callbacks, template timing and gates, reason levels), convex-test (per-subject candidates and permissions, foreign records, ownership change beating the cache, evidence-only candidates, the opt-out refusal, per-action reason permissions, the context query, the explicit task link and its refusals), component tests in the preview (third-party note, consequence preview and accept preserving edits, stale review, related work with follow-on link and a changed task, opt-out, template to WhatsApp without a send, agreed callback to staff review, reason prompts and the permission boundary) and a Playwright journey on the built preview bundle.
+- Support and content review are covered by pure tests (passages and location in both scripts, categories kept apart in English and Arabic, alternatives for a straddling case, invoice matching by id, amount and month, one clarification or none, unanswered requests including a reply written before the request and the closing summary, claims against the ledger, subscription and public page, contradictory replies, silence never a contradiction, bilingual paraphrases left alone, concept and number gaps), convex-test (the review context for administrators only with requesters and other tenants refused, platform status read-only, per-gym switch honoured by the platform team, invoice candidates, the unanswered and unsupported readings clearing as replies and summaries land, resolved cases refused, a request another user prepared refused, staleness; the profile context for profile managers only with inactive branches, archived plans and draft trainers excluded, other tenants reading their own text, claim and language findings, no-Arabic refusal, cache and staleness), component tests in the preview (triage by keyboard with the destination deep link and the matched invoice, one clarification inserted only into the reply, nothing while the switch is off, closure findings quoted by passage id with "Show in conversation" and the case untouched, the summary counting as an answer, highlights only where text still matches; the draft review with unknown claims listed, a language gap located in the editor, the action disabled while edits are unsaved, a paraphrase reading aligned, no-Arabic and switch-off states) and a Playwright journey that reviews a draft at phone width in RTL and then triages, checks and follows the destination in the console.
+- The resolution workspace is covered by pure tests (panel access and clarification rules, the brief's intent examples, plan priority and comparison, every class-eligibility rule, class and trainer matching including "never infer a language from a name", payment-to-charge service linkage without netting, whole-record evidence), convex-test (services and evidence for the owner, restricted roles, foreign members, per-actor candidates, plan priority, a class cancelled since the suggestion missing the cache, a trainer whose recorded language was removed reading as none) and component tests in the preview (the brief's goal opening the training-payment panel with the draft kept and the payment found behind eight newer notes, clarification, no match and show all, model failure with every panel still reachable, a trainer-role user, plan emphasis with the full table, a stale class refused before the roster mutation, and "languages: not recorded"), plus a Playwright journey that ends at phone width in the manual RTL layout.
+- Branch operations are covered by pure tests (report kinds in English and Arabic with unclear, branch-only candidates, tied machines splitting the answer, spaces and none, history by record with similar wording as a proposal only, recurring versus separate versus unclear with severity untouched, handover obligations with owner and date, recurring and space groups, wording pairs, same-problem grouping only on a strong answer, notification entities, mandatory alerts outside groups, unread sums, stray placement or none, and the useful/false/missed/hidden scoring), convex-test (candidates limited to the selected branch with the same-named Sweifieh machine excluded, a Sweifieh-only manager refused, short descriptions refused, same-machine comparisons only with other-machine and other-branch pairs refused, severity and safety unchanged, cache hits, related checklist items across persisted and not-yet-persisted runs with completed items refused, and notifications visible to their recipient only with nothing marked read), component tests (intake by keyboard with the prefilled filing, cleaning routed to maintenance, nothing while the switch is off, repair history with an explicit comparison and the current report's severity and safety unchanged, handover groups with the same items in both views and a checked pair, the bell's grouped reading with the same rows, mandatory alert, collapsed counts, unchanged badge and no read call, and a suggestion-only placement) and a Playwright journey on the built preview bundle that ends at phone width in the manual RTL layout.
 - **Not verified:** any live call to AI Gateway, the model's accuracy on RIVET
   questions (including how well Jev reads Arabic headings, labels and
   requests), and whether the gateway reports a non-zero `cost` during the

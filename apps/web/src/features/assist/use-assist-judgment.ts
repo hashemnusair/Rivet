@@ -35,6 +35,12 @@ export interface UseAssistJudgmentOptions {
   enabled?: boolean;
   /** Ask as soon as the switches allow it (default). False leaves it to `request()`. */
   auto?: boolean;
+  /**
+   * For platform-scoped questions: the gym whose case is being read. The
+   * status then comes from the platform read of that gym's switch instead of
+   * the caller's own workspace, which a platform administrator may not have.
+   */
+  platformGymId?: string;
 }
 
 export interface UseAssistJudgmentResult {
@@ -66,8 +72,12 @@ function sharedJudgment(key: string, input: AssistJudgmentRequest): Promise<Assi
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export function useAssistJudgment({ questionKey, subject, enabled = true, auto = true }: UseAssistJudgmentOptions): UseAssistJudgmentResult {
-  const statusQuery = useApiQuery(qk.assistStatus, (api) => api.getAssistStatus(), { staleTime: 60_000, refetchOnWindowFocus: false, enabled });
+export function useAssistJudgment({ questionKey, subject, enabled = true, auto = true, platformGymId }: UseAssistJudgmentOptions): UseAssistJudgmentResult {
+  const statusQuery = useApiQuery(
+    platformGymId ? qk.platformAssistStatus(platformGymId) : qk.assistStatus,
+    (api) => (platformGymId ? api.getPlatformAssistStatus(platformGymId) : api.getAssistStatus()),
+    { staleTime: 60_000, refetchOnWindowFocus: false, enabled },
+  );
   const status = statusQuery.data;
   const feature = status?.features.find((candidate) => candidate.questions.some((question) => question.key === questionKey));
   const featureReady = Boolean(feature?.ready);

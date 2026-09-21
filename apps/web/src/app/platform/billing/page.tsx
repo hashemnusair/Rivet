@@ -4,6 +4,7 @@ import { openInvoicePdf } from "@/features/billing/invoice-pdf";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { ArrowDownToLine, Ban, CalendarClock, CheckCircle2, CircleAlert, FilePlus2, FileText, Receipt, Send } from "lucide-react";
 import { PageHeader, Stat } from "@/components/shared/chrome";
 import { PlatformPage, PlatformPanel, PlatformPanelHeader } from "@/components/platform/platform-page";
@@ -41,6 +42,9 @@ export default function BillingPage() {
   const [action, setAction] = useState<InvoiceAction>();
   const [focusedInvoiceId, setFocusedInvoiceId] = useState<string>();
   const requestedBillGymId = searchParams.get("bill")?.trim() || undefined;
+  // A support triage suggestion lands here with ?case=<id>: say which case sent the operator, and offer the way back.
+  const requestedCaseId = searchParams.get("case")?.trim() || undefined;
+  const linkedCase = useMemo(() => (requestedCaseId ? platformSnapshot?.supportCases.find((item) => item.id === requestedCaseId) : undefined), [platformSnapshot?.supportCases, requestedCaseId]);
 
   // A gym page's "Manage subscription" link lands here with ?bill=<gymId>;
   // open the wizard on that tenant once the snapshot can resolve it.
@@ -143,6 +147,13 @@ export default function BillingPage() {
           </>
         }
       />
+
+      {requestedCaseId ? (
+        <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line bg-sunken/50 px-4 py-2.5 text-[12.5px] text-ink-2" role="status" data-testid="billing-case-banner">
+          <span>Reviewing for support case <span className="font-mono text-[12px]">{requestedCaseId}</span>{linkedCase ? ` · ${linkedCase.subject} · ${linkedCase.gym}` : " · not in the current snapshot"}.</span>
+          <Link className="font-medium text-ink underline-offset-4 hover:underline" href={`/platform/support?case=${encodeURIComponent(requestedCaseId)}`}>Back to the case</Link>
+        </div>
+      ) : null}
 
       <BillGymWizard open={billWizardOpen} onOpenChange={(open) => { setBillWizardOpen(open); if (!open) setBillWizardGymId(undefined); }} gyms={platformSnapshot?.gyms ?? []} plans={platformSnapshot?.plans ?? []} initialGymId={billWizardGymId} />
 

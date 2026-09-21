@@ -20,6 +20,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDateTime } from "@/lib/utils/dates";
 import { SettingsPanel, SettingsSaveBar, SettingsSection } from "@/features/settings/settings-layout";
+import { ProfileDraftReview } from "@/features/profile-review/profile-draft-review";
 
 const PROFILE_CATEGORIES = ["Gym", "Strength & conditioning", "Women-only fitness", "Combat sports", "Wellness studio"] as const;
 const PROFILE_AUDIENCES = ["All members", "Women", "Men", "Families", "Students"] as const;
@@ -272,10 +273,10 @@ export function GymPublicProfileSection() {
                   <SelectContent>{PROFILE_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="English tagline" required><Input value={form.taglineEn} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineEn: event.target.value }))} /></Field>
-              <Field label="Arabic tagline"><Input dir="rtl" lang="ar" value={form.taglineAr} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineAr: event.target.value }))} /></Field>
-              <Field label="English description" required><Textarea className="min-h-32" maxLength={2000} value={form.descriptionEn} onChange={(event) => setForm((current) => ({ ...current, descriptionEn: event.target.value }))} /></Field>
-              <Field label="Arabic description"><Textarea dir="rtl" lang="ar" className="min-h-32" maxLength={2000} value={form.descriptionAr} onChange={(event) => setForm((current) => ({ ...current, descriptionAr: event.target.value }))} /></Field>
+              <Field label="English tagline" required><Input data-profile-field="taglineEn" value={form.taglineEn} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineEn: event.target.value }))} /></Field>
+              <Field label="Arabic tagline"><Input data-profile-field="taglineAr" dir="rtl" lang="ar" value={form.taglineAr} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineAr: event.target.value }))} /></Field>
+              <Field label="English description" required><Textarea data-profile-field="descriptionEn" className="min-h-32" maxLength={2000} value={form.descriptionEn} onChange={(event) => setForm((current) => ({ ...current, descriptionEn: event.target.value }))} /></Field>
+              <Field label="Arabic description"><Textarea data-profile-field="descriptionAr" dir="rtl" lang="ar" className="min-h-32" maxLength={2000} value={form.descriptionAr} onChange={(event) => setForm((current) => ({ ...current, descriptionAr: event.target.value }))} /></Field>
               <Field label="Audience">
                 <Select value={form.audience} onValueChange={(audience) => setForm((current) => ({ ...current, audience }))}>
                   <SelectTrigger aria-label="Audience"><SelectValue /></SelectTrigger>
@@ -366,6 +367,8 @@ export function GymPublicProfileSection() {
               <p className="mt-4 border-t border-line pt-3 text-[12px] text-ink-3">{pendingMedia.logo || pendingMedia.cover ? "Local image preview · save draft to upload" : `${value.trainers.length} published trainer${value.trainers.length === 1 ? "" : "s"} · ${value.ptPackages.length} active PT package${value.ptPackages.length === 1 ? "" : "s"}`}</p>
             </div>
           </SettingsPanel>
+
+          <ProfileDraftReview profile={value} dirty={dirty} />
 
           <SettingsPanel title="Version history" description="Published snapshots remain available for audit." bodyClassName="p-0">
             {versions.isLoading ? <Skeleton className="m-4 h-24" /> : versions.data?.length ? (

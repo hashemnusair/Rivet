@@ -3771,6 +3771,22 @@ export type {
 
 // Connected staff follow-up assistance: the member projection and its parts live
 // with the shared module (convex/followupAssist.ts) so both adapters build it alike.
+// Member resolution workspace: one deterministic projection per member, shared with the preview adapter.
+export type {
+  MemberResolutionContext,
+  PlanAttributeId,
+  ResolutionCharge,
+  ResolutionClassOption,
+  ResolutionEvidence,
+  ResolutionMembership,
+  ResolutionPanelId,
+  ResolutionPayment,
+  ResolutionPlan,
+  ResolutionPtOrder,
+  ResolutionService,
+  ResolutionTrainerOption,
+} from "../../../convex/resolutionAssist";
+
 export type {
   ContactConsequences,
   ContactSubjectKind,
@@ -3783,6 +3799,43 @@ export type {
   MemberFollowUpContext,
   ReasonActionKey,
 } from "../../../convex/followupAssist";
+
+// Support inbox review and public-page draft review: passages, recorded facts and
+// findings are built by the shared modules so both adapters and the console agree.
+export type {
+  SupportCaseLike,
+  SupportCategoryId,
+  SupportCategoryView,
+  SupportClarification,
+  SupportFacts,
+  SupportInvoiceFact,
+  SupportPassage,
+  SupportPassageFinding,
+  SupportReviewContext,
+} from "../../../convex/supportAssist";
+
+export type {
+  GymProfileReviewContext,
+  ProfilePassage,
+  ProfilePassageFinding,
+  ProfileRecordedServices,
+  ProfileTextField,
+} from "../../../convex/profileAssist";
+
+// Branch operations: filing descriptions, repair history, handover and notification groups (shared module).
+export type {
+  HandoverGroup,
+  HandoverGrouping,
+  HandoverItem,
+  HandoverRelatedReading,
+  NotificationGroup,
+  NotificationGrouping,
+  RepairHistory,
+  RepairHistoryEntry,
+  ReportCategoryReading,
+  ReportTargetReading,
+  SameFaultReading,
+} from "../../../convex/branchOpsAssist";
 
 export interface AssistJudgmentRequest {
   questionKey: string;

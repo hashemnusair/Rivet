@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CheckCheck, Circle, CircleCheck, RefreshCw, WifiOff } from "lucide-react";
+import { Bell, CheckCheck, Circle, CircleCheck, Layers, List, RefreshCw, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getApi } from "@/lib/api/client";
 import type { OperationalNotification } from "@/lib/api/GymOSApi";
+import { NotificationGroupedView } from "@/features/branch-ops/notification-groups";
+import { groupNotifications } from "../../../convex/branchOpsAssist";
 
 export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark" }) {
   const router = useRouter();
@@ -16,7 +18,10 @@ export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark"
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState(0);
+  const [view, setView] = useState<"list" | "grouped">("list");
   const notificationsRef = useRef<OperationalNotification[]>([]);
+  // Groups are a way of reading the same list; they exist only when at least one group would form.
+  const groupable = useMemo(() => groupNotifications(notifications).groups.length > 0, [notifications]);
   const unread = useMemo(() => notifications.filter((notification) => !notification.readAt).length, [notifications]);
 
   const replaceNotifications = (next: OperationalNotification[]) => {
@@ -93,7 +98,10 @@ export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark"
             <p className="text-[14px] font-semibold">Notifications</p>
             <p className="mt-0.5 text-[12px] text-ink-3">{unread ? `${unread} unread` : "You are up to date"}</p>
           </div>
-          <Button variant="ghost" size="xs" disabled={!unread} onClick={() => void markAllRead()}><CheckCheck /> Mark all read</Button>
+          <div className="flex items-center gap-1">
+            {groupable ? <Button variant="ghost" size="xs" aria-pressed={view === "grouped"} data-testid="notifications-view-toggle" onClick={() => setView((current) => (current === "grouped" ? "list" : "grouped"))}>{view === "grouped" ? <><List /> List</> : <><Layers /> Grouped</>}</Button> : null}
+            <Button variant="ghost" size="xs" disabled={!unread} onClick={() => void markAllRead()}><CheckCheck /> Mark all read</Button>
+          </div>
         </div>
         {liveUpdatesPaused && notifications.length > 0 ? (
           <div className="flex items-center gap-2 border-b border-warning/25 bg-warning-bg px-4 py-2 text-[12px] text-warning-deep" role="status">
@@ -118,8 +126,17 @@ export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark"
               <p className="mt-3 text-[13px] font-medium">No notifications yet</p>
               <p className="mx-auto mt-1 max-w-[30ch] text-[12px] leading-relaxed text-ink-3">Operational updates addressed to you will appear here.</p>
             </div>
-          ) : notifications.map((notification) => (
-            <div key={notification.id} className="flex border-b border-line last:border-b-0 hover:bg-sunken">
+          ) : view === "grouped" && groupable ? (
+            <NotificationGroupedView notifications={notifications} renderRow={renderRow} />
+          ) : notifications.map(renderRow)}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+
+  function renderRow(notification: OperationalNotification) {
+    return (
+            <div key={notification.id} className="flex border-b border-line last:border-b-0 hover:bg-sunken" data-testid="notification-row" data-notification-id={notification.id}>
               <button type="button" onClick={() => void openNotification(notification)} className="flex min-w-0 flex-1 gap-3 px-4 py-3 text-start">
                 <span className={notification.readAt ? "mt-1.5 size-2 shrink-0 rounded-full bg-line-2" : "mt-1.5 size-2 shrink-0 rounded-full bg-signal"} />
                 <span className="min-w-0 flex-1">
@@ -132,11 +149,8 @@ export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark"
                 {notification.readAt ? <Circle className="size-3.5" /> : <CircleCheck className="size-3.5" />}
               </button>
             </div>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
+    );
+  }
 }
 
 function relativeTime(value: string) {

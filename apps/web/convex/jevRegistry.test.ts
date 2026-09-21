@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { JEV_QUESTION_ID, buildJevQuestions, canonicalJson, evaluateJevFixture, fixtureRawAnswers, jevStateHash, sanitizeJevSubject, sha256Hex, validateJevAnswers } from "./jevAnswers";
-import { jevStateLoader } from "./jevLoaders";
+import { jevPlatformStateLoader, jevStateLoader } from "./jevLoaders";
 import { JEV_FEATURES, JEV_QUESTIONS, getJevQuestion } from "./jevQuestions";
 import { JEV_MAX_SUBJECT_KEYS, validateJevRegistry, type JevChoiceQuestion, type JevQuestion } from "./jevRegistry";
 import { PERMISSIONS } from "./permissions";
@@ -19,6 +19,13 @@ describe("Jev question registry", () => {
 
   it("uses server-owned permissions and has a state loader for every question", () => {
     for (const question of JEV_QUESTIONS) {
+      if (question.scope === "platform") {
+        // Platform questions are answered for administrators, never through a gym role.
+        expect(question.permission, question.key).toBe("platform.admin");
+        expect(jevPlatformStateLoader(question.key), question.key).toBeDefined();
+        expect(jevStateLoader(question.key), question.key).toBeUndefined();
+        continue;
+      }
       expect(PERMISSIONS, question.key).toContain(question.permission);
       expect(jevStateLoader(question.key), question.key).toBeDefined();
     }

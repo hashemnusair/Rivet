@@ -18,6 +18,10 @@ import { getApi } from "@/lib/api/client";
 import type { PlatformSupportCase } from "@/lib/api/GymOSApi";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useExperience } from "@/lib/providers/experience-provider";
+import type { SupportPassage } from "@/lib/domain/types";
+import { SupportClosureCheck } from "@/features/support-review/support-closure-check";
+import { HighlightedMessageBody, supportPassageElementId } from "@/features/support-review/support-passages";
+import { SupportTriagePanel } from "@/features/support-review/support-triage";
 import { cn } from "@/lib/utils/cn";
 
 export default function SupportPage() {
@@ -33,6 +37,7 @@ export default function SupportPage() {
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [resolutionSummary, setResolutionSummary] = useState("");
   const [saving, setSaving] = useState<"reply" | "resolve" | "reopen" | "assign">();
+  const [highlighted, setHighlighted] = useState<SupportPassage[]>([]);
   const visibleCases = useMemo(() => cases.filter((item) => `${item.id} ${item.gym} ${item.subject} ${item.creatorName ?? ""} ${item.status}`.toLowerCase().includes(search.trim().toLowerCase())), [cases, search]);
   const selected = visibleCases.find((item) => item.id === selectedId) ?? visibleCases[0];
   const openCount = cases.filter((item) => item.status !== "resolved").length;
@@ -58,7 +63,19 @@ export default function SupportPage() {
     setReplyBody("");
     setResolutionSummary("");
     setResolutionOpen(false);
+    setHighlighted([]);
   }, [selected?.id]);
+
+  // A prepared clarification joins the reply the operator is writing; it never replaces a draft and is never sent by itself.
+  const insertClarification = (text: string) => {
+    setReplyBody((current) => (current.trim() ? `${current.trimEnd()}\n\n${text}` : text));
+  };
+  const showPassages = (passages: SupportPassage[]) => {
+    setHighlighted(passages);
+    setResolutionOpen(false);
+    const first = passages[0];
+    if (first) window.setTimeout(() => document.getElementById(supportPassageElementId(first.id))?.scrollIntoView?.({ block: "center" }), 50);
+  };
 
   const run = async (kind: NonNullable<typeof saving>, action: () => Promise<PlatformSupportCase>, message: string) => {
     setSaving(kind);
@@ -127,13 +144,14 @@ export default function SupportPage() {
                 {selected.status === "resolved" ? <Button size="sm" loading={saving === "reopen"} disabled={Boolean(saving)} onClick={() => void run("reopen", () => getApi().reopenPlatformSupportCase(selected.id), "Support case reopened.")}><RotateCcw /> Reopen</Button> : <Button size="sm" disabled={Boolean(saving)} onClick={() => setResolutionOpen(true)}><Check /> Resolve</Button>}
               </div>
             </header>
+            {selected.status !== "resolved" ? <SupportTriagePanel supportCase={selected} onInsertClarification={insertClarification} /> : null}
             <div className="flex flex-1 flex-col gap-3 bg-paper/40 px-4 py-4 sm:px-5">
               {(selected.messages ?? []).length === 0 ? (
                 <StatePanel layout="section" icon={MessageSquareText} title="Conversation history not available" description="This case predates append-only support messages; its status and assignment are still recorded." className="border-0 bg-transparent" />
               ) : selected.messages?.map((message) => (
                 <div key={message.id} className={cn("max-w-[82%] rounded-md border p-3.5", message.authorType === "platform" ? "ms-auto border-line-2 bg-sunken" : "me-auto border-line bg-surface")}>
                   <div className="flex justify-between gap-5"><p className="text-[12.5px] font-semibold">{message.authorName}</p><time className="text-[12px] text-ink-3" dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time></div>
-                  <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{message.body}</p>
+                  <HighlightedMessageBody messageId={message.id} body={message.body} highlights={highlighted} className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2" />
                 </div>
               ))}
               {selected.resolutionSummary ? <div className="rounded-md border border-success/25 bg-success-bg p-3.5"><p className="text-[12px] font-medium text-success-deep">Resolution</p><p className="mt-1.5 text-[13px] text-ink-2">{selected.resolutionSummary}</p><p className="mt-1.5 text-[12px] text-ink-3">Resolved {formatDateTime(selected.resolvedAt)}</p></div> : null}
@@ -151,7 +169,10 @@ export default function SupportPage() {
       <Dialog open={resolutionOpen} onOpenChange={setResolutionOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Resolve support case</DialogTitle><DialogDescription>The summary is required and remains on the case for the gym and platform team.</DialogDescription></DialogHeader>
-          <DialogBody><Field label="Resolution summary" htmlFor="support-resolution-summary"><Textarea id="support-resolution-summary" value={resolutionSummary} onChange={(event) => setResolutionSummary(event.target.value)} placeholder="What was resolved and what should happen next?" /></Field></DialogBody>
+          <DialogBody className="space-y-4">
+            <Field label="Resolution summary" htmlFor="support-resolution-summary"><Textarea id="support-resolution-summary" value={resolutionSummary} onChange={(event) => setResolutionSummary(event.target.value)} placeholder="What was resolved and what should happen next?" /></Field>
+            {selected ? <SupportClosureCheck supportCase={selected} summaryDraft={resolutionSummary} onLocate={(passage) => showPassages([passage])} onFindings={showPassages} /> : null}
+          </DialogBody>
           <DialogFooter><Button variant="secondary" onClick={() => setResolutionOpen(false)}>Cancel</Button><Button loading={saving === "resolve"} disabled={!selected || Boolean(saving) || !resolutionSummary.trim()} onClick={() => { if (!selected) return; void run("resolve", () => getApi().resolvePlatformSupportCase(selected.id, resolutionSummary.trim()), "Support case resolved.").then((updated) => { if (updated) { setResolutionSummary(""); setResolutionOpen(false); } }); }}>Resolve case</Button></DialogFooter>
         </DialogContent>
       </Dialog>

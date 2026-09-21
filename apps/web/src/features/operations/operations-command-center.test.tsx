@@ -135,7 +135,8 @@ describe("OperationsCommandCenter", () => {
     await user.type(screen.getByRole("textbox", { name: "Issue title" }), "Display flickers");
     await user.click(screen.getByRole("button", { name: "Report issue" }));
     await waitFor(() => expect(issueMutation).toHaveBeenCalledWith(expect.objectContaining({ title: "Display flickers", branchId: expect.any(String), assetId: expect.any(String) })));
-    await waitFor(() => expect(screen.getByText("Display flickers")).toBeInTheDocument());
+    // The report now appears in the issue history and as the machine's current report in its repair history.
+    await waitFor(() => expect(screen.getAllByText("Display flickers").length).toBeGreaterThanOrEqual(1));
 
     const orderMutation = vi.spyOn(api, "upsertEquipmentWorkOrder");
     await user.click(screen.getByRole("button", { name: "Open work order" }));

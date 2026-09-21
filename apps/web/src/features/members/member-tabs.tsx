@@ -256,14 +256,14 @@ function MembershipRecordRow({ membership }: { membership: MembershipSummary }) 
 // ---------------------------------------------------------------------------
 // Personal training
 // ---------------------------------------------------------------------------
-export function PersonalTrainingTab({ membershipId }: { membershipId?: UUID }) {
+export function PersonalTrainingTab({ membershipId, preselectTrainerId, openBookingOnMount }: { membershipId?: UUID; /** A trainer chosen elsewhere (the resolution workspace) is preselected; the person still picks branch, date and time. */ preselectTrainerId?: string; openBookingOnMount?: boolean }) {
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
-  const [trainerId, setTrainerId] = useState("");
+  const [trainerId, setTrainerId] = useState(preselectTrainerId ?? "");
   const [branchId, setBranchId] = useState("");
   const [date, setDate] = useState(() => addDays(todayISODate(), 1));
-  const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookingOpen, setBookingOpen] = useState(Boolean(openBookingOnMount && preselectTrainerId));
   const query = useRealtimeApiQuery({ queryKey: qk.ptMember(membershipId ?? "none"), query: (api) => api.getPtMemberExperience(membershipId!), subscribe: (api, onValue, onError) => api.subscribePtMemberExperience(membershipId!, onValue, onError), enabled: Boolean(membershipId) });
   const selectedTrainer = query.data?.trainers.find((item) => item.id === trainerId);
   // Booking is a mutation. Do not silently book at the trainer's first

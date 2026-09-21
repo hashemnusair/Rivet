@@ -79,7 +79,14 @@ interface JevQuestionCommon {
   label: string;
   description: string;
   instructions: string;
-  /** Server permission the caller must hold; checked before any state is loaded. */
+  /**
+   * Who may ask. Tenant questions (the default) resolve a gym actor and check
+   * `permission` against the role catalogue. Platform questions require a
+   * platform administrator; their loader names the gym the judgment belongs
+   * to, whose switch, cache and counters still apply.
+   */
+  scope?: "tenant" | "platform";
+  /** Server permission the caller must hold; checked before any state is loaded. `platform.admin` for platform questions. */
   permission: string;
   /** 0 disables caching. Cached rows are tenant-scoped and keyed by the state hash. */
   cacheTtlMs: number;
@@ -198,6 +205,8 @@ export function validateJevRegistry(questions: readonly JevQuestion[], features:
     if (!Number.isInteger(question.version) || question.version < 1) problems.push(`${prefix} needs an integer version of at least 1`);
     if (!question.label.trim() || !question.description.trim() || !question.instructions.trim()) problems.push(`${prefix} needs a label, description and instructions`);
     if (!question.permission.trim()) problems.push(`${prefix} needs a permission`);
+    if (question.scope === "platform" && question.permission !== "platform.admin") problems.push(`${prefix} is platform-scoped and must name the platform.admin permission`);
+    if (question.scope !== "platform" && question.permission === "platform.admin") problems.push(`${prefix} names platform.admin but is not platform-scoped`);
     if (!Number.isFinite(question.cacheTtlMs) || question.cacheTtlMs < 0) problems.push(`${prefix} needs a non-negative cacheTtlMs`);
     if (question.timeoutMs !== undefined && (question.timeoutMs < 1_000 || question.timeoutMs > JEV_MAX_TIMEOUT_MS)) problems.push(`${prefix} timeout must be between 1000 and ${JEV_MAX_TIMEOUT_MS} ms`);
     if (question.kind === "choice") {
@@ -275,6 +284,7 @@ export interface JevQuestionSummary {
   description: string;
   kind: JevKind;
   version: number;
+  scope: "tenant" | "platform";
   permission: string;
   synthetic: boolean;
   cacheTtlMs: number;

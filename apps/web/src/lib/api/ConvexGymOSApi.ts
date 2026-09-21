@@ -96,6 +96,7 @@ export interface ConvexTransport {
   action(reference: typeof api.invitations.send, args: InvitationActionArgs): Promise<unknown>;
   action(reference: typeof api.media.finalizeUpload, args: { organizationId: string; activeBranchId?: string; correlationId: string; ownerType: T.MediaAssetOwnerType; ownerPublicId: string; altText?: string; storageId: string }): Promise<unknown>;
   query(reference: typeof api.jev.status, args: JevScopedArgs): Promise<unknown>;
+  query(reference: typeof api.jev.platformStatus, args: { organizationId: string; correlationId: string }): Promise<unknown>;
   mutation(reference: typeof api.jev.updateTenantPreference, args: JevScopedArgs & T.UpdateAssistPreferenceInput): Promise<unknown>;
   action(reference: typeof api.jevInference.judge, args: JevScopedArgs & T.AssistJudgmentRequest): Promise<unknown>;
 }
@@ -741,6 +742,9 @@ export class ConvexGymOSApi implements GymOSApi {
   getAssistStatus(): Promise<T.AssistStatus> { return this.direct((transport) => transport.query(api.jev.status, this.scopedArgs())); }
   updateAssistPreference(input: T.UpdateAssistPreferenceInput): Promise<T.AssistStatus> { return this.direct((transport) => transport.mutation(api.jev.updateTenantPreference, { ...this.scopedArgs(), enabled: input.enabled, reason: input.reason })); }
   requestAssistJudgment(input: T.AssistJudgmentRequest): Promise<T.AssistJudgmentResult> { return this.direct((transport) => transport.action(api.jevInference.judge, { ...this.scopedArgs(), questionKey: input.questionKey, subject: input.subject })); }
+  getPlatformAssistStatus(gymId: string): Promise<T.AssistStatus> { return this.direct((transport) => transport.query(api.jev.platformStatus, { organizationId: gymId, correlationId: correlationId() })); }
+  getPlatformSupportReviewContext(caseId: string): Promise<T.SupportReviewContext> { return this.query("platform.support.review", { caseId }); }
+  getGymProfileReviewContext(): Promise<T.GymProfileReviewContext> { return this.query("profiles.gym.review"); }
   listMessageTemplateCatalogue(): Promise<T.MessageTemplateCatalogueEntry[]> { return this.query("messaging.templates.catalogue", {}); }
   listMyPlatformInvoices(): Promise<PlatformBillingInvoice[]> { return this.query("billing.invoices.list", {}); }
   getSubscriptionAgreementContext(): Promise<T.SubscriptionAgreementContext> { return this.query("legal.agreement.current", {}); }
@@ -794,6 +798,7 @@ export class ConvexGymOSApi implements GymOSApi {
   previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview> { return this.mutate("members.import.preview", input); }
   saveMemberImportAssistDraft(input: MemberImportAssistDraftInput): Promise<MemberImportAssistDraft> { return this.mutate("members.import.draft", input); }
   getMemberFollowUpContext(memberId: T.UUID): Promise<T.MemberFollowUpContext> { return this.query("members.followup_context", { memberId }); }
+  getMemberResolutionContext(memberId: T.UUID): Promise<T.MemberResolutionContext> { return this.query("members.resolution", { memberId }); }
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult> { return this.mutate("members.import.commit", input); }
   listMemberImports(): Promise<MemberImportSummary[]> { return this.query("members.import.list"); }
   getMemberImport(importId: T.UUID): Promise<MemberImportPreview> { return this.query("members.import.get", { importId }); }
