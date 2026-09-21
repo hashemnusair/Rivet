@@ -28,6 +28,7 @@ const INTENTIONALLY_PUBLIC: Record<string, string> = {
   "gymApplications.ts:submit": "public application form; the internal create mutation rate-limits by privacy fingerprint and a honeypot drops bots",
   "gymApplications.ts:review": "runs internal reviewRecord, which requires a platform administrator",
   "invitations.ts:send": "runs internal prepare, which requires an actor with users.manage",
+  "jevInference.ts:judge": "runs internal jev.prepare, which requires an actor holding the question's permission before any state is loaded or any model is called",
   "media.ts:finalizeUpload": "runs internal authorizeFinalize, which requires an actor with the media permission",
   "platformProvisioningAction.ts:provision": "runs internal begin, which requires a platform administrator",
   "users.ts:ensureCurrent": "ensureUserRecord reads ctx.auth.getUserIdentity and refuses unauthenticated callers",

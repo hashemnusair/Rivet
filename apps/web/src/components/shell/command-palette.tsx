@@ -1,8 +1,8 @@
 "use client";
 
 import { Command } from "cmdk";
-import { ArrowLeftRight, ArrowRight, CircleHelp, Clock3, Dumbbell, Gauge, KanbanSquare, ListFilter, Plus, ReceiptText, ScanLine, ScrollText, Settings, ShieldCheck, Star, StarOff, UserPlus, Users } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { ArrowLeftRight, ArrowRight, CircleHelp, Clock3, Dumbbell, Gauge, KanbanSquare, ListFilter, Plus, ReceiptText, ScanLine, ScrollText, Settings, ShieldCheck, Sparkles, Star, StarOff, UserPlus, Users } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { RecentWorkspaceItem, WorkspaceSearchResult } from "@/lib/domain/qol";
@@ -11,16 +11,28 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Badge } from "@/components/ui/badge";
+import { confidenceBand } from "@/features/assist/assist-judgment";
+import { useAssistJudgment } from "@/features/assist/use-assist-judgment";
+import { intentOutcomeForSession, navigationAccessFromSession, useNavigationAssist } from "@/features/navigation/navigation-assist";
+import { keywordSearchNavigation, permittedNavigationEntries, type NavigationEntry } from "../../../convex/navigationCatalogue";
 
 type PaletteTarget = Pick<WorkspaceSearchResult, "kind" | "id" | "title" | "subtitle" | "href">;
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const router = useRouter();
+  const pathname = usePathname();
   const invalidate = useInvalidate();
   const { canAny } = usePermissions();
   const { signedIn, session } = useApp();
   const [query, setQuery] = useState("");
   const settledQuery = useDebouncedValue(query.trim(), 200);
+  // Semantic help is asked for on purpose: the typed query is submitted as a
+  // whole, never per keystroke, and the draft in the input is left alone.
+  const assist = useNavigationAssist(open);
+  const [askedQuery, setAskedQuery] = useState("");
+  const intent = useAssistJudgment({ questionKey: "navigation.intent", subject: { query: askedQuery, path: pathname ?? "/" }, enabled: open && Boolean(askedQuery), auto: true });
+  const catalogue = useMemo(() => permittedNavigationEntries(navigationAccessFromSession(session)), [session]);
+  const places = useMemo(() => (settledQuery.length >= 2 ? keywordSearchNavigation(catalogue, settledQuery, 6) : []), [catalogue, settledQuery]);
   const search = useApiQuery(qk.workspaceSearch(settledQuery), (api) => api.searchWorkspace(settledQuery), { enabled: open && settledQuery.length >= 2, retry: false });
   const recents = useApiQuery(qk.workspaceRecents, (api) => api.listRecentWorkspaceItems(), { enabled: open });
   const pins = useApiQuery(qk.workspacePins, (api) => api.listPinnedWorkspaceItems(), { enabled: open });
@@ -40,7 +52,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
-  useEffect(() => { if (!open) setQuery(""); }, [open]);
+  useEffect(() => { if (!open) { setQuery(""); setAskedQuery(""); } }, [open]);
 
   const canOpenManagementLedger = canOpenManagementLedgerFromSession(session) && canAny(["reports.financial.read"]);
   const pages = useMemo(() => [
@@ -70,6 +82,12 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     router.push(target.href);
   };
   const grouped = (search.data ?? []).reduce<Record<string, WorkspaceSearchResult[]>>((groups, result) => { (groups[result.kind] ??= []).push(result); return groups; }, {});
+  const serverHrefs = new Set((search.data ?? []).map((result) => result.href));
+  const catalogueMatches = places.filter((entry) => !serverHrefs.has(entry.href));
+  const openEntry = (entry: NavigationEntry) => go({ kind: "page", id: entry.id, title: entry.label, subtitle: entry.description, href: entry.href });
+  const intentOutcome = intent.state.status === "ready" ? intentOutcomeForSession(intent.state.result, session) : undefined;
+  const intentBand = intent.state.status === "ready" ? confidenceBand(intent.state.result.judgment) : undefined;
+  const hasKeywordMatches = (search.data?.length ?? 0) > 0 || catalogueMatches.length > 0;
   const groupLabels: Record<string, string> = { member: "Members", lead: "Leads", receipt: "Receipts", page: "Pages", action: "Actions" };
 
   return <Command.Dialog open={open} onOpenChange={onOpenChange} label="Global search" className="fixed inset-0 z-[90]" shouldFilter={false}>
@@ -80,8 +98,18 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         {settledQuery.length >= 2 ? <>
           {search.isLoading ? <p className="px-3 py-2 text-[12.5px] text-ink-3">Searching across your workspace…</p> : null}
           {search.isError ? <div role="alert" className="mx-1 rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-3 text-[12.5px] text-danger"><p>Workspace search is unavailable.</p><button type="button" className="mt-2 font-medium underline underline-offset-2" onClick={() => { void search.refetch(); }}>Retry search</button></div> : null}
-          {!search.isLoading && !search.isError && search.data?.length === 0 ? <p className="px-3 py-6 text-center text-[13px] text-ink-3">No records, receipts, pages, or actions match “{settledQuery}”.</p> : null}
+          {!search.isLoading && !search.isError && search.data?.length === 0 && catalogueMatches.length === 0 ? <p className="px-3 py-6 text-center text-[13px] text-ink-3">No records, receipts, pages, or actions match “{settledQuery}”.</p> : null}
           {Object.entries(grouped).map(([kind, results]) => <Command.Group key={kind} heading={<GroupHeading>{groupLabels[kind] ?? kind}</GroupHeading>}>{results.map((result) => <PaletteItem key={`${result.kind}-${result.id}`} onSelect={() => go(result)} icon={result.kind === "receipt" ? ReceiptText : result.kind === "lead" ? UserPlus : result.kind === "member" ? Users : result.kind === "action" ? Star : ArrowRight} title={result.title} subtitle={result.subtitle} trailing={<Badge variant="outline">{result.kind}</Badge>} />)}</Command.Group>)}
+          {catalogueMatches.length ? <Command.Group heading={<GroupHeading>Places</GroupHeading>}>{catalogueMatches.map((entry) => <PaletteItem key={entry.id} onSelect={() => openEntry(entry)} icon={ArrowRight} title={entry.label} subtitle={entry.description} trailing={<Badge variant="outline">{entry.kind}</Badge>} />)}</Command.Group> : null}
+          {assist.ready && settledQuery.length >= 3 ? <Command.Group heading={<GroupHeading>Ask Jev</GroupHeading>}>
+            {askedQuery !== settledQuery ? <PaletteItem onSelect={() => setAskedQuery(settledQuery)} icon={Sparkles} title={hasKeywordMatches ? `Not what you meant? Ask where to go for “${settledQuery}”` : `Ask where to go for “${settledQuery}”`} subtitle="Jev picks a page, report, form or setting you already have access to. You decide whether to open it." /> : null}
+            {askedQuery === settledQuery && intent.state.status === "loading" ? <p role="status" className="px-3 py-2 text-[12.5px] text-ink-3">Asking Jev where to go…</p> : null}
+            {askedQuery === settledQuery && (intent.state.status === "unavailable" || intent.state.status === "stale") ? <><p role="status" className="px-3 py-2 text-[12.5px] text-ink-3">{intent.state.message} Keyword results still work.</p><PaletteItem onSelect={intent.request} icon={Sparkles} title="Ask again" /></> : null}
+            {askedQuery === settledQuery && intent.state.status === "disabled" && intent.state.message ? <p role="status" className="px-3 py-2 text-[12.5px] text-ink-3">{intent.state.message}</p> : null}
+            {askedQuery === settledQuery && intentOutcome?.kind === "destination" ? <PaletteItem onSelect={() => openEntry(intentOutcome.entry)} icon={Sparkles} title={`Open ${intentOutcome.entry.label}`} subtitle={`${intentOutcome.entry.description}${intentOutcome.entry.opensForm ? " Opens a form; nothing is submitted." : ""}`} trailing={<Badge variant={intentBand?.tone ?? "neutral"} dot>{intentBand?.label ?? "Suggestion"}</Badge>} /> : null}
+            {askedQuery === settledQuery && intentOutcome?.kind === "clarify" ? <><p role="status" className="px-3 py-2 text-[12.5px] text-ink-2">{intentOutcome.clarification.question}</p>{intentOutcome.options.map((entry) => <PaletteItem key={entry.id} onSelect={() => openEntry(entry)} icon={ArrowRight} title={entry.label} subtitle={entry.description} trailing={<Badge variant="outline">{entry.kind}</Badge>} />)}</> : null}
+            {askedQuery === settledQuery && intentOutcome?.kind === "no_match" ? <p role="status" className="px-3 py-2 text-[12.5px] text-ink-3">No page, report, form or setting in RIVET matches that request. Try other words, or open the sidebar.</p> : null}
+          </Command.Group> : null}
         </> : <>
           {pins.isError || recents.isError ? <div role="alert" className="mx-1 mb-2 border-s-2 border-danger ps-3 text-[12.5px] text-danger"><p>Saved shortcuts could not be loaded.</p><button type="button" className="mt-1 font-medium underline underline-offset-2" onClick={() => { void pins.refetch(); void recents.refetch(); }}>Retry</button></div> : null}
           {(pins.data?.length ?? 0) > 0 ? <Command.Group heading={<GroupHeading>Pinned</GroupHeading>}>{pins.data?.map((item) => <PaletteItem key={item.id} onSelect={() => go({ kind: "action", id: item.targetKey, title: item.label, href: item.href })} icon={Star} title={item.label} subtitle="Pinned action" trailing={<button type="button" className="rounded p-1 text-ink-3 hover:bg-sunken hover:text-ink" aria-label={`Unpin ${item.label}`} onClick={(event) => { event.stopPropagation(); unpin.mutate(item.id); }}><StarOff className="size-3.5" /></button>} />)}</Command.Group> : null}

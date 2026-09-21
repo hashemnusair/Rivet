@@ -3272,3 +3272,36 @@ describe("moving a class to another weekday", () => {
       .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION && error.message.includes(date));
   });
 });
+
+describe("Jev suggestions in the preview adapter", () => {
+  it("is off for a fresh gym, refuses non-managers, and answers from fixtures once switched on", async () => {
+    expect((await api.getAssistStatus())).toMatchObject({ mode: "fixture", ready: false, blockedReason: "tenant_off", tenant: { enabled: false }, canManage: true });
+    expect(await api.requestAssistJudgment({ questionKey: "foundation.refund_detected" })).toMatchObject({ status: "blocked", reason: "tenant_off" });
+
+    await api.switchDemoRole("receptionist");
+    await expect(api.updateAssistPreference({ enabled: true })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("owner");
+
+    const status = await api.updateAssistPreference({ enabled: true, reason: "Pilot" });
+    expect(status).toMatchObject({ ready: true, readyMode: "fixture", tenant: { enabled: true, reason: "Pilot" } });
+    expect((await api.listAuditEvents({ pageSize: 3 })).items[0]).toMatchObject({ action: "settings.assist.update", reason: "Pilot" });
+
+    const first = await api.requestAssistJudgment({ questionKey: "foundation.note_urgency" });
+    const second = await api.requestAssistJudgment({ questionKey: "foundation.note_urgency" });
+    expect(first).toMatchObject({ status: "ready", source: "fixture", judgment: { kind: "score", level: 3 } });
+    expect(second).toMatchObject({ status: "ready", source: "cache" });
+    expect(await api.requestAssistJudgment({ questionKey: "foundation.plan_fit" })).toMatchObject({ status: "ready", judgment: { kind: "choice", choice: "plan_b" } });
+    expect(await api.requestAssistJudgment({ questionKey: "foundation.ticket_route", subject: { simulate: "invalid_output" } })).toMatchObject({ status: "unavailable", reason: "invalid_output", retryable: false });
+    expect((await api.getAssistStatus()).usage.tenantRequests).toBe(3);
+
+    await api.switchDemoRole("receptionist");
+    await expect(api.requestAssistJudgment({ questionKey: "foundation.refund_detected" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+  });
+
+  it("honours the preview switch that turns Jev off entirely", async () => {
+    api.setBehavior({ assistMode: "off" });
+    await api.updateAssistPreference({ enabled: true });
+    expect(await api.getAssistStatus()).toMatchObject({ mode: "off", ready: false, blockedReason: "mode_off" });
+    expect(await api.requestAssistJudgment({ questionKey: "foundation.refund_detected" })).toMatchObject({ status: "blocked", reason: "mode_off" });
+  });
+});

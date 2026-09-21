@@ -53,6 +53,8 @@ import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { resolveMessagingMode } from "./messagingMode";
+import { IMPORT_DRAFT_TTL_MS, IMPORT_MAX_COLUMNS, IMPORT_MAX_HEADING_LENGTH, IMPORT_MAX_PLAN_LABELS, IMPORT_MAX_PLAN_LABEL_LENGTH, isImportField } from "./jevImportState";
+import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
@@ -1237,7 +1239,124 @@ async function workspacePreferencesData(ctx: ReadContext, actor: ActorContext, e
   };
 }
 
-async function workspaceAccessData(ctx: ReadContext, actor: ActorContext): Promise<Data> {
+export function tenantToday(actor: ActorContext): string {
+  return todayIn(actor.organization.timezone || TZ_FALLBACK);
+}
+
+/** The person's open tasks as the follow-up surfaces see them, in the shape the preview adapter shares. */
+export async function followUpRelatedTasks(ctx: ReadContext, actor: ActorContext, subject: { memberId?: string; leadId?: string }): Promise<FollowUpRelatedTask[]> {
+  const rows = subject.memberId
+    ? await recordsOfMemberIdentity(ctx, actor, subject.memberId, "task")
+    : subject.leadId
+      ? await recordsOfLead(ctx, actor.organization._id, subject.leadId, "task")
+      : [];
+  const me = publicUserId(actor.user);
+  const open = rows.map((row) => data(row.data)).filter((task) => stringValue(task.status, "open") === "open");
+  const tasks = await toTaskSummaries(ctx, actor, open, [], []);
+  return tasks
+    .map((task) => ({
+      id: stringValue(task.id),
+      type: stringValue(task.type, "general"),
+      title: stringValue(task.title),
+      ownerId: optionalString(task.ownerId),
+      ownerName: stringValue(task.ownerName, "Unassigned"),
+      dueAt: stringValue(task.dueAt),
+      priority: stringValue(task.priority, "normal"),
+      status: "open",
+      mine: !optionalString(task.ownerId) || optionalString(task.ownerId) === me,
+      createdById: optionalString(task.createdById),
+      relatedTaskId: optionalString(task.relatedTaskId),
+      relatedTaskTitle: optionalString(task.relatedTaskTitle),
+    }))
+    .sort((left, right) => left.dueAt.localeCompare(right.dueAt));
+}
+
+/**
+ * The deterministic follow-up context for one member: the renewal target,
+ * whether the automated journey stops and why, consent and suppression for
+ * renewal messages, quiet hours, every reminder RIVET queued for the term
+ * with truthful status wording, the last contact, an agreed callback, the
+ * recorded evidence and the open work. The member workspace, the renewal
+ * queue and the Jev loaders all read this one projection.
+ */
+export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<MemberFollowUpContext> {
+  requirePermission(actor, "members.read");
+  const memberRecord = await recordOf(ctx, actor, "member", memberId);
+  const member = data(memberRecord.data);
+  const today = tenantToday(actor);
+  const identityIds = await memberIdentityIds(ctx, actor, memberId);
+  const [membershipRows, timelineRows, planRows, branches, chargeRows, settings, deliveryRows] = await Promise.all([
+    recordsOfMemberIdentity(ctx, actor, memberId, "membership"),
+    recordsOfMemberIdentity(ctx, actor, memberId, "timeline"),
+    recordsOf(ctx, actor, "plan"),
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    recordsOfMemberIdentity(ctx, actor, memberId, "charge"),
+    settingsData(ctx, actor),
+    Promise.all(identityIds.map((id) => ctx.db.query("renewalDeliveries").withIndex("by_organization_member", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", id)).collect())),
+  ]);
+  const planNames = new Map(planRows.map((row) => [row.publicId, stringValue(data(row.data).name)]));
+  const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+  const outstandingByMembership = new Map<string, number>();
+  for (const row of chargeRows) {
+    const charge = data(row.data);
+    const membershipId = optionalString(charge.membershipId);
+    if (!membershipId || !identityIds.includes(stringValue(charge.memberId))) continue;
+    outstandingByMembership.set(membershipId, (outstandingByMembership.get(membershipId) ?? 0) + collectibleOutstandingValue(charge, today));
+  }
+  const memberships: FollowUpMembershipLike[] = membershipRows
+    .map((row) => data(row.data))
+    .filter((term) => identityIds.includes(stringValue(term.memberId)))
+    .map((term) => {
+      const freeze = data(term.activeFreeze);
+      return {
+        id: stringValue(term.id),
+        planName: planNames.get(stringValue(term.planId)),
+        branchName: branchNames.get(stringValue(term.homeBranchId)),
+        startDate: stringValue(term.startDate),
+        endDate: stringValue(term.endDate),
+        status: statusOfMembership(term, today),
+        cancelledAt: optionalString(term.cancelledAt),
+        previousMembershipId: optionalString(term.previousMembershipId),
+        remainingVisits: typeof term.remainingVisits === "number" ? term.remainingVisits : undefined,
+        activeFreeze: term.activeFreeze ? { status: optionalString(freeze.status), startDate: optionalString(freeze.startDate), endDate: optionalString(freeze.endDate) } : undefined,
+        outstandingMinor: outstandingByMembership.get(stringValue(term.id)) ?? 0,
+      };
+    });
+  const timeline: FollowUpTimelineLike[] = timelineRows
+    .map((row) => data(row.data))
+    .filter((event) => identityIds.includes(stringValue(event.memberId)))
+    .map((event) => ({ id: stringValue(event.id), type: stringValue(event.type), title: stringValue(event.title), body: optionalString(event.body), occurredAt: stringValue(event.occurredAt), actorName: optionalString(event.actorName), meta: data(event.meta) }));
+  const deliveries: FollowUpDeliveryLike[] = deliveryRows.flat().map((row) => ({ id: row.publicId, checkpointKey: row.checkpointKey, channel: row.channel, status: row.status, suppressionReason: row.suppressionReason, cancellationReason: row.cancellationReason, deferredUntil: row.deferredUntil, attempts: row.attempts.length, updatedAt: row.updatedAt, membershipId: row.membershipPublicId }));
+  const notifications = data(settings.notifications);
+  const tasks = hasPermission(actor, "crm.read") ? await followUpRelatedTasks(ctx, actor, { memberId }) : [];
+  return buildMemberFollowUpContext({
+    member: { id: memberId, fullName: stringValue(member.fullName), phone: optionalString(member.phone), preferredLanguage: optionalString(member.preferredLanguage), status: stringValue(member.status, "active"), consent: member },
+    memberships,
+    timeline,
+    tasks,
+    deliveries,
+    quietHours: { start: stringValue(notifications.quietHoursStart, "22:00"), end: stringValue(notifications.quietHoursEnd, "08:00") },
+    deliveryMode: stringValue(notifications.automationDeliveryMode, "sandbox") === "live" ? "live" : "sandbox",
+    currency: actor.organization.currency,
+    timezone: actor.organization.timezone || TZ_FALLBACK,
+    today,
+    now: Date.now(),
+  });
+}
+
+/** An explicit, accepted link from a new task to an existing open task about the same person; never inferred. */
+async function relatedTaskLink(ctx: ReadContext, actor: ActorContext, input: Data, subject: { memberId?: string; leadId?: string }): Promise<{ id: string; title: string } | undefined> {
+  const relatedTaskId = optionalString(input.relatedTaskId);
+  if (!relatedTaskId) return undefined;
+  const related = data((await recordOf(ctx, actor, "task", relatedTaskId)).data);
+  const sameSubject = (subject.memberId && optionalString(related.memberId) === subject.memberId) || (subject.leadId && optionalString(related.leadId) === subject.leadId);
+  if (!sameSubject) domainError("VALIDATION_ERROR", "The related task is about someone else.", { correlationId: actor.correlationId });
+  if (stringValue(related.status, "open") !== "open") domainError("VALIDATION_ERROR", "The related task is no longer open. Review the suggestion again.", { correlationId: actor.correlationId });
+  return { id: relatedTaskId, title: stringValue(related.title) };
+}
+
+
+export async function workspaceAccessData(ctx: ReadContext, actor: ActorContext): Promise<Data> {
   const entitlements = await workspaceEntitlementsData(ctx, actor);
   const entitledModules = entitlements.entitledModules as WorkspaceModuleKey[];
   const preferences = await workspacePreferencesData(ctx, actor, entitledModules);
@@ -4290,7 +4409,7 @@ function onboardingProgressView(record: Doc<"userOnboardingProgress"> | null, au
   return { audience, version: ONBOARDING_VERSION, completedStepKeys: record?.completedStepKeys ?? [], dismissedAt: record?.dismissedAt ? utcIso(record.dismissedAt) : undefined, completedAt: record?.completedAt ? utcIso(record.completedAt) : undefined, updatedAt: utcIso(record?.updatedAt ?? Date.now()) };
 }
 
-async function onboardingExperience(ctx: ReadContext, input: Data, request: RequestArgs): Promise<Data> {
+export async function onboardingExperience(ctx: ReadContext, input: Data, request: RequestArgs): Promise<Data> {
   const audience = stringValue(input.audience) as "owner" | "staff" | "member";
   if (!(["owner", "staff", "member"] as string[]).includes(audience)) domainError("VALIDATION_ERROR", "Choose a valid onboarding audience.", { correlationId: request.correlationId });
   if (audience === "member") {
@@ -5700,6 +5819,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
           return [];
         });
     }
+    case "members.followup_context":
+      return await memberFollowUpContextData(ctx, actor, recordId(input.memberId));
     case "members.timeline": {
       requirePermission(actor, "members.read");
       const memberId = recordId(input.memberId);
@@ -6576,6 +6697,7 @@ function memberImportView(value: Data, includeRows: boolean): Data {
     columnMapping: data(value.columnMapping),
     migrationCutoffDate: optionalString(value.migrationCutoffDate),
     planMappings: data(value.planMappings),
+    assist: importAssistProvenance(value.assist),
     membershipRows: numberValue(value.membershipRows),
     openingBalanceRows: numberValue(value.openingBalanceRows),
     historicalEvidenceRows: numberValue(value.historicalEvidenceRows),
@@ -6694,9 +6816,10 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const sourceHeaders = arrayValue(input.sourceHeaders).slice(0, 100).map((header) => stringValue(header).slice(0, 160));
   const columnMapping = data(input.columnMapping);
   const rawPlanMappings = Object.fromEntries(Object.entries(data(input.planMappings)).filter(([, value]) => typeof value === "string"));
-  const value = { id, branchId, rows: previewRows, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => numberValue(row.openingBalanceMinor) > 0).length, historicalEvidenceRows: previewRows.filter((row) => numberValue(row.historicalPaidMinor) > 0).length, currency: actor.organization.currency, migrationCutoffDate, planMappings: rawPlanMappings, nextCursor: 0, committedCount: 0, skippedCount: 0, createdMembers: [], status: "preview", sourceFileName, sourceKind, sourceHeaders, columnMapping, createdAt: isoNow(), createdById: publicUserId(actor.user) };
+  const assist = importAssistProvenance(input.assist);
+  const value = { id, branchId, rows: previewRows, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => numberValue(row.openingBalanceMinor) > 0).length, historicalEvidenceRows: previewRows.filter((row) => numberValue(row.historicalPaidMinor) > 0).length, currency: actor.organization.currency, migrationCutoffDate, planMappings: rawPlanMappings, nextCursor: 0, committedCount: 0, skippedCount: 0, createdMembers: [], status: "preview", sourceFileName, sourceKind, sourceHeaders, columnMapping, assist, createdAt: isoNow(), createdById: publicUserId(actor.user) };
   await insertRecord(ctx, actor, "memberImport", value, { branchId });
-  await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member migration · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows, including ${value.membershipRows} membership terms`, branchId, after: { migrationCutoffDate, membershipRows: value.membershipRows, openingBalanceRows: value.openingBalanceRows, historicalEvidenceRows: value.historicalEvidenceRows } });
+  await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member migration · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows, including ${value.membershipRows} membership terms`, branchId, after: { migrationCutoffDate, membershipRows: value.membershipRows, openingBalanceRows: value.openingBalanceRows, historicalEvidenceRows: value.historicalEvidenceRows, assistedColumns: assist?.columns ?? [], assistedPlans: assist?.plans.length ?? 0 } });
   return memberImportView({ ...value, createdAt: utcIso(now) }, true);
 }
 
@@ -6793,6 +6916,53 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
   await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `${stringValue(plan.name)} membership history imported`, body: `${stringValue(row.membershipStartDate)} → ${stringValue(row.membershipEndDate)} · source cutoff ${stringValue(importData.migrationCutoffDate)}`, meta: { importBatchId: importData.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
   await insertAudit(ctx, actor, { category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(plan.name)}`, summary: `Imported active or scheduled membership history from row ${numberValue(row.rowNumber)}`, branchId: stringValue(importData.branchId), after: { startDate: row.membershipStartDate, endDate: row.membershipEndDate, activeFreeze: Boolean(activeFreeze), openingBalanceMinor: numberValue(row.openingBalanceMinor), historicalPaidMinor: numberValue(row.historicalPaidMinor), importBatchId: importData.id, financialPostingEligible: false } });
   return { membershipId, membershipVersion: String(membershipRecord.updatedAt), chargeId, chargeVersion, evidenceId, evidenceVersion };
+}
+
+/**
+ * Which mappings came from an accepted Jev suggestion. Kept with the import
+ * record and its preview audit so a migration can be reviewed later; the
+ * suggestion itself never changed a mapping without a person accepting it.
+ */
+function importAssistProvenance(value: unknown): { draftId?: string; columns: string[]; plans: string[] } | undefined {
+  const record = data(value);
+  const columns = [...new Set(arrayValue(record.columns).map(String).filter(isImportField))];
+  const plans = [...new Set(arrayValue(record.plans).map(String).map((label) => label.trim().slice(0, IMPORT_MAX_PLAN_LABEL_LENGTH)).filter(Boolean))].slice(0, IMPORT_MAX_PLAN_LABELS);
+  const draftId = optionalString(record.draftId)?.slice(0, 80);
+  if (!columns.length && !plans.length && !draftId) return undefined;
+  return { ...(draftId ? { draftId } : {}), columns, plans };
+}
+
+function importColumnCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+}
+
+/**
+ * Saves what import assistance may reason about for one file: the headings,
+ * a value-shape summary per column (counts only, never cell values) and the
+ * legacy plan labels with their row counts. Member rows stay in the browser
+ * until the normal preview. One draft per person; expired drafts are pruned.
+ */
+async function saveMemberImportAssistDraft(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  requirePermission(actor, "members.write");
+  const branchId = recordId(input.branchId);
+  assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+  const headers = arrayValue(input.headers).slice(0, IMPORT_MAX_COLUMNS).map((header) => stringValue(header).trim().slice(0, IMPORT_MAX_HEADING_LENGTH));
+  if (!headers.length) domainError("VALIDATION_ERROR", "The import draft needs at least one column heading.", { correlationId: actor.correlationId });
+  if (arrayValue(input.columns).length > IMPORT_MAX_COLUMNS) domainError("VALIDATION_ERROR", `Import assistance handles at most ${IMPORT_MAX_COLUMNS} columns.`, { correlationId: actor.correlationId });
+  const summaryKeys = ["filled", "empty", "distinct", "numeric", "dateLike", "phoneLike", "emailLike", "alphabetic", "arabicScript", "minLength", "maxLength"] as const;
+  const columns = headers.map((heading, index) => {
+    const summary = data(arrayValue(input.columns)[index]);
+    return { index, heading, ...Object.fromEntries(summaryKeys.map((key) => [key, importColumnCount(summary[key])])) };
+  });
+  const sourcePlanLabels = arrayValue(input.sourcePlanLabels).slice(0, IMPORT_MAX_PLAN_LABELS).map(data).map((entry) => ({ label: stringValue(entry.label).trim().slice(0, IMPORT_MAX_PLAN_LABEL_LENGTH), rows: importColumnCount(entry.rows) })).filter((entry) => entry.label);
+  const now = Date.now();
+  for (const existing of await recordsOf(ctx, actor, "memberImportDraft")) {
+    const value = data(existing.data);
+    if (stringValue(value.createdById) === publicUserId(actor.user) || numberValue(value.expiresAt) < now) await ctx.db.delete(existing._id);
+  }
+  const value = { id: newPublicId(), branchId, sourceKind: ["csv", "xlsx", "pasted"].includes(stringValue(input.sourceKind)) ? stringValue(input.sourceKind) : "csv", sourceFileName: optionalString(input.sourceFileName)?.trim().slice(0, 180), headers, columns, sourcePlanLabels, createdById: publicUserId(actor.user), createdAt: isoNow(), expiresAt: now + IMPORT_DRAFT_TTL_MS };
+  await insertRecord(ctx, actor, "memberImportDraft", value, { branchId });
+  return { id: value.id, branchId, headers, columns, sourcePlanLabels, createdAt: value.createdAt, expiresAt: utcIso(value.expiresAt) };
 }
 
 async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -7312,8 +7482,9 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   const lead = input.leadId ? await recordOf(ctx, actor, "lead", stringValue(input.leadId)) : null;
   const member = input.memberId ? await recordOf(ctx, actor, "member", stringValue(input.memberId)) : null;
   const subject = lead ? data(lead.data).fullName : member ? data(member.data).fullName : "—";
-  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
-  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+  const related = await relatedTaskLink(ctx, actor, input, { memberId: optionalString(input.memberId), leadId: optionalString(input.leadId) });
+  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}) }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
+  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, body: related ? `Follow-on to: ${related.title}` : undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   return task;
 }
 
@@ -9417,6 +9588,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return await commitMemberImport(ctx, actor, input);
     case "members.import.undo":
       return await undoMemberImport(ctx, actor, input);
+    case "members.import.draft":
+      return await saveMemberImportAssistDraft(ctx, actor, input);
     case "members.create":
       return await createMemberMutation(ctx, actor, input);
     case "members.create_and_sell":

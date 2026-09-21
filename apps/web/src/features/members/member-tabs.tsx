@@ -500,6 +500,7 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
           </button>
           <div className="min-w-0">
             <p className="font-medium leading-snug">{t.title}</p>
+            {t.relatedTaskTitle ? <p className="text-[11.5px] text-ink-3">Follow-on to “{t.relatedTaskTitle}”</p> : null}
             <p className="text-[12px] text-ink-3">
               {t.ownerName} · <RelativeText iso={t.dueAt} />
             </p>

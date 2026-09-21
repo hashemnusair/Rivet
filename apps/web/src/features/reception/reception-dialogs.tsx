@@ -18,6 +18,7 @@ import {
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/input";
 import { REASON_CODE_LABELS } from "./reason-codes";
+import { ReasonCheck } from "@/features/followup/reason-check";
 
 /**
  * Manual override. Deliberately heavy: the reason is required, the block
@@ -101,6 +102,7 @@ export function OverrideCheckInDialog({
               data-testid="override-reason"
             />
           </Field>
+          <ReasonCheck action="checkin_override" reason={reason} />
         </DialogBody>
         <DialogFooter>
           {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}

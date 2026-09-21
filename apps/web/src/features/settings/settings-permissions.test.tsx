@@ -36,6 +36,6 @@ describe("Settings sections follow the signed-in role's permissions", () => {
   it("lets the owner reach every section", async () => {
     await renderWithApp(<SettingsPageInner />);
     expect(await screen.findByRole("heading", { name: "Organization", level: 2 })).toBeInTheDocument();
-    expect(screen.getAllByRole("tab")).toHaveLength(16);
+    expect(screen.getAllByRole("tab")).toHaveLength(17);
   });
 });

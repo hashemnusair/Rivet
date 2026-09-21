@@ -24,6 +24,7 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
+import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
 import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 
@@ -304,6 +305,7 @@ function RenewalQueuePage() {
         {selectedItem ? <aside ref={panelRef} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="follow-up-panel">
         <FollowUpHeader member={selectedItem.member} onClose={() => setSelectedId(undefined)} />
         <div className="px-4 py-4"><RenewalContext item={selectedItem} /></div>
+        <div className="border-t border-line px-4 py-4"><FollowUpContextPanel memberId={selectedItem.member.id} variant="renewal" /></div>
         <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3" aria-label="Follow-up actions">
           <Button asChild variant="secondary" size="sm"><a href={`tel:${selectedItem.member.phone}`}><PhoneCall /> Call</a></Button>
           <WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} />

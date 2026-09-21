@@ -2241,6 +2241,9 @@ export interface Task {
   completedAt?: ISODateTime;
   createdById: UUID;
   createdAt: ISODateTime;
+  /** An explicit, accepted link to an existing open task about the same person; never inferred. */
+  relatedTaskId?: UUID;
+  relatedTaskTitle?: string;
 }
 
 export interface CreateTaskInput {
@@ -2251,6 +2254,7 @@ export interface CreateTaskInput {
   priority?: "low" | "normal" | "high";
   leadId?: UUID;
   memberId?: UUID;
+  relatedTaskId?: UUID;
 }
 
 export interface CompleteTaskInput {
@@ -3747,4 +3751,54 @@ export interface UpdateUserAccessInput {
 export interface UpdateRolePermissionsInput {
   permissions?: string[];
   discountLimitMinor?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Jev-assisted suggestions: bounded semantic judgments. The shapes live with
+// the server registry (convex/jevRegistry.ts) so both adapters share them.
+// ---------------------------------------------------------------------------
+export type {
+  JevBlockReason as AssistBlockReason,
+  JevFailureReason as AssistFailureReason,
+  JevFeatureStatus as AssistFeatureStatus,
+  JevJudgeResult as AssistJudgmentResult,
+  JevJudgment as AssistJudgment,
+  JevKind as AssistJudgmentKind,
+  JevQuestionSummary as AssistQuestionSummary,
+  JevSimulation as AssistSimulation,
+  JevStatusView as AssistStatus,
+} from "../../../convex/jevRegistry";
+
+// Connected staff follow-up assistance: the member projection and its parts live
+// with the shared module (convex/followupAssist.ts) so both adapters build it alike.
+export type {
+  ContactConsequences,
+  ContactSubjectKind,
+  FollowUpDelivery,
+  FollowUpEvidence,
+  FollowUpEvidenceFlag,
+  FollowUpMoney,
+  FollowUpRelatedTask,
+  FollowUpTopic,
+  MemberFollowUpContext,
+  ReasonActionKey,
+} from "../../../convex/followupAssist";
+
+export interface AssistJudgmentRequest {
+  questionKey: string;
+  /** Identifiers of the record to judge. The server loads the state itself and re-checks access to every id. */
+  subject?: Record<string, string | number | boolean>;
+}
+
+export interface UpdateAssistPreferenceInput {
+  enabled: boolean;
+  reason?: string;
+}
+
+/** Mock persistence of the gym's own switch (Convex keeps it in jevTenantPreferences). */
+export interface AssistTenantPreference {
+  enabled: boolean;
+  updatedAt?: ISODateTime;
+  updatedBy?: string;
+  reason?: string;
 }

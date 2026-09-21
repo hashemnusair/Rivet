@@ -18,6 +18,7 @@ import type {
   MessageTemplate,
   Money,
   NotificationSettings,
+  AssistTenantPreference,
   OrganizationEntitlements,
   OperationalPolicies,
   Offer,
@@ -150,6 +151,8 @@ export interface MockDb {
   roles: RoleDefinition[];
   paymentMethods: PaymentMethod[];
   notificationSettings: NotificationSettings;
+  /** The gym's own Jev switch; off in every fresh seed. */
+  assistPreference: AssistTenantPreference;
   operationalPolicies: OperationalPolicies;
   /** Mock persistence mirrors the separate server entitlement/preference records. */
   organizationEntitlements: OrganizationEntitlements;

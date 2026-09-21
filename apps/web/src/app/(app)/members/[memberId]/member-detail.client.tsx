@@ -4,9 +4,6 @@ import { CalendarClock, Dumbbell, StickyNote } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Controller, useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
@@ -14,9 +11,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Breadcrumbs } from "@/components/shared/chrome";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
-import { Input, Textarea } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -35,6 +30,8 @@ import {
 } from "@/features/members/member-tabs";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
+import { CreateTaskDialog } from "@/features/members/create-task-dialog";
+import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
 
 export default function MemberDetailPageClient() {
   const { memberId } = useParams<{ memberId: string }>();
@@ -161,6 +158,11 @@ export default function MemberDetailPageClient() {
             <h3 className="mb-3 font-display text-[13px] font-semibold">Open tasks</h3>
             <MemberTasksPanel memberId={member.id} />
           </section>
+
+          <section className="panel p-4">
+            <h3 className="mb-3 font-display text-[13px] font-semibold">Follow-up context</h3>
+            <FollowUpContextPanel memberId={member.id} />
+          </section>
         </aside>
       </div>
 
@@ -200,130 +202,6 @@ function AddNoteDialog({ memberId, open, onOpenChange }: { memberId: string; ope
             Save note
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Create task
-// ---------------------------------------------------------------------------
-const taskSchema = z.object({
-  title: z.string().min(3, "Title is required"),
-  ownerId: z.string().min(1, "Choose an owner"),
-  dueAt: z.string().min(1, "Choose a due date"),
-  type: z.enum(["follow_up", "renewal_call", "payment_collection", "trial_follow_up", "general"]),
-});
-type TaskValues = z.infer<typeof taskSchema>;
-
-function CreateTaskDialog({
-  memberId,
-  memberName,
-  open,
-  onOpenChange,
-}: {
-  memberId: string;
-  memberName: string;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  const { session } = useApp();
-  const invalidate = useInvalidate();
-  const usersQuery = useApiQuery(qk.users({ staff: true }), (api) => api.listUsers({ status: "active", pageSize: 30 }));
-
-  const form = useForm<TaskValues>({
-    resolver: zodResolver(taskSchema),
-    defaultValues: {
-      title: `Follow up — ${memberName}`,
-      ownerId: session?.user.id ?? "",
-      dueAt: new Date(Date.now() + 24 * 3_600_000).toISOString().slice(0, 10),
-      type: "follow_up",
-    },
-  });
-
-  const mutation = useApiMutation(
-    (api, v: TaskValues) =>
-      api.createFollowUp({
-        type: v.type,
-        title: v.title,
-        ownerId: v.ownerId,
-        dueAt: new Date(`${v.dueAt}T10:00:00Z`).toISOString(),
-        memberId,
-      }),
-    {
-      onSuccess: async () => {
-        toast.success("Task created.");
-        onOpenChange(false);
-        await invalidate();
-      },
-    },
-  );
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Create task</DialogTitle>
-          <DialogDescription>Linked to {memberName} — appears in queues and on the member timeline.</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
-          <DialogBody className="space-y-4">
-            <Field label="Title" required error={form.formState.errors.title?.message}>
-              <Input {...form.register("title")} />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Owner" required>
-                <Controller
-                  control={form.control}
-                  name="ownerId"
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Task owner">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(usersQuery.data?.items ?? [])
-                          .filter((u) => ["salesperson", "manager", "receptionist"].includes(u.role))
-                          .map((u) => (
-                            <SelectItem key={u.id} value={u.id}>
-                              {u.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </Field>
-              <Field label="Due date" required>
-                <Input type="date" {...form.register("dueAt")} />
-              </Field>
-            </div>
-            <Field label="Type">
-              <Controller
-                control={form.control}
-                name="type"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger aria-label="Task type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="follow_up">Follow-up</SelectItem>
-                      <SelectItem value="renewal_call">Renewal call</SelectItem>
-                      <SelectItem value="payment_collection">Payment collection</SelectItem>
-                      <SelectItem value="trial_follow_up">Trial follow-up</SelectItem>
-                      <SelectItem value="general">General</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </Field>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending}>Create task</Button>
-          </DialogFooter>
-        </form>
       </DialogContent>
     </Dialog>
   );

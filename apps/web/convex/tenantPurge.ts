@@ -103,6 +103,10 @@ export const TENANT_TABLES: ReadonlyArray<{ table: TableNames; index?: string; s
   { table: "idempotencyRecords", index: "by_organization_operation_key" },
   { table: "entryPasses", index: "by_organization_public_id" },
   { table: "sequenceCounters", index: "by_organization_key" },
+  { table: "jevJudgments", index: "by_organization_lookup" },
+  { table: "jevRequests", index: "by_organization_lease" },
+  { table: "jevUsage", index: "by_organization_day" },
+  { table: "jevTenantPreferences", index: "by_organization" },
 ];
 
 type AnyDoc = { _id: Id<TableNames>; organizationId?: Id<"organizations">; storageId?: Id<"_storage"> };

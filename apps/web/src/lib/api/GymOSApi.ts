@@ -282,6 +282,37 @@ export type MemberImportColumnMapping = Partial<Record<MemberImportField, number
 export type MemberImportPlanMapping = Record<string, UUID>;
 export type MemberImportStatus = "preview" | "processing" | "completed" | "undoing" | "undone";
 
+/**
+ * What import assistance may reason about for one file: headings, a
+ * value-shape summary per column (counts only) and the legacy plan labels
+ * with their row counts. Member rows are never part of it.
+ */
+export interface MemberImportAssistDraftInput {
+  branchId: UUID;
+  sourceKind?: "csv" | "xlsx" | "pasted";
+  sourceFileName?: string;
+  headers: string[];
+  columns: import("../../../convex/jevImportState").ImportColumnSummary[];
+  sourcePlanLabels: Array<{ label: string; rows: number }>;
+}
+
+export interface MemberImportAssistDraft {
+  id: string;
+  branchId: UUID;
+  headers: string[];
+  columns: import("../../../convex/jevImportState").ImportColumnSummary[];
+  sourcePlanLabels: Array<{ label: string; rows: number }>;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Which mappings a person accepted from a Jev suggestion; kept with the import for review. */
+export interface MemberImportAssistProvenance {
+  draftId?: string;
+  columns: MemberImportField[];
+  plans: string[];
+}
+
 export interface MemberImportPreviewInput {
   csv: string;
   branchId: UUID;
@@ -291,6 +322,7 @@ export interface MemberImportPreviewInput {
   columnMapping?: MemberImportColumnMapping;
   migrationCutoffDate?: string;
   planMappings?: MemberImportPlanMapping;
+  assist?: MemberImportAssistProvenance;
 }
 
 export interface MemberImportPreview {
@@ -311,6 +343,7 @@ export interface MemberImportPreview {
   columnMapping?: MemberImportColumnMapping;
   migrationCutoffDate?: string;
   planMappings?: MemberImportPlanMapping;
+  assist?: MemberImportAssistProvenance;
   membershipRows?: number;
   openingBalanceRows?: number;
   historicalEvidenceRows?: number;
@@ -942,6 +975,8 @@ export interface GymOSApi {
   listMemberTimeline(memberId: UUID, query?: TimelineQuery): Promise<Page<TimelineEvent>>;
   addMemberNote(memberId: UUID, input: { body: string }): Promise<TimelineEvent>;
   logMemberContactAttempt(memberId: UUID, input: ContactAttemptInput): Promise<TimelineEvent>;
+  /** The deterministic follow-up context for one member: renewal target, journey status, consent and suppression, quiet hours, queued reminders with truthful wording, recorded evidence and open work. */
+  getMemberFollowUpContext(memberId: UUID): Promise<import("@/lib/domain/types").MemberFollowUpContext>;
 
   // Plans
   listPlans(query: PlanListQuery): Promise<Page<MembershipPlan>>;
@@ -1166,6 +1201,12 @@ export interface GymOSApi {
   getMessagingStatus(): Promise<import("@/lib/domain/types").MessagingStatus>;
   listMessageTemplateCatalogue(): Promise<import("@/lib/domain/types").MessageTemplateCatalogueEntry[]>;
 
+  // Jev-assisted suggestions: bounded semantic judgments. Pages read the status
+  // first and never block a workflow on a judgment (docs/21).
+  getAssistStatus(): Promise<import("@/lib/domain/types").AssistStatus>;
+  updateAssistPreference(input: import("@/lib/domain/types").UpdateAssistPreferenceInput): Promise<import("@/lib/domain/types").AssistStatus>;
+  requestAssistJudgment(input: import("@/lib/domain/types").AssistJudgmentRequest): Promise<import("@/lib/domain/types").AssistJudgmentResult>;
+
   // Subscription agreement (e-signature at onboarding)
   getSubscriptionAgreementContext(): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
   signSubscriptionAgreement(input: import("@/lib/domain/types").SignSubscriptionAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
@@ -1224,6 +1265,8 @@ export interface GymOSApi {
   getEquipmentRecommendation(assetId: UUID): Promise<import("@/lib/domain/types").EquipmentRecommendation>;
   listUsers(query: UserListQuery): Promise<Page<StaffUser>>;
   previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview>;
+  /** Headings and value-shape summaries only; the id scopes import suggestions to this file. */
+  saveMemberImportAssistDraft(input: MemberImportAssistDraftInput): Promise<MemberImportAssistDraft>;
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult>;
   listMemberImports(): Promise<MemberImportSummary[]>;
   getMemberImport(importId: UUID): Promise<MemberImportPreview>;
@@ -1254,6 +1297,8 @@ export interface MockBehavior {
   forceEmptyLists: boolean;
   /** Preview/test seam: pretend the demo gym has not signed its subscription agreement yet. */
   agreementUnsigned?: boolean;
+  /** Preview seam for Jev suggestions: fixture answers (default) or switched off. */
+  assistMode?: "off" | "fixture";
 }
 
 export const DEFAULT_BEHAVIOR: MockBehavior = {

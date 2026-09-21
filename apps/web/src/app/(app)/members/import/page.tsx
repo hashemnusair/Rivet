@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, Download, FileSpreadsheet, File
 import Link from "next/link";
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { isApiError } from "@/lib/api/errors";
-import type { MemberImportColumnMapping, MemberImportCommitResult, MemberImportPlanMapping, MemberImportPreview, MemberImportPreviewInput, MemberImportSummary, MemberImportUndoResult } from "@/lib/api/GymOSApi";
+import type { MemberImportAssistDraft, MemberImportColumnMapping, MemberImportCommitResult, MemberImportField, MemberImportPlanMapping, MemberImportPreview, MemberImportPreviewInput, MemberImportSummary, MemberImportUndoResult } from "@/lib/api/GymOSApi";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Breadcrumbs, PageHeader } from "@/components/shared/chrome";
@@ -18,6 +18,8 @@ import { inferMemberImportMapping, mappedMemberCsv, OPTIONAL_MEMBERSHIP_IMPORT_F
 import { qk } from "@/lib/api/keys";
 import { getApi } from "@/lib/api/client";
 import { downloadTextFile } from "@/lib/exports/download";
+import { ImportColumnSuggestion, ImportPlanSuggestion, describeColumnShape, useImportAssist } from "@/features/members/import-assist";
+import { summarizeImportColumns, type ImportField } from "../../../../../convex/jevImportState";
 
 const SAMPLE_CSV = `full_name,phone,gender,email,plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference
 Samira Haddad,+962790000001,female,samira@example.com,,,,,,,,,,
@@ -64,6 +66,12 @@ export default function MemberImportPage() {
   const [undoTarget, setUndoTarget] = useState<MemberImportSummary>();
   const [undoReason, setUndoReason] = useState("");
   const [undoResult, setUndoResult] = useState<MemberImportUndoResult>();
+  const [draft, setDraft] = useState<MemberImportAssistDraft>();
+  const [ignoredColumns, setIgnoredColumns] = useState<number[]>([]);
+  const [assistedColumns, setAssistedColumns] = useState<MemberImportField[]>([]);
+  const [assistedPlans, setAssistedPlans] = useState<string[]>([]);
+  const draftRequest = useRef({ key: "", seq: 0 });
+  const assist = useImportAssist(can("members.write"));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imports = useApiQuery(qk.memberImports(), (api) => api.listMemberImports());
   const plans = useApiQuery(qk.plans({ status: "active", pageSize: 100 }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
@@ -81,7 +89,7 @@ export default function MemberImportPage() {
     }
   }, [branchId, preview, session?.branches]);
 
-  const headers = matrix[0] ?? [];
+  const headers = useMemo(() => matrix[0] ?? [], [matrix]);
   const mappedCsv = useMemo(() => mappedMemberCsv(matrix, mapping), [mapping, matrix]);
   const sourcePlans = useMemo(() => sourcePlanNames(matrix, mapping), [mapping, matrix]);
   const validRows = useMemo(() => preview?.rows.filter((row) => row.status === "valid") ?? [], [preview]);
@@ -90,6 +98,34 @@ export default function MemberImportPage() {
   const hasRequiredMapping = mapping.fullName != null && mapping.phone != null && mapping.gender != null && new Set([mapping.fullName, mapping.phone, mapping.gender]).size === 3;
   const hasMembershipColumns = OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.some(({ field }) => mapping[field] != null);
   const hasCompletePlanMapping = sourcePlans.every((sourceName) => Boolean(planMappings[sourceName]));
+  const columnSummaries = useMemo(() => summarizeImportColumns(matrix), [matrix]);
+  const assignedFields = useMemo(() => (Object.entries(mapping) as Array<[MemberImportField, number | undefined]>).filter(([, index]) => index != null).map(([field]) => field), [mapping]);
+  const unmatchedColumns = useMemo(() => columnSummaries.filter((column) => !Object.values(mapping).includes(column.index) && !ignoredColumns.includes(column.index)), [columnSummaries, ignoredColumns, mapping]);
+  const sourcePlanRows = useMemo(() => {
+    const planColumn = mapping.sourcePlanName;
+    if (planColumn == null) return [] as Array<{ label: string; rows: number }>;
+    const counts = new Map<string, number>();
+    for (const row of matrix.slice(1)) { const label = row[planColumn]?.trim(); if (label) counts.set(label, (counts.get(label) ?? 0) + 1); }
+    return [...counts].map(([label, rows]) => ({ label, rows }));
+  }, [mapping.sourcePlanName, matrix]);
+  // The assist draft carries headings, value-shape counts and plan labels only.
+  // It exists solely while assistance is switched on for this gym, and a
+  // failure to save it leaves the manual import exactly as it was.
+  const draftKey = assist.ready && matrix.length >= 2 && branchId ? `${branchId}|${headers.join("\u0001")}|${matrix.length}|${mapping.sourcePlanName ?? ""}` : "";
+  useEffect(() => {
+    if (!draftKey) {
+      if (draftRequest.current.key) { draftRequest.current = { key: "", seq: draftRequest.current.seq + 1 }; setDraft(undefined); }
+      return;
+    }
+    if (draftRequest.current.key === draftKey) return;
+    const seq = draftRequest.current.seq + 1;
+    draftRequest.current = { key: draftKey, seq };
+    const selectedBranchId = visibleBranchId(session?.branches, branchId);
+    if (!selectedBranchId) return;
+    getApi().saveMemberImportAssistDraft({ branchId: selectedBranchId, sourceKind, sourceFileName: fileName || undefined, headers, columns: columnSummaries, sourcePlanLabels: sourcePlanRows })
+      .then((saved) => { if (draftRequest.current.seq === seq) setDraft(saved); })
+      .catch(() => { if (draftRequest.current.seq === seq) setDraft(undefined); });
+  }, [branchId, columnSummaries, draftKey, fileName, headers, session?.branches, sourceKind, sourcePlanRows]);
 
   const previewMutation = useApiMutation((api, input: MemberImportPreviewInput) => api.previewMemberImport(input), {
     onSuccess: (nextPreview) => { setPreview(nextPreview); setResult(undefined); void imports.refetch(); },
@@ -102,6 +138,9 @@ export default function MemberImportPage() {
     setMatrix(clean);
     setMapping(inferMemberImportMapping(clean[0] ?? []));
     setPlanMappings({});
+    setIgnoredColumns([]);
+    setAssistedColumns([]);
+    setAssistedPlans([]);
     setFileName(details.fileName);
     setSourceKind(details.sourceKind);
     setFileSize(details.size);
@@ -141,10 +180,35 @@ export default function MemberImportPage() {
     setSource(parseCsvMatrix(value), { fileName: "Pasted member list", sourceKind: "pasted", size: new Blob([value]).size, csvText: value });
   };
 
+  // Accepting a suggestion sets the select the way a hand would, and never
+  // over a field that is already matched: the person clears that match first.
+  const useSuggestedField = (field: ImportField, columnIndex: number): "applied" | "taken" => {
+    if (mapping[field] != null && mapping[field] !== columnIndex) return "taken";
+    setMapping((current) => ({ ...current, [field]: columnIndex }));
+    setAssistedColumns((current) => (current.includes(field) ? current : [...current, field]));
+    if (field === "sourcePlanName") { setPlanMappings({}); setAssistedPlans([]); }
+    setPreview(undefined);
+    setResult(undefined);
+    return "applied";
+  };
+  const leaveColumnUnmapped = (columnIndex: number) => setIgnoredColumns((current) => (current.includes(columnIndex) ? current : [...current, columnIndex]));
+  const markManualField = (field: MemberImportField) => setAssistedColumns((current) => current.filter((item) => item !== field));
+  const useSuggestedPlan = (label: string, planId: string): "applied" | "unavailable" => {
+    if (!plans.data?.items.some((plan) => plan.id === planId && plan.status === "active")) return "unavailable";
+    setPlanMappings((current) => ({ ...current, [label]: planId }));
+    setAssistedPlans((current) => (current.includes(label) ? current : [...current, label]));
+    setPreview(undefined);
+    setResult(undefined);
+    return "applied";
+  };
+
   const runPreview = () => {
     const selectedBranchId = visibleBranchId(session?.branches, branchId);
     if (!selectedBranchId || !hasRequiredMapping || matrix.length < 2) return;
-    previewMutation.mutate({ csv: mappedCsv, branchId: selectedBranchId, sourceFileName: fileName || undefined, sourceKind, sourceHeaders: headers, columnMapping: mapping, migrationCutoffDate, planMappings });
+    const acceptedColumns = assistedColumns.filter((field) => mapping[field] != null);
+    const acceptedPlans = assistedPlans.filter((label) => Boolean(planMappings[label]));
+    const assistProvenance = draft || acceptedColumns.length || acceptedPlans.length ? { draftId: draft?.id, columns: acceptedColumns, plans: acceptedPlans } : undefined;
+    previewMutation.mutate({ csv: mappedCsv, branchId: selectedBranchId, sourceFileName: fileName || undefined, sourceKind, sourceHeaders: headers, columnMapping: mapping, migrationCutoffDate, planMappings, ...(assistProvenance ? { assist: assistProvenance } : {}) });
   };
 
   const commit = async () => {
@@ -233,11 +297,12 @@ export default function MemberImportPage() {
 
     {headers.length ? <section className="panel overflow-hidden">
       <header className="border-b border-line px-5 py-4"><h2 className="font-display text-[15px] font-semibold text-ink">Match the columns</h2><p className="mt-1 text-[12.5px] text-ink-2">Name, phone, and gender are required. RIVET accepts male/female, M/F, and the Arabic equivalents.</p></header>
-      <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4"><MappingSelect label="Full name" required headers={headers} value={mapping.fullName} onChange={(value) => setMapping((current) => ({ ...current, fullName: value }))} /><MappingSelect label="Phone" required headers={headers} value={mapping.phone} onChange={(value) => setMapping((current) => ({ ...current, phone: value }))} /><MappingSelect label="Gender" required headers={headers} value={mapping.gender} onChange={(value) => setMapping((current) => ({ ...current, gender: value }))} /><MappingSelect label="Email" headers={headers} value={mapping.email} onChange={(value) => setMapping((current) => ({ ...current, email: value }))} /></div>
+      <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4"><MappingSelect label="Full name" required headers={headers} value={mapping.fullName} onChange={(value) => { markManualField("fullName"); setMapping((current) => ({ ...current, fullName: value })); }} /><MappingSelect label="Phone" required headers={headers} value={mapping.phone} onChange={(value) => { markManualField("phone"); setMapping((current) => ({ ...current, phone: value })); }} /><MappingSelect label="Gender" required headers={headers} value={mapping.gender} onChange={(value) => { markManualField("gender"); setMapping((current) => ({ ...current, gender: value })); }} /><MappingSelect label="Email" headers={headers} value={mapping.email} onChange={(value) => { markManualField("email"); setMapping((current) => ({ ...current, email: value })); }} /></div>
       <div className="border-t border-line px-5 py-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="text-[13px] font-semibold text-ink">Bring over current memberships</h3><p className="mt-1 max-w-3xl text-[12px] leading-5 text-ink-2">Optional. Map active or scheduled terms, current freezes, outstanding balances, and read-only payment history. RIVET never invents old receipts or cash activity.</p></div><label className="w-full space-y-1.5 sm:w-52"><span className="text-[12px] font-medium text-ink">Data accurate as of</span><Input type="date" value={migrationCutoffDate} onChange={(event) => { setMigrationCutoffDate(event.target.value); setPreview(undefined); setResult(undefined); }} aria-label="Migration cutoff date" /></label></div>
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.map(({ field, label }) => <MappingSelect key={field} label={label} headers={headers} value={mapping[field]} onChange={(value) => { setMapping((current) => ({ ...current, [field]: value })); if (field === "sourcePlanName") setPlanMappings({}); setPreview(undefined); setResult(undefined); }} />)}</div>
-        {sourcePlans.length ? <div className="mt-5 rounded-lg border border-line bg-sunken p-4"><div className="flex items-start justify-between gap-4"><div><h4 className="text-[12.5px] font-semibold text-ink">Match your plan names</h4><p className="mt-1 text-[11.5px] leading-5 text-ink-2">Your old labels stay in the import record. Choose the RIVET plan each one belongs to.</p></div><span className="shrink-0 text-[11px] tabular-nums text-ink-3">{Object.keys(planMappings).filter((name) => sourcePlans.includes(name)).length}/{sourcePlans.length}</span></div><div className="mt-4 grid gap-3 lg:grid-cols-2">{sourcePlans.map((sourceName) => <label key={sourceName} className="grid items-center gap-2 rounded-md border border-line bg-surface px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.8fr)]"><span className="truncate text-[12.5px] font-medium text-ink" title={sourceName}>{sourceName}</span><Select value={planMappings[sourceName] ?? "none"} onValueChange={(value) => { setPlanMappings((current) => ({ ...current, [sourceName]: value === "none" ? "" : value })); setPreview(undefined); setResult(undefined); }}><SelectTrigger aria-label={`RIVET plan for ${sourceName}`}><SelectValue placeholder="Choose RIVET plan" /></SelectTrigger><SelectContent><SelectItem value="none">Choose RIVET plan</SelectItem>{plans.data?.items.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select></label>)}</div></div> : null}
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.map(({ field, label }) => <MappingSelect key={field} label={label} headers={headers} value={mapping[field]} onChange={(value) => { markManualField(field); setMapping((current) => ({ ...current, [field]: value })); if (field === "sourcePlanName") { setPlanMappings({}); setAssistedPlans([]); } setPreview(undefined); setResult(undefined); }} />)}</div>
+        {assist.ready && draft && unmatchedColumns.length ? <div className="mt-5 rounded-lg border border-line bg-surface p-4" data-testid="import-unmatched-columns"><div className="flex items-start justify-between gap-4"><div><h4 className="text-[12.5px] font-semibold text-ink">Columns not matched yet</h4><p className="mt-1 text-[11.5px] leading-5 text-ink-2">Ask Jev what a column holds from its heading and the shape of its values. Member rows are not sent, and nothing changes until you accept a suggestion.</p></div><span className="shrink-0 text-[11px] tabular-nums text-ink-3">{unmatchedColumns.length}</span></div><ul className="mt-4 divide-y divide-line">{unmatchedColumns.map((column) => <li key={column.index} className="grid gap-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"><div className="min-w-0"><p className="truncate text-[12.5px] font-medium text-ink" dir="auto" title={column.heading}>{column.heading || `Column ${column.index + 1}`}</p><p className="mt-0.5 text-[11.5px] text-ink-3">{describeColumnShape(column)}</p></div><ImportColumnSuggestion draftId={draft.id} column={column} assignedFields={assignedFields} headers={headers} mapping={mapping} onUseField={useSuggestedField} onLeaveUnmapped={leaveColumnUnmapped} /></li>)}</ul>{ignoredColumns.length ? <button type="button" className="mt-3 text-[12px] text-ink-3 underline underline-offset-4 hover:text-ink" onClick={() => setIgnoredColumns([])}>Show {ignoredColumns.length} {ignoredColumns.length === 1 ? "column" : "columns"} left unmapped</button> : null}</div> : null}
+        {sourcePlans.length ? <div className="mt-5 rounded-lg border border-line bg-sunken p-4"><div className="flex items-start justify-between gap-4"><div><h4 className="text-[12.5px] font-semibold text-ink">Match your plan names</h4><p className="mt-1 text-[11.5px] leading-5 text-ink-2">Your old labels stay in the import record. Choose the RIVET plan each one belongs to.</p></div><span className="shrink-0 text-[11px] tabular-nums text-ink-3">{Object.keys(planMappings).filter((name) => sourcePlans.includes(name)).length}/{sourcePlans.length}</span></div><div className="mt-4 grid gap-3 lg:grid-cols-2">{sourcePlans.map((sourceName) => <div key={sourceName} className="rounded-md border border-line bg-surface px-3 py-3"><label className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.8fr)]"><span className="truncate text-[12.5px] font-medium text-ink" dir="auto" title={sourceName}>{sourceName}</span><Select value={planMappings[sourceName] ?? "none"} onValueChange={(value) => { setAssistedPlans((current) => current.filter((item) => item !== sourceName)); setPlanMappings((current) => ({ ...current, [sourceName]: value === "none" ? "" : value })); setPreview(undefined); setResult(undefined); }}><SelectTrigger aria-label={`RIVET plan for ${sourceName}`}><SelectValue placeholder="Choose RIVET plan" /></SelectTrigger><SelectContent><SelectItem value="none">Choose RIVET plan</SelectItem>{plans.data?.items.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select></label>{assist.ready && draft && !planMappings[sourceName] ? <div className="mt-3"><ImportPlanSuggestion draftId={draft.id} label={sourceName} plans={plans.data?.items ?? []} currency={session?.organization.currency ?? "JOD"} onUsePlan={useSuggestedPlan} /></div> : null}</div>)}</div></div> : null}
         {hasMembershipColumns ? <p className="mt-4 text-[11.5px] leading-5 text-ink-3">For a current freeze, supply both dates and use the membership end date already extended through that freeze. Visit-based plans also need visits remaining. Monetary values are entered in {session?.organization.currency ?? "the gym currency"}.</p> : null}
       </div>
       <div className="flex flex-col gap-3 border-t border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="max-w-3xl text-[11.5px] leading-5 text-ink-3">Imported marketing preference stays unknown, so automated marketing remains suppressed until consent is recorded.</p><Button className="shrink-0" onClick={runPreview} disabled={!branchId || !hasRequiredMapping || !hasCompletePlanMapping || !migrationCutoffDate || matrix.length < 2} loading={previewMutation.isPending}><CheckCircle2 /> Check members</Button></div>

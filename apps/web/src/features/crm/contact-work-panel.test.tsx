@@ -9,10 +9,12 @@ const mutate = vi.fn();
 vi.mock("@/lib/hooks/use-api", () => ({
   useApiMutation: () => ({ mutate, isPending: false }),
   useInvalidate: () => vi.fn(),
+  // Suggestions stay off here: the status query answers nothing, so the note review never appears.
+  useApiQuery: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() }),
 }));
 
 vi.mock("@/lib/providers/app-providers", () => ({
-  useApp: () => ({ session: { organization: { timezone: "Asia/Amman" } } }),
+  useApp: () => ({ session: { organization: { timezone: "Asia/Amman" }, user: { id: "user-1" }, roles: ["owner"], permissions: [] } }),
 }));
 
 describe("LogContactDialog", () => {

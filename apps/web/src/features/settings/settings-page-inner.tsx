@@ -25,6 +25,7 @@ import { GymPublicProfileSection } from "@/features/settings/gym-public-profile-
 import { OperationalEmailSection } from "@/features/settings/operational-email-section";
 import { BrandKitSection } from "@/features/settings/brand-kit-section";
 import { ChecklistsSection } from "@/features/settings/checklists-section";
+import { AssistSettingsSection } from "@/features/assist/assist-settings-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { usePermissions } from "@/lib/providers/app-providers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -85,6 +86,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
       { id: "operations", label: "Operational rules", keywords: "policies entry check-in scan freeze referral renewal lifecycle retention class booking waitlist", permission: "settings.manage", component: OperationalRulesSection },
       { id: "hours", label: "Hours & trials", keywords: "opening closing operating schedule free trial windows branch", permission: "settings.manage", component: HoursAndTrialsSection },
       { id: "checklists", label: "Daily checklists", keywords: "opening closing walkthrough morning night tasks", permission: "operations.manage", component: ChecklistsSection },
+      { id: "assist", label: "Jev assistance", keywords: "ai jev suggestions assistant typesafe gateway smart help judgments", permission: "settings.manage", component: AssistSettingsSection },
     ],
   },
 ];

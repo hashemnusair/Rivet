@@ -41,7 +41,7 @@ import type {
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
-  MemberImportPreviewInput,
+  MemberImportPreviewInput, MemberImportAssistDraft, MemberImportAssistDraftInput,
   MemberImportRow,
   MemberImportSummary,
   MemberImportUndoInput,
@@ -73,6 +73,14 @@ import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/c
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
+import { gateJevRequest, resolveJevMode, type JevModeResolution } from "../../../convex/jevMode";
+import { JEV_FEATURES, JEV_QUESTIONS, getJevQuestion } from "../../../convex/jevQuestions";
+import { JEV_MODEL_ID, JEV_REGISTRY_VERSION, JEV_SIMULATIONS, type JevSimulation } from "../../../convex/jevRegistry";
+import { evaluateJevFixture, jevStateHash, sanitizeJevSubject, type JevSubject } from "../../../convex/jevAnswers";
+import { IMPORT_DRAFT_TTL_MS, IMPORT_MAX_COLUMNS, IMPORT_MAX_HEADING_LENGTH, IMPORT_MAX_PLAN_LABELS, IMPORT_MAX_PLAN_LABEL_LENGTH, buildColumnTargetState, buildPlanMatchState, isImportField, normalizePlanLabel, type ImportAssistDraftData, type ImportColumnSummary, type PlanTerms } from "../../../convex/jevImportState";
+import type { JevCandidate, JevQuestion, JevState } from "../../../convex/jevRegistry";
+import { NAVIGATION_QUERY_MAX_LENGTH, buildNavigationIntentState, buildOnboardingNextStepState, buildReportFinderState, permittedClarifications, permittedNavigationEntries, type NavigationAccess } from "../../../convex/navigationCatalogue";
+import { FOLLOWUP_NOTE_MIN_LENGTH, REASON_ACTIONS, buildContactNoteState, buildMemberFollowUpContext, buildReasonCheckState, buildRelatedTaskState, buildReminderTemplateState, buildRenewalContextState, isReasonAction, reminderTemplateUnavailableReason, type ContactSubjectKind, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
 import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
@@ -136,6 +144,7 @@ function readPreviewBehavior(): MockBehavior {
       failNextRequest: parsed.failNextRequest === true,
       failNextPublicSubscription: parsed.failNextPublicSubscription === true,
       forceEmptyLists: parsed.forceEmptyLists === true,
+      ...(parsed.assistMode === "off" ? { assistMode: "off" as const } : {}),
     };
   } catch {
     return { ...DEFAULT_BEHAVIOR };
@@ -707,6 +716,8 @@ function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, ke
 export class MockGymOSApi implements GymOSApi {
   private db: MockDb;
   private behavior: MockBehavior = readPreviewBehavior();
+  private assistUsage: { day: string; requests: number } = { day: "", requests: 0 };
+  private assistCache = new Map<string, { result: Extract<T.AssistJudgmentResult, { status: "ready" }>; expiresAt: number }>();
   private gymApplications: PlatformGymApplication[];
   private platformGyms: MarketplaceGym[];
   private archivedGymIds = new Set<string>();
@@ -737,6 +748,7 @@ export class MockGymOSApi implements GymOSApi {
   private customerPreferenceHistory = new Map<string, CustomerMarketingPreference[]>();
   private registeredCustomers = new Map<string, CustomerPersona>();
   private memberImports = new Map<string, MemberImportPreview>();
+  private memberImportDrafts = new Map<string, MemberImportAssistDraft>();
   private memberImportPaymentEvidence: Array<{ id: string; memberId: string; membershipId: string; amount: T.Money; lastPaymentDate: string; sourceReference?: string; importBatchId: string; sourceRowNumber: number }> = [];
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
   private publicApplicationIdempotency = new Map<string, { signature: string; result: SubmitGymApplicationResult }>();
@@ -2115,10 +2127,128 @@ export class MockGymOSApi implements GymOSApi {
         ];
         return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: plan?.name, membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
       });
-      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, migrationCutoffDate, planMappings: input.planMappings, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => (row.openingBalanceMinor ?? 0) > 0).length, historicalEvidenceRows: previewRows.filter((row) => (row.historicalPaidMinor ?? 0) > 0).length, currency: this.db.organization.currency, createdAt: nowISO() };
+      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, migrationCutoffDate, planMappings: input.planMappings, assist: input.assist && (input.assist.columns.length || input.assist.plans.length || input.assist.draftId) ? { draftId: input.assist.draftId, columns: [...new Set(input.assist.columns.filter(isImportField))], plans: [...new Set(input.assist.plans.map((label) => label.trim()).filter(Boolean))] } : undefined, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => (row.openingBalanceMinor ?? 0) > 0).length, historicalEvidenceRows: previewRows.filter((row) => (row.historicalPaidMinor ?? 0) > 0).length, currency: this.db.organization.currency, createdAt: nowISO() };
       this.memberImports.set(preview.id, preview);
       return preview;
     });
+  }
+
+  saveMemberImportAssistDraft(input: MemberImportAssistDraftInput): Promise<MemberImportAssistDraft> {
+    return this.respond(() => {
+      this.require("members.write");
+      const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      const headers = input.headers.slice(0, IMPORT_MAX_COLUMNS).map((header) => header.trim().slice(0, IMPORT_MAX_HEADING_LENGTH));
+      if (!headers.length) throw ApiError.of(ERR.VALIDATION, "The import draft needs at least one column heading.");
+      const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0);
+      const columns: ImportColumnSummary[] = headers.map((heading, index) => {
+        const summary = input.columns[index];
+        return { index, heading, filled: count(summary?.filled), empty: count(summary?.empty), distinct: count(summary?.distinct), numeric: count(summary?.numeric), dateLike: count(summary?.dateLike), phoneLike: count(summary?.phoneLike), emailLike: count(summary?.emailLike), alphabetic: count(summary?.alphabetic), arabicScript: count(summary?.arabicScript), minLength: count(summary?.minLength), maxLength: count(summary?.maxLength) };
+      });
+      const sourcePlanLabels = input.sourcePlanLabels.slice(0, IMPORT_MAX_PLAN_LABELS).map((entry) => ({ label: entry.label.trim().slice(0, IMPORT_MAX_PLAN_LABEL_LENGTH), rows: count(entry.rows) })).filter((entry) => entry.label);
+      const now = Date.now();
+      for (const [id, existing] of this.memberImportDrafts) if (Date.parse(existing.expiresAt) < now) this.memberImportDrafts.delete(id);
+      const draft: MemberImportAssistDraft = { id: mockUuid(), branchId: input.branchId, headers, columns, sourcePlanLabels, createdAt: nowISO(), expiresAt: new Date(now + IMPORT_DRAFT_TTL_MS).toISOString() };
+      this.memberImportDrafts.set(draft.id, draft);
+      return draft;
+    });
+  }
+
+  /** The preview's equivalent of the server loaders: real candidates from the draft and the seeded plans; fixtures for synthetic questions. */
+  private async mockJevState(question: JevQuestion, subject: JevSubject): Promise<{ state: JevState; candidates?: JevCandidate[]; scopeKey: string; sourceVersion: string }> {
+    if (question.feature === "navigation") {
+      const access: NavigationAccess = { permissions: permissionsFor(this.db, currentRole(this.db)), role: currentRole(this.db), modules: this.workspaceAccess().modules.map((module) => ({ key: module.key, entitled: module.entitled, enabled: module.enabled })) };
+      const text = (key: string) => {
+        const value = typeof subject[key] === "string" ? subject[key].trim().slice(0, NAVIGATION_QUERY_MAX_LENGTH) : "";
+        if (value.length < 2) throw ApiError.of(ERR.VALIDATION, "Type a few words first.");
+        return value;
+      };
+      if (question.key === "navigation.intent") {
+        const entries = permittedNavigationEntries(access);
+        const path = typeof subject.path === "string" && subject.path.startsWith("/") ? subject.path.slice(0, 200) : undefined;
+        return buildNavigationIntentState({ query: text("query"), currentPath: path, entries, clarifications: permittedClarifications(entries), role: access.role });
+      }
+      if (question.key === "navigation.report_view") return buildReportFinderState({ question: text("question"), entries: permittedNavigationEntries(access) });
+      if (question.key === "navigation.next_step") {
+        const audience = subject.audience === "owner" ? "owner" : "staff";
+        if (audience === "owner" && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Owner onboarding is available only to organization owners.");
+        const experience = await this.getOnboardingExperience(audience);
+        const tasks = experience.tasks.map((task) => ({ key: task.key, title: task.title, description: task.description, category: task.category, href: task.href, complete: task.complete, unavailableReason: task.unavailableReason }));
+        return buildOnboardingNextStepState({ audience, organizationName: this.db.organization.name, tasks, facts: { openRequired: tasks.filter((task) => task.category === "required" && !task.complete).length, openRecommended: tasks.filter((task) => task.category !== "required" && !task.complete).length, completed: tasks.filter((task) => task.complete).length } });
+      }
+    }
+    if (question.feature === "followup") {
+      const kind: ContactSubjectKind = subject.subject === "lead" ? "lead" : "member";
+      const requiredText = (key: string, minLength: number, message: string) => {
+        const value = typeof subject[key] === "string" ? subject[key].trim() : "";
+        if (value.length < minLength) throw ApiError.of(ERR.VALIDATION, message);
+        return value;
+      };
+      const person = (): { id: string; fullName: string; stage?: string } => {
+        if (kind === "lead") {
+          const lead = this.db.leads.find((item) => item.id === subject.leadId);
+          if (!lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+          return { id: lead.id, fullName: lead.fullName, stage: lead.stage };
+        }
+        const member = this.db.members.find((item) => item.id === subject.memberId);
+        if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+        return { id: member.id, fullName: member.fullName };
+      };
+      if (question.key === "followup.contact_outcome") {
+        const note = requiredText("note", FOLLOWUP_NOTE_MIN_LENGTH, "Write a few more words in the note first.");
+        this.require(kind === "lead" ? "crm.write" : "members.write");
+        const who = person();
+        return buildContactNoteState({ subject: kind, subjectId: who.id, note, currentStage: who.stage });
+      }
+      if (question.key === "followup.related_task") {
+        const who = person();
+        const title = requiredText("title", 3, "Give the task a title first.");
+        const dueDate = typeof subject.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(subject.dueDate) ? subject.dueDate : "";
+        if (!dueDate) throw ApiError.of(ERR.VALIDATION, "Choose a due date first.");
+        const draft = { type: typeof subject.type === "string" ? subject.type : "general", title, dueDate, ownerName: typeof subject.ownerName === "string" ? subject.ownerName.slice(0, 80) : undefined };
+        return buildRelatedTaskState({ subject: kind, subjectId: who.id, personName: who.fullName, draft, tasks: this.followUpRelatedTasks(kind === "lead" ? { leadId: who.id } : { memberId: who.id }) });
+      }
+      if (question.key === "followup.renewal_context" || question.key === "followup.reminder_template") {
+        this.require("crm.read");
+        const context = this.memberFollowUpContextSync(typeof subject.memberId === "string" ? subject.memberId : "");
+        if (question.key === "followup.reminder_template") {
+          const blocked = reminderTemplateUnavailableReason(context);
+          if (blocked) throw ApiError.of(ERR.VALIDATION, blocked);
+        }
+        return question.key === "followup.renewal_context" ? buildRenewalContextState({ context, today: this.today() }) : buildReminderTemplateState({ context, today: this.today() });
+      }
+      if (question.key === "followup.reason_check") {
+        const action = subject.action;
+        if (!isReasonAction(action)) throw ApiError.of(ERR.VALIDATION, "Unknown action for a reason check.");
+        this.require(REASON_ACTIONS[action].permission as Permission);
+        return buildReasonCheckState({ action, reason: requiredText("reason", 1, "Type a reason first.") });
+      }
+    }
+
+    if (question.synthetic) return { state: question.fixture.state, candidates: question.fixture.candidates, scopeKey: "synthetic", sourceVersion: `fixture:${question.version}` };
+    if (question.feature === "import") {
+      const draftId = typeof subject.draftId === "string" ? subject.draftId : "";
+      const stored = this.memberImportDrafts.get(draftId);
+      if (!stored || Date.parse(stored.expiresAt) < Date.now()) throw ApiError.of(ERR.NOT_FOUND, "The import draft was not found or has expired. Load the file again to continue.");
+      if (!this.branchIsVisible(stored.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      const draft: ImportAssistDraftData = { id: stored.id, branchId: stored.branchId, headers: stored.headers, columns: stored.columns, sourcePlanLabels: stored.sourcePlanLabels };
+      const currency = this.db.organization.currency;
+      if (question.key === "import.column_target") {
+        const columnIndex = typeof subject.column === "number" ? subject.column : Number(subject.column);
+        const assigned = (typeof subject.assigned === "string" ? subject.assigned : "").split(",").map((item) => item.trim()).filter(isImportField);
+        const built = Number.isInteger(columnIndex) ? buildColumnTargetState({ draft, columnIndex, assignedFields: [...new Set(assigned)], currency }) : undefined;
+        if (!built) throw ApiError.of(ERR.NOT_FOUND, "That column is not part of the import draft.");
+        return built;
+      }
+      if (question.key === "import.plan_match") {
+        const wanted = typeof subject.label === "string" ? normalizePlanLabel(subject.label) : "";
+        const entry = draft.sourcePlanLabels.find((candidate) => normalizePlanLabel(candidate.label) === wanted);
+        if (!wanted || !entry) throw ApiError.of(ERR.NOT_FOUND, "That plan label is not part of the import draft.");
+        const plans: PlanTerms[] = this.db.plans.map((plan) => ({ id: plan.id, name: plan.name, code: plan.code, kind: plan.kind, durationDays: plan.durationDays, visitAllowance: plan.visitAllowance, visitValidityDays: plan.visitValidityDays, priceMinor: plan.basePrice.amount, currency: plan.basePrice.currency, branchAccess: plan.branchAccess, branchIds: plan.branchIds, status: plan.status }));
+        return buildPlanMatchState({ draft, label: entry.label, rows: entry.rows, plans, currency });
+      }
+    }
+    throw ApiError.of(ERR.NOT_FOUND, "This suggestion has no preview state.");
   }
 
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult> {
@@ -2230,7 +2360,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   listMemberImports(): Promise<MemberImportSummary[]> {
-    return this.respond(() => [...this.memberImports.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map((item) => ({ id: item.id, branchId: item.branchId, totalRows: item.totalRows, validRows: item.validRows, duplicateRows: item.duplicateRows, errorRows: item.errorRows, status: item.status, cursor: item.cursor, committedCount: item.committedCount, skippedCount: item.skippedCount, sourceFileName: item.sourceFileName, sourceKind: item.sourceKind, sourceHeaders: item.sourceHeaders, columnMapping: item.columnMapping, migrationCutoffDate: item.migrationCutoffDate, planMappings: item.planMappings, membershipRows: item.membershipRows, openingBalanceRows: item.openingBalanceRows, historicalEvidenceRows: item.historicalEvidenceRows, currency: item.currency, undoExpiresAt: item.undoExpiresAt, createdAt: item.createdAt, completedAt: item.completedAt, undoneAt: item.undoneAt, undoCursor: item.undoCursor, undoArchivedCount: item.undoArchivedCount, undoSkippedCount: item.undoSkippedCount })));
+    return this.respond(() => [...this.memberImports.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map((item) => ({ id: item.id, branchId: item.branchId, totalRows: item.totalRows, validRows: item.validRows, duplicateRows: item.duplicateRows, errorRows: item.errorRows, status: item.status, cursor: item.cursor, committedCount: item.committedCount, skippedCount: item.skippedCount, sourceFileName: item.sourceFileName, sourceKind: item.sourceKind, sourceHeaders: item.sourceHeaders, columnMapping: item.columnMapping, migrationCutoffDate: item.migrationCutoffDate, planMappings: item.planMappings, assist: item.assist, membershipRows: item.membershipRows, openingBalanceRows: item.openingBalanceRows, historicalEvidenceRows: item.historicalEvidenceRows, currency: item.currency, undoExpiresAt: item.undoExpiresAt, createdAt: item.createdAt, completedAt: item.completedAt, undoneAt: item.undoneAt, undoCursor: item.undoCursor, undoArchivedCount: item.undoArchivedCount, undoSkippedCount: item.undoSkippedCount })));
   }
 
   getMemberImport(importId: T.UUID): Promise<MemberImportPreview> {
@@ -3443,6 +3573,9 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   resetDemo(): Promise<void> {
+    this.assistCache.clear();
+    this.memberImportDrafts.clear();
+    this.assistUsage = { day: "", requests: 0 };
     const role = currentRole(this.db);
     const branch = this.db.session.activeBranchId;
     this.db = buildSeed();
@@ -6892,6 +7025,13 @@ export class MockGymOSApi implements GymOSApi {
   createFollowUp(input: T.CreateTaskInput): Promise<T.Task> {
     return this.respond(() => {
       this.require("crm.write");
+      const related = input.relatedTaskId ? this.db.tasks.find((candidate) => candidate.id === input.relatedTaskId) : undefined;
+      if (input.relatedTaskId) {
+        if (!related) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+        const sameSubject = (input.memberId && related.memberId === input.memberId) || (input.leadId && related.leadId === input.leadId);
+        if (!sameSubject) throw ApiError.of(ERR.VALIDATION, "The related task is about someone else.");
+        if (related.status !== "open") throw ApiError.of(ERR.VALIDATION, "The related task is no longer open. Review the suggestion again.");
+      }
       const subject = input.leadId
         ? this.db.leads.find((l) => l.id === input.leadId)?.fullName
         : this.db.members.find((m) => m.id === input.memberId)?.fullName;
@@ -6910,6 +7050,8 @@ export class MockGymOSApi implements GymOSApi {
         subjectName: subject ?? "—",
         createdById: this.actor().id,
         createdAt: nowISO(),
+        relatedTaskId: related?.id,
+        relatedTaskTitle: related?.title,
       };
       this.db.tasks.push(task);
       if (input.memberId) {
@@ -6917,6 +7059,7 @@ export class MockGymOSApi implements GymOSApi {
           memberId: input.memberId,
           type: "task_created",
           title: `Task: ${input.title}`,
+          body: related ? `Follow-on to: ${related.title}` : undefined,
           actorId: this.actor().id,
           actorName: this.actor().name,
         });
@@ -7073,6 +7216,61 @@ export class MockGymOSApi implements GymOSApi {
     });
     return record;
   }
+
+  /** The person's open tasks in the shape the follow-up surfaces share with Convex. */
+  private followUpRelatedTasks(subject: { memberId?: string; leadId?: string }): FollowUpRelatedTask[] {
+    const me = this.actor().id;
+    return this.db.tasks
+      .filter((task) => task.status === "open" && (subject.memberId ? task.memberId === subject.memberId : subject.leadId ? task.leadId === subject.leadId : false))
+      .map((task) => ({ id: task.id, type: task.type, title: task.title, ownerId: task.ownerId, ownerName: task.ownerName, dueAt: task.dueAt, priority: task.priority, status: task.status, mine: !task.ownerId || task.ownerId === me, createdById: task.createdById, relatedTaskId: task.relatedTaskId, relatedTaskTitle: task.relatedTaskTitle }))
+      .sort((left, right) => left.dueAt.localeCompare(right.dueAt));
+  }
+
+  /** The preview's equivalent of `members.followup_context`: the same builder over the seeded records; no reminder deliveries exist in the preview. */
+  private memberFollowUpContextSync(memberId: string): T.MemberFollowUpContext {
+    this.require("members.read");
+    const member = this.db.members.find((item) => item.id === memberId);
+    if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+    const today = this.today();
+    const memberships: FollowUpMembershipLike[] = this.db.memberships
+      .filter((term) => term.memberId === member.id)
+      .map((term) => ({
+        id: term.id,
+        planName: this.db.plans.find((plan) => plan.id === term.planId)?.name,
+        branchName: this.db.branches.find((branch) => branch.id === term.homeBranchId)?.name,
+        startDate: term.startDate,
+        endDate: term.endDate,
+        status: this.membershipStatusOf(term),
+        cancelledAt: term.cancelledAt,
+        previousMembershipId: term.previousMembershipId,
+        remainingVisits: term.remainingVisits,
+        activeFreeze: term.activeFreeze ? { status: term.activeFreeze.status, startDate: term.activeFreeze.startDate, endDate: term.activeFreeze.endDate } : undefined,
+        outstandingMinor: this.db.charges.filter((charge) => charge.membershipId === term.id).reduce((sum, charge) => sum + collectibleOutstandingMinor(charge, today), 0),
+      }));
+    const timeline: FollowUpTimelineLike[] = this.db.activities
+      .filter((event) => event.memberId === member.id)
+      .map((event) => ({ id: event.id, type: event.type, title: event.title, body: event.body, occurredAt: event.occurredAt, actorName: event.actorName, meta: event.meta }));
+    const tasks = permissionsFor(this.db, currentRole(this.db)).includes("crm.read") ? this.followUpRelatedTasks({ memberId: member.id }) : [];
+    const notifications = this.db.notificationSettings;
+    return buildMemberFollowUpContext({
+      member: { id: member.id, fullName: member.fullName, phone: member.phone, preferredLanguage: member.preferredLanguage, status: member.status, consent: { marketingOptIn: member.marketingOptIn, marketingPreference: member.marketingPreference } },
+      memberships,
+      timeline,
+      tasks,
+      deliveries: [],
+      quietHours: { start: notifications.quietHoursStart ?? "22:00", end: notifications.quietHoursEnd ?? "08:00" },
+      deliveryMode: notifications.automationDeliveryMode,
+      currency: this.db.organization.currency,
+      timezone: this.db.organization.timezone || TZ,
+      today,
+      now: Date.now(),
+    });
+  }
+
+  getMemberFollowUpContext(memberId: T.UUID): Promise<T.MemberFollowUpContext> {
+    return this.respond(() => this.memberFollowUpContextSync(memberId));
+  }
+
 
   listRenewalQueue(query: RenewalQueueQuery): Promise<T.Page<T.RenewalQueueItem>> {
     return this.respond(() => {
@@ -10926,6 +11124,120 @@ export class MockGymOSApi implements GymOSApi {
 
   listMessageTemplateCatalogue(): Promise<T.MessageTemplateCatalogueEntry[]> {
     return this.respond(() => MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] })));
+  }
+
+  // --- Jev-assisted suggestions: preview answers come from the registered fixtures; nothing leaves the browser ---
+
+  private assistResolution(now = Date.now()): JevModeResolution {
+    return resolveJevMode({ RIVET_JEV_MODE: this.behavior.assistMode ?? "fixture" }, now);
+  }
+
+  private assistUsageToday(): { day: string; requests: number } {
+    const day = new Date().toISOString().slice(0, 10);
+    if (this.assistUsage.day !== day) this.assistUsage = { day, requests: 0 };
+    return this.assistUsage;
+  }
+
+  private assistStatusView(): T.AssistStatus {
+    const resolution = this.assistResolution();
+    const usage = this.assistUsageToday();
+    const preference = this.db.assistPreference;
+    const gateFor = (featureKey?: string) => gateJevRequest({ resolution, featureKey, tenantEnabled: preference.enabled, breakerTripped: false, globalRequestsToday: usage.requests, tenantRequestsToday: usage.requests });
+    const features: T.AssistFeatureStatus[] = JEV_FEATURES.map((feature) => {
+      const gate = gateFor(feature.key);
+      return {
+        key: feature.key,
+        label: feature.label,
+        description: feature.description,
+        enabledGlobally: resolution.mode === "fixture" || resolution.features.includes(feature.key),
+        ready: gate.allowed,
+        ...(gate.allowed ? {} : { blockedReason: gate.reason }),
+        questions: JEV_QUESTIONS.filter((question) => question.feature === feature.key).map((question) => ({ key: question.key, label: question.label, description: question.description, kind: question.kind, version: question.version, permission: question.permission, synthetic: question.synthetic, cacheTtlMs: question.cacheTtlMs })),
+      };
+    });
+    const gate = gateFor(undefined);
+    const readyFeature = features.find((feature) => feature.ready);
+    return {
+      mode: resolution.mode,
+      modeSource: resolution.source,
+      modelId: JEV_MODEL_ID,
+      registryVersion: JEV_REGISTRY_VERSION,
+      keyConfigured: false,
+      freeTerms: resolution.freeTerms,
+      zeroDataRetention: false,
+      breaker: { tripped: false },
+      tenant: { enabled: preference.enabled, updatedAt: preference.updatedAt, updatedBy: preference.updatedBy, reason: preference.reason },
+      usage: { day: usage.day, tenantRequests: usage.requests, tenantDailyCap: resolution.tenantDailyCap, globalRequests: usage.requests, globalDailyCap: resolution.dailyCap },
+      features,
+      ready: Boolean(readyFeature),
+      readyMode: gate.allowed && readyFeature ? gate.mode : undefined,
+      blockedReason: gate.allowed ? (readyFeature ? undefined : "feature_off") : gate.reason,
+      blockedMessage: gate.allowed ? (readyFeature ? undefined : "No feature is enabled for live Jev calls in this environment.") : gate.message,
+      warnings: resolution.warnings,
+      canManage: permissionsFor(this.db, currentRole(this.db)).includes("settings.manage"),
+    };
+  }
+
+  getAssistStatus(): Promise<T.AssistStatus> {
+    return this.respond(() => this.assistStatusView());
+  }
+
+  updateAssistPreference(input: T.UpdateAssistPreferenceInput): Promise<T.AssistStatus> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      const reason = input.reason?.trim().slice(0, 500) || undefined;
+      this.db.assistPreference = { enabled: input.enabled, reason, updatedAt: nowISO(), updatedBy: this.actor().name };
+      this.audit({
+        category: "settings",
+        action: "settings.assist.update",
+        entityType: "organization",
+        entityId: this.db.organization.id,
+        entityLabel: this.db.organization.name,
+        summary: input.enabled ? "Jev suggestions switched on for this gym" : "Jev suggestions switched off for this gym",
+        reason,
+      });
+      return this.assistStatusView();
+    });
+  }
+
+  requestAssistJudgment(input: T.AssistJudgmentRequest): Promise<T.AssistJudgmentResult> {
+    return this.respond(async () => {
+      const question = getJevQuestion(input.questionKey);
+      if (!question) return { status: "blocked", reason: "unknown_question", message: "This suggestion is not registered." };
+      this.require(question.permission as Permission);
+      const resolution = this.assistResolution();
+      const usage = this.assistUsageToday();
+      const gate = gateJevRequest({ resolution, featureKey: question.feature, tenantEnabled: this.db.assistPreference.enabled, breakerTripped: false, globalRequestsToday: usage.requests, tenantRequestsToday: usage.requests });
+      if (!gate.allowed) return { status: "blocked", reason: gate.reason, message: gate.message };
+      const subject = sanitizeJevSubject(input.subject);
+      const simulate = question.synthetic && typeof subject.simulate === "string" && (JEV_SIMULATIONS as readonly string[]).includes(subject.simulate) ? (subject.simulate as JevSimulation) : undefined;
+      const loaded = await this.mockJevState(question, subject);
+      const stateHash = jevStateHash({ questionKey: question.key, questionVersion: question.version, sourceVersion: loaded.sourceVersion, state: loaded.state, candidates: loaded.candidates });
+      const cacheKey = `${this.db.organization.id}|${question.key}|${loaded.scopeKey}|${stateHash}`;
+      const now = Date.now();
+      if (question.cacheTtlMs > 0 && !simulate) {
+        const cached = this.assistCache.get(cacheKey);
+        if (cached && cached.expiresAt > now) return { ...cached.result, source: "cache", latencyMs: 0 };
+      }
+      usage.requests += 1;
+      const correlationId = `mock-${mockUuid()}`;
+      const outcome = evaluateJevFixture(question, simulate, 90, { state: loaded.state, candidates: loaded.candidates });
+      if (!outcome.ok) return { status: "unavailable", reason: outcome.reason, message: outcome.message, retryable: outcome.retryable, correlationId };
+      const result: Extract<T.AssistJudgmentResult, { status: "ready" }> = {
+        status: "ready",
+        source: "fixture",
+        judgment: outcome.judgment,
+        questionKey: question.key,
+        questionVersion: question.version,
+        modelId: outcome.modelId,
+        stateHash,
+        latencyMs: outcome.latencyMs,
+        createdAt: nowISO(),
+        correlationId,
+      };
+      if (question.cacheTtlMs > 0) this.assistCache.set(cacheKey, { result, expiresAt: now + question.cacheTtlMs });
+      return result;
+    });
   }
 
   getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }> {

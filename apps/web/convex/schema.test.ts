@@ -35,6 +35,11 @@ describe("Convex persistence contract", () => {
       "idempotencyRecords",
       "sequenceCounters",
       "entryPasses",
+      "jevJudgments",
+      "jevRequests",
+      "jevUsage",
+      "jevTenantPreferences",
+      "jevControlState",
     ]));
   });
 });

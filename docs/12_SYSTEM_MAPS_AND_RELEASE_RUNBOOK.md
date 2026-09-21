@@ -1188,6 +1188,12 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_MESSAGING_ALLOWLIST` | — | — | Comma list of E.164 numbers or `+96279*` prefixes | Required in `allowlist` mode | — |
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
 | `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` | Absent / `0` | — | — | Global platform-billing gate; default off, exact enable value is `1` | — |
+| `RIVET_JEV_MODE` | Absent (`off`) | — | `off` until the docs/21 go-live gate is complete | Jev suggestion switch: `off`, `fixture` (synthetic answers, no external call), `live` (typesafe-ai/jev through Vercel AI Gateway); unrecognised values mean `off` | — |
+| `RIVET_JEV_FEATURES` | — | — | Comma list of feature keys allowed to call live (for example `foundation`) | Empty means no feature may call the model even in `live` | — |
+| `RIVET_JEV_FREE_UNTIL` | — | — | Last UTC day (`YYYY-MM-DD`) on which the free terms were confirmed | Live calls stop when it is missing, malformed or in the past | — |
+| `RIVET_JEV_DAILY_CAP`, `RIVET_JEV_TENANT_DAILY_CAP` | — | — | Optional (defaults 200 and 50) | Live requests per UTC day, platform-wide and per gym; `0` means none | — |
+| `RIVET_JEV_ZERO_DATA_RETENTION` | — | — | `1` only on a Pro or Enterprise AI Gateway team | Asks the gateway for zero-data-retention routing on every request | — |
+| `AI_GATEWAY_API_KEY` | Never | Never | Never | Convex dashboard only; the code reads presence, never the value | Never; CI does not need it |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
 | `CONVEX_DEPLOY_KEY` | Development operator key | Never | Avoid unless Vercel is the approved deploy operator | — | Staging key for codegen/smoke |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Local-only staging session JSON |
@@ -1254,6 +1260,7 @@ Complete this phase before asking an agent to run staging or production checks. 
 - [ ] Confirm `RIVET_APPLICATION_RECIPIENTS` contains the intended RIVET operators.
 - [ ] Confirm `RIVET_EMAIL_MODE` is `allowlist` (with `RIVET_EMAIL_ALLOWLIST` = RIVET staff and the pilot gym) until the email go-live checklist in docs/19 is complete, then `live`.
 - [ ] Confirm `RIVET_MESSAGING_MODE` is `off` or `allowlist`; never `live` before the WhatsApp templates are approved and the docs/19 checklist is complete. RIVET sends WhatsApp only (decided 14 September 2026); there is no SMS sender variable.
+- [ ] Confirm `RIVET_JEV_MODE` is absent or `off` unless the go-live gate in `docs/21_JEV_ASSIST_FOUNDATION.md` is complete (free terms confirmed and dated in `RIVET_JEV_FREE_UNTIL`, key set in the Convex dashboard, features listed, breaker clear). `convex.json` now pins Node 22 for Node actions; the guarded dry run must accept it before the deploy.
 - [ ] Confirm the 8 August 2026 production backup/export still exists or create a fresh backup before pilot mutations.
 - [x] Do not run `seed:seedDemoTenant`.
 - [x] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.

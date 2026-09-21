@@ -6,6 +6,7 @@ import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { CONTACT_OUTCOME_LABELS, suggestedFollowUpDays } from "@/lib/crm/contact-outcomes";
+import { ContactNoteReview } from "@/features/followup/contact-note-review";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { addDays, localDateTimeToISO, todayISODate } from "@/lib/utils/dates";
@@ -92,6 +93,7 @@ export function LogContactForm({
   const today = todayISODate(timezone);
   const [error, setError] = useState<string | null>(null);
   const [followUpTouched, setFollowUpTouched] = useState(false);
+  const [stageTouched, setStageTouched] = useState(false);
   const [suggestedDays, setSuggestedDays] = useState<number | undefined>(() => defaultOutcome ? suggestedFollowUpDays(defaultOutcome) : undefined);
 
   const form = useForm<FormValues>({
@@ -120,6 +122,22 @@ export function LogContactForm({
     if (!followUpTouched) form.setValue("nextFollowUp", days ? addDays(today, days) : "");
   };
 
+  // A reviewed note may set the outcome, never the fields the person edited:
+  // a typed date and a chosen stage stay; only the untouched defaults follow.
+  const applySuggestedOutcome = (next: ContactOutcome) => {
+    form.setValue("outcome", next, { shouldValidate: true });
+    if (subject === "lead" && !stageTouched) form.setValue("stage", recommendedLeadStage(next, currentStage));
+    const days = suggestedFollowUpDays(next);
+    setSuggestedDays(days);
+    if (!followUpTouched) form.setValue("nextFollowUp", days ? addDays(today, days) : "");
+  };
+  /** The stage the form would send for an outcome, exactly as the mutation applies it. */
+  const stageFor = (candidate: ContactOutcome): string | undefined => {
+    if (subject !== "lead") return undefined;
+    if (STAGE_OUTCOMES.has(candidate)) return (stageTouched ? form.getValues("stage") : undefined) ?? recommendedLeadStage(candidate, currentStage);
+    return currentStage === "new" ? "attempted" : currentStage;
+  };
+
   const mutation = useApiMutation<unknown, FormValues>(
     (api, v) => {
       const input = {
@@ -137,6 +155,7 @@ export function LogContactForm({
         toast.success("Contact logged — timeline updated.");
         form.reset({ outcome: undefined, notes: "", nextFollowUp: "", stage: undefined });
         setFollowUpTouched(false);
+        setStageTouched(false);
         setSuggestedDays(undefined);
         await invalidate();
         onLogged?.();
@@ -147,6 +166,7 @@ export function LogContactForm({
   );
 
   const followUp = form.watch("nextFollowUp");
+  const notes = form.watch("notes") ?? "";
   const followUpInPast = Boolean(followUp && followUp < today);
 
   return (
@@ -186,7 +206,7 @@ export function LogContactForm({
             control={form.control}
             name="stage"
             render={({ field }) => (
-              <Select value={field.value ?? recommendedLeadStage(outcome!, currentStage)} onValueChange={field.onChange}>
+              <Select value={field.value ?? recommendedLeadStage(outcome!, currentStage)} onValueChange={(value) => { setStageTouched(true); field.onChange(value); }}>
                 <SelectTrigger aria-label="Lead stage">
                   <SelectValue />
                 </SelectTrigger>
@@ -204,6 +224,19 @@ export function LogContactForm({
       <Field label="Notes">
         <Textarea rows={compact ? 2 : 3} placeholder="What did they say?" {...form.register("notes")} data-testid="contact-notes" />
       </Field>
+      {(subject === "lead" ? leadId : memberId) ? (
+        <ContactNoteReview
+          subject={subject}
+          subjectId={subject === "lead" ? leadId! : memberId!}
+          note={notes}
+          currentStage={currentStage}
+          selectedOutcome={outcome}
+          followUpDate={followUp || undefined}
+          followUpTouched={followUpTouched}
+          stageFor={stageFor}
+          onApply={applySuggestedOutcome}
+        />
+      ) : null}
 
       <Field
         label="Next follow-up"

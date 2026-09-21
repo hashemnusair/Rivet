@@ -1855,4 +1855,87 @@ export default defineSchema({
     nextValue: v.number(),
     updatedAt: v.number(),
   }).index("by_organization_key", ["organizationId", "key"]),
+
+  // --- Jev-assisted suggestions: bounded semantic judgments (see jev.ts) ---
+  // Cached judgments are tenant-scoped and keyed by the hash of the state the
+  // model saw; the row also carries the question, registry and model versions
+  // so any contract change invalidates it.
+  jevJudgments: defineTable({
+    organizationId: v.id("organizations"),
+    questionKey: v.string(),
+    questionVersion: v.number(),
+    registryVersion: v.number(),
+    scopeKey: v.string(),
+    stateHash: v.string(),
+    sourceVersion: v.string(),
+    source: v.union(v.literal("fixture"), v.literal("live")),
+    modelId: v.string(),
+    modelVersion: v.optional(v.string()),
+    judgment: v.any(),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    reportedCostUsd: v.optional(v.number()),
+    latencyMs: v.number(),
+    requestedByUserId: v.id("users"),
+    correlationId: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_organization_lookup", ["organizationId", "questionKey", "scopeKey", "stateHash"])
+    .index("by_expires", ["expiresAt"]),
+
+  // One row per attempted judgment: the in-flight lease that deduplicates
+  // identical requests, then the outcome for the request log.
+  jevRequests: defineTable({
+    organizationId: v.id("organizations"),
+    leaseKey: v.string(),
+    status: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.literal("stale")),
+    mode: v.union(v.literal("fixture"), v.literal("live")),
+    requestedByUserId: v.id("users"),
+    correlationId: v.string(),
+    startedAt: v.number(),
+    leaseExpiresAt: v.number(),
+    finishedAt: v.optional(v.number()),
+    latencyMs: v.optional(v.number()),
+    failureReason: v.optional(v.string()),
+    failureMessage: v.optional(v.string()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    reportedCostUsd: v.optional(v.number()),
+  })
+    .index("by_organization_lease", ["organizationId", "leaseKey"])
+    .index("by_lease_expires", ["leaseExpiresAt"]),
+
+  jevUsage: defineTable({
+    organizationId: v.id("organizations"),
+    day: v.string(),
+    requests: v.number(),
+    inputTokens: v.number(),
+    outputTokens: v.number(),
+    reportedCostUsd: v.number(),
+    updatedAt: v.number(),
+  }).index("by_organization_day", ["organizationId", "day"]),
+
+  // The gym's own switch; off until a settings manager turns it on.
+  jevTenantPreferences: defineTable({
+    organizationId: v.id("organizations"),
+    enabled: v.boolean(),
+    reason: v.optional(v.string()),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_organization", ["organizationId"]),
+
+  // Platform-wide rows: the zero-cost breaker and the global daily counter.
+  jevControlState: defineTable({
+    key: v.string(),
+    day: v.optional(v.string()),
+    requests: v.optional(v.number()),
+    trippedAt: v.optional(v.number()),
+    tripReason: v.optional(v.string()),
+    resetAt: v.optional(v.number()),
+    resetReason: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
 });

@@ -95,7 +95,7 @@ export function TimelineFeed({
         const { icon: Icon, tone } = EVENT_ICON[event.type] ?? { icon: CircleDot, tone: "text-ink-2" };
         const receiptId = event.meta?.receiptId ? String(event.meta.receiptId) : undefined;
         return (
-          <li key={event.id} className={cn("relative flex gap-3", i < events.length - 1 && "pb-4")}>
+          <li key={event.id} id={`timeline-event-`} className={cn("relative flex gap-3 scroll-mt-20", i < events.length - 1 && "pb-4")}>
             {i < events.length - 1 ? (
               <span aria-hidden className="absolute start-[7px] top-5 bottom-0 w-px bg-line" />
             ) : null}

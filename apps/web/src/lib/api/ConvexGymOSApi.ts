@@ -19,6 +19,8 @@ import type {
   MemberImportCommitResult,
   MemberImportPreview,
   MemberImportPreviewInput,
+  MemberImportAssistDraft,
+  MemberImportAssistDraftInput,
   MemberImportSummary,
   MemberImportUndoInput,
   MemberImportUndoResult,
@@ -69,6 +71,13 @@ type InvitationActionArgs = {
   correlationId: string;
 };
 
+/** Workspace scope for the Jev functions, which live outside the domain dispatcher. */
+type JevScopedArgs = {
+  organizationId?: string;
+  activeBranchId?: string;
+  correlationId: string;
+};
+
 export interface ConvexTransport {
   query(reference: typeof api.domain.query, args: ConvexOperationArgs): Promise<unknown>;
   mutation(reference: typeof api.domain.mutate, args: ConvexOperationArgs): Promise<unknown>;
@@ -86,6 +95,9 @@ export interface ConvexTransport {
   action(reference: typeof api.platformProvisioningAction.provision, args: ProvisionGymInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.invitations.send, args: InvitationActionArgs): Promise<unknown>;
   action(reference: typeof api.media.finalizeUpload, args: { organizationId: string; activeBranchId?: string; correlationId: string; ownerType: T.MediaAssetOwnerType; ownerPublicId: string; altText?: string; storageId: string }): Promise<unknown>;
+  query(reference: typeof api.jev.status, args: JevScopedArgs): Promise<unknown>;
+  mutation(reference: typeof api.jev.updateTenantPreference, args: JevScopedArgs & T.UpdateAssistPreferenceInput): Promise<unknown>;
+  action(reference: typeof api.jevInference.judge, args: JevScopedArgs & T.AssistJudgmentRequest): Promise<unknown>;
 }
 
 function correlationId(): string {
@@ -247,6 +259,20 @@ export class ConvexGymOSApi implements GymOSApi {
       if (!this.transport || !this.organizationId) throw ApiError.of(ERR.CONFIGURATION, "Select a gym workspace before inviting staff.");
       const result = await this.transport.action(reference, { input: input as Record<string, unknown>, organizationId: this.organizationId, correlationId: correlationId() });
       return result as T;
+    } catch (error) {
+      throw error instanceof ApiError ? error : errorFromConvex(error);
+    }
+  }
+
+  private scopedArgs(): JevScopedArgs {
+    return { organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: correlationId() };
+  }
+
+  /** Functions outside the domain dispatcher still get the same configuration and error translation. */
+  private async direct<T>(call: (transport: ConvexTransport) => Promise<unknown>): Promise<T> {
+    try {
+      if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
+      return (await call(this.transport)) as T;
     } catch (error) {
       throw error instanceof ApiError ? error : errorFromConvex(error);
     }
@@ -712,6 +738,9 @@ export class ConvexGymOSApi implements GymOSApi {
   receivePurchaseOrder(input: T.ReceivePurchaseOrderInput): Promise<T.PurchaseOrder> { return this.mutate("operations.purchase_order.receive", input); }
   notifyPurchaseOrderSupplier(input: { purchaseOrderId: T.UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<T.SupplierNotificationResult> { return this.mutate("operations.supplier_notification.preview", input); }
   getMessagingStatus(): Promise<T.MessagingStatus> { return this.query("messaging.status", {}); }
+  getAssistStatus(): Promise<T.AssistStatus> { return this.direct((transport) => transport.query(api.jev.status, this.scopedArgs())); }
+  updateAssistPreference(input: T.UpdateAssistPreferenceInput): Promise<T.AssistStatus> { return this.direct((transport) => transport.mutation(api.jev.updateTenantPreference, { ...this.scopedArgs(), enabled: input.enabled, reason: input.reason })); }
+  requestAssistJudgment(input: T.AssistJudgmentRequest): Promise<T.AssistJudgmentResult> { return this.direct((transport) => transport.action(api.jevInference.judge, { ...this.scopedArgs(), questionKey: input.questionKey, subject: input.subject })); }
   listMessageTemplateCatalogue(): Promise<T.MessageTemplateCatalogueEntry[]> { return this.query("messaging.templates.catalogue", {}); }
   listMyPlatformInvoices(): Promise<PlatformBillingInvoice[]> { return this.query("billing.invoices.list", {}); }
   getSubscriptionAgreementContext(): Promise<T.SubscriptionAgreementContext> { return this.query("legal.agreement.current", {}); }
@@ -763,6 +792,8 @@ export class ConvexGymOSApi implements GymOSApi {
   getEquipmentRecommendation(assetId: T.UUID): Promise<T.EquipmentRecommendation> { return this.query("operations.equipment.recommendation", { id: assetId }); }
   listUsers(query: UserListQuery): Promise<T.Page<T.StaffUser>> { return this.query("users.list", query); }
   previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview> { return this.mutate("members.import.preview", input); }
+  saveMemberImportAssistDraft(input: MemberImportAssistDraftInput): Promise<MemberImportAssistDraft> { return this.mutate("members.import.draft", input); }
+  getMemberFollowUpContext(memberId: T.UUID): Promise<T.MemberFollowUpContext> { return this.query("members.followup_context", { memberId }); }
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult> { return this.mutate("members.import.commit", input); }
   listMemberImports(): Promise<MemberImportSummary[]> { return this.query("members.import.list"); }
   getMemberImport(importId: T.UUID): Promise<MemberImportPreview> { return this.query("members.import.get", { importId }); }

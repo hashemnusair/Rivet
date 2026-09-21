@@ -23,6 +23,10 @@ interface WhatsAppHandoffProps {
   buttonLabel?: string;
   onLogged?: () => void;
   className?: string;
+  /** Drive the dialog from outside (for example with a suggested message); otherwise it renders its own button. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
 function firstName(name: string): string {
@@ -56,13 +60,21 @@ export function WhatsAppHandoff({
   buttonLabel = "WhatsApp",
   onLogged,
   className,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: WhatsAppHandoffProps) {
   const { session } = useApp();
   const invalidate = useInvalidate();
   const gymName = organizationName ?? session?.organization.name ?? "RIVET";
   const callingCode = defaultCountryCallingCode ?? session?.organization.phoneCountryCallingCode ?? DEFAULT_PHONE_COUNTRY_CALLING_CODE;
   const preparedMessage = useMemo(() => initialMessage?.trim() || defaultWhatsAppMessage(recipientName, gymName), [gymName, initialMessage, recipientName]);
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const [message, setMessage] = useState(preparedMessage);
   const [nextFollowUp, setNextFollowUp] = useState(() => addDays(todayISODate(session?.organization.timezone), 1));
   const [error, setError] = useState<string>();
@@ -122,9 +134,11 @@ export function WhatsAppHandoff({
 
   return (
     <>
-      <Button type="button" variant="secondary" size="sm" className={className} onClick={() => setOpen(true)}>
-        <MessageCircle /> {buttonLabel}
-      </Button>
+      {hideTrigger ? null : (
+        <Button type="button" variant="secondary" size="sm" className={className} onClick={() => setOpen(true)}>
+          <MessageCircle /> {buttonLabel}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>

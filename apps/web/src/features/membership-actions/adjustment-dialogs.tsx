@@ -26,6 +26,7 @@ import {
 import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ReasonCheck } from "@/features/followup/reason-check";
 
 const transferSchema = z.object({
   branchId: z.string().min(1, "Choose a destination branch"),
@@ -86,6 +87,7 @@ export function TransferMembershipDialog({
             <Field label="Reason" required error={form.formState.errors.reason?.message}>
               <Textarea placeholder="e.g. Member relocated; confirmed by branch manager" {...form.register("reason")} />
             </Field>
+            <ReasonCheck action="transfer" reason={form.watch("reason")} />
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
@@ -203,6 +205,7 @@ export function FreezeDialog({
             <Field label="Reason" required error={form.formState.errors.reason?.message}>
               <Textarea placeholder="e.g. Travel for work, back on the 20th" {...form.register("reason")} />
             </Field>
+            <ReasonCheck action="freeze" reason={form.watch("reason")} />
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
@@ -280,6 +283,7 @@ export function ExtendDialog({
             <Field label="Reason" required error={form.formState.errors.reason?.message}>
               <Textarea placeholder="e.g. Goodwill for the equipment outage last week" {...form.register("reason")} />
             </Field>
+            <ReasonCheck action="extend" reason={form.watch("reason")} />
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
@@ -344,6 +348,7 @@ export function CancelMembershipDialog({
             <Field label="Reason" required error={form.formState.errors.reason?.message}>
               <Textarea placeholder="e.g. Member relocated; confirmed by phone" {...form.register("reason")} />
             </Field>
+            <ReasonCheck action="cancel" reason={form.watch("reason")} />
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
@@ -408,6 +413,7 @@ export function UnfreezeDialog({
             <Field label="Reason" required error={form.formState.errors.reason?.message}>
               <Textarea placeholder="e.g. Member returned early, at the desk now" {...form.register("reason")} />
             </Field>
+            <ReasonCheck action="unfreeze" reason={form.watch("reason")} />
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
@@ -497,6 +503,7 @@ export function ChangeMembershipPlanDialog({
             <Field label="Reason" required error={form.formState.errors.reason?.message}>
               <Textarea placeholder="e.g. Member moving to unlimited access at next renewal" {...form.register("reason")} />
             </Field>
+            <ReasonCheck action="plan_change" reason={form.watch("reason")} />
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}

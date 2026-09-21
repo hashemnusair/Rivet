@@ -6,6 +6,7 @@ export const qk = {
   members: (params?: unknown) => ["members", "list", params] as const,
   member: (id: string) => ["members", "detail", id] as const,
   memberTimeline: (id: string, params?: unknown) => ["members", "timeline", id, params] as const,
+  memberFollowUpContext: (id: string) => ["members", "followup", id] as const,
   plans: (params?: unknown) => ["plans", params] as const,
   gymProfile: ["gymProfile"] as const,
   gymProfileVersions: ["gymProfile", "versions"] as const,
@@ -73,6 +74,7 @@ export const qk = {
   checklistAssignees: (branchId: string) => ["checklistAssignees", branchId] as const,
   checklistTemplates: (branchId?: string) => ["checklistTemplates", branchId ?? "all"] as const,
   checklistDay: (branchId: string, date?: string) => ["checklistDay", branchId, date ?? "today"] as const,
+  assistStatus: ["assist", "status"] as const,
 };
 
 /** Prefixes invalidated after any money/membership-affecting mutation. */

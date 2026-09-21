@@ -24,6 +24,7 @@ import { downloadTextFile } from "@/lib/exports/download";
 import { OperationalReports, OPERATIONAL_REPORT_LABELS, OPERATIONAL_REPORT_QUESTIONS, type OperationalReportKind } from "@/features/reports/operational-reports";
 import { countLabel, loadTransactionsInRange, summarizeRange } from "@/features/reports/overview-totals";
 import { ReportScopeBar, parseReportScope, reportScopeFrom, reportScopeHref, type ReportScope } from "@/features/reports/report-scope";
+import { ReportFinder } from "@/features/navigation/navigation-assist";
 
 type ReportsView = "overview" | OperationalReportKind;
 const VIEWS: readonly ReportsView[] = ["overview", "peak-hours", "classes", "retention", "renewals", "collections", "crm", "controls"];
@@ -171,6 +172,7 @@ function ReportsPageInner() {
       />
 
       <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner or manager access is required for financial reporting." />}>
+        {canRead ? <ReportFinder session={session} hrefForView={(href) => hrefFor(parseView(new URL(href, "https://rivet.local").searchParams.get("view")))} /> : null}
         <nav aria-label="Report views" className={tabListClassName}>
           {VIEWS.map((kind) => (
             <Link key={kind} href={hrefFor(kind)} replace scroll={false} onClick={(event) => selectView(event, kind)} aria-current={view === kind ? "page" : undefined} className={tabTriggerClassName} data-tab-value={kind}>

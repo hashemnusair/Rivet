@@ -1983,6 +1983,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
       { key: "cliq", label: "CliQ instant transfer", enabled: true, affectsCashDrawer: false },
       { key: "other", label: "Other / adjustment", enabled: false, affectsCashDrawer: false },
     ],
+    assistPreference: { enabled: false },
     notificationSettings: {
       managerAlerts: { cashVariance: true, refundOrVoid: true, checkinOverride: true, discountApproval: true },
       renewalRecoveryEnabled: false,
