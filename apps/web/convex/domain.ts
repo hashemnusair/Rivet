@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -79,6 +79,7 @@ import {
 } from "../src/lib/utils/contact";
 import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
 import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
+import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefScope, type BriefSourceInput, type BriefSourceKey, type OperatingBrief } from "./operatingBrief";
 import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
 import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "../src/lib/members/lookup";
 import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, resolveFollowUpTasks, shouldClearLeadFollowUp } from "../src/lib/crm/contact-outcomes";
@@ -6591,6 +6592,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "dashboard":
       return await dashboardData(ctx, actor, input);
+    case "dashboard.brief":
+      return await operatingBriefData(ctx, actor, input);
     case "operations.products.list":
     case "operations.suppliers.list":
     case "operations.inventory.list":
@@ -12038,7 +12041,195 @@ async function settingsView(ctx: ReadContext, actor: ActorContext): Promise<Data
   return { organization: { ...organizationView(actor.organization), brand }, brand, branches: branches.map((branch) => branchView(branch, publicOrganizationId(actor.organization))), paymentMethods: settings.paymentMethods, roles: await roleViews(ctx, actor), notifications: settings.notifications, operationalPolicies: settings.operationalPolicies, workspace: await workspaceAccessData(ctx, actor) };
 }
 
-async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data> {
+function briefErrorCode(error: unknown): string | undefined {
+  if (error instanceof ConvexError) {
+    const payload = error.data as { code?: unknown } | undefined;
+    return typeof payload?.code === "string" ? payload.code : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The evidence-backed daily operating brief for the caller's own scope.
+ *
+ * The Today queue is the first source, built by `dashboardData` with the
+ * same permission and branch rules and without its page limit. Four more
+ * sources are read separately so a failure, a module that is off or a role
+ * that may not see one is reported as partial coverage instead of silently
+ * shrinking the brief: lapsed memberships, open machine reports, low stock
+ * and the gym's open RIVET cases. Every figure is computed by
+ * `buildOperatingBrief`; nothing here asks a model.
+ */
+export async function operatingBriefData(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<OperatingBrief> {
+  requirePermission(actor, "members.read");
+  const timezone = actor.organization.timezone || TZ_FALLBACK;
+  const today = todayIn(timezone);
+  const generatedAt = isoNow();
+  const branchId = optionalString(input.branchId);
+  if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+  const dashboard = await dashboardData(ctx, actor, { branchId, from: addDays(today, -29), to: today }, { complete: true });
+  const todayQueue = data(dashboard.todayQueue);
+  const queue = (Array.isArray(todayQueue.items) ? todayQueue.items : []) as BriefQueueItem[];
+  const branchRows = await accessibleBranches(ctx, actor);
+  const branchNameById = new Map(branchRows.map((branch) => [publicBranchId(branch), branch.name]));
+  // A record with no branch is organization-wide; one with a branch must be in the actor's scope and, when requested, the selected branch.
+  const visible = (candidateBranchId?: string) => !candidateBranchId || (branchNameById.has(candidateBranchId) && (!branchId || candidateBranchId === branchId));
+  const scope: BriefScope = {
+    ...(branchId ? { branchId } : {}),
+    branches: branchRows.map((branch) => ({ id: publicBranchId(branch), name: branch.name })),
+    branchScope: actor.branchScope,
+    role: frontendRole(actor.role),
+    userId: publicUserId(actor.user),
+  };
+  const actorPublicId = publicUserId(actor.user);
+  const sources: BriefSourceInput[] = [];
+  const read = async (key: BriefSourceKey, permitted: boolean, load: () => Promise<BriefQueueItem[]>) => {
+    if (!permitted) {
+      sources.push({ key, status: "no_permission", message: "Not included for your role." });
+      return;
+    }
+    try {
+      sources.push({ key, status: "ok", items: await load() });
+    } catch (error) {
+      const code = briefErrorCode(error);
+      sources.push({
+        key,
+        status: code === "FEATURE_NOT_AVAILABLE" ? "not_enabled" : code === "FORBIDDEN" ? "no_permission" : "unavailable",
+        message: code === "FEATURE_NOT_AVAILABLE" ? "The operations module is off for this gym." : code === "FORBIDDEN" ? "Not included for your role." : "This source could not be read just now; the rest of the brief is current.",
+      });
+    }
+  };
+
+  await read("expired", hasPermission(actor, "crm.read"), async () => {
+    const [memberRows, membershipRows, planRows] = await Promise.all([memberRecords(ctx, actor), membershipRecords(ctx, actor), recordsOf(ctx, actor, "plan")]);
+    const members = new Map(memberRows.map((record) => [record.publicId, data(record.data)] as const));
+    const planById = new Map(planRows.map((record) => [record.publicId, data(record.data)] as const));
+    const memberships = membershipRows.map((record) => data(record.data));
+    const renewedIds = new Set(memberships.map((membership) => optionalString(membership.previousMembershipId)).filter(Boolean));
+    const items: BriefQueueItem[] = [];
+    for (const membership of memberships) {
+      const membershipId = stringValue(membership.id);
+      if (renewedIds.has(membershipId) || statusOfMembership(membership, today) !== "expired") continue;
+      const homeBranchId = optionalString(membership.homeBranchId);
+      if (!visible(homeBranchId)) continue;
+      const member = members.get(stringValue(membership.memberId));
+      if (!member || stringValue(member.status) === "archived") continue;
+      if (actor.role === "sales" && optionalString(member.assignedSalespersonId) !== actorPublicId) continue;
+      const endDate = stringValue(membership.endDate);
+      const daysSince = diffDays(endDate, today);
+      if (daysSince < 0 || daysSince > 30) continue;
+      const planName = stringValue(planById.get(stringValue(membership.planId))?.name, "Membership");
+      items.push({
+        id: `expired:${membershipId}`,
+        kind: "renewal",
+        priority: "normal",
+        title: `Win back ${stringValue(member.fullName)}`,
+        detail: `${planName} · expired ${daysSince === 0 ? "today" : `${daysSince} day${daysSince === 1 ? "" : "s"} ago`}, not renewed`,
+        subjectName: stringValue(member.fullName),
+        subject: { kind: "member", id: stringValue(member.id) },
+        ...(homeBranchId && branchNameById.get(homeBranchId) ? { branchName: branchNameById.get(homeBranchId) } : {}),
+        dueAt: `${endDate}T20:59:59.999Z`,
+        overdue: true,
+        href: `/members/${stringValue(member.id)}?action=renew`,
+        action: { kind: "navigate", label: hasPermission(actor, "memberships.sell") ? "Renew" : "Open" },
+      });
+    }
+    return items;
+  });
+
+  const operationsPermitted = hasPermission(actor, "operations.manage");
+  await read("equipment", operationsPermitted, async () => {
+    const [issues, assets] = await Promise.all([
+      operationsQuery(ctx, actor, "operations.equipment_issues.list", branchId ? { branchId } : {}) as Promise<Data[]>,
+      operationsQuery(ctx, actor, "operations.equipment_assets.list", branchId ? { branchId } : {}) as Promise<Data[]>,
+    ]);
+    const assetById = new Map(assets.map((asset) => [stringValue(asset.id), asset] as const));
+    return issues
+      .filter((issue) => ["open", "in_progress"].includes(stringValue(issue.status)) && visible(optionalString(issue.branchId)))
+      .map((issue): BriefQueueItem => {
+        const asset = assetById.get(stringValue(issue.assetId));
+        const issueBranchId = stringValue(issue.branchId);
+        const safetyStatus = stringValue(issue.safetyStatus, "unknown");
+        const severity = stringValue(issue.severity);
+        return {
+          id: `equipment:${stringValue(issue.id)}`,
+          kind: "equipment_issue",
+          priority: safetyStatus === "out_of_service" || severity === "critical" ? "urgent" : severity === "high" ? "high" : "normal",
+          title: stringValue(issue.title),
+          detail: `${asset ? `${stringValue(asset.code)} ${stringValue(asset.name)}` : "Machine"} · ${stringValue(issue.status).replaceAll("_", " ")} · safety: ${safetyStatus.replaceAll("_", " ")}`,
+          ...(optionalString(issue.description) ? { description: optionalString(issue.description) } : {}),
+          ...(branchNameById.get(issueBranchId) ? { branchName: branchNameById.get(issueBranchId) } : {}),
+          occurredAt: stringValue(issue.reportedAt),
+          href: `/operations?tab=equipment&branch=${encodeURIComponent(issueBranchId)}`,
+          action: { kind: "navigate", label: "Open" },
+          safetyStatus,
+        };
+      });
+  });
+
+  await read("stock", operationsPermitted, async () => {
+    const alerts = await operationsQuery(ctx, actor, "operations.low_stock.list", branchId ? { branchId } : {}) as Data[];
+    const products = await ctx.db.query("products").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+    const productName = new Map(products.map((product) => [product.publicId, product.name] as const));
+    return alerts.filter((alert) => visible(optionalString(alert.branchId))).map((alert): BriefQueueItem => {
+      const alertBranchId = stringValue(alert.branchId);
+      const available = numberValue(alert.availableQuantity);
+      return {
+        id: `stock:${alertBranchId}:${stringValue(alert.productId)}`,
+        kind: "low_stock",
+        priority: available <= 0 ? "high" : "normal",
+        title: `Reorder ${productName.get(stringValue(alert.productId)) ?? "product"}`,
+        detail: `${available} available · reorder at ${numberValue(alert.reorderPoint)}`,
+        ...(branchNameById.get(alertBranchId) ? { branchName: branchNameById.get(alertBranchId) } : {}),
+        occurredAt: stringValue(alert.updatedAt),
+        href: `/operations?tab=inventory&stock=attention&branch=${encodeURIComponent(alertBranchId)}`,
+        action: { kind: "navigate", label: "Open" },
+      };
+    });
+  });
+
+  await read("support", actor.role === "owner" || actor.role === "manager", async () => {
+    const records = await recordsOf(ctx, actor, "supportCase");
+    const views = await Promise.all(records.map((record) => supportCaseView(ctx, record)));
+    return views
+      .filter((view) => stringValue(view.status) !== "resolved" && visible(optionalString(view.branchId)))
+      .map((view): BriefQueueItem => {
+        const caseBranchId = optionalString(view.branchId);
+        return {
+          id: `support:${stringValue(view.id)}`,
+          kind: "support_case",
+          priority: stringValue(view.priority) === "urgent" ? "urgent" : "normal",
+          title: stringValue(view.subject),
+          detail: `${stringValue(view.status) === "waiting" ? "Waiting" : "Open"} · ${stringValue(view.creatorName, "your gym")}`,
+          ...(optionalString(view.body) ? { description: stringValue(view.body).slice(0, 300) } : {}),
+          ...(caseBranchId && branchNameById.get(caseBranchId) ? { branchName: branchNameById.get(caseBranchId) } : {}),
+          occurredAt: stringValue(view.updatedAt) || stringValue(view.createdAt),
+          href: `/support?case=${encodeURIComponent(stringValue(view.id))}`,
+          action: { kind: "navigate", label: "Open case" },
+        };
+      });
+  });
+
+  return buildOperatingBrief({
+    generatedAt,
+    today,
+    timezone,
+    currency: actor.organization.currency,
+    scope,
+    queue,
+    queueTotal: numberValue(todayQueue.totalItems, queue.length),
+    sources,
+  });
+}
+
+/**
+ * The dashboard projection. `options.complete` is internal to the operating
+ * brief: it lifts the Today queue's page limit, the at-risk sample and the
+ * due-today filter on maintenance tasks so the brief can list every
+ * unresolved item with the same rules the queue applies. The public
+ * `dashboard` query never sets it.
+ */
+async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, options: { complete?: boolean } = {}): Promise<Data> {
   requirePermission(actor, "members.read");
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const from = optionalString(input.from) ?? addDays(today, -29);
@@ -12280,7 +12471,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
       .filter((risk) => actor.role !== "sales" || risk.assignedSalespersonId === actorPublicId)
       // Expiring-only members already have the dedicated renewal item above.
       .filter((risk) => risk.reasons.some((reason) => reason.kind !== "expiring"))
-      .slice(0, 6);
+      .slice(0, options.complete ? BRIEF_QUEUE_LIMIT : 6);
     for (const risk of retentionRisks) {
       const member = memberById.get(risk.memberId);
       const term = memberships.find((membership) => stringValue(membership.id) === risk.membershipId);
@@ -12399,7 +12590,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
         if (!queueBranchVisible(taskBranchId)) continue;
         const dueAt = task.dueAt ? utcIso(task.dueAt) : undefined;
         const dueToday = dueAt ? businessDate(dueAt, actor.organization.timezone || TZ_FALLBACK) <= today : false;
-        if (!dueToday && !["high", "critical"].includes(task.severity)) continue;
+        if (!options.complete && !dueToday && !["high", "critical"].includes(task.severity)) continue;
         queueItems.push({
           id: `facility:${task.publicId}`,
           kind: "facility_task",
@@ -12415,7 +12606,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     }
   }
   queueItems.push(...(await checklistTodayQueueItems(ctx, actor, queueBranchVisible)) as Array<Data & TodayQueueSortableItem>);
-  const todayQueue = finalizeTodayQueue(queueItems, isoNow());
+  const todayQueue = finalizeTodayQueue(queueItems, isoNow(), options.complete ? BRIEF_QUEUE_LIMIT : undefined);
   const timeline = timelineRecords.map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
   return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, todayQueue, recentActivity: timeline };
 }

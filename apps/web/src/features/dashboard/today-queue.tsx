@@ -3,11 +3,14 @@
 import {
   ArrowRight,
   Banknote,
+  Boxes,
   CalendarClock,
   Check,
   CheckCircle2,
   ClipboardCheck,
+  Cog,
   DoorOpen,
+  LifeBuoy,
   ListChecks,
   ShieldAlert,
   Wrench,
@@ -15,7 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
@@ -36,20 +39,22 @@ const KIND_META: Record<TodayQueueKind, { icon: LucideIcon; label: string }> = {
   cash_variance: { icon: ListChecks, label: "Cash" },
   facility_task: { icon: Wrench, label: "Maintenance" },
   branch_checklist: { icon: ClipboardCheck, label: "Checklist" },
+  equipment_issue: { icon: Cog, label: "Machine" },
+  low_stock: { icon: Boxes, label: "Stock" },
+  support_case: { icon: LifeBuoy, label: "RIVET case" },
 };
 
-export function TodayQueue({
-  data,
-  loading = false,
-  initialVisible = 6,
-  className,
-}: {
-  data?: TodayQueueData;
-  loading?: boolean;
-  initialVisible?: number;
-  className?: string;
-}) {
-  const [expanded, setExpanded] = useState(false);
+export function todayQueueKindLabel(kind: TodayQueueKind): string {
+  return KIND_META[kind].label;
+}
+
+/**
+ * The queue's completion flow, shared with the operating brief so a
+ * follow-up finished from either place records the same outcome: a
+ * follow-up about a person asks what happened; other tasks complete
+ * through the same permission-checked mutation.
+ */
+export function useTodayQueueCompletion(): { requestComplete: (item: TodayQueueItem) => void; isCompleting: (item: TodayQueueItem) => boolean; dialog: ReactNode } {
   /** A follow-up about a person: "Done" asks what happened so the outcome is kept. */
   const [logging, setLogging] = useState<TodayQueueItem>();
   const invalidate = useInvalidate();
@@ -67,6 +72,49 @@ export function TodayQueue({
     if (item.subject && item.kind === "follow_up") setLogging(item);
     else if (item.action.taskId) completeTask.mutate(item.action.taskId);
   };
+  const dialog = (
+    <Dialog open={Boolean(logging)} onOpenChange={(open) => { if (!open) setLogging(undefined); }}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>What happened?</DialogTitle>
+          <DialogDescription>{logging ? `${logging.title}. Record the outcome so this follow-up closes with it, or move it to the next date.` : ""}</DialogDescription>
+        </DialogHeader>
+        {logging?.subject ? (
+          <DialogBody>
+            <LogContactForm
+              subject={logging.subject.kind}
+              leadId={logging.subject.kind === "lead" ? logging.subject.id : undefined}
+              memberId={logging.subject.kind === "member" ? logging.subject.id : undefined}
+              submitLabel="Log contact and finish"
+              onLogged={() => setLogging(undefined)}
+            />
+          </DialogBody>
+        ) : null}
+        <DialogFooter className="justify-between">
+          <Button type="button" variant="ghost" size="sm" loading={completeTask.isPending} onClick={() => { if (logging?.action.taskId) completeTask.mutate(logging.action.taskId); }}>
+            Mark done without a contact
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setLogging(undefined)}>Cancel</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+  return { requestComplete, isCompleting: (item) => completeTask.isPending && completeTask.variables === item.action.taskId, dialog };
+}
+
+export function TodayQueue({
+  data,
+  loading = false,
+  initialVisible = 6,
+  className,
+}: {
+  data?: TodayQueueData;
+  loading?: boolean;
+  initialVisible?: number;
+  className?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const completion = useTodayQueueCompletion();
   const items = data?.items ?? [];
   const visibleItems = expanded ? items : items.slice(0, initialVisible);
   const hiddenItems = Math.max(0, items.length - visibleItems.length);
@@ -117,8 +165,8 @@ export function TodayQueue({
                 key={item.id}
                 item={item}
                 first={index === 0}
-                completing={completeTask.isPending && completeTask.variables === item.action.taskId}
-                onComplete={() => requestComplete(item)}
+                completing={completion.isCompleting(item)}
+                onComplete={() => completion.requestComplete(item)}
               />
             ))}
           </ol>
@@ -144,45 +192,26 @@ export function TodayQueue({
           ) : null}
         </>
       )}
-      <Dialog open={Boolean(logging)} onOpenChange={(open) => { if (!open) setLogging(undefined); }}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>What happened?</DialogTitle>
-            <DialogDescription>{logging ? `${logging.title}. Record the outcome so this follow-up closes with it, or move it to the next date.` : ""}</DialogDescription>
-          </DialogHeader>
-          {logging?.subject ? (
-            <DialogBody>
-              <LogContactForm
-                subject={logging.subject.kind}
-                leadId={logging.subject.kind === "lead" ? logging.subject.id : undefined}
-                memberId={logging.subject.kind === "member" ? logging.subject.id : undefined}
-                submitLabel="Log contact and finish"
-                onLogged={() => setLogging(undefined)}
-              />
-            </DialogBody>
-          ) : null}
-          <DialogFooter className="justify-between">
-            <Button type="button" variant="ghost" size="sm" loading={completeTask.isPending} onClick={() => { if (logging?.action.taskId) completeTask.mutate(logging.action.taskId); }}>
-              Mark done without a contact
-            </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={() => setLogging(undefined)}>Cancel</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {completion.dialog}
     </section>
   );
 }
 
-function TodayQueueRow({
+export function TodayQueueRow({
   item,
   first,
   completing,
   onComplete,
+  extra,
+  testId,
 }: {
   item: TodayQueueItem;
   first: boolean;
   completing: boolean;
   onComplete: () => void;
+  /** Feature-owned additions under the detail line (the brief's overdue-days, stale and related notes). */
+  extra?: ReactNode;
+  testId?: string;
 }) {
   const meta = KIND_META[item.kind];
   const Icon = meta.icon;
@@ -190,7 +219,7 @@ function TodayQueueRow({
   const urgent = item.priority === "urgent";
 
   return (
-    <li className={cn("relative grid grid-cols-[20px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition-colors sm:grid-cols-[20px_minmax(0,1fr)_auto] sm:px-5", first && urgent ? "bg-danger-bg/35" : "hover:bg-sunken/35")}>
+    <li className={cn("relative grid grid-cols-[20px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition-colors sm:grid-cols-[20px_minmax(0,1fr)_auto] sm:px-5", first && urgent ? "bg-danger-bg/35" : "hover:bg-sunken/35")} data-testid={testId} data-item-id={item.id}>
       <Icon className={cn("size-4", urgent ? "text-danger" : item.priority === "high" ? "text-warning-deep" : "text-ink-3")} aria-hidden />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -206,6 +235,7 @@ function TodayQueueRow({
           {item.amount ? <MoneyText money={item.amount} signed={item.kind === "cash_variance"} className="font-medium text-ink-2" /> : null}
           {eventAt ? <span className={cn("shrink-0", urgent && "font-medium text-danger")}><RelativeText iso={eventAt} /></span> : null}
         </p>
+        {extra}
       </div>
       <div className="col-start-2 justify-self-start sm:col-start-3 sm:row-start-1 sm:justify-self-end">
         {item.action.kind === "complete_task" && item.action.taskId ? (

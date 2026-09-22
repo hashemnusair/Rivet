@@ -23,6 +23,18 @@ function RecordPanel({ simulate, questionKey = "foundation.ticket_route" }: { si
   );
 }
 
+/** An explicit-ask surface: nothing is asked until the person presses the button. */
+function AskPanel() {
+  const suggestion = useAssistJudgment({ questionKey: "foundation.ticket_route", subject: {}, auto: false });
+  return (
+    <div>
+      <button type="button">Log contact</button>
+      {suggestion.featureReady ? <button type="button" onClick={suggestion.request}>Ask Jev</button> : null}
+      <AssistSuggestion suggestion={suggestion} title="Suggested team" render={(result) => <JudgmentSummary result={result} />} />
+    </div>
+  );
+}
+
 /** Lets a test change the subject the way a page does when the person moves to another record. */
 function SubjectSwitcher({ initial }: { initial?: AssistSimulation }) {
   const [simulate, setSimulate] = useState<AssistSimulation | undefined>(initial);
@@ -77,6 +89,17 @@ describe("AssistSuggestion with useAssistJudgment", () => {
     await screen.findByTestId("assist-suggestion");
     await user.click(screen.getByRole("button", { name: "Dismiss suggestion" }));
     expect(await screen.findByText("No suggestion")).toBeInTheDocument();
+  });
+
+  it("says why when a person asked and the server refused, instead of going quiet", async () => {
+    const { api } = await renderWithApp(<AskPanel />, { prepare: async (api) => { await api.updateAssistPreference({ enabled: true }); } });
+    const ask = await screen.findByRole("button", { name: "Ask Jev" });
+    // The gym's cap fills before the person asks: the explicit request comes back blocked.
+    vi.spyOn(api, "requestAssistJudgment").mockResolvedValue({ status: "blocked", reason: "tenant_daily_cap", message: "This gym's daily limit for Jev requests has been reached. Suggestions resume tomorrow." });
+    const user = userEvent.setup();
+    await user.click(ask);
+    expect(await screen.findByTestId("assist-suggestion-blocked")).toHaveTextContent("daily limit for Jev requests has been reached");
+    expect(screen.getByRole("button", { name: "Log contact" })).toBeEnabled();
   });
 
   it("ignores the answer to a superseded subject", async () => {

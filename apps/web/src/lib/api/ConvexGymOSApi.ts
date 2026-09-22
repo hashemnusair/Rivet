@@ -2,6 +2,7 @@ import { api } from "../../../convex/_generated/api";
 import type {
   AuditQuery,
   DashboardQuery,
+  OperatingBriefQuery,
   ExecutionQuery,
   GymOSApi,
   LeadListQuery,
@@ -506,6 +507,7 @@ export class ConvexGymOSApi implements GymOSApi {
   subscribeDashboard(query: DashboardQuery, onValue: (dashboard: T.DashboardData) => void, onError?: (error: unknown) => void): Promise<() => void> {
     return this.subscribeQuery<T.DashboardData>("dashboard", query, (dashboard) => onValue(dashboardWithTodayQueue(dashboard)), onError);
   }
+  getOperatingBrief(query: OperatingBriefQuery): Promise<T.OperatingBrief> { return this.query("dashboard.brief", query); }
   listMembers(query: MemberListQuery): Promise<T.Page<T.MemberSummary>> { return this.query("members.list", query); }
   getMember(memberId: T.UUID): Promise<T.MemberDetail> { return this.query("members.get", { memberId }); }
   subscribeMember(memberId: T.UUID, onValue: (member: T.MemberDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("members.get", { memberId }, onValue, onError); }

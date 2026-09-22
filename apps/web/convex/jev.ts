@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
-import { canonicalJson, jevStateBytes, jevStateHash, sanitizeJevSubject } from "./jevAnswers";
+import { buildJevQuestions, canonicalJson, jevStateBytes, jevStateHash, sanitizeJevSubject } from "./jevAnswers";
 import { jevPlatformStateLoader, jevStateLoader } from "./jevLoaders";
 import { gateJevRequest, resolveJevMode, utcDay, type JevGate, type JevModeResolution } from "./jevMode";
 import { JEV_FEATURES, JEV_QUESTIONS, getJevQuestion } from "./jevQuestions";
@@ -174,7 +174,10 @@ async function statusViewFor(ctx: ReadCtx, organizationId: Id<"organizations">, 
     readyMode: context.gate.allowed && readyFeature ? context.gate.mode : undefined,
     blockedReason: context.gate.allowed ? (readyFeature ? undefined : "feature_off") : context.gate.reason,
     blockedMessage: context.gate.allowed ? (readyFeature ? undefined : "No feature is enabled for live Jev calls in this environment.") : context.gate.message,
-    warnings: resolution.warnings,
+    warnings: [
+      ...resolution.warnings,
+      ...resolution.features.filter((key) => !JEV_FEATURES.some((feature) => feature.key === key)).map((key) => `RIVET_JEV_FEATURES lists "${key}", which is not a registered feature; check the spelling.`),
+    ],
     canManage,
   };
 }
@@ -310,7 +313,11 @@ export const prepare = internalQuery({
       if (!context.gate.allowed) return resolved(blockedResult(context.gate));
       loaded = await loader(ctx, actor, subject);
     }
-    if (jevStateBytes(canonicalJson(loaded.state)) > JEV_MAX_STATE_BYTES) return resolved({ status: "blocked", reason: "state_too_large", message: "This record is too large to send for a suggestion." });
+    if (jevStateBytes(canonicalJson({ state: loaded.state, candidates: loaded.candidates ?? null })) > JEV_MAX_STATE_BYTES) return resolved({ status: "blocked", reason: "state_too_large", message: "This record is too large to send for a suggestion." });
+    // A candidate list the request cannot honour is refused here, before the
+    // cache is read and before `begin` counts a request against the caps.
+    const buildable = buildJevQuestions(question, loaded.candidates);
+    if (!buildable.ok) return resolved({ status: "unavailable", reason: "request_invalid", message: buildable.message, retryable: false, correlationId });
     const stateHash = jevStateHash({ questionKey: question.key, questionVersion: question.version, sourceVersion: loaded.sourceVersion, state: loaded.state, candidates: loaded.candidates });
     if (question.cacheTtlMs > 0 && !simulate) {
       const cached = await cachedJudgment(ctx, organizationDocId, question, loaded.scopeKey, stateHash, context.gate.mode, now);
@@ -444,6 +451,16 @@ export const complete = internalMutation({
     const now = Date.now();
     const judgment = args.judgment as JevJudgment | undefined;
 
+    // The permission was checked when the request was prepared; a role that
+    // changed while the model was answering must not receive the answer.
+    if (actor && question) {
+      const permission = permissionOf(question);
+      if (!permission || !hasPermission(actor, permission)) {
+        await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: "request_invalid", failureMessage: "The caller's access changed while the suggestion was being prepared." });
+        return { status: "unavailable", reason: "request_invalid", message: "Your access changed while the suggestion was being prepared, so it was not shown.", retryable: false, correlationId: args.correlationId };
+      }
+    }
+
     const usage = await tenantUsage(ctx, organizationDocId, utcDay(now));
     if (usage) {
       await ctx.db.patch(usage._id, {
@@ -470,13 +487,20 @@ export const complete = internalMutation({
     // Load again with the same authority the request was prepared under, so a
     // record that changed (or moved to another gym) is rejected as stale.
     let loaded: JevLoadedStateResult | undefined;
-    if (admin) {
-      const loader = jevPlatformStateLoader(question.key);
-      const platformLoaded = loader ? await loader(ctx, admin, sanitizeJevSubject(args.subject)) : undefined;
-      loaded = platformLoaded && platformLoaded.organizationDocId === organizationDocId ? platformLoaded : undefined;
-    } else if (actor) {
-      const loader = jevStateLoader(question.key);
-      loaded = loader ? await loader(ctx, actor, sanitizeJevSubject(args.subject)) : undefined;
+    try {
+      if (admin) {
+        const loader = jevPlatformStateLoader(question.key);
+        const platformLoaded = loader ? await loader(ctx, admin, sanitizeJevSubject(args.subject)) : undefined;
+        loaded = platformLoaded && platformLoaded.organizationDocId === organizationDocId ? platformLoaded : undefined;
+      } else if (actor) {
+        const loader = jevStateLoader(question.key);
+        loaded = loader ? await loader(ctx, actor, sanitizeJevSubject(args.subject)) : undefined;
+      }
+    } catch {
+      // The record moved on (a case resolved, a draft expired, a machine
+      // retired) while the model was answering: the answer is stale, the
+      // lease is released below, and nothing is cached.
+      loaded = undefined;
     }
     const currentHash = loaded ? jevStateHash({ questionKey: question.key, questionVersion: question.version, sourceVersion: loaded.sourceVersion, state: loaded.state, candidates: loaded.candidates }) : undefined;
     if (!loaded || currentHash !== args.stateHash) {
@@ -526,12 +550,24 @@ export const complete = internalMutation({
 
 /** Release a lease after a failed call, keeping the classified reason for the request log. */
 export const fail = internalMutation({
-  args: { requestId: v.id("jevRequests"), reason: v.string(), message: v.string(), latencyMs: v.number() },
+  args: { requestId: v.id("jevRequests"), reason: v.string(), message: v.string(), latencyMs: v.number(), inputTokens: v.optional(v.number()), outputTokens: v.optional(v.number()), reportedCostUsd: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const request = await ctx.db.get(args.requestId);
     if (!request) return null;
-    await ctx.db.patch(request._id, { status: "failed", finishedAt: Date.now(), latencyMs: args.latencyMs, failureReason: args.reason.slice(0, 64), failureMessage: args.message.slice(0, 500) });
+    const now = Date.now();
+    await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: args.reason.slice(0, 64), failureMessage: args.message.slice(0, 500), inputTokens: args.inputTokens, outputTokens: args.outputTokens, reportedCostUsd: args.reportedCostUsd });
+    // A response the gateway served and then RIVET rejected (wrong model,
+    // unusable answer) may still have been billed: count it and trip the
+    // breaker exactly as a completed request would.
+    if (args.inputTokens !== undefined || args.outputTokens !== undefined || args.reportedCostUsd !== undefined) {
+      const usage = await tenantUsage(ctx, request.organizationId, utcDay(now));
+      if (usage) await ctx.db.patch(usage._id, { inputTokens: usage.inputTokens + (args.inputTokens ?? 0), outputTokens: usage.outputTokens + (args.outputTokens ?? 0), reportedCostUsd: usage.reportedCostUsd + (args.reportedCostUsd ?? 0), updatedAt: now });
+    }
+    if (request.mode === "live" && (args.reportedCostUsd ?? 0) > 0) {
+      await tripBreaker(ctx, `AI Gateway reported a cost of ${args.reportedCostUsd} USD for a Jev request that was then rejected (${args.reason}, correlation ${request.correlationId}).`, now);
+      console.warn("[rivet.jev.breaker]", JSON.stringify({ correlationId: request.correlationId, reportedCostUsd: args.reportedCostUsd, reason: args.reason }));
+    }
     return null;
   },
 });

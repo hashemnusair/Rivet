@@ -3,6 +3,8 @@ export const qk = {
   session: ["session"] as const,
   publicOffer: (token: string) => ["publicOffer", token] as const,
   dashboard: (branchId?: string) => ["dashboard", branchId ?? "all"] as const,
+  /** Keyed by the viewer and their branch scope: a restricted manager never reads an owner's cached brief. */
+  operatingBrief: (viewer: string, branchId?: string) => ["dashboard", "brief", viewer, branchId ?? "all"] as const,
   members: (params?: unknown) => ["members", "list", params] as const,
   member: (id: string) => ["members", "detail", id] as const,
   memberTimeline: (id: string, params?: unknown) => ["members", "timeline", id, params] as const,

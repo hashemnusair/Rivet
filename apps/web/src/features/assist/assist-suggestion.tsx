@@ -37,6 +37,15 @@ export function AssistSuggestion({
   testId?: string;
 }) {
   const { state } = suggestion;
+  if (state.status === "disabled" && state.requested && state.message) {
+    // A person pressed the button and the server refused (cap reached, breaker
+    // tripped, the gym switched off meanwhile): say so instead of going quiet.
+    return (
+      <div role="status" data-testid={`${testId}-blocked`} className={cn("rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12.5px] text-ink-2", className)}>
+        {state.message} Continue as usual; nothing here depends on it.
+      </div>
+    );
+  }
   if (state.status === "idle" || state.status === "disabled") return <>{fallback}</>;
 
   if (state.status === "loading") {

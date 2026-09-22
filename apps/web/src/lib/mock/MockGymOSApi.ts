@@ -3,6 +3,7 @@ import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/
 import type {
   AuditQuery,
   DashboardQuery,
+  OperatingBriefQuery,
   ExecutionQuery,
   GymOSApi,
   LeadListQuery,
@@ -83,6 +84,7 @@ import { NAVIGATION_QUERY_MAX_LENGTH, buildNavigationIntentState, buildOnboardin
 import { FOLLOWUP_NOTE_MIN_LENGTH, REASON_ACTIONS, buildContactNoteState, buildMemberFollowUpContext, buildReasonCheckState, buildRelatedTaskState, buildReminderTemplateState, buildRenewalContextState, isReasonAction, reminderTemplateUnavailableReason, type ContactSubjectKind, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { buildGymProfileReviewContext, buildLanguageGapState, buildProfileClaimState, languageGapUnavailableReason } from "../../../convex/profileAssist";
 import { BRANCHOPS_DESCRIPTION_MAX_LENGTH, BRANCHOPS_DESCRIPTION_MIN_LENGTH, buildHandoverRelatedState, buildNotificationTopicState, buildReportCategoryState, buildReportTargetState, buildSameFaultState, groupNotifications, handoverItemKey, type HandoverItem } from "../../../convex/branchOpsAssist";
+import { BRIEF_QUEUE_LIMIT, buildBriefEmphasisState, buildBriefRelatedState, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
 import { buildSupportCategoryState, buildSupportClaimState, buildSupportClarificationState, buildSupportInvoiceMatchState, buildSupportReviewContext, buildSupportUnansweredState, isSupportCategoryId, supportClaimPassages, supportRequestPassages, type SupportFacts } from "../../../convex/supportAssist";
 import { RESOLUTION_CLASS_HORIZON_DAYS, RESOLUTION_TRAINER_HORIZON_DAYS, buildClassPickState, buildPlanPriorityState, buildResolutionIntentState, buildTrainerPickState, chargeService, classEligibility, permittedResolutionClarifications, permittedResolutionPanels, resolutionFacts, selectResolutionEvidence, type ClassBookingPolicyLike } from "../../../convex/resolutionAssist";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
@@ -754,6 +756,7 @@ export class MockGymOSApi implements GymOSApi {
   private registeredCustomers = new Map<string, CustomerPersona>();
   private memberImports = new Map<string, MemberImportPreview>();
   private memberImportDrafts = new Map<string, MemberImportAssistDraft>();
+  private memberImportDraftOwners = new Map<string, string>();
   private memberImportPaymentEvidence: Array<{ id: string; memberId: string; membershipId: string; amount: T.Money; lastPaymentDate: string; sourceReference?: string; importBatchId: string; sourceRowNumber: number }> = [];
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
   private publicApplicationIdempotency = new Map<string, { signature: string; result: SubmitGymApplicationResult }>();
@@ -2219,6 +2222,7 @@ export class MockGymOSApi implements GymOSApi {
       for (const [id, existing] of this.memberImportDrafts) if (Date.parse(existing.expiresAt) < now) this.memberImportDrafts.delete(id);
       const draft: MemberImportAssistDraft = { id: mockUuid(), branchId: input.branchId, headers, columns, sourcePlanLabels, createdAt: nowISO(), expiresAt: new Date(now + IMPORT_DRAFT_TTL_MS).toISOString() };
       this.memberImportDrafts.set(draft.id, draft);
+      this.memberImportDraftOwners.set(draft.id, this.actor().id);
       return draft;
     });
   }
@@ -2412,6 +2416,18 @@ export class MockGymOSApi implements GymOSApi {
 
     if (question.feature === "branchops") return this.branchOpsJevState(question.key, subject);
 
+    if (question.feature === "brief") {
+      const brief = this.operatingBriefSync(typeof subject.branchId === "string" && subject.branchId ? { branchId: subject.branchId } : {});
+      if (question.key === "brief.emphasis") return buildBriefEmphasisState({ brief, currency: this.db.organization.currency });
+      if (question.key === "brief.related_matter") {
+        const first = brief.queue.find((item) => item.id === subject.firstId);
+        const second = brief.queue.find((item) => item.id === subject.secondId);
+        if (!first || !second) throw ApiError.of(ERR.NOT_FOUND, "Brief item not found.");
+        if (first.id === second.id) throw ApiError.of(ERR.VALIDATION, "Choose two different items to compare.");
+        return buildBriefRelatedState({ first, second, scope: brief.scope });
+      }
+    }
+
     if (question.feature === "resolution") {
       const goal = typeof subject.goal === "string" ? subject.goal.trim() : "";
       if (goal.length < 3) throw ApiError.of(ERR.VALIDATION, "Write what you are helping with first.");
@@ -2435,7 +2451,7 @@ export class MockGymOSApi implements GymOSApi {
     if (question.feature === "import") {
       const draftId = typeof subject.draftId === "string" ? subject.draftId : "";
       const stored = this.memberImportDrafts.get(draftId);
-      if (!stored || Date.parse(stored.expiresAt) < Date.now()) throw ApiError.of(ERR.NOT_FOUND, "The import draft was not found or has expired. Load the file again to continue.");
+      if (!stored || Date.parse(stored.expiresAt) < Date.now() || this.memberImportDraftOwners.get(draftId) !== this.actor().id) throw ApiError.of(ERR.NOT_FOUND, "The import draft was not found or has expired. Load the file again to continue.");
       if (!this.branchIsVisible(stored.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       const draft: ImportAssistDraftData = { id: stored.id, branchId: stored.branchId, headers: stored.headers, columns: stored.columns, sourcePlanLabels: stored.sourcePlanLabels };
       const currency = this.db.organization.currency;
@@ -3781,6 +3797,7 @@ export class MockGymOSApi implements GymOSApi {
   resetDemo(): Promise<void> {
     this.assistCache.clear();
     this.memberImportDrafts.clear();
+    this.memberImportDraftOwners.clear();
     this.assistUsage = { day: "", requests: 0 };
     const role = currentRole(this.db);
     const branch = this.db.session.activeBranchId;
@@ -4692,7 +4709,17 @@ export class MockGymOSApi implements GymOSApi {
   // -------------------------------------------------------------------------
 
   getDashboard(query: DashboardQuery): Promise<T.DashboardData> {
-    return this.respond(() => {
+    return this.respond(() => this.dashboardSync(query));
+  }
+
+  /**
+   * The dashboard projection. `options.complete` is internal to the operating
+   * brief: it lifts the Today queue's page limit, the at-risk sample and the
+   * due-today filter on maintenance tasks, with every permission and branch
+   * rule unchanged.
+   */
+  private dashboardSync(query: DashboardQuery, options: { complete?: boolean } = {}): T.DashboardData {
+    {
       const today = this.today();
       const branchId = this.branchScopedBranchId(query.branchId);
       const inBranch = <X extends { branchId?: T.UUID; homeBranchId?: T.UUID }>(x: X) =>
@@ -4916,7 +4943,7 @@ export class MockGymOSApi implements GymOSApi {
         }).filter((risk) => queueBranchVisible(risk.branchId))
           .filter((risk) => role !== "salesperson" || risk.assignedSalespersonId === actor.id)
           .filter((risk) => risk.reasons.some((reason) => reason.kind !== "expiring"))
-          .slice(0, 6);
+          .slice(0, options.complete ? BRIEF_QUEUE_LIMIT : 6);
         for (const risk of retentionRisks) {
           const member = memberById.get(risk.memberId);
           const membership = this.db.memberships.find((candidate) => candidate.id === risk.membershipId);
@@ -5025,7 +5052,7 @@ export class MockGymOSApi implements GymOSApi {
         for (const task of this.db.facilityTasks) {
           if (!queueBranchVisible(task.branchId) || !["open", "in_progress", "blocked"].includes(task.status)) continue;
           const dueToday = task.dueAt ? todayISODate(TZ, new Date(task.dueAt)) <= today : false;
-          if (!dueToday && !["high", "critical"].includes(task.severity)) continue;
+          if (!options.complete && !dueToday && !["high", "critical"].includes(task.severity)) continue;
           queueItems.push({
             id: `facility:${task.id}`,
             kind: "facility_task",
@@ -5079,7 +5106,7 @@ export class MockGymOSApi implements GymOSApi {
         }
       }
 
-      const todayQueue = finalizeTodayQueue(queueItems, nowISO());
+      const todayQueue = finalizeTodayQueue(queueItems, nowISO(), options.complete ? BRIEF_QUEUE_LIMIT : undefined);
 
       const recentActivity = this.db.activities
         .filter((a) => !a.leadId)
@@ -5106,6 +5133,152 @@ export class MockGymOSApi implements GymOSApi {
         todayQueue,
         recentActivity,
       };
+    }
+  }
+
+  getOperatingBrief(query: OperatingBriefQuery = {}): Promise<T.OperatingBrief> {
+    return this.respond(() => this.operatingBriefSync(query));
+  }
+
+  /**
+   * The daily operating brief from the seeded records: the complete Today
+   * queue plus lapsed terms, machine reports, low stock and open RIVET cases,
+   * each read separately so a module that is off or a role that may not see
+   * a source reads as partial coverage. Every figure is computed by the
+   * shared module.
+   */
+  private operatingBriefSync(query: OperatingBriefQuery): T.OperatingBrief {
+    this.require("members.read");
+    const today = this.today();
+    const generatedAt = nowISO();
+    const requestedBranchId = query.branchId?.trim() || undefined;
+    const branchId = this.branchScopedBranchId(requestedBranchId);
+    const dashboard = this.dashboardSync({ branchId, from: addDays(today, -29), to: today }, { complete: true });
+    const actor = this.actor();
+    const role = currentRole(this.db);
+    const permissions = permissionsFor(this.db, role);
+    const branches = this.db.branches.filter((branch) => branch.status === "active" && this.branchIsVisible(branch.id));
+    const branchNameById = new Map(this.db.branches.map((branch) => [branch.id, branch.name]));
+    const visible = (candidate?: T.UUID) => !candidate || (this.branchIsVisible(candidate) && (!branchId || candidate === branchId));
+    const scope: T.BriefScope = { ...(requestedBranchId ? { branchId: requestedBranchId } : {}), branches: branches.map((branch) => ({ id: branch.id, name: branch.name })), branchScope: actor.branchScope, role, userId: actor.id };
+    const sources: BriefSourceInput[] = [];
+    const read = (key: BriefSourceKey, permitted: boolean, load: () => BriefQueueItem[]) => {
+      if (!permitted) {
+        sources.push({ key, status: "no_permission", message: "Not included for your role." });
+        return;
+      }
+      try {
+        sources.push({ key, status: "ok", items: load() });
+      } catch (error) {
+        const code = error instanceof ApiError ? error.code : undefined;
+        sources.push({
+          key,
+          status: code === ERR.FEATURE_NOT_AVAILABLE ? "not_enabled" : code === ERR.FORBIDDEN ? "no_permission" : "unavailable",
+          message: code === ERR.FEATURE_NOT_AVAILABLE ? "The operations module is off for this gym." : code === ERR.FORBIDDEN ? "Not included for your role." : "This source could not be read just now; the rest of the brief is current.",
+        });
+      }
+    };
+
+    read("expired", permissions.includes("crm.read"), () => {
+      const renewedIds = new Set(this.db.memberships.map((membership) => membership.previousMembershipId).filter(Boolean));
+      const items: BriefQueueItem[] = [];
+      for (const membership of this.db.memberships) {
+        if (renewedIds.has(membership.id) || this.membershipStatusOf(membership) !== "expired" || !visible(membership.homeBranchId)) continue;
+        const member = this.db.members.find((candidate) => candidate.id === membership.memberId);
+        if (!member || member.status === "archived") continue;
+        if (role === "salesperson" && member.assignedSalespersonId !== actor.id) continue;
+        const daysSince = diffDays(membership.endDate, today);
+        if (daysSince < 0 || daysSince > 30) continue;
+        const planName = this.db.plans.find((plan) => plan.id === membership.planId)?.name ?? "Membership";
+        const branchName = branchNameById.get(membership.homeBranchId);
+        items.push({
+          id: `expired:${membership.id}`,
+          kind: "renewal",
+          priority: "normal",
+          title: `Win back ${member.fullName}`,
+          detail: `${planName} · expired ${daysSince === 0 ? "today" : `${daysSince} day${daysSince === 1 ? "" : "s"} ago`}, not renewed`,
+          subjectName: member.fullName,
+          subject: { kind: "member", id: member.id },
+          ...(branchName ? { branchName } : {}),
+          dueAt: `${membership.endDate}T20:59:59.999Z`,
+          overdue: true,
+          href: `/members/${member.id}?action=renew`,
+          action: { kind: "navigate", label: permissions.includes("memberships.sell") ? "Renew" : "Open" },
+        });
+      }
+      return items;
+    });
+
+    const operationsPermitted = permissions.includes("operations.manage");
+    read("equipment", operationsPermitted, () => {
+      this.requireOperationsRead();
+      return this.db.equipmentIssues
+        .filter((issue) => ["open", "in_progress"].includes(issue.status) && this.branchIsVisible(issue.branchId) && visible(issue.branchId))
+        .map((issue): BriefQueueItem => {
+          const asset = this.db.equipmentAssets.find((candidate) => candidate.id === issue.assetId);
+          const branchName = branchNameById.get(issue.branchId);
+          return {
+            id: `equipment:${issue.id}`,
+            kind: "equipment_issue",
+            priority: issue.safetyStatus === "out_of_service" || issue.severity === "critical" ? "urgent" : issue.severity === "high" ? "high" : "normal",
+            title: issue.title,
+            detail: `${asset ? `${asset.code} ${asset.name}` : "Machine"} · ${issue.status.replaceAll("_", " ")} · safety: ${issue.safetyStatus.replaceAll("_", " ")}`,
+            ...(issue.description ? { description: issue.description } : {}),
+            ...(branchName ? { branchName } : {}),
+            occurredAt: issue.reportedAt,
+            href: `/operations?tab=equipment&branch=${encodeURIComponent(issue.branchId)}`,
+            action: { kind: "navigate", label: "Open" },
+            safetyStatus: issue.safetyStatus,
+          };
+        });
+    });
+
+    read("stock", operationsPermitted, () => {
+      this.requireOperationsRead();
+      return this.lowStockSnapshot(branchId ? { branchId } : {}).filter((alert) => alert.status === "open").map((alert): BriefQueueItem => {
+        const product = this.db.products.find((candidate) => candidate.id === alert.productId);
+        const branchName = branchNameById.get(alert.branchId);
+        return {
+          id: `stock:${alert.branchId}:${alert.productId}`,
+          kind: "low_stock",
+          priority: alert.availableQuantity <= 0 ? "high" : "normal",
+          title: `Reorder ${product?.name ?? "product"}`,
+          detail: `${alert.availableQuantity} available · reorder at ${alert.reorderPoint}`,
+          ...(branchName ? { branchName } : {}),
+          occurredAt: alert.updatedAt,
+          href: `/operations?tab=inventory&stock=attention&branch=${encodeURIComponent(alert.branchId)}`,
+          action: { kind: "navigate", label: "Open" },
+        };
+      });
+    });
+
+    read("support", role === "owner" || role === "manager", () => this.platformSupportCases
+      .filter((supportCase) => supportCase.status !== "resolved" && visible(supportCase.branchId))
+      .map((supportCase): BriefQueueItem => {
+        const branchName = supportCase.branchId ? branchNameById.get(supportCase.branchId) : undefined;
+        return {
+          id: `support:${supportCase.id}`,
+          kind: "support_case",
+          priority: supportCase.priority === "urgent" ? "urgent" : "normal",
+          title: supportCase.subject,
+          detail: `${supportCase.status === "waiting" ? "Waiting" : "Open"} · ${supportCase.creatorName ?? "your gym"}`,
+          ...(supportCase.body ? { description: supportCase.body.slice(0, 300) } : {}),
+          ...(branchName ? { branchName } : {}),
+          occurredAt: supportCase.updatedAt ?? supportCase.createdAt ?? generatedAt,
+          href: `/support?case=${encodeURIComponent(supportCase.id)}`,
+          action: { kind: "navigate", label: "Open case" },
+        };
+      }));
+
+    return buildOperatingBrief({
+      generatedAt,
+      today,
+      timezone: TZ,
+      currency: this.db.organization.currency,
+      scope,
+      queue: dashboard.todayQueue.items as BriefQueueItem[],
+      queueTotal: dashboard.todayQueue.totalItems,
+      sources,
     });
   }
 
@@ -11482,11 +11655,11 @@ export class MockGymOSApi implements GymOSApi {
     return this.assistUsage;
   }
 
-  private assistStatusView(): T.AssistStatus {
+  private assistStatusView(tenantEnabled = this.db.assistPreference.enabled): T.AssistStatus {
     const resolution = this.assistResolution();
     const usage = this.assistUsageToday();
     const preference = this.db.assistPreference;
-    const gateFor = (featureKey?: string) => gateJevRequest({ resolution, featureKey, tenantEnabled: preference.enabled, breakerTripped: false, globalRequestsToday: usage.requests, tenantRequestsToday: usage.requests });
+    const gateFor = (featureKey?: string) => gateJevRequest({ resolution, featureKey, tenantEnabled, breakerTripped: false, globalRequestsToday: usage.requests, tenantRequestsToday: usage.requests });
     const features: T.AssistFeatureStatus[] = JEV_FEATURES.map((feature) => {
       const gate = gateFor(feature.key);
       return {
@@ -11551,8 +11724,23 @@ export class MockGymOSApi implements GymOSApi {
   getPlatformAssistStatus(gymId: string): Promise<T.AssistStatus> {
     return this.respond(() => {
       if (!this.mockPlatformGymFor(gymId)) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
-      return { ...this.assistStatusView(), canManage: false };
+      return { ...this.assistStatusView(this.platformGymIsDemoTenant(gymId) && this.db.assistPreference.enabled), canManage: false };
     });
+  }
+
+  /** Only the demo workspace has a Jev switch in the preview; every other listed gym reads as switched off. */
+  private platformGymIsDemoTenant(gymId: string): boolean {
+    const gym = this.mockPlatformGymFor(gymId);
+    if (!gym) return false;
+    const tenant = this.tenantForGym(gym);
+    return tenant ? tenant.organization === this.db.organization : this.isProvisionedGym(gym);
+  }
+
+  private platformCaseGymEnabled(subject: unknown): boolean {
+    const caseId = subject && typeof subject === "object" && typeof (subject as { caseId?: unknown }).caseId === "string" ? (subject as { caseId: string }).caseId : "";
+    const supportCase = this.platformSupportCases.find((candidate) => candidate.id === caseId);
+    const gymId = supportCase?.gymId ?? this.db.organization.id;
+    return this.platformGymIsDemoTenant(gymId) && this.db.assistPreference.enabled;
   }
 
   /** The seeded directory row for a case's gym; cases created in the demo workspace carry the organization id. */
@@ -11632,7 +11820,9 @@ export class MockGymOSApi implements GymOSApi {
       if (question.scope !== "platform") this.require(question.permission as Permission);
       const resolution = this.assistResolution();
       const usage = this.assistUsageToday();
-      const gate = gateJevRequest({ resolution, featureKey: question.feature, tenantEnabled: this.db.assistPreference.enabled, breakerTripped: false, globalRequestsToday: usage.requests, tenantRequestsToday: usage.requests });
+      // A platform question is answered with the case's gym's own switch; only the demo tenant has one in the preview.
+      const gymEnabled = question.scope === "platform" ? this.platformCaseGymEnabled(input.subject) : this.db.assistPreference.enabled;
+      const gate = gateJevRequest({ resolution, featureKey: question.feature, tenantEnabled: gymEnabled, breakerTripped: false, globalRequestsToday: usage.requests, tenantRequestsToday: usage.requests });
       if (!gate.allowed) return { status: "blocked", reason: gate.reason, message: gate.message };
       const subject = sanitizeJevSubject(input.subject);
       const simulate = question.synthetic && typeof subject.simulate === "string" && (JEV_SIMULATIONS as readonly string[]).includes(subject.simulate) ? (subject.simulate as JevSimulation) : undefined;

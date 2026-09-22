@@ -50,7 +50,20 @@ export type JevEvaluationOutcome =
       latencyMs: number;
       warnings: string[];
     }
-  | { ok: false; reason: JevFailureReason; message: string; latencyMs: number; retryable: boolean };
+  | {
+      ok: false;
+      reason: JevFailureReason;
+      /** Generic copy safe for the page. */
+      message: string;
+      /** Server-side detail for the request log (may quote the model's answer); never sent to the page. */
+      detail?: string;
+      latencyMs: number;
+      retryable: boolean;
+      /** Usage the gateway reported before the answer was rejected, so a billed failure still counts. */
+      inputTokens?: number;
+      outputTokens?: number;
+      reportedCostUsd?: number;
+    };
 
 export type JevSubject = Record<string, string | number | boolean>;
 
@@ -293,7 +306,7 @@ export function evaluateJevFixture(question: JevQuestion, simulate?: JevSimulati
   const raw = resolved ? rawAnswersFromJudgment(resolved, built.prepared.candidateKeys) : fixtureRawAnswers(question, simulate);
   const metadata = resolved ? confidenceMetadata(resolved.confidence) : fixtureProviderMetadata(question);
   const validated = validateJevAnswers(question, raw, built.prepared.candidateKeys, metadata);
-  if (!validated.ok) return { ok: false, reason: "invalid_output", message: `The model answer could not be used: ${validated.message}.`, latencyMs, retryable: false };
+  if (!validated.ok) return { ok: false, reason: "invalid_output", message: "The model answer could not be used.", detail: validated.message, latencyMs, retryable: false };
   return { ok: true, judgment: validated.judgment, modelId: JEV_MODEL_ID, modelVersion: "fixture", inputTokens: 0, outputTokens: 0, reportedCostUsd: 0, latencyMs, warnings: [] };
 }
 

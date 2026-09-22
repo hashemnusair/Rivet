@@ -73,6 +73,12 @@ export function classifyJevError(rawError: unknown, timedOut: boolean, timeoutMs
   return { reason: "provider_error", message: "The model could not be reached.", retryable: true };
 }
 
+/** Only Jev itself: the pinned id, or the same provider's versioned Jev id (for example `typesafe-ai/jev-1`). */
+export function isJevModelId(modelId: string): boolean {
+  const id = modelId.trim().toLowerCase();
+  return id === JEV_MODEL_ID || id === "jev" || id.startsWith(`${JEV_MODEL_ID}-`) || id.startsWith(`${JEV_MODEL_ID}@`);
+}
+
 function reportedCost(providerMetadata: unknown): number | undefined {
   if (!isRecord(providerMetadata) || !isRecord(providerMetadata.gateway)) return undefined;
   const raw = providerMetadata.gateway.cost;
@@ -117,11 +123,13 @@ export async function runJevEvaluation(input: JevEvaluationInput): Promise<JevEv
     const latencyMs = Math.max(0, now() - startedAt);
     const modelId = result.response.modelId;
     const provider = resolvedProvider(result.providerMetadata);
-    if (!modelId.toLowerCase().includes("jev") || (provider !== undefined && provider !== JEV_PROVIDER)) {
-      return { ok: false, reason: "unexpected_model", message: "A model other than Jev answered, so the answer was discarded.", latencyMs, retryable: false };
+    // Whatever happens next, the gateway has served (and may have billed) this response.
+    const usage = { inputTokens: result.usage?.inputTokens, outputTokens: result.usage?.outputTokens, reportedCostUsd: reportedCost(result.providerMetadata) };
+    if (!isJevModelId(modelId) || (provider !== undefined && provider !== JEV_PROVIDER)) {
+      return { ok: false, reason: "unexpected_model", message: "A model other than Jev answered, so the answer was discarded.", detail: `model ${modelId}${provider ? ` via ${provider}` : ""}`, latencyMs, retryable: false, ...usage };
     }
     const validated = validateJevAnswers(input.question, result.answers, built.prepared.candidateKeys, result.providerMetadata);
-    if (!validated.ok) return { ok: false, reason: "invalid_output", message: `The model answer could not be used: ${validated.message}.`, latencyMs, retryable: false };
+    if (!validated.ok) return { ok: false, reason: "invalid_output", message: "The model answer could not be used.", detail: validated.message, latencyMs, retryable: false, ...usage };
     return {
       ok: true,
       judgment: validated.judgment,

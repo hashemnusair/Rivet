@@ -85,7 +85,7 @@ export function ReportIntake({ branchId, machines, spaces, onFileIssue }: { bran
         }}
         actions={() => (
           <>
-            <Button type="button" size="sm" variant="secondary" data-testid="report-intake-file-issue" onClick={() => onFileIssue({ assetId: machineHint?.id, description: asked ?? trimmed })}><ShieldAlert /> {machineHint ? `File machine issue for ${machineHint.code}` : "File as machine issue"}</Button>
+            <Button type="button" size="sm" variant="secondary" data-testid="report-intake-file-issue" onClick={() => onFileIssue({ assetId: machineHint?.id, description: trimmed })}><ShieldAlert /> {machineHint ? `File machine issue for ${machineHint.code}` : "File as machine issue"}</Button>
             <Button asChild size="sm" variant="ghost"><Link href={maintenanceHref} data-testid="report-intake-open-maintenance"><ClipboardCheck /> {spaceHint ? `Open maintenance task in ${spaceHint.name}` : "Open maintenance tasks"}</Link></Button>
           </>
         )}

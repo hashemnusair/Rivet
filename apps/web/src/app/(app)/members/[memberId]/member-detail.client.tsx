@@ -132,7 +132,8 @@ export default function MemberDetailPageClient() {
             <CheckInsTab memberId={member.id} />
           </TabsContent>
           <TabsContent value="pt">
-            <PersonalTrainingTab membershipId={currentMembership?.id} preselectTrainerId={searchParams.get("trainer") ?? undefined} openBookingOnMount={searchParams.get("book") === "1"} />
+            {/* Keyed by the preselect so a "Book with" link works while the tab is already open. */}
+            <PersonalTrainingTab key={`${searchParams.get("trainer") ?? ""}:${searchParams.get("book") ?? ""}`} membershipId={currentMembership?.id} preselectTrainerId={searchParams.get("trainer") ?? undefined} openBookingOnMount={searchParams.get("book") === "1"} />
           </TabsContent>
         </Tabs>
 

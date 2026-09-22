@@ -1,6 +1,7 @@
 "use client";
 
 import { MessageSquareText, Plus, Send } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/chrome";
@@ -34,7 +35,10 @@ export default function GymSupportPage() {
   const { session } = useApp();
   const { saasPlans } = useExperience();
   const [cases, setCases] = useState<PlatformSupportCase[]>([]);
-  const [selectedId, setSelectedId] = useState<string>();
+  // A notification or the operating brief may deep-link one case (`?case=`).
+  const requestedCaseId = useSearchParams().get("case") ?? undefined;
+  const [selectedId, setSelectedId] = useState<string | undefined>(requestedCaseId);
+  useEffect(() => { if (requestedCaseId) setSelectedId(requestedCaseId); }, [requestedCaseId]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [retryToken, setRetryToken] = useState(0);

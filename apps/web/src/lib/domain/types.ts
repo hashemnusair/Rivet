@@ -3299,7 +3299,10 @@ export type TodayQueueKind =
   | "approval"
   | "cash_variance"
   | "facility_task"
-  | "branch_checklist";
+  | "branch_checklist"
+  | "equipment_issue"
+  | "low_stock"
+  | "support_case";
 
 export type TodayQueuePriority = "urgent" | "high" | "normal";
 
@@ -3836,6 +3839,24 @@ export type {
   ReportTargetReading,
   SameFaultReading,
 } from "../../../convex/branchOpsAssist";
+
+// The daily operating brief: sections, figures, sources, mandatory items and the two readings (shared module).
+export type {
+  BriefEmphasisKey,
+  BriefEmphasisReading,
+  BriefEvidenceLink,
+  BriefFigure,
+  BriefItem,
+  BriefRelatedPair,
+  BriefRelatedReading,
+  BriefScope,
+  BriefSection,
+  BriefSectionKey,
+  BriefSource,
+  BriefSourceKey,
+  BriefSourceStatus,
+  OperatingBrief,
+} from "../../../convex/operatingBrief";
 
 export interface AssistJudgmentRequest {
   questionKey: string;

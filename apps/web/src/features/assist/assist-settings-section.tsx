@@ -190,7 +190,8 @@ function SyntheticCheckPanel() {
       </div>
       {question ? <p className="mt-2 text-[12px] leading-5 text-ink-3">{question.description}</p> : null}
       <div className="mt-3 space-y-2">
-        {suggestion.state.status === "disabled" ? (
+        {/* Before any run the reason shows here; once a person presses Run check, the card itself reports a refusal. */}
+        {suggestion.state.status === "disabled" && !suggestion.state.requested ? (
           <p className="rounded-md bg-sunken/60 px-3 py-2 text-[12.5px] text-ink-2" role="status" data-testid="assist-check-blocked">{suggestion.state.message ?? "Jev suggestions are switched off."}</p>
         ) : null}
         <AssistSuggestion suggestion={suggestion} title={question?.label ?? "Synthetic check"} render={(result) => <JudgmentSummary result={result} />} testId="assist-check" />

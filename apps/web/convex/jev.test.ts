@@ -194,6 +194,37 @@ describe("Jev judgments", () => {
     });
   });
 
+  it("refuses to complete a request when the caller's role lost the question's permission meanwhile", async () => {
+    fixtureMode();
+    const { t, ownerA } = await harness();
+    await ownerA.mutation(api.jev.updateTenantPreference, scoped("org-a", { enabled: true }));
+    const question = getJevQuestion("foundation.note_urgency")!;
+    const requestId = await t.run(async (ctx) => {
+      const organization = (await ctx.db.query("organizations").collect()).find((row) => row.publicId === "org-a")!;
+      const user = (await ctx.db.query("users").collect()).find((row) => row.publicId === "owner-a")!;
+      // The owner prepared the request; the role is downgraded before the answer lands.
+      const membership = (await ctx.db.query("organizationMemberships").collect()).find((row) => row.userId === user._id && row.organizationId === organization._id)!;
+      await ctx.db.patch(membership._id, { role: "trainer" });
+      return await ctx.db.insert("jevRequests", { organizationId: organization._id, leaseKey: "lease", status: "pending", mode: "fixture", requestedByUserId: user._id, correlationId: "cor-downgraded", startedAt: Date.now(), leaseExpiresAt: Date.now() + 60_000 });
+    });
+    const result = await ownerA.mutation(internal.jev.complete, {
+      ...scoped("org-a"),
+      requestId,
+      questionKey: question.key,
+      stateHash: "0".repeat(64),
+      source: "fixture",
+      judgment: question.fixture.judgment,
+      modelId: "typesafe-ai/jev",
+      latencyMs: 5,
+      warnings: [],
+    }) as JevJudgeResult;
+    expect(result).toMatchObject({ status: "unavailable", reason: "request_invalid", retryable: false });
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(requestId))?.status).toBe("failed");
+      expect(await ctx.db.query("jevJudgments").collect()).toEqual([]);
+    });
+  });
+
   it("refuses to complete a request that belongs to another gym", async () => {
     fixtureMode();
     const { t, ownerB } = await harness();
@@ -247,6 +278,52 @@ describe("Jev judgments", () => {
     await t.run(async (ctx) => {
       expect((await ctx.db.query("jevUsage").collect())[0]).toMatchObject({ inputTokens: 300, reportedCostUsd: 0.0000126 });
     });
+  });
+
+  it("counts and trips the breaker on a live response the gateway served and RIVET then rejected", async () => {
+    vi.stubEnv("RIVET_JEV_MODE", "live");
+    const { t, ownerA } = await harness();
+    const requestId = await t.run(async (ctx) => {
+      const organization = (await ctx.db.query("organizations").collect()).find((row) => row.publicId === "org-a")!;
+      const user = (await ctx.db.query("users").collect()).find((row) => row.publicId === "owner-a")!;
+      return await ctx.db.insert("jevRequests", { organizationId: organization._id, leaseKey: "lease", status: "pending", mode: "live", requestedByUserId: user._id, correlationId: "cor-billed-failure", startedAt: Date.now(), leaseExpiresAt: Date.now() + 60_000 });
+    });
+    await ownerA.mutation(internal.jev.fail, { requestId, reason: "invalid_output", message: "the chosen option does not carry the highest probability", latencyMs: 40, inputTokens: 80, outputTokens: 0, reportedCostUsd: 0.00001155 });
+    await t.run(async (ctx) => {
+      const request = await ctx.db.get(requestId);
+      expect(request).toMatchObject({ status: "failed", failureReason: "invalid_output", reportedCostUsd: 0.00001155 });
+      const breaker = (await ctx.db.query("jevControlState").collect()).find((row) => row.key === "breaker");
+      expect(breaker?.trippedAt).toBeTypeOf("number");
+      expect(breaker?.tripReason).toMatch(/rejected/);
+    });
+    const status = await ownerA.query(api.jev.status, scoped("org-a")) as JevStatusView;
+    expect(status.breaker.tripped).toBe(true);
+  });
+
+  it("answers a simulated failure from the fixture even in live mode, so the Settings check never reaches the gateway", async () => {
+    vi.stubEnv("RIVET_JEV_MODE", "live");
+    vi.stubEnv("RIVET_JEV_FEATURES", "foundation");
+    vi.stubEnv("AI_GATEWAY_API_KEY", "placeholder-not-a-real-key");
+    vi.stubEnv("RIVET_JEV_FREE_UNTIL", "2999-12-31");
+    const { t, ownerA } = await harness();
+    await ownerA.mutation(api.jev.updateTenantPreference, scoped("org-a", { enabled: true }));
+    const result = await ownerA.action(api.jevInference.judge, scoped("org-a", { questionKey: "foundation.refund_detected", subject: { simulate: "timeout" } })) as JevJudgeResult;
+    // A real call with a placeholder key would have failed as a provider or auth error, never as the simulated timeout.
+    expect(result).toMatchObject({ status: "unavailable", reason: "timeout", retryable: true });
+    await t.run(async (ctx) => {
+      const rows = await ctx.db.query("jevRequests").collect();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: "failed", mode: "live", failureReason: "timeout" });
+    });
+  });
+
+  it("warns about a feature key that is not registered instead of silently disabling it", async () => {
+    vi.stubEnv("RIVET_JEV_MODE", "live");
+    vi.stubEnv("RIVET_JEV_FEATURES", "foundation,folowup");
+    const { ownerA } = await harness();
+    const status = await ownerA.query(api.jev.status, scoped("org-a")) as JevStatusView;
+    expect(status.warnings.some((warning) => warning.includes('"folowup"'))).toBe(true);
+    expect(status.features.find((feature) => feature.key === "followup")?.enabledGlobally).toBe(false);
   });
 
   it("cleans up expired judgments and old request rows in bounded batches", async () => {

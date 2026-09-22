@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarClock, CheckCircle2, Dumbbell } from "lucide-react";
 import { qk } from "@/lib/api/keys";
@@ -263,9 +263,16 @@ export function PersonalTrainingTab({ membershipId, preselectTrainerId, openBook
   const [trainerId, setTrainerId] = useState(preselectTrainerId ?? "");
   const [branchId, setBranchId] = useState("");
   const [date, setDate] = useState(() => addDays(todayISODate(), 1));
-  const [bookingOpen, setBookingOpen] = useState(Boolean(openBookingOnMount && preselectTrainerId));
+  const [bookingOpen, setBookingOpen] = useState(false);
   const query = useRealtimeApiQuery({ queryKey: qk.ptMember(membershipId ?? "none"), query: (api) => api.getPtMemberExperience(membershipId!), subscribe: (api, onValue, onError) => api.subscribePtMemberExperience(membershipId!, onValue, onError), enabled: Boolean(membershipId) });
   const selectedTrainer = query.data?.trainers.find((item) => item.id === trainerId);
+  // A "Book with" link from the resolution workspace opens the dialog only once
+  // the record shows a usable credit; without one the page explains instead.
+  const openRequested = Boolean(openBookingOnMount && preselectTrainerId);
+  const availableSessions = query.data?.availableSessions;
+  useEffect(() => {
+    if (openRequested && availableSessions !== undefined && availableSessions > 0) setBookingOpen(true);
+  }, [openRequested, availableSessions]);
   // Booking is a mutation. Do not silently book at the trainer's first
   // branch; the operator must choose a concrete branch for this session.
   const selectedBranch = visibleBranchId(session?.branches, branchId) ?? "";

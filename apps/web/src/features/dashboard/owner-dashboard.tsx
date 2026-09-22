@@ -14,6 +14,7 @@ import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { ErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/utils/cn";
+import { OperatingBriefPanel } from "@/features/brief/operating-brief";
 import { BranchRevenueBars, RevenueChart } from "./charts";
 import { dashboardScopeDescription } from "./dashboard-scope";
 import { TodayQueue } from "./today-queue";
@@ -84,6 +85,8 @@ export function OwnerDashboard() {
           {kpis?.checkInsToday ?? 0}
         </KpiCell>
       </section>
+
+      <OperatingBriefPanel branchId={branchId} />
 
       <TodayQueue data={data?.todayQueue} loading={isLoading || !data} initialVisible={4} />
 

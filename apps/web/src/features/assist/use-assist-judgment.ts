@@ -22,7 +22,7 @@ export type AssistReadyResult = Extract<AssistJudgmentResult, { status: "ready" 
 
 export type AssistSuggestionState =
   | { status: "idle" }
-  | { status: "disabled"; reason?: AssistBlockReason; message?: string }
+  | { status: "disabled"; reason?: AssistBlockReason; message?: string; /** True when a person asked and the server refused, so the page shows why. */ requested?: boolean }
   | { status: "loading" }
   | { status: "ready"; result: AssistReadyResult }
   | { status: "unavailable"; message: string; retryable: boolean }
@@ -117,7 +117,7 @@ export function useAssistJudgment({ questionKey, subject, enabled = true, auto =
         return run();
       }
       if (result.status === "ready") setState({ status: "ready", result });
-      else if (result.status === "blocked") setState({ status: "disabled", reason: result.reason, message: result.message });
+      else if (result.status === "blocked") setState({ status: "disabled", reason: result.reason, message: result.message, requested: true });
       else if (result.status === "stale") setState({ status: "stale", message: result.message });
       else setState({ status: "unavailable", message: result.message, retryable: result.retryable });
     };

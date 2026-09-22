@@ -49,6 +49,9 @@ discarded, and a reported cost trips a breaker that stops live calls.
 | `apps/web/src/features/branch-ops/repair-history.tsx` | Related repair history for the selected machine with "Compare with Jev" per similarly worded earlier report. |
 | `apps/web/src/features/branch-ops/handover-groups.tsx` | Grouped and flat handover views of unresolved checklist work, with "Check with Jev" per wording-similar pair. |
 | `apps/web/src/features/branch-ops/notification-groups.tsx` | The grouped reading of the notification bell: mandatory alerts first, record and kind groups, singles with "Suggest a group". |
+| `apps/web/convex/operatingBrief.ts` | Pure daily-brief logic: authored sections and headings, every figure, overdue and stale condition, mandatory rule, coverage and source status, the deterministic queue order, prepared emphases with preconditions, related-pair proposals, both states, resolvers and readings. |
+| `apps/web/convex/jevQuestionsBrief.ts` | The `brief` feature: `brief.emphasis` (candidates: the applicable prepared emphases; counts and amounts only) and `brief.related_matter` (static options). |
+| `apps/web/src/features/brief/operating-brief.tsx` | The "Operating brief" panel on the owner and manager dashboards: scope, freshness, coverage, the emphasis card with its figures, the mandatory list, sections with figures and "Show all", the complete queue, similar-wording checks and the sources list; rows are the Today queue's own rows. |
 | `apps/web/src/features/resolution/resolution-workspace.tsx` | The "Resolve" area on the member page: goal input, deterministic unresolved facts, the intent card, panel chips, show all and standard view. |
 | `apps/web/src/features/resolution/resolution-panels.tsx` | The seven panels: training payment, balance, membership terms, plan comparison, classes (with the stale re-check before the roster mutation), trainers and open work. |
 | `apps/web/src/features/followup/contact-note-review.tsx` | "Review note" in the contact form: the reading, the consequence preview and the accept action that sets only the outcome. |
@@ -531,6 +534,80 @@ machine safe.
   member follow-ups, a support reply, a maintenance escalation and an access
   denial).
 
+## Daily operating brief (`RIVET_JEV_FEATURES=brief`)
+
+A compact working view of unresolved commercial and operational issues on
+the owner and manager dashboards, read through the `dashboard.brief` domain
+query (`operatingBriefData` in `domain.ts`, `getOperatingBrief()` on the API
+boundary, `qk.operatingBrief(viewer, branchId)`). Everything in it is
+computed in code; Jev is asked two bounded questions and neither answer
+hides, merges, closes or reorders anything.
+
+- **Sources.** The Today queue is the first source, built by `dashboardData`
+  with the same permission and branch rules and, internally, without its page
+  limit, its at-risk sample or the due-today filter on maintenance tasks
+  (`options.complete`; the public `dashboard` query never sets it). Four
+  more sources are read separately: lapsed memberships (expired within 30
+  days and never renewed, `crm.read`), open machine reports and low stock
+  (operations module and `operations.manage`), and the gym's open RIVET
+  cases (owner or manager). A source that throws, a module that is off or a
+  role that may not see one is listed with its status (`unavailable`,
+  `not_enabled`, `no_permission`) and the brief reads as partial coverage;
+  every source carries its read time. A queue cut at `BRIEF_QUEUE_LIMIT`
+  (2,000) is partial coverage too.
+- **Figures.** `buildOperatingBrief` sums balances, counts renewals ending
+  within seven days and today, lapsed terms, overdue and due-today follow-ups,
+  work waiting seven or more days (`stale`, with the exact `overdueDays`),
+  members at risk, pending approvals, cash variances and their total, entry
+  denials, open, overdue and blocked or critical maintenance, open and
+  out-of-service machine reports, failed and due checklists, products at or
+  below their reorder point, and open and urgent cases, per authored section
+  in a fixed order (collections, renewals, follow-ups, retention, controls,
+  facilities, equipment, checklists, stock, support). Every figure is a
+  count or a money value with an optional link into the existing queue.
+- **Order and mandatory items.** Items are the Today queue's own items (plus
+  `expired:`, `equipment:`, `stock:` and `support:` items in the same shape),
+  ordered by `finalizeTodayQueue` (priority, then time, then id). Urgent
+  items by the existing rules are mandatory: listed on top under "Must be
+  seen today", never folded away and unaffected by dismissing a suggestion,
+  and still present in their sections and in the complete queue. Every row
+  is `TodayQueueRow` with the server's own action (`Collect`, `Renew`,
+  `Done` through the queue's shared completion flow, `Open case`), so each
+  action returns to the original authorized workflow; evidence links add the
+  member record, timeline, payments and the queue the item came from.
+- **Scope, freshness, caching.** The brief names its branch scope (the
+  selected branch, all branches, or the caller's assigned branches), the
+  generation time and the tenant-local date, and the page reads it on open
+  or on the explicit Refresh only (no subscription, no polling). The query
+  key includes the viewer, their role and branch list, so a restricted
+  manager never reads an owner's cached brief; a failed refresh keeps the
+  last brief and says when it was generated. On the server the brief is
+  rebuilt per caller from `ActorContext`, and a branch outside their scope is
+  not found.
+- **Emphasis (`brief.emphasis`).** Nine prepared, authored emphases each
+  carry a deterministic precondition on the figures (mandatory items,
+  outstanding total, renewals or lapsed terms, overdue follow-ups, members at
+  risk, open repairs or reports, incomplete checklists, open cases, and the
+  routine emphasis that always applies). The applicable ones are the
+  candidates; the state holds counts and amounts only (no names or record
+  text); Jev picks one and the page shows its heading with the figures of the
+  sections it points at and links to them. Without Jev, on a model failure,
+  or when the answer names something not offered, the first applicable
+  emphasis by rank leads as "Start here (standard order)".
+- **Related matter (`brief.related_matter`).** Operational items in the same
+  branch whose wording overlaps by two or more content tokens are proposed
+  as pairs (at most six). "Same matter?" is an explicit check; the loader
+  finds both items in the caller's own brief (an id outside their scope is
+  not found). A strong same-matter answer adds a "Same matter as" line to
+  both rows and nothing else; related, separate and unclear (including
+  descriptions that contradict each other, such as "fixed" against "out of
+  service") leave both rows as recorded. The recorded safety status is passed
+  as a fact and never re-judged.
+- **Preview.** `MockGymOSApi.getOperatingBrief` builds the same projection
+  from the seeded records (the complete queue through `dashboardSync`, then
+  the four sources with the same permission and module gates) and answers
+  both questions through the deterministic resolvers.
+
 ## Adding a feature question (later agents)
 
 1. Create `apps/web/convex/jevQuestions<Feature>.ts` exporting a `JevFeature`
@@ -582,7 +659,22 @@ machine safe.
 - Follow-up assistance is covered by pure tests (note readings in English and Arabic, third party, contradictions, consequence previews, related-work matching and unrelated similar tasks, evidence tags, consent and suppression, quiet hours, delivery wording, agreed callbacks, template timing and gates, reason levels), convex-test (per-subject candidates and permissions, foreign records, ownership change beating the cache, evidence-only candidates, the opt-out refusal, per-action reason permissions, the context query, the explicit task link and its refusals), component tests in the preview (third-party note, consequence preview and accept preserving edits, stale review, related work with follow-on link and a changed task, opt-out, template to WhatsApp without a send, agreed callback to staff review, reason prompts and the permission boundary) and a Playwright journey on the built preview bundle.
 - Support and content review are covered by pure tests (passages and location in both scripts, categories kept apart in English and Arabic, alternatives for a straddling case, invoice matching by id, amount and month, one clarification or none, unanswered requests including a reply written before the request and the closing summary, claims against the ledger, subscription and public page, contradictory replies, silence never a contradiction, bilingual paraphrases left alone, concept and number gaps), convex-test (the review context for administrators only with requesters and other tenants refused, platform status read-only, per-gym switch honoured by the platform team, invoice candidates, the unanswered and unsupported readings clearing as replies and summaries land, resolved cases refused, a request another user prepared refused, staleness; the profile context for profile managers only with inactive branches, archived plans and draft trainers excluded, other tenants reading their own text, claim and language findings, no-Arabic refusal, cache and staleness), component tests in the preview (triage by keyboard with the destination deep link and the matched invoice, one clarification inserted only into the reply, nothing while the switch is off, closure findings quoted by passage id with "Show in conversation" and the case untouched, the summary counting as an answer, highlights only where text still matches; the draft review with unknown claims listed, a language gap located in the editor, the action disabled while edits are unsaved, a paraphrase reading aligned, no-Arabic and switch-off states) and a Playwright journey that reviews a draft at phone width in RTL and then triages, checks and follows the destination in the console.
 - The resolution workspace is covered by pure tests (panel access and clarification rules, the brief's intent examples, plan priority and comparison, every class-eligibility rule, class and trainer matching including "never infer a language from a name", payment-to-charge service linkage without netting, whole-record evidence), convex-test (services and evidence for the owner, restricted roles, foreign members, per-actor candidates, plan priority, a class cancelled since the suggestion missing the cache, a trainer whose recorded language was removed reading as none) and component tests in the preview (the brief's goal opening the training-payment panel with the draft kept and the payment found behind eight newer notes, clarification, no match and show all, model failure with every panel still reachable, a trainer-role user, plan emphasis with the full table, a stale class refused before the roster mutation, and "languages: not recorded"), plus a Playwright journey that ends at phone width in the manual RTL layout.
+- The daily operating brief is covered by pure tests (every figure per section, queue order, mandatory items, stale days, evidence links, partial coverage for unavailable, disabled and forbidden sources, a cut queue, the empty scope, emphasis preconditions, counts-and-amounts-only state, scope keys, fixture readings and fallbacks, related pairs limited to one branch, same matter, conflicting descriptions and separate matters), convex-test (owner figures across both branches, a manager restricted to one branch with only their items and a refused branch, another tenant not found, per-caller emphasis states with different hashes and a cache hit, related pairs inside the caller's scope with conflicting descriptions reading unclear and the machine's safety status unchanged, and a Starter plan or a desk role reading as partial coverage), component tests (exact figures, mandatory rows with the server's actions, section previews, the complete queue in server order, stale badges, the shared completion dialog, the sources list, the standard order with Jev off and nothing asked, Jev's emphasis with evidence and a dismissal that changes nothing, a model failure, partial coverage with the operations module off, the selected-branch scope, a conflicting pair reading unclear with both rows kept, and the empty state) and a Playwright journey on the built preview bundle that ends at phone width in the manual RTL layout.
 - Branch operations are covered by pure tests (report kinds in English and Arabic with unclear, branch-only candidates, tied machines splitting the answer, spaces and none, history by record with similar wording as a proposal only, recurring versus separate versus unclear with severity untouched, handover obligations with owner and date, recurring and space groups, wording pairs, same-problem grouping only on a strong answer, notification entities, mandatory alerts outside groups, unread sums, stray placement or none, and the useful/false/missed/hidden scoring), convex-test (candidates limited to the selected branch with the same-named Sweifieh machine excluded, a Sweifieh-only manager refused, short descriptions refused, same-machine comparisons only with other-machine and other-branch pairs refused, severity and safety unchanged, cache hits, related checklist items across persisted and not-yet-persisted runs with completed items refused, and notifications visible to their recipient only with nothing marked read), component tests (intake by keyboard with the prefilled filing, cleaning routed to maintenance, nothing while the switch is off, repair history with an explicit comparison and the current report's severity and safety unchanged, handover groups with the same items in both views and a checked pair, the bell's grouped reading with the same rows, mandatory alert, collapsed counts, unchanged badge and no read call, and a suggestion-only placement) and a Playwright journey on the built preview bundle that ends at phone width in the manual RTL layout.
+- Review and hardening (22 September 2026): `complete` re-checks the caller's
+  permission and turns a loader that throws into `stale`; `fail` counts the
+  tokens and cost of a response the gateway served and RIVET rejected and
+  trips the breaker on a billed live failure; `prepare` refuses candidate
+  lists the request cannot honour and counts candidates in the size limit
+  before the cache and the counters; a simulated failure never reaches the
+  gateway in any mode; an unregistered `RIVET_JEV_FEATURES` key is warned
+  about in the status view; the adapter accepts only Jev's own model ids and
+  sends generic copy on invalid output; the card shows why an explicit ask
+  was refused. Covered by `jev.test.ts`, `jevAdapter.test.ts` and
+  `assist-suggestion.test.tsx`, plus prompt-injection and forged-id cases in
+  `followupAssist.test.ts`, `contact-note-review.test.tsx` and
+  `branchOpsAssist.test.ts`. Rollout and disable steps: docs/12, "Jev
+  suggestions: controlled rollout and immediate disable".
 - **Not verified:** any live call to AI Gateway, the model's accuracy on RIVET
   questions (including how well Jev reads Arabic headings, labels and
   requests), and whether the gateway reports a non-zero `cost` during the

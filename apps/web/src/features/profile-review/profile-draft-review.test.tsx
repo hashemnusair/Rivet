@@ -97,6 +97,23 @@ describe("public page draft review", () => {
     expect(await screen.findByTestId("profile-language-clear")).toHaveTextContent("No meaningful difference");
   });
 
+  it("is disabled while the editor has unsaved edits, and Save draft stays available", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<GymPublicProfileSection />, {
+      prepare: async (api) => {
+        await api.updateAssistPreference({ enabled: true });
+        await saveDraft(api, { taglineEn: "Strength for everyone.", taglineAr: "قوة للجميع", descriptionEn: "Two branches in Amman.", descriptionAr: "فرعان في عمّان." });
+      },
+    });
+    const run = await screen.findByTestId("profile-review-run");
+    expect(run).toBeEnabled();
+    const tagline = screen.getByLabelText(/English tagline/i);
+    await user.type(tagline, " Open late.");
+    expect(screen.getByTestId("profile-review-run")).toBeDisabled();
+    expect(screen.getByTestId("profile-review-run")).toHaveAttribute("title", expect.stringMatching(/save/i));
+    expect(screen.getByRole("button", { name: /Save draft/i })).toBeEnabled();
+  });
+
   it("says when there is no Arabic text to compare", async () => {
     const user = userEvent.setup();
     await renderWithApp(<GymPublicProfileSection />, {

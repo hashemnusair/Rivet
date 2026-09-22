@@ -3,7 +3,7 @@ import type { Experimental_EvaluationModel } from "ai";
 import { Experimental_EvaluationMockModelV4 as MockEvaluationModel } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { JEV_QUESTION_ID } from "./jevAnswers";
-import { classifyJevError, runJevEvaluation } from "./jevAdapter";
+import { classifyJevError, isJevModelId, runJevEvaluation } from "./jevAdapter";
 import { getJevQuestion } from "./jevQuestions";
 import type { JevChoiceQuestion } from "./jevRegistry";
 
@@ -61,6 +61,22 @@ describe("runJevEvaluation", () => {
   it("discards an answer served by any model other than Jev", async () => {
     const outcome = await runJevEvaluation({ question: refund, state: refund.fixture.state, timeoutMs: 2_000, model: jev(async () => ({ answers: { [JEV_QUESTION_ID]: { type: "boolean", probability: 0.9 } }, warnings: [], providerMetadata: metadata({ routing: { resolvedProvider: "openai" } }), response: { modelId: "openai/gpt-5.6" } }), "openai/gpt-5.6") });
     expect(outcome).toMatchObject({ ok: false, reason: "unexpected_model" });
+  });
+
+  it("keeps the gateway's usage and cost on an answer it rejects, so a billed failure still counts", async () => {
+    // The gateway served (and may have billed) a response that RIVET then discards because another provider answered.
+    const outcome = await runJevEvaluation({ question: refund, state: refund.fixture.state, timeoutMs: 2_000, model: jev(async () => ({ answers: { [JEV_QUESTION_ID]: { type: "boolean", probability: 0.9 } }, warnings: [], usage: { inputTokens: 80, outputTokens: 0 }, providerMetadata: metadata({ routing: { resolvedProvider: "openai" } }), response: { modelId: "typesafe-ai/jev" } })) });
+    expect(outcome).toMatchObject({ ok: false, reason: "unexpected_model", inputTokens: 80, outputTokens: 0, reportedCostUsd: 0.00001155 });
+    expect((outcome as { detail?: string }).detail).toMatch(/via openai/);
+  });
+
+  it("accepts only Jev's own model ids", () => {
+    expect(isJevModelId("typesafe-ai/jev")).toBe(true);
+    expect(isJevModelId("jev")).toBe(true);
+    expect(isJevModelId("typesafe-ai/jev-1")).toBe(true);
+    expect(isJevModelId("openai/gpt-4o")).toBe(false);
+    expect(isJevModelId("some-vendor/jevelin")).toBe(false);
+    expect(isJevModelId("jevelin")).toBe(false);
   });
 
   it("times out through the abort signal and reports it as retryable", async () => {

@@ -45,7 +45,8 @@ export const judge = action({
     });
     if (began.status !== "started") return began.result;
 
-    const outcome = request.mode === "fixture"
+    // A simulated failure (the Settings synthetic check) never reaches the gateway, whatever the mode.
+    const outcome = request.mode === "fixture" || request.simulate
       ? evaluateJevFixture(question, request.simulate, 0, { state: request.state, candidates: request.candidates })
       : await runJevEvaluation({
           question,
@@ -57,27 +58,34 @@ export const judge = action({
         });
 
     if (!outcome.ok) {
-      await ctx.runMutation(internal.jev.fail, { requestId: began.requestId, reason: outcome.reason, message: outcome.message, latencyMs: outcome.latencyMs });
+      await ctx.runMutation(internal.jev.fail, { requestId: began.requestId, reason: outcome.reason, message: outcome.detail ?? outcome.message, latencyMs: outcome.latencyMs, inputTokens: outcome.inputTokens, outputTokens: outcome.outputTokens, reportedCostUsd: outcome.reportedCostUsd });
       return { status: "unavailable", reason: outcome.reason, message: outcome.message, retryable: outcome.retryable, correlationId: args.correlationId };
     }
 
-    return await ctx.runMutation(internal.jev.complete, {
-      requestId: began.requestId,
-      organizationId: args.organizationId,
-      activeBranchId: args.activeBranchId,
-      correlationId: args.correlationId,
-      questionKey: request.questionKey,
-      subject: args.subject,
-      stateHash: request.stateHash,
-      source: request.mode,
-      judgment: outcome.judgment,
-      modelId: outcome.modelId,
-      modelVersion: outcome.modelVersion,
-      inputTokens: outcome.inputTokens,
-      outputTokens: outcome.outputTokens,
-      reportedCostUsd: outcome.reportedCostUsd,
-      latencyMs: outcome.latencyMs,
-      warnings: outcome.warnings,
-    });
+    try {
+      return await ctx.runMutation(internal.jev.complete, {
+        requestId: began.requestId,
+        organizationId: args.organizationId,
+        activeBranchId: args.activeBranchId,
+        correlationId: args.correlationId,
+        questionKey: request.questionKey,
+        subject: args.subject,
+        stateHash: request.stateHash,
+        source: request.mode,
+        judgment: outcome.judgment,
+        modelId: outcome.modelId,
+        modelVersion: outcome.modelVersion,
+        inputTokens: outcome.inputTokens,
+        outputTokens: outcome.outputTokens,
+        reportedCostUsd: outcome.reportedCostUsd,
+        latencyMs: outcome.latencyMs,
+        warnings: outcome.warnings,
+      });
+    } catch (error) {
+      // The caller's access changed in a way `complete` refuses: release the
+      // lease and keep the usage rather than leaving the row pending.
+      await ctx.runMutation(internal.jev.fail, { requestId: began.requestId, reason: "request_invalid", message: error instanceof Error ? error.message.slice(0, 500) : "The suggestion could not be completed.", latencyMs: outcome.latencyMs, inputTokens: outcome.inputTokens, outputTokens: outcome.outputTokens, reportedCostUsd: outcome.reportedCostUsd });
+      return { status: "unavailable", reason: "request_invalid", message: "The suggestion could not be completed. Refresh and ask again.", retryable: true, correlationId: args.correlationId };
+    }
   },
 });

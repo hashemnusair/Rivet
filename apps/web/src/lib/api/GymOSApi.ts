@@ -401,6 +401,10 @@ export interface DashboardQuery {
   to: string;
 }
 
+export interface OperatingBriefQuery {
+  branchId?: UUID;
+}
+
 export interface PlatformBillingInvoice {
   id: string;
   gymId?: string;
@@ -960,6 +964,8 @@ export interface GymOSApi {
 
   // Dashboard
   getDashboard(query: DashboardQuery): Promise<DashboardData>;
+  /** The evidence-backed daily operating brief for the caller's own scope: exact queues, figures, sources and mandatory items, read on open or explicit refresh only. */
+  getOperatingBrief(query: OperatingBriefQuery): Promise<import("@/lib/domain/types").OperatingBrief>;
   subscribeDashboard(query: DashboardQuery, onValue: (dashboard: DashboardData) => void, onError?: (error: unknown) => void): Promise<() => void>;
 
   // Members

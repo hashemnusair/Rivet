@@ -1,7 +1,8 @@
 import type { JevSubject } from "./jevAnswers";
 import { buildColumnTargetState, buildPlanMatchState, isImportField, normalizePlanLabel, type ImportAssistDraftData, type ImportColumnSummary, type ImportField, type PlanTerms } from "./jevImportState";
 import { FOUNDATION_QUESTIONS } from "./jevQuestionsFoundation";
-import { followUpRelatedTasks, gymProfileReviewContextData, memberFollowUpContextData, memberResolutionContextData, onboardingExperience, supportReviewSource, tenantToday, workspaceAccessData, type PlatformAdminContext } from "./domain";
+import { followUpRelatedTasks, gymProfileReviewContextData, memberFollowUpContextData, memberResolutionContextData, onboardingExperience, operatingBriefData, supportReviewSource, tenantToday, workspaceAccessData, type PlatformAdminContext } from "./domain";
+import { buildBriefEmphasisState, buildBriefRelatedState } from "./operatingBrief";
 import { buildLanguageGapState, buildProfileClaimState, languageGapUnavailableReason } from "./profileAssist";
 import { BRANCHOPS_DESCRIPTION_MAX_LENGTH, BRANCHOPS_DESCRIPTION_MIN_LENGTH, buildHandoverRelatedState, buildNotificationTopicState, buildReportCategoryState, buildReportTargetState, buildSameFaultState, groupNotifications, handoverItemKey, type HandoverItem, type IssueLike, type NotificationLike } from "./branchOpsAssist";
 import { branchByPublicId as operationsBranch, requireOperations } from "./operations";
@@ -12,7 +13,7 @@ import type { Id } from "./_generated/dataModel";
 import type { Permission } from "./permissions";
 import { NAVIGATION_QUERY_MAX_LENGTH, buildNavigationIntentState, buildOnboardingNextStepState, buildReportFinderState, permittedClarifications, permittedNavigationEntries, type NavigationAccess, type OnboardingStepCandidate } from "./navigationCatalogue";
 import type { JevCandidate, JevQuestion, JevState } from "./jevRegistry";
-import { assertBranchAccess, domainError, publicBranchId, publicOrganizationId, requirePermission, type ActorContext, type ReadCtx } from "./security";
+import { assertBranchAccess, domainError, publicBranchId, publicOrganizationId, publicUserId, requirePermission, type ActorContext, type ReadCtx } from "./security";
 
 /**
  * Server-side state loaders, one per registered question. A loader runs
@@ -96,7 +97,8 @@ async function importDraft(ctx: ReadCtx, actor: ActorContext, subject: JevSubjec
     ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "memberImportDraft").eq("publicId", draftId)).unique()
     : null;
   const value = record(row?.data);
-  if (!row || (typeof value.expiresAt === "number" && value.expiresAt < Date.now())) {
+  // The draft belongs to the person who loaded the file; a colleague with the same permission asks about their own.
+  if (!row || (typeof value.expiresAt === "number" && value.expiresAt < Date.now()) || (typeof value.createdById === "string" && value.createdById !== publicUserId(actor.user))) {
     domainError("NOT_FOUND", "The import draft was not found or has expired. Load the file again to continue.", { correlationId: actor.correlationId });
   }
   const branch = row.branchId ? await ctx.db.get(row.branchId) : null;
@@ -493,6 +495,28 @@ const notificationTopicLoader: JevStateLoader = async (ctx, actor, subject) => {
   return buildNotificationTopicState({ notification, grouping });
 };
 
+// --- Daily operating brief -----------------------------------------------------
+
+function briefInput(subject: JevSubject): Record<string, unknown> {
+  return typeof subject.branchId === "string" && subject.branchId ? { branchId: subject.branchId } : {};
+}
+
+/** The brief is rebuilt for the caller, so the figures Jev sees are exactly the caller's own scope; counts and amounts only. */
+const briefEmphasisLoader: JevStateLoader = async (ctx, actor, subject) => {
+  const brief = await operatingBriefData(ctx, actor, briefInput(subject));
+  return buildBriefEmphasisState({ brief, currency: actor.organization.currency });
+};
+
+/** Both items must be in the caller's own brief; an id outside their scope is not found. */
+const briefRelatedLoader: JevStateLoader = async (ctx, actor, subject) => {
+  const brief = await operatingBriefData(ctx, actor, briefInput(subject));
+  const first = brief.queue.find((item) => item.id === String(subject.firstId ?? ""));
+  const second = brief.queue.find((item) => item.id === String(subject.secondId ?? ""));
+  if (!first || !second) domainError("NOT_FOUND", "Brief item not found.", { correlationId: actor.correlationId });
+  if (first.id === second.id) domainError("VALIDATION_ERROR", "Choose two different items to compare.", { correlationId: actor.correlationId });
+  return buildBriefRelatedState({ first, second, scope: brief.scope });
+};
+
 export const JEV_STATE_LOADERS: Readonly<Record<string, JevStateLoader>> = {
   ...Object.fromEntries(FOUNDATION_QUESTIONS.map((question) => [question.key, syntheticLoader(question)] as const)),
   "import.column_target": columnTargetLoader,
@@ -516,6 +540,8 @@ export const JEV_STATE_LOADERS: Readonly<Record<string, JevStateLoader>> = {
   "branchops.same_fault": sameFaultLoader,
   "branchops.handover_related": handoverRelatedLoader,
   "branchops.notification_topic": notificationTopicLoader,
+  "brief.emphasis": briefEmphasisLoader,
+  "brief.related_matter": briefRelatedLoader,
 };
 
 export function jevStateLoader(questionKey: string): JevStateLoader | undefined {
