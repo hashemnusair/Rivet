@@ -3,6 +3,96 @@
 Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
 daily-checklist Production release at application tip `fdd6dac`.
 
+## Jev release verification and import pilot gate, 23 September 2026
+
+The Production Convex target is `rivet:rivet:production` / `descriptive-meerkat-589`
+(`https://descriptive-meerkat-589.eu-west-1.convex.cloud`). Establish it with
+`CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --dry-run --yes` before a release.
+This empty assignment suppresses the **local** `apps/web/.env.local` deploy-key
+override for that command; it does not reveal or alter the key. A plain
+`pnpm convex:env:names -- --prod` is insufficient here: the CLI warned that it
+ignored `--prod` and used the key's deployment, then returned Development's
+names. With the override suppressed,
+`CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` selected Production and
+listed `AI_GATEWAY_API_KEY` by **name**, with no `RIVET_JEV_*` names. The local
+Development deployment is `fleet-otter-621` and has no Gateway key by name.
+Set or confirm any secret only in the Convex dashboard for the target
+deployment, under **Settings → Environment Variables**. Never copy its value
+into a terminal, test command, CI secret or frontend environment.
+
+On 23 September 2026 the guarded Production dry run passed schema validation
+with no index deletion, and the guarded deploy succeeded from source SHA
+`97f0e2b8b8ea0a7b5f2cb02e4a08a87b684ca41a`. A post-deploy
+`health:check --prod` returned `ok` at 09:24:38 UTC. Convex's Deployment
+History view is unavailable on this team's plan; the named target, deploy
+output, source checkout and health check are the available release record.
+GitHub Actions run `35842276609` passed every job for the same source SHA.
+Vercel Production deployment `dpl_GuvW1auSrRZ7JJjztr196HYPsaoU` is Ready
+for that SHA and aliased to the canonical RIVET domains; GitHub deployment
+`6610598859` supplies the source-SHA link. Frontend readiness and the Convex
+release were checked separately.
+
+The [official Jev announcement](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway)
+says the model is free until 25 September 2026, while the
+[current model page](https://vercel.com/ai-gateway/models/jev) displays a
+nonzero token price. This account's Gateway overview asks for a card to unlock
+free credits, and the usage page has no calls. Account-specific zero-cost
+eligibility is therefore **unconfirmed**. Do not set or extend
+`RIVET_JEV_FREE_UNTIL` based only on the public date, and do not run a live
+smoke or test a first paid request. No live Jev response, deployed action path
+or model accuracy is yet verified. The mode remains off, the feature allowlist
+empty, and every gym's audited preference defaults off. The configured
+fallback caps are 200 global and 50 per gym per UTC day; lower them before a
+pilot. A missing or nonzero cost in a live response now withholds the answer
+and trips the breaker. No SDK retries, alternate model or paid fallback are
+configured. The Production `jevControlState`, `jevRequests` and
+`jevTenantPreferences` tables were inspected read-only on 23 September and
+are empty: there is no stored breaker trip, recorded request or opted-in gym.
+Recheck before any future activation.
+
+### Synthetic import pilot protocol
+
+Use a **dedicated test gym and branch in a non-production Convex deployment**
+with fabricated names, phone numbers and plan terms. First confirm that the
+same deployment owns the site, Clerk instance, Gateway key and Jev switches.
+Never select Production by assuming `--prod` won over a deploy key. Keep
+`RIVET_JEV_MODE=off` until account-specific zero-cost access is confirmed.
+Then set a confirmed UTC expiry, `RIVET_JEV_MODE=live`,
+`RIVET_JEV_FEATURES=foundation,import`, `RIVET_JEV_DAILY_CAP=20`, and
+`RIVET_JEV_TENANT_DAILY_CAP=10` in that test deployment only. Enable the
+dedicated gym's preference as a `settings.manage` actor. Check a single
+synthetic foundation request through the **deployed Convex action**, then the
+import cases one at a time, checking Gateway model/provider and explicit zero
+cost before each next call. Stop on missing cost, any charge, unexpected model,
+failure or breaker trip. Record counts, latency, tokens, reported cost, selected
+option, staff correction and deterministic/manual outcome without logging raw
+provider payloads. The local Vitest smoke requires its own securely configured
+key; a key in Convex does not appear in a local process. Fixture and preview
+answers prove workflow only and must never count as model-quality evidence.
+
+| Synthetic sheet case | Required comparison and safety check |
+| --- | --- |
+| Known English and Arabic aliases | Ordinary mapping wins without a Jev call. |
+| Unfamiliar English and Arabic headings | Compare the chosen destination with manual mapping; accept or correct explicitly. |
+| Ambiguous `balance` | Confirm that a financial field is never silently assigned; record wrong suggestions and clarification. |
+| Two columns for one destination | First accepted field is protected; review the remaining column manually. |
+| Legacy plans with different currency, duration, visits or price | Display exact terms, reject incompatible choices, and require explicit review for differences. |
+| No equivalent and clarification | Keep the source label visible and permit manual resolution. |
+| Edited mapping or plan after a suggestion | Discard stale result and revalidate the server preview. |
+| Model unavailable or mode off | Complete the ordinary mapping and preview without Jev. |
+
+Only accepted synthetic mappings may reach the existing preview, validation and
+synthetic import commit in the test gym. Do not use real member records or a
+real gym for this evaluation. For a **real-customer pilot**, obtain the named
+participating gym's authorization to process the allowed import metadata
+(headings, column shape counts and legacy plan labels; never row values), and
+identify the participating `settings.manage` and `members.write` staff. Start
+with import alone after the foundation check, observe every request and cost,
+and require the operator to approve expansion based on correct suggestions,
+financial-field errors, corrections, refusals and latency. Roll back by setting
+the deployment mode to `off`, removing `import` from the allowlist, setting a
+cap to `0`, or disabling that gym's audited switch. Other features remain off.
+
 ## Jev suggestions: controlled rollout and immediate disable, 22 September 2026
 
 Eight Jev-assisted feature batches are implemented on `main` (foundation,

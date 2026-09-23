@@ -100,8 +100,9 @@ discarded, and a reported cost trips a breaker that stops live calls.
    score inside the scale).
 5. `internal.jev.complete` re-loads and re-hashes the state; a changed record
    makes the result `stale` (never shown, never cached). Otherwise the judgment
-   is cached when the question has a TTL, usage and reported cost are recorded,
-   and a live cost above zero trips the breaker.
+   is cached when the question has a TTL, usage and reported cost are recorded.
+   A live response with missing or nonzero cost is withheld, never cached, and
+   trips the breaker, including when the caller's role changed while it ran.
 6. The page receives `ready` (with `source: live | fixture | cache`), `blocked`,
    `in_progress`, `stale` or `unavailable`. Authorization failures throw the
    usual `FORBIDDEN` / `NOT_FOUND` / `UNAUTHENTICATED`.
@@ -134,17 +135,16 @@ Everything is off by default. Live calls need all of the following:
 - Breaker clear and daily caps not reached (`RIVET_JEV_DAILY_CAP` 200,
   `RIVET_JEV_TENANT_DAILY_CAP` 50; `0` means none).
 
-Free-eligibility facts as read on 21 September 2026: Vercel's pages for the
-model (`vercel.com/ai-gateway/models/jev`), the changelog, the pricing page and
-the FAQ show list pricing ($0.042 per million input tokens, output free) and
-**no promotion**. Only a third-party guide states that Vercel listed Jev as free
-under a promotion ending 25 September 2026. The gateway's free tier is a monthly
-credit on a subset of models that requires a card on file
-(`403 customer_verification_required` otherwise) and refuses requests with
-`402` when the balance is not positive. None of this proves zero cost for this
-account, so `RIVET_JEV_FREE_UNTIL` stays unset until an operator confirms it in
-the Vercel dashboard, and the breaker treats any reported cost as the signal
-to stop.
+Free-eligibility facts rechecked on 23 September 2026: Vercel's
+[Jev announcement](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway)
+says Jev is free until 25 September 2026, while its
+[model page](https://vercel.com/ai-gateway/models/jev) displays a nonzero
+per-token price. The account's Gateway overview prompts for a card to unlock
+free credits; its usage page has no calls and does not establish a zero-cost
+entitlement. The public promotion and an empty balance do not prove this
+account's eligibility. `RIVET_JEV_FREE_UNTIL` stays unset until an operator
+confirms the account-specific terms and zero-cost access in the dashboard.
+The gateway's reported cost is then checked on every response.
 
 Breaker reset (operator only, from a shell with the deployment selected, no
 secret involved): `pnpm --filter web exec convex run jev:resetBreaker '{"reason":"<why>"}'`.
