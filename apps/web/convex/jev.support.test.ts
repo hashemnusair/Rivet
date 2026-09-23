@@ -131,7 +131,7 @@ describe("support questions on the server", () => {
     const unanswered = await admin.action(api.jevInference.judge, ask("support.unanswered", { caseId, summary: "" })) as JevJudgeResult;
     expect(unanswered.status).toBe("ready");
     const requests = resolveSupportUnansweredReading((unanswered as Extract<JevJudgeResult, { status: "ready" }>).judgment, context);
-    expect(requests.findings.map((finding) => finding.passage.text)).toEqual(["Please refund the duplicate.", "Can you also move our billing date to the 1st of each month?"]);
+    expect(requests.findings.map((finding) => finding.passage.text)).toEqual(["Please refund the duplicate."]);
     const claims = await admin.action(api.jevInference.judge, ask("support.claim_check", { caseId })) as JevJudgeResult;
     const claimReading = resolveSupportClaimReading((claims as Extract<JevJudgeResult, { status: "ready" }>).judgment, context);
     expect(claimReading.findings.map((finding) => [finding.passage.text, finding.evidence])).toEqual([

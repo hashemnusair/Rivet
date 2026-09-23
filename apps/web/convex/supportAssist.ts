@@ -555,22 +555,6 @@ export function resolveSupportUnansweredFixture(input: { state: JevState; candid
 }
 
 /** Everything that carries at least half the top option's mass is flagged with it; a long tail is not. */
-export function flagFloor(judgment: Extract<JevJudgment, { kind: "choice" }>): number {
-  const top = Math.max(...Object.values(judgment.probabilities), 0);
-  return Math.max(0.05, top * 0.5);
-}
-
-/** The choice first, then by weight, then in the order the case reads; ties never reorder by chance. */
-function findingOrder(choice: string, context: Pick<SupportReviewContext, "passages">) {
-  const position = new Map(context.passages.map((passage, index) => [passage.id, index] as const));
-  return (left: { passage: SupportPassage; probability: number }, right: { passage: SupportPassage; probability: number }): number => {
-    if (left.passage.id === choice) return -1;
-    if (right.passage.id === choice) return 1;
-    if (Math.abs(right.probability - left.probability) > 1e-9) return right.probability - left.probability;
-    return (position.get(left.passage.id) ?? 0) - (position.get(right.passage.id) ?? 0);
-  };
-}
-
 export interface SupportPassageFinding {
   passage: SupportPassage;
   probability: number;
@@ -583,14 +567,12 @@ export function resolveSupportUnansweredReading(judgment: JevJudgment, context: 
   if (judgment.kind !== "choice") return { allAnswered: false, findings: [] };
   if (judgment.choice === SUPPORT_ALL_ANSWERED) return { allAnswered: true, findings: [] };
   const byId = new Map(context.passages.map((passage) => [passage.id, passage] as const));
-  const floor = flagFloor(judgment);
+  // Choice alternatives express uncertainty, not additional independent findings.
   const findings = Object.entries(judgment.probabilities)
-    .filter(([id, probability]) => id !== SUPPORT_ALL_ANSWERED && (id === judgment.choice || probability >= floor))
+    .filter(([id]) => id === judgment.choice)
     .map(([id, probability]) => ({ passage: byId.get(id), probability }))
-    .filter((entry): entry is { passage: SupportPassage; probability: number } => Boolean(entry.passage))
-    .sort(findingOrder(judgment.choice, context))
-    .slice(0, 8);
-  return { allAnswered: findings.length === 0, findings };
+    .filter((entry): entry is { passage: SupportPassage; probability: number } => Boolean(entry.passage));
+  return { allAnswered: false, findings };
 }
 
 // ---------------------------------------------------------------------------
@@ -709,15 +691,13 @@ export function resolveSupportClaimReading(judgment: JevJudgment, context: Suppo
   if (judgment.kind !== "choice") return { supported: false, findings: [] };
   if (judgment.choice === SUPPORT_NONE) return { supported: true, findings: [] };
   const byId = new Map(context.passages.map((passage) => [passage.id, passage] as const));
-  const floor = flagFloor(judgment);
+  // Choice alternatives express uncertainty, not additional independent findings.
   const findings = Object.entries(judgment.probabilities)
-    .filter(([id, probability]) => id !== SUPPORT_NONE && (id === judgment.choice || probability >= floor))
+    .filter(([id]) => id === judgment.choice)
     .map(([id, probability]) => ({ passage: byId.get(id), probability }))
     .filter((entry): entry is { passage: SupportPassage; probability: number } => Boolean(entry.passage))
-    .map((entry) => ({ ...entry, evidence: supportClaimEvidence(entry.passage, context.facts) ?? "Nothing in the recorded facts confirms this passage. A reply alone is not evidence that a backend issue was fixed." }))
-    .sort(findingOrder(judgment.choice, context))
-    .slice(0, 8);
-  return { supported: findings.length === 0, findings };
+    .map((entry) => ({ ...entry, evidence: supportClaimEvidence(entry.passage, context.facts) ?? "Nothing in the recorded facts confirms this passage. A reply alone is not evidence that a backend issue was fixed." }));
+  return { supported: false, findings };
 }
 
 /** Case ids and passage ids are opaque; a passage id is valid only when the current case still carries it with the same text. */

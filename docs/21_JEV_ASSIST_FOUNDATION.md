@@ -447,6 +447,11 @@ gives the console the gym's status read-only (`canManage: false`); the hook's
   allows freezing or grants every branch, scheduled classes, chosen amenities,
   audience, category). Unsaved edits are not reviewed: the action is disabled
   until the editor saves or discards.
+Each passage-review Choice (support unanswered requests, support claims, profile
+claims and language gaps) displays only its selected passage. Alternative
+probabilities are competing answers, not independent findings. These checks
+are not exhaustive reviews; invalid selections never imply an all-clear.
+
 - **Claims** (`profile.claim_check`): only a contradiction counts. Code checks
   branch and trainer counts, women-only or men-only against the audience,
   freezing against plan terms, and "every branch" access against plan terms;

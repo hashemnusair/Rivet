@@ -67,7 +67,7 @@ export function SupportClosureCheck({ supportCase, summaryDraft, onLocate, onFin
   return (
     <section aria-label="Checks before closing" data-testid="support-closure-check" className="space-y-3 rounded-md border border-dashed border-line-2 bg-surface/60 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[12.5px] leading-5 text-ink-2"><ShieldQuestion className="me-1 inline size-3.5 text-ink-3" aria-hidden />Optional: ask Jev which explicit requests no reply addressed and which claims the ledger, subscription or public-page records do not support. Closing stays your call.</p>
+        <p className="text-[12.5px] leading-5 text-ink-2"><ShieldQuestion className="me-1 inline size-3.5 text-ink-3" aria-hidden />Optional: ask Jev which explicit requests no reply addressed and which claims the ledger, subscription or public-page records do not support. Each check suggests at most one passage; review the full case before closing.</p>
         <Button type="button" size="sm" variant="secondary" data-testid="support-closure-run" loading={unanswered.state.status === "loading" || claimCheck.state.status === "loading" || (Boolean(checked) && context.isLoading)} onClick={run}>{checked ? "Check again" : "Check before closing"}</Button>
       </div>
       {checked && context.data ? (
@@ -78,7 +78,7 @@ export function SupportClosureCheck({ supportCase, summaryDraft, onLocate, onFin
               title="Explicit requests without an answer"
               testId="support-unanswered"
               render={() => unansweredReading?.allAnswered
-                ? <p data-testid="support-unanswered-clear">Every explicit request is addressed by a reply or by your summary draft.</p>
+                ? <p data-testid="support-unanswered-clear">No unanswered request was selected. Review the full case before closing.</p>
                 : unansweredReading ? <FindingList findings={unansweredReading.findings} kind="request" onLocate={onLocate} testId="support-unanswered-findings" /> : null}
               actions={() => flagged.length && onFindings ? <Button type="button" size="sm" variant="ghost" onClick={() => onFindings(flagged)}>Highlight in conversation</Button> : null}
             />
@@ -89,7 +89,7 @@ export function SupportClosureCheck({ supportCase, summaryDraft, onLocate, onFin
               title="Claims the records do not support"
               testId="support-claims"
               render={() => claimReading?.supported
-                ? <p data-testid="support-claims-clear">The recorded facts support every claim on this case.</p>
+                ? <p data-testid="support-claims-clear">No unsupported claim was selected. This is not verification of every claim.</p>
                 : claimReading ? <FindingList findings={claimReading.findings} kind="claim" onLocate={onLocate} testId="support-claim-findings" /> : null}
             />
           ) : <p className="text-[12.5px] text-ink-3" data-testid="support-claims-unavailable">No passage on this case asserts an outcome, so there is no claim to check against the records.</p>}

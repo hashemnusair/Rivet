@@ -69,7 +69,7 @@ describe("claims against the recorded services", () => {
     const judgment = resolveProfileClaimFixture(state)!;
     const reading = resolveProfileClaimReading(judgment, ctx);
     expect(reading.clear).toBe(false);
-    expect(reading.findings.map((finding) => finding.passage.text)).toEqual(["Strength and conditioning across six branches.", "Women only, with five certified coaches.", "Freeze your membership any time."]);
+    expect(reading.findings.map((finding) => finding.passage.text)).toEqual(["Strength and conditioning across six branches."]);
     expect(reading.findings[0]?.evidence).toBe("Recorded: 2 active branches (Abdoun, Sweifieh).");
     // Sauna, pool, parking and 24/7 are unknown, not false.
     const unchecked = profileUncheckedClaims(ctx);
@@ -122,9 +122,8 @@ describe("differences between the languages", () => {
     const judgment = resolveLanguageGapFixture(buildLanguageGapState({ context: ctx }))!;
     const reading = resolveLanguageGapReading(judgment, ctx);
     expect(reading.aligned).toBe(false);
-    expect(reading.findings.map((finding) => finding.passage.text)).toEqual(["Free parking at every branch.", "للسيدات فقط بعد الساعة 6."]);
+    expect(reading.findings.map((finding) => finding.passage.text)).toEqual(["Free parking at every branch."]);
     expect(reading.findings[0]?.evidence).toBe("This passage mentions branch count, access to every branch, parking; the Arabic text does not.");
-    expect(reading.findings[1]?.evidence).toBe("This passage mentions women-only access and states the number 6; the English text does not.");
     expect(languageGapEvidence({ lang: "ar", text: "جمّد اشتراكك عندما تسافر." }, ctx)).toBeUndefined();
   });
 
@@ -132,4 +131,17 @@ describe("differences between the languages", () => {
     const ctx = context({ taglineEn: "Strength for everyone.", descriptionEn: "Two branches." });
     expect(languageGapUnavailableReason(ctx)).toBe("Add an Arabic tagline or description to compare the two languages.");
   });
+});
+
+
+it("does not promote Choice alternatives to findings or clear an invalid selected passage", () => {
+  const ctx = context({ taglineEn: "", descriptionEn: "Six branches. Free parking." });
+  const [first, second] = ctx.passages;
+  const judgment = { kind: "choice" as const, choice: first!.id, probabilities: { [first!.id]: 0.51, [second!.id]: 0.49 } };
+  for (const read of [resolveProfileClaimReading, resolveLanguageGapReading]) {
+    expect(read(judgment, ctx).findings.map((item) => item.passage.id)).toEqual([first!.id]);
+    expect(read({ ...judgment, choice: "missing" }, ctx).findings).toEqual([]);
+  }
+  expect(resolveProfileClaimReading({ ...judgment, choice: "missing" }, ctx).clear).toBe(false);
+  expect(resolveLanguageGapReading({ ...judgment, choice: "missing" }, ctx).aligned).toBe(false);
 });

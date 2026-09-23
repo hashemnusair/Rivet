@@ -275,22 +275,6 @@ export function resolveProfileClaimFixture(input: { state: JevState; candidates?
 }
 
 /** Everything that carries at least half the top option's mass is flagged with it; a long tail is not. */
-function flagFloor(judgment: Extract<JevJudgment, { kind: "choice" }>): number {
-  const top = Math.max(...Object.values(judgment.probabilities), 0);
-  return Math.max(0.05, top * 0.5);
-}
-
-/** The choice first, then by weight, then in the order the draft reads; ties never reorder by chance. */
-function findingOrder(choice: string, context: Pick<GymProfileReviewContext, "passages">) {
-  const position = new Map(context.passages.map((passage, index) => [passage.id, index] as const));
-  return (left: { passage: ProfilePassage; probability: number }, right: { passage: ProfilePassage; probability: number }): number => {
-    if (left.passage.id === choice) return -1;
-    if (right.passage.id === choice) return 1;
-    if (Math.abs(right.probability - left.probability) > 1e-9) return right.probability - left.probability;
-    return (position.get(left.passage.id) ?? 0) - (position.get(right.passage.id) ?? 0);
-  };
-}
-
 export interface ProfilePassageFinding {
   passage: ProfilePassage;
   probability: number;
@@ -301,15 +285,13 @@ export function resolveProfileClaimReading(judgment: JevJudgment, context: GymPr
   if (judgment.kind !== "choice") return { clear: false, findings: [] };
   if (judgment.choice === PROFILE_NONE) return { clear: true, findings: [] };
   const byId = new Map(context.passages.map((passage) => [passage.id, passage] as const));
-  const floor = flagFloor(judgment);
+  // Choice alternatives express uncertainty, not additional independent findings.
   const findings = Object.entries(judgment.probabilities)
-    .filter(([id, probability]) => id !== PROFILE_NONE && (id === judgment.choice || probability >= floor))
+    .filter(([id]) => id === judgment.choice)
     .map(([id, probability]) => ({ passage: byId.get(id), probability }))
     .filter((entry): entry is { passage: ProfilePassage; probability: number } => Boolean(entry.passage))
-    .map((entry) => ({ ...entry, evidence: profileClaimEvidence(entry.passage, context.services) ?? "Compare this passage with the recorded services below; the records do not confirm it." }))
-    .sort(findingOrder(judgment.choice, context))
-    .slice(0, 8);
-  return { clear: findings.length === 0, findings };
+    .map((entry) => ({ ...entry, evidence: profileClaimEvidence(entry.passage, context.services) ?? "Compare this passage with the recorded services below; the records do not confirm it." }));
+  return { clear: false, findings };
 }
 
 /** Passages that mention something the records cannot confirm or deny; listed as unknown, never as false. */
@@ -391,15 +373,13 @@ export function resolveLanguageGapReading(judgment: JevJudgment, context: GymPro
   if (judgment.kind !== "choice") return { aligned: false, findings: [] };
   if (judgment.choice === PROFILE_NONE) return { aligned: true, findings: [] };
   const byId = new Map(context.passages.map((passage) => [passage.id, passage] as const));
-  const floor = flagFloor(judgment);
+  // Choice alternatives express uncertainty, not additional independent findings.
   const findings = Object.entries(judgment.probabilities)
-    .filter(([id, probability]) => id !== PROFILE_NONE && (id === judgment.choice || probability >= floor))
+    .filter(([id]) => id === judgment.choice)
     .map(([id, probability]) => ({ passage: byId.get(id), probability }))
     .filter((entry): entry is { passage: ProfilePassage; probability: number } => Boolean(entry.passage))
-    .map((entry) => ({ ...entry, evidence: languageGapEvidence(entry.passage, context) ?? `The ${entry.passage.lang === "en" ? "Arabic" : "English"} text does not state this.` }))
-    .sort(findingOrder(judgment.choice, context))
-    .slice(0, 8);
-  return { aligned: findings.length === 0, findings };
+    .map((entry) => ({ ...entry, evidence: languageGapEvidence(entry.passage, context) ?? `The ${entry.passage.lang === "en" ? "Arabic" : "English"} text does not state this.` }));
+  return { aligned: false, findings };
 }
 
 export function profileDraftHasArabic(draft: ProfileDraftText): boolean {

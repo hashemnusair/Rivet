@@ -206,8 +206,8 @@ describe("claims the records do not support", () => {
     const judgment = resolveSupportClaimFixture(buildSupportClaimState({ context: ctx }))!;
     const reading = resolveSupportClaimReading(judgment, ctx);
     expect(reading.supported).toBe(false);
-    expect(reading.findings.map((finding) => finding.passage.text)).toEqual(claims);
-    expect(reading.findings[1]?.evidence).toBe("Ledger: invoice RV-2001 is recorded as failed.");
+    expect(reading.findings.map((finding) => finding.passage.text)).toEqual(claims.slice(0, 1));
+    expect(reading.findings[0]?.evidence).toBe("Ledger: invoice RV-2001 is recorded as failed.");
   });
 
   it("supports claims the facts confirm and treats contradictory replies by their own words", () => {
@@ -233,4 +233,17 @@ describe("claims the records do not support", () => {
     expect(supportClaimEvidence({ authorType: "gym", text: "We paid last week." }, silent)).toBeUndefined();
     expect(supportClaimEvidence({ authorType: "platform", text: "We moved you to the Pro plan." }, silent)).toBeUndefined();
   });
+});
+
+
+it("does not report competing Choice alternatives as separate support findings", () => {
+  const ctx = context([{ authorType: "gym", body: "Fix our invoice. Change our billing date." }]);
+  const [first, second] = ctx.passages;
+  const judgment = { kind: "choice" as const, choice: first!.id, probabilities: { [first!.id]: 0.51, [second!.id]: 0.49 } };
+  for (const read of [resolveSupportUnansweredReading, resolveSupportClaimReading]) {
+    expect(read(judgment, ctx).findings.map((item) => item.passage.id)).toEqual([first!.id]);
+    expect(read({ ...judgment, choice: "missing" }, ctx).findings).toEqual([]);
+  }
+  expect(resolveSupportUnansweredReading({ ...judgment, choice: "missing" }, ctx).allAnswered).toBe(false);
+  expect(resolveSupportClaimReading({ ...judgment, choice: "missing" }, ctx).supported).toBe(false);
 });

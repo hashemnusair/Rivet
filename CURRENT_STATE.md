@@ -1,5 +1,10 @@
 # GymOS / RIVET current implementation state
 
+## Jev Choice review semantics fix, 23 September 2026
+
+- Profile claims, bilingual comparisons, unanswered support requests and support claims now display only the selected Choice passage. Alternative probabilities are not independent findings. Invalid selected IDs never imply an all-clear. UI copy explicitly limits each check to one suggestion and avoids claiming complete verification.
+- Validation: 23 profile/support logic tests and 11 existing UI tests pass, including near-tied alternatives and invalid selections. No API/schema changes or extra inference calls. Read `apps/web/convex/profileAssist.ts`, `supportAssist.ts` and their tests first.
+
 ## Jev scope isolation fix, 23 September 2026
 
 - Suggestion request deduplication and status queries now include the API scope epoch and platform gym. Workspace changes invalidate pending results and retries; unmounts invalidate callbacks. Reuses the existing scope notifications for organization, branch and session changes.

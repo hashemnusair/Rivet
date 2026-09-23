@@ -116,10 +116,6 @@ describe("profile questions on the server", () => {
     const reading = resolveProfileClaimReading(ready(result).judgment, context);
     expect(reading.findings.map((finding) => [finding.passage.text, finding.evidence])).toEqual([
       ["Strength and conditioning across six branches.", "Recorded: 2 active branches (Abdoun, Sweifieh)."],
-      ["Women only after 6pm.", "Recorded audience: All members."],
-      ["Freeze your membership any time you travel.", "Recorded plans (Basic Monthly) allow no freeze days."],
-      ["للسيدات فقط بعد الساعة 6.", "Recorded audience: All members."],
-      ["جمّد اشتراكك في أي وقت تسافر فيه.", "Recorded plans (Basic Monthly) allow no freeze days."],
     ]);
     // "Free parking at every branch" is not contradicted: parking is unrecorded, and the every-branch rule needs a plan record to speak.
     expect(reading.findings.some((finding) => finding.passage.text.startsWith("Free parking"))).toBe(false);

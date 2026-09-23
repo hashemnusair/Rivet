@@ -94,7 +94,7 @@ export function ProfileDraftReview({ profile, dirty }: { profile: GymPublicProfi
   return (
     <SettingsPanel
       title="Draft review"
-      description="Compares the saved draft with your recorded services and checks that the Arabic and English text say the same things. Suggestions only: nothing is rewritten, translated or published."
+      description="Compares the saved draft with your recorded services and checks that the Arabic and English text say the same things. Each check suggests at most one passage; other passages have not been individually cleared. Nothing is rewritten, translated or published."
       testId="profile-draft-review"
       control={<Button type="button" size="sm" variant="secondary" data-testid="profile-review-run" disabled={Boolean(disabledReason)} title={disabledReason} loading={requested && (context.isLoading || claims.state.status === "loading")} onClick={review}><Sparkles /> {requested ? "Review again" : "Review saved draft"}</Button>}
     >
@@ -110,7 +110,7 @@ export function ProfileDraftReview({ profile, dirty }: { profile: GymPublicProfi
               testId="profile-claims"
               render={() => claimReading
                 ? claimReading.clear
-                  ? <p data-testid="profile-claims-clear">No passage contradicts the recorded services.</p>
+                  ? <p data-testid="profile-claims-clear">No contradiction was selected. This is not verification of every claim.</p>
                   : <Findings findings={claimReading.findings} testId="profile-claims-findings" />
                 : <p>The review could not be read against the saved draft. Review again.</p>}
             />
@@ -128,7 +128,7 @@ export function ProfileDraftReview({ profile, dirty }: { profile: GymPublicProfi
                 testId="profile-language"
                 render={() => gapReading
                   ? gapReading.aligned
-                    ? <p data-testid="profile-language-clear">No meaningful difference between the English and Arabic text; wording differences are not flagged.</p>
+                    ? <p data-testid="profile-language-clear">No meaningful difference was selected. This is not verification of every passage.</p>
                     : <Findings findings={gapReading.findings} testId="profile-language-findings" />
                   : <p>The comparison could not be read against the saved draft. Review again.</p>}
               />
