@@ -260,7 +260,10 @@ describe("Jev judgments", () => {
     });
   });
 
-  it("trips the breaker when a live completion reports a cost", async () => {
+  it.each([
+    { cost: 0.0000126, reason: "payment_required", breakerText: "0.0000126" },
+    { cost: undefined, reason: "cost_unconfirmed", breakerText: "did not report a cost" },
+  ])("withholds a live answer and trips the breaker when cost is $reason", async ({ cost, reason, breakerText }) => {
     vi.stubEnv("RIVET_JEV_MODE", "live");
     const { t, ownerA } = await harness();
     const question = getJevQuestion("foundation.refund_detected")!;
@@ -271,16 +274,18 @@ describe("Jev judgments", () => {
       return await ctx.db.insert("jevRequests", { organizationId: organization._id, leaseKey: "lease", status: "pending", mode: "live", requestedByUserId: user._id, correlationId: "cor-cost", startedAt: Date.now(), leaseExpiresAt: Date.now() + 60_000 });
     });
     const stateHash = jevStateHash({ questionKey: question.key, questionVersion: question.version, sourceVersion: `fixture:${question.version}`, state: question.fixture.state });
-    const result = await ownerA.mutation(internal.jev.complete, { ...scoped("org-a"), requestId, questionKey: question.key, stateHash, source: "live", judgment: question.fixture.judgment, modelId: "typesafe-ai/jev", inputTokens: 300, outputTokens: 0, reportedCostUsd: 0.0000126, latencyMs: 210, warnings: [] }) as JevJudgeResult;
-    expect(result).toMatchObject({ status: "ready", source: "live", warning: expect.stringContaining("stopped") });
+    const result = await ownerA.mutation(internal.jev.complete, { ...scoped("org-a"), requestId, questionKey: question.key, stateHash, source: "live", judgment: question.fixture.judgment, modelId: "typesafe-ai/jev", inputTokens: 300, outputTokens: 0, reportedCostUsd: cost, latencyMs: 210, warnings: [] }) as JevJudgeResult;
+    expect(result).toMatchObject({ status: "unavailable", reason, retryable: false });
     const status = await ownerA.query(api.jev.status, scoped("org-a")) as JevStatusView;
-    expect(status.breaker).toMatchObject({ tripped: true, reason: expect.stringContaining("0.0000126") });
+    expect(status.breaker).toMatchObject({ tripped: true, reason: expect.stringContaining(breakerText) });
     await t.run(async (ctx) => {
-      expect((await ctx.db.query("jevUsage").collect())[0]).toMatchObject({ inputTokens: 300, reportedCostUsd: 0.0000126 });
+      expect((await ctx.db.query("jevUsage").collect())[0]).toMatchObject({ inputTokens: 300, reportedCostUsd: cost ?? 0 });
+      expect((await ctx.db.query("jevRequests").collect())[0]).toMatchObject({ status: "failed", failureReason: reason });
+      expect(await ctx.db.query("jevJudgments").collect()).toEqual([]);
     });
   });
 
-  it("counts and trips the breaker on a live response the gateway served and RIVET then rejected", async () => {
+  it.each([0.00001155, undefined])("trips the breaker on a failed live response with cost %s", async (cost) => {
     vi.stubEnv("RIVET_JEV_MODE", "live");
     const { t, ownerA } = await harness();
     const requestId = await t.run(async (ctx) => {
@@ -288,13 +293,14 @@ describe("Jev judgments", () => {
       const user = (await ctx.db.query("users").collect()).find((row) => row.publicId === "owner-a")!;
       return await ctx.db.insert("jevRequests", { organizationId: organization._id, leaseKey: "lease", status: "pending", mode: "live", requestedByUserId: user._id, correlationId: "cor-billed-failure", startedAt: Date.now(), leaseExpiresAt: Date.now() + 60_000 });
     });
-    await ownerA.mutation(internal.jev.fail, { requestId, reason: "invalid_output", message: "the chosen option does not carry the highest probability", latencyMs: 40, inputTokens: 80, outputTokens: 0, reportedCostUsd: 0.00001155 });
+    await ownerA.mutation(internal.jev.fail, { requestId, reason: "invalid_output", message: "the chosen option does not carry the highest probability", latencyMs: 40, inputTokens: 80, outputTokens: 0, reportedCostUsd: cost, gatewayAttempted: true });
     await t.run(async (ctx) => {
       const request = await ctx.db.get(requestId);
-      expect(request).toMatchObject({ status: "failed", failureReason: "invalid_output", reportedCostUsd: 0.00001155 });
+      expect(request).toMatchObject({ status: "failed", failureReason: "invalid_output" });
+      expect(request?.reportedCostUsd).toBe(cost);
       const breaker = (await ctx.db.query("jevControlState").collect()).find((row) => row.key === "breaker");
       expect(breaker?.trippedAt).toBeTypeOf("number");
-      expect(breaker?.tripReason).toMatch(/rejected/);
+      expect(breaker?.tripReason).toMatch(cost === undefined ? /did not confirm zero cost/ : /rejected/);
     });
     const status = await ownerA.query(api.jev.status, scoped("org-a")) as JevStatusView;
     expect(status.breaker.tripped).toBe(true);
@@ -314,6 +320,7 @@ describe("Jev judgments", () => {
       const rows = await ctx.db.query("jevRequests").collect();
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ status: "failed", mode: "live", failureReason: "timeout" });
+      expect((await ctx.db.query("jevControlState").collect()).some((row) => row.key === "breaker" && row.trippedAt !== undefined)).toBe(false);
     });
   });
 

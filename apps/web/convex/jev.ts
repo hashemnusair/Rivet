@@ -418,8 +418,8 @@ async function tripBreaker(ctx: MutationCtx, reason: string, now: number): Promi
 /**
  * Record a validated judgment. The state is loaded again and re-hashed: if
  * the record changed while the model was answering, the answer is marked
- * stale and never shown or cached. A reported cost trips the breaker so no
- * further live call is made until an operator has looked.
+ * stale and never shown or cached. A live answer is shown only when Gateway
+ * explicitly reports zero cost; any other cost state trips the breaker.
  */
 export const complete = internalMutation({
   args: {
@@ -471,12 +471,15 @@ export const complete = internalMutation({
       });
     }
 
-    let warning: string | undefined;
-    if (args.source === "live" && (args.reportedCostUsd ?? 0) > 0) {
-      const reason = `AI Gateway reported a cost of ${args.reportedCostUsd} USD for a Jev request (correlation ${args.correlationId}).`;
-      await tripBreaker(ctx, reason, now);
-      warning = "AI Gateway reported a cost for this request. Live Jev calls are now stopped until an operator resets the breaker.";
-      console.warn("[rivet.jev.breaker]", JSON.stringify({ correlationId: args.correlationId, reportedCostUsd: args.reportedCostUsd }));
+    if (args.source === "live" && args.reportedCostUsd !== 0) {
+      const knownCost = args.reportedCostUsd !== undefined;
+      const reason = knownCost ? "payment_required" : "cost_unconfirmed";
+      await tripBreaker(ctx, knownCost
+        ? `AI Gateway reported a cost of ${args.reportedCostUsd} USD for a Jev request (correlation ${args.correlationId}).`
+        : `AI Gateway did not report a cost for a Jev request (correlation ${args.correlationId}).`, now);
+      await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: reason, failureMessage: "Zero cost was not confirmed.", inputTokens: args.inputTokens, outputTokens: args.outputTokens, reportedCostUsd: args.reportedCostUsd });
+      console.warn("[rivet.jev.breaker]", JSON.stringify({ correlationId: args.correlationId, reason, reportedCostUsd: args.reportedCostUsd }));
+      return { status: "unavailable", reason, message: "Zero-cost access could not be confirmed. Live Jev calls are stopped for operator review.", retryable: false, correlationId: args.correlationId };
     }
 
     if (!question || !judgment || judgment.kind !== question.kind) {
@@ -543,14 +546,13 @@ export const complete = internalMutation({
       latencyMs: args.latencyMs,
       createdAt: iso(now),
       correlationId: args.correlationId,
-      ...(warning ? { warning } : {}),
     };
   },
 });
 
 /** Release a lease after a failed call, keeping the classified reason for the request log. */
 export const fail = internalMutation({
-  args: { requestId: v.id("jevRequests"), reason: v.string(), message: v.string(), latencyMs: v.number(), inputTokens: v.optional(v.number()), outputTokens: v.optional(v.number()), reportedCostUsd: v.optional(v.number()) },
+  args: { requestId: v.id("jevRequests"), reason: v.string(), message: v.string(), latencyMs: v.number(), inputTokens: v.optional(v.number()), outputTokens: v.optional(v.number()), reportedCostUsd: v.optional(v.number()), gatewayAttempted: v.boolean() },
   returns: v.null(),
   handler: async (ctx, args) => {
     const request = await ctx.db.get(args.requestId);
@@ -564,8 +566,10 @@ export const fail = internalMutation({
       const usage = await tenantUsage(ctx, request.organizationId, utcDay(now));
       if (usage) await ctx.db.patch(usage._id, { inputTokens: usage.inputTokens + (args.inputTokens ?? 0), outputTokens: usage.outputTokens + (args.outputTokens ?? 0), reportedCostUsd: usage.reportedCostUsd + (args.reportedCostUsd ?? 0), updatedAt: now });
     }
-    if (request.mode === "live" && (args.reportedCostUsd ?? 0) > 0) {
-      await tripBreaker(ctx, `AI Gateway reported a cost of ${args.reportedCostUsd} USD for a Jev request that was then rejected (${args.reason}, correlation ${request.correlationId}).`, now);
+    if (request.mode === "live" && args.gatewayAttempted && args.reportedCostUsd !== 0) {
+      await tripBreaker(ctx, args.reportedCostUsd === undefined
+        ? `AI Gateway did not confirm zero cost for a failed Jev request (${args.reason}, correlation ${request.correlationId}).`
+        : `AI Gateway reported a cost of ${args.reportedCostUsd} USD for a Jev request that was then rejected (${args.reason}, correlation ${request.correlationId}).`, now);
       console.warn("[rivet.jev.breaker]", JSON.stringify({ correlationId: request.correlationId, reportedCostUsd: args.reportedCostUsd, reason: args.reason }));
     }
     return null;

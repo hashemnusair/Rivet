@@ -58,7 +58,7 @@ export const judge = action({
         });
 
     if (!outcome.ok) {
-      await ctx.runMutation(internal.jev.fail, { requestId: began.requestId, reason: outcome.reason, message: outcome.detail ?? outcome.message, latencyMs: outcome.latencyMs, inputTokens: outcome.inputTokens, outputTokens: outcome.outputTokens, reportedCostUsd: outcome.reportedCostUsd });
+      await ctx.runMutation(internal.jev.fail, { requestId: began.requestId, reason: outcome.reason, message: outcome.detail ?? outcome.message, latencyMs: outcome.latencyMs, inputTokens: outcome.inputTokens, outputTokens: outcome.outputTokens, reportedCostUsd: outcome.reportedCostUsd, gatewayAttempted: request.mode === "live" && !request.simulate });
       return { status: "unavailable", reason: outcome.reason, message: outcome.message, retryable: outcome.retryable, correlationId: args.correlationId };
     }
 
@@ -71,7 +71,7 @@ export const judge = action({
         questionKey: request.questionKey,
         subject: args.subject,
         stateHash: request.stateHash,
-        source: request.mode,
+        source: request.simulate ? "fixture" : request.mode,
         judgment: outcome.judgment,
         modelId: outcome.modelId,
         modelVersion: outcome.modelVersion,
@@ -84,7 +84,7 @@ export const judge = action({
     } catch (error) {
       // The caller's access changed in a way `complete` refuses: release the
       // lease and keep the usage rather than leaving the row pending.
-      await ctx.runMutation(internal.jev.fail, { requestId: began.requestId, reason: "request_invalid", message: error instanceof Error ? error.message.slice(0, 500) : "The suggestion could not be completed.", latencyMs: outcome.latencyMs, inputTokens: outcome.inputTokens, outputTokens: outcome.outputTokens, reportedCostUsd: outcome.reportedCostUsd });
+      await ctx.runMutation(internal.jev.fail, { requestId: began.requestId, reason: "request_invalid", message: error instanceof Error ? error.message.slice(0, 500) : "The suggestion could not be completed.", latencyMs: outcome.latencyMs, inputTokens: outcome.inputTokens, outputTokens: outcome.outputTokens, reportedCostUsd: outcome.reportedCostUsd, gatewayAttempted: request.mode === "live" && !request.simulate });
       return { status: "unavailable", reason: "request_invalid", message: "The suggestion could not be completed. Refresh and ask again.", retryable: true, correlationId: args.correlationId };
     }
   },

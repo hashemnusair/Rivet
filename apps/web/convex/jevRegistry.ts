@@ -152,6 +152,7 @@ export type JevFailureReason =
   | "rate_limited"
   | "auth_error"
   | "payment_required"
+  | "cost_unconfirmed"
   | "unexpected_model"
   | "request_invalid";
 
