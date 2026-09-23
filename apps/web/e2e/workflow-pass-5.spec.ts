@@ -70,7 +70,7 @@ const OWNER_ROUTES: Route[] = [
   { path: "/audit", slug: "audit", heading: /^Audit log$/, ready: async (page) => { await expect(page.getByRole("button", { name: /Voided JOD 40\.000/ })).toBeVisible(); } },
   { path: "/exports", slug: "exports", heading: /^Data exports$/, ready: async (page) => { await expect(page.getByRole("heading", { name: "Generate a CSV" })).toBeVisible(); await expect(page.getByText("No exports yet")).toBeVisible(); } },
   { path: "/automations", slug: "automations", heading: /^Automation monitoring$/, ready: async (page) => { await expect(page.getByRole("region", { name: "Provider readiness" }).locator("article")).toHaveCount(3); await expect(page.getByRole("link", { name: /Renewal reminder/ }).first()).toBeVisible(); await expect(page.getByRole("region", { name: "Recent executions" }).getByText(/1–15 of/)).toBeVisible(); } },
-  { path: "/support", slug: "support", heading: /^RIVET support$/, ready: async (page) => { await expect(page.getByRole("heading", { name: "Payment retry failed", level: 2 })).toBeVisible(); } },
+  { path: "/support", slug: "support", heading: /^RIVET support$/, ready: async (page) => { await page.getByRole("complementary", { name: "Your visible cases" }).getByRole("button", { name: /SUP-218.*Payment retry failed/ }).click(); await expect(page.getByRole("heading", { name: "Payment retry failed", level: 2 })).toBeVisible(); } },
 ];
 
 for (const width of [360, 390, 768, 820, 1280, 1440]) {

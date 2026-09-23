@@ -148,7 +148,7 @@ jobs:
           PLAYWRIGHT_SERVER_MODE: start
           PLAYWRIGHT_DIST_DIR: .next-playwright
           PLAYWRIGHT_WORKERS: "2"
-        run: pnpm test:e2e -- --shard=${{ matrix.shard }}/8
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/8
       - name: Check patch formatting
         run: git diff --check
       - name: Assert clean worktree after Playwright
