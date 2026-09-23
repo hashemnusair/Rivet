@@ -451,16 +451,6 @@ export const complete = internalMutation({
     const now = Date.now();
     const judgment = args.judgment as JevJudgment | undefined;
 
-    // The permission was checked when the request was prepared; a role that
-    // changed while the model was answering must not receive the answer.
-    if (actor && question) {
-      const permission = permissionOf(question);
-      if (!permission || !hasPermission(actor, permission)) {
-        await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: "request_invalid", failureMessage: "The caller's access changed while the suggestion was being prepared." });
-        return { status: "unavailable", reason: "request_invalid", message: "Your access changed while the suggestion was being prepared, so it was not shown.", retryable: false, correlationId: args.correlationId };
-      }
-    }
-
     const usage = await tenantUsage(ctx, organizationDocId, utcDay(now));
     if (usage) {
       await ctx.db.patch(usage._id, {
@@ -480,6 +470,16 @@ export const complete = internalMutation({
       await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: reason, failureMessage: "Zero cost was not confirmed.", inputTokens: args.inputTokens, outputTokens: args.outputTokens, reportedCostUsd: args.reportedCostUsd });
       console.warn("[rivet.jev.breaker]", JSON.stringify({ correlationId: args.correlationId, reason, reportedCostUsd: args.reportedCostUsd }));
       return { status: "unavailable", reason, message: "Zero-cost access could not be confirmed. Live Jev calls are stopped for operator review.", retryable: false, correlationId: args.correlationId };
+    }
+
+    // Account for the served response before refusing a caller whose role
+    // changed in flight. No judgment is returned to a caller who lost access.
+    if (actor && question) {
+      const permission = permissionOf(question);
+      if (!permission || !hasPermission(actor, permission)) {
+        await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: "request_invalid", failureMessage: "The caller's access changed while the suggestion was being prepared.", inputTokens: args.inputTokens, outputTokens: args.outputTokens, reportedCostUsd: args.reportedCostUsd });
+        return { status: "unavailable", reason: "request_invalid", message: "Your access changed while the suggestion was being prepared, so it was not shown.", retryable: false, correlationId: args.correlationId };
+      }
     }
 
     if (!question || !judgment || judgment.kind !== question.kind) {
