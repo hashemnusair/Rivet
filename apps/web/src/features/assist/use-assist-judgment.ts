@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { currentApiScopeEpoch, useApiScopeEpoch } from "@/lib/api/scope";
 import { getApi } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
@@ -73,15 +74,16 @@ function sharedJudgment(key: string, input: AssistJudgmentRequest): Promise<Assi
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function useAssistJudgment({ questionKey, subject, enabled = true, auto = true, platformGymId }: UseAssistJudgmentOptions): UseAssistJudgmentResult {
+  const scopeEpoch = useApiScopeEpoch();
   const statusQuery = useApiQuery(
-    platformGymId ? qk.platformAssistStatus(platformGymId) : qk.assistStatus,
+    [...(platformGymId ? qk.platformAssistStatus(platformGymId) : qk.assistStatus), scopeEpoch],
     (api) => (platformGymId ? api.getPlatformAssistStatus(platformGymId) : api.getAssistStatus()),
     { staleTime: 60_000, refetchOnWindowFocus: false, enabled },
   );
   const status = statusQuery.data;
   const feature = status?.features.find((candidate) => candidate.questions.some((question) => question.key === questionKey));
   const featureReady = Boolean(feature?.ready);
-  const key = assistRequestKey(questionKey, subject);
+  const key = canonicalJson([scopeEpoch, platformGymId ?? null, assistRequestKey(questionKey, subject)]);
   const subjectRef = useRef(subject);
   useEffect(() => {
     subjectRef.current = subject;
@@ -95,25 +97,26 @@ export function useAssistJudgment({ questionKey, subject, enabled = true, auto =
     const mine = ++sequence.current;
     setDismissed(false);
     setState({ status: "loading" });
+    const isCurrent = () => mine === sequence.current && scopeEpoch === currentApiScopeEpoch();
     let attempts = 0;
     const run = async (): Promise<void> => {
       let result: AssistJudgmentResult;
       try {
         result = await sharedJudgment(key, { questionKey, subject: subjectRef.current });
       } catch (error) {
-        if (mine !== sequence.current) return;
+        if (!isCurrent()) return;
         setState({ status: "unavailable", message: isApiError(error) ? error.message : "Suggestions are unavailable right now.", retryable: true });
         return;
       }
       // A newer request (different subject, refresh or dismiss) owns the screen now.
-      if (mine !== sequence.current) return;
+      if (!isCurrent()) return;
       if (result.status === "in_progress") {
         if (attempts++ >= MAX_IN_PROGRESS_RETRIES) {
           setState({ status: "unavailable", message: "The suggestion is still being prepared. Try again in a moment.", retryable: true });
           return;
         }
         await wait(result.retryAfterMs);
-        if (mine !== sequence.current) return;
+        if (!isCurrent()) return;
         return run();
       }
       if (result.status === "ready") setState({ status: "ready", result });
@@ -122,7 +125,7 @@ export function useAssistJudgment({ questionKey, subject, enabled = true, auto =
       else setState({ status: "unavailable", message: result.message, retryable: result.retryable });
     };
     void run();
-  }, [enabled, key, questionKey]);
+  }, [enabled, key, questionKey, scopeEpoch]);
 
   const dismiss = useCallback(() => {
     sequence.current += 1;
@@ -135,6 +138,7 @@ export function useAssistJudgment({ questionKey, subject, enabled = true, auto =
     sequence.current += 1;
     setState({ status: "idle" });
     setDismissed(false);
+    return () => { sequence.current += 1; };
   }, [key]);
 
   useEffect(() => {

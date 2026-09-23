@@ -1,5 +1,10 @@
 # GymOS / RIVET current implementation state
 
+## Jev scope isolation fix, 23 September 2026
+
+- Suggestion request deduplication and status queries now include the API scope epoch and platform gym. Workspace changes invalidate pending results and retries; unmounts invalidate callbacks. Reuses the existing scope notifications for organization, branch and session changes.
+- Validation: the two new hook regression cases and eight existing suggestion tests pass (10 tests). No deployment or live inference. Read `src/features/assist/use-assist-judgment.ts` and its test first (under apps/web).
+
 ## Jev review and validation: all eight feature batches wired end to end, hardened and re-verified, 22 September 2026
 
 - **What this stage did.** Read the foundation and every feature batch (commits `068aad2`, `aba2824` and the brief working tree) against the contract in `docs/21_JEV_ASSIST_FOUNDATION.md`, ran four independent read-only audits (foundation controls; import, navigation and follow-up; resolution, support and profile; branch operations and the brief) and verified each finding by hand before changing anything. Every audit finding that was a real gap is fixed below; the rest are recorded as limitations. The brief stage below and this review stage are committed together and pushed to `origin/main` at the end of this stage (the sections below that say "uncommitted" describe the tree as it was when each stage finished).
