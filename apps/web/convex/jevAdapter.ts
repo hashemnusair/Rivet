@@ -12,7 +12,7 @@ import { logRedactedServerError } from "./telemetry";
  * returns a validated judgment or a classified failure, never a raw model
  * response, and it never logs request or response bodies.
  *
- * Bounds: one question per call, `maxRetries: 1`, an abort timeout, the
+ * Bounds: one question per call, `maxRetries: 0`, an abort timeout, the
  * gateway restricted to the TypeSafe provider (no fallback model), and a
  * response check that the model that answered is Jev.
  */
@@ -111,7 +111,7 @@ export async function runJevEvaluation(input: JevEvaluationInput): Promise<JevEv
       model: input.model ?? JEV_MODEL_ID,
       state: input.state,
       questions: built.prepared.questions,
-      maxRetries: 1,
+      maxRetries: 0,
       abortSignal: controller.signal,
       providerOptions: {
         gateway: {

@@ -1,5 +1,11 @@
 # GymOS / RIVET current implementation state
 
+## Jev smoke cost checks and final regression verification, 23 September 2026
+
+- Synthetic live smoke now validates each response before the next request, stops on unknown/nonzero cost or errors, rechecks eligibility per request and never runs in CI. Shared adapter SDK retries are disabled so retries cannot bypass the guarded request entry point. Six offline smoke regressions and an adapter retry-setting regression make no external calls. Read `apps/web/scripts/jev-smoke.ts`, `apps/web/convex/jevSmoke.test.ts` and `jev.smoke.live.test.ts` first.
+- Final validation across the three fixes: frontend and Convex typechecks pass; full suite 1,883 passed, one live smoke skipped, and only the already-known PT last-credit test fails at `MockGymOSApi.test.ts:3251` (undefined slot). Relevant UI, server and regression tests pass. No live inference, deployment or production flag changes. Existing audit documents remain untracked and untouched.
+- Commands: `pnpm --filter web typecheck`, `pnpm --filter web convex:typecheck`, `pnpm --filter web lint`, `RIVET_JEV_LIVE_SMOKE=0 pnpm --filter web test`. Live connectivity and model accuracy remain unverified; the PT test failure remains outside these three fixes.
+
 ## Jev Choice review semantics fix, 23 September 2026
 
 - Profile claims, bilingual comparisons, unanswered support requests and support claims now display only the selected Choice passage. Alternative probabilities are not independent findings. Invalid selected IDs never imply an all-clear. UI copy explicitly limits each check to one suggestion and avoids claiming complete verification.

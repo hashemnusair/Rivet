@@ -63,7 +63,7 @@ discarded, and a reported cost trips a breaker that stops live calls.
 | `apps/web/convex/jevAnswers.ts` | Pure: SDK request building, scoped candidate ids, answer validation, canonical JSON, SHA-256 state hashing, fixture evaluation (also used by the preview adapter). |
 | `apps/web/convex/jevMode.ts` | Pure: environment switches, free-terms date gate, caps, `gateJevRequest`, block copy. |
 | `apps/web/convex/jev.ts` | Default runtime: `status` query, `platformStatus` query (an administrator reading one gym's switch), `updateTenantPreference` mutation (audited), internal `prepare` / `begin` / `complete` / `fail` / `resetBreaker` / `cleanupExpired`. Cache, leases, usage counters, breaker. |
-| `apps/web/convex/jevAdapter.ts` (`"use node"`) | The one place that calls the model: timeout, `maxRetries: 1`, provider pin, model check, validation, cost read, error classification. Injectable model/evaluate for tests. |
+| `apps/web/convex/jevAdapter.ts` (`"use node"`) | The one place that calls the model: timeout, `maxRetries: 0`, provider pin, model check, validation, cost read, error classification. Injectable model/evaluate for tests. |
 | `apps/web/convex/jevInference.ts` (`"use node"`) | The public `judge` action: prepare → begin → adapter or fixture → complete/fail. |
 | `apps/web/convex/schema.ts` | Tables `jevJudgments`, `jevRequests`, `jevUsage`, `jevTenantPreferences` (tenant-scoped, in `tenantPurge.TENANT_TABLES`) and `jevControlState` (breaker, global counter). |
 | `apps/web/src/lib/domain/types.ts` | `AssistStatus`, `AssistJudgment`, `AssistJudgmentResult`, `AssistJudgmentRequest`, `UpdateAssistPreferenceInput` (re-exported from the registry). |
@@ -95,7 +95,7 @@ discarded, and a reported cost trips a breaker that stops live calls.
 4. In `fixture` mode the registered fixture is run through the real builder and
    validator; in `live` mode `runJevEvaluation` calls the gateway with one
    question, an abort timeout (question `timeoutMs`, default 8 s, cap 15 s),
-   `maxRetries: 1` and the provider pin, then validates the answer (exact
+   `maxRetries: 0` and the provider pin, then validates the answer (exact
    question id, matching type, offered option only, coherent probabilities,
    score inside the scale).
 5. `internal.jev.complete` re-loads and re-hashes the state; a changed record
@@ -688,3 +688,14 @@ hides, merges, closes or reorders anything.
   Run the smoke test only when zero-cost terms are confirmed:
   `RIVET_JEV_LIVE_SMOKE=1 RIVET_JEV_FREE_UNTIL=<date> pnpm --filter web exec vitest run convex/jev.smoke.live.test.ts`
   with the key exported in that shell only.
+
+### Smoke test cost checks, 23 September 2026
+
+The opt-in smoke is disabled in CI and checks eligibility before each request.
+Each response must succeed and explicitly report zero cost before the next
+request is sent. Missing cost is unknown and stops the run; errors and billed
+responses stop it too. SDK retries are disabled for all adapter calls, so a
+retry must enter through the guarded request path. This does not prove a first
+request cannot be billed; account pricing must still be confirmed beforehand.
+The offline regression tests in `convex/jevSmoke.test.ts` use synthetic results
+and never contact Gateway.

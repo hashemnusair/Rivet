@@ -103,3 +103,17 @@ describe("runJevEvaluation", () => {
     expect(classifyJevError(new TypeError("fetch failed"), false, 1000)).toMatchObject({ reason: "provider_error", retryable: true });
   });
 });
+
+it("disables SDK retries so each outbound attempt requires a new guarded request", async () => {
+  let calls = 0;
+  const result = await runJevEvaluation({
+    question: refund, state: refund.fixture.state, timeoutMs: 100,
+    evaluate: async (options) => {
+      calls += 1;
+      expect(options.maxRetries).toBe(0);
+      throw new Error("simulated transport failure");
+    },
+  });
+  expect(calls).toBe(1);
+  expect(result.ok).toBe(false);
+});

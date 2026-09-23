@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
+import { runJevSmokeChecks } from "../scripts/jev-smoke";
 import { runJevEvaluation } from "./jevAdapter";
 import { getJevQuestion } from "./jevQuestions";
 import { resolveJevMode } from "./jevMode";
@@ -11,15 +12,19 @@ import type { JevChoiceQuestion } from "./jevRegistry";
  * RIVET_JEV_LIVE_SMOKE=1, a securely configured AI_GATEWAY_API_KEY is present
  * in the shell, and RIVET_JEV_FREE_UNTIL confirms zero-cost terms for today.
  * It never runs in CI, never sends gym data, and prints only token usage and
- * the reported cost. A reported cost above zero fails the run: that is the
+ * the reported cost. A missing cost or a reported cost above zero stops the run before the next request: that is the
  * signal to stop live use and re-check the account.
  *
  *   RIVET_JEV_LIVE_SMOKE=1 RIVET_JEV_FREE_UNTIL=YYYY-MM-DD pnpm --filter web exec vitest run convex/jev.smoke.live.test.ts
  */
 const resolution = resolveJevMode(process.env);
 const optedIn = process.env.RIVET_JEV_LIVE_SMOKE === "1";
-const eligible = optedIn && resolution.keyConfigured && resolution.freeTerms === "confirmed";
-const skipReason = !optedIn
+function eligibleNow(): boolean {
+  const current = resolveJevMode(process.env);
+  return !process.env.CI && optedIn && current.keyConfigured && current.freeTerms === "confirmed";
+}
+const eligible = eligibleNow();
+const skipReason = process.env.CI ? "live smoke is disabled in CI" : !optedIn
   ? "RIVET_JEV_LIVE_SMOKE is not 1"
   : !resolution.keyConfigured
     ? "AI_GATEWAY_API_KEY is not configured in this shell"
@@ -30,16 +35,13 @@ describe.skipIf(!eligible)(`live Jev smoke (skipped: ${skipReason})`, () => {
     const refund = getJevQuestion("foundation.refund_detected")!;
     const planFit = getJevQuestion("foundation.plan_fit") as JevChoiceQuestion;
     const urgency = getJevQuestion("foundation.note_urgency")!;
-    const outcomes = [
-      await runJevEvaluation({ question: refund, state: refund.fixture.state, timeoutMs: 15_000 }),
-      await runJevEvaluation({ question: planFit, state: planFit.fixture.state, candidates: planFit.fixture.candidates, timeoutMs: 15_000 }),
-      await runJevEvaluation({ question: urgency, state: urgency.fixture.state, timeoutMs: 15_000 }),
-    ];
+    const outcomes = await runJevSmokeChecks([
+      { question: refund, state: refund.fixture.state, timeoutMs: 15_000 },
+      { question: planFit, state: planFit.fixture.state, candidates: planFit.fixture.candidates, timeoutMs: 15_000 },
+      { question: urgency, state: urgency.fixture.state, timeoutMs: 15_000 },
+    ], runJevEvaluation, eligibleNow);
     for (const outcome of outcomes) {
-      expect(outcome.ok, JSON.stringify(outcome)).toBe(true);
-      if (!outcome.ok) continue;
       console.info("[jev.smoke]", JSON.stringify({ kind: outcome.judgment.kind, modelVersion: outcome.modelVersion, inputTokens: outcome.inputTokens, outputTokens: outcome.outputTokens, reportedCostUsd: outcome.reportedCostUsd, latencyMs: outcome.latencyMs }));
-      expect(outcome.reportedCostUsd ?? 0, "a reported cost means the account is being billed; stop live use").toBe(0);
     }
     const [refundOutcome, planOutcome, urgencyOutcome] = outcomes;
     if (refundOutcome?.ok && refundOutcome.judgment.kind === "boolean") expect(refundOutcome.judgment.probability).toBeGreaterThan(0.5);
