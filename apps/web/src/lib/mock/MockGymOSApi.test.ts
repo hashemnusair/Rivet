@@ -3240,16 +3240,18 @@ describe("PT credit conservation in the preview adapter", () => {
 
     // Spend down to the last credit, then race two reservations for it.
     vi.useRealTimers();
-    let later = await slotsOn(day + 1);
-    for (let index = 0; remaining - index > 1 && index < later.length; index += 1) {
+    const from = addDays(todayISODate("Asia/Amman"), day + 1);
+    const to = addDays(from, 13);
+    const later = await api.listPtAvailableSlots({ trainerProfileId: trainer.id, branchId, from, to });
+    expect(later.length).toBeGreaterThanOrEqual(remaining + 1);
+    for (let index = 0; remaining - index > 1; index += 1) {
       await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[index]!.startsAt, idempotencyKey: `conserve-drain-${index}` });
     }
     experience = await conserved(membershipId);
     expect(experience.availableSessions).toBe(1);
-    later = await slotsOn(day + 2);
     const race = await Promise.allSettled([
-      api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[0]!.startsAt, idempotencyKey: "conserve-final-a" }),
-      api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[1]!.startsAt, idempotencyKey: "conserve-final-b" }),
+      api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[remaining - 1]!.startsAt, idempotencyKey: "conserve-final-a" }),
+      api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[remaining]!.startsAt, idempotencyKey: "conserve-final-b" }),
     ]);
     expect(race.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     experience = await conserved(membershipId);
