@@ -14,7 +14,8 @@ override for that command; it does not reveal or alter the key. A plain
 ignored `--prod` and used the key's deployment, then returned Development's
 names. With the override suppressed,
 `CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` selected Production and
-listed `AI_GATEWAY_API_KEY` by **name**, with no `RIVET_JEV_*` names. The local
+listed `AI_GATEWAY_API_KEY` by **name**. At the initial inspection it listed
+no `RIVET_JEV_*` names; two zero caps were added later as described below. The local
 Development deployment is `fleet-otter-621` and has no Gateway key by name.
 Set or confirm any secret only in the Convex dashboard for the target
 deployment, under **Settings → Environment Variables**. Never copy its value
@@ -40,10 +41,15 @@ free credits, and the usage page has no calls. Account-specific zero-cost
 eligibility is therefore **unconfirmed**. Do not set or extend
 `RIVET_JEV_FREE_UNTIL` based only on the public date, and do not run a live
 smoke or test a first paid request. No live Jev response, deployed action path
-or model accuracy is yet verified. The mode remains off, the feature allowlist
-empty, and every gym's audited preference defaults off. The configured
-fallback caps are 200 global and 50 per gym per UTC day; lower them before a
-pilot. A missing or nonzero cost in a live response now withholds the answer
+or model accuracy is yet verified. `RIVET_JEV_MODE`, `RIVET_JEV_FEATURES` and
+`RIVET_JEV_FREE_UNTIL` remain absent, so mode is off and the allowlist empty;
+every gym's audited preference defaults off. Explicit Production
+`RIVET_JEV_DAILY_CAP=0` and `RIVET_JEV_TENANT_DAILY_CAP=0` were saved after the
+deploy and their names verified with the approved wrapper. The code defaults
+are 200 global and 50 per gym per UTC day when caps are absent; the configured
+zeros block live requests even if mode were changed accidentally. Replace
+them with deliberate small limits only after the pilot gate is met. A missing
+or nonzero cost in a live response now withholds the answer
 and trips the breaker. No SDK retries, alternate model or paid fallback are
 configured. The Production `jevControlState`, `jevRequests` and
 `jevTenantPreferences` tables were inspected read-only on 23 September and
