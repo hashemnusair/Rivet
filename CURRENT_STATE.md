@@ -1,5 +1,99 @@
 # GymOS / RIVET current implementation state
 
+## Live walkthrough: member recovery and Jev activation, 27 September 2026
+
+- Released `da91930`: an authenticated member with no RIVET profile now gets
+  a profile-completion form. Query/auth failures still show an error instead
+  of creating a profile. Registration remains identity-scoped and excludes
+  staff/admin accounts server-side. Signup keeps its profile retry visible
+  when Clerk becomes signed in. Vercel `dpl_5eaouMV2xnSNorUsbq5pikRHLcU9`
+  is READY at the exact commit and assigned to the canonical domains.
+  The screenshot matches the former generic failure; the user's specific
+  account has not been inspected and its live retry remains pending.
+- Validation: 49 focused signup, identity, profile-completion, provider and
+  backend ownership tests passed; typecheck, lint, build and diff checks passed.
+  Earlier commit `03d264b` CI failed in an unrelated class-calendar browser
+  journey waiting for “Add a member at the desk” (`classes.spec.ts:22`).
+  Do not describe full CI as green. Current release CI is still in progress.
+- Released paid-pilot code `8ea316e` through the guarded Convex dry run and
+  actual deploy to Production `descriptive-meerkat-589`; schema validation
+  succeeded with no deleted indexes. Post-deploy `health:check` returned ok.
+  The previous full test run covered this pilot implementation (1,896 passed).
+  Vercel `dpl_8GTiRr2ZQSb4aPaEpnoVi5Lzdt1S` is also READY at exact
+  `8ea316e6cc2ee3f9cc0cef75a8257d6db10e7fd6` on the canonical domains.
+- User added a Vercel card. Dashboard confirms $5 credit and auto-reload off.
+  RIVET API-key budget was $3/never; reduced to $1/never to leave margin below
+  the user's $3 maximum. Saved state verified; no credit purchase was made.
+- Production now has live mode, all nine feature groups, global/gym caps of
+  50 requests per UTC day, a $1 lifetime app allowance, and paid pilot expiry
+  `2026-09-27` (03:00 Amman on 28 September). Only Test Gym organization
+  `0b1e7029-dd30-4345-8bd6-1dbf175ba8c5` is allowed; this ID was verified in
+  the Production organizations table (the public listing ID uses `abd6`).
+  Mode was set live last, after the budget and other settings were saved.
+- Elias enabled Settings → Jev assistance: Production now has an enabled
+  tenant preference saved at 20:57:43 Amman. The user reports “success”; the
+  request table remains empty, so this currently proves the switch, not an
+  inference. Asked the user to distinguish the toggle toast from Run check.
+  No live request or accuracy claim is made yet. The operator browser has
+  platform access; the gym's audited owner preference was not bypassed.
+- Read first: this section, `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`,
+  `apps/web/src/app/login/member-profile-completion.tsx`, and
+  `apps/web/convex/jevMode.ts`. Walkthrough checklist and budget screenshot
+  are under `outputs/`. Historical frontend handoff remains unchanged.
+
+## Member signup and paid Jev walkthrough preparation, 27 September 2026
+
+- Released signup fix: commit `03d264bc40993f97e8910ceff58001945017efb1`
+  was pushed to `main`. Vercel Production deployment
+  `dpl_8QYC6EfzvVPJ9jGhwjanR8XBMgrX` is READY at that exact SHA and
+  assigned to `app.rivetjo.com` and the canonical RIVET domains. GitHub CI
+  run `36337476466` is still running at this check. Account creation awaits
+  the user's live retry; no account was created by the agent.
+  The initial Clerk password signup no longer unconditionally
+  sends `phoneNumber`, which Production rejects while phone signup is disabled.
+  Mobile remains required and is saved through authenticated RIVET profile
+  registration. If Clerk returns `phone_number` in `missingFields`, the existing
+  update and SMS verification flow still handles it. Email verification is
+  unchanged. No Clerk setting was weakened or changed.
+- The user authorized $1–3 total for Jev testing. Added an explicit paid pilot
+  with a budget capped at $3, UTC expiry, public gym-ID allowlist, lifetime
+  atomic admission debits of $0.01, and cost enforcement on successful and
+  failed responses. Unknown or over-allowance cost trips the breaker. Duplicate
+  callbacks no longer double-count. Existing free-only behavior remains the
+  default, along with per-gym opt-in, role checks, feature allowlists and daily
+  caps. Settings labels the paid allowance separately from free terms.
+- Proposed walkthrough configuration is $1 in the app and a $1 non-resetting
+  Gateway API-key budget, leaving margin below $3. Gateway budgets are soft
+  caps and the one-cent admission debit is not a price guarantee. Setup and
+  limitations are documented at the top of the release runbook.
+- At preparation time, Production names-only inspection confirmed the Gateway key existed; mode,
+  features and paid-pilot settings were absent. No live inference, payment,
+  environment change or Jev release had been performed. Then-pending prerequisites:
+  saved Gateway budget/usable credit, exact test gym public ID, pilot expiry,
+  release and owner opt-in. No model accuracy or live connection is claimed.
+- Read first: `apps/web/src/app/customer/signup/customer-signup.client.tsx`,
+  `apps/web/convex/jevMode.ts`, `apps/web/convex/jev.ts`, and
+  `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`. Historical frontend handoff is
+  unchanged.
+- Validation: `pnpm test` passed 1,896 tests (289 files), with one opt-in live
+  test skipped. `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`,
+  `pnpm build` and `git diff --check` passed. The seven signup tests include
+  phone-disabled email signup and required-phone verification. The 47 focused
+  Jev tests include paid admission races, expiry/configuration, tenant scope,
+  completion/failure idempotency and cost breaker behavior. The guarded
+  `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --dry-run --yes` selected exact
+  Production `descriptive-meerkat-589`, validated the schema and reported no
+  index deletions. This was a dry run, not a release.
+
+## Walkthrough blocker: gym application protection, 27 September 2026
+
+- Walkthrough follow-up: user confirmed submission now works; supplied screenshot shows application approved and workspace provisioned. The received owner email landed in Gmail spam. Sender and message authentication results are pending, so the cause is unconfirmed. Invitation delivery uses Clerk independently of the Resend operational-email queue; the screenshot still shows application confirmation and decision emails as `Not configured`. Track deliverability and suppressed application notifications separately. No email settings were changed.
+
+- Elias reported `Public request protection is not configured` when submitting the public gym application. `convex/gymApplications.ts` calls `privacyFingerprint` before saving the application; `convex/publicAbuse.ts` throws this error when the runtime pepper is absent or fails validation. Browser profiles and platform roles do not participate in this check.
+- `CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` succeeded and lists `RIVET_PUBLIC_REQUEST_PEPPER`. The plain command and an unset-only override selected the local deploy key's Development deployment instead; those results are not Production evidence. No secret values were read.
+- Remaining: owner must check the pepper in the Production dashboard for `descriptive-meerkat-589`: at least 32 characters after trimming and at least three of lowercase, uppercase, digits, symbols. A lowercase hexadecimal value fails this implementation's character-class check. Presence alone does not prove validity; the current live browser's backend target and pepper validity have not been independently verified. Retry Elias's submission after configuration is corrected.
+- No code, configuration, or application data changed. No application was submitted by the agent and no automated tests were run for this diagnostic pass. Read `apps/web/convex/publicAbuse.ts`, `apps/web/convex/gymApplications.ts`, and the deployment-selection guidance at the top of `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` first.
+
 ## Jev release verification and initial import pilot gate, 23 September 2026
 
 - **Implemented and pushed.** `57b9c61` makes the PT-credit conservation/race test choose actual trainer working slots within its booking window; the missing slot was a date-dependent test fixture, not a credit accounting defect. `b67ba55` passes Playwright's shard flag correctly and updates two browser expectations for the Jev-era Settings rail and support case selection. `b65e34e` with `97f0e2b` withholds live judgments when Gateway cost is missing or nonzero, records usage and trips the breaker even if the caller's role changed while the response was in flight; simulated fixture failures do not falsely trip it. All four commits were pushed directly to `main` with the configured Git author. The historical `FRONTEND_HANDOFF.md` and untracked `docs/audits/` were untouched.
