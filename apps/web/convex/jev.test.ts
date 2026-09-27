@@ -46,6 +46,76 @@ async function harness() {
 
 const fixtureMode = () => vi.stubEnv("RIVET_JEV_MODE", "fixture");
 
+async function paidHarness(budget = "1") {
+  vi.stubEnv("RIVET_JEV_MODE", "live");
+  vi.stubEnv("RIVET_JEV_FEATURES", "foundation");
+  vi.stubEnv("AI_GATEWAY_API_KEY", "placeholder-not-a-real-key");
+  vi.stubEnv("RIVET_JEV_PAID_PILOT_BUDGET_USD", budget);
+  vi.stubEnv("RIVET_JEV_PAID_PILOT_UNTIL", "2999-12-31");
+  vi.stubEnv("RIVET_JEV_PAID_PILOT_ORGANIZATIONS", "org-a");
+  const h = await harness();
+  await h.ownerA.mutation(api.jev.updateTenantPreference, scoped("org-a", { enabled: true }));
+  const args = await h.t.run(async (ctx) => ({
+    organizationDocId: (await ctx.db.query("organizations").collect()).find((row) => row.publicId === "org-a")!._id,
+    userId: (await ctx.db.query("users").collect()).find((row) => row.publicId === "owner-a")!._id,
+    feature: "foundation", leaseKey: "paid-test", correlationId: "paid-test", mode: "live" as const, timeoutMs: 8000,
+  }));
+  return { ...h, args };
+}
+
+describe("paid pilot accounting", () => {
+  it("admits only one concurrent request for the last allowance and does not replenish on reset or midnight", async () => {
+    const { t, args } = await paidHarness("0.01");
+    const results = await Promise.all([t.mutation(internal.jev.begin, args), t.mutation(internal.jev.begin, { ...args, leaseKey: "other" })]);
+    expect(results.filter((result) => result.status === "started")).toHaveLength(1);
+    expect(results.find((result) => result.status === "resolved")).toMatchObject({ result: { reason: "paid_pilot_budget" } });
+    await t.mutation(internal.jev.resetBreaker, { reason: "Reviewed pilot test accounting" });
+    await t.run(async (ctx) => {
+      const counter = await ctx.db.query("jevControlState").withIndex("by_key", (q) => q.eq("key", "global-usage")).unique();
+      await ctx.db.patch(counter!._id, { day: "2000-01-01", requests: 0 });
+    });
+    expect(await t.mutation(internal.jev.begin, { ...args, leaseKey: "next-day" })).toMatchObject({ result: { reason: "paid_pilot_budget" } });
+  });
+  it("blocks an opted-in foreign gym before invoking the gateway", async () => {
+    const { ownerB } = await paidHarness();
+    await ownerB.mutation(api.jev.updateTenantPreference, scoped("org-b", { enabled: true }));
+    expect(await ownerB.action(api.jevInference.judge, scoped("org-b", { questionKey: "foundation.refund_detected" }))).toMatchObject({ reason: "paid_pilot_gym" });
+  });
+  it.each([0.0000126, 0.01, 0.02, undefined])("accounts a response once and applies its reserved allowance: %s", async (cost) => {
+    const { t, ownerA, args } = await paidHarness();
+    const started = await t.mutation(internal.jev.begin, args);
+    expect(started.status).toBe("started");
+    if (started.status !== "started") throw new Error("Expected admission");
+    const question = getJevQuestion("foundation.refund_detected")!;
+    const completion = { ...scoped("org-a"), requestId: started.requestId, questionKey: question.key, stateHash: jevStateHash({ questionKey: question.key, questionVersion: question.version, sourceVersion: `fixture:${question.version}`, state: question.fixture.state }), source: "live" as const, judgment: question.fixture.judgment, modelId: "typesafe-ai/jev", inputTokens: 300, reportedCostUsd: cost, latencyMs: 10, warnings: [] };
+    const result = await ownerA.mutation(internal.jev.complete, completion);
+    const permitted = cost !== undefined && cost <= 0.01;
+    expect(result.status).toBe(permitted ? "ready" : "unavailable");
+    expect(await ownerA.mutation(internal.jev.complete, completion)).toMatchObject({ reason: "request_invalid" });
+    await t.run(async (ctx) => {
+      const usage = (await ctx.db.query("jevUsage").collect())[0];
+      expect(usage).toMatchObject({ inputTokens: 300, reportedCostUsd: cost ?? 0 });
+      const pilot = await ctx.db.query("jevControlState").withIndex("by_key", (q) => q.eq("key", "paid-pilot-lifetime")).unique();
+      expect(pilot?.pilotDebitedMicroUsd).toBe(cost === 0.02 ? 20000 : 10000);
+      const breaker = await ctx.db.query("jevControlState").withIndex("by_key", (q) => q.eq("key", "breaker")).unique();
+      expect(Boolean(breaker?.trippedAt)).toBe(!permitted);
+    });
+  });
+  it.each([0.0000126, undefined])("counts a failed request once and stops unknown cost: %s", async (cost) => {
+    const { t, args } = await paidHarness();
+    const started = await t.mutation(internal.jev.begin, args);
+    if (started.status !== "started") throw new Error("Expected admission");
+    const failure = { requestId: started.requestId, reason: "invalid_output", message: "Rejected response", latencyMs: 10, inputTokens: 200, reportedCostUsd: cost, gatewayAttempted: true };
+    await t.mutation(internal.jev.fail, failure);
+    await t.mutation(internal.jev.fail, failure);
+    await t.run(async (ctx) => {
+      expect((await ctx.db.query("jevUsage").collect())[0]).toMatchObject({ inputTokens: 200, reportedCostUsd: cost ?? 0 });
+      const breaker = await ctx.db.query("jevControlState").withIndex("by_key", (q) => q.eq("key", "breaker")).unique();
+      expect(Boolean(breaker?.trippedAt)).toBe(cost === undefined);
+    });
+  });
+});
+
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Jev status and the gym's own switch", () => {

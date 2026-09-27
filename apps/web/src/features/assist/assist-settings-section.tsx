@@ -73,7 +73,7 @@ export function AssistSettingsSection() {
 
   const readiness = [
     { label: status.keyConfigured ? "Gateway key configured" : "Gateway key missing", variant: status.keyConfigured ? "success" : "outline" },
-    { label: status.freeUntil ? `${FREE_TERMS_LABELS[status.freeTerms]} · until ${status.freeUntil}` : FREE_TERMS_LABELS[status.freeTerms], variant: status.freeTerms === "confirmed" ? "success" : "warning" },
+    { label: status.paidPilot ? `Paid pilot allowance $${status.paidPilot.debitedUsd.toFixed(2)} / $${status.paidPilot.budgetUsd.toFixed(2)} · until ${status.paidPilot.until}` : status.freeUntil ? `${FREE_TERMS_LABELS[status.freeTerms]} · until ${status.freeUntil}` : FREE_TERMS_LABELS[status.freeTerms], variant: status.paidPilot ? (status.paidPilot.valid ? "success" : "warning") : status.freeTerms === "confirmed" ? "success" : "warning" },
     { label: status.breaker.tripped ? "Cost breaker tripped" : "Cost breaker clear", variant: status.breaker.tripped ? "danger" : "success" },
     { label: `Model ${status.modelId}`, variant: "neutral" },
   ] as const;

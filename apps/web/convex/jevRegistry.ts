@@ -142,6 +142,9 @@ export type JevBlockReason =
   | "daily_cap"
   | "tenant_daily_cap"
   | "state_too_large"
+  | "paid_pilot_invalid"
+  | "paid_pilot_gym"
+  | "paid_pilot_budget"
   | "unknown_question";
 
 /** Why a model call that was allowed did not produce a usable judgment. */
@@ -255,6 +258,7 @@ export interface JevStatusView {
   keyConfigured: boolean;
   freeUntil?: string;
   freeTerms: "confirmed" | "unconfirmed" | "expired" | "invalid";
+  paidPilot?: { budgetUsd: number; debitedUsd: number; until: string; valid: boolean };
   zeroDataRetention: boolean;
   breaker: { tripped: boolean; reason?: string; trippedAt?: string };
   tenant: { enabled: boolean; updatedAt?: string; updatedBy?: string; reason?: string };

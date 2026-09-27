@@ -21,8 +21,9 @@ import type { JevBlockReason } from "./jevRegistry";
  *   AI_GATEWAY_API_KEY        Convex-only secret; only its presence is read
  *
  * A gym must also switch suggestions on for itself (Settings → Jev
- * assistance), and a zero-cost breaker stops live calls the moment the
- * gateway reports a billed request. No Convex imports: shared with the
+ * assistance). An explicit paid pilot budget (max $3), expiry and gym list
+ * can replace the free-terms gate; unknown or excessive cost still stops calls.
+ * No Convex imports: shared with the
  * preview adapter and tests.
  */
 export const JEV_MODES = ["off", "fixture", "live"] as const;
@@ -31,6 +32,9 @@ export type JevFreeTerms = "confirmed" | "unconfirmed" | "expired" | "invalid";
 
 export const JEV_DEFAULT_DAILY_CAP = 200;
 export const JEV_DEFAULT_TENANT_DAILY_CAP = 50;
+// Conservative admission allowance, not a provider price quote. Gateway's
+// key budget remains necessary because billed cost is known after a call.
+export const JEV_PILOT_REQUEST_MICRO_USD = 10_000;
 
 type Env = Record<string, string | undefined>;
 
@@ -46,6 +50,7 @@ export interface JevModeResolution {
   tenantDailyCap: number;
   zeroDataRetention: boolean;
   warnings: string[];
+  paidPilot?: { valid: boolean; budgetMicroUsd: number; until: string; organizationIds: string[] };
 }
 
 export function utcDay(now: number): string {
@@ -89,6 +94,16 @@ export function resolveJevMode(env: Env = process.env, now: number = Date.now())
     }
   }
   if (mode === "live" && features.length === 0) warnings.push("RIVET_JEV_MODE is live but RIVET_JEV_FEATURES is empty; no feature may call the model.");
+  let paidPilot: JevModeResolution["paidPilot"];
+  if (env.RIVET_JEV_PAID_PILOT_BUDGET_USD !== undefined) {
+    const budget = Number(env.RIVET_JEV_PAID_PILOT_BUDGET_USD);
+    const until = env.RIVET_JEV_PAID_PILOT_UNTIL?.trim() ?? "";
+    const organizationIds = (env.RIVET_JEV_PAID_PILOT_ORGANIZATIONS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+    const validDate = /^\d{4}-\d{2}-\d{2}$/.test(until) && Number.isFinite(Date.parse(`${until}T00:00:00Z`)) && utcDay(Date.parse(`${until}T00:00:00Z`)) === until;
+    const valid = Number.isFinite(budget) && budget >= 0.01 && budget <= 3 && validDate && until >= utcDay(now) && organizationIds.length > 0;
+    paidPilot = { valid, budgetMicroUsd: valid ? Math.floor(budget * 1_000_000) : 0, until, organizationIds };
+    if (!valid) warnings.push("Paid Jev pilot requires a budget from $0.01 to $3, an unexpired UTC date, and explicit gym IDs.");
+  }
   return {
     mode,
     source,
@@ -100,6 +115,7 @@ export function resolveJevMode(env: Env = process.env, now: number = Date.now())
     tenantDailyCap: parseCap(env.RIVET_JEV_TENANT_DAILY_CAP, JEV_DEFAULT_TENANT_DAILY_CAP, "RIVET_JEV_TENANT_DAILY_CAP", warnings),
     zeroDataRetention: env.RIVET_JEV_ZERO_DATA_RETENTION?.trim() === "1",
     warnings,
+    paidPilot,
   };
 }
 
@@ -110,11 +126,14 @@ export const JEV_BLOCK_MESSAGES: Record<JevBlockReason, string> = {
   key_missing: "RIVET's AI Gateway key is not configured, so nothing was sent.",
   free_terms_unconfirmed: "Live Jev calls wait until RIVET confirms the free terms (RIVET_JEV_FREE_UNTIL).",
   free_terms_expired: "The confirmed free period for Jev has ended, so live calls are stopped until it is confirmed again.",
-  breaker_tripped: "Live Jev calls are stopped because AI Gateway reported a billed request. An operator must reset the breaker.",
+  breaker_tripped: "Live Jev calls are stopped because request cost was unknown or exceeded its allowance. An operator must review and reset the breaker.",
   daily_cap: "RIVET's daily limit for Jev requests has been reached. Suggestions resume tomorrow.",
   tenant_daily_cap: "This gym's daily limit for Jev requests has been reached. Suggestions resume tomorrow.",
   state_too_large: "This record is too large to send for a suggestion.",
   unknown_question: "This suggestion is not registered.",
+  paid_pilot_invalid: "The paid Jev pilot is not configured or has expired.",
+  paid_pilot_gym: "This gym is not included in the paid Jev pilot.",
+  paid_pilot_budget: "The paid Jev pilot allowance has been used. Further calls are stopped.",
 };
 
 export interface JevGateInput {
@@ -125,6 +144,8 @@ export interface JevGateInput {
   breakerTripped: boolean;
   globalRequestsToday: number;
   tenantRequestsToday: number;
+  organizationPublicId?: string;
+  pilotDebitedMicroUsd?: number;
 }
 
 export type JevGate = { allowed: true; mode: "fixture" | "live" } | { allowed: false; reason: JevBlockReason; message: string };
@@ -145,8 +166,14 @@ export function gateJevRequest(input: JevGateInput): JevGate {
   if (input.featureKey !== undefined && !resolution.features.includes(input.featureKey)) return blocked("feature_off");
   if (!input.tenantEnabled) return blocked("tenant_off");
   if (!resolution.keyConfigured) return blocked("key_missing");
-  if (resolution.freeTerms === "expired") return blocked("free_terms_expired");
-  if (resolution.freeTerms !== "confirmed") return blocked("free_terms_unconfirmed");
+  if (resolution.paidPilot) {
+    if (!resolution.paidPilot.valid) return blocked("paid_pilot_invalid");
+    if (!input.organizationPublicId || !resolution.paidPilot.organizationIds.includes(input.organizationPublicId)) return blocked("paid_pilot_gym");
+    if (input.pilotDebitedMicroUsd === undefined || input.pilotDebitedMicroUsd + JEV_PILOT_REQUEST_MICRO_USD > resolution.paidPilot.budgetMicroUsd) return blocked("paid_pilot_budget");
+  } else {
+    if (resolution.freeTerms === "expired") return blocked("free_terms_expired");
+    if (resolution.freeTerms !== "confirmed") return blocked("free_terms_unconfirmed");
+  }
   if (input.breakerTripped) return blocked("breaker_tripped");
   if (input.globalRequestsToday >= resolution.dailyCap) return blocked("daily_cap");
   if (input.tenantRequestsToday >= resolution.tenantDailyCap) return blocked("tenant_daily_cap");

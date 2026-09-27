@@ -1887,6 +1887,7 @@ export default defineSchema({
   // One row per attempted judgment: the in-flight lease that deduplicates
   // identical requests, then the outcome for the request log.
   jevRequests: defineTable({
+    pilotDebitMicroUsd: v.optional(v.number()),
     organizationId: v.id("organizations"),
     leaseKey: v.string(),
     status: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.literal("stale")),
@@ -1928,6 +1929,7 @@ export default defineSchema({
 
   // Platform-wide rows: the zero-cost breaker and the global daily counter.
   jevControlState: defineTable({
+    pilotDebitedMicroUsd: v.optional(v.number()),
     key: v.string(),
     day: v.optional(v.string()),
     requests: v.optional(v.number()),

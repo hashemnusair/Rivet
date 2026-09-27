@@ -5,6 +5,24 @@ const now = Date.parse("2026-09-21T10:00:00Z");
 const live = { RIVET_JEV_MODE: "live", RIVET_JEV_FEATURES: "foundation, crm", RIVET_JEV_FREE_UNTIL: "2026-09-25", AI_GATEWAY_API_KEY: "placeholder-not-a-real-key" };
 const open = { tenantEnabled: true, breakerTripped: false, globalRequestsToday: 0, tenantRequestsToday: 0 };
 
+describe("paid pilot configuration", () => {
+  const paid = { ...live, RIVET_JEV_FREE_UNTIL: undefined, RIVET_JEV_PAID_PILOT_BUDGET_USD: "1", RIVET_JEV_PAID_PILOT_UNTIL: "2026-09-22", RIVET_JEV_PAID_PILOT_ORGANIZATIONS: "org-a" };
+  const gate = (env = paid) => gateJevRequest({ resolution: resolveJevMode(env, now), ...open, organizationPublicId: "org-a", pilotDebitedMicroUsd: 0 });
+  it("requires an explicit valid budget, real expiry date, and gym list", () => {
+    expect(gate()).toMatchObject({ allowed: true });
+    for (const budget of ["", "0", "-1", "3.01", "Infinity", "no"]) expect(gate({ ...paid, RIVET_JEV_PAID_PILOT_BUDGET_USD: budget })).toMatchObject({ reason: "paid_pilot_invalid" });
+    for (const until of ["", "2026-09-20", "2026-02-31"]) expect(gate({ ...paid, RIVET_JEV_PAID_PILOT_UNTIL: until })).toMatchObject({ reason: "paid_pilot_invalid" });
+    expect(gate({ ...paid, RIVET_JEV_PAID_PILOT_ORGANIZATIONS: "" })).toMatchObject({ reason: "paid_pilot_invalid" });
+  });
+  it("fails closed for a foreign gym or missing budget counter", () => {
+    const resolution = resolveJevMode(paid, now);
+    expect(gateJevRequest({ resolution, ...open, organizationPublicId: "org-b", pilotDebitedMicroUsd: 0 })).toMatchObject({ reason: "paid_pilot_gym" });
+    expect(gateJevRequest({ resolution, ...open, organizationPublicId: "org-a" })).toMatchObject({ reason: "paid_pilot_budget" });
+    expect(gateJevRequest({ resolution, ...open, organizationPublicId: "org-a", pilotDebitedMicroUsd: 990001 })).toMatchObject({ reason: "paid_pilot_budget" });
+    expect(gateJevRequest({ resolution, ...open, organizationPublicId: "org-a", pilotDebitedMicroUsd: 990000 })).toMatchObject({ allowed: true });
+  });
+});
+
 describe("resolveJevMode", () => {
   it("is off by default and never reads a key value", () => {
     const resolution = resolveJevMode({}, now);

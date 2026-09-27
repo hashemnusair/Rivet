@@ -3,7 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import { buildJevQuestions, canonicalJson, jevStateBytes, jevStateHash, sanitizeJevSubject } from "./jevAnswers";
 import { jevPlatformStateLoader, jevStateLoader } from "./jevLoaders";
-import { gateJevRequest, resolveJevMode, utcDay, type JevGate, type JevModeResolution } from "./jevMode";
+import { gateJevRequest, JEV_PILOT_REQUEST_MICRO_USD, resolveJevMode, utcDay, type JevGate, type JevModeResolution } from "./jevMode";
 import { JEV_FEATURES, JEV_QUESTIONS, getJevQuestion } from "./jevQuestions";
 import {
   JEV_MAX_STATE_BYTES,
@@ -36,6 +36,7 @@ import { domainError, hasPermission, publicOrganizationId, publicUserId, require
 
 const BREAKER_KEY = "breaker";
 const GLOBAL_USAGE_KEY = "global-usage";
+const PAID_PILOT_KEY = "paid-pilot-lifetime";
 const LEASE_GRACE_MS = 5_000;
 const IN_PROGRESS_RETRY_MS = 1_500;
 const REQUEST_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -102,6 +103,8 @@ async function tenantPreference(ctx: ReadCtx, organizationId: Id<"organizations"
 }
 
 interface GateContext {
+  organizationPublicId: string;
+  pilotDebitedMicroUsd: number;
   resolution: JevModeResolution;
   gate: JevGate;
   preference: Doc<"jevTenantPreferences"> | null;
@@ -114,15 +117,19 @@ interface GateContext {
 async function gateContext(ctx: ReadCtx, organizationId: Id<"organizations">, featureKey: string | undefined, now: number): Promise<GateContext> {
   const resolution = resolveJevMode(process.env, now);
   const day = utcDay(now);
-  const [preference, breaker, usage, globalRequests] = await Promise.all([
+  const [preference, breaker, usage, globalRequests, organization, pilot] = await Promise.all([
     tenantPreference(ctx, organizationId),
     breakerState(ctx),
     tenantUsage(ctx, organizationId, day),
     globalRequestsToday(ctx, day),
+    ctx.db.get(organizationId),
+    controlRow(ctx, PAID_PILOT_KEY),
   ]);
+  const organizationPublicId = organization ? publicOrganizationId(organization) : "";
+  const pilotDebitedMicroUsd = pilot?.pilotDebitedMicroUsd ?? 0;
   const tenantRequests = usage?.requests ?? 0;
-  const gate = gateJevRequest({ resolution, featureKey, tenantEnabled: preference?.enabled === true, breakerTripped: breaker.tripped, globalRequestsToday: globalRequests, tenantRequestsToday: tenantRequests });
-  return { resolution, gate, preference, breaker, day, tenantRequests, globalRequests };
+  const gate = gateJevRequest({ resolution, featureKey, tenantEnabled: preference?.enabled === true, breakerTripped: breaker.tripped, globalRequestsToday: globalRequests, tenantRequestsToday: tenantRequests, organizationPublicId, pilotDebitedMicroUsd });
+  return { resolution, gate, preference, breaker, day, tenantRequests, globalRequests, organizationPublicId, pilotDebitedMicroUsd };
 }
 
 async function statusView(ctx: ReadCtx, actor: ActorContext): Promise<JevStatusView> {
@@ -135,7 +142,7 @@ async function statusViewFor(ctx: ReadCtx, organizationId: Id<"organizations">, 
   const { resolution, preference, breaker } = context;
   const updatedBy = preference ? await ctx.db.get(preference.updatedByUserId) : null;
   const features: JevFeatureStatus[] = JEV_FEATURES.map((feature) => {
-    const gate = gateJevRequest({ resolution, featureKey: feature.key, tenantEnabled: preference?.enabled === true, breakerTripped: breaker.tripped, globalRequestsToday: context.globalRequests, tenantRequestsToday: context.tenantRequests });
+    const gate = gateJevRequest({ resolution, featureKey: feature.key, tenantEnabled: preference?.enabled === true, breakerTripped: breaker.tripped, globalRequestsToday: context.globalRequests, tenantRequestsToday: context.tenantRequests, organizationPublicId: context.organizationPublicId, pilotDebitedMicroUsd: context.pilotDebitedMicroUsd });
     return {
       key: feature.key,
       label: feature.label,
@@ -165,6 +172,7 @@ async function statusViewFor(ctx: ReadCtx, organizationId: Id<"organizations">, 
     keyConfigured: resolution.keyConfigured,
     freeUntil: resolution.freeUntil,
     freeTerms: resolution.freeTerms,
+    paidPilot: resolution.paidPilot ? { budgetUsd: resolution.paidPilot.budgetMicroUsd / 1_000_000, debitedUsd: context.pilotDebitedMicroUsd / 1_000_000, until: resolution.paidPilot.until, valid: resolution.paidPilot.valid } : undefined,
     zeroDataRetention: resolution.zeroDataRetention,
     breaker: { tripped: breaker.tripped, reason: breaker.reason, trippedAt: breaker.trippedAt ? iso(breaker.trippedAt) : undefined },
     tenant: { enabled: preference?.enabled === true, updatedAt: preference ? iso(preference.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: preference?.reason },
@@ -388,7 +396,18 @@ export const begin = internalMutation({
       .collect();
     if (pending.some((row) => row.leaseExpiresAt > now)) return resolved({ status: "in_progress", retryAfterMs: IN_PROGRESS_RETRY_MS });
 
+    // Debit before the external request, atomically with admission. Never
+    // refund: failures, crashes and simulations conservatively consume a slot.
+    // This lifetime counter survives midnight, cleanup and breaker resets.
+    const pilotDebitMicroUsd = args.mode === "live" && context.resolution.paidPilot ? JEV_PILOT_REQUEST_MICRO_USD : undefined;
+    if (pilotDebitMicroUsd) {
+      const pilot = await controlRow(ctx, PAID_PILOT_KEY);
+      const debit = context.pilotDebitedMicroUsd + pilotDebitMicroUsd;
+      if (pilot) await ctx.db.patch(pilot._id, { pilotDebitedMicroUsd: debit, updatedAt: now });
+      else await ctx.db.insert("jevControlState", { key: PAID_PILOT_KEY, pilotDebitedMicroUsd: debit, updatedAt: now });
+    }
     const requestId = await ctx.db.insert("jevRequests", {
+      pilotDebitMicroUsd,
       organizationId: organization._id,
       leaseKey: args.leaseKey,
       status: "pending",
@@ -415,11 +434,24 @@ async function tripBreaker(ctx: MutationCtx, reason: string, now: number): Promi
   else await ctx.db.insert("jevControlState", { key: BREAKER_KEY, trippedAt: now, tripReason: reason, updatedAt: now });
 }
 
+function costPermitted(request: Doc<"jevRequests">, cost: number | undefined): boolean {
+  if (cost === undefined || !Number.isFinite(cost) || cost < 0) return false;
+  return cost <= (request.pilotDebitMicroUsd ?? 0) / 1_000_000;
+}
+
+async function accountPilotOverage(ctx: MutationCtx, request: Doc<"jevRequests">, cost: number | undefined, now: number): Promise<void> {
+  if (!request.pilotDebitMicroUsd || cost === undefined || !Number.isFinite(cost) || cost < 0) return;
+  const extra = Math.max(0, Math.ceil(cost * 1_000_000) - request.pilotDebitMicroUsd);
+  if (!extra) return;
+  const pilot = await controlRow(ctx, PAID_PILOT_KEY);
+  if (pilot) await ctx.db.patch(pilot._id, { pilotDebitedMicroUsd: (pilot.pilotDebitedMicroUsd ?? 0) + extra, updatedAt: now });
+}
+
 /**
  * Record a validated judgment. The state is loaded again and re-hashed: if
  * the record changed while the model was answering, the answer is marked
- * stale and never shown or cached. A live answer is shown only when Gateway
- * explicitly reports zero cost; any other cost state trips the breaker.
+ * stale and never shown or cached. Gateway must explicitly report a cost
+ * within the request's approved allowance (zero outside the paid pilot).
  */
 export const complete = internalMutation({
   args: {
@@ -450,6 +482,7 @@ export const complete = internalMutation({
     const userId = actor ? actor.user._id : admin!.user._id;
     const now = Date.now();
     const judgment = args.judgment as JevJudgment | undefined;
+    if (request.status !== "pending") return { status: "unavailable", reason: "request_invalid", message: "This suggestion request is already finished.", retryable: false, correlationId: args.correlationId };
 
     const usage = await tenantUsage(ctx, organizationDocId, utcDay(now));
     if (usage) {
@@ -461,15 +494,16 @@ export const complete = internalMutation({
       });
     }
 
-    if (args.source === "live" && args.reportedCostUsd !== 0) {
+    if (args.source === "live" && !costPermitted(request, args.reportedCostUsd)) {
       const knownCost = args.reportedCostUsd !== undefined;
       const reason = knownCost ? "payment_required" : "cost_unconfirmed";
       await tripBreaker(ctx, knownCost
         ? `AI Gateway reported a cost of ${args.reportedCostUsd} USD for a Jev request (correlation ${args.correlationId}).`
         : `AI Gateway did not report a cost for a Jev request (correlation ${args.correlationId}).`, now);
-      await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: reason, failureMessage: "Zero cost was not confirmed.", inputTokens: args.inputTokens, outputTokens: args.outputTokens, reportedCostUsd: args.reportedCostUsd });
+      await accountPilotOverage(ctx, request, args.reportedCostUsd, now);
+      await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: reason, failureMessage: "The approved request cost was not confirmed.", inputTokens: args.inputTokens, outputTokens: args.outputTokens, reportedCostUsd: args.reportedCostUsd });
       console.warn("[rivet.jev.breaker]", JSON.stringify({ correlationId: args.correlationId, reason, reportedCostUsd: args.reportedCostUsd }));
-      return { status: "unavailable", reason, message: "Zero-cost access could not be confirmed. Live Jev calls are stopped for operator review.", retryable: false, correlationId: args.correlationId };
+      return { status: "unavailable", reason, message: "The approved request cost could not be confirmed. Live Jev calls are stopped for operator review.", retryable: false, correlationId: args.correlationId };
     }
 
     // Account for the served response before refusing a caller whose role
@@ -556,7 +590,7 @@ export const fail = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const request = await ctx.db.get(args.requestId);
-    if (!request) return null;
+    if (!request || request.status !== "pending") return null;
     const now = Date.now();
     await ctx.db.patch(request._id, { status: "failed", finishedAt: now, latencyMs: args.latencyMs, failureReason: args.reason.slice(0, 64), failureMessage: args.message.slice(0, 500), inputTokens: args.inputTokens, outputTokens: args.outputTokens, reportedCostUsd: args.reportedCostUsd });
     // A response the gateway served and then RIVET rejected (wrong model,
@@ -566,7 +600,8 @@ export const fail = internalMutation({
       const usage = await tenantUsage(ctx, request.organizationId, utcDay(now));
       if (usage) await ctx.db.patch(usage._id, { inputTokens: usage.inputTokens + (args.inputTokens ?? 0), outputTokens: usage.outputTokens + (args.outputTokens ?? 0), reportedCostUsd: usage.reportedCostUsd + (args.reportedCostUsd ?? 0), updatedAt: now });
     }
-    if (request.mode === "live" && args.gatewayAttempted && args.reportedCostUsd !== 0) {
+    if (request.mode === "live" && args.gatewayAttempted && !costPermitted(request, args.reportedCostUsd)) {
+      await accountPilotOverage(ctx, request, args.reportedCostUsd, now);
       await tripBreaker(ctx, args.reportedCostUsd === undefined
         ? `AI Gateway did not confirm zero cost for a failed Jev request (${args.reason}, correlation ${request.correlationId}).`
         : `AI Gateway reported a cost of ${args.reportedCostUsd} USD for a Jev request that was then rejected (${args.reason}, correlation ${request.correlationId}).`, now);
