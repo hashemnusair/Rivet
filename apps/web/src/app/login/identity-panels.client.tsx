@@ -15,6 +15,8 @@ import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import type { Audience } from "./portals";
 import { api } from "../../../convex/_generated/api";
+import { MemberProfileMissingError } from "@/lib/auth/member-profile";
+import { MemberProfileCompletion } from "./member-profile-completion";
 
 const ENTRY_TRANSITION_MS = 900;
 const holdTransition = () => new Promise<void>((resolve) => window.setTimeout(resolve, ENTRY_TRANSITION_MS));
@@ -334,6 +336,7 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
   const { signInAsIdentity } = useExperience();
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
+  const [needsProfile, setNeedsProfile] = useState(false);
 
   useEffect(() => {
     if (started.current) return;
@@ -343,8 +346,18 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
       holdTransition(),
     ])
       .then(() => router.replace(postSignInPath("/customer/my-gyms", window.location.search)))
-      .catch(() => setFailed(true));
+      .catch((error: unknown) => {
+        if (error instanceof MemberProfileMissingError) setNeedsProfile(true);
+        else setFailed(true);
+      });
   }, [identity.email, identity.fullName, router, signInAsIdentity]);
+
+  if (needsProfile) {
+    return <MemberProfileCompletion identity={identity} onComplete={async () => {
+      await signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" });
+      router.replace(postSignInPath("/customer/my-gyms", window.location.search));
+    }} />;
+  }
 
   if (failed) {
     return (

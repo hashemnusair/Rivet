@@ -6,6 +6,7 @@ import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { getApi } from "@/lib/api/client";
 import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { MemberProfileMissingError } from "@/lib/auth/member-profile";
 import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { platformTenantDirectoryGyms, publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { refreshFailureState, startExperienceSubscription } from "@/lib/public/experience-refresh";
@@ -374,7 +375,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       // gym-member linking flow already created instead.
       const experience = await getApi().getCustomerExperience();
       const persona = experience.customer;
-      if (!persona) throw new Error("The authenticated member profile is not available.");
+      if (!persona) throw new MemberProfileMissingError();
       setCustomer(persona);
       setCustomerId(persona.id);
       return persona;

@@ -40,6 +40,8 @@ vi.mock("@/lib/api/client", () => ({
   getApi: () => ({ registerCustomer: state.registerCustomer }),
 }));
 
+vi.mock("@/app/login/identity-panels.client", () => ({ IdentityPanel: () => <div>Resolve signed-in member</div> }));
+
 vi.mock("@/app/login/portals", () => ({
   PORTALS: {
     member: {
@@ -229,6 +231,10 @@ describe("CustomerSignupClient", () => {
 
   it("keeps an authenticated profile retryable if Convex is temporarily unavailable after Clerk finalizes", async () => {
     const signUp = state.signUp!;
+    signUp.finalize.mockImplementationOnce(async () => {
+      state.auth.isSignedIn = true;
+      return { error: null };
+    });
     state.registerCustomer.mockRejectedValueOnce(new Error("temporary"));
     render(<CustomerSignupClient />);
 

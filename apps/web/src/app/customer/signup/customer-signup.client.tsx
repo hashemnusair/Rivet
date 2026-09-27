@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { getApi } from "@/lib/api/client";
 import { PORTALS } from "@/app/login/portals";
 import { LoginLayout, PortalHeading } from "@/app/login/login-chrome";
+import { IdentityPanel } from "@/app/login/identity-panels.client";
 
 const signupSchema = z
   .object({
@@ -261,12 +262,14 @@ export function CustomerSignupClient() {
     // decorated URL so Safari can refresh the Clerk cookie when needed, then
     // navigate only after the authenticated Convex profile exists.
     let decoratedReturnTo = context.returnTo;
+    setStep("profile-pending");
     const result = await signUp.finalize({
       navigate: async ({ decorateUrl }) => {
         decoratedReturnTo = decorateUrl(context.returnTo);
       },
     });
     if (result.error) {
+      setStep("verify-email");
       setFormError(clerkMessage(result.error, "Your account could not be activated. Please try again."));
       setSubmitting(false);
       return;
@@ -437,15 +440,10 @@ export function CustomerSignupClient() {
     setExistingAccount(false);
   };
 
-  if (authLoaded && isSignedIn) {
+  if (authLoaded && isSignedIn && step === "details") {
     return (
       <LoginLayout portal={PORTALS.member} mode="sign-up">
-        <PortalHeading portal={PORTALS.member} mode="sign-up" />
-        <div className="mt-7 rounded-lg border border-line-2 bg-surface p-4">
-          <p className="text-[13px] font-medium">You are already signed in.</p>
-          <p className="mt-2 text-[12px] leading-relaxed text-ink-2">Continue to your member dashboard to request a trial or review your gyms.</p>
-          <Button type="button" className="mt-5 w-full" onClick={() => navigateToReturn(finalizedReturnTo)}>Continue <ArrowRight /></Button>
-        </div>
+        <IdentityPanel audience="member" />
       </LoginLayout>
     );
   }

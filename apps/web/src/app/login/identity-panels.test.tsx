@@ -1,6 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IdentityPanel } from "./identity-panels.client";
+import { MemberProfileMissingError } from "@/lib/auth/member-profile";
 
 const state = vi.hoisted(() => ({
   identity: {
@@ -54,6 +55,23 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 }));
 
 describe("IdentityPanel", () => {
+  it("offers profile completion only when the authenticated profile is missing", async () => {
+    state.identity = { ...state.identity, platformAdmin: false, email: "member@example.com", fullName: "Member Example" };
+    state.signInAsIdentity.mockRejectedValueOnce(new MemberProfileMissingError());
+    render(<IdentityPanel audience="member" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(900); });
+    expect(screen.getByRole("heading", { name: "Finish your member profile" })).toBeVisible();
+    expect(screen.queryByText("Your member dashboard could not be opened")).not.toBeInTheDocument();
+  });
+
+  it("does not treat an unavailable member query as a missing profile", async () => {
+    state.identity = { ...state.identity, platformAdmin: false };
+    state.signInAsIdentity.mockRejectedValueOnce(new Error("Network unavailable"));
+    render(<IdentityPanel audience="member" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(900); });
+    expect(screen.getByText("Your member dashboard could not be opened")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Finish your member profile" })).not.toBeInTheDocument();
+  });
   afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     vi.useFakeTimers();
