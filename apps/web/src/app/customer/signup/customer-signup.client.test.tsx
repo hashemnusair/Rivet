@@ -114,8 +114,11 @@ describe("CustomerSignupClient", () => {
     expect(resolveCustomerSignupContext("?returnTo=https%3A%2F%2Fevil.example%2Ftakeover&customerId=foreign")).toEqual({ returnTo: "/customer/discover" });
   });
 
-  it("creates through Clerk, verifies email, finalizes, then creates the authenticated profile and returns to the gym", async () => {
+  it("creates with Clerk phone signup disabled, verifies email, and saves mobile in the authenticated RIVET profile", async () => {
     const signUp = state.signUp!;
+    signUp.password.mockImplementation(async (params: { phoneNumber?: string }) => ({
+      error: params.phoneNumber ? { message: "phone_number is not a valid parameter for this request" } : null,
+    }));
     render(<CustomerSignupClient />);
 
     fireEvent.change(screen.getByLabelText(/Full name/), { target: { value: " Lina Haddad " } });
@@ -129,7 +132,6 @@ describe("CustomerSignupClient", () => {
     await waitFor(() => {
       expect(signUp.password).toHaveBeenCalledWith({
         emailAddress: "lina@example.com",
-        phoneNumber: "+962790000000",
         password: "secret-password",
         firstName: "Lina",
         lastName: "Haddad",
@@ -212,7 +214,7 @@ describe("CustomerSignupClient", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     await waitFor(() => {
-      expect(signUp.password).toHaveBeenCalledWith(expect.objectContaining({ phoneNumber: "+962790000000" }));
+      expect(signUp.password).toHaveBeenCalledWith(expect.not.objectContaining({ phoneNumber: expect.anything() }));
       expect(signUp.update).toHaveBeenCalledWith({ phoneNumber: "+962790000000" });
       expect(signUp.verifications.sendPhoneCode).toHaveBeenCalledOnce();
     });

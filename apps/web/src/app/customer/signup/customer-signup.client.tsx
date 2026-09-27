@@ -336,9 +336,10 @@ export function CustomerSignupClient() {
 
     const name = splitName(parsed.data.fullName);
     setSubmitting(true);
+    // Mobile is required for the RIVET profile, but may be disabled as a
+    // Clerk identifier. startVerification supplies it if Clerk requires it.
     const result = await signUp.password({
       emailAddress: parsed.data.email.trim().toLowerCase(),
-      phoneNumber: normalizePhoneForClerk(parsed.data.phone),
       password: parsed.data.password,
       firstName: name.firstName,
       ...(name.lastName ? { lastName: name.lastName } : {}),
