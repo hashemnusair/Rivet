@@ -5,8 +5,9 @@
 - [x] Recognize Hashem and Elias's 27 September exploratory walkthrough and
   preserve its findings in `CURRENT_STATE.md`; do not restart its status at
   “not tested”. Missing recorded outcomes remain unknown.
-- [ ] Close the three browser CI failures on the feedback-pass release and
-  verify matching frontend/Convex deployment evidence (current work).
+- [x] Close the three browser CI failures on the feedback-pass release:
+  run `36437542914` at `c2866dc` passed all 13 jobs. Exact frontend and
+  matching Convex runtime evidence are recorded in docs/12.
 - [ ] Hashem will retest the feedback fixes personally later: invitations,
   signup/profile recovery, own-profile settings, onboarding links, gym
   address and device layout. Agent-driven Production mutations are excluded.

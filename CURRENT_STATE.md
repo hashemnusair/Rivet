@@ -18,7 +18,7 @@ mutations on his behalf for this release pass.
 - Synced the checkout to `c39590e`, preserving the local 27 September Jev
   failure notes here and in the archived docs/21 walkthrough section. The
   frozen `FRONTEND_HANDOFF.md`, untracked audits and user outputs are preserved.
-- Release repair in progress: trainer browser coverage now permits personal
+- Released repairs: trainer browser coverage now permits personal
   Settings while explicitly denying organization and staff settings; reduced
   Settings group gaps to fit the added Account group at desktop height.
   Failed CI browser results are retained for three days so Linux screenshot
@@ -60,11 +60,30 @@ mutations on his behalf for this release pass.
   at 390/1440px, with a Linux 390px reference for native font metrics. The
   browser test waits for repair details and asserts the manual machine picker
   and disabled empty-report action. Screenshot tolerance remains 0.04. Both
-  affected local snapshot journeys pass; final hosted verification follows.
+  affected local snapshot journeys pass.
 - Vercel Production `dpl_2EBmR1Lct5uUNmiZ3KP2NFwZWN8p` is READY at exact
   `c310a9cdeb97295cf65389a3054a026abc0eb9e5`, assigned to all canonical domains.
   The one-hour project 5xx log-count query returned no entries.
 
+
+**Closure:** [GitHub Actions run 36437542914](https://github.com/hashemnusair/Rivet/actions/runs/36437542914)
+passed all 13 jobs at exact `c2866dc119f936da282bfe83afa529278db168c1`,
+including both unit shards, all eight browser shards, static/safety checks,
+production build/audit and credentialed Convex codegen. Vercel Production
+`dpl_9tSuRKWHxDXgbE3cuwLALxcZPPJ3` is READY at that exact SHA on all canonical
+domains. The deployed Convex source is `c310a9c`; Git confirms no changes to
+`apps/web/convex` or `apps/web/src` between that release and `c2866dc`.
+Signup and all three sign-in doors return HTTP 200. Subsequent handoff-only
+commits do not change this verified runtime. No further backend deploy is owed
+for the feedback pass. Original untracked `docs/audits/` and `outputs/` remain
+untouched; the temporary reconciliation stash was removed after its findings
+were committed. The historical frontend handoff is unchanged.
+
+Remaining: Hashem's deferred manual retests, the provider-access/header work
+for email delivery, and any business-day outcomes the users choose to record.
+Run `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`,
+`pnpm --filter web test --maxWorkers=2`, and `pnpm build` for a new code change.
+Read this section, docs/12, and the current docs/13 backlog first.
 
 ## Consolidated feedback pass: access, workspace controls, onboarding, platform visibility, signup and Jev retirement, 28 September 2026
 

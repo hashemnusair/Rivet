@@ -2,6 +2,16 @@
 
 ## Walkthrough follow-up release, 28 September 2026
 
+**Verified release:** all 13 jobs passed in
+[run 36437542914](https://github.com/hashemnusair/Rivet/actions/runs/36437542914)
+at `c2866dc119f936da282bfe83afa529278db168c1`. Vercel Production
+`dpl_9tSuRKWHxDXgbE3cuwLALxcZPPJ3` is READY at that exact SHA on all canonical
+domains. Convex was deployed from `c310a9c`; its backend and frontend runtime
+source is unchanged through `c2866dc` (only tests/references/handoff changed).
+No backend release remains owed for the feedback pass. Later handoff-only
+commits do not change this runtime evidence. Signup and all three sign-in
+doors returned HTTP 200.
+
 Hashem authorized closing the feedback-pass release and will retest manually
 later. The 27 September exploratory walkthrough already happened; see the
 coverage and email findings at the top of `CURRENT_STATE.md`.
@@ -18,8 +28,8 @@ coverage and email findings at the top of `CURRENT_STATE.md`.
   1,676 unit/component tests plus 14 CLI/environment guards, and 40 targeted
   preview browser journeys passed. Hosted run `36436717162` passed 12 of 13
   jobs; its sole failure was the stale equipment screenshot. The inspected
-  replacement references and manual-intake assertions pass locally; final
-  hosted verification follows.
+  replacement references and manual-intake assertions pass locally and in
+  the final hosted run linked above.
 - Vercel `dpl_2EBmR1Lct5uUNmiZ3KP2NFwZWN8p` is READY at exact `c310a9c`
   on the canonical domains. The one-hour project 5xx query returned no entries.
 - Email: Production has 8 provider-accepted allowlist attempts among the latest
