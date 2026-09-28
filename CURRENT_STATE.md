@@ -38,12 +38,32 @@ mutations on his behalf for this release pass.
   Provider ownership/access and the affected invitation's authentication
   headers remain needed to close delivery. Do not blindly tighten DMARC or
   replace the existing production sender/key with an unrelated account.
+- Convex Production deployed successfully from `c310a9c` through the guarded
+  wrapper. Health returned `ok` at `1790605964359`. Only the seven retired
+  Jev indexes were removed. Post-release read-only checks matched the backup
+  IDs for all four populated retired tables (3 control rows, 1 request,
+  1 usage row, 1 tenant preference); no retained documents were purged.
+- The latest 16 operational-email records contain 8 provider-accepted sends
+  whose attempts record allowlist mode and 8 suppressed deliveries, including
+  owner preferences not confirmed, email types disabled, and a historical
+  provider-not-configured result. Provider acceptance is not inbox delivery.
+  This supersedes the blanket impression that no operational mail can send;
+  the missing webhook secret still prevents authenticated delivery callbacks.
 - Local validation: 1,676 unit/component tests in 266 files and 14 CLI/environment
   guard tests passed; both typechecks, lint/secret-output audit, production
   build and diff check passed. All 40 targeted browser journeys passed on the
   built preview, including trainer access, Settings sizing, feedback flows
-  and branch operations at six viewport widths. Linux CI and final release
-  verification remain in progress.
+  and branch operations at six viewport widths. Hosted run `36436717162` passed 12 of 13 jobs, including both repaired
+  trainer/Settings shards; only the equipment screenshot baseline remains.
+  Its Linux artifact was visually reviewed: the old reference omits the
+  retained manual issue-intake form. Equipment references now show that form
+  at 390/1440px, with a Linux 390px reference for native font metrics. The
+  browser test waits for repair details and asserts the manual machine picker
+  and disabled empty-report action. Screenshot tolerance remains 0.04. Both
+  affected local snapshot journeys pass; final hosted verification follows.
+- Vercel Production `dpl_2EBmR1Lct5uUNmiZ3KP2NFwZWN8p` is READY at exact
+  `c310a9cdeb97295cf65389a3054a026abc0eb9e5`, assigned to all canonical domains.
+  The one-hour project 5xx log-count query returned no entries.
 
 
 ## Consolidated feedback pass: access, workspace controls, onboarding, platform visibility, signup and Jev retirement, 28 September 2026

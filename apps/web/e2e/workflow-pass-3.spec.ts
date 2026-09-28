@@ -35,13 +35,18 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
       await expect(page.getByRole("heading", { level: 1 }), route).toBeVisible();
       await expect(page.locator("main").getByText(ready, { exact: false }).first()).toBeVisible();
       if (name === "orders") await expect(page.getByTestId("operations-orders")).toBeVisible();
-      if (name === "equipment") await expect(page.getByRole("heading", { name: "Machine register" })).toBeVisible();
+      if (name === "equipment") {
+        await expect(page.getByRole("heading", { name: "Machine register" })).toBeVisible();
+        await expect(page.getByRole("combobox", { name: "Report machine" })).toBeVisible();
+        await expect(page.getByTestId("report-intake-file-issue")).toBeDisabled();
+        await expect(page.getByText("Repair decision support", { exact: true })).toBeVisible();
+      }
       await fits(page);
       if (width === 390 || width === 1440) {
         await page.evaluate(() => document.fonts.ready);
         // Native font metrics change description/toolbar wrapping on these
         // narrow pages. Keep inspected Linux references at the same tolerance.
-        const platform = (name === "orders" || name === "maintenance") && width === 390 && process.platform === "linux" ? "-linux" : "";
+        const platform = (name === "orders" || name === "maintenance" || name === "equipment") && width === 390 && process.platform === "linux" ? "-linux" : "";
         await expect(page).toHaveScreenshot(`pass-3-${name}-${width}${platform}.png`, { animations: "disabled", maxDiffPixelRatio: 0.04 });
       }
     }

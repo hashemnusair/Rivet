@@ -1,8 +1,38 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-09-28 for the feedback pass being published through main.
-This publication does not run a Convex deployment. Frontend deployment status
-requires separate evidence from the normal deployment pipeline.
+## Walkthrough follow-up release, 28 September 2026
+
+Hashem authorized closing the feedback-pass release and will retest manually
+later. The 27 September exploratory walkthrough already happened; see the
+coverage and email findings at the top of `CURRENT_STATE.md`.
+
+- Backup with file storage: owner-only local archive
+  `~/.local/share/rivet/backups/production-before-jev-retirement-2026-09-28.zip`.
+- Source `c310a9c` deployed with `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --yes`
+  after the guarded dry run selected Production `descriptive-meerkat-589`.
+  Schema validation passed. Seven retired Jev indexes were removed as expected;
+  all four populated retired tables retain the same record IDs as the backup.
+  This release does not purge data or reactivate Jev.
+- Post-deploy `health:check` returned `ok` at `1790605964359`.
+- Local verification: both typechecks, lint/secret audit, production build,
+  1,676 unit/component tests plus 14 CLI/environment guards, and 40 targeted
+  preview browser journeys passed. Hosted run `36436717162` passed 12 of 13
+  jobs; its sole failure was the stale equipment screenshot. The inspected
+  replacement references and manual-intake assertions pass locally; final
+  hosted verification follows.
+- Vercel `dpl_2EBmR1Lct5uUNmiZ3KP2NFwZWN8p` is READY at exact `c310a9c`
+  on the canonical domains. The one-hour project 5xx query returned no entries.
+- Email: Production has 8 provider-accepted allowlist attempts among the latest
+  16 deliveries. Other rows are suppressed for preference/type/provider reasons.
+  `RESEND_WEBHOOK_SECRET` is absent by names-only inspection. The accessible
+  Resend account does not own RIVET's domain. No send/retry, preference change,
+  live-mode activation, DNS change or secret change was performed. Resolve
+  provider access and inspect the actual invitation headers before declaring
+  inbox delivery fixed; Hashem owns later manual acceptance.
+
+
+The original feedback-pass publication did not deploy Convex. The follow-up
+release above records the subsequent authorized backend deployment.
 
 ## Jev assistance retirement — 28 September 2026
 
