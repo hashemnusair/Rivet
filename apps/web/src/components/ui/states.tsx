@@ -33,7 +33,7 @@ export function StatePanel({
   return (
     <div
       className={cn(
-        "border-line-2 bg-surface/55",
+        "relative border-line-2 bg-surface/55",
         resolvedLayout === "inline" && "flex items-start gap-3 border-y px-3 py-3 text-start",
         resolvedLayout === "section" && "flex items-start gap-3 rounded-md border border-dashed px-4 py-4 text-start",
         resolvedLayout === "page" && "flex flex-col items-center justify-center rounded-lg border border-dashed px-6 py-14 text-center",

@@ -399,7 +399,7 @@ async function upsertSettings(ctx: MutationCtx, organizationId: Id<"organization
   else await ctx.db.insert("domainRecords", { organizationId, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: value });
 }
 
-async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizations">, input: { applicationId: string; marketplacePublicId: string; organizationPublicId: string; gymName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise"; billingInterval: BillingInterval; branchPublicId: string; branchName: string; now: number; organization: Doc<"organizations"> }) {
+async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizations">, input: { applicationId: string; marketplacePublicId: string; organizationPublicId: string; gymName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise"; billingInterval: BillingInterval; branchPublicId: string; branchName: string; address: string; now: number; organization: Doc<"organizations"> }) {
   const existing = await ctx.db
     .query("domainRecords")
     .withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "marketplaceGym").eq("publicId", input.marketplacePublicId))
@@ -410,7 +410,7 @@ async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizat
   const organization = input.organization;
   const plan = organization.subscriptionPlan ?? input.plan;
   const billingInterval = organization.billingInterval ?? input.billingInterval;
-  const defaultBranches = [{ id: input.branchPublicId, name: input.branchName, area: "Amman", address: "", trialSlots: [] }];
+  const defaultBranches = [{ id: input.branchPublicId, name: input.branchName, area: "Amman", address: input.address, trialSlots: [] }];
   const value = {
     ...existingData,
     id: input.marketplacePublicId,
@@ -532,7 +532,7 @@ export const createWorkspace = internalMutation({
         organizationId: organization._id,
         name: branchName(application.gymName),
         code: "MAIN",
-        address: "",
+        address: application.gymAddress ?? "",
         phone: application.contactNumber,
         capacity: 120,
         active: true,
@@ -549,6 +549,11 @@ export const createWorkspace = internalMutation({
       branch = await ctx.db.get(branch._id);
     }
     if (!branch) domainError("INTERNAL_ERROR", "The first gym branch could not be created.", { correlationId: args.correlationId });
+    if (application.gymAddress && !branch.address?.trim()) {
+      await ctx.db.patch(branch._id, { address: application.gymAddress, updatedAt: now });
+      branch = await ctx.db.get(branch._id);
+    }
+    if (!branch) domainError("INTERNAL_ERROR", "The first gym branch could not be read after its address was updated.", { correlationId: args.correlationId });
     // Persist the stable branch identity before later workspace writes. A
     // retry never needs to infer the branch from mutable display codes.
     await ctx.db.patch(application._id, { provisionedBranchId: publicBranchId(branch), updatedAt: now });
@@ -608,7 +613,7 @@ export const createWorkspace = internalMutation({
     if (existingPreferences) await ctx.db.patch(existingPreferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: user._id, updatedAt: now });
     else await ctx.db.insert("workspaceModulePreferences", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: user._id, createdAt: now, updatedAt: now });
     await upsertSettings(ctx, organization._id, now);
-    await upsertMarketplace(ctx, organization._id, { applicationId: application.publicId, marketplacePublicId: ids.marketplacePublicId, organizationPublicId: ids.organizationPublicId, gymName: application.gymName, plan, billingInterval, branchPublicId: publicBranchId(branch), branchName: branch.name, now, organization });
+    await upsertMarketplace(ctx, organization._id, { applicationId: application.publicId, marketplacePublicId: ids.marketplacePublicId, organizationPublicId: ids.organizationPublicId, gymName: application.gymName, plan, billingInterval, branchPublicId: publicBranchId(branch), branchName: branch.name, address: application.gymAddress ?? "", now, organization });
 
     await ctx.db.patch(application._id, { provisioningCheckpoint: "workspace_ready", provisioningOutcome: "partial", provisioningLastCorrelationId: args.correlationId, provisionedBranchId: publicBranchId(branch), updatedAt: now });
 

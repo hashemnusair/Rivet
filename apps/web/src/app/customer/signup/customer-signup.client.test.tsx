@@ -231,11 +231,12 @@ describe("CustomerSignupClient", () => {
 
   it("keeps an authenticated profile retryable if Convex is temporarily unavailable after Clerk finalizes", async () => {
     const signUp = state.signUp!;
-    signUp.finalize.mockImplementationOnce(async () => {
+    state.registerCustomer.mockRejectedValueOnce(new Error("temporary"));
+    signUp.finalize.mockImplementationOnce(async (params?: { navigate?: (input: { decorateUrl: (url: string) => string }) => Promise<void> }) => {
+      if (params?.navigate) await params.navigate({ decorateUrl: state.decorateReturnTo });
       state.auth.isSignedIn = true;
       return { error: null };
     });
-    state.registerCustomer.mockRejectedValueOnce(new Error("temporary"));
     render(<CustomerSignupClient />);
 
     for (const [label, value] of [[/Full name/, "Lina Haddad"], [/Email address/, "lina@example.com"], [/Mobile number/, "+962790000000"], [/^Password/, "secret-password"], [/Confirm password/, "secret-password"]] as const) {
@@ -249,6 +250,8 @@ describe("CustomerSignupClient", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: /Finish member setup/ })).toBeVisible());
     expect(screen.getByRole("alert")).toHaveTextContent(/could not finish/i);
+    expect(screen.queryByText("You are already signed in.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Resolve signed-in member")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Finish member setup/ }));
     await waitFor(() => expect(state.registerCustomer).toHaveBeenCalledTimes(2));
     expect(signUp.finalize).toHaveBeenCalledOnce();

@@ -91,7 +91,13 @@ export async function ensureUserRecord(ctx: MutationCtx, suppliedFullName?: stri
   const email = (identity.email ?? "").trim().toLowerCase();
   const normalizedFullName = suppliedFullName?.trim().replace(/\s+/g, " ");
   if (normalizedFullName && normalizedFullName.length > 160) throw new Error("INVALID_PROFILE_NAME");
-  const fullName = normalizedFullName || identity.name?.trim() || existing?.fullName || email.split("@")[0] || "RIVET user";
+  // Once a person explicitly chooses a display name in RIVET, do not let a
+  // later Clerk bootstrap sync silently overwrite it with the provider's
+  // stale profile name. New and legacy accounts without the marker still
+  // follow the provider name during bootstrap.
+  const fullName = existing?.profileNameUpdatedAt
+    ? existing.fullName
+    : normalizedFullName || identity.name?.trim() || existing?.fullName || email.split("@")[0] || "RIVET user";
 
   if (existing) {
     if (existing.status === "deactivated") throw new Error("UNAUTHENTICATED");

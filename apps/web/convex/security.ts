@@ -46,6 +46,7 @@ type MaybeUser = {
   authSubject: string;
   email: string;
   fullName: string;
+  profileNameUpdatedAt?: number;
   phone?: string;
   platformAdmin: boolean;
   status?: AccountStatus;

@@ -15,8 +15,8 @@ describe("operational notification triggers", () => {
       await ctx.db.insert("users", { publicId: "platform-disabled", authSubject: "clerk-platform-disabled", email: "disabled@example.com", fullName: "Disabled Admin", platformAdmin: true, status: "deactivated", createdAt: now, updatedAt: now });
     });
 
-    const created = await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
-    await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
+    const created = await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
+    await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
     const notifications = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());
     expect(notifications).toEqual([expect.objectContaining({ kind: "application_awaiting_review", dedupeKey: `gym-application:${created.applicationId}`, href: expect.stringContaining("/platform/applications") })]);
   });

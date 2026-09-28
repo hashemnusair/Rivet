@@ -79,7 +79,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/audit", label: "Audit log", icon: ScrollText, anyPermission: ["audit.read"] },
       { href: "/exports", label: "Data exports", icon: Download, anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
       { href: "/support", label: "Support", icon: CircleHelp },
-      { href: "/settings", label: "Settings", icon: Settings, anyPermission: ["settings.manage", "users.manage"] },
+      { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];

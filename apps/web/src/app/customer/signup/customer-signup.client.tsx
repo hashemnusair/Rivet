@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { z } from "zod";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -440,7 +441,11 @@ export function CustomerSignupClient() {
     setExistingAccount(false);
   };
 
-  if (authLoaded && isSignedIn && step === "details") {
+  // Clerk can publish the session between finalization and the authenticated
+  // member-profile mutation. Keep that handoff mounted until the profile
+  // step finishes instead of briefly replacing it with an "already signed in"
+  // message.
+  if (authLoaded && isSignedIn && step === "details" && !submitting) {
     return (
       <LoginLayout portal={PORTALS.member} mode="sign-up">
         <IdentityPanel audience="member" />
@@ -476,10 +481,10 @@ export function CustomerSignupClient() {
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Password" htmlFor="customer-signup-password" error={fieldErrors.password} required>
-              <Input id="customer-signup-password" type="password" value={values.password} onChange={(event) => updateValue("password", event.target.value)} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.password)} />
+              <PasswordInput id="customer-signup-password" value={values.password} onChange={(event) => updateValue("password", event.target.value)} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "customer-signup-password-error" : undefined} />
             </Field>
             <Field label="Confirm password" htmlFor="customer-signup-confirm" error={fieldErrors.confirmPassword} required>
-              <Input id="customer-signup-confirm" type="password" value={values.confirmPassword} onChange={(event) => updateValue("confirmPassword", event.target.value)} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.confirmPassword)} />
+              <PasswordInput id="customer-signup-confirm" value={values.confirmPassword} onChange={(event) => updateValue("confirmPassword", event.target.value)} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.confirmPassword)} aria-describedby={fieldErrors.confirmPassword ? "customer-signup-confirm-error" : undefined} />
             </Field>
           </div>
           {formError ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{formError}</p> : null}

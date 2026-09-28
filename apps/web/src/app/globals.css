@@ -273,6 +273,15 @@ html.landing-motion-ready [data-experience-notice] {
     line-height: 1.45;
   }
 
+  /*
+    WebKit can extend a native text selection to a static block's padding
+    edge. Human-facing text blocks are paint anchors so a one-line selection
+    stays with its own line and does not wash over a surrounding surface.
+  */
+  :where(p, h1, h2, h3, h4, h5, h6) {
+    position: relative;
+  }
+
   /* Mouse-dense controls remain compact on office laptops, while the same
      controls meet a practical 44px target on reception tablets and phones. */
   @media (pointer: coarse) {
@@ -440,12 +449,16 @@ html.landing-motion-ready [data-experience-notice] {
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
+  /* WebKit can paint a text selection through a static block's padding. A
+     positioned surface keeps the native highlight inside the card bounds. */
+  position: relative;
 }
 
 @utility panel-inset {
   background: var(--color-sunken);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-md);
+  position: relative;
 }
 
 /* Every enabled control reads as clickable. */

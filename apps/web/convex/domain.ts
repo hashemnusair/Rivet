@@ -53,10 +53,7 @@ import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { resolveMessagingMode } from "./messagingMode";
-import { IMPORT_DRAFT_TTL_MS, IMPORT_MAX_COLUMNS, IMPORT_MAX_HEADING_LENGTH, IMPORT_MAX_PLAN_LABELS, IMPORT_MAX_PLAN_LABEL_LENGTH, isImportField } from "./jevImportState";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
-import { buildGymProfileReviewContext, type GymProfileReviewContext } from "./profileAssist";
-import { buildSupportReviewContext, type SupportCaseLike, type SupportFacts, type SupportReviewContext } from "./supportAssist";
 import { RESOLUTION_CLASS_HORIZON_DAYS, RESOLUTION_TRAINER_HORIZON_DAYS, chargeService, classEligibility, permittedResolutionPanels, resolutionFacts, selectResolutionEvidence, type ClassBookingPolicyLike, type MemberResolutionContext, type ResolutionCharge, type ResolutionClassOption, type ResolutionMembership, type ResolutionMoney, type ResolutionPayment, type ResolutionPlan, type ResolutionPtOrder, type ResolutionService, type ResolutionTrainerOption } from "./resolutionAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
@@ -1280,8 +1277,8 @@ export async function followUpRelatedTasks(ctx: ReadContext, actor: ActorContext
  * whether the automated journey stops and why, consent and suppression for
  * renewal messages, quiet hours, every reminder RIVET queued for the term
  * with truthful status wording, the last contact, an agreed callback, the
- * recorded evidence and the open work. The member workspace, the renewal
- * queue and the Jev loaders all read this one projection.
+ * recorded evidence and the open work. The member workspace and renewal
+ * queue read this one deterministic projection.
  */
 export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<MemberFollowUpContext> {
   requirePermission(actor, "members.read");
@@ -1359,117 +1356,6 @@ async function relatedTaskLink(ctx: ReadContext, actor: ActorContext, input: Dat
   return { id: relatedTaskId, title: stringValue(related.title) };
 }
 
-
-/**
- * The saved public-page draft cut into addressable passages, beside what the
- * gym's own records say. Read with `profiles.manage`, like the editor. The
- * review never reads member data: only branches, plans, published trainer
- * profiles, active PT packages, the timetable and the draft's own fields.
- */
-export async function gymProfileReviewContextData(ctx: ReadContext, actor: ActorContext): Promise<GymProfileReviewContext> {
-  requirePermission(actor, "profiles.manage");
-  const profile = await currentGymProfile(ctx, actor);
-  const branches = (await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect()).filter((branch) => branch.active && branch.status !== "inactive");
-  const plans = (await recordsOf(ctx, actor, "plan")).map((row) => data(row.data)).filter((plan) => stringValue(plan.status, "active") === "active");
-  const classes = (await ctx.db.query("classSessions").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect()).filter((session) => session.status === "scheduled");
-  const trainers = arrayValue(profile.trainers).map(data);
-  const packages = arrayValue(profile.ptPackages).map(data);
-  return buildGymProfileReviewContext({
-    organizationId: publicOrganizationId(actor.organization),
-    version: numberValue(profile.version, 1),
-    status: stringValue(profile.status, "draft"),
-    updatedAt: stringValue(profile.updatedAt),
-    draft: { taglineEn: stringValue(profile.taglineEn), taglineAr: optionalString(profile.taglineAr), descriptionEn: stringValue(profile.descriptionEn), descriptionAr: optionalString(profile.descriptionAr) },
-    services: {
-      branches: { count: branches.length, names: branches.map((branch) => branch.name) },
-      trainers: { publishedCount: trainers.length, names: trainers.map((trainer) => stringValue(trainer.displayName)), specialties: trainers.flatMap((trainer) => arrayValue(trainer.specialties).map(String)), languages: trainers.flatMap((trainer) => arrayValue(trainer.languages).map(String)) },
-      ptPackages: { count: packages.length, names: packages.map((item) => stringValue(item.name)) },
-      plans: {
-        count: plans.length,
-        names: plans.map((plan) => stringValue(plan.name)),
-        freezeAvailable: plans.some((plan) => numberValue(plan.freezeAllowanceDays) > 0),
-        multiBranchAccess: plans.some((plan) => stringValue(plan.branchAccess, "all") === "all"),
-        includedTraining: plans.some((plan) => numberValue(plan.includedPtSessions) > 0),
-      },
-      classes: { count: classes.length, names: classes.map((session) => session.name) },
-      amenities: arrayValue(profile.amenities).map(String),
-      audience: stringValue(profile.audience, "All members"),
-      category: stringValue(profile.category, "Gym"),
-    },
-  });
-}
-
-function supportCaseLike(view: Data): SupportCaseLike {
-  return {
-    id: stringValue(view.id),
-    subject: stringValue(view.subject),
-    body: optionalString(view.body),
-    status: stringValue(view.status, "open"),
-    priority: stringValue(view.priority, "normal"),
-    requestType: optionalString(view.requestType),
-    requestedPlan: optionalString(view.requestedPlan),
-    billingInterval: optionalString(view.billingInterval),
-    branchName: optionalString(view.branchName),
-    creatorName: optionalString(view.creatorName),
-    createdAt: optionalString(view.createdAt),
-    updatedAt: optionalString(view.updatedAt),
-    resolutionSummary: optionalString(view.resolutionSummary),
-    messages: arrayValue(view.messages).map(data).map((message) => ({ id: stringValue(message.id), authorType: stringValue(message.authorType) === "platform" ? "platform" as const : "gym" as const, authorName: stringValue(message.authorName), body: stringValue(message.body), createdAt: stringValue(message.createdAt) })),
-  };
-}
-
-/**
- * One support case across tenants, for the platform team only: its passages
- * and the recorded facts about the gym that wrote it (subscription, ledger,
- * public page). Gym staff never read this projection; their own inbox shows
- * the case without review findings.
- */
-export async function supportReviewSource(ctx: ReadContext, admin: PlatformAdminContext, caseId: string): Promise<{ context: SupportReviewContext; organizationId: Id<"organizations"> }> {
-  const publicId = caseId.trim();
-  const record = publicId
-    ? await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "supportCase").eq("publicId", publicId)).unique()
-    : null;
-  if (!record) domainError("NOT_FOUND", "Support case not found.", { correlationId: admin.correlationId });
-  const organization = await ctx.db.get(record.organizationId);
-  if (!organization) domainError("NOT_FOUND", "Support case not found.", { correlationId: admin.correlationId });
-  const view = await supportCaseView(ctx, record);
-  const invoices = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
-    .map((row): Data => ({ id: row.publicId, ...data(row.data) }))
-    .sort((left, right) => stringValue(right.issuedAt ?? right.createdAt).localeCompare(stringValue(left.issuedAt ?? left.createdAt)));
-  const branches = (await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect()).filter((branch) => branch.active && branch.status !== "inactive");
-  const listing = (await marketplaceRows(ctx)).find((row) => row.organizationId === organization._id);
-  const listingValue = data(listing?.data);
-  const profileDraft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
-  const draftValue = profileDraft ? data(profileDraft.data) : undefined;
-  const publishedVersion = booleanValue(listingValue.profilePublished, false) ? numberValue(listingValue.profileVersion, 0) : 0;
-  const draftVersion = draftValue ? numberValue(draftValue.version) : undefined;
-  const facts: SupportFacts = {
-    gymId: publicOrganizationId(organization),
-    gymName: organization.name,
-    organizationStatus: organization.status,
-    plan: organization.subscriptionPlan,
-    billingInterval: organization.billingInterval,
-    currentPeriodEndsAt: organization.currentPeriodEndsAt ? utcIso(organization.currentPeriodEndsAt) : undefined,
-    trialEndsAt: organization.trialEndsAt ? utcIso(organization.trialEndsAt) : undefined,
-    branchCount: branches.length,
-    invoices: invoices.map((invoice) => ({
-      id: stringValue(invoice.id),
-      status: stringValue(invoice.status, "open"),
-      amount: optionalString(invoice.amount),
-      amountMinor: typeof invoice.amountMinor === "number" ? invoice.amountMinor : undefined,
-      currency: optionalString(invoice.currency),
-      date: optionalString(invoice.date),
-      issuedAt: optionalString(invoice.issuedAt),
-      dueAt: optionalString(invoice.dueAt),
-      paidAt: optionalString(invoice.paidAt),
-      periodStart: optionalString(invoice.periodStart),
-      periodEnd: optionalString(invoice.periodEnd),
-      billingInterval: optionalString(invoice.billingInterval),
-    })),
-    publicPage: { publishedVersion, draftVersion, draftAwaitingReview: Boolean(draftValue) && stringValue(draftValue?.status, "draft") === "draft" && (draftVersion ?? 0) > publishedVersion },
-  };
-  return { context: buildSupportReviewContext({ supportCase: supportCaseLike(view), gymId: facts.gymId, facts }), organizationId: organization._id };
-}
 
 /**
  * The member resolution workspace's deterministic context: charges and
@@ -2879,6 +2765,7 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
   return {
     id: application.publicId,
     gymName: application.gymName,
+    gymAddress: application.gymAddress ?? "",
     ownerName: application.ownerName,
     email: application.email,
     contactNumber: application.contactNumber,
@@ -5353,8 +5240,12 @@ function workspacePages(actor: ActorContext): Data[] {
     { id: "exports", title: "Data exports", subtitle: "Portable CSV datasets", href: "/exports", anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
     { id: "audit", title: "Audit log", subtitle: "Sensitive action history", href: "/audit", permission: "audit.read" },
     { id: "automations", title: "Automation monitoring", subtitle: "Rules, providers and execution history", href: "/automations", permission: "automations.manage" },
-    { id: "settings", title: "Settings", subtitle: "Organization, branches and team", href: "/settings", permission: "settings.manage" },
-    { id: "support", title: "Support", subtitle: "Cases and RIVET assistance", href: "/support" },
+    // Every active gym employee can open Settings for their personal profile;
+    // the page filters organization sections and each server mutation still
+    // enforces its own permission.
+    { id: "settings", title: "Settings", subtitle: "Profile, organization and team", href: "/settings" },
+    { id: "settings-my-profile", title: "My profile", subtitle: "Display name and phone", href: "/settings?section=my-profile" },
+    { id: "support", title: "Support", subtitle: "Cases", href: "/support" },
   ];
   return rows.filter((row) => (!row.permission || actor.permissions.includes(row.permission)) && (!row.anyPermission || row.anyPermission.some((permission) => actor.permissions.includes(permission))));
 }
@@ -5400,6 +5291,11 @@ function pinnedWorkspaceItemView(row: Doc<"pinnedWorkspaceItems">): Data {
 }
 
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  if (operation === "users.profile.get") {
+    const actor = await requireActor(ctx, request);
+    return { id: publicUserId(actor.user), name: actor.user.fullName, email: actor.user.email, phone: actor.user.phone ?? "" };
+  }
+
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
     return await buildSession(ctx, actor, request.activeBranchId);
@@ -5729,11 +5625,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     });
     return { gyms, bookings, invoices, supportCases: supportCaseViews, applications, auditEvents, plans, overview };
   }
-  if (operation === "platform.support.review") {
-    const admin = await requirePlatformAdmin(ctx, request.correlationId);
-    return (await supportReviewSource(ctx, admin, stringValue(input.caseId))).context;
-  }
-
   if (operation === "platform.gym.detail") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const gymId = recordId(input.gymId);
@@ -5759,6 +5650,30 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
 
     let branches: Array<{ id: string; name: string; code: string; address?: string; phone?: string; status: "active" | "inactive" }> = [];
+    let members: Array<{
+      id: string;
+      memberNumber: string;
+      name: string;
+      status: "active" | "inactive" | "archived";
+      branchId?: string;
+      branchName?: string;
+      membershipStatus?: string;
+      planName?: string;
+      membershipEndDate?: string;
+      joinedAt?: string;
+    }> = [];
+    let staff: Array<{
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      status: "active" | "invited" | "deactivated";
+      branchScope: "all" | "selected";
+      branchIds: string[];
+      branchNames: string[];
+      invitationStatus?: "pending" | "accepted" | "revoked";
+      joinedAt?: string;
+    }> = [];
     let owner: { name: string; email: string; phone?: string } | undefined;
     let agreement: (Record<string, unknown> & { id: string; reference: string; status: string }) | undefined;
     let memberCount = 0;
@@ -5789,15 +5704,91 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (ownerUser) owner = { name: ownerUser.fullName, email: ownerUser.email, phone: ownerUser.phone };
       agreement = await agreementSummaryForOrganization(ctx, organization._id, organization.name) as (Record<string, unknown> & { id: string; reference: string; status: string }) | undefined;
 
-      const [memberRows, planRows, ruleRows, paymentRows] = await Promise.all([
+      const [memberRows, planRows, ruleRows, paymentRows, membershipDetailRows, tenantPlanRows, staffUsers] = await Promise.all([
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect(),
         platformPlans(ctx),
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "automationRule")).collect(),
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "payment")).collect(),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership")).collect(),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "plan")).collect(),
+        Promise.all(membershipRows.map((membership) => ctx.db.get(membership.userId))),
       ]);
       memberCount = memberRows.filter((member) => stringValue(data(member.data).status) === "active").length;
       automationRuleCount = ruleRows.length;
       paymentTransactionCount = paymentRows.length;
+
+      const branchById = new Map<string, typeof branchRows[number]>();
+      for (const branch of branchRows) {
+        branchById.set(publicBranchId(branch), branch);
+        branchById.set(String(branch._id), branch);
+      }
+      const plansById = new Map(tenantPlanRows.map((row) => [row.publicId, data(row.data)]));
+      const membershipsByMember = new Map<string, Data[]>();
+      for (const row of membershipDetailRows) {
+        const membership = data(row.data);
+        const memberId = optionalString(membership.memberId);
+        if (!memberId) continue;
+        const values = membershipsByMember.get(memberId) ?? [];
+        values.push(membership);
+        membershipsByMember.set(memberId, values);
+      }
+      const membershipRank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
+      const today = todayIn(organization.timezone || TZ_FALLBACK);
+      const validMemberStatus = (value: string): "active" | "inactive" | "archived" => ["active", "inactive", "archived"].includes(value) ? value as "active" | "inactive" | "archived" : "active";
+      // Keep every current member record in this tenant. Merged rows are
+      // historical aliases and are intentionally omitted, matching the gym's
+      // own member directory without leaking another tenant's data.
+      members = memberRows
+        .map((row) => ({ row, value: data(row.data) }))
+        .filter(({ value }) => !optionalString(value.mergedIntoMemberId))
+        .map(({ row, value }) => {
+          const memberId = stringValue(value.id, row.publicId);
+          const membership = (membershipsByMember.get(memberId) ?? [])
+            .map((candidate) => ({ candidate, status: statusOfMembership(candidate, today) }))
+            .sort((left, right) => (membershipRank[left.status] ?? 5) - (membershipRank[right.status] ?? 5) || stringValue(right.candidate.endDate).localeCompare(stringValue(left.candidate.endDate)))[0]?.candidate;
+          const branchId = optionalString(value.homeBranchId);
+          const branch = branchId ? branchById.get(branchId) : undefined;
+          const memberStatus = validMemberStatus(stringValue(value.status, "active"));
+          const plan = membership ? plansById.get(stringValue(membership.planId)) : undefined;
+          return {
+            id: memberId,
+            memberNumber: stringValue(value.memberNumber, memberId),
+            name: stringValue(value.fullName, stringValue(value.memberNumber, memberId)),
+            status: memberStatus,
+            ...(branchId ? { branchId } : {}),
+            ...(branch ? { branchName: branch.name } : {}),
+            ...(membership ? { membershipStatus: statusOfMembership(membership, today), planName: optionalString(plan?.name), membershipEndDate: optionalString(membership.endDate) } : {}),
+            ...(optionalString(value.createdAt) ? { joinedAt: optionalString(value.createdAt) } : {}),
+          };
+        });
+
+      const userById = new Map(staffUsers.flatMap((user) => user ? [[String(user._id), user], [publicUserId(user), user]] : []));
+      const accountStatus = (membership: typeof membershipRows[number], user: NonNullable<typeof staffUsers[number]>): "active" | "invited" | "deactivated" => {
+        if (!membership.active || membership.invitationStatus === "revoked" || user.status === "deactivated") return "deactivated";
+        if (membership.invitationStatus === "pending" || user.status === "invited") return "invited";
+        return "active";
+      };
+      staff = membershipRows.flatMap((membership, index) => {
+        const user = staffUsers[index] ? userById.get(String(staffUsers[index]!._id)) : undefined;
+        if (!user) return [];
+        const branchScope = membership.branchScope ?? (membership.role === "owner" || membership.role === "manager" ? "all" : "selected");
+        const assignedBranches = membership.branchIds.map((branchId) => branchById.get(String(branchId))).filter((branch): branch is typeof branchRows[number] => Boolean(branch));
+        const branchIds = assignedBranches.map((branch) => publicBranchId(branch));
+        const branchNames = assignedBranches.map((branch) => branch.name);
+        const invitationStatus = membership.invitationStatus ?? (user.status === "invited" ? "pending" : user.status === "active" ? "accepted" : undefined);
+        return [{
+          id: publicUserId(user),
+          name: user.fullName,
+          email: user.email,
+          role: toFrontendRole(membership.role),
+          status: accountStatus(membership, user),
+          branchScope,
+          branchIds,
+          branchNames,
+          ...(invitationStatus ? { invitationStatus } : {}),
+          joinedAt: utcIso(membership.createdAt),
+        }];
+      });
       const configuredPlan = planRows.find((plan) => stringValue(data(plan).name) === effectivePlan);
       const configuredStaffLimit = configuredPlan ? data(configuredPlan).staff : undefined;
       if (typeof configuredStaffLimit === "number" && Number.isFinite(configuredStaffLimit)) staffLimit = configuredStaffLimit;
@@ -5874,6 +5865,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
           }
         : undefined,
       branches,
+      members,
+      staff,
       owner,
       agreement,
       usage: { memberCount, activeStaffCount, staffLimit, automationRuleCount, paymentTransactionCount },
@@ -6017,8 +6010,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "profiles.manage");
       return await currentGymProfile(ctx, actor);
     }
-    case "profiles.gym.review":
-      return await gymProfileReviewContextData(ctx, actor);
     case "profiles.gym.versions": {
       requirePermission(actor, "profiles.manage");
       const versions = (await recordsOf(ctx, actor, "gymProfileVersion")).sort((left, right) => numberValue(data(right.data).version) - numberValue(data(left.data).version));
@@ -7026,7 +7017,6 @@ function memberImportView(value: Data, includeRows: boolean): Data {
     columnMapping: data(value.columnMapping),
     migrationCutoffDate: optionalString(value.migrationCutoffDate),
     planMappings: data(value.planMappings),
-    assist: importAssistProvenance(value.assist),
     membershipRows: numberValue(value.membershipRows),
     openingBalanceRows: numberValue(value.openingBalanceRows),
     historicalEvidenceRows: numberValue(value.historicalEvidenceRows),
@@ -7145,10 +7135,9 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
   const sourceHeaders = arrayValue(input.sourceHeaders).slice(0, 100).map((header) => stringValue(header).slice(0, 160));
   const columnMapping = data(input.columnMapping);
   const rawPlanMappings = Object.fromEntries(Object.entries(data(input.planMappings)).filter(([, value]) => typeof value === "string"));
-  const assist = importAssistProvenance(input.assist);
-  const value = { id, branchId, rows: previewRows, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => numberValue(row.openingBalanceMinor) > 0).length, historicalEvidenceRows: previewRows.filter((row) => numberValue(row.historicalPaidMinor) > 0).length, currency: actor.organization.currency, migrationCutoffDate, planMappings: rawPlanMappings, nextCursor: 0, committedCount: 0, skippedCount: 0, createdMembers: [], status: "preview", sourceFileName, sourceKind, sourceHeaders, columnMapping, assist, createdAt: isoNow(), createdById: publicUserId(actor.user) };
+  const value = { id, branchId, rows: previewRows, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => numberValue(row.openingBalanceMinor) > 0).length, historicalEvidenceRows: previewRows.filter((row) => numberValue(row.historicalPaidMinor) > 0).length, currency: actor.organization.currency, migrationCutoffDate, planMappings: rawPlanMappings, nextCursor: 0, committedCount: 0, skippedCount: 0, createdMembers: [], status: "preview", sourceFileName, sourceKind, sourceHeaders, columnMapping, createdAt: isoNow(), createdById: publicUserId(actor.user) };
   await insertRecord(ctx, actor, "memberImport", value, { branchId });
-  await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member migration · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows, including ${value.membershipRows} membership terms`, branchId, after: { migrationCutoffDate, membershipRows: value.membershipRows, openingBalanceRows: value.openingBalanceRows, historicalEvidenceRows: value.historicalEvidenceRows, assistedColumns: assist?.columns ?? [], assistedPlans: assist?.plans.length ?? 0 } });
+  await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member migration · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows, including ${value.membershipRows} membership terms`, branchId, after: { migrationCutoffDate, membershipRows: value.membershipRows, openingBalanceRows: value.openingBalanceRows, historicalEvidenceRows: value.historicalEvidenceRows } });
   return memberImportView({ ...value, createdAt: utcIso(now) }, true);
 }
 
@@ -7245,53 +7234,6 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
   await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `${stringValue(plan.name)} membership history imported`, body: `${stringValue(row.membershipStartDate)} → ${stringValue(row.membershipEndDate)} · source cutoff ${stringValue(importData.migrationCutoffDate)}`, meta: { importBatchId: importData.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
   await insertAudit(ctx, actor, { category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(plan.name)}`, summary: `Imported active or scheduled membership history from row ${numberValue(row.rowNumber)}`, branchId: stringValue(importData.branchId), after: { startDate: row.membershipStartDate, endDate: row.membershipEndDate, activeFreeze: Boolean(activeFreeze), openingBalanceMinor: numberValue(row.openingBalanceMinor), historicalPaidMinor: numberValue(row.historicalPaidMinor), importBatchId: importData.id, financialPostingEligible: false } });
   return { membershipId, membershipVersion: String(membershipRecord.updatedAt), chargeId, chargeVersion, evidenceId, evidenceVersion };
-}
-
-/**
- * Which mappings came from an accepted Jev suggestion. Kept with the import
- * record and its preview audit so a migration can be reviewed later; the
- * suggestion itself never changed a mapping without a person accepting it.
- */
-function importAssistProvenance(value: unknown): { draftId?: string; columns: string[]; plans: string[] } | undefined {
-  const record = data(value);
-  const columns = [...new Set(arrayValue(record.columns).map(String).filter(isImportField))];
-  const plans = [...new Set(arrayValue(record.plans).map(String).map((label) => label.trim().slice(0, IMPORT_MAX_PLAN_LABEL_LENGTH)).filter(Boolean))].slice(0, IMPORT_MAX_PLAN_LABELS);
-  const draftId = optionalString(record.draftId)?.slice(0, 80);
-  if (!columns.length && !plans.length && !draftId) return undefined;
-  return { ...(draftId ? { draftId } : {}), columns, plans };
-}
-
-function importColumnCount(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
-}
-
-/**
- * Saves what import assistance may reason about for one file: the headings,
- * a value-shape summary per column (counts only, never cell values) and the
- * legacy plan labels with their row counts. Member rows stay in the browser
- * until the normal preview. One draft per person; expired drafts are pruned.
- */
-async function saveMemberImportAssistDraft(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
-  requirePermission(actor, "members.write");
-  const branchId = recordId(input.branchId);
-  assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
-  const headers = arrayValue(input.headers).slice(0, IMPORT_MAX_COLUMNS).map((header) => stringValue(header).trim().slice(0, IMPORT_MAX_HEADING_LENGTH));
-  if (!headers.length) domainError("VALIDATION_ERROR", "The import draft needs at least one column heading.", { correlationId: actor.correlationId });
-  if (arrayValue(input.columns).length > IMPORT_MAX_COLUMNS) domainError("VALIDATION_ERROR", `Import assistance handles at most ${IMPORT_MAX_COLUMNS} columns.`, { correlationId: actor.correlationId });
-  const summaryKeys = ["filled", "empty", "distinct", "numeric", "dateLike", "phoneLike", "emailLike", "alphabetic", "arabicScript", "minLength", "maxLength"] as const;
-  const columns = headers.map((heading, index) => {
-    const summary = data(arrayValue(input.columns)[index]);
-    return { index, heading, ...Object.fromEntries(summaryKeys.map((key) => [key, importColumnCount(summary[key])])) };
-  });
-  const sourcePlanLabels = arrayValue(input.sourcePlanLabels).slice(0, IMPORT_MAX_PLAN_LABELS).map(data).map((entry) => ({ label: stringValue(entry.label).trim().slice(0, IMPORT_MAX_PLAN_LABEL_LENGTH), rows: importColumnCount(entry.rows) })).filter((entry) => entry.label);
-  const now = Date.now();
-  for (const existing of await recordsOf(ctx, actor, "memberImportDraft")) {
-    const value = data(existing.data);
-    if (stringValue(value.createdById) === publicUserId(actor.user) || numberValue(value.expiresAt) < now) await ctx.db.delete(existing._id);
-  }
-  const value = { id: newPublicId(), branchId, sourceKind: ["csv", "xlsx", "pasted"].includes(stringValue(input.sourceKind)) ? stringValue(input.sourceKind) : "csv", sourceFileName: optionalString(input.sourceFileName)?.trim().slice(0, 180), headers, columns, sourcePlanLabels, createdById: publicUserId(actor.user), createdAt: isoNow(), expiresAt: now + IMPORT_DRAFT_TTL_MS };
-  await insertRecord(ctx, actor, "memberImportDraft", value, { branchId });
-  return { id: value.id, branchId, headers, columns, sourcePlanLabels, createdAt: value.createdAt, expiresAt: utcIso(value.expiresAt) };
 }
 
 async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -9917,8 +9859,6 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return await commitMemberImport(ctx, actor, input);
     case "members.import.undo":
       return await undoMemberImport(ctx, actor, input);
-    case "members.import.draft":
-      return await saveMemberImportAssistDraft(ctx, actor, input);
     case "members.create":
       return await createMemberMutation(ctx, actor, input);
     case "members.create_and_sell":
@@ -11919,6 +11859,41 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const updated = await ctx.db.get(user._id);
       const nextMembership = await ctx.db.get(membership._id);
       return { id: publicUserId(updated ?? user), organizationId: publicOrganizationId(actor.organization), name: (updated ?? user).fullName, email: (updated ?? user).email, phone: (updated ?? user).phone ?? "", role: frontendRole((nextMembership ?? membership).role), branchScope: (nextMembership ?? membership).branchScope ?? "selected", branchIds: await Promise.all((nextMembership ?? membership).branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: organizationUserStatus(updated ?? user, nextMembership ?? membership) };
+    }
+    case "users.profile.update": {
+      // This operation is deliberately self-scoped. The authenticated actor
+      // is the only user row that may be changed; callers never supply a
+      // target user id, so a staff member cannot turn profile editing into an
+      // access-management mutation.
+      const name = stringValue(input.name).trim().replace(/\s+/g, " ");
+      if (name.length < 2 || name.length > 160) {
+        domainError("VALIDATION_ERROR", "Display name must be between 2 and 160 characters.", {
+          correlationId: actor.correlationId,
+          fieldErrors: { name: ["Enter a display name between 2 and 160 characters."] },
+        });
+      }
+      const rawPhone = input.phone === undefined ? actor.user.phone ?? "" : stringValue(input.phone).trim();
+      const phone = rawPhone ? normalizePhoneForStorage(rawPhone, organizationPhoneCountryCallingCode(actor.organization)) : "";
+      if (phone && (phone.length < 9 || phone.length > 18 || !LEAD_PHONE_PATTERN.test(phone))) {
+        domainError("VALIDATION_ERROR", "Enter a valid phone number or leave it blank.", {
+          correlationId: actor.correlationId,
+          fieldErrors: { phone: ["Enter a valid phone number or leave it blank."] },
+        });
+      }
+      const before = { name: actor.user.fullName, phone: actor.user.phone ?? "" };
+      const now = Date.now();
+      await ctx.db.patch(actor.user._id, { fullName: name, profileNameUpdatedAt: now, phone: phone || undefined, updatedAt: now });
+      await insertAudit(ctx, actor, {
+        category: "users",
+        action: "user.profile_update",
+        entityType: "user",
+        entityId: publicUserId(actor.user),
+        entityLabel: name,
+        summary: "Personal account profile updated",
+        before,
+        after: { name, phone },
+      });
+      return { id: publicUserId(actor.user), name, email: actor.user.email, phone };
     }
     case "roles.update": {
       requirePermission(actor, "users.manage");

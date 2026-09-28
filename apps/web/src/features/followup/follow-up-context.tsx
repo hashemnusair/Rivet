@@ -1,6 +1,5 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -10,14 +9,8 @@ import { DateText, DaysUntilText, MoneyText, RelativeText } from "@/components/s
 import { qk } from "@/lib/api/keys";
 import type { FollowUpEvidence, MemberFollowUpContext } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
-import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDate, formatTime } from "@/lib/utils/dates";
-import { AssistSuggestion } from "@/features/assist/assist-suggestion";
-import { percent } from "@/features/assist/assist-judgment";
-import { useAssistJudgment, type AssistReadyResult } from "@/features/assist/use-assist-judgment";
-import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
-import { eligibleReminderTemplates, reminderTemplateUnavailableReason, renderReminderForMember, resolveReminderTemplateReading, resolveRenewalContextReading } from "../../../convex/followupAssist";
 
 /**
  * The member's recorded follow-up context, as the member workspace and the
@@ -26,9 +19,8 @@ import { eligibleReminderTemplates, reminderTemplateUnavailableReason, renderRem
  * consent and suppression, quiet hours, the reminders RIVET queued (with
  * wording that never says "delivered"), the last contact, an agreed
  * callback, the recorded evidence with a link to each timeline event, and
- * the open work. Two optional Jev suggestions sit on top: which recorded
- * item matters most for the conversation, and whether an approved template
- * fits or staff should write the message. Nothing here sends anything.
+ * the open work. Staff decide what matters and what to send from the recorded
+ * context; this panel only presents the facts and their evidence.
  */
 export function useMemberFollowUpContext(memberId: string | undefined, enabled = true) {
   const query = useApiQuery(qk.memberFollowUpContext(memberId ?? ""), (api) => api.getMemberFollowUpContext(memberId ?? ""), { enabled: enabled && Boolean(memberId), refetchOnWindowFocus: false });
@@ -72,7 +64,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export function FollowUpContextPanel({ memberId, variant = "workspace", className }: { memberId: string; variant?: "workspace" | "renewal"; className?: string }) {
-  const { session } = useApp();
   const { context, isLoading, isError, refetch } = useMemberFollowUpContext(memberId);
   const [showAll, setShowAll] = useState(false);
   if (isLoading && !context) return <Skeleton className="h-24 w-full" data-testid="follow-up-context-loading" />;
@@ -159,98 +150,6 @@ export function FollowUpContextPanel({ memberId, variant = "workspace", classNam
         </div>
       ) : null}
 
-      <RenewalContextHighlight context={context} />
-      <ReminderTemplateSuggestion context={context} organizationName={session?.organization.name} />
     </section>
-  );
-}
-
-/** Which recorded item matters most for the renewal conversation. Each item keeps its evidence link. */
-export function RenewalContextHighlight({ context }: { context: MemberFollowUpContext }) {
-  const suggestion = useAssistJudgment({ questionKey: "followup.renewal_context", subject: { memberId: context.memberId }, auto: false });
-  if (!suggestion.featureReady || context.evidence.length === 0) return null;
-  const render = (result: AssistReadyResult) => {
-    const reading = resolveRenewalContextReading(result.judgment, context.evidence);
-    if (reading.kind === "none") return <p data-testid="renewal-context-none">Nothing recorded changes how this conversation should go.</p>;
-    return (
-      <ul className="space-y-1.5" data-testid="renewal-context-items">
-        {reading.items.map((item, index) => <EvidenceLine key={item.evidence.id} item={item.evidence} memberId={context.memberId} lead={`${index === 0 ? "Most relevant" : "Also"} · ${percent(item.probability)}`} />)}
-      </ul>
-    );
-  };
-  return (
-    <div className="space-y-2" data-testid="renewal-context-highlight">
-      <Button type="button" size="xs" variant="secondary" onClick={suggestion.request} loading={suggestion.state.status === "loading"} aria-label="Highlight what matters">
-        <Sparkles /> {suggestion.state.status === "ready" ? "Highlight again" : "Highlight what matters"}
-      </Button>
-      <AssistSuggestion suggestion={suggestion} title="Before you talk about renewing" render={render} actions={<Button type="button" size="sm" variant="ghost" onClick={suggestion.dismiss}>Close</Button>} testId="renewal-context-card" />
-    </div>
-  );
-}
-
-/**
- * An approved reminder template for the term's timing, or staff review. The
- * page decides the gates: an explicit opt-out offers nothing; unknown
- * consent shows the suppression; quiet hours are named. "Use in WhatsApp"
- * opens the normal handoff with the text ready, which logs an opened
- * handoff and never claims a send.
- */
-export function ReminderTemplateSuggestion({ context, organizationName }: { context: MemberFollowUpContext; organizationName?: string }) {
-  const suggestion = useAssistJudgment({ questionKey: "followup.reminder_template", subject: { memberId: context.memberId }, auto: false });
-  const [handoffMessage, setHandoffMessage] = useState<string>();
-  if (!suggestion.featureReady) return null;
-  const optedOut = context.messaging.consent === "explicit_opt_out" || context.messaging.channelOptedOut;
-  if (optedOut) return <p className="text-[12px] text-ink-3" data-testid="reminder-blocked">No message suggestions: this member opted out of renewal messages. Call instead.</p>;
-  // The same deterministic gate the loader applies: nothing is asked when no approved template fits the timing.
-  if (reminderTemplateUnavailableReason(context)) return null;
-  const offered = eligibleReminderTemplates(context);
-  const gym = organizationName ?? "RIVET";
-  const whyStaff = context.callback?.future
-    ? `a callback is agreed for ${context.callback.dueAt ? formatDate(context.callback.dueAt) : "later"}`
-    : context.evidence.some((item) => item.topics.includes("complaint"))
-      ? "a possible complaint is recorded"
-      : context.lastContact?.outcome === "answered_not_interested"
-        ? "the last contact declined"
-        : undefined;
-  const bodyFor = (result: AssistReadyResult) => {
-    const reading = resolveReminderTemplateReading(result.judgment, offered);
-    return reading.kind === "template" ? { reading, body: renderReminderForMember(reading.template, context, gym) } : { reading, body: undefined };
-  };
-  const render = (result: AssistReadyResult) => {
-    const { reading, body } = bodyFor(result);
-    if (reading.kind === "staff_review" || !body) {
-      return (
-        <div data-testid="reminder-staff-review">
-          <p>Write this one yourself{whyStaff ? `: ${whyStaff}` : ""}. The standard reminder would read wrong here.</p>
-        </div>
-      );
-    }
-    return (
-      <div data-testid="reminder-template">
-        <p><strong>{reading.template.name}</strong> · approved utility template</p>
-        <blockquote dir="auto" className="mt-1 whitespace-pre-wrap rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12.5px] text-ink">{body}</blockquote>
-        {context.messaging.consent !== "explicit_opt_in" ? <p className="mt-1 text-[12px] text-warning-deep" data-testid="reminder-suppressed">RIVET&apos;s automated reminders are suppressed for this member{context.messaging.suppressionReason ? ` (${context.messaging.suppressionReason.toLowerCase()})` : ""}. A WhatsApp you open yourself is logged as opened, never as sent.</p> : null}
-        {context.messaging.quietHours.activeNow ? <p className="mt-1 text-[12px] text-warning-deep">Quiet hours now: a message would reach them during quiet hours. Consider waiting{context.messaging.quietHours.resumesAt ? ` until ${formatTime(context.messaging.quietHours.resumesAt)}` : ""}.</p> : null}
-      </div>
-    );
-  };
-  const actions = (result: AssistReadyResult) => {
-    const { reading, body } = bodyFor(result);
-    if (reading.kind === "staff_review" || !body) return <Button type="button" size="sm" variant="ghost" onClick={suggestion.dismiss}>Close</Button>;
-    return (
-      <>
-        <Button type="button" size="sm" onClick={() => setHandoffMessage(body)} data-testid="reminder-use-whatsapp">Use in WhatsApp</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={suggestion.dismiss}>Close</Button>
-      </>
-    );
-  };
-  return (
-    <div className="space-y-2" data-testid="reminder-suggestion">
-      <Button type="button" size="xs" variant="secondary" onClick={suggestion.request} loading={suggestion.state.status === "loading"} aria-label="Suggest a message">
-        <Sparkles /> {suggestion.state.status === "ready" ? "Suggest again" : "Suggest a message"}
-      </Button>
-      <AssistSuggestion suggestion={suggestion} title="Reminder message" render={render} actions={actions} testId="reminder-card" />
-      <WhatsAppHandoff subject="member" subjectId={context.memberId} recipientName={context.memberName} phone={context.phone ?? ""} organizationName={gym} initialMessage={handoffMessage} open={Boolean(handoffMessage)} onOpenChange={(open) => { if (!open) setHandoffMessage(undefined); }} hideTrigger />
-    </div>
   );
 }

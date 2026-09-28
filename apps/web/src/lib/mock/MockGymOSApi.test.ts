@@ -277,9 +277,20 @@ describe("workspace entitlement and preference boundary", () => {
 });
 
 describe("platform gym applications", () => {
+  it.each(["AB", "123", "1234"])("rejects a physical address shorter than five characters (%s)", async (gymAddress) => {
+    await expect(api.submitGymApplication({
+      gymName: `Short Address Gym ${gymAddress}`,
+      gymAddress,
+      ownerName: "Short Address Owner",
+      email: `short-${gymAddress}@example.test`,
+      contactNumber: "+962 79 700 0090",
+      plan: "Starter",
+    })).rejects.toMatchObject({ code: ERR.VALIDATION });
+  });
+
   it("persists the selected billing cadence through the application queue", async () => {
-    const submitted = await api.submitGymApplication({ gymName: "Annual Reconcile Gym", ownerName: "Annual Owner", email: "annual-owner@example.test", contactNumber: "+962 79 700 0000", plan: "Pro", billingInterval: "annual" });
-    expect((await api.listGymApplications()).find((application) => application.id === submitted.applicationId)).toMatchObject({ plan: "Pro", billingInterval: "annual" });
+    const submitted = await api.submitGymApplication({ gymName: "Annual Reconcile Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Annual Owner", email: "annual-owner@example.test", contactNumber: "+962 79 700 0000", plan: "Pro", billingInterval: "annual" });
+    expect((await api.listGymApplications()).find((application) => application.id === submitted.applicationId)).toMatchObject({ gymAddress: "12 Airport Road, Amman", plan: "Pro", billingInterval: "annual" });
   });
 
   it("delivers the current application queue through the mock subscription contract", async () => {
@@ -710,6 +721,12 @@ describe("platform subscription controls", () => {
     expect(forge.organization).toMatchObject({ state: "available", value: { name: "Forge Fitness Club" } });
     expect(forge.owner).toMatchObject({ state: "available", value: { name: "Omar Al-Khatib", email: "omar@forgefitness.jo" } });
     expect(forge.branches).toMatchObject({ state: "available", value: expect.arrayContaining([expect.objectContaining({ name: "Forge — Abdoun" })]) });
+    expect(forge.members).toMatchObject({ state: "available", value: expect.arrayContaining([expect.objectContaining({ memberNumber: expect.stringMatching(/^(ABD|SWF)-/), name: expect.any(String) })]) });
+    expect(forge.staff).toMatchObject({ state: "available", value: expect.arrayContaining([
+      expect.objectContaining({ name: "Omar Al-Khatib", email: "omar@forgefitness.jo", role: "owner", status: "active", branchScope: "all" }),
+      expect.objectContaining({ name: "Sanad Khries", status: "invited", invitationStatus: "pending" }),
+      expect.objectContaining({ name: "Rania Hijazi", status: "deactivated" }),
+    ]) });
     expect(forge.usage.memberCount.state).toBe("available");
     expect(forge.usage.paymentTransactionCount.state).toBe("available");
     expect(forge).not.toHaveProperty("health");
@@ -722,6 +739,8 @@ describe("platform subscription controls", () => {
     expect(directoryOnly.organization).toEqual({ state: "not_available" });
     expect(directoryOnly.owner).toEqual({ state: "not_available" });
     expect(directoryOnly.usage.memberCount).toEqual({ state: "not_available" });
+    expect(directoryOnly.members).toEqual({ state: "not_available" });
+    expect(directoryOnly.staff).toEqual({ state: "not_available" });
     expect(JSON.stringify(directoryOnly)).not.toContain("Omar Al-Khatib");
   });
 });
@@ -3272,38 +3291,5 @@ describe("moving a class to another weekday", () => {
     await api.addClassOccurrenceAttendee({ occurrenceId: `occ:${template.id}:${date}`, memberId: member.id, membershipId: membership.id });
     await expect(api.upsertClassSession({ sessionId: template.id, branchId, name: "Move test", dayOfWeek: (dayOfWeek + 1) % 7, startMinute: 23 * 60, durationMinutes: 45, capacity: 2, audience: "mixed" }))
       .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION && error.message.includes(date));
-  });
-});
-
-describe("Jev suggestions in the preview adapter", () => {
-  it("is off for a fresh gym, refuses non-managers, and answers from fixtures once switched on", async () => {
-    expect((await api.getAssistStatus())).toMatchObject({ mode: "fixture", ready: false, blockedReason: "tenant_off", tenant: { enabled: false }, canManage: true });
-    expect(await api.requestAssistJudgment({ questionKey: "foundation.refund_detected" })).toMatchObject({ status: "blocked", reason: "tenant_off" });
-
-    await api.switchDemoRole("receptionist");
-    await expect(api.updateAssistPreference({ enabled: true })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
-    await api.switchDemoRole("owner");
-
-    const status = await api.updateAssistPreference({ enabled: true, reason: "Pilot" });
-    expect(status).toMatchObject({ ready: true, readyMode: "fixture", tenant: { enabled: true, reason: "Pilot" } });
-    expect((await api.listAuditEvents({ pageSize: 3 })).items[0]).toMatchObject({ action: "settings.assist.update", reason: "Pilot" });
-
-    const first = await api.requestAssistJudgment({ questionKey: "foundation.note_urgency" });
-    const second = await api.requestAssistJudgment({ questionKey: "foundation.note_urgency" });
-    expect(first).toMatchObject({ status: "ready", source: "fixture", judgment: { kind: "score", level: 3 } });
-    expect(second).toMatchObject({ status: "ready", source: "cache" });
-    expect(await api.requestAssistJudgment({ questionKey: "foundation.plan_fit" })).toMatchObject({ status: "ready", judgment: { kind: "choice", choice: "plan_b" } });
-    expect(await api.requestAssistJudgment({ questionKey: "foundation.ticket_route", subject: { simulate: "invalid_output" } })).toMatchObject({ status: "unavailable", reason: "invalid_output", retryable: false });
-    expect((await api.getAssistStatus()).usage.tenantRequests).toBe(3);
-
-    await api.switchDemoRole("receptionist");
-    await expect(api.requestAssistJudgment({ questionKey: "foundation.refund_detected" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
-  });
-
-  it("honours the preview switch that turns Jev off entirely", async () => {
-    api.setBehavior({ assistMode: "off" });
-    await api.updateAssistPreference({ enabled: true });
-    expect(await api.getAssistStatus()).toMatchObject({ mode: "off", ready: false, blockedReason: "mode_off" });
-    expect(await api.requestAssistJudgment({ questionKey: "foundation.refund_detected" })).toMatchObject({ status: "blocked", reason: "mode_off" });
   });
 });

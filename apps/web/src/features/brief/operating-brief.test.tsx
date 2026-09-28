@@ -1,8 +1,7 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OperatingBrief } from "@/lib/domain/types";
-import type { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import { BRANCH_SWF } from "@/lib/mock/seed";
 import { formatMoney } from "@/lib/utils/money";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
@@ -14,7 +13,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 afterEach(() => { resetApiForTests(); router.push.mockReset(); });
 
-const enableAssist = async (api: MockGymOSApi) => { await api.updateAssistPreference({ enabled: true }); };
 const figureValue = (brief: OperatingBrief, section: string, key: string) => {
   const figure = brief.sections.find((entry) => entry.key === section)?.figures.find((entry) => entry.key === key);
   if (!figure) throw new Error(`figure ${section}.${key} missing`);
@@ -68,39 +66,12 @@ describe("operating brief", () => {
     expect(screen.getByTestId("brief-source-queue")).toHaveAttribute("data-status", "ok");
   });
 
-  it("stays useful with Jev off: the standard order leads and nothing asks the model", async () => {
+  it("uses the standard order and keeps the emphasis evidence deterministic", async () => {
     const { api } = await renderWithApp(<OperatingBriefPanel />, { role: "owner" });
-    const spy = vi.spyOn(api, "requestAssistJudgment");
     const brief = await api.getOperatingBrief({});
     await screen.findByTestId("brief-emphasis-default");
     expect(screen.getByTestId("brief-emphasis-default")).toHaveTextContent(briefEmphasis(brief.defaultEmphasis)!.heading);
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
-    expect(screen.queryByTestId("brief-emphasis-jev")).not.toBeInTheDocument();
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it("leads with Jev's prepared emphasis when the switch is on, and dismissing it changes nothing in the queue", async () => {
-    const user = userEvent.setup();
-    const { api } = await renderWithApp(<OperatingBriefPanel />, { role: "owner", prepare: enableAssist });
-    const brief = await api.getOperatingBrief({});
-    const card = await screen.findByTestId("brief-emphasis-jev");
-    expect(brief.mandatory.length).toBeGreaterThan(0);
-    expect(card).toHaveTextContent("Safety, cash and entry problems come first");
-    expect(within(card).getByTestId("brief-emphasis-evidence")).toHaveTextContent("Approvals, cash and entry");
-    expect(screen.queryByTestId("brief-emphasis-default")).not.toBeInTheDocument();
-    const before = screen.getAllByTestId("brief-mandatory-item").length;
-    await user.click(within(card).getByRole("button", { name: "Dismiss suggestion" }));
-    expect(screen.queryByTestId("brief-emphasis-jev")).not.toBeInTheDocument();
-    expect(screen.getByTestId("brief-emphasis-default")).toBeInTheDocument();
-    expect(screen.getAllByTestId("brief-mandatory-item")).toHaveLength(before);
-  });
-
-  it("falls back to the standard order when the model fails, with the whole queue still there", async () => {
-    const { api } = await renderWithApp(<OperatingBriefPanel />, { role: "owner", prepare: enableAssist });
-    vi.spyOn(api, "requestAssistJudgment").mockResolvedValue({ status: "unavailable", reason: "timeout", message: "Jev did not answer in time.", retryable: true, correlationId: "test" });
-    const brief = await api.getOperatingBrief({});
-    expect(await screen.findByTestId("brief-emphasis-jev-unavailable")).toHaveTextContent("Jev did not answer in time.");
-    expect(screen.getByTestId("brief-emphasis-default")).toHaveTextContent(briefEmphasis(brief.defaultEmphasis)!.heading);
+    expect(screen.getByTestId("brief-emphasis-evidence")).toBeInTheDocument();
     expect(screen.getAllByTestId("brief-mandatory-item")).toHaveLength(brief.mandatory.length);
   });
 
@@ -134,10 +105,9 @@ describe("operating brief", () => {
     await waitFor(() => expect(screen.getByTestId("brief-queue-toggle")).toHaveTextContent(`Complete queue · ${brief.totals.items}`));
   });
 
-  it("relates two similarly worded items only on request, reads conflicting descriptions as unclear, and lists both regardless", async () => {
+  it("discloses similarly worded items and lists both regardless", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperatingBriefPanel />, { role: "owner", prepare: async (api) => {
-      await enableAssist(api);
       const issues = await api.listEquipmentIssues();
       const issue = issues.find((candidate) => candidate.status !== "resolved");
       if (!issue) throw new Error("seed should hold an open machine report");
@@ -150,16 +120,13 @@ describe("operating brief", () => {
     const pairs = await screen.findAllByTestId("brief-related-pair");
     const row = pairs.find((candidate) => candidate.textContent?.includes("TREAD-01 belt fixed"))!;
     expect(row).toHaveTextContent("Belt slipping under load");
-    expect(screen.queryByTestId("brief-related")).not.toBeInTheDocument();
-    await user.click(await within(row).findByTestId("brief-related-check"));
-    expect(await within(row).findByTestId("brief-related-verdict")).toHaveTextContent("Unclear");
+    expect(row).toHaveTextContent("Review both records before acting");
     // Both items are still in the queue and the machine's recorded safety status is untouched.
     const issues = await api.listEquipmentIssues();
     expect(issues.find((candidate) => candidate.title === "Belt slipping under load")).toMatchObject({ safetyStatus: "out_of_service" });
     await user.click(screen.getByTestId("brief-queue-toggle"));
     const ids = screen.getAllByTestId("brief-queue-item").map((entry) => entry.getAttribute("data-item-id"));
     expect(ids).toEqual(expect.arrayContaining([pair!.firstId, pair!.secondId]));
-    expect(screen.queryByTestId("brief-item-related")).not.toBeInTheDocument();
   });
 
   it("shows the empty state when nothing is unresolved in scope", async () => {

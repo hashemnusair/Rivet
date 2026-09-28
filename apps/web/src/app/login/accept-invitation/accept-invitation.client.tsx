@@ -4,9 +4,10 @@ import { useAuth, useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
 import { useAction } from "convex/react";
 import { ArrowRight, CircleAlert, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -73,6 +74,8 @@ export function AcceptInvitation() {
   // to be signed out even though Clerk itself never reports as loaded.
   const identityKnown = authLoaded || DEMO_AUTH_BYPASS;
   const signedIn = authLoaded && Boolean(isSignedIn);
+  const [invitationFlowStarted, setInvitationFlowStarted] = useState(false);
+  const markInvitationFlowStarted = useCallback(() => setInvitationFlowStarted(true), []);
 
   useEffect(() => {
     if (status === "complete" && signedIn) router.replace("/login");
@@ -94,7 +97,14 @@ export function AcceptInvitation() {
     return <InvitationFrame><InvitationProgress state="processing" /></InvitationFrame>;
   }
 
-  if (signedIn) {
+  // Do not mount the ticket flow while Clerk is still hydrating. A session
+  // that is about to become visible must be treated as preexisting so the
+  // invitation cannot auto-claim it for the wrong account.
+  if (!identityKnown) {
+    return <InvitationFrame><InvitationProgress state="processing" /></InvitationFrame>;
+  }
+
+  if (signedIn && !invitationFlowStarted) {
     return <InvitationFrame><InvitationConflict onSignOut={() => void signOut({ redirectUrl: window.location.href })} /></InvitationFrame>;
   }
 
@@ -102,10 +112,10 @@ export function AcceptInvitation() {
     return <InvitationFrame><InvitationError tone="done" title="Invitations need the connected RIVET backend" body="This build has no identity service connected, so an invitation cannot be verified or accepted here. Open the link on the RIVET address in your invitation email." action="Back to sign in" /></InvitationFrame>;
   }
 
-  return <InvitationFlow ticket={ticket} status={status} />;
+  return <InvitationFlow ticket={ticket} status={status} onSignInStarted={markInvitationFlowStarted} />;
 }
 
-function InvitationFlow({ ticket, status }: { ticket: string; status: "sign_in" | "sign_up" }) {
+function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; status: "sign_in" | "sign_up"; onSignInStarted: () => void }) {
   const router = useRouter();
   const { fetchStatus: signInFetchStatus, signIn } = useSignIn();
   const { fetchStatus: signUpFetchStatus, signUp } = useSignUp();
@@ -118,6 +128,7 @@ function InvitationFlow({ ticket, status }: { ticket: string; status: "sign_in" 
 
   useEffect(() => {
     if (status !== "sign_in" || !signIn || signInFetchStatus === "fetching" || attempted.current) return;
+    onSignInStarted();
     attempted.current = true;
     setState("processing");
     void (async () => {
@@ -137,7 +148,7 @@ function InvitationFlow({ ticket, status }: { ticket: string; status: "sign_in" 
       setState("error");
       setError(invitationErrorMessage(reason));
     });
-  }, [claimInvitation, router, signIn, signInFetchStatus, status, ticket]);
+  }, [claimInvitation, onSignInStarted, router, signIn, signInFetchStatus, status, ticket]);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -155,6 +166,7 @@ function InvitationFlow({ ticket, status }: { ticket: string; status: "sign_in" 
 
     setFieldErrors({});
     setError(undefined);
+    onSignInStarted();
     setState("processing");
     try {
       const result = await signUp.create({
@@ -195,8 +207,8 @@ function InvitationFlow({ ticket, status }: { ticket: string; status: "sign_in" 
               <Field label="First name" htmlFor="invitation-first-name" error={fieldErrors.firstName} required><Input id="invitation-first-name" autoComplete="given-name" autoFocus value={values.firstName} onChange={(event) => setValues((current) => ({ ...current, firstName: event.target.value }))} /></Field>
               <Field label="Last name" htmlFor="invitation-last-name" error={fieldErrors.lastName} required><Input id="invitation-last-name" autoComplete="family-name" value={values.lastName} onChange={(event) => setValues((current) => ({ ...current, lastName: event.target.value }))} /></Field>
             </div>
-            <Field label="Password" htmlFor="invitation-password" hint="At least 8 characters" error={fieldErrors.password} required><Input id="invitation-password" type="password" autoComplete="new-password" value={values.password} onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))} /></Field>
-            <Field label="Confirm password" htmlFor="invitation-confirm-password" error={fieldErrors.confirmPassword} required><Input id="invitation-confirm-password" type="password" autoComplete="new-password" value={values.confirmPassword} onChange={(event) => setValues((current) => ({ ...current, confirmPassword: event.target.value }))} /></Field>
+            <Field label="Password" htmlFor="invitation-password" hint="At least 8 characters" error={fieldErrors.password} required><PasswordInput id="invitation-password" autoComplete="new-password" value={values.password} onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))} aria-describedby={fieldErrors.password ? "invitation-password-error" : "invitation-password-hint"} /></Field>
+            <Field label="Confirm password" htmlFor="invitation-confirm-password" error={fieldErrors.confirmPassword} required><PasswordInput id="invitation-confirm-password" autoComplete="new-password" value={values.confirmPassword} onChange={(event) => setValues((current) => ({ ...current, confirmPassword: event.target.value }))} aria-describedby={fieldErrors.confirmPassword ? "invitation-confirm-password-error" : undefined} /></Field>
             {error ? <p className="flex items-start gap-2 rounded-md border border-danger/25 bg-danger-bg px-3 py-2.5 text-[12px] leading-relaxed text-danger" role="alert"><CircleAlert className="mt-0.5 size-4 shrink-0" />{error}</p> : null}
             <Button type="submit" size="lg" className="mt-1 w-full" loading={signUpFetchStatus === "fetching"} disabled={signUpFetchStatus === "fetching"}>Open gym workspace <ArrowRight className="size-4" /></Button>
           </form>

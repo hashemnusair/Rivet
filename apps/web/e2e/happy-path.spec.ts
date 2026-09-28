@@ -200,12 +200,14 @@ test.describe("role restrictions", () => {
     await expect(page.getByText("All 2 branches, consolidated.")).toBeVisible();
   });
 
-  test("hides finance and system areas from reception", async ({ page }) => {
+  test("keeps finance restricted while exposing personal Settings to reception", async ({ page }) => {
     await signIn(page, "Reception");
     const nav = page.getByRole("navigation").first();
     await expect(nav.getByRole("link", { name: /^Payments$/ })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: /^Audit log$/ })).toHaveCount(0);
-    await expect(nav.getByRole("link", { name: /^Settings$/ })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
+    await page.goto("/settings?section=organization");
+    await expect(page.getByText(/needs the Manage settings permission/i)).toBeVisible();
   });
 
   test("refuses the transaction ledger by URL, not just by hiding the link", async ({ page }) => {

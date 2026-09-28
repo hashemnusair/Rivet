@@ -23,7 +23,6 @@ async function memberWithoutTasks(api: MockGymOSApi): Promise<MemberSummary> {
 }
 
 async function prepare(api: MockGymOSApi, existing: Pick<Task, "type" | "title">): Promise<{ member: MemberSummary; task: Task }> {
-  await api.updateAssistPreference({ enabled: true });
   const member = await memberWithoutTasks(api);
   const session = await api.getSession();
   const task = await api.createFollowUp({ type: existing.type, title: existing.title, ownerId: session.user.id, dueAt: later(2), memberId: member.id });
@@ -37,20 +36,19 @@ function Probe({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
 }
 
 describe("related open work when creating a task", () => {
-  it("lists open work, points at the same work, and links the new task only on an explicit follow-on", async () => {
+  it("lists open work and links the new task only on an explicit follow-on", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
     let seeded: { member: MemberSummary; task: Task } | undefined;
     const { api } = await renderWithApp(<Probe onOpenChange={onOpenChange} />, { prepare: async (mock) => { seeded = await prepare(mock, { type: "follow_up", title: "Follow up — about the class schedule" }); } });
     const related = await screen.findByTestId("related-work");
     await waitFor(() => expect(related).toHaveTextContent("Follow up — about the class schedule"));
-    await user.click(screen.getByRole("button", { name: "Check for related work" }));
-    const card = await screen.findByTestId("related-task-card");
-    expect(within(card).getByTestId("related-task-match")).toHaveTextContent("same work as “Follow up — about the class schedule”");
+    expect(within(related).getByRole("button", { name: "Keep the existing task" })).toBeInTheDocument();
+    expect(within(related).getByTestId("related-task-link")).toBeInTheDocument();
 
     const before = await api.listTasks({ status: "open", memberId: seeded!.member.id, pageSize: 10 });
     expect(before.totalItems).toBe(1);
-    await user.click(within(card).getByRole("button", { name: "Create as follow-on" }));
+    await user.click(within(related).getByRole("button", { name: "Create as follow-on" }));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     const after = await api.listTasks({ status: "open", memberId: seeded!.member.id, pageSize: 10 });
     expect(after.totalItems).toBe(2);
@@ -65,21 +63,19 @@ describe("related open work when creating a task", () => {
     const onOpenChange = vi.fn();
     let seeded: { member: MemberSummary; task: Task } | undefined;
     const { api } = await renderWithApp(<Probe onOpenChange={onOpenChange} />, { prepare: async (mock) => { seeded = await prepare(mock, { type: "follow_up", title: "Follow up — renewal chat" }); } });
-    await screen.findByTestId("related-work");
-    await user.click(await screen.findByRole("button", { name: "Check for related work" }));
-    const card = await screen.findByTestId("related-task-card");
+    const related = await screen.findByTestId("related-work");
     await api.completeTask(seeded!.task.id, { outcome: "Done elsewhere" });
-    await user.click(within(card).getByRole("button", { name: "Create as follow-on" }));
-    expect(await screen.findByTestId("related-task-stale")).toHaveTextContent("changed since the suggestion");
+    await user.click(within(related).getByRole("button", { name: "Create as follow-on" }));
+    expect(await screen.findByTestId("related-task-stale")).toHaveTextContent("changed since it was listed");
     expect(onOpenChange).not.toHaveBeenCalled();
     expect((await api.listTasks({ status: "open", memberId: seeded!.member.id, pageSize: 10 })).totalItems).toBe(0);
   });
 
-  it("does not relate similar-looking but different work", async () => {
-    const user = userEvent.setup();
+  it("leaves the choice explicit for every open task", async () => {
     await renderWithApp(<Probe onOpenChange={vi.fn()} />, { prepare: async (mock) => { await prepare(mock, { type: "payment_collection", title: "Collect balance 40.000 JOD" }); } });
-    await screen.findByTestId("related-work");
-    await user.click(await screen.findByRole("button", { name: "Check for related work" }));
-    expect(await screen.findByTestId("related-task-none")).toHaveTextContent("No open task covers this work");
+    const related = await screen.findByTestId("related-work");
+    expect(within(related).getByRole("button", { name: "Keep the existing task" })).toBeInTheDocument();
+    expect(within(related).getByRole("button", { name: "Create separately" })).toBeInTheDocument();
+    expect(within(related).queryByRole("button", { name: "Is this the same work?" })).not.toBeInTheDocument();
   });
 });

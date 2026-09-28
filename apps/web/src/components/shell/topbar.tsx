@@ -48,9 +48,6 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
 
   const role = session?.roles[0];
   const canPickBranch = role === "owner" || role === "manager";
-  // Settings only opens for roles the page will let in; a menu entry that ends
-  // on "Not allowed for this role" is not a shortcut.
-  const canOpenSettings = Boolean(session?.permissions.some((permission) => permission === "settings.manage" || permission === "users.manage"));
   const demoControlsEnabled = DEMO_AUTH_BYPASS || !CONVEX_ENABLED;
 
   const handleSignOut = async () => {
@@ -302,11 +299,9 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               </>
             ) : null}
             <DropdownMenuSeparator />
-            {canOpenSettings ? (
-              <DropdownMenuItem onClick={() => router.push("/settings")}>
-                <Building2 /> Organization settings
-              </DropdownMenuItem>
-            ) : null}
+            <DropdownMenuItem onClick={() => router.push("/settings")}>
+              <Building2 /> Settings
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/getting-started")}><GraduationCap /> Getting started</DropdownMenuItem>
             <DropdownMenuItem onClick={() => void handleSignOut()}>
               <LogOut /> {demoControlsEnabled ? "Sign out of demo" : "Sign out"}

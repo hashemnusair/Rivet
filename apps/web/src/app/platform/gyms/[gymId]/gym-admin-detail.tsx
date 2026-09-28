@@ -1,9 +1,9 @@
 "use client";
 
-import { Archive, ArrowLeft, Check, CircleAlert, ExternalLink, Mail, MapPin, Phone, Receipt } from "lucide-react";
+import { Archive, ArrowLeft, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, Mail, MapPin, Phone, Receipt, Search, UserRound, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PlatformGymLogo } from "@/components/platform/platform-gym-logo";
@@ -12,7 +12,7 @@ import { SubscriptionStatusBadge, subscriptionStatusLabel } from "@/components/p
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
-import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail } from "@/lib/api/GymOSApi";
+import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail, PlatformGymMember, PlatformGymStaff } from "@/lib/api/GymOSApi";
 import { Switch } from "@/components/ui/switch";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
@@ -193,6 +193,11 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         </div>
       </div>
 
+      <div className="mt-5 grid gap-5 xl:grid-cols-[.85fr_1.15fr] xl:items-start">
+        <StaffDirectory field={detail.staff} />
+        <MemberDirectory field={detail.members} />
+      </div>
+
       <PlatformPanel className="mt-5 px-4 py-4 sm:px-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
@@ -326,4 +331,110 @@ function Usage({ label, field }: { label: string; field: PlatformData<number | s
 
 function FactRow({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="flex items-baseline justify-between gap-3 py-2.5 text-[13px]"><dt className="text-ink-3">{label}</dt><dd className="text-end font-medium">{children}</dd></div>;
+}
+
+const DIRECTORY_PAGE_SIZE = 20;
+
+function StaffDirectory({ field }: { field: PlatformData<PlatformGymStaff[]> }) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const filtered = useMemo(() => {
+    const rows = field.state === "available" ? field.value : [];
+    const needle = search.trim().toLocaleLowerCase();
+    if (!needle) return rows;
+    return rows.filter((staff) => [staff.name, staff.email, staff.role, staff.status, staff.branchNames.join(" "), staff.invitationStatus ?? ""].join(" ").toLocaleLowerCase().includes(needle));
+  }, [field, search]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / DIRECTORY_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visible = filtered.slice((safePage - 1) * DIRECTORY_PAGE_SIZE, safePage * DIRECTORY_PAGE_SIZE);
+
+  return (
+    <PlatformPanel aria-labelledby="team-directory-title">
+      <PlatformPanelHeader id="team-directory-title" title="Team directory" description="Every staff account, role, and branch scope for this gym." />
+      {field.state === "available" ? (
+        <>
+          <DirectorySearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} label="Search team" placeholder="Search staff, role, or branch" />
+          {filtered.length > 0 ? (
+            <div className="divide-y divide-line">
+              {visible.map((staff) => (
+                <div key={staff.id} className="flex items-start gap-3 px-4 py-3.5 sm:px-5">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-2"><UserRound className="size-4" aria-hidden /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2"><p className="text-[13.5px] font-semibold">{staff.name}</p><DirectoryStatus status={staff.status} /></div>
+                    <p className="mt-1 text-[12.5px] text-ink-3">{staff.email}</p>
+                    <p className="mt-1 text-[12.5px] text-ink-3">{labelize(staff.role)} · {staff.branchScope === "all" ? "All branches" : staff.branchNames.length > 0 ? staff.branchNames.join(", ") : "No active branch"}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyDirectory text={search ? "No team members match this search." : "No staff accounts recorded."} />}
+          <DirectoryPager page={safePage} totalPages={totalPages} totalItems={filtered.length} onPageChange={setPage} />
+        </>
+      ) : <UnavailableBlock field={field} empty="No staff accounts recorded" />}
+    </PlatformPanel>
+  );
+}
+
+function MemberDirectory({ field }: { field: PlatformData<PlatformGymMember[]> }) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const filtered = useMemo(() => {
+    const rows = field.state === "available" ? field.value : [];
+    const needle = search.trim().toLocaleLowerCase();
+    if (!needle) return rows;
+    return rows.filter((member) => [member.name, member.memberNumber, member.status, member.membershipStatus ?? "", member.planName ?? "", member.branchName ?? ""].join(" ").toLocaleLowerCase().includes(needle));
+  }, [field, search]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / DIRECTORY_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visible = filtered.slice((safePage - 1) * DIRECTORY_PAGE_SIZE, safePage * DIRECTORY_PAGE_SIZE);
+
+  return (
+    <PlatformPanel aria-labelledby="member-directory-title">
+      <PlatformPanelHeader id="member-directory-title" title="Member directory" description="Every current member record, with status and membership context." />
+      {field.state === "available" ? (
+        <>
+          <DirectorySearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} label="Search members" placeholder="Search by name, number, plan, or branch" />
+          {filtered.length > 0 ? (
+            <div className="divide-y divide-line">
+              {visible.map((member) => (
+                <div key={member.id} className="flex items-start gap-3 px-4 py-3.5 sm:px-5">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-2"><Users className="size-4" aria-hidden /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2"><p className="text-[13.5px] font-semibold">{member.name}</p><DirectoryStatus status={member.status} /></div>
+                    <p className="mt-1 text-[12.5px] text-ink-3"><span className="font-mono text-[12px]">{member.memberNumber}</span> · {member.branchName || "Branch not recorded"}{member.planName ? ` · ${member.planName}` : ""}</p>
+                    {member.membershipStatus ? <p className="mt-0.5 text-[12px] text-ink-3">Membership {labelize(member.membershipStatus)}{member.membershipEndDate ? ` · through ${formatDate(member.membershipEndDate)}` : ""}</p> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyDirectory text={search ? "No members match this search." : "No member records recorded."} />}
+          <DirectoryPager page={safePage} totalPages={totalPages} totalItems={filtered.length} onPageChange={setPage} />
+        </>
+      ) : <UnavailableBlock field={field} empty="No member records recorded" />}
+    </PlatformPanel>
+  );
+}
+
+function DirectorySearch({ value, onChange, label, placeholder }: { value: string; onChange: (value: string) => void; label: string; placeholder: string }) {
+  return <div className="border-b border-line px-4 py-3 sm:px-5"><label className="sr-only" htmlFor={`${label.replaceAll(" ", "-")}-input`}>{label}</label><div className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden /><Input id={`${label.replaceAll(" ", "-")}-input`} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="ps-8" /></div></div>;
+}
+
+function DirectoryPager({ page, totalPages, totalItems, onPageChange }: { page: number; totalPages: number; totalItems: number; onPageChange: (page: number) => void }) {
+  if (totalItems === 0) return null;
+  const first = (page - 1) * DIRECTORY_PAGE_SIZE + 1;
+  const last = Math.min(page * DIRECTORY_PAGE_SIZE, totalItems);
+  return <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-2.5 text-[12px] text-ink-3 sm:px-5"><span>Showing {first}–{last} of {totalItems}</span><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Previous page" disabled={page <= 1} onClick={() => onPageChange(page - 1)}><ChevronLeft className="rtl:rotate-180" aria-hidden /></Button><span className="min-w-12 text-center tabular">{page} / {totalPages}</span><Button type="button" variant="ghost" size="icon-sm" aria-label="Next page" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}><ChevronRight className="rtl:rotate-180" aria-hidden /></Button></div></div>;
+}
+
+function DirectoryStatus({ status }: { status: string }) {
+  const tone = status === "active" ? "border-success/30 bg-success-bg text-success-deep" : status === "invited" ? "border-warning/30 bg-warning-bg text-warning-deep" : "border-line-2 bg-sunken text-ink-3";
+  return <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${tone}`}>{labelize(status)}</span>;
+}
+
+function EmptyDirectory({ text }: { text: string }) {
+  return <div className="px-5 py-8 text-center text-[12.5px] text-ink-3">{text}</div>;
+}
+
+function labelize(value: string): string {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

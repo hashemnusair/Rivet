@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PublicDocumentPage } from "@/components/public/public-document-page";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import type { PlatformSaasPlan, SubmitGymApplicationResult } from "@/lib/api/GymOSApi";
 import { getApi } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
@@ -23,7 +23,7 @@ import {
 } from "@/lib/public/pricing";
 import { cn } from "@/lib/utils/cn";
 
-type FormErrors = Partial<Record<"ownerName" | "gymName" | "email" | "contactNumber", string>>;
+type FormErrors = Partial<Record<"ownerName" | "gymName" | "gymAddress" | "email" | "contactNumber", string>>;
 
 export default function GymApplicationPage() {
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
@@ -34,6 +34,7 @@ export default function GymApplicationPage() {
   const usingFallbackCatalog = saasPlans.length === 0;
   const [ownerName, setOwnerName] = useState("");
   const [gymName, setGymName] = useState("");
+  const [gymAddress, setGymAddress] = useState("");
   const [email, setEmail] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [plan, setPlan] = useState<PublicPricingPlanName>("Growth");
@@ -65,6 +66,7 @@ export default function GymApplicationPage() {
     const nextErrors: FormErrors = {};
     if (ownerName.trim().length < 2) nextErrors.ownerName = "Enter the owner name.";
     if (gymName.trim().length < 2) nextErrors.gymName = "Enter the gym name.";
+    if (gymAddress.trim().length < 5) nextErrors.gymAddress = "Enter the gym's physical address.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) nextErrors.email = "Enter a valid email address.";
     if (contactNumber.replace(/\D/g, "").length < 7) nextErrors.contactNumber = "Enter a reachable contact number.";
     if (Object.keys(nextErrors).length > 0) {
@@ -79,6 +81,7 @@ export default function GymApplicationPage() {
       const submitted = await getApi().submitGymApplication({
         ownerName: ownerName.trim(),
         gymName: gymName.trim(),
+        gymAddress: gymAddress.trim(),
         email: email.trim().toLowerCase(),
         contactNumber: contactNumber.trim(),
         plan: plan as PlatformSaasPlan["name"],
@@ -125,7 +128,7 @@ export default function GymApplicationPage() {
                       <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                     <Field label="Contact number" htmlFor="application-phone" error={errors.contactNumber} hint="Use a number where our team can reach you." required>
-                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="+962 79 555 0194" autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
+                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="Enter a reachable number" autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                   </div>
 
@@ -139,6 +142,9 @@ export default function GymApplicationPage() {
                   <h2 className="text-[15px] font-semibold">Which plan fits?</h2>
                   <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-4" required>
                     <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" disabled={!hydrated} />
+                  </Field>
+                  <Field label="Gym address" htmlFor="application-address" error={errors.gymAddress} hint="The physical location where the gym operates." className="mt-4" required>
+                    <Textarea id="application-address" value={gymAddress} onChange={(event) => setGymAddress(event.target.value)} placeholder="Street, area, city" autoComplete="street-address" maxLength={300} disabled={!hydrated} />
                   </Field>
                   <fieldset className="mt-5">
                     <legend className="text-[13px] font-medium text-ink-2">Billing cadence</legend>
@@ -172,10 +178,13 @@ export default function GymApplicationPage() {
                     {plans.map((item) => {
                       const selected = plan === item.name;
                       const price = calculatePlanPrice(item, billingInterval);
+                      const featureList = publicPlanFeatures(item);
+                      const capacitySummary = featureList.slice(0, 3).join(" · ");
+                      const capabilitySummary = featureList.slice(3).filter((feature) => feature !== "Member app and marketplace listing" && feature !== "Staff permissions and audit history").join(" · ");
                       return (
                         <button key={item.name} type="button" role="radio" aria-checked={selected} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 rounded-md border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", selected ? "border-ink bg-sunken/60" : "border-line-2 hover:border-line-3")}>
                           <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-ink bg-ink text-paper" : "border-line-3")} aria-hidden>{selected ? <Check className="size-3" /> : null}</span>
-                          <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[12.5px] text-ink-2">JD {formatJodMinor(price.effectiveMonthlyMinor)} / month{billingInterval === "annual" ? ` · JD ${formatJodMinor(price.annualTotalMinor)} billed annually` : ""}</span><span className="mt-0.5 block text-[12px] text-ink-3">{publicPlanFeatures(item).slice(-1)[0]}</span></span>
+                          <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[12.5px] text-ink-2">JD {formatJodMinor(price.effectiveMonthlyMinor)} / month{billingInterval === "annual" ? ` · JD ${formatJodMinor(price.annualTotalMinor)} billed annually` : ""}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{capacitySummary}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">Includes: {capabilitySummary}</span></span>
                         </button>
                       );
                     })}
@@ -196,12 +205,18 @@ export default function GymApplicationPage() {
 }
 
 function ApplicationReceived({ result, gymName, email }: { result: SubmitGymApplicationResult; gymName: string; email: string }) {
+  const confirmation = result.notificationStatus === "sent"
+    ? `We sent a confirmation to ${email}.`
+    : result.notificationStatus === "pending"
+      ? `We queued a confirmation for ${email}.`
+      : "We could not deliver a confirmation email yet, but your application is in our review queue.";
   return (
     <div className="mx-auto max-w-xl rounded-lg border border-line bg-surface p-6 text-center sm:p-10" role="status">
       <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-bg text-success-deep" aria-hidden><CheckCircle2 className="size-6" /></span>
       <p className="mt-5 text-[12px] font-medium text-ink-3">Application received</p>
       <h1 className="mt-2 font-display text-[26px] font-semibold leading-tight tracking-tight">We’ll be in touch soon.</h1>
-      <p className="mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>. We sent a confirmation to <strong className="text-ink">{email}</strong> and our team will contact you after review.</p>
+      <p className="relative mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>. {result.notificationStatus === "sent" || result.notificationStatus === "pending" ? <>{confirmation} </> : null}Our team will contact you after review.</p>
+      {result.notificationStatus !== "sent" && result.notificationStatus !== "pending" ? <p className="mt-3 text-[12.5px] text-ink-3">{confirmation}</p> : null}
       {result.duplicate ? <p className="mt-3 text-[12.5px] text-ink-3">This application is already in our review queue.</p> : null}
       <div className="mt-6 grid gap-2 sm:grid-cols-2">
         <Button asChild size="lg"><Link href="/login/gym">Sign in <ArrowRight /></Link></Button>

@@ -85,6 +85,7 @@ The precise file names are implementation choices, but the client should expose 
 ```ts
 submitGymApplication(input: {
   gymName: string;
+  gymAddress: string;
   ownerName: string;
   email: string;
   contactNumber: string;
@@ -247,6 +248,8 @@ createAutomationRule(input: CreateAutomationRuleInput): Promise<AutomationRule>
 updateAutomationRule(id: string, input: UpdateAutomationRuleInput): Promise<AutomationRule>
 listAutomationExecutions(query: ExecutionQuery): Promise<Page<AutomationExecution>>
 listAuditEvents(query: AuditQuery): Promise<Page<AuditEvent>>
+getMyProfile(): Promise<UserProfile>
+updateMyProfile(input: UpdateUserProfileInput): Promise<UserProfile>
 getOrganizationSettings(): Promise<OrganizationSettings>
 updateOrganizationSettings(input: UpdateOrganizationSettingsInput): Promise<OrganizationSettings>
 updateOperationalPolicies(input: OperationalPolicies): Promise<OrganizationSettings>
@@ -260,6 +263,8 @@ updateUserAccess(userId: string, input: UpdateUserAccessInput): Promise<StaffUse
 ```text
 GET    /session
 GET    /dashboard
+GET    /users/me
+PATCH  /users/me
 
 GET    /members
 POST   /members

@@ -24,6 +24,7 @@ test.describe("staged provisioning", () => {
       await owner.getByLabel("Email address").fill(email);
       await owner.getByLabel("Contact number").fill(`+96279${Date.now().toString().slice(-7)}`);
       await owner.getByLabel("Gym name").fill(gymName);
+      await owner.getByLabel("Gym address").fill("12 Airport Road, Amman");
       await owner.getByRole("button", { name: /Send gym application/i }).click();
       await expect(owner.getByRole("heading", { name: /We.ll be in touch soon/i })).toBeVisible();
 

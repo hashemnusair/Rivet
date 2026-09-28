@@ -1,4 +1,4 @@
-import { act, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotificationCenter } from "@/components/shell/notification-center";
@@ -15,8 +15,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 afterEach(() => { resetApiForTests(); router.push.mockReset(); });
 
-const enableAssist = async (api: MockGymOSApi) => { await api.updateAssistPreference({ enabled: true }); };
-
 async function equipmentBranch(api: MockGymOSApi): Promise<{ branchId: string; assets: EquipmentAsset[]; zones: Zone[]; issues: EquipmentIssue[]; workOrders: EquipmentWorkOrder[] }> {
   const assets = await api.listEquipmentAssets();
   const branchId = assets[0]?.branchId;
@@ -28,36 +26,29 @@ const stash = (key: string, value: unknown) => window.sessionStorage.setItem(`te
 const stored = <T,>(key: string): T => JSON.parse(window.sessionStorage.getItem(`test.${key}`) ?? "null") as T;
 
 describe("describe what you found", () => {
-  it("suggests the report kind and the branch's own machine, files through the existing form prefilled, and works by keyboard", async () => {
+  it("lets staff describe and file a machine issue through the existing form", async () => {
     const user = userEvent.setup();
     const onFileIssue = vi.fn();
-    await renderWithApp(<IntakeProbe onFileIssue={onFileIssue} />, { role: "manager", prepare: async (api) => { await enableAssist(api); const branch = await equipmentBranch(api); stash("branch", branch); } });
+    await renderWithApp(<IntakeProbe onFileIssue={onFileIssue} />, { role: "manager", prepare: async (api) => { const branch = await equipmentBranch(api); stash("branch", branch); } });
     const text = await screen.findByTestId("report-intake-text");
     await user.type(text, "TREAD-01 belt slipping again under load, grinding noise at speed 10");
-    const run = screen.getByTestId("report-intake-run");
-    run.focus();
-    await user.keyboard("{Enter}");
-    expect(await screen.findByTestId("report-intake-category-label")).toHaveTextContent("Machine issue");
-    expect(await screen.findByTestId("report-intake-target-label")).toHaveTextContent("TREAD-01");
     await user.click(screen.getByTestId("report-intake-file-issue"));
     const branch = stored<{ assets: EquipmentAsset[] }>("branch");
     expect(onFileIssue).toHaveBeenCalledWith({ assetId: branch.assets.find((asset) => asset.code === "TREAD-01")?.id, description: "TREAD-01 belt slipping again under load, grinding noise at speed 10" });
   });
 
-  it("says none and unclear honestly, and points cleaning descriptions at the maintenance page", async () => {
+  it("keeps maintenance work explicit and points space issues at the maintenance page", async () => {
     const user = userEvent.setup();
-    await renderWithApp(<IntakeProbe onFileIssue={vi.fn()} />, { role: "manager", prepare: async (api) => { await enableAssist(api); stash("branch", await equipmentBranch(api)); } });
+    const onFileIssue = vi.fn();
+    await renderWithApp(<IntakeProbe onFileIssue={onFileIssue} />, { role: "manager", prepare: async (api) => { stash("branch", await equipmentBranch(api)); } });
     await user.type(await screen.findByTestId("report-intake-text"), "Sticky floor and a bad smell near the lockers, bins overflowing");
-    await user.click(screen.getByTestId("report-intake-run"));
-    expect(await screen.findByTestId("report-intake-category-label")).toHaveTextContent("Cleaning task");
-    await screen.findByTestId("report-intake-target");
+    expect(screen.getByTestId("report-intake-file-issue")).toBeEnabled();
     expect(screen.getByTestId("report-intake-open-maintenance")).toHaveAttribute("href", expect.stringMatching(/^\/maintenance\?branch=/));
   });
 
-  it("renders nothing while the gym's switch is off", async () => {
+  it("keeps the manual intake available without a model preference", async () => {
     await renderWithApp(<IntakeProbe onFileIssue={vi.fn()} />, { role: "manager", prepare: async (api) => { stash("branch", await equipmentBranch(api)); } });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
-    expect(screen.queryByTestId("report-intake")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("report-intake")).toBeInTheDocument();
   });
 });
 
@@ -72,18 +63,14 @@ function HistoryProbe() {
 }
 
 describe("related repair history", () => {
-  it("lists this machine's earlier reports, tells a recurring fault from a separate one on request, and changes no severity or safety", async () => {
-    const user = userEvent.setup();
-    let earlierId = "";
+  it("lists this machine's earlier reports and discloses similar wording without changing severity or safety", async () => {
     const { api } = await renderWithApp(<HistoryProbe />, {
       role: "manager",
       prepare: async (mock) => {
-        await enableAssist(mock);
         const branch = await equipmentBranch(mock);
         const asset = branch.assets[0]!;
         const earlier = await mock.reportEquipmentIssue({ branchId: branch.branchId, assetId: asset.id, title: "Belt slipping", description: "Belt slipped under load during the evening peak; deck tensioned.", severity: "medium", safetyStatus: "safe_to_operate" });
         await mock.updateEquipmentIssue(earlier.id, { status: "resolved", safetyStatus: "safe_to_operate" });
-        earlierId = earlier.id;
         // A resolved display fault with overlapping wording: history, but a separate defect. The seeded open belt issue stays the current report.
         const display = await mock.reportEquipmentIssue({ branchId: branch.branchId, assetId: asset.id, title: "Display flickers under load", description: "Console display flickers and resets at high speed.", severity: "low", safetyStatus: "safe_to_operate" });
         await mock.updateEquipmentIssue(display.id, { status: "resolved", safetyStatus: "safe_to_operate" });
@@ -95,9 +82,7 @@ describe("related repair history", () => {
     const entries = within(panel).getAllByTestId("repair-history-entry");
     expect(entries.length).toBe(2);
     expect(within(panel).getAllByTestId("repair-history-similar").length).toBeGreaterThanOrEqual(1);
-    await user.click(await within(panel).findByTestId(`same-fault-check-${earlierId}`));
-    expect(await within(panel).findByTestId(`same-fault-verdict-${earlierId}`)).toHaveTextContent("Same fault, recurring");
-    expect(within(panel).getByTestId("repair-history-recurring")).toHaveTextContent("1 earlier report confirmed as the same fault");
+    expect(within(panel).getByTestId("repair-history-recurring")).toHaveTextContent("share wording");
     const issues = await api.listEquipmentIssues();
     const current = issues.find((issue) => issue.title === "Belt slipping under load");
     expect(current).toMatchObject({ severity: "high", safetyStatus: "out_of_service", status: "in_progress" });
@@ -114,7 +99,6 @@ describe("checklist handover", () => {
     await renderWithApp(<HandoverProbe />, {
       role: "manager",
       prepare: async (api) => {
-        await enableAssist(api);
         const session = await api.getSession();
         const branchId = session.branches[0]!.id;
         const templates = await api.listChecklistTemplates({ branchId });
@@ -143,9 +127,8 @@ describe("checklist handover", () => {
     expect(within(handover).getAllByTestId("handover-item")[0]).toHaveTextContent(/receptionist|Reception/);
     await user.click(within(handover).getByRole("button", { name: "Grouped" }));
     const comparison = await within(handover).findByTestId("handover-comparison");
-    await user.click(within(comparison).getByTestId("handover-related-check"));
-    await within(comparison).findByTestId("handover-related-verdict");
-    // Whatever the verdict, the items keep their own rows, owners and dates: nothing is merged or closed.
+    expect(comparison).toHaveTextContent("Shared words:");
+    // Similar wording is a disclosure only: items keep their own rows, owners and dates.
     expect(within(handover).getAllByTestId("handover-item").length).toBe(groupedKeys.length);
   });
 });
@@ -153,7 +136,7 @@ describe("checklist handover", () => {
 describe("notification center groups", () => {
   it("offers a grouped reading with the same rows, keeps mandatory alerts visible, and never marks anything read", async () => {
     const user = userEvent.setup();
-    const { api } = await renderWithApp(<NotificationCenter />, { role: "owner", prepare: enableAssist });
+    const { api } = await renderWithApp(<NotificationCenter />, { role: "owner" });
     const markRead = vi.spyOn(api, "setNotificationRead");
     const bell = await screen.findByRole("button", { name: /unread notifications/ });
     const unreadBefore = bell.getAttribute("aria-label");
@@ -183,16 +166,4 @@ describe("notification center groups", () => {
     expect(screen.getAllByTestId("notification-row").length).toBe(rowsBefore);
   });
 
-  it("places a stray notification only on request and only as a suggestion", async () => {
-    const user = userEvent.setup();
-    const { api } = await renderWithApp(<NotificationCenter />, { role: "owner", prepare: enableAssist });
-    await user.click(await screen.findByRole("button", { name: /unread notifications/ }));
-    await user.click(await screen.findByTestId("notifications-view-toggle"));
-    const single = (await screen.findAllByTestId("notification-single")).find((entry) => entry.textContent?.includes("Checklist item escalated"))!;
-    await user.click(within(single).getByRole("button", { name: "Suggest a group" }));
-    await screen.findByTestId("notification-topic-NOT-demo-task-1");
-    expect(screen.queryByTestId("notification-placed")).not.toBeInTheDocument();
-    const notifications = await api.listNotifications();
-    expect(notifications.find((entry) => entry.id === "NOT-demo-task-1")?.readAt).toBeUndefined();
-  });
 });

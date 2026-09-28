@@ -21,7 +21,6 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState, NotFoundState } from "@/components/ui/states";
-import { ReasonCheck } from "@/features/followup/reason-check";
 import { cn } from "@/lib/utils/cn";
 import type { Payment, RetailSale } from "@/lib/domain/types";
 
@@ -472,7 +471,6 @@ function RefundDialog({
           <Field label="Reason" required>
             <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Duplicate charge confirmed with the bank" data-testid="refund-reason" />
           </Field>
-          <ReasonCheck action="refund" reason={reason} />
           {reviewFlagged ? (
             <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
               Refunds above {currency} 25.000 are flagged for manager review in the audit log.
@@ -537,7 +535,6 @@ function VoidDialog({
           <Field label="Reason" required>
             <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Wrong amount keyed at the terminal" />
           </Field>
-          <ReasonCheck action="void" reason={reason} />
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>

@@ -26,6 +26,54 @@ async function seed(t: TestConvex<typeof schema>, options: { status?: "active" |
 }
 
 describe("exported Convex platform subscription lifecycle", () => {
+  it("projects the complete, tenant-scoped member and staff directories", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
+      const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", "branch-sub")).unique();
+      if (!organization || !branch) throw new Error("seed organization missing");
+      const invited = await ctx.db.insert("users", { publicId: "invited-staff", authSubject: "clerk-invited-staff", email: "invited@example.com", fullName: "Invited Staff", platformAdmin: false, status: "invited", createdAt: now, updatedAt: now });
+      const deactivated = await ctx.db.insert("users", { publicId: "deactivated-staff", authSubject: "clerk-deactivated-staff", email: "deactivated@example.com", fullName: "Deactivated Staff", platformAdmin: false, status: "deactivated", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: invited, role: "receptionist", branchIds: [branch._id], branchScope: "selected", active: true, invitationStatus: "pending", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: deactivated, role: "sales", branchIds: [branch._id], branchScope: "selected", active: false, invitationStatus: "revoked", createdAt: now, updatedAt: now });
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "plan", publicId: "membership-plan", branchId: branch._id, createdAt: now, updatedAt: now, data: { id: "membership-plan", name: "Monthly Member Plan", status: "active" } });
+      for (const [publicId, id, status] of [["member-active", "member-active", "active"], ["member-inactive", "member-inactive", "inactive"], ["member-archived", "member-archived", "archived"]] as const) {
+        await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "member", publicId, branchId: branch._id, memberPublicId: publicId, createdAt: now, updatedAt: now, data: { id, memberNumber: `MAIN-${publicId.slice(-6)}`, fullName: `${status} member`, phone: "+962790000000", homeBranchId: "branch-sub", status, tags: [], createdAt: new Date(now).toISOString() } });
+      }
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "membership", publicId: "member-term", branchId: branch._id, memberPublicId: "member-active", createdAt: now, updatedAt: now, data: { id: "member-term", memberId: "member-active", planId: "membership-plan", homeBranchId: "branch-sub", startDate: "2026-01-01", endDate: "2099-01-01", salePrice: { amount: 40_000, currency: "JOD" }, discount: { amount: 0, currency: "JOD" }, discountApprovalStatus: "none", soldById: "owner", frozenDaysUsed: 0, freezes: [], adjustments: [], createdAt: new Date(now).toISOString() } });
+
+      const foreignOrganization = await ctx.db.insert("organizations", { publicId: "org-foreign", name: "Foreign Gym", slug: "foreign-gym", status: "active", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
+      await ctx.db.insert("domainRecords", { organizationId: foreignOrganization, entityType: "member", publicId: "foreign-member", createdAt: now, updatedAt: now, data: { id: "foreign-member", memberNumber: "FOR-1", fullName: "Foreign member", phone: "+962790000001", homeBranchId: "foreign-branch", status: "active", tags: [], createdAt: new Date(now).toISOString() } });
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "marketplaceGym", publicId: "directory-only-detail", createdAt: now, updatedAt: now, data: { id: "directory-only-detail", name: "Directory-only detail", targetOrganizationId: "missing-organization", subscriptionStatus: "active", rivetPlan: "Growth", isPublic: true } });
+    });
+
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const detail = await platform.query(api.domain.query, operation("platform.gym.detail", { gymId: "subscription-gym" })) as {
+      members: { state: string; value?: Array<Record<string, unknown>> };
+      staff: { state: string; value?: Array<Record<string, unknown>> };
+    };
+    expect(detail.members).toMatchObject({ state: "available", value: expect.arrayContaining([
+      expect.objectContaining({ id: "member-active", name: "active member", status: "active", planName: "Monthly Member Plan", branchName: "Main" }),
+      expect.objectContaining({ id: "member-inactive", status: "inactive" }),
+      expect.objectContaining({ id: "member-archived", status: "archived" }),
+    ]) });
+    expect(detail.members.value).toHaveLength(3);
+    expect(detail.staff).toMatchObject({ state: "available", value: expect.arrayContaining([
+      expect.objectContaining({ name: "Gym Owner", email: "owner@example.com", role: "owner", status: "active", branchScope: "all" }),
+      expect.objectContaining({ name: "Invited Staff", email: "invited@example.com", status: "invited", invitationStatus: "pending", branchNames: ["Main"] }),
+      expect.objectContaining({ name: "Deactivated Staff", email: "deactivated@example.com", status: "deactivated", invitationStatus: "revoked" }),
+    ]) });
+    expect(JSON.stringify(detail)).not.toContain("Foreign member");
+    expect(JSON.stringify(detail)).not.toContain("+962790000000");
+
+    await expectCode(t.withIdentity({ subject: "clerk-owner" }).query(api.domain.query, operation("platform.gym.detail", { gymId: "subscription-gym" })), "FORBIDDEN");
+    const cleanup = await platform.query(api.domain.query, operation("platform.gym.detail", { gymId: "directory-only-detail" })) as { members: unknown; staff: unknown };
+    expect(cleanup.members).toEqual({ state: "not_available" });
+    expect(cleanup.staff).toEqual({ state: "not_available" });
+  });
+
   it("requires platform authorization and keeps onboarding trial dates automatic", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

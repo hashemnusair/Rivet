@@ -1,24 +1,21 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ClipboardList, RefreshCw, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ClipboardList, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { MoneyText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
-import { ContextLabel } from "@/components/ui/typography";
-import { AssistSuggestion } from "@/features/assist/assist-suggestion";
-import { useAssistJudgment } from "@/features/assist/use-assist-judgment";
 import { dashboardScopeDescription } from "@/features/dashboard/dashboard-scope";
 import { TodayQueueRow, useTodayQueueCompletion } from "@/features/dashboard/today-queue";
 import { qk } from "@/lib/api/keys";
-import type { BriefEmphasisReading, BriefFigure, BriefItem, BriefRelatedReading, BriefSection, BriefSource, OperatingBrief, TodayQueueItem } from "@/lib/domain/types";
+import type { BriefFigure, BriefItem, BriefSection, BriefSource, OperatingBrief, TodayQueueItem } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatTime } from "@/lib/utils/dates";
-import { briefEmphasis, briefPairKey, briefSharedWords, resolveBriefEmphasisReading, resolveBriefRelatedReading } from "../../../convex/operatingBrief";
+import { briefEmphasis, briefPairKey, briefSharedWords } from "../../../convex/operatingBrief";
 
 const SECTION_PREVIEW = 3;
 
@@ -48,58 +45,24 @@ function Figures({ figures, testId }: { figures: BriefFigure[]; testId: string }
   );
 }
 
-function ItemExtra({ item, related }: { item: BriefItem; related?: BriefItem[] }) {
-  if (item.overdueDays === undefined && !related?.length) return null;
+function ItemExtra({ item }: { item: BriefItem }) {
+  if (item.overdueDays === undefined) return null;
   return (
     <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-3">
       {item.overdueDays !== undefined ? <Badge variant={item.stale ? "danger" : "warning"} data-testid="brief-item-overdue">{item.stale ? `waiting ${item.overdueDays} days` : item.overdueDays === 0 ? "due today, past time" : `${item.overdueDays} day${item.overdueDays === 1 ? "" : "s"} overdue`}</Badge> : null}
-      {related?.length ? <span data-testid="brief-item-related">Same matter as: {related.map((entry) => entry.title).join("; ")}</span> : null}
     </p>
   );
 }
-
-function RelatedCheck({ first, second, branchId, onReading }: { first: BriefItem; second: BriefItem; branchId?: string; onReading: (key: string, reading: BriefRelatedReading | undefined) => void }) {
-  const key = briefPairKey(first.id, second.id);
-  const suggestion = useAssistJudgment({ questionKey: "brief.related_matter", subject: { firstId: first.id, secondId: second.id, ...(branchId ? { branchId } : {}) }, enabled: true, auto: false });
-  const reading = suggestion.state.status === "ready" ? resolveBriefRelatedReading(suggestion.state.result.judgment) : undefined;
-  const verdictKey = reading ? `${reading.verdict}:${reading.probability.toFixed(3)}` : "";
-  useEffect(() => { onReading(key, reading); }, [key, verdictKey, onReading]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!suggestion.status || !suggestion.featureReady) return null;
-  return (
-    <div className="mt-1 space-y-2">
-      {suggestion.state.status === "idle" ? <Button type="button" size="xs" variant="secondary" data-testid="brief-related-check" onClick={suggestion.request}><Sparkles /> Same matter?</Button> : null}
-      <AssistSuggestion suggestion={suggestion} title="Same matter?" testId="brief-related" render={() => reading ? <p><span className="font-semibold text-ink" data-testid="brief-related-verdict">{reading.label}</span> · {reading.explanation}</p> : null} />
-    </div>
-  );
-}
-
-function EmphasisCard({ brief, branchId }: { brief: OperatingBrief; branchId?: string }) {
-  const suggestion = useAssistJudgment({ questionKey: "brief.emphasis", subject: { asOf: brief.generatedAt, ...(branchId ? { branchId } : {}) }, enabled: true, auto: true });
-  const reading: BriefEmphasisReading | undefined = suggestion.state.status === "ready" ? resolveBriefEmphasisReading(suggestion.state.result.judgment, brief) : undefined;
+function EmphasisCard({ brief }: { brief: OperatingBrief }) {
   const fallback = briefEmphasis(brief.defaultEmphasis);
-  const shown = reading && !reading.fallback ? reading : undefined;
   const evidence = (keys: string[]) => brief.sections.filter((section) => keys.includes(section.key));
-  const jevActive = Boolean(suggestion.status && suggestion.featureReady && !suggestion.dismissed && suggestion.state.status !== "disabled");
   return (
     <div className="space-y-2" data-testid="brief-emphasis">
-      {!jevActive || suggestion.state.status === "unavailable" || suggestion.state.status === "stale" ? (
-        <div className="rounded-md border border-line bg-sunken/30 px-3 py-2" data-testid="brief-emphasis-default">
-          <ContextLabel as="span">Start here (standard order)</ContextLabel>
-          <p className="mt-0.5 text-[13.5px] font-semibold text-ink">{fallback?.heading}</p>
-          <EmphasisEvidence sections={evidence(fallback?.sections ?? [])} />
-        </div>
-      ) : null}
-      <AssistSuggestion
-        suggestion={suggestion}
-        title={shown?.heading ?? fallback?.heading ?? "Routine day"}
-        testId="brief-emphasis-jev"
-        render={() => (
-          <div>
-            {reading?.fallback ? <p className="text-[12.5px] text-ink-3">The answer named nothing the brief offers, so the standard order stands.</p> : null}
-            <EmphasisEvidence sections={evidence((shown ?? { sections: fallback?.sections ?? [] }).sections)} />
-          </div>
-        )}
-      />
+      <div className="rounded-md border border-line bg-sunken/30 px-3 py-2" data-testid="brief-emphasis-default">
+        <p className="context-label">Start here (standard order)</p>
+        <p className="mt-0.5 text-[13.5px] font-semibold text-ink">{fallback?.heading ?? "Routine day"}</p>
+        <EmphasisEvidence sections={evidence(fallback?.sections ?? [])} />
+      </div>
     </div>
   );
 }
@@ -126,9 +89,9 @@ function EmphasisEvidence({ sections }: { sections: BriefSection[] }) {
  * branch scope. Mandatory items stay on top and are never folded away, the
  * complete queue is one click away, every row is the Today queue's own row
  * with its own permitted action, and missing sources are shown as partial
- * coverage. Jev is asked which prepared emphasis to lead with and, on an
- * explicit check, whether two similarly worded items are the same matter;
- * neither answer hides, merges or reorders anything.
+ * coverage. Similar wording is shown as a deterministic review aid; neither
+ * the wording comparison nor the standard emphasis order hides, merges or
+ * reorders anything.
  */
 export function OperatingBriefPanel({ branchId }: { branchId?: string }) {
   const { session } = useApp();
@@ -139,21 +102,6 @@ export function OperatingBriefPanel({ branchId }: { branchId?: string }) {
   const [mode, setMode] = useState<"sections" | "queue">("sections");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  const [readings, setReadings] = useState<Record<string, BriefRelatedReading | undefined>>({});
-  const onReading = useMemo(() => (key: string, reading: BriefRelatedReading | undefined) => setReadings((current) => (current[key] === reading ? current : { ...current, [key]: reading })), []);
-  const itemById = useMemo(() => new Map((brief?.queue ?? []).map((item) => [item.id, item] as const)), [brief]);
-  const relatedTo = useMemo(() => {
-    const map = new Map<string, BriefItem[]>();
-    for (const pair of brief?.related ?? []) {
-      const reading = readings[briefPairKey(pair.firstId, pair.secondId)];
-      const first = itemById.get(pair.firstId);
-      const second = itemById.get(pair.secondId);
-      if (!reading?.related || !first || !second) continue;
-      map.set(first.id, [...(map.get(first.id) ?? []), second]);
-      map.set(second.id, [...(map.get(second.id) ?? []), first]);
-    }
-    return map;
-  }, [brief?.related, readings, itemById]);
 
   const row = (item: BriefItem, testId: string) => (
     <TodayQueueRow
@@ -162,7 +110,7 @@ export function OperatingBriefPanel({ branchId }: { branchId?: string }) {
       first={false}
       completing={completion.isCompleting(item as TodayQueueItem)}
       onComplete={() => completion.requestComplete(item as TodayQueueItem)}
-      extra={<ItemExtra item={item} related={relatedTo.get(item.id)} />}
+      extra={<ItemExtra item={item} />}
       testId={testId}
     />
   );
@@ -204,7 +152,7 @@ export function OperatingBriefPanel({ branchId }: { branchId?: string }) {
         <div className="px-5 py-8 text-center text-[12.5px] text-ink-3" role="status" data-testid="brief-error">The brief could not be read. <Button type="button" size="xs" variant="secondary" className="ms-2" onClick={() => void query.refetch()}>Try again</Button></div>
       ) : (
         <div className="space-y-4 p-4 sm:p-5">
-          <EmphasisCard brief={brief} branchId={branchId} />
+          <EmphasisCard brief={brief} />
 
           {brief.mandatory.length ? (
             <section aria-labelledby="brief-mandatory-title" data-testid="brief-mandatory" className="rounded-md border border-danger/40">
@@ -263,15 +211,15 @@ export function OperatingBriefPanel({ branchId }: { branchId?: string }) {
 
           {brief.related.length ? (
             <section className="space-y-2 border-t border-line pt-3" aria-label="Similar wording" data-testid="brief-related-pairs">
-              <p className="text-[12px] text-ink-3">Similar wording across operational items. A check reads a pair together only when it is the same matter; both items stay listed with their own owners and actions.</p>
+              <p className="text-[12px] text-ink-3">Similar wording across operational items. Review the records together before deciding whether they concern the same matter; both items stay listed with their own owners and actions.</p>
               {brief.related.map((pair) => {
-                const first = itemById.get(pair.firstId);
-                const second = itemById.get(pair.secondId);
+                const first = brief.queue.find((item) => item.id === pair.firstId);
+                const second = brief.queue.find((item) => item.id === pair.secondId);
                 if (!first || !second) return null;
                 return (
                   <div key={briefPairKey(pair.firstId, pair.secondId)} className="rounded-md border border-dashed border-line-2 p-2" data-testid="brief-related-pair">
                     <p className="text-[12.5px] text-ink-2">“{first.title}” and “{second.title}” <span className="text-ink-3">· shared words: {briefSharedWords(first, second).join(", ") || "none"}</span></p>
-                    <RelatedCheck first={first} second={second} branchId={branchId} onReading={onReading} />
+                    <p className="mt-1 text-[12px] text-ink-3">Review both records before acting; each item keeps its owner and action.</p>
                   </div>
                 );
               })}

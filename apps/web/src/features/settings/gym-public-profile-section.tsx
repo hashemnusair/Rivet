@@ -20,7 +20,6 @@ import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { formatDateTime } from "@/lib/utils/dates";
 import { SettingsPanel, SettingsSaveBar, SettingsSection } from "@/features/settings/settings-layout";
-import { ProfileDraftReview } from "@/features/profile-review/profile-draft-review";
 
 const PROFILE_CATEGORIES = ["Gym", "Strength & conditioning", "Women-only fitness", "Combat sports", "Wellness studio"] as const;
 const PROFILE_AUDIENCES = ["All members", "Women", "Men", "Families", "Students"] as const;
@@ -367,8 +366,6 @@ export function GymPublicProfileSection() {
               <p className="mt-4 border-t border-line pt-3 text-[12px] text-ink-3">{pendingMedia.logo || pendingMedia.cover ? "Local image preview · save draft to upload" : `${value.trainers.length} published trainer${value.trainers.length === 1 ? "" : "s"} · ${value.ptPackages.length} active PT package${value.ptPackages.length === 1 ? "" : "s"}`}</p>
             </div>
           </SettingsPanel>
-
-          <ProfileDraftReview profile={value} dirty={dirty} />
 
           <SettingsPanel title="Version history" description="Published snapshots remain available for audit." bodyClassName="p-0">
             {versions.isLoading ? <Skeleton className="m-4 h-24" /> : versions.data?.length ? (

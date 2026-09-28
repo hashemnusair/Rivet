@@ -1321,6 +1321,14 @@ export interface StaffUser {
   invitedAt?: ISODateTime;
 }
 
+/** The signed-in staff member's editable account profile. */
+export interface UserProfile {
+  id: UUID;
+  name: string;
+  email: string;
+  phone: string;
+}
+
 export interface Session {
   user: { id: UUID; name: string; email: string };
   organization: {
@@ -3751,29 +3759,16 @@ export interface UpdateUserAccessInput {
   status?: "active" | "deactivated";
 }
 
+export interface UpdateUserProfileInput {
+  name: string;
+  phone?: string;
+}
+
 export interface UpdateRolePermissionsInput {
   permissions?: string[];
   discountLimitMinor?: number;
 }
 
-// ---------------------------------------------------------------------------
-// Jev-assisted suggestions: bounded semantic judgments. The shapes live with
-// the server registry (convex/jevRegistry.ts) so both adapters share them.
-// ---------------------------------------------------------------------------
-export type {
-  JevBlockReason as AssistBlockReason,
-  JevFailureReason as AssistFailureReason,
-  JevFeatureStatus as AssistFeatureStatus,
-  JevJudgeResult as AssistJudgmentResult,
-  JevJudgment as AssistJudgment,
-  JevKind as AssistJudgmentKind,
-  JevQuestionSummary as AssistQuestionSummary,
-  JevSimulation as AssistSimulation,
-  JevStatusView as AssistStatus,
-} from "../../../convex/jevRegistry";
-
-// Connected staff follow-up assistance: the member projection and its parts live
-// with the shared module (convex/followupAssist.ts) so both adapters build it alike.
 // Member resolution workspace: one deterministic projection per member, shared with the preview adapter.
 export type {
   MemberResolutionContext,
@@ -3803,52 +3798,24 @@ export type {
   ReasonActionKey,
 } from "../../../convex/followupAssist";
 
-// Support inbox review and public-page draft review: passages, recorded facts and
-// findings are built by the shared modules so both adapters and the console agree.
-export type {
-  SupportCaseLike,
-  SupportCategoryId,
-  SupportCategoryView,
-  SupportClarification,
-  SupportFacts,
-  SupportInvoiceFact,
-  SupportPassage,
-  SupportPassageFinding,
-  SupportReviewContext,
-} from "../../../convex/supportAssist";
-
-export type {
-  GymProfileReviewContext,
-  ProfilePassage,
-  ProfilePassageFinding,
-  ProfileRecordedServices,
-  ProfileTextField,
-} from "../../../convex/profileAssist";
-
 // Branch operations: filing descriptions, repair history, handover and notification groups (shared module).
 export type {
   HandoverGroup,
   HandoverGrouping,
   HandoverItem,
-  HandoverRelatedReading,
   NotificationGroup,
   NotificationGrouping,
   RepairHistory,
   RepairHistoryEntry,
-  ReportCategoryReading,
-  ReportTargetReading,
-  SameFaultReading,
 } from "../../../convex/branchOpsAssist";
 
-// The daily operating brief: sections, figures, sources, mandatory items and the two readings (shared module).
+// The daily operating brief: sections, figures, sources, mandatory items and related pairs (shared module).
 export type {
   BriefEmphasisKey,
-  BriefEmphasisReading,
   BriefEvidenceLink,
   BriefFigure,
   BriefItem,
   BriefRelatedPair,
-  BriefRelatedReading,
   BriefScope,
   BriefSection,
   BriefSectionKey,
@@ -3857,22 +3824,3 @@ export type {
   BriefSourceStatus,
   OperatingBrief,
 } from "../../../convex/operatingBrief";
-
-export interface AssistJudgmentRequest {
-  questionKey: string;
-  /** Identifiers of the record to judge. The server loads the state itself and re-checks access to every id. */
-  subject?: Record<string, string | number | boolean>;
-}
-
-export interface UpdateAssistPreferenceInput {
-  enabled: boolean;
-  reason?: string;
-}
-
-/** Mock persistence of the gym's own switch (Convex keeps it in jevTenantPreferences). */
-export interface AssistTenantPreference {
-  enabled: boolean;
-  updatedAt?: ISODateTime;
-  updatedBy?: string;
-  reason?: string;
-}

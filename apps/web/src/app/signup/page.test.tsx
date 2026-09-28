@@ -58,18 +58,35 @@ describe("gym application pricing selection", () => {
     await screen.findByRole("radio", { name: /Enterprise/ });
     await user.type(screen.getByPlaceholderText("Omar Khalil"), "Annual Owner");
     await user.type(screen.getByPlaceholderText("owner@example.com"), "annual-owner@example.test");
-    await user.type(screen.getByPlaceholderText("+962 79 555 0194"), "+962790000999");
     await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Annual Gym");
+    await user.type(screen.getByPlaceholderText("Enter a reachable number"), "+962790000999");
+    await user.type(screen.getByPlaceholderText("Street, area, city"), "12 King Abdullah II Street, Amman");
     await user.click(screen.getByRole("button", { name: /Send gym application/ }));
 
     expect(state.submitGymApplication).toHaveBeenCalledWith(expect.objectContaining({
       ownerName: "Annual Owner",
       gymName: "Annual Gym",
+      gymAddress: "12 King Abdullah II Street, Amman",
       email: "annual-owner@example.test",
       contactNumber: "+962790000999",
       plan: "Enterprise",
       billingInterval: "annual",
     }));
     expect(state.submitGymApplication.mock.calls[0]?.[0].idempotencyKey).toEqual(expect.any(String));
+  });
+
+  it("requires a physical gym address before sending the application", async () => {
+    const user = userEvent.setup();
+    render(<GymApplicationPage />);
+
+    await screen.findByRole("radio", { name: /Enterprise/ });
+    await user.type(screen.getByPlaceholderText("Omar Khalil"), "Annual Owner");
+    await user.type(screen.getByPlaceholderText("owner@example.com"), "annual-owner@example.test");
+    await user.type(screen.getByPlaceholderText("Enter a reachable number"), "+962790000999");
+    await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Annual Gym");
+    await user.click(screen.getByRole("button", { name: /Send gym application/ }));
+
+    expect(await screen.findByText("Enter the gym's physical address.")).toBeInTheDocument();
+    expect(state.submitGymApplication).not.toHaveBeenCalled();
   });
 });

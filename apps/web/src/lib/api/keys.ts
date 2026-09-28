@@ -13,7 +13,6 @@ export const qk = {
   plans: (params?: unknown) => ["plans", params] as const,
   gymProfile: ["gymProfile"] as const,
   gymProfileVersions: ["gymProfile", "versions"] as const,
-  gymProfileReview: ["gymProfile", "review"] as const,
   ptWorkspace: ["pt", "workspace"] as const,
   ptMember: (membershipId: string) => ["pt", "member", membershipId] as const,
   memberships: (params?: unknown) => ["memberships", params] as const,
@@ -42,6 +41,7 @@ export const qk = {
   approvals: ["approvals"] as const,
   platformGymDetail: (id: string) => ["platform", "gyms", "detail", id] as const,
   settings: ["settings"] as const,
+  myProfile: ["myProfile"] as const,
   workspaceAccess: ["workspace", "access"] as const,
   operations: (params?: unknown) => ["operations", params] as const,
   payables: (params?: unknown) => ["payables", params] as const,
@@ -78,9 +78,6 @@ export const qk = {
   checklistAssignees: (branchId: string) => ["checklistAssignees", branchId] as const,
   checklistTemplates: (branchId?: string) => ["checklistTemplates", branchId ?? "all"] as const,
   checklistDay: (branchId: string, date?: string) => ["checklistDay", branchId, date ?? "today"] as const,
-  assistStatus: ["assist", "status"] as const,
-  platformAssistStatus: (gymId: string) => ["assist", "platform", gymId] as const,
-  platformSupportReview: (caseId: string) => ["platform", "support", "review", caseId] as const,
 };
 
 /** Prefixes invalidated after any money/membership-affecting mutation. */

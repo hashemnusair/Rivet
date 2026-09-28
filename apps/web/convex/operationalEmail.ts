@@ -6,6 +6,7 @@ import { notifyOrganizationSupervisors } from "./notificationDelivery";
 import { parseEmailAllowlist, resolveEmailMode, routeEmail, sandboxSubject } from "./emailMode";
 import { attachmentSizeLabel, renderBrandedEmail, type BrandedEmail, type EmailAudience } from "./emailTemplate";
 import { resolveBrandColor } from "./brand";
+import { BRAND_CONTACT } from "./brandTokens";
 
 const RETRY_MINUTES = [1, 5, 30] as const;
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -103,8 +104,8 @@ const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: strin
     ar: { subject: "تم إصدار فاتورة RIVET", body: "تم إصدار فاتورة منصة للنادي. سجّل الدخول إلى RIVET لعرض المبلغ وفترة الفوترة وتاريخ الاستحقاق." },
   },
   platform_invoice_reminder: {
-    en: { subject: "Your RIVET invoice is coming due", body: "Your next RIVET platform invoice is due in three days. Sign in to review the amount, billing period, and due date." },
-    ar: { subject: "فاتورة RIVET مستحقة قريباً", body: "تستحق فاتورة منصة RIVET القادمة خلال ثلاثة أيام. سجّل الدخول لمراجعة المبلغ وفترة الفوترة وتاريخ الاستحقاق." },
+    en: { subject: "Your RIVET invoice is ready", body: "Your next RIVET platform invoice has been issued. Sign in to review the amount, billing period, and due date. Payment is due on the date shown." },
+    ar: { subject: "فاتورة RIVET جاهزة", body: "تم إصدار فاتورة منصة RIVET القادمة. سجّل الدخول لمراجعة المبلغ وفترة الفوترة وتاريخ الاستحقاق. يستحق الدفع في التاريخ الموضح." },
   },
   platform_invoice_paid: {
     en: { subject: "Your RIVET invoice was marked paid", body: "An offline payment was recorded against your platform invoice. Sign in to RIVET to view the reference and status." },
@@ -553,6 +554,11 @@ export const processDue = internalAction({
             subject,
             html: delivery.html,
             text: delivery.text,
+            ...(delivery.kind.startsWith("gym_application_") ? {
+              // Keep applicant replies with the RIVET team even when this
+              // message is sent from the provider-managed noreply identity.
+              reply_to: process.env.RESEND_REPLY_TO_EMAIL?.trim() || BRAND_CONTACT.email,
+            } : {}),
             ...(delivery.attachments?.length ? { attachments: delivery.attachments.map((attachment) => ({ filename: attachment.filename, content: attachment.contentBase64, content_type: attachment.contentType })) } : {}),
           }),
         });

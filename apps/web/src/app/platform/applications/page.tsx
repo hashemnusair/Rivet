@@ -139,7 +139,7 @@ export default function PlatformApplicationsPage() {
     const normalized = search.trim().toLowerCase();
     return applications.filter((application) => {
       const matchesFilter = filter === "all" || application.status === filter;
-      const matchesSearch = !normalized || [application.gymName, application.ownerName, application.email, application.contactNumber, application.plan].some((value) => value.toLowerCase().includes(normalized));
+      const matchesSearch = !normalized || [application.gymName, application.gymAddress ?? "", application.ownerName, application.email, application.contactNumber, application.plan].some((value) => value.toLowerCase().includes(normalized));
       return matchesFilter && matchesSearch;
     });
   }, [applications, filter, search]);
@@ -319,6 +319,7 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyNote,
             <h3 id={`applicant-${application.id}`} className="text-[13px] font-semibold">Applicant</h3>
             <dl className="mt-2 grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2">
               <Detail label="Owner" value={application.ownerName} />
+              <Detail label="Gym address" value={application.gymAddress || "Address not provided"} />
               <Detail label="Email" value={application.email} ltr />
               <Detail label="Contact number" value={application.contactNumber} ltr />
               <Detail label="Chosen plan" value={application.plan} />

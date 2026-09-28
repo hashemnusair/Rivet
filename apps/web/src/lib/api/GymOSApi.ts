@@ -118,6 +118,8 @@ import type {
   UpdatePlanInput,
   UpdateRolePermissionsInput,
   UpdateUserAccessInput,
+  UpdateUserProfileInput,
+  UserProfile,
   VoidPaymentInput,
   VoidRetailSaleInput,
   ISODate,
@@ -282,37 +284,6 @@ export type MemberImportColumnMapping = Partial<Record<MemberImportField, number
 export type MemberImportPlanMapping = Record<string, UUID>;
 export type MemberImportStatus = "preview" | "processing" | "completed" | "undoing" | "undone";
 
-/**
- * What import assistance may reason about for one file: headings, a
- * value-shape summary per column (counts only) and the legacy plan labels
- * with their row counts. Member rows are never part of it.
- */
-export interface MemberImportAssistDraftInput {
-  branchId: UUID;
-  sourceKind?: "csv" | "xlsx" | "pasted";
-  sourceFileName?: string;
-  headers: string[];
-  columns: import("../../../convex/jevImportState").ImportColumnSummary[];
-  sourcePlanLabels: Array<{ label: string; rows: number }>;
-}
-
-export interface MemberImportAssistDraft {
-  id: string;
-  branchId: UUID;
-  headers: string[];
-  columns: import("../../../convex/jevImportState").ImportColumnSummary[];
-  sourcePlanLabels: Array<{ label: string; rows: number }>;
-  createdAt: string;
-  expiresAt: string;
-}
-
-/** Which mappings a person accepted from a Jev suggestion; kept with the import for review. */
-export interface MemberImportAssistProvenance {
-  draftId?: string;
-  columns: MemberImportField[];
-  plans: string[];
-}
-
 export interface MemberImportPreviewInput {
   csv: string;
   branchId: UUID;
@@ -322,7 +293,6 @@ export interface MemberImportPreviewInput {
   columnMapping?: MemberImportColumnMapping;
   migrationCutoffDate?: string;
   planMappings?: MemberImportPlanMapping;
-  assist?: MemberImportAssistProvenance;
 }
 
 export interface MemberImportPreview {
@@ -343,7 +313,6 @@ export interface MemberImportPreview {
   columnMapping?: MemberImportColumnMapping;
   migrationCutoffDate?: string;
   planMappings?: MemberImportPlanMapping;
-  assist?: MemberImportAssistProvenance;
   membershipRows?: number;
   openingBalanceRows?: number;
   historicalEvidenceRows?: number;
@@ -469,6 +438,33 @@ export interface PlatformGymDetailBranch {
   status: "active" | "inactive";
 }
 
+export interface PlatformGymMember {
+  id: string;
+  memberNumber: string;
+  name: string;
+  status: "active" | "inactive" | "archived";
+  branchId?: string;
+  branchName?: string;
+  membershipStatus?: string;
+  planName?: string;
+  membershipEndDate?: string;
+  joinedAt?: string;
+}
+
+export interface PlatformGymStaff {
+  id: string;
+  name: string;
+  /** Sign-in identifier for operationally distinguishing same-name invitees. */
+  email: string;
+  role: string;
+  status: "active" | "invited" | "deactivated";
+  branchScope: "all" | "selected";
+  branchIds: string[];
+  branchNames: string[];
+  invitationStatus?: "pending" | "accepted" | "revoked";
+  joinedAt?: string;
+}
+
 export interface PlatformGymOwner {
   name: string;
   email: string;
@@ -518,6 +514,10 @@ export interface PlatformGymDetail {
   publicPage: PlatformData<{ publishedVersion: number; draftVersion?: number; draftStatus?: string; draftUpdatedAt?: string }>;
   joinedAt: PlatformData<string>;
   branches: PlatformData<PlatformGymDetailBranch[]>;
+  /** Complete tenant-scoped directory rows; the detail UI paginates these
+   * client-side while retaining access to the full result. */
+  members: PlatformData<PlatformGymMember[]>;
+  staff: PlatformData<PlatformGymStaff[]>;
   owner: PlatformData<PlatformGymOwner>;
   /** The active subscription agreement; not_configured until the owner signs. */
   agreement: PlatformData<import("@/lib/domain/types").PlatformAgreementSummary>;
@@ -661,6 +661,8 @@ export interface PlatformSaasPlan {
 
 export interface SubmitGymApplicationInput {
   gymName: string;
+  /** Physical address where the applicant's gym operates. */
+  gymAddress: string;
   ownerName: string;
   email: string;
   contactNumber: string;
@@ -681,6 +683,8 @@ export type GymProvisioningOutcome = "complete" | "partial" | "retryable" | "per
 export interface PlatformGymApplication {
   id: UUID;
   gymName: string;
+  /** Required for new applications; optional for historical rows created before address capture. */
+  gymAddress?: string;
   ownerName: string;
   email: string;
   contactNumber: string;
@@ -1161,6 +1165,8 @@ export interface GymOSApi {
   listAuditEvents(query: AuditQuery): Promise<Page<AuditEvent>>;
 
   // Settings & users
+  getMyProfile(): Promise<UserProfile>;
+  updateMyProfile(input: UpdateUserProfileInput): Promise<UserProfile>;
   getOrganizationSettings(): Promise<OrganizationSettings>;
   getBrandKit(): Promise<BrandKit>;
   updateBrandKit(input: UpdateBrandKitInput): Promise<BrandKit>;
@@ -1208,18 +1214,6 @@ export interface GymOSApi {
   // Outbound messaging (WhatsApp / SMS)
   getMessagingStatus(): Promise<import("@/lib/domain/types").MessagingStatus>;
   listMessageTemplateCatalogue(): Promise<import("@/lib/domain/types").MessageTemplateCatalogueEntry[]>;
-
-  // Jev-assisted suggestions: bounded semantic judgments. Pages read the status
-  // first and never block a workflow on a judgment (docs/21).
-  getAssistStatus(): Promise<import("@/lib/domain/types").AssistStatus>;
-  updateAssistPreference(input: import("@/lib/domain/types").UpdateAssistPreferenceInput): Promise<import("@/lib/domain/types").AssistStatus>;
-  requestAssistJudgment(input: import("@/lib/domain/types").AssistJudgmentRequest): Promise<import("@/lib/domain/types").AssistJudgmentResult>;
-  /** The same status for one gym, read by a platform administrator on the support inbox; never changes the gym's switch. */
-  getPlatformAssistStatus(gymId: string): Promise<import("@/lib/domain/types").AssistStatus>;
-  /** One support case cut into addressable passages beside the gym's recorded billing and public-page facts. Platform administrators only. */
-  getPlatformSupportReviewContext(caseId: string): Promise<import("@/lib/domain/types").SupportReviewContext>;
-  /** The saved public-page draft cut into passages beside what the gym's records say. Needs profiles.manage. */
-  getGymProfileReviewContext(): Promise<import("@/lib/domain/types").GymProfileReviewContext>;
 
   // Subscription agreement (e-signature at onboarding)
   getSubscriptionAgreementContext(): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
@@ -1279,8 +1273,6 @@ export interface GymOSApi {
   getEquipmentRecommendation(assetId: UUID): Promise<import("@/lib/domain/types").EquipmentRecommendation>;
   listUsers(query: UserListQuery): Promise<Page<StaffUser>>;
   previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview>;
-  /** Headings and value-shape summaries only; the id scopes import suggestions to this file. */
-  saveMemberImportAssistDraft(input: MemberImportAssistDraftInput): Promise<MemberImportAssistDraft>;
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult>;
   listMemberImports(): Promise<MemberImportSummary[]>;
   getMemberImport(importId: UUID): Promise<MemberImportPreview>;
@@ -1311,10 +1303,6 @@ export interface MockBehavior {
   forceEmptyLists: boolean;
   /** Preview/test seam: pretend the demo gym has not signed its subscription agreement yet. */
   agreementUnsigned?: boolean;
-  /** Preview seam for Jev suggestions: fixture answers (default) or switched off. */
-  assistMode?: "off" | "fixture";
-  /** Preview seam: the demo gym's own Jev switch, persisted so it survives a full navigation in the preview. */
-  assistEnabled?: boolean;
 }
 
 export const DEFAULT_BEHAVIOR: MockBehavior = {

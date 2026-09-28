@@ -150,4 +150,45 @@ describe("Convex authorization matrix", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("payments.void", { paymentId: "missing", reason: "Owner verification", idempotencyKey: "missing-owner-void" })), "NOT_FOUND");
     await expectCode(owner.mutation(api.domain.mutate, operation("checkins.override", { branchId: "auth-branch-a", memberId: "missing", reason: "Owner verification" })), "NOT_FOUND");
   });
+
+  it("scopes profile reads and writes to the authenticated staff member", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const reception = t.withIdentity({ subject: "clerk-auth-reception", name: "Provider Reception Name", email: "auth-reception@example.com" });
+    const manager = t.withIdentity({ subject: "clerk-auth-manager", name: "Provider Manager Name", email: "auth-manager@example.com" });
+
+    // These roles do not have settings.manage or users.manage, but personal
+    // profile access is intentionally available to every active staff role.
+    await expect(reception.query(api.domain.query, operation("users.profile.get"))).resolves.toMatchObject({ id: "auth-reception", name: "auth-reception" });
+    await expect(manager.mutation(api.domain.mutate, operation("users.profile.update", { name: "  Manager Profile  ", phone: "+962790000123", userId: "auth-reception" }))).resolves.toMatchObject({ id: "auth-manager", name: "Manager Profile", phone: "+962790000123" });
+
+    // A caller-supplied target id is ignored. It cannot turn the self-service
+    // operation into an access-management mutation.
+    await expect(reception.mutation(api.domain.mutate, operation("users.profile.update", { name: "Reception Profile", userId: "auth-manager" }))).resolves.toMatchObject({ id: "auth-reception", name: "Reception Profile" });
+    await expect(reception.query(api.domain.query, operation("users.profile.get"))).resolves.toMatchObject({ id: "auth-reception", name: "Reception Profile" });
+    await expect(manager.query(api.domain.query, operation("users.profile.get"))).resolves.toMatchObject({ id: "auth-manager", name: "Manager Profile" });
+
+    const searchResults = await reception.query(api.domain.query, operation("workspace.search", { search: "settings" })) as Array<{ href?: string }>;
+    expect(searchResults).toEqual(expect.arrayContaining([expect.objectContaining({ href: "/settings" })]));
+
+    // The explicit local name marker survives a later Clerk bootstrap using
+    // the provider's stale name.
+    await expect(reception.mutation(api.users.ensureCurrent, { fullName: "Stale Provider Name" })).resolves.toMatchObject({ synced: true });
+    await expect(reception.query(api.domain.query, operation("users.profile.get"))).resolves.toMatchObject({ name: "Reception Profile" });
+
+    // Tenant selection remains enforced by requireActor, even for a personal
+    // profile operation.
+    await expectCode(reception.query(api.domain.query, operation("users.profile.get", {}, { organizationId: "org-auth-b" })), "FORBIDDEN");
+    await expectCode(reception.mutation(api.domain.mutate, operation("settings.organization.update", { name: "Should not change the gym" })), "FORBIDDEN");
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", "auth-reception")).unique();
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-auth-a")).unique();
+      if (!user || !organization) throw new Error("profile authorization fixtures missing");
+      const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organization._id).eq("userId", user._id)).unique();
+      if (!membership) throw new Error("profile membership fixture missing");
+      await ctx.db.patch(membership._id, { active: false, updatedAt: Date.now() });
+    });
+    await expectCode(reception.query(api.domain.query, operation("users.profile.get")), "FORBIDDEN");
+  });
 });

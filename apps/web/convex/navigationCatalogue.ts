@@ -1,15 +1,11 @@
-import type { JevCandidate, JevJudgment, JevState } from "./jevRegistry";
-
 /**
  * The one catalogue of places a person can go in the gym workspace:
  * destinations, report views, form entry points and Settings sections. Every
  * entry has a stable id, an authored description, its route and the
  * permission and workspace-module requirements that already gate that route.
  *
- * The fast keyword search and Jev's intent suggestion both read this list.
- * Jev is only ever offered the entries the caller is permitted to open (the
- * server filters with the actor, the page filters again with the session),
- * plus prepared clarifications and "no match"; it can name nothing else.
+ * The fast keyword search reads this list. The server filters with the actor,
+ * and the page filters again with the current session before showing entries.
  * Pure: no Convex or SDK imports.
  */
 export type NavigationEntryKind = "destination" | "report" | "form" | "settings";
@@ -33,20 +29,6 @@ export interface NavigationEntry {
   /** Opening it presents a form or dialog; nothing is submitted by navigating. */
   opensForm?: boolean;
 }
-
-export interface NavigationClarification {
-  id: string;
-  /** The question shown to the person. */
-  question: string;
-  /** When the model should pick this instead of one destination. */
-  description: string;
-  /** Catalogue ids the person chooses between. */
-  options: string[];
-  keywords: string[];
-}
-
-export const NAVIGATION_NO_MATCH = "no_match";
-export const NAVIGATION_CATALOGUE_VERSION = 1;
 
 const REPORTS = "reports.financial.read";
 
@@ -98,6 +80,7 @@ export const NAVIGATION_ENTRIES: readonly NavigationEntry[] = [
   { id: "report.controls", kind: "report", label: "Controls", description: "Who is refunding, voiding, discounting and overriding, and why.", href: "/reports?view=controls", keywords: ["refunds", "voids", "discounts", "overrides", "controls"], anyPermission: [REPORTS] },
   // Settings sections (ids mirror the Settings rail)
   { id: "settings.organization", kind: "settings", label: "Settings: Organization", description: "Gym name, timezone, locale, language, phone country and tax.", href: "/settings?section=organization", keywords: ["gym name", "timezone", "locale", "language", "identity"], anyPermission: ["settings.manage"] },
+  { id: "settings.my-profile", kind: "settings", label: "Settings: My profile", description: "Change your display name and phone number without changing anyone else's access.", href: "/settings?section=my-profile", keywords: ["profile", "account", "display name", "name", "phone", "personal"] },
   { id: "settings.brand", kind: "settings", label: "Settings: Brand kit", description: "Logo, palette and the colours the workspace and documents use.", href: "/settings?section=brand", keywords: ["logo", "colour", "color", "brand", "theme"], anyPermission: ["settings.manage"] },
   { id: "settings.profile", kind: "settings", label: "Settings: Public profile", description: "The gym's public page in member discovery: photos, amenities, publishing.", href: "/settings?section=profile", keywords: ["public page", "website", "directory", "publish", "photos"], anyPermission: ["profiles.manage"] },
   { id: "settings.branches", kind: "settings", label: "Settings: Branches", description: "The gym's locations, their codes, addresses and status.", href: "/settings?section=branches", keywords: ["branch", "location", "address", "site"], anyPermission: ["settings.manage"] },
@@ -113,20 +96,6 @@ export const NAVIGATION_ENTRIES: readonly NavigationEntry[] = [
   { id: "settings.operations", kind: "settings", label: "Settings: Operational rules", description: "Entry rules, freezes, referrals, renewals, class booking and retention policies.", href: "/settings?section=operations", keywords: ["policies", "freeze rules", "entry rules", "referral", "booking rules"], anyPermission: ["settings.manage"] },
   { id: "settings.hours", kind: "settings", label: "Settings: Hours & trials", description: "Opening hours per branch and the windows for free trials.", href: "/settings?section=hours", keywords: ["opening hours", "trial", "schedule", "closing"], anyPermission: ["settings.manage"] },
   { id: "settings.checklists", kind: "settings", label: "Settings: Daily checklists", description: "The opening and closing checklist templates per branch.", href: "/settings?section=checklists", keywords: ["checklist template", "opening", "closing"], anyPermission: ["operations.manage"] },
-  { id: "settings.assist", kind: "settings", label: "Settings: Jev assistance", description: "Whether Jev suggestions are on for this gym, their status and a synthetic check.", href: "/settings?section=assist", keywords: ["jev", "ai", "suggestions", "assist"], anyPermission: ["settings.manage"] },
-];
-
-/**
- * Prepared clarifications. The model may pick one when a request fits more
- * than one existing workflow; the person then chooses between real
- * destinations. Nothing here describes behaviour RIVET does not have.
- */
-export const NAVIGATION_CLARIFICATIONS: readonly NavigationClarification[] = [
-  { id: "clarify.payment", question: "Which payment do you mean?", description: "The request is about recording a payment but does not say whether it is a member paying the gym or the gym paying a supplier.", options: ["form.payment.collect", "form.supplier.payment"], keywords: ["payment", "pay", "record a payment", "paid"] },
-  { id: "clarify.member_change", question: "What should change for the member?", description: "The request is about changing something on a member's membership or record (for example moving them, pausing, extending or switching plan); each is an existing action started from the member's record.", options: ["page.members", "page.memberships", "settings.branches"], keywords: ["move", "transfer", "another branch", "switch branch", "freeze", "pause", "change plan", "extend"] },
-  { id: "clarify.report_or_ledger", question: "Do you want the report or the ledger?", description: "The request is about money figures and could mean the transaction ledger, the finance overview report or the management statements.", options: ["page.payments", "report.overview", "page.finance"], keywords: ["revenue", "income", "money", "sales figures", "how much"] },
-  { id: "clarify.staff_or_roles", question: "People or permissions?", description: "The request is about staff and could mean managing accounts (invite, deactivate) or what a role may do.", options: ["settings.users", "settings.roles"], keywords: ["staff", "team", "employee", "permission", "access"] },
-  { id: "clarify.check_in", question: "Check someone in, or review check-ins?", description: "The request is about entry and could mean checking a member in now or looking at attendance and peak hours.", options: ["form.checkin.start", "report.peak_hours"], keywords: ["check in", "entry", "attendance", "came in"] },
 ];
 
 export interface NavigationAccess {
@@ -155,12 +124,6 @@ export function permittedNavigationEntries(access: NavigationAccess): Navigation
   return NAVIGATION_ENTRIES.filter((entry) => navigationEntryVisible(entry, access));
 }
 
-/** A clarification is offered only when the person could open at least two of its options. */
-export function permittedClarifications(entries: readonly NavigationEntry[]): NavigationClarification[] {
-  const ids = new Set(entries.map((entry) => entry.id));
-  return NAVIGATION_CLARIFICATIONS.map((clarification) => ({ ...clarification, options: clarification.options.filter((option) => ids.has(option)) })).filter((clarification) => clarification.options.length >= 2);
-}
-
 export function normalizeNavigationQuery(value: string): string {
   return value.normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}\s&]+/gu, " ").replace(/\s+/g, " ").trim();
 }
@@ -169,10 +132,7 @@ function tokens(value: string): string[] {
   return normalizeNavigationQuery(value).split(" ").filter((token) => token.length >= 2);
 }
 
-/**
- * The fast path: exact label, then keyword and word overlap. Deterministic
- * and cheap enough to run on every keystroke; Jev is never involved here.
- */
+/** The fast path: exact label, then keyword and word overlap. */
 export function keywordSearchNavigation(entries: readonly NavigationEntry[], query: string, limit = 8): NavigationEntry[] {
   const normalized = normalizeNavigationQuery(query);
   if (normalized.length < 2) return [];
@@ -193,189 +153,8 @@ export function keywordSearchNavigation(entries: readonly NavigationEntry[], que
   return scored.slice(0, limit).map((item) => item.entry);
 }
 
-export interface NavigationIntentBuild {
-  state: JevState;
-  candidates: JevCandidate[];
-  scopeKey: string;
-  sourceVersion: string;
-}
-
 export const NAVIGATION_QUERY_MAX_LENGTH = 200;
-
-/**
- * The state for one request: the person's words, where they are, and what
- * they may open. Candidates are the permitted entries, the clarifications
- * that still have two permitted options, and no-match.
- */
-export function buildNavigationIntentState(input: { query: string; currentPath?: string; entries: readonly NavigationEntry[]; clarifications: readonly NavigationClarification[]; role?: string }): NavigationIntentBuild {
-  const query = input.query.trim().slice(0, NAVIGATION_QUERY_MAX_LENGTH);
-  const candidates: JevCandidate[] = [
-    ...input.entries.map((entry) => ({ id: entry.id, description: `${entry.label} (${entry.kind}${entry.opensForm ? ", opens a form" : ""}): ${entry.description}` })),
-    ...input.clarifications.map((clarification) => ({ id: clarification.id, description: `Ask "${clarification.question}" between ${clarification.options.map((option) => BY_ID.get(option)?.label ?? option).join(" / ")}. ${clarification.description}` })),
-    { id: NAVIGATION_NO_MATCH, description: "No page, report, form or setting in RIVET fits this request, or the request is not about going somewhere in RIVET." },
-  ];
-  const state: JevState = {
-    task: "A member of gym staff typed a request into RIVET's workspace search. Pick the one place in RIVET they most plausibly want to open, a prepared clarification when the request fits more than one place, or no_match.",
-    request: query,
-    currentPage: input.currentPath ?? null,
-    role: input.role ?? null,
-    permittedPlaces: input.entries.length,
-  };
-  return { state, candidates, scopeKey: "navigation:intent", sourceVersion: `navigation:${NAVIGATION_CATALOGUE_VERSION}` };
-}
-
-export type NavigationIntentOutcome =
-  | { kind: "destination"; entry: NavigationEntry; probability: number }
-  | { kind: "clarify"; clarification: NavigationClarification; options: NavigationEntry[]; probability: number }
-  | { kind: "no_match"; probability: number };
-
-/**
- * A judgment becomes an outcome only through the permitted lists supplied by
- * the caller: an id that is not in them is a no-match, whatever it was.
- */
-export function resolveNavigationIntent(judgment: JevJudgment, entries: readonly NavigationEntry[], clarifications: readonly NavigationClarification[]): NavigationIntentOutcome {
-  if (judgment.kind !== "choice") return { kind: "no_match", probability: 0 };
-  const probability = judgment.probabilities[judgment.choice] ?? 0;
-  const entry = entries.find((candidate) => candidate.id === judgment.choice);
-  if (entry) return { kind: "destination", entry, probability };
-  const clarification = clarifications.find((candidate) => candidate.id === judgment.choice);
-  if (clarification) {
-    const options = clarification.options.map((id) => entries.find((candidate) => candidate.id === id)).filter((candidate): candidate is NavigationEntry => Boolean(candidate));
-    if (options.length >= 2) return { kind: "clarify", clarification, options, probability };
-  }
-  return { kind: "no_match", probability };
-}
-
-function distribution(candidates: readonly JevCandidate[] | undefined, choice: string, confidence: number): JevJudgment {
-  const ids = (candidates ?? []).map((candidate) => candidate.id);
-  const others = ids.filter((id) => id !== choice);
-  const rest = others.length ? (1 - confidence) / others.length : 0;
-  return { kind: "choice", choice, probabilities: Object.fromEntries(ids.map((id) => [id, id === choice ? (others.length ? confidence : 1) : rest])), confidence };
-}
-
-/**
- * The preview's stand-in for the model: keyword overlap against the offered
- * candidates' descriptions, a clarification when the request matches one and
- * no single entry clearly wins, no-match otherwise. Deterministic.
- */
-/** Function words carry no intent; the preview resolver ignores them on both sides. */
-const STOPWORDS = new Set(["what", "when", "where", "which", "who", "whom", "whose", "why", "how", "does", "do", "did", "have", "has", "had", "still", "this", "that", "these", "those", "with", "from", "into", "your", "their", "there", "about", "more", "some", "want", "need", "open", "show", "find", "please", "next", "month", "week", "today", "tonight", "can", "the", "and", "for", "you", "our", "they", "them", "will", "should", "could", "would", "also", "just", "like", "much", "many", "very"]);
-
-const ACTION_VERBS = ["record", "create", "add", "new", "collect", "start", "book", "sell", "import", "invite", "register", "upload", "log"];
-
-/** Whole-word or stem overlap: "collect" matches "collections" and "collected", "life" matches nothing. */
-function tokenMatches(left: string, right: string): boolean {
-  return left === right || (left.length >= 4 && right.length >= 4 && (left.startsWith(right) || right.startsWith(left)));
-}
-
-function requestMentions(requestTokens: ReadonlySet<string>, token: string): boolean {
-  if (STOPWORDS.has(token)) return false;
-  for (const candidate of requestTokens) if (!STOPWORDS.has(candidate) && tokenMatches(candidate, token)) return true;
-  return false;
-}
-
-export function resolveNavigationIntentFixture(input: { state: JevState; candidates?: JevCandidate[] }): JevJudgment | undefined {
-  if (typeof input.state !== "object" || input.state === null || Array.isArray(input.state)) return undefined;
-  const request = typeof input.state.request === "string" ? normalizeNavigationQuery(input.state.request) : "";
-  const requestTokens = new Set(tokens(request));
-  const offered = new Map((input.candidates ?? []).map((candidate) => [candidate.id, candidate] as const));
-  if (!request || !offered.size) return distribution(input.candidates, NAVIGATION_NO_MATCH, 0.7);
-  const scoreEntry = (entry: NavigationEntry): number => {
-    let score = 0;
-    const label = normalizeNavigationQuery(entry.label);
-    if (request.includes(label)) score += 6;
-    for (const keyword of entry.keywords.map(normalizeNavigationQuery)) if (request.includes(keyword)) score += 4;
-    for (const token of new Set(tokens(`${entry.label} ${entry.keywords.join(" ")} ${entry.description}`))) if (token.length >= 4 && requestMentions(requestTokens, token)) score += 1;
-    // "Record …", "Create …": a request that starts with an action verb leans towards an entry point over a page.
-    if (entry.opensForm && ACTION_VERBS.some((verb) => request === verb || request.startsWith(`${verb} `))) score += 1;
-    return score;
-  };
-  const entries = NAVIGATION_ENTRIES.filter((entry) => offered.has(entry.id)).map((entry) => ({ id: entry.id, entry, score: scoreEntry(entry) })).sort((left, right) => right.score - left.score);
-  const clarifications = NAVIGATION_CLARIFICATIONS.filter((clarification) => offered.has(clarification.id)).map((clarification) => ({ clarification, score: clarification.keywords.map(normalizeNavigationQuery).filter((keyword) => request.includes(keyword)).length })).filter((item) => item.score > 0).sort((left, right) => right.score - left.score);
-  const clarification = clarifications[0]?.clarification;
-  if (clarification) {
-    // A clarification's trigger words are shared by all its options; only a
-    // word that belongs to exactly one option (its label or keywords, not the
-    // shared triggers) settles the request without asking.
-    const shared = new Set(clarification.keywords.flatMap(tokens));
-    const optionWords = clarification.options.map((id) => {
-      const entry = BY_ID.get(id);
-      return { id, words: new Set(entry ? tokens(`${entry.label} ${entry.keywords.join(" ")}`).filter((word) => word.length >= 4 && ![...shared].some((trigger) => tokenMatches(trigger, word))) : []) };
-    });
-    const distinguishing = optionWords.map(({ id, words }) => ({ id, words: [...words].filter((word) => optionWords.every((other) => other.id === id || !other.words.has(word))) }));
-    const mentioned = distinguishing.filter(({ words }) => words.some((word) => requestMentions(requestTokens, word))).map(({ id }) => id);
-    if (mentioned.length === 1 && offered.has(mentioned[0]!)) return distribution(input.candidates, mentioned[0]!, 0.86);
-    return distribution(input.candidates, clarification.id, 0.74);
-  }
-  const best = entries[0];
-  const second = entries[1];
-  if (!best || best.score === 0) return distribution(input.candidates, NAVIGATION_NO_MATCH, 0.72);
-  if (second && second.score === best.score) return distribution(input.candidates, best.id, 0.55);
-  return distribution(input.candidates, best.id, best.score >= 6 ? 0.9 : 0.7);
-}
-
-// --- Onboarding next step -------------------------------------------------------
-
-export interface OnboardingStepCandidate {
-  key: string;
-  title: string;
-  description: string;
-  category: "required" | "recommended" | "optional";
-  href: string;
-  complete: boolean;
-  unavailableReason?: string;
-}
-
-export const ONBOARDING_NO_STEP = "no_step";
-
-/** Which incomplete setup step to take next; every step stays listed on the page regardless. */
-export function buildOnboardingNextStepState(input: { audience: string; organizationName?: string; tasks: readonly OnboardingStepCandidate[]; facts: Record<string, number | boolean> }): NavigationIntentBuild {
-  const open = input.tasks.filter((task) => !task.complete && !task.unavailableReason);
-  const candidates: JevCandidate[] = [
-    ...open.map((task) => ({ id: task.key, description: `${task.title} (${task.category}): ${task.description}` })),
-    { id: ONBOARDING_NO_STEP, description: "Nothing stands out: the remaining steps are equally reasonable, or none is left." },
-  ];
-  const state: JevState = {
-    task: "A gym is setting up RIVET. Given what is already in place and the steps still open, pick the single step that unblocks the most day-to-day operation next. Required steps come before recommended and optional ones unless a recommended step is a prerequisite for daily work.",
-    audience: input.audience,
-    completedSteps: input.tasks.filter((task) => task.complete).map((task) => task.title),
-    openSteps: open.map((task) => ({ title: task.title, category: task.category })),
-    facts: input.facts,
-  };
-  return { state, candidates, scopeKey: `onboarding:${input.audience}`, sourceVersion: "onboarding:1" };
-}
-
-export function resolveOnboardingNextStepFixture(input: { state: JevState; candidates?: JevCandidate[] }): JevJudgment | undefined {
-  const offered = (input.candidates ?? []).map((candidate) => candidate.id).filter((id) => id !== ONBOARDING_NO_STEP);
-  if (!offered.length) return distribution(input.candidates, ONBOARDING_NO_STEP, 0.8);
-  // Required first, in the checklist's own order.
-  const required = (input.candidates ?? []).find((candidate) => candidate.id !== ONBOARDING_NO_STEP && candidate.description.includes("(required)"));
-  return distribution(input.candidates, required?.id ?? offered[0]!, required ? 0.86 : 0.7);
-}
-
-// --- Report finder ------------------------------------------------------------
 
 export function reportEntries(entries: readonly NavigationEntry[]): NavigationEntry[] {
   return entries.filter((entry) => entry.id.startsWith("report."));
-}
-
-export function buildReportFinderState(input: { question: string; entries: readonly NavigationEntry[] }): NavigationIntentBuild {
-  const question = input.question.trim().slice(0, NAVIGATION_QUERY_MAX_LENGTH);
-  const reports = reportEntries(input.entries);
-  const candidates: JevCandidate[] = [
-    ...reports.map((entry) => ({ id: entry.id, description: `${entry.label}: ${entry.description}` })),
-    { id: NAVIGATION_NO_MATCH, description: "No report view answers this question." },
-  ];
-  const state: JevState = {
-    task: "A gym owner or manager asked a question about their gym. Pick the report view that answers it, or no_match if none does. The report's dates and branch filter are chosen on the page, never here.",
-    question,
-    permittedReports: reports.length,
-  };
-  return { state, candidates, scopeKey: "navigation:report", sourceVersion: `navigation:${NAVIGATION_CATALOGUE_VERSION}` };
-}
-
-export function resolveReportFinderFixture(input: { state: JevState; candidates?: JevCandidate[] }): JevJudgment | undefined {
-  if (typeof input.state !== "object" || input.state === null || Array.isArray(input.state)) return undefined;
-  const question = typeof input.state.question === "string" ? input.state.question : "";
-  return resolveNavigationIntentFixture({ state: { request: question }, candidates: input.candidates });
 }

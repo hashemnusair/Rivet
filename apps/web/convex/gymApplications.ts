@@ -13,6 +13,7 @@ const reviewDecision = v.union(v.literal("under_review"), v.literal("approved"),
 
 const applicationArgs = {
   gymName: v.string(),
+  gymAddress: v.string(),
   ownerName: v.string(),
   email: v.string(),
   contactNumber: v.string(),
@@ -32,6 +33,7 @@ const applicationResult = v.object({
 
 type ApplicationInput = {
   gymName: string;
+  gymAddress: string;
   ownerName: string;
   email: string;
   contactNumber: string;
@@ -52,6 +54,7 @@ type ApplicationResult = {
 type ReviewResult = {
   applicationId: string;
   gymName: string;
+  gymAddress?: string;
   ownerName: string;
   email: string;
   plan: "Starter" | "Growth" | "Pro" | "Enterprise";
@@ -66,9 +69,9 @@ type ReviewResult = {
   reviewNotes?: string;
 };
 
-function clean(value: string, label: string, maxLength: number): string {
+function clean(value: string, label: string, maxLength: number, minLength = 2): string {
   const result = value.trim().replace(/\s+/g, " ");
-  if (result.length < 2 || result.length > maxLength) throw new Error(`INVALID_${label.toUpperCase()}`);
+  if (result.length < minLength || result.length > maxLength) throw new Error(`INVALID_${label.toUpperCase()}`);
   return result;
 }
 
@@ -111,10 +114,11 @@ function slug(value: string): string {
 
 function inputValues(args: ApplicationInput) {
   const gymName = clean(args.gymName, "gym_name", 120);
+  const gymAddress = clean(args.gymAddress, "gym_address", 300, 5);
   const ownerName = clean(args.ownerName, "owner_name", 160);
   const email = cleanEmail(args.email);
   const contactNumber = cleanPhone(args.contactNumber);
-  return { gymName, ownerName, email, contactNumber, canonicalContactNumber: canonicalPhone(contactNumber), plan: args.plan, billingInterval: args.billingInterval ?? "monthly" };
+  return { gymName, gymAddress, ownerName, email, contactNumber, canonicalContactNumber: canonicalPhone(contactNumber), plan: args.plan, billingInterval: args.billingInterval ?? "monthly" };
 }
 
 /**
@@ -137,6 +141,7 @@ export const create = internalMutation({
     const requestHash = await privacyFingerprint({
       scope: "gym_application",
       gymName: slug(values.gymName),
+      gymAddress: values.gymAddress,
       ownerName: values.ownerName,
       email: values.email,
       contactNumber: values.canonicalContactNumber,
@@ -192,6 +197,7 @@ export const create = internalMutation({
       publicId,
       applicationKey: matches.length > 0 ? `${baseKey}::${now}` : baseKey,
       gymName: values.gymName,
+      gymAddress: values.gymAddress,
       ownerName: values.ownerName,
       email: values.email,
       contactNumber: values.contactNumber,
@@ -323,6 +329,7 @@ export const reviewRecord = internalMutation({
       applicationDocumentId: application._id,
       applicationId: application.publicId,
       gymName: application.gymName,
+      gymAddress: application.gymAddress,
       ownerName: application.ownerName,
       email: application.email,
       plan: application.plan,
@@ -369,6 +376,7 @@ function escapeHtml(value: string): string {
 function detailsHtml(values: ApplicationInput): string {
   return `<table style="border-collapse:collapse;width:100%;max-width:560px;font-family:Arial,sans-serif;font-size:14px">
     <tr><td style="padding:8px 0;color:#777">Gym name</td><td style="padding:8px 0;font-weight:600">${escapeHtml(values.gymName)}</td></tr>
+    <tr><td style="padding:8px 0;color:#777">Gym address</td><td style="padding:8px 0">${escapeHtml(values.gymAddress)}</td></tr>
     <tr><td style="padding:8px 0;color:#777">Owner name</td><td style="padding:8px 0;font-weight:600">${escapeHtml(values.ownerName)}</td></tr>
     <tr><td style="padding:8px 0;color:#777">Email</td><td style="padding:8px 0"><a href="mailto:${encodeURIComponent(values.email)}">${escapeHtml(values.email)}</a></td></tr>
     <tr><td style="padding:8px 0;color:#777">Contact number</td><td style="padding:8px 0">${escapeHtml(values.contactNumber)}</td></tr>
@@ -426,7 +434,7 @@ export const submit = action({
       relatedEntityPublicId: created.applicationId,
       subject: "RIVET gym application received",
       html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>Application received</h2><p>Thanks for applying to bring <strong>${escapeHtml(values.gymName)}</strong> onto RIVET.</p><p>Our team will review your application and contact you soon. There is no gym account to create yet; approved gyms receive access directly from RIVET.</p>${summary}</div>`,
-      text: `Application received for ${values.gymName}. Our team will review it and contact you soon.\n\nGym: ${values.gymName}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}`,
+      text: `Application received for ${values.gymName}. Our team will review it and contact you soon.\n\nGym: ${values.gymName}\nAddress: ${values.gymAddress}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}`,
     });
     const internalRecipients = recipients.length > 0 ? recipients : [undefined];
     const internalNotifications = await Promise.all(internalRecipients.map((recipient, index) => ctx.runMutation(internal.operationalEmail.enqueue, {
@@ -439,7 +447,7 @@ export const submit = action({
       relatedEntityPublicId: created.applicationId,
       subject: `New RIVET gym application · ${values.gymName}`,
       html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>New gym application</h2><p>A gym owner submitted an application through rivetjo.com.</p>${summary}<p style="color:#777;font-size:12px">Review the applicant before provisioning a gym workspace or sending access.</p></div>`,
-      text: `New RIVET gym application\n\nGym: ${values.gymName}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}\n\nReview before provisioning access.`,
+      text: `New RIVET gym application\n\nGym: ${values.gymName}\nAddress: ${values.gymAddress}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}\n\nReview before provisioning access.`,
     })));
     const results = [applicant, ...internalNotifications];
     const notificationStatus = results.some((result) => result.status === "suppressed") ? "not_configured" as const : "pending" as const;
@@ -464,6 +472,7 @@ export const review = action({
       applicationDocumentId: Id<"gymApplications">;
       applicationId: string;
       gymName: string;
+      gymAddress?: string;
       ownerName: string;
       email: string;
       plan: "Starter" | "Growth" | "Pro" | "Enterprise";

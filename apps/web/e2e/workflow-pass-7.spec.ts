@@ -301,6 +301,7 @@ test("the gym application validates before sending and ends on a receipt", async
   await page.getByLabel("Email address").fill("omar.qa@example.com");
   await page.getByLabel("Contact number").fill("+962 79 555 0101");
   await page.getByLabel("Gym name").fill("Northstar QA Fitness");
+  await page.getByLabel("Gym address").fill("12 Airport Road, Amman");
   await page.getByRole("tab", { name: /Annual/ }).click();
   await page.getByRole("radio", { name: /Starter/ }).click();
   await expect(page.getByText(/JD 758\.400 billed annually/)).toBeVisible();

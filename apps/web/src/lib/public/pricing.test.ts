@@ -56,7 +56,9 @@ describe("public pricing contract", () => {
   it("uses the selected workspace module list for each public card", () => {
     expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[0]!)).toEqual(expect.arrayContaining(["Gym foundation", "Revenue protection"]));
     expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[0]!)).not.toContain("Daily operations");
+    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[1]!)).toContain("Daily operations");
     expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[2]!)).toEqual(expect.arrayContaining(["Financial operating system", "Management reporting"]));
+    expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[2]!)).toContain("Management reporting");
     expect(publicPlanFeatures(DEFAULT_PUBLIC_PRICING_PLANS[3]!)).toEqual(expect.arrayContaining(["Gym foundation", "Revenue protection", "Daily operations", "Financial operating system", "Management reporting"]));
   });
 

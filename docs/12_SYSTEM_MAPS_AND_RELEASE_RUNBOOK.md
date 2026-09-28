@@ -1,248 +1,44 @@
 # 12 — System Maps and Release Runbook
 
-## Walkthrough paid Jev pilot, 27 September 2026
+Last reviewed: 2026-09-28 for the feedback pass being published through main.
+This publication does not run a Convex deployment. Frontend deployment status
+requires separate evidence from the normal deployment pipeline.
 
-**Live status:** paid-pilot code `8ea316e` is deployed to Production
-`descriptive-meerkat-589`. Gateway RIVET key budget is saved at $1 with no
-refresh; balance is $5 and auto-reload is off. Production is configured live
-for all nine groups, both daily caps 50, paid allowance $1, expiry
-`2026-09-27`, and organization `0b1e7029-dd30-4345-8bd6-1dbf175ba8c5` only.
-Expiry is 03:00 Amman on 28 September. Gym opt-in was saved at 20:57:43
-Amman; the first live request remains unverified (request table empty).
-No live model accuracy has been verified. Steps below document the setup.
+## Jev assistance retirement — 28 September 2026
 
-The user authorized $1–3 total for the walkthrough. The new paid-pilot path
-is opt-in and defaults off. It supplements the older zero-cost-only procedure
-below; do not fabricate a future `RIVET_JEV_FREE_UNTIL` to enable paid calls.
+Jev suggestions and their AI Gateway integration are retired from the active
+runtime and setup path. Do not configure Jev feature flags, AI Gateway keys,
+model settings, or gym-level Jev switches for new deployments. The historical
+design and rollout record remains in `docs/21_JEV_ASSIST_FOUNDATION.md` and the
+older entries in `CURRENT_STATE.md` for audit context only.
 
-1. In Vercel AI Gateway, identify the API key used by Convex. Set its budget
-   to **$1**, refresh period **none**, and leave auto top-up off. API-key
-   requests are not covered by Vercel project budgets. Add credits only if
-   the account lacks usable credit/model access. The user handles payment.
-   Vercel documents a soft cap: the crossing request can complete, so this
-   is deliberately below the user's $3 ceiling. Confirm the saved budget
-   has taken effect before any live test. See
-   https://vercel.com/docs/ai-gateway/observability-and-spend/budgets.
-2. The frontend signup fix is live at `03d264b`, Vercel deployment
-   `dpl_8QYC6EfzvVPJ9jGhwjanR8XBMgrX` (READY, canonical domains).
-   Release the additive Jev Convex changes through the existing guarded
-   release procedure. Schema adds optional
-   `jevRequests.pilotDebitMicroUsd` and
-   `jevControlState.pilotDebitedMicroUsd`; no new indexes or deletions.
-3. In Convex Production Settings → Environment Variables, configure these
-   non-secret settings only after the Gateway budget is verified:
-   - `RIVET_JEV_PAID_PILOT_BUDGET_USD=1` (accepted range $0.01–$3).
-   - `RIVET_JEV_PAID_PILOT_UNTIL`: an agreed final UTC date, `YYYY-MM-DD`.
-   - `RIVET_JEV_PAID_PILOT_ORGANIZATIONS`: exact public organization ID(s)
-     for the test gym(s), comma-separated. Do not use names or Clerk IDs.
-   - `RIVET_JEV_FEATURES=foundation,import` initially; add the existing
-     `navigation,followup,resolution,support,profile,branchops,brief` features
-     as their walkthrough starts.
-   - `RIVET_JEV_DAILY_CAP=20`, `RIVET_JEV_TENANT_DAILY_CAP=20` initially.
-     The full walkthrough has 32 registered checks; after the first check,
-     deliberately raise both to 50 if testing all groups in one day. Keep
-     the lifetime paid allowance and Gateway budget unchanged.
-   - Set `RIVET_JEV_MODE=live` last. The Gateway key already exists by name;
-     names-only inspection does not prove credential validity or balance.
-4. The test gym's owner enables Settings → Jev assistance and runs one
-   synthetic check. Verify its request status, actual reported Gateway cost,
-   and allowance debit before using import assistance. The existing direct
-   CLI/live-smoke script remains zero-cost-only; use the guarded app action
-   for this paid pilot.
+The removal is code and configuration cleanup, not a production data purge.
+Unused `jev*` table definitions have been removed from the application schema;
+existing deployment data is retained and is no longer included by the active
+tenant-purge table list. Convex's deployment schema view and
+`DefineSchemaOptions` documentation describe the schema/data boundary:
+[deployment schema guidance](https://docs.convex.dev/dashboard/deployments/schema)
+and [`DefineSchemaOptions`](https://docs.convex.dev/api/interfaces/server.DefineSchemaOptions).
+Before any future retention decision, take the normal deployment backup and
+obtain explicit approval for a targeted data operation. Never purge production
+Jev rows as part of this retirement.
 
-Each admitted live attempt atomically consumes 10,000 micro-USD ($0.01) of
-the lifetime pilot allowance, including failures and simulations. This is a
-conservative admission allowance, **not actual billing**. It is never refunded
-or reset by midnight, request cleanup, a mode toggle, or a breaker reset.
-At $1 this permits at most 100 attempts. Existing daily limits also apply.
-Actual reported usage remains in `jevUsage` and request rows. Cost above the
-per-request allowance is added to the lifetime debit and trips the breaker;
-unknown cost also trips it. Repeated completion/failure callbacks cannot
-double-count. A provider-side price change or unknown final charge cannot be
-prevented retroactively; the app allowance is not a billing guarantee.
+Release verification confirms the active package manifest, environment example,
+and setup documentation contain no Jev or AI Gateway configuration. The
+remaining product surfaces should continue to operate through their ordinary
+deterministic paths after the feature files are removed.
 
-Stop with `RIVET_JEV_MODE=off`. Do not delete the lifetime counter or replace
-the API key to replenish this walkthrough's budget. Expired, malformed or
-incomplete paid-pilot configuration fails closed; other gyms remain blocked
-even if they enable their own switch.
+## Deployment target selection
 
-Last reviewed: 2026-08-31 for the combined classes, retention, analytics, and
-daily-checklist Production release at application tip `fdd6dac`.
-
-## Jev release verification and import pilot gate, 23 September 2026
-
-The Production Convex target is `rivet:rivet:production` / `descriptive-meerkat-589`
-(`https://descriptive-meerkat-589.eu-west-1.convex.cloud`). Establish it with
-`CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --dry-run --yes` before a release.
-This empty assignment suppresses the **local** `apps/web/.env.local` deploy-key
-override for that command; it does not reveal or alter the key. A plain
-`pnpm convex:env:names -- --prod` is insufficient here: the CLI warned that it
-ignored `--prod` and used the key's deployment, then returned Development's
-names. With the override suppressed,
-`CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` selected Production and
-listed `AI_GATEWAY_API_KEY` by **name**. At the initial inspection it listed
-no `RIVET_JEV_*` names; two zero caps were added later as described below. The local
-Development deployment is `fleet-otter-621` and has no Gateway key by name.
-Set or confirm any secret only in the Convex dashboard for the target
-deployment, under **Settings → Environment Variables**. Never copy its value
-into a terminal, test command, CI secret or frontend environment.
-
-On 23 September 2026 the guarded Production dry run passed schema validation
-with no index deletion, and the guarded deploy succeeded from source SHA
-`97f0e2b8b8ea0a7b5f2cb02e4a08a87b684ca41a`. A post-deploy
-`health:check --prod` returned `ok` at 09:24:38 UTC. Convex's Deployment
-History view is unavailable on this team's plan; the named target, deploy
-output, source checkout and health check are the available release record.
-GitHub Actions run `35842276609` passed every job for the same source SHA.
-Vercel Production deployment `dpl_GuvW1auSrRZ7JJjztr196HYPsaoU` is Ready
-for that SHA and aliased to the canonical RIVET domains; GitHub deployment
-`6610598859` supplies the source-SHA link. Frontend readiness and the Convex
-release were checked separately.
-
-The [official Jev announcement](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway)
-says the model is free until 25 September 2026, while the
-[current model page](https://vercel.com/ai-gateway/models/jev) displays a
-nonzero token price. This account's Gateway overview asks for a card to unlock
-free credits, and the usage page has no calls. Account-specific zero-cost
-eligibility is therefore **unconfirmed**. Do not set or extend
-`RIVET_JEV_FREE_UNTIL` based only on the public date, and do not run a live
-smoke or test a first paid request. No live Jev response, deployed action path
-or model accuracy is yet verified. `RIVET_JEV_MODE`, `RIVET_JEV_FEATURES` and
-`RIVET_JEV_FREE_UNTIL` remain absent, so mode is off and the allowlist empty;
-every gym's audited preference defaults off. Explicit Production
-`RIVET_JEV_DAILY_CAP=0` and `RIVET_JEV_TENANT_DAILY_CAP=0` were saved after the
-deploy and their names verified with the approved wrapper. The code defaults
-are 200 global and 50 per gym per UTC day when caps are absent; the configured
-zeros block live requests even if mode were changed accidentally. Replace
-them with deliberate small limits only after the pilot gate is met. A missing
-or nonzero cost in a live response now withholds the answer
-and trips the breaker. No SDK retries, alternate model or paid fallback are
-configured. The Production `jevControlState`, `jevRequests` and
-`jevTenantPreferences` tables were inspected read-only on 23 September and
-are empty: there is no stored breaker trip, recorded request or opted-in gym.
-Recheck before any future activation.
-
-### Synthetic import pilot protocol
-
-Use a **dedicated test gym and branch in a non-production Convex deployment**
-with fabricated names, phone numbers and plan terms. First confirm that the
-same deployment owns the site, Clerk instance, Gateway key and Jev switches.
-Never select Production by assuming `--prod` won over a deploy key. Keep
-`RIVET_JEV_MODE=off` until account-specific zero-cost access is confirmed.
-Then set a confirmed UTC expiry, `RIVET_JEV_MODE=live`,
-`RIVET_JEV_FEATURES=foundation,import`, `RIVET_JEV_DAILY_CAP=20`, and
-`RIVET_JEV_TENANT_DAILY_CAP=10` in that test deployment only. Enable the
-dedicated gym's preference as a `settings.manage` actor. Check a single
-synthetic foundation request through the **deployed Convex action**, then the
-import cases one at a time, checking Gateway model/provider and explicit zero
-cost before each next call. Stop on missing cost, any charge, unexpected model,
-failure or breaker trip. Record counts, latency, tokens, reported cost, selected
-option, staff correction and deterministic/manual outcome without logging raw
-provider payloads. The local Vitest smoke requires its own securely configured
-key; a key in Convex does not appear in a local process. Fixture and preview
-answers prove workflow only and must never count as model-quality evidence.
-
-| Synthetic sheet case | Required comparison and safety check |
-| --- | --- |
-| Known English and Arabic aliases | Ordinary mapping wins without a Jev call. |
-| Unfamiliar English and Arabic headings | Compare the chosen destination with manual mapping; accept or correct explicitly. |
-| Ambiguous `balance` | Confirm that a financial field is never silently assigned; record wrong suggestions and clarification. |
-| Two columns for one destination | First accepted field is protected; review the remaining column manually. |
-| Legacy plans with different currency, duration, visits or price | Display exact terms, reject incompatible choices, and require explicit review for differences. |
-| No equivalent and clarification | Keep the source label visible and permit manual resolution. |
-| Edited mapping or plan after a suggestion | Discard stale result and revalidate the server preview. |
-| Model unavailable or mode off | Complete the ordinary mapping and preview without Jev. |
-
-Only accepted synthetic mappings may reach the existing preview, validation and
-synthetic import commit in the test gym. Do not use real member records or a
-real gym for this evaluation. For a **real-customer pilot**, obtain the named
-participating gym's authorization to process the allowed import metadata
-(headings, column shape counts and legacy plan labels; never row values), and
-identify the participating `settings.manage` and `members.write` staff. Start
-with import alone after the foundation check, observe every request and cost,
-and require the operator to approve expansion based on correct suggestions,
-financial-field errors, corrections, refusals and latency. Roll back by setting
-the deployment mode to `off`, removing `import` from the allowlist, setting a
-cap to `0`, or disabling that gym's audited switch. Other features remain off.
-
-## Jev suggestions: controlled rollout and immediate disable, 22 September 2026
-
-Eight Jev-assisted feature batches are implemented on `main` (foundation,
-member import, navigation, follow-up, member resolution, support and profile
-review, branch operations, the daily operating brief; contract in
-`docs/21_JEV_ASSIST_FOUNDATION.md`, status per feature in `CURRENT_STATE.md`).
-Production posture on 22 September 2026: the Convex Production environment
-lists `AI_GATEWAY_API_KEY` by name and no `RIVET_JEV_*` variable, so every
-request is refused with `mode_off` before any tenant data is read; nothing has
-called AI Gateway from any RIVET deployment; live connectivity and model
-accuracy are unverified. Only `typesafe-ai/jev` is referenced anywhere in the
-code, the gateway is pinned to the TypeSafe provider, and there is no other
-model, paid fallback, purchase or recharge path.
-
-### What must be true before the first live call
-
-1. The Convex modules are deployed (`pnpm convex:deploy -- --yes`, after the
-   guarded dry run). Deploying changes nothing by itself: the mode stays off.
-2. An operator has confirmed, in the Vercel dashboard for this account, that
-   Jev requests are free, and writes the last confirmed UTC day into
-   `RIVET_JEV_FREE_UNTIL=YYYY-MM-DD`. A missing, malformed or past date stops
-   live calls.
-3. `AI_GATEWAY_API_KEY` exists in the Convex dashboard (check with
-   `pnpm convex:env:names -- --prod`; never print a value; never put it in a
-   command, a log or a chat).
-4. `RIVET_JEV_DAILY_CAP` and `RIVET_JEV_TENANT_DAILY_CAP` are set low for the
-   pilot (for example `20` and `10`) and the breaker is clear.
-5. `RIVET_JEV_FEATURES` lists only the features being piloted, starting with
-   `foundation` (its questions are synthetic and send no customer data).
-6. Never set `RIVET_JEV_MODE=fixture` in Production: fixture answers are
-   synthetic and would be shown to real gyms as suggestions. Rehearse fixture
-   mode on the Development deployment or the preview only.
-
-### Controlled rollout (one step per day, watching the gateway bill)
-
-1. Set the variables above and `RIVET_JEV_MODE=live` in the Convex dashboard.
-   Every gym still sees nothing: each gym's own switch is off by default.
-2. One pilot gym turns its switch on (Settings → Jev assistance, requires
-   `settings.manage`, audited as `settings.assist.update`) and runs the
-   synthetic check on that page. Confirm in the Convex dashboard that
-   `jevRequests` holds a `completed` row with `mode: live`, that
-   `jevUsage.reportedCostUsd` stayed `0`, and that the AI Gateway usage page
-   shows no charge. A reported cost trips the breaker automatically and every
-   further live call is refused with `breaker_tripped`.
-3. Add features one at a time to `RIVET_JEV_FEATURES`, in the order they were
-   built (`import`, `navigation`, `followup`, `resolution`, `support,profile`,
-   `branchops`, `brief`), with the pilot gym exercising each surface. Model
-   accuracy is measured only here, on real (pilot-consented) records; the
-   preview and the tests prove wiring, not accuracy.
-4. Raise the caps and let further gyms switch themselves on only after the
-   pilot has run for a full billing period with `reportedCostUsd` at zero.
-
-### Immediate disable (no deploy, no code change)
-
-- Set `RIVET_JEV_MODE=off` (or delete it) in the Convex dashboard. The next
-  request is refused before the cache, the loaders or the counters are
-  touched; pages fall back to their ordinary behaviour and show nothing.
-- Narrower stops: remove a feature key from `RIVET_JEV_FEATURES`; delete
-  `RIVET_JEV_FREE_UNTIL` (live calls stop, `free_terms_unconfirmed`); set
-  `RIVET_JEV_DAILY_CAP=0`; or turn one gym's own switch off in its Settings.
-- The breaker trips itself on any reported cost. A `402` from the gateway is
-  refused as `payment_required` (not retried), and an answer served by any
-  model other than Jev is discarded; both are logged with their correlation
-  id. Reset the breaker only after reading the gateway bill:
-  `pnpm --filter web exec convex run jev:resetBreaker '{"reason":"<why>"}'`
-  from a shell with the deployment selected.
-- Cached judgments (`jevJudgments`) expire per question (10 to 60 minutes)
-  and are never served while the environment is off; the hourly
-  `jev:cleanupExpired` job removes them and old request rows.
-
-### What to watch
-
-`jevRequests` (status and `failureReason`: `timeout`, `invalid_output`,
-`unexpected_model`, `payment_required`, `rate_limited`), `jevUsage` per gym
-per UTC day (`requests`, tokens, `reportedCostUsd`), the `jevControlState`
-breaker row, and the AI Gateway usage page. Logs carry the question key, the
-classified reason and the correlation id only; no request or response body
-and no key value is ever logged.
+Production is `rivet:rivet:production` / `descriptive-meerkat-589`;
+Development is `fleet-otter-621`. The local `apps/web/.env.local` deploy-key
+override previously made a plain `--prod` inspection target Development.
+For a deliberately authorized Production release, suppress that local override
+with `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --dry-run --yes` and verify
+the target before applying the release. Names-only Production inspection uses
+`CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod`. These empty overrides
+do not expose or change the stored key. Retired Jev walkthrough instructions
+are archived in `docs/21_JEV_ASSIST_FOUNDATION.md`, not active release steps.
 
 ## Fresh start: removing the Production test gyms, 14 September 2026
 
@@ -1414,6 +1210,7 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_SITE_URL` | — | — | — | Correct environment origin | — |
 | `RESEND_API_KEY` | — | — | — | Production or sandbox key | — |
 | `RESEND_FROM_EMAIL` | — | — | — | Verified sender | — |
+| `RESEND_REPLY_TO_EMAIL` | — | — | — | Optional verified reply-to for gym-application mail only; defaults to `sales@rivetjo.com` | — |
 | `RESEND_WEBHOOK_SECRET` | — | — | — | Resend signing secret | — |
 | `RIVET_APPLICATION_RECIPIENTS` | — | — | — | Partner recipient list | — |
 | `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Deprecated alias: `true` means `live` only while `RIVET_EMAIL_MODE` is unset | — |
@@ -1429,12 +1226,6 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_MESSAGING_ALLOWLIST` | — | — | Comma list of E.164 numbers or `+96279*` prefixes | Required in `allowlist` mode | — |
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
 | `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` | Absent / `0` | — | — | Global platform-billing gate; default off, exact enable value is `1` | — |
-| `RIVET_JEV_MODE` | Absent (`off`) | — | `off` until the docs/21 go-live gate is complete | Jev suggestion switch: `off`, `fixture` (synthetic answers, no external call), `live` (typesafe-ai/jev through Vercel AI Gateway); unrecognised values mean `off` | — |
-| `RIVET_JEV_FEATURES` | — | — | Comma list of feature keys allowed to call live (for example `foundation`) | Empty means no feature may call the model even in `live` | — |
-| `RIVET_JEV_FREE_UNTIL` | — | — | Last UTC day (`YYYY-MM-DD`) on which the free terms were confirmed | Live calls stop when it is missing, malformed or in the past | — |
-| `RIVET_JEV_DAILY_CAP`, `RIVET_JEV_TENANT_DAILY_CAP` | — | — | Optional (defaults 200 and 50) | Live requests per UTC day, platform-wide and per gym; `0` means none | — |
-| `RIVET_JEV_ZERO_DATA_RETENTION` | — | — | `1` only on a Pro or Enterprise AI Gateway team | Asks the gateway for zero-data-retention routing on every request | — |
-| `AI_GATEWAY_API_KEY` | Never | Never | Never | Convex dashboard only; the code reads presence, never the value | Never; CI does not need it |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
 | `CONVEX_DEPLOY_KEY` | Development operator key | Never | Avoid unless Vercel is the approved deploy operator | — | Staging key for codegen/smoke |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Local-only staging session JSON |
@@ -1454,6 +1245,12 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 7. Keep production secret values out of local project files whenever possible.
 8. Live operational email requires the global kill switch and the tenant/global message-type allowlist. Configuring Resend alone must not activate delivery.
 9. Staging write tests require an exact expected Convex URL, a non-Production host, a unique run ID, and the required role-specific Clerk storage states.
+
+### Signup address and applicant-email release notes — 28 September 2026
+
+- Gym application address capture is an additive, backend-first change. The public submit action requires a trimmed physical address of at least five characters, while `gymApplications.gymAddress` stays optional in the stored schema so historical rows without the field remain readable. The coordinated frontend, operator application detail, confirmation email and provisioning paths all carry the new value; deploy the Convex schema/functions before enabling a frontend that submits it. Legacy duplicate submissions are read-only with respect to the missing address.
+- Subscription prices and tier limits remain the existing catalog. The public cards use existing entitlement and module data to explain how tiers differ. Billing continues to issue an invoice three days before the term boundary and keeps the fourteen-day payment term from invoice issuance; applicant-facing reminders must describe the due date on the invoice rather than imply payment is due three days after issuance.
+- Signup spam placement still needs delivery evidence. The application now uses a RIVET reply path only for gym-application mail (`RESEND_REPLY_TO_EMAIL`, default `sales@rivetjo.com`), but code changes and published authentication records do not prove inbox placement. For a disposable test submission, retain the provider event and full delivered-message headers, then inspect alignment, bounces and complaints in [Resend's guidance for avoiding Gmail's spam folder](https://resend.com/docs/knowledge-base/how-do-i-avoid-gmails-spam-folder) and [Resend Deliverability Insights](https://resend.com/blog/deliverability-insights). Do not mark spam as resolved from DNS records alone.
 
 ## Release runbook
 
@@ -1501,7 +1298,6 @@ Complete this phase before asking an agent to run staging or production checks. 
 - [ ] Confirm `RIVET_APPLICATION_RECIPIENTS` contains the intended RIVET operators.
 - [ ] Confirm `RIVET_EMAIL_MODE` is `allowlist` (with `RIVET_EMAIL_ALLOWLIST` = RIVET staff and the pilot gym) until the email go-live checklist in docs/19 is complete, then `live`.
 - [ ] Confirm `RIVET_MESSAGING_MODE` is `off` or `allowlist`; never `live` before the WhatsApp templates are approved and the docs/19 checklist is complete. RIVET sends WhatsApp only (decided 14 September 2026); there is no SMS sender variable.
-- [ ] Confirm `RIVET_JEV_MODE` is absent or `off` unless the go-live gate in `docs/21_JEV_ASSIST_FOUNDATION.md` is complete and the rollout section above is being followed (free terms confirmed and dated in `RIVET_JEV_FREE_UNTIL`, key set in the Convex dashboard, features listed, breaker clear). `convex.json` now pins Node 22 for Node actions; the guarded dry run must accept it before the deploy.
 - [ ] Confirm the 8 August 2026 production backup/export still exists or create a fresh backup before pilot mutations.
 - [x] Do not run `seed:seedDemoTenant`.
 - [x] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.

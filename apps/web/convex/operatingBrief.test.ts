@@ -4,13 +4,7 @@ import {
   applicableEmphases,
   briefEmphasisFacts,
   briefRelatedPairs,
-  buildBriefEmphasisState,
-  buildBriefRelatedState,
   buildOperatingBrief,
-  resolveBriefEmphasisFixture,
-  resolveBriefEmphasisReading,
-  resolveBriefRelatedFixture,
-  resolveBriefRelatedReading,
   type BriefInput,
   type BriefQueueItem,
 } from "./operatingBrief";
@@ -138,7 +132,7 @@ describe("the operating brief computes every figure in code", () => {
 });
 
 describe("prepared emphasis", () => {
-  it("offers only emphases whose deterministic precondition holds, defaults to the first by rank, and sends counts and amounts only", () => {
+  it("offers only emphases whose deterministic precondition holds and defaults to the first by rank", () => {
     const brief = buildOperatingBrief(input());
     expect(brief.applicableEmphases).toEqual(["safety_first", "collections", "renewals", "followups", "retention", "facilities", "checklists", "support", "steady"]);
     expect(brief.defaultEmphasis).toBe("safety_first");
@@ -148,26 +142,6 @@ describe("prepared emphasis", () => {
     const facts = briefEmphasisFacts(brief);
     expect(JSON.stringify(facts)).not.toMatch(/Aya|Omar|Rania|Treadmill|TREAD/);
     expect(facts).toMatchObject({ scope: "all_branches", branchCount: 2, mandatoryItems: 4, figures: { collections: { items: 2, outstanding: 165_000 } } });
-    const state = buildBriefEmphasisState({ brief, currency: "JOD" });
-    expect(state.candidates.map((candidate) => candidate.id)).toEqual(brief.applicableEmphases);
-    expect(state.scopeKey).toBe("brief:u-owner:all");
-    const scoped = buildBriefEmphasisState({ brief: buildOperatingBrief(input({ scope: { ...scope, branchId: "b-a", branchScope: "selected", userId: "u-manager" } })), currency: "JOD" });
-    expect(scoped.scopeKey).toBe("brief:u-manager:b-a");
-    expect(scoped.state).not.toEqual(state.state);
-  });
-
-  it("reads the fixture answer, leads with safety when anything is mandatory, and falls back to the standard order for an unoffered answer or a model failure", () => {
-    const brief = buildOperatingBrief(input());
-    const state = buildBriefEmphasisState({ brief, currency: "JOD" });
-    const judgment = resolveBriefEmphasisFixture({ state: state.state, candidates: state.candidates });
-    expect(judgment).toMatchObject({ kind: "choice", choice: "safety_first" });
-    expect(resolveBriefEmphasisReading(judgment!, brief)).toMatchObject({ key: "safety_first", heading: "Safety, cash and entry problems come first", fallback: false });
-    const calm = buildOperatingBrief(input({ queue: QUEUE.filter((entry) => entry.priority !== "urgent"), sources: [] }));
-    const calmState = buildBriefEmphasisState({ brief: calm, currency: "JOD" });
-    const calmJudgment = resolveBriefEmphasisFixture({ state: calmState.state, candidates: calmState.candidates });
-    expect(calmJudgment).toMatchObject({ kind: "choice", choice: "collections" });
-    expect(resolveBriefEmphasisReading({ kind: "choice", choice: "support", probabilities: { support: 1 } }, calm)).toMatchObject({ key: calm.defaultEmphasis, fallback: true });
-    expect(resolveBriefEmphasisReading({ kind: "boolean", probability: 0.9 }, calm)).toMatchObject({ key: "collections", fallback: true });
   });
 });
 
@@ -181,22 +155,4 @@ describe("related matter", () => {
     expect(crossBranch.some((pair) => pair.secondId === "facility:f-3" && pair.firstId === "facility:f-1")).toBe(false);
   });
 
-  it("reads a shared machine as the same matter, conflicting descriptions as unclear, and a strong answer only as a presentation link", () => {
-    const first = item({ id: "equipment:e-1", kind: "equipment_issue", title: "Belt slipping under load", detail: "TREAD-01 Commercial treadmill · in progress · safety: out of service", description: "Belt slips above speed 10 with a grinding noise.", safetyStatus: "out_of_service" });
-    const same = item({ id: "facility:f-1", kind: "facility_task", title: "Treadmill belt noise", detail: "Main floor · open", description: "TREAD-01 belt squeals at speed 10; members complaining." });
-    const sameState = buildBriefRelatedState({ first, second: same, scope: { userId: "u-owner" } });
-    expect(sameState.scopeKey).toBe("brief-related:u-owner:equipment:e-1+facility:f-1");
-    const sameReading = resolveBriefRelatedReading(resolveBriefRelatedFixture({ state: sameState.state })!);
-    expect(sameReading).toMatchObject({ verdict: "same_matter", related: true });
-    const conflicting = item({ id: "facility:f-9", kind: "facility_task", title: "TREAD-01 belt fixed", detail: "Main floor · open", description: "Belt tensioned this morning; treadmill safe to use again." });
-    const conflictState = buildBriefRelatedState({ first, second: conflicting, scope: { userId: "u-owner" } });
-    const conflictReading = resolveBriefRelatedReading(resolveBriefRelatedFixture({ state: conflictState.state })!);
-    expect(conflictReading).toMatchObject({ verdict: "unclear", related: false });
-    expect(conflictReading.explanation).toContain("both stay listed");
-    // The recorded safety status is passed as a fact and is never part of the answer.
-    expect((conflictState.state as { first: { recordedSafetyStatus: string } }).first.recordedSafetyStatus).toBe("out_of_service");
-    const separate = item({ id: "facility:f-2", kind: "facility_task", title: "Shower drain slow", description: "Drain in the men's showers backs up after the evening peak." });
-    expect(resolveBriefRelatedReading(resolveBriefRelatedFixture({ state: buildBriefRelatedState({ first, second: separate, scope: { userId: "u-owner" } }).state })!)).toMatchObject({ verdict: "separate", related: false });
-    expect(resolveBriefRelatedReading({ kind: "choice", choice: "same_matter", probabilities: { same_matter: 0.55, related: 0.45 } }).related).toBe(false);
-  });
 });

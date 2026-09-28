@@ -33,6 +33,7 @@ function application(overrides: Partial<PlatformGymApplication> = {}): PlatformG
   return {
     id: "app-1",
     gymName: "Northline Strength",
+    gymAddress: "12 Wasfi Al-Tal Street, Amman",
     ownerName: "Karim Haddad",
     email: "karim@northline.example",
     contactNumber: "+962 79 555 0144",
@@ -86,6 +87,13 @@ describe("PlatformApplicationsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Mosaic Women's Fitness" })).toBeInTheDocument();
     expect(screen.getAllByText("Approved", { selector: "span" })).toHaveLength(2);
+  });
+
+  it("shows the applicant's physical gym address to the operator", async () => {
+    state.rows = [application()];
+    render(<PlatformApplicationsPage />);
+
+    expect(await screen.findByText("12 Wasfi Al-Tal Street, Amman")).toBeInTheDocument();
   });
 
   it("follows application query changes without leaving the route", async () => {

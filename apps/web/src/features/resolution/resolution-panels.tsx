@@ -1,12 +1,11 @@
 "use client";
 
-import { Banknote, CalendarClock, Dumbbell, ExternalLink, Sparkles, X } from "lucide-react";
+import { Banknote, CalendarClock, Dumbbell, ExternalLink, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { DateText, DateTimeText, MoneyText, RelativeText } from "@/components/shared/data-display";
 import { PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS } from "@/components/shared/status-chip";
 import type { MemberResolutionContext, PlanAttributeId, ResolutionClassOption, ResolutionEvidence, ResolutionPanelId, ResolutionTrainerOption } from "@/lib/domain/types";
@@ -16,8 +15,6 @@ import { isApiError } from "@/lib/api/errors";
 import { cn } from "@/lib/utils/cn";
 import { formatDate } from "@/lib/utils/dates";
 import { receiptHref } from "@/lib/utils/receipt-links";
-import { AssistSuggestion } from "@/features/assist/assist-suggestion";
-import { useAssistJudgment, type AssistReadyResult } from "@/features/assist/use-assist-judgment";
 import { evidenceHref } from "@/features/followup/follow-up-context";
 import {
   PLAN_ATTRIBUTES,
@@ -25,9 +22,6 @@ import {
   comparePlans,
   describeInstant,
   readTrainingPayment,
-  resolveClassPickReading,
-  resolvePlanPriorityReading,
-  resolveTrainerPickReading,
   resolutionPanel,
 } from "../../../convex/resolutionAssist";
 
@@ -40,7 +34,6 @@ import {
  */
 export interface PanelProps {
   context: MemberResolutionContext;
-  goal: string;
   onClose: () => void;
   refetch: () => Promise<unknown>;
   onCreateTask?: () => void;
@@ -224,39 +217,13 @@ export function MembershipTermsPanel({ context, onClose }: PanelProps) {
 // ---------------------------------------------------------------------------
 // Plan comparison
 // ---------------------------------------------------------------------------
-export function PlanComparePanel({ context, goal, onClose }: PanelProps) {
-  const [priorityText, setPriorityText] = useState(goal);
-  const [asked, setAsked] = useState("");
+export function PlanComparePanel({ context, onClose }: PanelProps) {
   const [emphasized, setEmphasized] = useState<PlanAttributeId[]>([]);
-  const suggestion = useAssistJudgment({ questionKey: "resolution.plan_priority", subject: { memberId: context.memberId, goal: asked }, enabled: true, auto: Boolean(asked) });
   const comparison = comparePlans(context.plans, context.membership?.planId, emphasized);
   const toggle = (attribute: PlanAttributeId) => setEmphasized((current) => (current.includes(attribute) ? current.filter((item) => item !== attribute) : [...current, attribute]));
-  const render = (result: AssistReadyResult) => {
-    const reading = resolvePlanPriorityReading(result.judgment);
-    if (!reading.primary) return <p data-testid="plan-priority-none">The request names no plan priority. Pick what to emphasise below, or read the full table.</p>;
-    return <p data-testid="plan-priority-reading">Emphasise <strong>{reading.emphasized.map((id) => PLAN_ATTRIBUTES.find((attribute) => attribute.id === id)?.label ?? id).join(", ")}</strong>. Every term and price stays in the table.</p>;
-  };
-  const actions = (result: AssistReadyResult) => {
-    const reading = resolvePlanPriorityReading(result.judgment);
-    if (!reading.primary) return <Button type="button" size="sm" variant="ghost" onClick={suggestion.dismiss}>Close</Button>;
-    return (
-      <>
-        <Button type="button" size="sm" onClick={() => { setEmphasized(reading.emphasized); suggestion.dismiss(); }} data-testid="plan-priority-apply">Emphasise these</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={suggestion.dismiss}>Keep my choice</Button>
-      </>
-    );
-  };
   return (
     <PanelFrame id="panel.plan_compare" onClose={onClose}>
-      <form className="flex flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); if (priorityText.trim().length >= 3) setAsked(priorityText.trim()); }}>
-        <label className="grid min-w-0 flex-1 gap-1 text-[12px] font-medium">
-          What matters to the member?
-          <Input value={priorityText} onChange={(event) => setPriorityText(event.target.value)} placeholder="e.g. travels a lot, needs both branches, wants training included" aria-label="Plan priority request" />
-        </label>
-        {suggestion.featureReady ? <Button type="submit" size="sm" variant="secondary" disabled={priorityText.trim().length < 3}><Sparkles /> Suggest what to emphasise</Button> : null}
-      </form>
-      <AssistSuggestion suggestion={suggestion} title="Plan priority" render={render} actions={actions} testId="plan-priority-card" className="mt-2" />
-      <div className="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Emphasised plan attributes">
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Emphasised plan attributes">
         <span className="text-[12px] text-ink-3">Emphasise:</span>
         {PLAN_ATTRIBUTES.map((attribute) => (
           <button key={attribute.id} type="button" aria-pressed={emphasized.includes(attribute.id)} onClick={() => toggle(attribute.id)} className={cn("min-h-8 rounded-full border px-3 text-[12px] font-medium transition-colors", emphasized.includes(attribute.id) ? "border-ink bg-ink text-paper" : "border-line-2 bg-surface text-ink-2 hover:border-line-3")}>{attribute.label}</button>
@@ -307,48 +274,32 @@ function ClassLine({ option, timezone, action }: { option: ResolutionClassOption
   );
 }
 
-export function ClassesPanel({ context, goal, onClose, refetch }: PanelProps) {
+export function ClassesPanel({ context, onClose, refetch }: PanelProps) {
   const invalidate = useInvalidate();
-  const [askText, setAskText] = useState(goal);
-  const [asked, setAsked] = useState("");
   const [stale, setStale] = useState<string>();
   const [showBlocked, setShowBlocked] = useState(false);
   const joinable = context.classes.options.filter((option) => option.eligible);
   const blocked = context.classes.options.filter((option) => !option.eligible);
-  const suggestion = useAssistJudgment({ questionKey: "resolution.class_pick", subject: { memberId: context.memberId, goal: asked }, enabled: joinable.length > 0, auto: Boolean(asked) });
   const add = useApiMutation((api, option: ResolutionClassOption) => api.addClassOccurrenceAttendee({ occurrenceId: option.id, memberId: context.memberId, membershipId: context.membership!.id }), {
     onSuccess: async (occurrence) => { toast.success(`${context.memberName} ${occurrence.roster.some((entry) => entry.memberId === context.memberId && entry.status === "waitlisted") ? "joined the waitlist for" : "is booked into"} ${occurrence.name}.`); await invalidate(); await refetch(); },
     onError: (error) => toast.error(isApiError(error) ? error.message : "The class could not be booked."),
   });
   const addToClass = async (option: ResolutionClassOption) => {
     setStale(undefined);
-    // Availability is re-read before anything is booked: a class that filled or was cancelled since the suggestion is refused here, and the server refuses it again.
+    // Availability is re-read before anything is booked: a class that filled or was cancelled since this list loaded is refused here, and the server refuses it again.
     const fresh = (await refetch()) as { data?: MemberResolutionContext } | undefined;
     const latest = fresh?.data?.classes.options.find((candidate) => candidate.id === option.id) ?? (await getApi().getMemberResolutionContext(context.memberId)).classes.options.find((candidate) => candidate.id === option.id);
-    if (!latest || !latest.eligible) { setStale(`${option.name} changed since the suggestion${latest?.blockReason ? `: ${latest.blockReason}` : "."}`); suggestion.dismiss(); return; }
+    if (!latest || !latest.eligible) { setStale(`${option.name} changed since the list loaded${latest?.blockReason ? `: ${latest.blockReason}` : "."}`); return; }
     add.mutate(latest);
   };
   const action = (option: ResolutionClassOption) => context.access.roster && context.membership && option.eligible
     ? <Button type="button" size="xs" variant="secondary" loading={add.isPending && add.variables?.id === option.id} onClick={() => void addToClass(option)} data-testid={`resolution-class-add-${option.id}`}>{option.wouldWaitlist ? "Join waitlist" : "Add to class"}</Button>
     : null;
-  const render = (result: AssistReadyResult) => {
-    const reading = resolveClassPickReading(result.judgment, context.classes.options);
-    if (reading.kind === "none") return <p data-testid="class-pick-none">No joinable class fits that request. The full list below is what the member can actually join.</p>;
-    return <ul data-testid="class-pick-match"><ClassLine option={reading.option} timezone={context.timezone} action={action(reading.option)} /></ul>;
-  };
   return (
     <PanelFrame id="panel.classes" onClose={onClose}>
       {!context.classes.policyEnabled ? <p className="mb-2 text-[12.5px] text-warning-deep">Class booking is paused for this gym.</p> : null}
       {!context.membership ? <p className="mb-2 text-[12.5px] text-warning-deep">No current membership: classes cannot be booked.</p> : null}
-      <form className="flex flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); if (askText.trim().length >= 3) { setStale(undefined); setAsked(askText.trim()); } }}>
-        <label className="grid min-w-0 flex-1 gap-1 text-[12px] font-medium">
-          What did the member ask for?
-          <Input value={askText} onChange={(event) => setAskText(event.target.value)} placeholder="e.g. a morning class this Sunday, boxing, yoga with Rami" aria-label="Class request" />
-        </label>
-        {suggestion.featureReady && joinable.length > 0 ? <Button type="submit" size="sm" variant="secondary" disabled={askText.trim().length < 3}><Sparkles /> Which class fits?</Button> : null}
-      </form>
       {stale ? <p role="status" className="mt-2 text-[12.5px] text-warning-deep" data-testid="resolution-class-stale">{stale}</p> : null}
-      <AssistSuggestion suggestion={suggestion} title="Suggested class" render={render} actions={<Button type="button" size="sm" variant="ghost" onClick={suggestion.dismiss}>Close</Button>} testId="class-pick-card" className="mt-2" />
       <p className="context-label mt-3">Joinable in the next {context.classes.horizonDays} days · {context.homeBranchName}</p>
       {joinable.length ? <ul className="divide-y divide-line" data-testid="resolution-classes-joinable">{joinable.map((option) => <ClassLine key={option.id} option={option} timezone={context.timezone} action={action(option)} />)}</ul> : <p className="text-[12.5px] text-ink-3" data-testid="resolution-classes-none">No class the member can join in this window.</p>}
       {blocked.length ? (
@@ -379,35 +330,19 @@ function TrainerLine({ option, timezone, action }: { option: ResolutionTrainerOp
   );
 }
 
-export function TrainersPanel({ context, goal, onClose }: PanelProps) {
-  const [askText, setAskText] = useState(goal);
-  const [asked, setAsked] = useState("");
+export function TrainersPanel({ context, onClose }: PanelProps) {
   const bookable = context.trainers.options.filter((option) => option.published && option.nextSlotAt);
-  const suggestion = useAssistJudgment({ questionKey: "resolution.trainer_pick", subject: { memberId: context.memberId, goal: asked }, enabled: bookable.length > 0, auto: Boolean(asked) });
   const noCredit = context.trainers.credits <= 0;
   const action = (option: ResolutionTrainerOption) => option.nextSlotAt && context.membership
     ? noCredit
       ? <span className="text-[12px] text-warning-deep">needs a paid PT package first</span>
       : <Button asChild size="xs" variant="secondary"><Link href={`/members/${context.memberId}?tab=pt&trainer=${encodeURIComponent(option.id)}&book=1`} data-testid={`resolution-trainer-book-${option.id}`}>Book with {option.displayName.split(/\s+/)[0]}</Link></Button>
     : null;
-  const render = (result: AssistReadyResult) => {
-    const reading = resolveTrainerPickReading(result.judgment, context.trainers.options);
-    if (reading.kind === "none") return <p data-testid="trainer-pick-none">No trainer with a recorded profile fits that request. What a profile does not record stays unknown; the list below is what is recorded.</p>;
-    return <ul data-testid="trainer-pick-match"><TrainerLine option={reading.option} timezone={context.timezone} action={action(reading.option)} /></ul>;
-  };
   return (
     <PanelFrame id="panel.trainers" onClose={onClose}>
       <p className="text-[12.5px]" data-testid="resolution-pt-credits">
         PT credits: <strong>{context.trainers.credits} available</strong>{context.pt.reserved ? `, ${context.pt.reserved} reserved` : ""}.{noCredit ? " No usable credit: create a package charge from the PT tab and collect it before booking." : ""}
       </p>
-      <form className="mt-2 flex flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); if (askText.trim().length >= 3) setAsked(askText.trim()); }}>
-        <label className="grid min-w-0 flex-1 gap-1 text-[12px] font-medium">
-          What did the member ask for?
-          <Input value={askText} onChange={(event) => setAskText(event.target.value)} placeholder="e.g. an Arabic-speaking trainer for strength work, the soonest slot" aria-label="Trainer request" />
-        </label>
-        {suggestion.featureReady && bookable.length > 0 ? <Button type="submit" size="sm" variant="secondary" disabled={askText.trim().length < 3}><Sparkles /> Who fits?</Button> : null}
-      </form>
-      <AssistSuggestion suggestion={suggestion} title="Suggested trainer" render={render} actions={<Button type="button" size="sm" variant="ghost" onClick={suggestion.dismiss}>Close</Button>} testId="trainer-pick-card" className="mt-2" />
       <p className="context-label mt-3">Trainers at {context.homeBranchName} with open slots in the next two weeks</p>
       {bookable.length ? <ul className="divide-y divide-line" data-testid="resolution-trainers-bookable">{bookable.map((option) => <TrainerLine key={option.id} option={option} timezone={context.timezone} action={action(option)} />)}</ul> : <p className="text-[12.5px] text-ink-3" data-testid="resolution-trainers-none">No trainer has an open slot at this branch in the next two weeks.</p>}
       {context.trainers.options.filter((option) => !option.nextSlotAt).length ? <p className="mt-2 text-[12px] text-ink-3">{context.trainers.options.filter((option) => !option.nextSlotAt).map((option) => option.displayName).join(", ")}: no open slot in this window.</p> : null}

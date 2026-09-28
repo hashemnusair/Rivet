@@ -1,6 +1,13 @@
-import { contentTokens, sharedTokenCount } from "./assistPassages";
-import type { JevCandidate, JevJudgment, JevState } from "./jevRegistry";
 import { finalizeTodayQueue } from "../src/lib/dashboard/today-queue";
+
+function contentTokens(value: string): string[] {
+  return value.normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter((token) => token.length >= 2);
+}
+
+function sharedTokenCount(left: string, right: string): number {
+  const rightTokens = new Set(contentTokens(right));
+  return [...new Set(contentTokens(left))].filter((token) => rightTokens.has(token)).length;
+}
 
 /**
  * The evidence-backed daily operating brief: the pure logic shared by the
@@ -12,15 +19,11 @@ import { finalizeTodayQueue } from "../src/lib/dashboard/today-queue";
  * its page limit), the extra sources (lapsed terms, machine reports, low
  * stock, open RIVET cases), every balance, count, overdue condition and
  * branch scope, the deterministic order, which items are mandatory, and how
- * complete the coverage is. Headings are authored. Jev is asked two bounded
- * questions only: which prepared emphasis to lead with, given the figures,
- * and whether two similarly worded operational items describe the same
- * matter. Neither answer hides, merges, closes or reorders anything.
+ * complete the coverage is. Headings and related wording comparisons are
+ * deterministic; neither hides, merges, closes or reorders anything.
  *
  * No Convex or path-alias imports: the browser preview adapter shares it.
  */
-type ChoiceJudgment = Extract<JevJudgment, { kind: "choice" }>;
-
 export const BRIEF_QUEUE_LIMIT = 2_000;
 /** A follow-up this far overdue is reported as stale, not merely overdue. */
 export const BRIEF_STALE_DAYS = 7;
@@ -426,14 +429,7 @@ export function applicableEmphases(brief: Pick<OperatingBrief, "sections" | "man
   return [...BRIEF_EMPHASES].sort((left, right) => left.rank - right.rank).filter((emphasis) => emphasis.applies(brief)).map((emphasis) => emphasis.key);
 }
 
-export function briefEmphasisCandidates(keys: readonly BriefEmphasisKey[]): JevCandidate[] {
-  return keys.map((key) => {
-    const emphasis = briefEmphasis(key)!;
-    return { id: key, description: emphasis.sections.length ? `${emphasis.heading} (about: ${emphasis.sections.map(briefSectionLabel).join(", ")})` : emphasis.heading };
-  });
-}
-
-/** Counts and amounts only: no names, titles or record text leave the brief for this question. */
+/** Counts and amounts used by the brief's deterministic summaries. */
 export function briefEmphasisFacts(brief: Pick<OperatingBrief, "sections" | "mandatory" | "totals" | "coverage" | "scope" | "today">): Record<string, unknown> {
   const figures: Record<string, Record<string, number>> = {};
   for (const section of brief.sections) {
@@ -451,82 +447,6 @@ export function briefEmphasisFacts(brief: Pick<OperatingBrief, "sections" | "man
     staleItems: brief.totals.stale,
     figures,
   };
-}
-
-export function buildBriefEmphasisState(input: { brief: Pick<OperatingBrief, "sections" | "mandatory" | "totals" | "coverage" | "scope" | "today" | "applicableEmphases">; currency: string }): { state: JevState; candidates: JevCandidate[]; scopeKey: string; sourceVersion: string } {
-  const keys = input.brief.applicableEmphases.length ? input.brief.applicableEmphases : applicableEmphases(input.brief);
-  return {
-    state: {
-      task: "Choose the one prepared emphasis a gym owner or manager should read first this morning. The figures are exact counts and amounts computed by RIVET; the currency is given. Only the offered emphases exist. Pick the one whose figures matter most today; choose the routine emphasis when nothing stands out.",
-      currency: input.currency,
-      facts: briefEmphasisFacts(input.brief) as Record<string, never>,
-      emphases: keys.map((key) => ({ key, heading: briefEmphasis(key)!.heading })),
-    } as unknown as JevState,
-    candidates: briefEmphasisCandidates(keys),
-    scopeKey: `brief:${input.brief.scope.userId}:${input.brief.scope.branchId ?? input.brief.scope.branchScope}`,
-    sourceVersion: "brief-emphasis:1",
-  };
-}
-
-function spread(ids: readonly string[], choice: string, weight: number): ChoiceJudgment {
-  const others = ids.filter((id) => id !== choice);
-  const rest = others.length ? (1 - weight) / others.length : 0;
-  const probabilities: Record<string, number> = {};
-  for (const id of ids) probabilities[id] = id === choice ? (others.length ? weight : 1) : rest;
-  return { kind: "choice", choice, probabilities, confidence: Math.min(0.96, weight + 0.04) };
-}
-
-/**
- * The preview's stand-in for the model: lead with safety when anything is
- * mandatory, otherwise with the largest figure among the offered emphases
- * (money in major units against counts scaled by ten), and with the routine
- * emphasis when nothing applies.
- */
-export function resolveBriefEmphasisFixture(input: { state: JevState; candidates?: JevCandidate[] }): JevJudgment | undefined {
-  const ids = (input.candidates ?? []).map((candidate) => candidate.id);
-  if (!ids.length) return undefined;
-  const state = input.state && typeof input.state === "object" && !Array.isArray(input.state) ? (input.state as Record<string, unknown>) : {};
-  const facts = state.facts && typeof state.facts === "object" ? (state.facts as Record<string, unknown>) : {};
-  const figures = facts.figures && typeof facts.figures === "object" ? (facts.figures as Record<string, Record<string, number>>) : {};
-  const mandatory = typeof facts.mandatoryItems === "number" ? facts.mandatoryItems : 0;
-  if (mandatory > 0 && ids.includes("safety_first")) return spread(ids, "safety_first", 0.86);
-  const weight = (key: string): number => {
-    switch (key) {
-      case "collections": return (figures.collections?.outstanding ?? 0) / 1_000;
-      case "renewals": return ((figures.renewals?.ending ?? 0) + (figures.renewals?.expired ?? 0)) * 10;
-      case "followups": return (figures.followups?.overdue ?? 0) * 10 + (figures.followups?.stale ?? 0) * 10;
-      case "retention": return (figures.retention?.members ?? 0) * 8;
-      case "facilities": return ((figures.facilities?.open ?? 0) + (figures.equipment?.open ?? 0)) * 10;
-      case "checklists": return ((figures.checklists?.failed ?? 0) + (figures.checklists?.due ?? 0)) * 10;
-      case "support": return (figures.support?.open ?? 0) * 6;
-      default: return 0;
-    }
-  };
-  let best = "steady";
-  let bestWeight = 0;
-  for (const id of ids) {
-    const value = weight(id);
-    if (value > bestWeight) { best = id; bestWeight = value; }
-  }
-  if (!ids.includes(best)) best = ids[0]!;
-  return spread(ids, best, best === "steady" ? 0.7 : 0.78);
-}
-
-export interface BriefEmphasisReading {
-  key: BriefEmphasisKey;
-  heading: string;
-  sections: BriefSectionKey[];
-  probability: number;
-  /** True when the answer named something the brief did not offer, so the deterministic default is shown instead. */
-  fallback: boolean;
-}
-
-export function resolveBriefEmphasisReading(judgment: JevJudgment, brief: Pick<OperatingBrief, "applicableEmphases" | "defaultEmphasis">): BriefEmphasisReading {
-  const fallback = briefEmphasis(brief.defaultEmphasis) ?? BRIEF_EMPHASES[BRIEF_EMPHASES.length - 1]!;
-  if (judgment.kind !== "choice") return { key: fallback.key, heading: fallback.heading, sections: fallback.sections, probability: 0, fallback: true };
-  const chosen = briefEmphasis(judgment.choice);
-  if (!chosen || !brief.applicableEmphases.includes(chosen.key)) return { key: fallback.key, heading: fallback.heading, sections: fallback.sections, probability: 0, fallback: true };
-  return { key: chosen.key, heading: chosen.heading, sections: chosen.sections, probability: judgment.probabilities[judgment.choice] ?? 0, fallback: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -551,8 +471,7 @@ export function briefPairKey(firstId: string, secondId: string): string {
 
 /**
  * Operational items in the same branch whose wording overlaps. Wording
- * only proposes a comparison; nothing is grouped until an explicit check
- * reads the pair as the same matter, and even then both items stay listed.
+ * only proposes a comparison; both items stay listed as recorded.
  */
 export function briefRelatedPairs(items: readonly BriefItem[]): BriefRelatedPair[] {
   const candidates = items.filter((item) => RELATABLE_KINDS.has(item.kind));
@@ -567,94 +486,6 @@ export function briefRelatedPairs(items: readonly BriefItem[]): BriefRelatedPair
     }
   }
   return pairs.sort((left, right) => right.sharedTokens - left.sharedTokens || left.firstId.localeCompare(right.firstId) || left.secondId.localeCompare(right.secondId)).slice(0, BRIEF_RELATED_MAX_PAIRS);
-}
-
-export type BriefRelatedVerdict = "same_matter" | "related" | "separate" | "unclear";
-
-export function briefRelatedOptions(): Record<BriefRelatedVerdict, string> {
-  return {
-    same_matter: "Both items describe one underlying problem; one fix would settle both.",
-    related: "They share a place, machine or theme but need separate actions.",
-    separate: "The wording overlaps by coincidence; they are different matters.",
-    unclear: "The descriptions do not say enough, or they contradict each other.",
-  };
-}
-
-function itemForState(item: BriefQueueItem): Record<string, unknown> {
-  return {
-    kind: item.kind,
-    title: item.title,
-    detail: item.detail,
-    ...(item.description ? { description: item.description.slice(0, 500) } : {}),
-    ...(item.branchName ? { branch: item.branchName } : {}),
-    ...(item.safetyStatus ? { recordedSafetyStatus: item.safetyStatus } : {}),
-    ...(item.dueAt ? { dueAt: item.dueAt } : {}),
-    ...(item.occurredAt ? { reportedAt: item.occurredAt } : {}),
-  };
-}
-
-export function buildBriefRelatedState(input: { first: BriefQueueItem; second: BriefQueueItem; scope: Pick<BriefScope, "userId"> }): { state: JevState; scopeKey: string; sourceVersion: string } {
-  return {
-    state: {
-      task: "Two unresolved operational items from one gym are given with their recorded wording. Say whether they describe the same underlying matter. The recorded safety status is a fact, not a claim to re-judge. Do not decide severity, safety, priority or who should act.",
-      first: itemForState(input.first) as Record<string, never>,
-      second: itemForState(input.second) as Record<string, never>,
-    } as unknown as JevState,
-    scopeKey: `brief-related:${input.scope.userId}:${briefPairKey(input.first.id, input.second.id)}`,
-    sourceVersion: "brief-related:1",
-  };
-}
-
-const MACHINE_CODE = /\b[A-Z]{2,}-\d{1,4}\b/g;
-const RESOLVED_WORDS = /\b(fixed|repaired|resolved|safe to (use|operate)|back in service|working again|cleared)\b/i;
-const OPEN_WORDS = /\b(out of service|blocked|still|again|unsafe|broken|not working|slipping|leaking|flooding|fault)\b/i;
-
-/**
- * The preview's stand-in for the model. A shared machine code or a strong
- * wording overlap reads as the same matter, unless one description says the
- * matter is fixed while the other says it is still open, which reads as
- * unclear; moderate overlap reads as related; the rest as separate.
- */
-export function resolveBriefRelatedFixture(input: { state: JevState; candidates?: JevCandidate[] }): JevJudgment | undefined {
-  const ids = Object.keys(briefRelatedOptions());
-  const state = input.state && typeof input.state === "object" && !Array.isArray(input.state) ? (input.state as Record<string, unknown>) : {};
-  const text = (value: unknown): string => {
-    const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-    return [record.title, record.detail, record.description].filter((part): part is string => typeof part === "string").join(". ");
-  };
-  const first = text(state.first);
-  const second = text(state.second);
-  if (!first || !second) return spread(ids, "unclear", 0.6);
-  const codes = (value: string) => new Set((value.match(MACHINE_CODE) ?? []).map((code) => code.toUpperCase()));
-  const sharedCode = [...codes(first)].some((code) => codes(second).has(code));
-  const shared = sharedTokenCount(first, second);
-  const contradiction = (RESOLVED_WORDS.test(first) && OPEN_WORDS.test(second)) || (RESOLVED_WORDS.test(second) && OPEN_WORDS.test(first));
-  if (contradiction) return spread(ids, "unclear", 0.66);
-  if (sharedCode || shared >= 4) return spread(ids, "same_matter", 0.82);
-  if (shared >= 2) return spread(ids, "related", 0.62);
-  return spread(ids, "separate", 0.7);
-}
-
-export interface BriefRelatedReading {
-  verdict: BriefRelatedVerdict;
-  probability: number;
-  label: string;
-  explanation: string;
-  /** True only for a strong same-matter answer; a presentation link, never a merge. */
-  related: boolean;
-}
-
-export function resolveBriefRelatedReading(judgment: JevJudgment): BriefRelatedReading {
-  const verdict: BriefRelatedVerdict = judgment.kind === "choice" && judgment.choice in briefRelatedOptions() ? (judgment.choice as BriefRelatedVerdict) : "unclear";
-  const probability = judgment.kind === "choice" ? judgment.probabilities[judgment.choice] ?? 0 : 0;
-  const labels: Record<BriefRelatedVerdict, [string, string]> = {
-    same_matter: ["Same matter", "Both items stay listed with their own owners; read them together."],
-    related: ["Related, separate actions", "They touch the same place or machine but need separate work."],
-    separate: ["Separate matters", "The wording overlaps by coincidence."],
-    unclear: ["Unclear", "The descriptions disagree or do not say enough; both stay listed as recorded."],
-  };
-  const [label, explanation] = labels[verdict];
-  return { verdict, probability, label, explanation, related: verdict === "same_matter" && probability >= 0.7 };
 }
 
 /** Which content words two items share, for the comparison's own evidence line. */

@@ -77,6 +77,15 @@ describe("durable operational email", () => {
     expect(row?.suppressionReason).toBeUndefined();
   });
 
+  it("describes the invoice reminder as issued, without claiming payment is due three days later", async () => {
+    const { t, organizationId } = await seed();
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "platform_invoice_reminder", templateVersion: "platform-invoice-reminder-v1", recipientReference: "email-owner", recipientEmail: "owner@example.test", dedupeKey: "invoice-reminder-copy" });
+    const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "invoice-reminder-copy")).unique());
+    expect(row?.subject).toBe("Your RIVET invoice is ready");
+    expect(row?.text).toContain("Payment is due on the date shown.");
+    expect(row?.text).not.toContain("due in three days");
+  });
+
   it("sends a confirmed enabled category through Resend and persists only provider-safe outcome data", async () => {
     enableLiveWorker();
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-email-accepted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -171,13 +180,32 @@ describe("operational email go-live modes", () => {
     });
     await t.action(internal.operationalEmail.processDue, {});
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const body = JSON.parse(String(request.body)) as { to: string[]; subject: string };
+    const body = JSON.parse(String(request.body)) as { to: string[]; subject: string; reply_to?: string };
     expect(body.to).toEqual(["inbox@rivetjo.com"]);
     expect(body.subject).toBe("[sandbox → owner@gym.jo] Invoice issued");
+    expect(body.reply_to).toBeUndefined();
     const delivery = await t.run(async (ctx) => (await ctx.db.query("operationalEmailDeliveries").collect())[0]);
     expect(delivery?.attempts[0]).toMatchObject({ outcome: "accepted", mode: "sandbox", deliveredTo: "inbox@rivetjo.com" });
     delete process.env.RIVET_EMAIL_MODE;
     delete process.env.RIVET_EMAIL_SANDBOX_TO;
+  });
+
+  it("gives public applicants a RIVET reply address without changing gym member mail", async () => {
+    process.env.RIVET_EMAIL_MODE = "sandbox";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "gym_application_received_applicant";
+    process.env.RIVET_EMAIL_SANDBOX_TO = "inbox@rivetjo.com";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-application" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await enqueueOperationalEmail(ctx, { kind: "gym_application_received_applicant", templateVersion: "gym-application-received-v1", recipientReference: "owner@example.test", recipientEmail: "owner@example.test", dedupeKey: "application-reply-to", subject: "Application received", html: "<p>received</p>", text: "received" });
+    });
+    await t.action(internal.operationalEmail.processDue, {});
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as { reply_to?: string };
+    expect(body.reply_to).toBe("sales@rivetjo.com");
   });
 
   it("suppresses recipients outside the allowlist with a readable reason and never calls the provider for them", async () => {

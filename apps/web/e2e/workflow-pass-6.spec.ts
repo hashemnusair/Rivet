@@ -154,10 +154,9 @@ test("the rail is operable from the keyboard", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   await expect(page.getByRole("tab", { name: "Brand Kit" })).toBeFocused();
   await page.keyboard.press("End");
-  await expect(page.getByRole("tab", { name: "Jev assistance" })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Daily checklists" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("tab", { name: "Organization" })).toBeFocused();
-  await page.keyboard.press("ArrowUp");
+  await expect(page.getByRole("tab", { name: "My profile" })).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
   await expect(page.getByRole("tab", { name: "Hours & trials" })).toBeFocused();

@@ -1,6 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
-import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformSnapshot, PlatformSupportCase } from "@/lib/api/GymOSApi";
 import SupportPage from "./page";
@@ -22,11 +20,7 @@ vi.mock("@/lib/auth/rivet-identity", () => ({
 }));
 
 vi.mock("@/lib/api/client", () => ({
-  // No Jev feature is ready here, so the triage and closure panels render nothing.
-  getApi: () => ({
-    getPlatformAssistStatus: async () => ({ mode: "off", features: [], ready: false }),
-    getPlatformSupportReviewContext: async () => { throw new Error("not in this test"); },
-  }),
+  getApi: () => ({}),
 }));
 
 function supportCase(overrides: Partial<PlatformSupportCase> = {}): PlatformSupportCase {
@@ -76,9 +70,6 @@ function snapshot(supportCases: PlatformSupportCase[]): PlatformSnapshot {
   };
 }
 
-// The triage and closure panels read through React Query; the page itself keeps its own local state.
-const withQuery = (element: ReactElement) => <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{element}</QueryClientProvider>;
-
 describe("SupportPage", () => {
   beforeEach(() => {
     state.snapshot = snapshot([supportCase(), supportCase({ id: "SUP-2", subject: "Owner access request", priority: "normal" })]);
@@ -87,11 +78,11 @@ describe("SupportPage", () => {
 
   it("follows same-route support case query changes", () => {
     window.history.replaceState({}, "", "/platform/support?case=SUP-1");
-    const view = render(withQuery(<SupportPage />));
+    const view = render(<SupportPage />);
     expect(screen.getByRole("heading", { name: "Payment retry failed" })).toBeInTheDocument();
 
     window.history.replaceState({}, "", "/platform/support?case=SUP-2");
-    view.rerender(withQuery(<SupportPage />));
+    view.rerender(<SupportPage />);
     expect(screen.getByRole("heading", { name: "Owner access request" })).toBeInTheDocument();
   });
 });

@@ -5,7 +5,7 @@ import { AgreementSection } from "@/features/settings/agreement-section";
 import { SubscriptionSection } from "@/features/settings/subscription-section";
 import { Search, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Gate, PageHeader } from "@/components/shared/chrome";
+import { PageHeader } from "@/components/shared/chrome";
 import { ForbiddenState } from "@/components/ui/states";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
@@ -25,7 +25,7 @@ import { GymPublicProfileSection } from "@/features/settings/gym-public-profile-
 import { OperationalEmailSection } from "@/features/settings/operational-email-section";
 import { BrandKitSection } from "@/features/settings/brand-kit-section";
 import { ChecklistsSection } from "@/features/settings/checklists-section";
-import { AssistSettingsSection } from "@/features/assist/assist-settings-section";
+import { MyProfileSection } from "@/features/settings/my-profile-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { usePermissions } from "@/lib/providers/app-providers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -37,7 +37,7 @@ interface SettingsEntry {
   /** Extra search terms beyond the label, so "logo" finds Brand Kit. */
   keywords: string;
   /** The permission the section's own mutations require on the server. */
-  permission: string;
+  permission?: string;
   component: ComponentType;
 }
 
@@ -47,6 +47,12 @@ interface SettingsGroup {
 }
 
 const SETTINGS_GROUPS: SettingsGroup[] = [
+  {
+    label: "Account",
+    entries: [
+      { id: "my-profile", label: "My profile", keywords: "account name display name phone email role personal", component: MyProfileSection },
+    ],
+  },
   {
     label: "Gym",
     entries: [
@@ -86,7 +92,6 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
       { id: "operations", label: "Operational rules", keywords: "policies entry check-in scan freeze referral renewal lifecycle retention class booking waitlist", permission: "settings.manage", component: OperationalRulesSection },
       { id: "hours", label: "Hours & trials", keywords: "opening closing operating schedule free trial windows branch", permission: "settings.manage", component: HoursAndTrialsSection },
       { id: "checklists", label: "Daily checklists", keywords: "opening closing walkthrough morning night tasks", permission: "operations.manage", component: ChecklistsSection },
-      { id: "assist", label: "Jev assistance", keywords: "ai jev suggestions assistant typesafe gateway smart help judgments", permission: "settings.manage", component: AssistSettingsSection },
     ],
   },
 ];
@@ -111,11 +116,13 @@ export function SettingsPageInner() {
   // Sections the signed-in role can actually save. The server enforces every
   // permission; the rail only avoids offering a section that would refuse.
   const visibleGroups = useMemo(
-    () => SETTINGS_GROUPS.map((group) => ({ ...group, entries: group.entries.filter((entry) => can(entry.permission)) })).filter((group) => group.entries.length > 0),
+    () => SETTINGS_GROUPS.map((group) => ({ ...group, entries: group.entries.filter((entry) => !entry.permission || can(entry.permission)) })).filter((group) => group.entries.length > 0),
     [can],
   );
   const visibleEntries = useMemo(() => visibleGroups.flatMap((group) => group.entries), [visibleGroups]);
-  const defaultEntry = visibleEntries[0] ?? ALL_ENTRIES[0]!;
+  // Keep the existing owner landing section stable while staff roles without
+  // organization access land directly on their personal profile.
+  const defaultEntry = visibleEntries.find((entry) => entry.id === "organization") ?? visibleEntries[0] ?? ALL_ENTRIES[0]!;
 
   const section = searchParams.get("section") ?? defaultEntry.id;
   const requested = ALL_ENTRIES.find((entry) => entry.id === section);
@@ -130,7 +137,7 @@ export function SettingsPageInner() {
   }, [query, visibleEntries]);
 
   const active = ALL_ENTRIES.find((entry) => entry.id === activeSection) ?? defaultEntry;
-  const allowed = can(active.permission);
+  const allowed = !active.permission || can(active.permission);
   const ActiveComponent = active.component;
 
   useEffect(() => {
@@ -191,8 +198,7 @@ export function SettingsPageInner() {
         description="Identity, people, money, messaging and daily operations. Sensitive changes are audited."
         className="bg-paper py-0.5 lg:sticky lg:top-14 lg:z-20 lg:h-[72px] lg:border-b lg:border-line/80 lg:py-2"
       />
-      <Gate permission={["settings.manage", "users.manage"]} fallback={<ForbiddenState description="Settings require owner-level permissions." />}>
-        <div className="space-y-3 lg:grid lg:grid-cols-[224px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:space-y-0">
+      <div className="space-y-3 lg:grid lg:grid-cols-[224px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:space-y-0">
           <div className="sticky top-14 z-20 -mx-4 border-y border-line/80 bg-paper px-4 py-2 sm:-mx-6 sm:px-6 lg:hidden">
             <div className="flex items-center gap-3">
               <label className="shrink-0 text-[12px] font-medium text-ink-2" htmlFor="mobile-settings-section">Settings section</label>
@@ -255,10 +261,9 @@ export function SettingsPageInner() {
           <div className="min-w-0 scroll-mt-20" role="tabpanel" aria-label={active.label}>
             {allowed
               ? <ActiveComponent />
-              : <ForbiddenState layout="page" description={PERMISSION_COPY[active.permission] ?? "Your role cannot change this section."} />}
+              : <ForbiddenState layout="page" description={active.permission ? PERMISSION_COPY[active.permission] ?? "Your role cannot change this section." : "Your role cannot change this section."} />}
           </div>
         </div>
-      </Gate>
-    </div>
+      </div>
   );
 }

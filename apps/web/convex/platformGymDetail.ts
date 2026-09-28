@@ -48,6 +48,35 @@ export interface PlatformGymDetailSource {
     phone?: string;
     status: "active" | "inactive";
   }>;
+  /** Safe operational member directory rows. Contact and payment details stay
+   * on tenant-only surfaces; platform operators need the record identity,
+   * status, branch, and current membership context to supervise a gym. */
+  members?: Array<{
+    id: string;
+    memberNumber: string;
+    name: string;
+    status: "active" | "inactive" | "archived";
+    branchId?: string;
+    branchName?: string;
+    membershipStatus?: string;
+    planName?: string;
+    membershipEndDate?: string;
+    joinedAt?: string;
+  }>;
+  /** Staff access rows, including invited and deactivated team members. */
+  staff?: Array<{
+    id: string;
+    name: string;
+    /** The sign-in identifier lets operators distinguish same-name invitees. */
+    email: string;
+    role: string;
+    status: "active" | "invited" | "deactivated";
+    branchScope: "all" | "selected";
+    branchIds: string[];
+    branchNames: string[];
+    invitationStatus?: "pending" | "accepted" | "revoked";
+    joinedAt?: string;
+  }>;
   owner?: {
     name: string;
     email: string;
@@ -151,6 +180,8 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
     publicPage: tenantAvailable && source.publicPage ? available(source.publicPage) : notAvailable(),
     joinedAt: joinedAt ? available(joinedAt) : notAvailable(),
     branches: tenantAvailable ? available(source.branches) : notAvailable(),
+    members: tenantAvailable ? available(source.members ?? []) : notAvailable(),
+    staff: tenantAvailable ? available(source.staff ?? []) : notAvailable(),
     owner: source.owner ? available(source.owner) : notAvailable(),
     agreement: tenantAvailable ? (source.agreement ? available(source.agreement) : notConfigured()) : notAvailable(),
     usage: {

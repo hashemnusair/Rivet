@@ -40,6 +40,18 @@ vi.mock("@/lib/hooks/use-api", () => ({
 const available = <T,>(value: T) => ({ state: "available" as const, value });
 
 function detail(overrides: Partial<PlatformGymDetail["controls"]> = {}, organizationState: "available" | "not_available" = "available"): PlatformGymDetail {
+  const members = Array.from({ length: 22 }, (_, index) => ({
+    id: `member-${index + 1}`,
+    memberNumber: `FOR-${1000 + index + 1}`,
+    name: `Member ${index + 1}`,
+    status: index === 21 ? "inactive" as const : "active" as const,
+    branchId: "branch-1",
+    branchName: "Main branch",
+    membershipStatus: index === 21 ? "expired" : "active",
+    planName: "Monthly Standard",
+    membershipEndDate: "2026-02-01",
+    joinedAt: "2026-01-01T00:00:00.000Z",
+  }));
   return {
     id: "gym-1",
     name: "Forge Fitness",
@@ -51,6 +63,12 @@ function detail(overrides: Partial<PlatformGymDetail["controls"]> = {}, organiza
     publicPage: organizationState === "available" ? available({ publishedVersion: 1 }) : { state: "not_available" as const },
     joinedAt: available("2026-01-01T00:00:00.000Z"),
     branches: available([{ id: "branch-1", name: "Main branch", code: "FOR-MAIN", address: "Amman", status: "active" }]),
+    members: organizationState === "available" ? available(members) : { state: "not_available" as const },
+    staff: organizationState === "available" ? available([
+      { id: "staff-owner", name: "Owner", email: "owner@example.com", role: "owner", status: "active", branchScope: "all", branchIds: ["branch-1"], branchNames: ["Main branch"], invitationStatus: "accepted" },
+      { id: "staff-invited", name: "Invited teammate", email: "invitee@example.com", role: "receptionist", status: "invited", branchScope: "selected", branchIds: ["branch-1"], branchNames: ["Main branch"], invitationStatus: "pending" },
+      { id: "staff-deactivated", name: "Former teammate", email: "former@example.com", role: "salesperson", status: "deactivated", branchScope: "selected", branchIds: ["branch-1"], branchNames: ["Main branch"], invitationStatus: "revoked" },
+    ]) : { state: "not_available" as const },
     owner: available({ name: "Owner", email: "owner@example.com", phone: "+962 79 000 0000" }),
     agreement: { state: "not_configured" },
     usage: {
@@ -106,6 +124,26 @@ describe("Gym admin detail (informational record)", () => {
     expect(screen.getByText("Subscription facts")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Manage subscription/ })).toHaveAttribute("href", "/platform/billing?bill=gym-1");
     expect(screen.getByRole("link", { name: "Manage in Billing" })).toHaveAttribute("href", "/platform/billing?bill=gym-1");
+  });
+
+  it("shows complete member and team directories with search and pagination", () => {
+    render(<GymAdminDetail gymId="gym-1" />);
+
+    expect(screen.getByText("Team directory")).toBeInTheDocument();
+    expect(screen.getByText("Member directory")).toBeInTheDocument();
+    expect(screen.getByText("Invited teammate")).toBeInTheDocument();
+    expect(screen.getByText("invitee@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Former teammate")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1–20 of 22")).toBeInTheDocument();
+    expect(screen.queryByText("Member 22")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Next page" })[1]!);
+    expect(screen.getByText("Showing 21–22 of 22")).toBeInTheDocument();
+    expect(screen.getByText("Member 22")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search members"), { target: { value: "Member 22" } });
+    expect(screen.getByText("Showing 1–1 of 1")).toBeInTheDocument();
+    expect(screen.getByText("Member 22")).toBeInTheDocument();
   });
 
   it("renders the canonical logo and keeps initials as the missing-logo fallback", () => {

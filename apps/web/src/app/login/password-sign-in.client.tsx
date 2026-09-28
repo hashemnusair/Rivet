@@ -2,10 +2,11 @@
 
 import { loginHref, safeInternalRedirect } from "@/lib/routing/host-routing";
 import { useSignIn } from "@clerk/nextjs";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,6 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
   const router = useRouter();
   const [emailAddress, setEmailAddress] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [verification, setVerification] = useState<VerificationKind | null>(null);
   const [code, setCode] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -254,26 +254,15 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         />
       </Field>
       <Field label="Password" htmlFor="login-password" error={errors.fields.password?.message} required>
-        <div className="relative">
-          <Input
-            id="login-password"
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-            placeholder="Enter password"
-            className="pe-10"
-            aria-invalid={Boolean(errors.fields.password)}
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((visible) => !visible)}
-            className="absolute inset-y-0 end-0 flex w-10 items-center justify-center text-ink-3 hover:text-ink"
-            aria-label={showPassword ? "Hide password" : "Show password"}
-          >
-            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          </button>
-        </div>
+        <PasswordInput
+          id="login-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          autoComplete="current-password"
+          placeholder="Enter password"
+          aria-invalid={Boolean(errors.fields.password)}
+          aria-describedby={errors.fields.password ? "login-password-error" : undefined}
+        />
       </Field>
       {localError ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{localError}</p> : null}
       <Button

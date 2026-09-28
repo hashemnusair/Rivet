@@ -445,6 +445,8 @@ describe("ConvexGymOSApi contract boundary", () => {
       organization: { state: "available" as const, value: { id: "org-a", name: "Alpha Gym", status: "active" as const, currency: "JOD", timezone: "Asia/Amman" } },
       joinedAt: { state: "not_available" as const },
       branches: { state: "available" as const, value: [{ id: "branch-a", name: "Alpha Main", code: "MAIN", status: "active" as const }] },
+      members: { state: "available" as const, value: [] },
+      staff: { state: "available" as const, value: [] },
       owner: { state: "available" as const, value: { name: "Alpha Owner", email: "owner@alpha.example" } },
       usage: {
         memberCount: { state: "available" as const, value: 7 },

@@ -53,7 +53,7 @@ test.describe("stock and purchasing workflows", () => {
     await expect(issueCard.getByRole("button", { name: "Resolve issue" })).toHaveCount(0);
 
     // Maintenance is linked from here and lives on its own page.
-    await page.getByRole("link", { name: "Maintenance" }).click();
+    await page.getByRole("link", { name: "Maintenance", exact: true }).first().click();
     await expect(page).toHaveURL(/\/maintenance/);
     await expect(page.getByRole("heading", { name: "Maintenance list" })).toBeVisible();
     await expect(page.getByTestId("operations-facilities").getByText(/Cleaning, inspections, and incidents/)).toBeVisible();

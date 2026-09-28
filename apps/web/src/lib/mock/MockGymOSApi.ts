@@ -42,7 +42,7 @@ import type {
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
-  MemberImportPreviewInput, MemberImportAssistDraft, MemberImportAssistDraftInput,
+  MemberImportPreviewInput,
   MemberImportRow,
   MemberImportSummary,
   MemberImportUndoInput,
@@ -74,19 +74,9 @@ import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/c
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
-import { gateJevRequest, resolveJevMode, type JevModeResolution } from "../../../convex/jevMode";
-import { JEV_FEATURES, JEV_QUESTIONS, getJevQuestion } from "../../../convex/jevQuestions";
-import { JEV_MODEL_ID, JEV_REGISTRY_VERSION, JEV_SIMULATIONS, type JevSimulation } from "../../../convex/jevRegistry";
-import { evaluateJevFixture, jevStateHash, sanitizeJevSubject, type JevSubject } from "../../../convex/jevAnswers";
-import { IMPORT_DRAFT_TTL_MS, IMPORT_MAX_COLUMNS, IMPORT_MAX_HEADING_LENGTH, IMPORT_MAX_PLAN_LABELS, IMPORT_MAX_PLAN_LABEL_LENGTH, buildColumnTargetState, buildPlanMatchState, isImportField, normalizePlanLabel, type ImportAssistDraftData, type ImportColumnSummary, type PlanTerms } from "../../../convex/jevImportState";
-import type { JevCandidate, JevQuestion, JevState } from "../../../convex/jevRegistry";
-import { NAVIGATION_QUERY_MAX_LENGTH, buildNavigationIntentState, buildOnboardingNextStepState, buildReportFinderState, permittedClarifications, permittedNavigationEntries, type NavigationAccess } from "../../../convex/navigationCatalogue";
-import { FOLLOWUP_NOTE_MIN_LENGTH, REASON_ACTIONS, buildContactNoteState, buildMemberFollowUpContext, buildReasonCheckState, buildRelatedTaskState, buildReminderTemplateState, buildRenewalContextState, isReasonAction, reminderTemplateUnavailableReason, type ContactSubjectKind, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
-import { buildGymProfileReviewContext, buildLanguageGapState, buildProfileClaimState, languageGapUnavailableReason } from "../../../convex/profileAssist";
-import { BRANCHOPS_DESCRIPTION_MAX_LENGTH, BRANCHOPS_DESCRIPTION_MIN_LENGTH, buildHandoverRelatedState, buildNotificationTopicState, buildReportCategoryState, buildReportTargetState, buildSameFaultState, groupNotifications, handoverItemKey, type HandoverItem } from "../../../convex/branchOpsAssist";
-import { BRIEF_QUEUE_LIMIT, buildBriefEmphasisState, buildBriefRelatedState, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
-import { buildSupportCategoryState, buildSupportClaimState, buildSupportClarificationState, buildSupportInvoiceMatchState, buildSupportReviewContext, buildSupportUnansweredState, isSupportCategoryId, supportClaimPassages, supportRequestPassages, type SupportFacts } from "../../../convex/supportAssist";
-import { RESOLUTION_CLASS_HORIZON_DAYS, RESOLUTION_TRAINER_HORIZON_DAYS, buildClassPickState, buildPlanPriorityState, buildResolutionIntentState, buildTrainerPickState, chargeService, classEligibility, permittedResolutionClarifications, permittedResolutionPanels, resolutionFacts, selectResolutionEvidence, type ClassBookingPolicyLike } from "../../../convex/resolutionAssist";
+import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
+import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
+import { RESOLUTION_CLASS_HORIZON_DAYS, RESOLUTION_TRAINER_HORIZON_DAYS, chargeService, classEligibility, permittedResolutionPanels, resolutionFacts, selectResolutionEvidence, type ClassBookingPolicyLike } from "../../../convex/resolutionAssist";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
 import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
@@ -150,8 +140,6 @@ function readPreviewBehavior(): MockBehavior {
       failNextRequest: parsed.failNextRequest === true,
       failNextPublicSubscription: parsed.failNextPublicSubscription === true,
       forceEmptyLists: parsed.forceEmptyLists === true,
-      ...(parsed.assistMode === "off" ? { assistMode: "off" as const } : {}),
-      ...(parsed.assistEnabled === true ? { assistEnabled: true } : {}),
     };
   } catch {
     return { ...DEFAULT_BEHAVIOR };
@@ -504,6 +492,7 @@ const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
   {
     id: "20000000-0000-4a00-8a00-000000000001",
     gymName: "Northline Strength",
+    gymAddress: "12 Wasfi Al-Tal Street, Amman",
     ownerName: "Karim Haddad",
     email: "karim@northline.example",
     contactNumber: "+962 79 555 0144",
@@ -518,6 +507,7 @@ const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
   {
     id: "20000000-0000-4a00-8a00-000000000002",
     gymName: "Mosaic Women’s Fitness",
+    gymAddress: "8 Queen Rania Street, Amman",
     ownerName: "Dina Al-Saleh",
     email: "dina@mosaic.example",
     contactNumber: "+962 78 222 0908",
@@ -723,8 +713,6 @@ function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, ke
 export class MockGymOSApi implements GymOSApi {
   private db: MockDb;
   private behavior: MockBehavior = readPreviewBehavior();
-  private assistUsage: { day: string; requests: number } = { day: "", requests: 0 };
-  private assistCache = new Map<string, { result: Extract<T.AssistJudgmentResult, { status: "ready" }>; expiresAt: number }>();
   private gymApplications: PlatformGymApplication[];
   private platformGyms: MarketplaceGym[];
   private archivedGymIds = new Set<string>();
@@ -755,8 +743,6 @@ export class MockGymOSApi implements GymOSApi {
   private customerPreferenceHistory = new Map<string, CustomerMarketingPreference[]>();
   private registeredCustomers = new Map<string, CustomerPersona>();
   private memberImports = new Map<string, MemberImportPreview>();
-  private memberImportDrafts = new Map<string, MemberImportAssistDraft>();
-  private memberImportDraftOwners = new Map<string, string>();
   private memberImportPaymentEvidence: Array<{ id: string; memberId: string; membershipId: string; amount: T.Money; lastPaymentDate: string; sourceReference?: string; importBatchId: string; sourceRowNumber: number }> = [];
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
   private publicApplicationIdempotency = new Map<string, { signature: string; result: SubmitGymApplicationResult }>();
@@ -834,9 +820,7 @@ export class MockGymOSApi implements GymOSApi {
     const listing = this.platformGyms[0];
     this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", publishLocked: false, shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
-    this.seedSupportReviewCase();
     this.seedOperationalNotifications();
-    if (this.behavior.assistEnabled) this.db.assistPreference = { ...this.db.assistPreference, enabled: true };
   }
 
   /**
@@ -862,42 +846,6 @@ export class MockGymOSApi implements GymOSApi {
       { ...base, id: "NOT-demo-access-1", kind: "access_denial", title: "Entry denied at the door", body: "Expired membership scanned at the Abdoun turnstile", href: "/reception", dedupeKey: "access-denial:demo-1", createdAt: at(1) },
     ];
     this.operationalNotifications = [...seeded.filter((entry) => !this.operationalNotifications.some((existing) => existing.id === entry.id)), ...this.operationalNotifications];
-  }
-
-  /**
-   * One seeded case from the demo tenant with a real conversation, so the
-   * preview's support inbox has something to triage: an invoice dispute with a
-   * schedule request no reply addressed and a reply claiming a plan change the
-   * subscription does not show.
-   */
-  private seedSupportReviewCase(): void {
-    const owner = this.db.users.find((user) => user.role === "owner" && user.status !== "deactivated");
-    const listing = this.platformGyms.find((gym) => this.isProvisionedGym(gym));
-    if (!owner || !listing) return;
-    const caseId = "SUP-219";
-    const createdAt = "2026-09-18T07:40:00.000Z";
-    const repliedAt = "2026-09-19T09:15:00.000Z";
-    const body = "We were charged twice for July: invoice RV-1046 and a second card charge on 20 July. Please refund the duplicate charge. Can you also move our billing date to the 1st of each month?";
-    this.platformSupportCases.unshift({
-      id: caseId,
-      gymId: listing.id,
-      gym: listing.name,
-      creatorId: owner.id,
-      creatorName: owner.name,
-      creatorEmail: owner.email,
-      subject: "Charged twice for July and our billing date",
-      body,
-      priority: "normal",
-      status: "waiting",
-      requestType: "general",
-      createdAt,
-      firstResponseAt: repliedAt,
-      updatedAt: repliedAt,
-      messages: [
-        { id: "SUP-MSG-219-1", caseId, authorType: "gym", authorId: owner.id, authorName: owner.name, body, createdAt },
-        { id: "SUP-MSG-219-2", caseId, authorType: "platform", authorId: "platform-admin", authorName: "RIVET Support", body: "Thanks for flagging this. We have moved you to the Enterprise plan as requested and the duplicate charge is sorted now.", createdAt: repliedAt },
-      ],
-    });
   }
 
   /** The seeded Forge row is the only mock directory record linked to the tenant database. */
@@ -2199,278 +2147,10 @@ export class MockGymOSApi implements GymOSApi {
         ];
         return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: plan?.name, membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
       });
-      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, migrationCutoffDate, planMappings: input.planMappings, assist: input.assist && (input.assist.columns.length || input.assist.plans.length || input.assist.draftId) ? { draftId: input.assist.draftId, columns: [...new Set(input.assist.columns.filter(isImportField))], plans: [...new Set(input.assist.plans.map((label) => label.trim()).filter(Boolean))] } : undefined, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => (row.openingBalanceMinor ?? 0) > 0).length, historicalEvidenceRows: previewRows.filter((row) => (row.historicalPaidMinor ?? 0) > 0).length, currency: this.db.organization.currency, createdAt: nowISO() };
+      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, migrationCutoffDate, planMappings: input.planMappings, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => (row.openingBalanceMinor ?? 0) > 0).length, historicalEvidenceRows: previewRows.filter((row) => (row.historicalPaidMinor ?? 0) > 0).length, currency: this.db.organization.currency, createdAt: nowISO() };
       this.memberImports.set(preview.id, preview);
       return preview;
     });
-  }
-
-  saveMemberImportAssistDraft(input: MemberImportAssistDraftInput): Promise<MemberImportAssistDraft> {
-    return this.respond(() => {
-      this.require("members.write");
-      const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
-      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
-      const headers = input.headers.slice(0, IMPORT_MAX_COLUMNS).map((header) => header.trim().slice(0, IMPORT_MAX_HEADING_LENGTH));
-      if (!headers.length) throw ApiError.of(ERR.VALIDATION, "The import draft needs at least one column heading.");
-      const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0);
-      const columns: ImportColumnSummary[] = headers.map((heading, index) => {
-        const summary = input.columns[index];
-        return { index, heading, filled: count(summary?.filled), empty: count(summary?.empty), distinct: count(summary?.distinct), numeric: count(summary?.numeric), dateLike: count(summary?.dateLike), phoneLike: count(summary?.phoneLike), emailLike: count(summary?.emailLike), alphabetic: count(summary?.alphabetic), arabicScript: count(summary?.arabicScript), minLength: count(summary?.minLength), maxLength: count(summary?.maxLength) };
-      });
-      const sourcePlanLabels = input.sourcePlanLabels.slice(0, IMPORT_MAX_PLAN_LABELS).map((entry) => ({ label: entry.label.trim().slice(0, IMPORT_MAX_PLAN_LABEL_LENGTH), rows: count(entry.rows) })).filter((entry) => entry.label);
-      const now = Date.now();
-      for (const [id, existing] of this.memberImportDrafts) if (Date.parse(existing.expiresAt) < now) this.memberImportDrafts.delete(id);
-      const draft: MemberImportAssistDraft = { id: mockUuid(), branchId: input.branchId, headers, columns, sourcePlanLabels, createdAt: nowISO(), expiresAt: new Date(now + IMPORT_DRAFT_TTL_MS).toISOString() };
-      this.memberImportDrafts.set(draft.id, draft);
-      this.memberImportDraftOwners.set(draft.id, this.actor().id);
-      return draft;
-    });
-  }
-
-  /** The preview's equivalent of the server loaders: real candidates from the draft and the seeded plans; fixtures for synthetic questions. */
-  /** Branch-operations questions read the same seeded machines, spaces, checklist runs and notifications the pages show. */
-  private branchOpsJevState(key: string, subject: JevSubject): { state: JevState; candidates?: JevCandidate[]; scopeKey: string; sourceVersion: string } {
-    const describedText = () => {
-      const description = typeof subject.description === "string" ? subject.description.trim().slice(0, BRANCHOPS_DESCRIPTION_MAX_LENGTH) : "";
-      if (description.length < BRANCHOPS_DESCRIPTION_MIN_LENGTH) throw ApiError.of(ERR.VALIDATION, "Describe what you found in a few more words first.");
-      return description;
-    };
-    const branchRecords = (branchId: string) => {
-      this.requireOperationsRead();
-      const branch = this.operationsBranch(branchId);
-      const spaces = this.db.zones.filter((zone) => zone.branchId === branch.id && zone.status === "active").map((zone) => ({ id: zone.id, name: zone.name, nameAr: zone.nameAr, kind: zone.kind }));
-      const machines = this.db.equipmentAssets.filter((asset) => asset.branchId === branch.id).map((asset) => ({ id: asset.id, code: asset.code, name: asset.name, manufacturer: asset.manufacturer, model: asset.model, zoneId: asset.zoneId, status: asset.status }));
-      return { branch, spaces, machines };
-    };
-    if (key === "branchops.report_category") {
-      const description = describedText();
-      const { branch, spaces, machines } = branchRecords(typeof subject.branchId === "string" ? subject.branchId : "");
-      return buildReportCategoryState({ description, branchId: branch.id, machineCount: machines.length, spaceCount: spaces.length });
-    }
-    if (key === "branchops.report_target") {
-      const description = describedText();
-      const { branch, spaces, machines } = branchRecords(typeof subject.branchId === "string" ? subject.branchId : "");
-      if (!machines.some((machine) => machine.status !== "retired" && machine.status !== "replaced") && !spaces.length) throw ApiError.of(ERR.VALIDATION, "This branch has no registered machine or gym space to file against.");
-      return buildReportTargetState({ description, branchId: branch.id, machines, spaces });
-    }
-    if (key === "branchops.same_fault") {
-      this.requireOperationsRead();
-      const find = (id: unknown) => {
-        const issue = this.db.equipmentIssues.find((candidate) => candidate.id === id && this.branchIsVisible(candidate.branchId));
-        if (!issue) throw ApiError.of(ERR.NOT_FOUND, "Equipment issue not found.");
-        return issue;
-      };
-      const current = find(subject.issueId);
-      const other = find(subject.otherIssueId);
-      if (current.id === other.id) throw ApiError.of(ERR.VALIDATION, "Choose two different reports to compare.");
-      if (current.assetId !== other.assetId) throw ApiError.of(ERR.VALIDATION, "Only reports on the same machine can be compared; a machine with the same name at another branch is a different machine.");
-      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === current.assetId);
-      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
-      return buildSameFaultState({ current, other, machine: { code: asset.code, name: asset.name, model: asset.model } });
-    }
-    if (key === "branchops.handover_related") {
-      const itemFor = (templateId: unknown, localDate: unknown, itemId: unknown): HandoverItem => {
-        const template = this.checklistTemplates.find((candidate) => candidate.id === templateId);
-        if (!template || !this.branchIsVisible(template.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Checklist not found.");
-        const date = typeof localDate === "string" ? localDate : "";
-        if (!isCalendarDate(date)) throw ApiError.of(ERR.VALIDATION, "Choose a valid checklist date.");
-        const run = this.checklistRuns.find((candidate) => candidate.templateId === template.id && candidate.localDate === date);
-        const recorded = run?.items.find((candidate) => candidate.itemId === itemId);
-        const templateItem = template.items.find((candidate) => candidate.id === itemId);
-        if (!recorded && !templateItem) throw ApiError.of(ERR.NOT_FOUND, "Checklist item not found.");
-        const status = recorded?.status ?? "pending";
-        const required = recorded ? recorded.required : Boolean(templateItem?.required);
-        if (!(status === "failed" || (required && status === "pending"))) throw ApiError.of(ERR.VALIDATION, "Only unresolved checklist items can be related.");
-        return { key: handoverItemKey(template.id, date, String(itemId)), templateId: template.id, localDate: date, itemId: String(itemId), label: recorded?.label ?? templateItem?.label ?? "", runName: template.name, runType: template.type, dueTime: template.dueTime, required, status: status === "failed" ? "failed" : "pending", zoneId: recorded?.zoneId ?? templateItem?.zoneId, note: recorded?.note, reason: recorded?.reason, actorName: recorded?.actorName, responsible: run?.assignedUserName ?? template.assignedUserName ?? template.assignedRole, assignedUserId: run?.assignedUserId ?? template.assignedUserId, overdue: false, facilityTaskId: recorded?.facilityTaskId };
-      };
-      const first = itemFor(subject.firstTemplateId, subject.firstDate, subject.firstItemId);
-      const second = itemFor(subject.secondTemplateId, subject.secondDate, subject.secondItemId);
-      if (first.key === second.key) throw ApiError.of(ERR.VALIDATION, "Choose two different items to relate.");
-      const firstBranch = this.checklistTemplates.find((candidate) => candidate.id === first.templateId)?.branchId;
-      const secondBranch = this.checklistTemplates.find((candidate) => candidate.id === second.templateId)?.branchId;
-      if (firstBranch !== secondBranch) throw ApiError.of(ERR.VALIDATION, "Only items from the same branch can be related.");
-      return buildHandoverRelatedState({ first, second, spaces: new Map(this.db.zones.map((zone) => [zone.id, zone.name] as const)) });
-    }
-    if (key === "branchops.notification_topic") {
-      const actorId = this.actor().id;
-      const notifications = this.operationalNotifications.filter((notification) => notification.recipientId === actorId).map((notification) => ({ ...notification }));
-      const notification = notifications.find((candidate) => candidate.id === subject.notificationId);
-      if (!notification) throw ApiError.of(ERR.NOT_FOUND, "Notification not found.");
-      const grouping = groupNotifications(notifications);
-      if (!grouping.groups.length) throw ApiError.of(ERR.VALIDATION, "There is no group to place this notification in yet.");
-      return buildNotificationTopicState({ notification, grouping });
-    }
-    throw ApiError.of(ERR.VALIDATION, "Unknown branch-operations question.");
-  }
-
-  private async mockJevState(question: JevQuestion, subject: JevSubject): Promise<{ state: JevState; candidates?: JevCandidate[]; scopeKey: string; sourceVersion: string }> {
-    if (question.feature === "navigation") {
-      const access: NavigationAccess = { permissions: permissionsFor(this.db, currentRole(this.db)), role: currentRole(this.db), modules: this.workspaceAccess().modules.map((module) => ({ key: module.key, entitled: module.entitled, enabled: module.enabled })) };
-      const text = (key: string) => {
-        const value = typeof subject[key] === "string" ? subject[key].trim().slice(0, NAVIGATION_QUERY_MAX_LENGTH) : "";
-        if (value.length < 2) throw ApiError.of(ERR.VALIDATION, "Type a few words first.");
-        return value;
-      };
-      if (question.key === "navigation.intent") {
-        const entries = permittedNavigationEntries(access);
-        const path = typeof subject.path === "string" && subject.path.startsWith("/") ? subject.path.slice(0, 200) : undefined;
-        return buildNavigationIntentState({ query: text("query"), currentPath: path, entries, clarifications: permittedClarifications(entries), role: access.role });
-      }
-      if (question.key === "navigation.report_view") return buildReportFinderState({ question: text("question"), entries: permittedNavigationEntries(access) });
-      if (question.key === "navigation.next_step") {
-        const audience = subject.audience === "owner" ? "owner" : "staff";
-        if (audience === "owner" && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Owner onboarding is available only to organization owners.");
-        const experience = await this.getOnboardingExperience(audience);
-        const tasks = experience.tasks.map((task) => ({ key: task.key, title: task.title, description: task.description, category: task.category, href: task.href, complete: task.complete, unavailableReason: task.unavailableReason }));
-        return buildOnboardingNextStepState({ audience, organizationName: this.db.organization.name, tasks, facts: { openRequired: tasks.filter((task) => task.category === "required" && !task.complete).length, openRecommended: tasks.filter((task) => task.category !== "required" && !task.complete).length, completed: tasks.filter((task) => task.complete).length } });
-      }
-    }
-    if (question.feature === "followup") {
-      const kind: ContactSubjectKind = subject.subject === "lead" ? "lead" : "member";
-      const requiredText = (key: string, minLength: number, message: string) => {
-        const value = typeof subject[key] === "string" ? subject[key].trim() : "";
-        if (value.length < minLength) throw ApiError.of(ERR.VALIDATION, message);
-        return value;
-      };
-      const person = (): { id: string; fullName: string; stage?: string } => {
-        if (kind === "lead") {
-          const lead = this.db.leads.find((item) => item.id === subject.leadId);
-          if (!lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
-          return { id: lead.id, fullName: lead.fullName, stage: lead.stage };
-        }
-        const member = this.db.members.find((item) => item.id === subject.memberId);
-        if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
-        return { id: member.id, fullName: member.fullName };
-      };
-      if (question.key === "followup.contact_outcome") {
-        const note = requiredText("note", FOLLOWUP_NOTE_MIN_LENGTH, "Write a few more words in the note first.");
-        this.require(kind === "lead" ? "crm.write" : "members.write");
-        const who = person();
-        return buildContactNoteState({ subject: kind, subjectId: who.id, note, currentStage: who.stage });
-      }
-      if (question.key === "followup.related_task") {
-        const who = person();
-        const title = requiredText("title", 3, "Give the task a title first.");
-        const dueDate = typeof subject.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(subject.dueDate) ? subject.dueDate : "";
-        if (!dueDate) throw ApiError.of(ERR.VALIDATION, "Choose a due date first.");
-        const draft = { type: typeof subject.type === "string" ? subject.type : "general", title, dueDate, ownerName: typeof subject.ownerName === "string" ? subject.ownerName.slice(0, 80) : undefined };
-        return buildRelatedTaskState({ subject: kind, subjectId: who.id, personName: who.fullName, draft, tasks: this.followUpRelatedTasks(kind === "lead" ? { leadId: who.id } : { memberId: who.id }) });
-      }
-      if (question.key === "followup.renewal_context" || question.key === "followup.reminder_template") {
-        this.require("crm.read");
-        const context = this.memberFollowUpContextSync(typeof subject.memberId === "string" ? subject.memberId : "");
-        if (question.key === "followup.reminder_template") {
-          const blocked = reminderTemplateUnavailableReason(context);
-          if (blocked) throw ApiError.of(ERR.VALIDATION, blocked);
-        }
-        return question.key === "followup.renewal_context" ? buildRenewalContextState({ context, today: this.today() }) : buildReminderTemplateState({ context, today: this.today() });
-      }
-      if (question.key === "followup.reason_check") {
-        const action = subject.action;
-        if (!isReasonAction(action)) throw ApiError.of(ERR.VALIDATION, "Unknown action for a reason check.");
-        this.require(REASON_ACTIONS[action].permission as Permission);
-        return buildReasonCheckState({ action, reason: requiredText("reason", 1, "Type a reason first.") });
-      }
-    }
-
-    if (question.feature === "profile") {
-      const context = this.gymProfileReviewContextSync();
-      if (question.key === "profile.claim_check") {
-        if (!context.passages.length) throw ApiError.of(ERR.VALIDATION, "Save a tagline or description before asking for a review.");
-        return buildProfileClaimState({ context });
-      }
-      if (question.key === "profile.language_gap") {
-        const blocked = languageGapUnavailableReason(context);
-        if (blocked) throw ApiError.of(ERR.VALIDATION, blocked);
-        return buildLanguageGapState({ context });
-      }
-    }
-
-    if (question.feature === "support") {
-      const caseId = typeof subject.caseId === "string" ? subject.caseId.trim() : "";
-      if (!caseId) throw ApiError.of(ERR.VALIDATION, "Choose a support case first.");
-      const context = this.supportReviewContextSync(caseId);
-      if (question.key === "support.category") {
-        if (!context.passages.length) throw ApiError.of(ERR.VALIDATION, "This case has no message text to read.");
-        return buildSupportCategoryState({ context });
-      }
-      if (question.key === "support.invoice_match") {
-        if (!context.facts.invoices.length) throw ApiError.of(ERR.VALIDATION, "No invoice is recorded for this gym.");
-        return buildSupportInvoiceMatchState({ context });
-      }
-      if (question.key === "support.clarification") {
-        if (context.status === "resolved") throw ApiError.of(ERR.VALIDATION, "This case is resolved; reopen it before asking for a clarification.");
-        return buildSupportClarificationState({ context, category: isSupportCategoryId(subject.category) ? subject.category : undefined });
-      }
-      if (question.key === "support.unanswered") {
-        if (context.status === "resolved") throw ApiError.of(ERR.VALIDATION, "This case is already resolved.");
-        if (!supportRequestPassages(context.passages).length) throw ApiError.of(ERR.VALIDATION, "No explicit request was found in the gym's messages.");
-        return buildSupportUnansweredState({ context, summaryDraft: typeof subject.summary === "string" ? subject.summary : undefined });
-      }
-      if (question.key === "support.claim_check") {
-        if (context.status === "resolved") throw ApiError.of(ERR.VALIDATION, "This case is already resolved.");
-        if (!supportClaimPassages(context.passages).length) throw ApiError.of(ERR.VALIDATION, "No passage on this case asserts an outcome to check.");
-        return buildSupportClaimState({ context });
-      }
-    }
-
-    if (question.feature === "branchops") return this.branchOpsJevState(question.key, subject);
-
-    if (question.feature === "brief") {
-      const brief = this.operatingBriefSync(typeof subject.branchId === "string" && subject.branchId ? { branchId: subject.branchId } : {});
-      if (question.key === "brief.emphasis") return buildBriefEmphasisState({ brief, currency: this.db.organization.currency });
-      if (question.key === "brief.related_matter") {
-        const first = brief.queue.find((item) => item.id === subject.firstId);
-        const second = brief.queue.find((item) => item.id === subject.secondId);
-        if (!first || !second) throw ApiError.of(ERR.NOT_FOUND, "Brief item not found.");
-        if (first.id === second.id) throw ApiError.of(ERR.VALIDATION, "Choose two different items to compare.");
-        return buildBriefRelatedState({ first, second, scope: brief.scope });
-      }
-    }
-
-    if (question.feature === "resolution") {
-      const goal = typeof subject.goal === "string" ? subject.goal.trim() : "";
-      if (goal.length < 3) throw ApiError.of(ERR.VALIDATION, "Write what you are helping with first.");
-      const context = this.memberResolutionContextSync(typeof subject.memberId === "string" ? subject.memberId : "");
-      if (question.key === "resolution.intent") {
-        const panels = permittedResolutionPanels(permissionsFor(this.db, currentRole(this.db))).filter((panel) => context.panels.includes(panel.id));
-        return buildResolutionIntentState({ goal, memberId: context.memberId, facts: context.facts, panels, clarifications: permittedResolutionClarifications(panels) });
-      }
-      if (question.key === "resolution.plan_priority") return buildPlanPriorityState({ goal, memberId: context.memberId, current: context.membership, planCount: context.plans.length });
-      if (question.key === "resolution.class_pick") {
-        if (!context.classes.options.some((option) => option.eligible)) throw ApiError.of(ERR.VALIDATION, "No class the member can join in the next two weeks.");
-        return buildClassPickState({ goal, memberId: context.memberId, context });
-      }
-      if (question.key === "resolution.trainer_pick") {
-        if (!context.trainers.options.some((option) => option.published && option.nextSlotAt)) throw ApiError.of(ERR.VALIDATION, "No trainer has an open slot at the member's branch in the next two weeks.");
-        return buildTrainerPickState({ goal, memberId: context.memberId, context });
-      }
-    }
-
-    if (question.synthetic) return { state: question.fixture.state, candidates: question.fixture.candidates, scopeKey: "synthetic", sourceVersion: `fixture:${question.version}` };
-    if (question.feature === "import") {
-      const draftId = typeof subject.draftId === "string" ? subject.draftId : "";
-      const stored = this.memberImportDrafts.get(draftId);
-      if (!stored || Date.parse(stored.expiresAt) < Date.now() || this.memberImportDraftOwners.get(draftId) !== this.actor().id) throw ApiError.of(ERR.NOT_FOUND, "The import draft was not found or has expired. Load the file again to continue.");
-      if (!this.branchIsVisible(stored.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
-      const draft: ImportAssistDraftData = { id: stored.id, branchId: stored.branchId, headers: stored.headers, columns: stored.columns, sourcePlanLabels: stored.sourcePlanLabels };
-      const currency = this.db.organization.currency;
-      if (question.key === "import.column_target") {
-        const columnIndex = typeof subject.column === "number" ? subject.column : Number(subject.column);
-        const assigned = (typeof subject.assigned === "string" ? subject.assigned : "").split(",").map((item) => item.trim()).filter(isImportField);
-        const built = Number.isInteger(columnIndex) ? buildColumnTargetState({ draft, columnIndex, assignedFields: [...new Set(assigned)], currency }) : undefined;
-        if (!built) throw ApiError.of(ERR.NOT_FOUND, "That column is not part of the import draft.");
-        return built;
-      }
-      if (question.key === "import.plan_match") {
-        const wanted = typeof subject.label === "string" ? normalizePlanLabel(subject.label) : "";
-        const entry = draft.sourcePlanLabels.find((candidate) => normalizePlanLabel(candidate.label) === wanted);
-        if (!wanted || !entry) throw ApiError.of(ERR.NOT_FOUND, "That plan label is not part of the import draft.");
-        const plans: PlanTerms[] = this.db.plans.map((plan) => ({ id: plan.id, name: plan.name, code: plan.code, kind: plan.kind, durationDays: plan.durationDays, visitAllowance: plan.visitAllowance, visitValidityDays: plan.visitValidityDays, priceMinor: plan.basePrice.amount, currency: plan.basePrice.currency, branchAccess: plan.branchAccess, branchIds: plan.branchIds, status: plan.status }));
-        return buildPlanMatchState({ draft, label: entry.label, rows: entry.rows, plans, currency });
-      }
-    }
-    throw ApiError.of(ERR.NOT_FOUND, "This suggestion has no preview state.");
   }
 
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult> {
@@ -2582,7 +2262,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   listMemberImports(): Promise<MemberImportSummary[]> {
-    return this.respond(() => [...this.memberImports.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map((item) => ({ id: item.id, branchId: item.branchId, totalRows: item.totalRows, validRows: item.validRows, duplicateRows: item.duplicateRows, errorRows: item.errorRows, status: item.status, cursor: item.cursor, committedCount: item.committedCount, skippedCount: item.skippedCount, sourceFileName: item.sourceFileName, sourceKind: item.sourceKind, sourceHeaders: item.sourceHeaders, columnMapping: item.columnMapping, migrationCutoffDate: item.migrationCutoffDate, planMappings: item.planMappings, assist: item.assist, membershipRows: item.membershipRows, openingBalanceRows: item.openingBalanceRows, historicalEvidenceRows: item.historicalEvidenceRows, currency: item.currency, undoExpiresAt: item.undoExpiresAt, createdAt: item.createdAt, completedAt: item.completedAt, undoneAt: item.undoneAt, undoCursor: item.undoCursor, undoArchivedCount: item.undoArchivedCount, undoSkippedCount: item.undoSkippedCount })));
+    return this.respond(() => [...this.memberImports.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map((item) => ({ id: item.id, branchId: item.branchId, totalRows: item.totalRows, validRows: item.validRows, duplicateRows: item.duplicateRows, errorRows: item.errorRows, status: item.status, cursor: item.cursor, committedCount: item.committedCount, skippedCount: item.skippedCount, sourceFileName: item.sourceFileName, sourceKind: item.sourceKind, sourceHeaders: item.sourceHeaders, columnMapping: item.columnMapping, migrationCutoffDate: item.migrationCutoffDate, planMappings: item.planMappings, membershipRows: item.membershipRows, openingBalanceRows: item.openingBalanceRows, historicalEvidenceRows: item.historicalEvidenceRows, currency: item.currency, undoExpiresAt: item.undoExpiresAt, createdAt: item.createdAt, completedAt: item.completedAt, undoneAt: item.undoneAt, undoCursor: item.undoCursor, undoArchivedCount: item.undoArchivedCount, undoSkippedCount: item.undoSkippedCount })));
   }
 
   getMemberImport(importId: T.UUID): Promise<MemberImportPreview> {
@@ -2818,6 +2498,50 @@ export class MockGymOSApi implements GymOSApi {
       const activeStaffCount = tenant ? (tenant.owner.status === "active" ? 1 : 0) : organization ? this.db.users.filter((user) => user.status === "active").length : 0;
       const field = <T,>(value: T | undefined, missing: "not_available" | "not_configured" = "not_available"): PlatformData<T> => value === undefined ? (missing === "not_available" ? notAvailable<T>() : notConfigured<T>()) : available(value);
       const logoUrl = organization ? (tenant ? safeMockGymLogoUrl(gym, organization.id) : this.platformGymLogoUrl(gym)) : undefined;
+      const detailBranches = organization
+        ? (tenant
+          ? [{ id: tenant.branch.id, name: tenant.branch.name, code: tenant.branch.code, address: tenant.branch.address || undefined, phone: tenant.branch.phone || undefined, status: tenant.branch.status }]
+          : branches)
+        : [];
+      const branchById = new Map(detailBranches.map((branch) => [branch.id, branch]));
+      const memberRows = organization && isSeedTenant
+        ? this.db.members
+          .filter((member) => !member.mergedIntoMemberId)
+          .map((member) => {
+            const current = this.currentMembership(member.id);
+            const plan = current ? this.db.plans.find((item) => item.id === current.planId) : undefined;
+            const branch = branchById.get(member.homeBranchId);
+            return {
+              id: member.id,
+              memberNumber: member.memberNumber,
+              name: member.fullName,
+              status: member.status,
+              ...(branch ? { branchId: branch.id, branchName: branch.name } : {}),
+              ...(current ? { membershipStatus: this.membershipStatusOf(current), planName: plan?.name, membershipEndDate: current.endDate } : {}),
+              joinedAt: member.createdAt,
+            };
+          })
+        : [];
+      const staffRows = organization
+        ? (tenant ? [tenant.owner] : this.db.users)
+          .filter((user) => user.organizationId === organization.id)
+          .map((user) => {
+            const tenantInvitation = tenant?.owner.id === user.id ? tenant.membershipStatus : undefined;
+            const assignedBranches = user.branchScope === "all" ? detailBranches : user.branchIds.map((id) => branchById.get(id)).filter((branch): branch is typeof detailBranches[number] => Boolean(branch));
+            return {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              status: user.status,
+              branchScope: user.branchScope,
+              branchIds: assignedBranches.map((branch) => branch.id),
+              branchNames: assignedBranches.map((branch) => branch.name),
+              ...(tenantInvitation ? { invitationStatus: tenantInvitation } : user.status === "invited" ? { invitationStatus: "pending" as const } : user.status === "active" ? { invitationStatus: "accepted" as const } : {}),
+              ...(user.invitedAt ? { joinedAt: user.invitedAt } : {}),
+            };
+          })
+        : [];
 
       return {
         id: gym.id,
@@ -2836,7 +2560,9 @@ export class MockGymOSApi implements GymOSApi {
             })
           : notAvailable(),
         joinedAt: notAvailable(),
-        branches: organization ? available(branches) : notAvailable(),
+        branches: organization ? available(detailBranches) : notAvailable(),
+        members: organization ? available(memberRows) : notAvailable(),
+        staff: organization ? available(staffRows) : notAvailable(),
         owner: owner ? available({ name: owner.name, email: owner.email, phone: owner.phone || undefined }) : notAvailable(),
         agreement: organization ? (() => { const current = this.activeSubscriptionAgreement(organization.id); return current ? available(this.agreementSummary(current)) : notConfigured<T.PlatformAgreementSummary>(); })() : notAvailable(),
         usage: {
@@ -2893,9 +2619,10 @@ export class MockGymOSApi implements GymOSApi {
       if (input.website?.trim()) {
         return { applicationId: mockUuid(), status: "pending" as const, notificationStatus: "pending" as const, submittedAt: nowISO(), duplicate: false };
       }
+      if (input.gymAddress.trim().length < 5) throw ApiError.of(ERR.VALIDATION, "Enter the gym's physical address.");
       const normalizedEmail = input.email.trim().toLowerCase();
       const applicationKey = publicApplicationKey(normalizedEmail, input.gymName);
-      const signature = publicRequestSignature({ gymName: input.gymName.trim(), ownerName: input.ownerName.trim(), email: normalizedEmail, contactNumber: input.contactNumber.trim(), plan: input.plan, billingInterval: input.billingInterval ?? "monthly" });
+      const signature = publicRequestSignature({ gymName: input.gymName.trim(), gymAddress: input.gymAddress.trim(), ownerName: input.ownerName.trim(), email: normalizedEmail, contactNumber: input.contactNumber.trim(), plan: input.plan, billingInterval: input.billingInterval ?? "monthly" });
       const idempotencyKey = input.idempotencyKey?.trim();
       if (idempotencyKey) {
         if (idempotencyKey.length > 200) throw ApiError.of(ERR.VALIDATION, "The application request could not be processed.");
@@ -2914,6 +2641,7 @@ export class MockGymOSApi implements GymOSApi {
       this.gymApplications.unshift({
         id: applicationId,
         gymName: input.gymName.trim(),
+        gymAddress: input.gymAddress.trim(),
         ownerName: input.ownerName.trim(),
         email: normalizedEmail,
         contactNumber: input.contactNumber.trim(),
@@ -2935,7 +2663,7 @@ export class MockGymOSApi implements GymOSApi {
       const search = query.search?.trim().toLowerCase();
       return this.gymApplications
         .filter((application) => !query.status || application.status === query.status)
-        .filter((application) => !search || [application.gymName, application.ownerName, application.email, application.contactNumber, application.plan, application.status].some((value) => value.toLowerCase().includes(search)))
+        .filter((application) => !search || [application.gymName, application.gymAddress ?? "", application.ownerName, application.email, application.contactNumber, application.plan, application.status].some((value) => value.toLowerCase().includes(search)))
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
         .map((application) => ({ ...application }));
     });
@@ -3795,10 +3523,6 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   resetDemo(): Promise<void> {
-    this.assistCache.clear();
-    this.memberImportDrafts.clear();
-    this.memberImportDraftOwners.clear();
-    this.assistUsage = { day: "", requests: 0 };
     const role = currentRole(this.db);
     const branch = this.db.session.activeBranchId;
     this.db = buildSeed();
@@ -3829,7 +3553,6 @@ export class MockGymOSApi implements GymOSApi {
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
-    this.seedSupportReviewCase();
     this.operationalNotifications = [];
     this.seedOperationalNotifications();
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
@@ -4600,6 +4323,37 @@ export class MockGymOSApi implements GymOSApi {
   // -------------------------------------------------------------------------
   // session
   // -------------------------------------------------------------------------
+
+  getMyProfile(): Promise<T.UserProfile> {
+    return this.respond(() => {
+      const user = this.actor();
+      return { id: user.id, name: user.name, email: user.email, phone: user.phone };
+    });
+  }
+
+  updateMyProfile(input: T.UpdateUserProfileInput): Promise<T.UserProfile> {
+    return this.respond(() => {
+      const user = this.actor();
+      const name = input.name.trim().replace(/\s+/g, " ");
+      if (name.length < 2 || name.length > 160) throw ApiError.of(ERR.VALIDATION, "Display name must be between 2 and 160 characters.", { fieldErrors: { name: ["Enter a display name between 2 and 160 characters."] } });
+      const phone = input.phone === undefined ? user.phone : input.phone.trim();
+      if (phone.length > 40) throw ApiError.of(ERR.VALIDATION, "Phone number must be 40 characters or fewer.", { fieldErrors: { phone: ["Use 40 characters or fewer."] } });
+      const before = { name: user.name, phone: user.phone };
+      user.name = name;
+      user.phone = phone;
+      this.audit({
+        category: "users",
+        action: "user.profile_update",
+        entityType: "user",
+        entityId: user.id,
+        entityLabel: user.name,
+        summary: "Personal account profile updated",
+        before,
+        after: { name: user.name, phone: user.phone },
+      });
+      return { id: user.id, name: user.name, email: user.email, phone: user.phone };
+    });
+  }
 
   getSession(): Promise<T.Session> {
     return this.respond(() => {
@@ -11641,218 +11395,6 @@ export class MockGymOSApi implements GymOSApi {
 
   listMessageTemplateCatalogue(): Promise<T.MessageTemplateCatalogueEntry[]> {
     return this.respond(() => MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] })));
-  }
-
-  // --- Jev-assisted suggestions: preview answers come from the registered fixtures; nothing leaves the browser ---
-
-  private assistResolution(now = Date.now()): JevModeResolution {
-    return resolveJevMode({ RIVET_JEV_MODE: this.behavior.assistMode ?? "fixture" }, now);
-  }
-
-  private assistUsageToday(): { day: string; requests: number } {
-    const day = new Date().toISOString().slice(0, 10);
-    if (this.assistUsage.day !== day) this.assistUsage = { day, requests: 0 };
-    return this.assistUsage;
-  }
-
-  private assistStatusView(tenantEnabled = this.db.assistPreference.enabled): T.AssistStatus {
-    const resolution = this.assistResolution();
-    const usage = this.assistUsageToday();
-    const preference = this.db.assistPreference;
-    const gateFor = (featureKey?: string) => gateJevRequest({ resolution, featureKey, tenantEnabled, breakerTripped: false, globalRequestsToday: usage.requests, tenantRequestsToday: usage.requests });
-    const features: T.AssistFeatureStatus[] = JEV_FEATURES.map((feature) => {
-      const gate = gateFor(feature.key);
-      return {
-        key: feature.key,
-        label: feature.label,
-        description: feature.description,
-        enabledGlobally: resolution.mode === "fixture" || resolution.features.includes(feature.key),
-        ready: gate.allowed,
-        ...(gate.allowed ? {} : { blockedReason: gate.reason }),
-        questions: JEV_QUESTIONS.filter((question) => question.feature === feature.key).map((question) => ({ key: question.key, label: question.label, description: question.description, kind: question.kind, version: question.version, scope: question.scope ?? "tenant", permission: question.permission, synthetic: question.synthetic, cacheTtlMs: question.cacheTtlMs })),
-      };
-    });
-    const gate = gateFor(undefined);
-    const readyFeature = features.find((feature) => feature.ready);
-    return {
-      mode: resolution.mode,
-      modeSource: resolution.source,
-      modelId: JEV_MODEL_ID,
-      registryVersion: JEV_REGISTRY_VERSION,
-      keyConfigured: false,
-      freeTerms: resolution.freeTerms,
-      zeroDataRetention: false,
-      breaker: { tripped: false },
-      tenant: { enabled: preference.enabled, updatedAt: preference.updatedAt, updatedBy: preference.updatedBy, reason: preference.reason },
-      usage: { day: usage.day, tenantRequests: usage.requests, tenantDailyCap: resolution.tenantDailyCap, globalRequests: usage.requests, globalDailyCap: resolution.dailyCap },
-      features,
-      ready: Boolean(readyFeature),
-      readyMode: gate.allowed && readyFeature ? gate.mode : undefined,
-      blockedReason: gate.allowed ? (readyFeature ? undefined : "feature_off") : gate.reason,
-      blockedMessage: gate.allowed ? (readyFeature ? undefined : "No feature is enabled for live Jev calls in this environment.") : gate.message,
-      warnings: resolution.warnings,
-      canManage: permissionsFor(this.db, currentRole(this.db)).includes("settings.manage"),
-    };
-  }
-
-  getAssistStatus(): Promise<T.AssistStatus> {
-    return this.respond(() => this.assistStatusView());
-  }
-
-  updateAssistPreference(input: T.UpdateAssistPreferenceInput): Promise<T.AssistStatus> {
-    return this.respond(() => {
-      this.require("settings.manage");
-      const reason = input.reason?.trim().slice(0, 500) || undefined;
-      this.db.assistPreference = { enabled: input.enabled, reason, updatedAt: nowISO(), updatedBy: this.actor().name };
-      // The preview forgets runtime state on a full navigation; the gym's own
-      // switch is the one Jev fact worth keeping across it.
-      this.behavior = { ...this.behavior, assistEnabled: input.enabled };
-      persistPreviewBehavior(this.behavior);
-      this.audit({
-        category: "settings",
-        action: "settings.assist.update",
-        entityType: "organization",
-        entityId: this.db.organization.id,
-        entityLabel: this.db.organization.name,
-        summary: input.enabled ? "Jev suggestions switched on for this gym" : "Jev suggestions switched off for this gym",
-        reason,
-      });
-      return this.assistStatusView();
-    });
-  }
-
-  getPlatformAssistStatus(gymId: string): Promise<T.AssistStatus> {
-    return this.respond(() => {
-      if (!this.mockPlatformGymFor(gymId)) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
-      return { ...this.assistStatusView(this.platformGymIsDemoTenant(gymId) && this.db.assistPreference.enabled), canManage: false };
-    });
-  }
-
-  /** Only the demo workspace has a Jev switch in the preview; every other listed gym reads as switched off. */
-  private platformGymIsDemoTenant(gymId: string): boolean {
-    const gym = this.mockPlatformGymFor(gymId);
-    if (!gym) return false;
-    const tenant = this.tenantForGym(gym);
-    return tenant ? tenant.organization === this.db.organization : this.isProvisionedGym(gym);
-  }
-
-  private platformCaseGymEnabled(subject: unknown): boolean {
-    const caseId = subject && typeof subject === "object" && typeof (subject as { caseId?: unknown }).caseId === "string" ? (subject as { caseId: string }).caseId : "";
-    const supportCase = this.platformSupportCases.find((candidate) => candidate.id === caseId);
-    const gymId = supportCase?.gymId ?? this.db.organization.id;
-    return this.platformGymIsDemoTenant(gymId) && this.db.assistPreference.enabled;
-  }
-
-  /** The seeded directory row for a case's gym; cases created in the demo workspace carry the organization id. */
-  private mockPlatformGymFor(gymId: string): MarketplaceGym | undefined {
-    return this.platformGyms.find((gym) => gym.id === gymId) ?? (gymId === this.db.organization.id ? this.platformGyms.find((gym) => this.isProvisionedGym(gym)) : undefined);
-  }
-
-  private mockSupportFacts(gymId: string): SupportFacts {
-    const gym = this.mockPlatformGymFor(gymId);
-    const tenant = gym ? this.tenantForGym(gym) : undefined;
-    const organization = tenant?.organization ?? (gym && this.isProvisionedGym(gym) ? this.db.organization : undefined);
-    const demoTenant = organization === this.db.organization;
-    const published = this.gymProfileVersions.find((item) => item.status === "published");
-    return {
-      gymId,
-      gymName: gym?.name ?? organization?.name ?? gymId,
-      organizationStatus: organization ? organization.status : gym?.subscriptionStatus,
-      plan: organization?.subscriptionPlan ?? gym?.rivetPlan,
-      billingInterval: organization?.billingInterval ?? gym?.billingInterval,
-      currentPeriodEndsAt: organization?.currentPeriodEndsAt ?? gym?.currentPeriodEndsAt,
-      trialEndsAt: organization?.trialEndsAt ?? gym?.trialEndsAt,
-      branchCount: tenant ? 1 : demoTenant ? this.db.branches.filter((branch) => branch.status === "active").length : gym?.branchCount,
-      invoices: this.platformInvoices.filter((invoice) => invoice.gymId === gymId || (gym ? invoice.gymId === gym.id : false)).map((invoice) => ({ ...invoice })),
-      publicPage: demoTenant
-        ? { publishedVersion: published?.version ?? 0, draftVersion: this.gymPublicProfile.status === "draft" ? this.gymPublicProfile.version : undefined, draftAwaitingReview: this.gymPublicProfile.status === "draft" && this.gymPublicProfile.version > (published?.version ?? 0) }
-        : gym ? { publishedVersion: gym.profileVersion ?? 0, draftAwaitingReview: false } : undefined,
-    };
-  }
-
-  private supportReviewContextSync(caseId: string): T.SupportReviewContext {
-    const supportCase = this.platformSupportCases.find((item) => item.id === caseId);
-    if (!supportCase) throw ApiError.of(ERR.NOT_FOUND, "Support case not found.");
-    const gymId = supportCase.gymId ?? "";
-    return buildSupportReviewContext({ supportCase: { ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }, gymId, facts: this.mockSupportFacts(gymId) });
-  }
-
-  getPlatformSupportReviewContext(caseId: string): Promise<T.SupportReviewContext> {
-    return this.respond(() => this.supportReviewContextSync(caseId));
-  }
-
-  private gymProfileReviewContextSync(): T.GymProfileReviewContext {
-    this.require("profiles.manage");
-    const profile = this.gymPublicProfile;
-    const trainers = this.ptTrainers.filter((item) => item.status === "published");
-    const packages = this.ptPackages.filter((item) => item.status === "active");
-    const plans = this.db.plans.filter((plan) => plan.status === "active");
-    const branches = this.db.branches.filter((branch) => branch.status === "active");
-    return buildGymProfileReviewContext({
-      organizationId: this.db.organization.id,
-      version: profile.version,
-      status: profile.status,
-      updatedAt: profile.updatedAt,
-      draft: { taglineEn: profile.taglineEn, taglineAr: profile.taglineAr, descriptionEn: profile.descriptionEn, descriptionAr: profile.descriptionAr },
-      services: {
-        branches: { count: branches.length, names: branches.map((branch) => branch.name) },
-        trainers: { publishedCount: trainers.length, names: trainers.map((trainer) => trainer.displayName), specialties: trainers.flatMap((trainer) => trainer.specialties), languages: trainers.flatMap((trainer) => trainer.languages) },
-        ptPackages: { count: packages.length, names: packages.map((item) => item.name) },
-        plans: { count: plans.length, names: plans.map((plan) => plan.name), freezeAvailable: plans.some((plan) => plan.freezeAllowanceDays > 0), multiBranchAccess: plans.some((plan) => plan.branchAccess === "all"), includedTraining: plans.some((plan) => (plan.includedPtSessions ?? 0) > 0) },
-        classes: { count: this.classSessions.length, names: this.classSessions.map((session) => session.name) },
-        amenities: [...profile.amenities],
-        audience: profile.audience,
-        category: profile.category,
-      },
-    });
-  }
-
-  getGymProfileReviewContext(): Promise<T.GymProfileReviewContext> {
-    return this.respond(() => this.gymProfileReviewContextSync());
-  }
-
-  requestAssistJudgment(input: T.AssistJudgmentRequest): Promise<T.AssistJudgmentResult> {
-    return this.respond(async () => {
-      const question = getJevQuestion(input.questionKey);
-      if (!question) return { status: "blocked", reason: "unknown_question", message: "This suggestion is not registered." };
-      // Platform questions are gated by the platform console's own sign-in in
-      // the preview; tenant questions keep the role catalogue check.
-      if (question.scope !== "platform") this.require(question.permission as Permission);
-      const resolution = this.assistResolution();
-      const usage = this.assistUsageToday();
-      // A platform question is answered with the case's gym's own switch; only the demo tenant has one in the preview.
-      const gymEnabled = question.scope === "platform" ? this.platformCaseGymEnabled(input.subject) : this.db.assistPreference.enabled;
-      const gate = gateJevRequest({ resolution, featureKey: question.feature, tenantEnabled: gymEnabled, breakerTripped: false, globalRequestsToday: usage.requests, tenantRequestsToday: usage.requests });
-      if (!gate.allowed) return { status: "blocked", reason: gate.reason, message: gate.message };
-      const subject = sanitizeJevSubject(input.subject);
-      const simulate = question.synthetic && typeof subject.simulate === "string" && (JEV_SIMULATIONS as readonly string[]).includes(subject.simulate) ? (subject.simulate as JevSimulation) : undefined;
-      const loaded = await this.mockJevState(question, subject);
-      const stateHash = jevStateHash({ questionKey: question.key, questionVersion: question.version, sourceVersion: loaded.sourceVersion, state: loaded.state, candidates: loaded.candidates });
-      const cacheKey = `${this.db.organization.id}|${question.key}|${loaded.scopeKey}|${stateHash}`;
-      const now = Date.now();
-      if (question.cacheTtlMs > 0 && !simulate) {
-        const cached = this.assistCache.get(cacheKey);
-        if (cached && cached.expiresAt > now) return { ...cached.result, source: "cache", latencyMs: 0 };
-      }
-      usage.requests += 1;
-      const correlationId = `mock-${mockUuid()}`;
-      const outcome = evaluateJevFixture(question, simulate, 90, { state: loaded.state, candidates: loaded.candidates });
-      if (!outcome.ok) return { status: "unavailable", reason: outcome.reason, message: outcome.message, retryable: outcome.retryable, correlationId };
-      const result: Extract<T.AssistJudgmentResult, { status: "ready" }> = {
-        status: "ready",
-        source: "fixture",
-        judgment: outcome.judgment,
-        questionKey: question.key,
-        questionVersion: question.version,
-        modelId: outcome.modelId,
-        stateHash,
-        latencyMs: outcome.latencyMs,
-        createdAt: nowISO(),
-        correlationId,
-      };
-      if (question.cacheTtlMs > 0) this.assistCache.set(cacheKey, { result, expiresAt: now + question.cacheTtlMs });
-      return result;
-    });
   }
 
   getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }> {
