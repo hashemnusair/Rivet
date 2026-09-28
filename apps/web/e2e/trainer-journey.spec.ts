@@ -163,18 +163,24 @@ test.describe("trainer account journey (preview)", () => {
     await enterTrainerCold(page);
     const sidebar = page.locator('aside[aria-label="Primary navigation"]');
     await expect(sidebar.getByRole("link", { name: "Personal training" })).toBeVisible();
-    for (const hidden of ["Settings", "Leads", "Follow-ups", "Payments", "Reports", "Audit log", "Checkout"]) {
+    await expect(sidebar.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+    for (const hidden of ["Leads", "Follow-ups", "Payments", "Reports", "Audit log", "Checkout"]) {
       await expect(sidebar.getByRole("link", { name: hidden })).toHaveCount(0);
     }
     // Selected-branch staff get their branch as a fixed label, not a picker.
     await expect(page.getByRole("combobox", { name: "Active branch" })).toHaveCount(0);
     await expect(page.getByText("Forge — Abdoun", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Account menu" }).click();
-    await expect(page.getByRole("menuitem", { name: "Organization settings" })).toHaveCount(0);
+    await expect(page.getByRole("menuitem", { name: "Settings", exact: true })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Getting started" })).toBeVisible();
     await page.keyboard.press("Escape");
 
-    for (const path of ["/settings", "/finance", "/audit", "/payments", "/crm/pipeline", "/checkout"]) {
+    await page.goto("/settings");
+    await expect(page.getByRole("heading", { name: "My profile", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Display name")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Organization", exact: true })).toHaveCount(0);
+
+    for (const path of ["/settings?section=organization", "/settings?section=users", "/finance", "/audit", "/payments", "/crm/pipeline", "/checkout"]) {
       await page.goto(path);
       // A cold dev-server compile of a route can outlast the default expectation.
       await expect(page.getByRole("heading", { name: "Not allowed for this role" }), path).toBeVisible({ timeout: 30_000 });

@@ -1,5 +1,24 @@
 # RIVET product, engineering, and operations backlog
 
+## Walkthrough follow-up, 28 September 2026
+
+- [x] Recognize Hashem and Elias's 27 September exploratory walkthrough and
+  preserve its findings in `CURRENT_STATE.md`; do not restart its status at
+  “not tested”. Missing recorded outcomes remain unknown.
+- [ ] Close the three browser CI failures on the feedback-pass release and
+  verify matching frontend/Convex deployment evidence (current work).
+- [ ] Hashem will retest the feedback fixes personally later: invitations,
+  signup/profile recovery, own-profile settings, onboarding links, gym
+  address and device layout. Agent-driven Production mutations are excluded.
+- [ ] Email delivery: identify the RIVET Resend workspace, configure its
+  missing Production webhook secret securely, verify actual delivery mode
+  and suppression reasons, and inspect the affected Clerk invitation headers.
+  DNS presence is not proof that spam placement has been fixed. No sending
+  or delivery-mode activation is part of this diagnostic pass.
+- [x] Jev is retired in source by `c39590e`; its former funding/activation
+  blocker is historical, not a remaining product launch requirement.
+
+
 Updated 3 September 2026 for the approved product UI system refinement,
 credentialed release verification and the complete quality-of-life implementation batch,
 in addition to the 29 August 2026 Production backend closure, owner/platform

@@ -238,7 +238,7 @@ export function SettingsPageInner() {
                 <p className="sr-only" aria-live="polite">{filtered.length === 1 ? "1 section matches" : `${filtered.length} sections match`}</p>
               ) : null}
             </div>
-            <div ref={railRef} role="tablist" aria-orientation="vertical" aria-label="Settings sections" className="space-y-2.5 pb-1" onKeyDown={moveFocus}>
+            <div ref={railRef} role="tablist" aria-orientation="vertical" aria-label="Settings sections" className="space-y-1.5 pb-1" onKeyDown={moveFocus}>
               {filtered ? (
                 filtered.length > 0 ? (
                   <div className="space-y-0.5">

@@ -1,5 +1,51 @@
 # GymOS / RIVET current implementation state
 
+## Walkthrough follow-up and release closure, 28 September 2026
+
+Hashem and Elias already performed an exploratory Production walkthrough on
+27 September. The Codex chat **Fix gym signup protection** records both
+platform-admin sign-ins, the successful application/approval/provisioning
+retry, an owner invitation arriving in spam, member-signup/profile blockers
+fixed during testing, and the failed live Jev check. The requested synthetic
+CSV was supplied; its import outcome and the payment, drawer, QR, class and
+PT outcomes are not recorded in that chat. Unrecorded is not a failed test
+or a claim that the users did not try it.
+
+Hashem will personally retest the feedback fixes later. Do not list a fresh
+full walkthrough as an unstarted prerequisite or run account/financial
+mutations on his behalf for this release pass.
+
+- Synced the checkout to `c39590e`, preserving the local 27 September Jev
+  failure notes here and in the archived docs/21 walkthrough section. The
+  frozen `FRONTEND_HANDOFF.md`, untracked audits and user outputs are preserved.
+- Release repair in progress: trainer browser coverage now permits personal
+  Settings while explicitly denying organization and staff settings; reduced
+  Settings group gaps to fit the added Account group at desktop height.
+  Failed CI browser results are retained for three days so Linux screenshot
+  differences can be inspected without weakening comparison thresholds.
+- Production backup including file storage saved outside Git at
+  `~/.local/share/rivet/backups/production-before-jev-retirement-2026-09-28.zip`
+  (6,311,296 bytes, owner-only permissions). Guarded dry run selected exactly
+  `descriptive-meerkat-589`, passed schema validation and proposed only seven
+  retired Jev index removals. Existing Jev documents are not purged.
+- Email investigation: Production names-only inspection confirms the Resend
+  key, sender, recipients, mode and allowlist names; `RESEND_WEBHOOK_SECRET`
+  is absent. Public DNS has Resend DKIM and the SES return-path SPF/MX;
+  root DMARC remains `p=none`. These are configuration observations, not
+  evidence about the actual invitation's authentication or spam placement.
+  The available Resend browser account has no RIVET domain/team, and the
+  Convex dashboard session has expired. No email was sent, retried or enabled.
+  Provider ownership/access and the affected invitation's authentication
+  headers remain needed to close delivery. Do not blindly tighten DMARC or
+  replace the existing production sender/key with an unrelated account.
+- Local validation: 1,676 unit/component tests in 266 files and 14 CLI/environment
+  guard tests passed; both typechecks, lint/secret-output audit, production
+  build and diff check passed. All 40 targeted browser journeys passed on the
+  built preview, including trainer access, Settings sizing, feedback flows
+  and branch operations at six viewport widths. Linux CI and final release
+  verification remain in progress.
+
+
 ## Consolidated feedback pass: access, workspace controls, onboarding, platform visibility, signup and Jev retirement, 28 September 2026
 
 **Release status:** this feedback pass is being published through `main` in this release step. It does not run a Convex deployment; the backend changes still require the coordinated, guarded Convex release described in the runbook. A push may trigger the repository's normal frontend automation, but this document does not claim a Vercel deployment without provider evidence.
@@ -52,11 +98,20 @@
   the Production organizations table (the public listing ID uses `abd6`).
   Mode was set live last, after the budget and other settings were saved.
 - Elias enabled Settings → Jev assistance: Production now has an enabled
-  tenant preference saved at 20:57:43 Amman. The user reports “success”; the
-  request table remains empty, so this currently proves the switch, not an
-  inference. Asked the user to distinguish the toggle toast from Run check.
-  No live request or accuracy claim is made yet. The operator browser has
-  platform access; the gym's audited owner preference was not bypassed.
+  tenant preference saved at 20:57:43 Amman. The first foundation request at
+  20:59:18 failed with Gateway HTTP 403 (`auth_error`), correlation
+  `web-5d083f1f-46dd-44c5-8894-4e83481aa743`. Gateway generation
+  `gen_01M3J0AXVDCCWNW4A3P0Z1ZD0A` confirms the RIVET key and $0 charged.
+  The authenticated Jev model page says this team's plan excludes the model;
+  both providers show Free Tier: No. The $5 balance is free credit. Adding
+  a card alone has not enabled Jev. The Buy Credit form rejects a $3 custom
+  top-up with “Minimum amount is $10”, above the user's authorized budget.
+  No purchase was made. Await the user's funding decision.
+- The failed response lacked cost metadata, so RIVET's breaker is tripped.
+  Lifetime admission allowance used is $0.01; that is not a provider charge.
+  After model eligibility is resolved, reset only the breaker with an audited
+  reason, preserve all budget counters, and ask the owner to run one check.
+  No successful live inference or model accuracy has been verified.
 - Read first: this section, `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`,
   `apps/web/src/app/login/member-profile-completion.tsx`, and
   `apps/web/convex/jevMode.ts`. Walkthrough checklist and budget screenshot

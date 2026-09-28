@@ -722,8 +722,18 @@ refresh; balance is $5 and auto-reload is off. Production is configured live
 for all nine groups, both daily caps 50, paid allowance $1, expiry
 `2026-09-27`, and organization `0b1e7029-dd30-4345-8bd6-1dbf175ba8c5` only.
 Expiry is 03:00 Amman on 28 September. Gym opt-in was saved at 20:57:43
-Amman; the first live request remains unverified (request table empty).
-No live model accuracy has been verified. Steps below document the setup.
+Amman. The first foundation call at 20:59:18 returned Gateway HTTP 403:
+the authenticated model page says the team's plan excludes Jev, and both
+providers show Free Tier: No. Gateway records $0 charged. The $5 balance
+is free credit; adding a card alone did not enable this model. The credit
+purchase form rejects $3 with “Minimum amount is $10”. No purchase was
+made because this exceeds the authorized $3 total. Await a funding decision.
+RIVET's breaker remains tripped because the failed response omitted cost
+metadata. Admission allowance used is $0.01, distinct from provider spend.
+After eligibility is resolved, use `jev:resetBreaker` with an audited reason
+without resetting budget counters, then verify one owner-run check.
+No successful live inference or model accuracy has been verified.
+These are historical findings; Jev was retired on 28 September. Do not reactivate or reset the breaker as a release step.
 
 The user authorized $1–3 total for the walkthrough. The new paid-pilot path
 is opt-in and defaults off. It supplements the older zero-cost-only procedure
