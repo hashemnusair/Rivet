@@ -97,7 +97,7 @@ export function SalesDashboard() {
                     </span>
                     {lead.expectedValue ? <MoneyText money={lead.expectedValue} className="shrink-0 text-[12px] text-ink-2" /> : null}
                     <LeadStageChip stage={lead.stage} />
-                    <span className={cn("w-16 shrink-0 text-end text-[11.5px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
+                    <span className={cn("w-16 shrink-0 text-end text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
                       {lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}
                     </span>
                   </Link>

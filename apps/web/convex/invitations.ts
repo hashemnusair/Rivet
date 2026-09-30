@@ -269,7 +269,7 @@ export const markFailed = internalMutation({
       organizationId: args.organizationId,
       kind: "staff_invitation_failure",
       title: "Staff invitation needs attention",
-      body: `${args.userName} · invitation delivery failed`,
+      body: `The invitation to ${args.userName} could not be sent. Check their email address and try again.`,
       href: "/settings?section=users",
       dedupeKey: `staff-invitation-failed:${args.userPublicId}:${args.attemptedAt}`,
     });

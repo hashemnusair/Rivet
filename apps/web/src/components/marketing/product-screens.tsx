@@ -79,8 +79,8 @@ const NAV: Array<{ label: string; items: Array<[string, LucideIcon]> }> = [
   {
     label: "System",
     items: [
-      ["Audit log", ScrollText],
-      ["Data exports", Download],
+      ["Activity log", ScrollText],
+      ["Downloads", Download],
       ["Support", CircleHelp],
       ["Settings", Settings],
     ],

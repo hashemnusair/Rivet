@@ -136,7 +136,7 @@ function QueryRefreshNotice() {
 
   return (
     <div
-      className="fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[11.5px] text-warning-deep shadow-sm"
+      className="fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[12px] text-warning-deep shadow-sm"
       role="status"
       aria-live="polite"
     >

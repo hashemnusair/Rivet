@@ -281,7 +281,7 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
                 </div>
                 <Field label="ID number" required hint={idHint} error={fieldErrors.idNumber}><Input value={form.idNumber} onChange={set("idNumber")} inputMode={form.idType === "national" ? "numeric" : "text"} dir="ltr" autoComplete="off" required /></Field>
               </div>
-              <p className="flex gap-2 rounded-md border border-line bg-sunken/40 px-3 py-2 text-[11.5px] text-ink-2"><ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Your ID number is kept only with the signed agreement. Gym staff never see it, and it is partly hidden in every copy.</p>
+              <p className="flex gap-2 rounded-md border border-line bg-sunken/40 px-3 py-2 text-[12px] text-ink-2"><ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Your ID number is kept only with the signed agreement. Gym staff never see it, and it is partly hidden in every copy.</p>
             </section>
             <section className="space-y-3">
               <p className="context-label">The contract</p>

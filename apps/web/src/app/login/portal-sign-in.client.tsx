@@ -320,7 +320,7 @@ function StaffRoles({ loading, onEnter }: { loading: boolean; onEnter: (role: Ro
       </div>
 
       <Button type="submit" className="mt-5 w-full" size="lg" loading={loading} data-testid="sign-in-button">
-        Open {selected.name.split(" ")[0]}&rsquo;s workspace
+        Sign in as {selected.name.split(" ")[0]}
         <ArrowRight className="size-4" />
       </Button>
     </form>

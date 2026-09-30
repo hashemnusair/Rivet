@@ -20,7 +20,7 @@ export function NavigationEntryLine({ entry }: { entry: NavigationEntry }) {
     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
       <span className="font-medium text-ink">{entry.label}</span>
       <Badge variant="outline">{KIND_LABEL[entry.kind]}</Badge>
-      {entry.opensForm ? <span className="text-[11.5px] text-ink-3">opens a form. Nothing is saved yet</span> : null}
+      {entry.opensForm ? <span className="text-[12px] text-ink-3">opens a form. Nothing is saved yet</span> : null}
     </span>
   );
 }

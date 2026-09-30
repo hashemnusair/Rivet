@@ -4,7 +4,7 @@ test.describe("gym-area setup", () => {
   test("explains the concept and lets an owner add a recognizable place", async ({ page }) => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /owner/i }).click();
-    await page.getByRole("button", { name: /Open .+ workspace/i }).click();
+    await page.getByRole("button", { name: /Sign in as .+/i }).click();
     await expect(page).not.toHaveURL(/\/login/);
     await page.goto("/settings?section=spaces");
 

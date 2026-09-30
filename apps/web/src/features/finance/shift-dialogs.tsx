@@ -214,7 +214,7 @@ export function CloseShiftDialog({
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {DENOMS.map((d) => (
                 <label key={d.label} className="block">
-                  <span className="mb-1 block text-[11px] text-ink-3 tabular">{d.label}</span>
+                  <span className="mb-1 block text-[12px] text-ink-3 tabular">{d.label}</span>
                   <Input
                     type="number"
                     min={0}

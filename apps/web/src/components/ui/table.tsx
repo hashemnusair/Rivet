@@ -45,7 +45,7 @@ const TableHead = forwardRef<HTMLTableCellElement, ThHTMLAttributes<HTMLTableCel
     <th
       ref={ref}
       className={cn(
-        "h-9 whitespace-nowrap bg-surface px-3 text-start align-middle text-[11.5px] font-semibold text-ink-3",
+        "h-9 whitespace-nowrap bg-surface px-3 text-start align-middle text-[12px] font-semibold text-ink-3",
         className,
       )}
       data-rivet-table-head

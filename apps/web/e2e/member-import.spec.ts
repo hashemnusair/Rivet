@@ -4,7 +4,7 @@ test.describe("member file import", () => {
   test("uploads a CSV, previews its members, and keeps raw text secondary", async ({ page }) => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /owner/i }).click();
-    await page.getByRole("button", { name: /Open .+ workspace/i }).click();
+    await page.getByRole("button", { name: /Sign in as .+/i }).click();
     // The persona is stored once the sign-in resolves; jumping to a deep
     // route before that leaves the workspace guard waiting for nobody.
     await expect(page).toHaveURL(/\/dashboard$/);

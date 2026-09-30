@@ -49,7 +49,7 @@ function memberContext({
 
 describe("Convex security kernel", () => {
   it("rejects a missing server permission", () => {
-    expect(() => requirePermission(actor(), "payments.refund")).toThrow(/refund permission/i);
+    expect(() => requirePermission(actor(), "payments.refund")).toThrow(/You do not have access to this action/i);
   });
 
   it("keeps commercial and override permissions role-owned", () => {

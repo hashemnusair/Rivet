@@ -27,7 +27,7 @@ export function StatusChip({ tone, children, className, dot }: { tone: Tone; chi
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap",
+        "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[12px] font-medium leading-4 whitespace-nowrap",
         toneStyles[tone],
         className,
       )}

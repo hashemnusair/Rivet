@@ -133,7 +133,7 @@ export async function requireOperations(ctx: ReadContext, actor: ActorContext): 
   try {
     requireWorkspaceModule("operations", { entitledModules: entitlements.entitledModules, enabledModules: resolvedPreferences.enabledModules });
   } catch {
-    domainError("FEATURE_NOT_AVAILABLE", "The operations workspace module is not enabled for this organization.", { correlationId: actor.correlationId, details: { module: "operations" } });
+    domainError("FEATURE_NOT_AVAILABLE", "Stock and purchasing are not included in your gym’s plan.", { correlationId: actor.correlationId, details: { module: "operations" } });
   }
 }
 
@@ -249,7 +249,7 @@ async function assetByPublicId(ctx: ReadContext, actor: ActorContext, id: string
   const asset = id
     ? await ctx.db.query("equipmentAssets").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", id)).unique()
     : null;
-  if (!asset) domainError("NOT_FOUND", "Equipment asset not found.", { correlationId: actor.correlationId });
+  if (!asset) domainError("NOT_FOUND", "Machine not found.", { correlationId: actor.correlationId });
   const branch = await ctx.db.get(asset.branchId);
   assertBranchAccess(actor, branch);
   return asset;
@@ -346,7 +346,7 @@ async function ensureBalance(ctx: MutationCtx, actor: ActorContext, branchId: Id
   const publicId = `inventory-${String(branchId)}-${String(productId)}`;
   const id = await ctx.db.insert("inventoryBalances", { organizationId: actor.organization._id, publicId, branchId, productId, quantityOnHand: 0, committedQuantity: 0, sellable: true, updatedAt: Date.now() });
   const created = await ctx.db.get(id);
-  if (!created) domainError("NOT_FOUND", "Inventory balance could not be created.", { correlationId: actor.correlationId });
+  if (!created) domainError("NOT_FOUND", "Stock balance could not be created.", { correlationId: actor.correlationId });
   return created;
 }
 
@@ -507,7 +507,7 @@ async function deleteProduct(ctx: MutationCtx, actor: ActorContext, input: Data)
   const balances = await ctx.db.query("inventoryBalances").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   const productBalances = balances.filter((row) => row.productId === product._id);
   if (actor.branchScope !== "all" && productBalances.some((row) => !actor.branchIds.includes(row.branchId))) {
-    domainError("FORBIDDEN", "This product has inventory in a branch outside your access.", { correlationId: actor.correlationId });
+    domainError("FORBIDDEN", "This product has stock in a branch outside your access.", { correlationId: actor.correlationId });
   }
   if (productBalances.some((row) => row.quantityOnHand > 0)) {
     domainError("CONFLICT", "This product still has stock on hand. Sell, return, or adjust it to zero before permanently deleting the item.", { correlationId: actor.correlationId });
@@ -693,10 +693,10 @@ async function recordMovementInternal(ctx: MutationCtx, actor: ActorContext, inp
   const existing = await idempotentResult(ctx, actor, "operations.stock_movement", input.idempotencyKey, requestHash);
   if (existing) return existing;
   const delta = input.type === "adjustment" && input.quantityDelta !== undefined ? input.quantityDelta : movementDelta(input.type, input.quantity);
-  if (!Number.isSafeInteger(delta) || delta === 0) domainError("VALIDATION_ERROR", "Stock adjustment must change inventory by a non-zero whole number.", { correlationId: actor.correlationId });
+  if (!Number.isSafeInteger(delta) || delta === 0) domainError("VALIDATION_ERROR", "Stock adjustment must change stock by at least one whole item.", { correlationId: actor.correlationId });
   const balance = await ensureBalance(ctx, actor, input.branch._id, input.product._id);
   const nextQuantity = balance.quantityOnHand + delta;
-  if (nextQuantity < 0) domainError("CONFLICT", "Stock movement would make inventory negative.", { correlationId: actor.correlationId, details: { productId: input.product.publicId, branchId: publicBranchId(input.branch), quantityOnHand: balance.quantityOnHand, requestedDelta: delta } });
+  if (nextQuantity < 0) domainError("CONFLICT", "Stock movement would leave less than zero stock.", { correlationId: actor.correlationId, details: { productId: input.product.publicId, branchId: publicBranchId(input.branch), quantityOnHand: balance.quantityOnHand, requestedDelta: delta } });
   const now = Date.now();
   const currentCostKnown = balance.quantityOnHand === 0
     ? { amount: 0, currency: actor.organization.currency }
@@ -820,7 +820,7 @@ async function transferInventory(ctx: MutationCtx, actor: ActorContext, input: D
   await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: sourceMovementId, branchId: sourceBranch._id, productId: product._id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_out", quantityDelta: -quantity, quantity, unitCostMinor: unitCost?.amount, unitCostCurrency: unitCost?.currency, totalCostMinor: movedTotalCostMinor, totalCostCurrency: movedTotalCostMinor === undefined ? undefined : actor.organization.currency, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: sourceMovementKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
   await ctx.db.insert("stockMovements", { organizationId: actor.organization._id, publicId: destinationMovementId, branchId: destinationBranch._id, productId: product._id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_in", quantityDelta: quantity, quantity, unitCostMinor: unitCost?.amount, unitCostCurrency: unitCost?.currency, totalCostMinor: movedTotalCostMinor, totalCostCurrency: movedTotalCostMinor === undefined ? undefined : actor.organization.currency, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: destinationMovementKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdByUserId: actor.user._id });
   if (sourceBalance) await ctx.db.patch(sourceBalance._id, { quantityOnHand: sourceBalance.quantityOnHand - quantity, totalCostMinor: sourceRemainingCostMinor, totalCostCurrency: sourceRemainingCostMinor === undefined ? undefined : actor.organization.currency, lastMovementAt: now, updatedAt: now });
-  else domainError("CONFLICT", "The source branch inventory balance could not be loaded.", { correlationId: actor.correlationId });
+  else domainError("CONFLICT", "The source branch stock balance could not be loaded.", { correlationId: actor.correlationId });
   await ctx.db.patch(destinationBalance._id, { quantityOnHand: destinationBalance.quantityOnHand + quantity, totalCostMinor: destinationNextCostMinor, totalCostCurrency: destinationNextCostMinor === undefined ? undefined : actor.organization.currency, lastMovementAt: now, updatedAt: now });
   await ctx.db.insert("inventoryTransfers", { organizationId: actor.organization._id, publicId: transferId, sourceBranchId: sourceBranch._id, destinationBranchId: destinationBranch._id, productId: product._id, quantity, reason, status: "completed", sourceMovementId, destinationMovementId, totalCostMinor: movedTotalCostMinor, totalCostCurrency: movedTotalCostMinor === undefined ? undefined : actor.organization.currency, sourceAvailableBefore: sourceAvailableQuantity, destinationAvailableBefore: destinationAvailableQuantity, sourceAvailableAfter: sourceAvailableQuantity - quantity, destinationAvailableAfter: destinationAvailableQuantity + quantity, idempotencyKey, createdByUserId: actor.user._id, occurredAt: now, createdAt: now });
   const movementTotalCost = movedTotalCostMinor === undefined ? undefined : { amount: movedTotalCostMinor, currency: actor.organization.currency };
@@ -828,7 +828,7 @@ async function transferInventory(ctx: MutationCtx, actor: ActorContext, input: D
   const destinationMovement = { id: destinationMovementId, organizationId: publicOrganizationId(actor.organization), branchId: destinationBranch.publicId, productId: product.publicId, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_in", quantityDelta: quantity, quantity, unitCost, totalCost: movementTotalCost, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: destinationMovementKey, financialPostingStatus: "not_posted", occurredAt: iso(now), createdAt: iso(now), createdById: publicUserId(actor.user) };
   const result = { id: transferId, organizationId: publicOrganizationId(actor.organization), sourceBranchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, productId: product.publicId, quantity, reason, idempotencyKey, status: "completed", totalCost: movementTotalCost, sourceMovementId, destinationMovementId, sourceMovement, destinationMovement, sourceAvailableQuantity: sourceAvailableQuantity - quantity, destinationAvailableQuantity: destinationAvailableQuantity + quantity, createdById: publicUserId(actor.user), occurredAt: iso(now) };
   await saveIdempotentResult(ctx, actor, "operations.inventory.transfer", idempotencyKey, requestHash, result);
-  await audit(ctx, actor, { action: "operations.inventory.transfer", entityType: "inventory_transfer", entityId: transferId, entityLabel: `${product.sku} · ${sourceBranch.name} → ${destinationBranch.name}`, summary: "Inventory transferred between branches", reason, branchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, before: { sourceBranchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, productId: product.publicId, sourceAvailableQuantity, destinationAvailableQuantity }, after: { sourceBranchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, productId: product.publicId, quantity, totalCostMinor: movedTotalCostMinor, sourceAvailableQuantity: sourceAvailableQuantity - quantity, destinationAvailableQuantity: destinationAvailableQuantity + quantity } });
+  await audit(ctx, actor, { action: "operations.inventory.transfer", entityType: "inventory_transfer", entityId: transferId, entityLabel: `${product.sku} · ${sourceBranch.name} → ${destinationBranch.name}`, summary: "Stock transferred between branches", reason, branchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, before: { sourceBranchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, productId: product.publicId, sourceAvailableQuantity, destinationAvailableQuantity }, after: { sourceBranchId: sourceBranch.publicId, destinationBranchId: destinationBranch.publicId, productId: product.publicId, quantity, totalCostMinor: movedTotalCostMinor, sourceAvailableQuantity: sourceAvailableQuantity - quantity, destinationAvailableQuantity: destinationAvailableQuantity + quantity } });
   return result;
 }
 
@@ -1595,22 +1595,22 @@ async function upsertFacilityTask(ctx: MutationCtx, actor: ActorContext, input: 
   requireOperationsWrite(actor);
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
   const zone = await zoneByPublicId(ctx, actor, optionalText(input.zoneId), branch);
-  const kind = assertOneOf(input.kind, FACILITY_KINDS, "Facility task kind", actor.correlationId);
-  const severity = assertOneOf(input.severity, FACILITY_SEVERITIES, "Facility task severity", actor.correlationId);
-  const requestedStatus = input.status === undefined ? undefined : assertOneOf(input.status, FACILITY_STATUSES, "Facility task status", actor.correlationId);
+  const kind = assertOneOf(input.kind, FACILITY_KINDS, "Maintenance job kind", actor.correlationId);
+  const severity = assertOneOf(input.severity, FACILITY_SEVERITIES, "Maintenance job severity", actor.correlationId);
+  const requestedStatus = input.status === undefined ? undefined : assertOneOf(input.status, FACILITY_STATUSES, "Maintenance job status", actor.correlationId);
   const status = requestedStatus ?? "open";
   const title = text(input.title).trim();
-  if (!title || title.length > 160) domainError("VALIDATION_ERROR", "Facility task title must be between 1 and 160 characters.", { correlationId: actor.correlationId });
+  if (!title || title.length > 160) domainError("VALIDATION_ERROR", "Maintenance job title must be between 1 and 160 characters.", { correlationId: actor.correlationId });
   const assignee = await userByPublicId(ctx, actor, optionalText(input.assigneeId));
   const dueAt = input.dueAt === undefined ? undefined : Date.parse(text(input.dueAt));
-  if (input.dueAt !== undefined && !Number.isFinite(dueAt)) domainError("VALIDATION_ERROR", "Facility task due date is invalid.", { correlationId: actor.correlationId });
+  if (input.dueAt !== undefined && !Number.isFinite(dueAt)) domainError("VALIDATION_ERROR", "Maintenance job due date is invalid.", { correlationId: actor.correlationId });
   const trafficRaw = input.trafficContext === undefined ? undefined : value(input.trafficContext);
   const trafficContext = trafficRaw ? { checkInsLastHour: trafficRaw.checkInsLastHour === undefined ? undefined : integer(trafficRaw.checkInsLastHour, Number.NaN), occupancyPercent: trafficRaw.occupancyPercent === undefined ? undefined : finite(trafficRaw.occupancyPercent, Number.NaN), capturedAt: trafficRaw.capturedAt === undefined ? undefined : Date.parse(text(trafficRaw.capturedAt)) } : undefined;
   if (trafficContext && ((trafficContext.checkInsLastHour !== undefined && (!Number.isSafeInteger(trafficContext.checkInsLastHour) || trafficContext.checkInsLastHour < 0)) || (trafficContext.occupancyPercent !== undefined && (!Number.isFinite(trafficContext.occupancyPercent) || trafficContext.occupancyPercent < 0 || trafficContext.occupancyPercent > 100)) || (trafficContext.capturedAt !== undefined && !Number.isFinite(trafficContext.capturedAt)))) domainError("VALIDATION_ERROR", "Traffic context must contain recorded non-negative check-ins and 0–100 occupancy.", { correlationId: actor.correlationId });
   const suppliesCost = requireNonNegativeMoney(input.suppliesCost, actor.organization.currency, "Supplies cost", actor.correlationId);
   const inputId = optionalText(input.id);
   const existing = inputId ? await ctx.db.query("facilityTasks").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", inputId)).unique() : null;
-  if (existing && existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A facility task cannot move between branches.", { correlationId: actor.correlationId });
+  if (existing && existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A maintenance job cannot move between branches.", { correlationId: actor.correlationId });
   const now = Date.now();
   const effectiveStatus = existing ? requestedStatus ?? existing.status : status;
   const immutableStatus = existing ? await immutableAccountingStatus(ctx, actor, "facility_supplies", existing.publicId, existing.financialPostingStatus) : undefined;
@@ -1629,22 +1629,22 @@ async function upsertFacilityTask(ctx: MutationCtx, actor: ActorContext, input: 
     suppliesCostMinor !== existing.suppliesCostMinor ||
     suppliesCostCurrency !== existing.suppliesCostCurrency
   )) {
-    rejectImmutableAccountingMutation(actor, "This facility task", immutableStatus);
+    rejectImmutableAccountingMutation(actor, "This maintenance job", immutableStatus);
   }
   const fields = { branchId: branch._id, zoneId: zone._id, kind, severity, status: effectiveStatus, title, notes: optionalText(input.notes), assigneeId: assignee ? publicUserId(assignee) : undefined, dueAt, completedAt, trafficContext: trafficContext ? { checkInsLastHour: trafficContext.checkInsLastHour, occupancyPercent: trafficContext.occupancyPercent, capturedAt: trafficContext.capturedAt } : undefined, suppliesCostMinor, suppliesCostCurrency, financialPostingStatus: existing?.financialPostingStatus ?? "not_posted", financialSourceId: existing?.financialSourceId, updatedAt: now };
   if (existing) {
     const before = await facilityView(ctx, actor, existing);
     await ctx.db.patch(existing._id, fields);
     const updated = await ctx.db.get(existing._id);
-    if (!updated) domainError("NOT_FOUND", "Facility task could not be loaded after update.", { correlationId: actor.correlationId });
-    await audit(ctx, actor, { action: "operations.facility_task.update", entityType: "facility_task", entityId: updated.publicId, entityLabel: updated.title, summary: "Facility task updated", before, after: await facilityView(ctx, actor, updated), branchId: publicBranchId(branch) });
+    if (!updated) domainError("NOT_FOUND", "Maintenance job could not be loaded after update.", { correlationId: actor.correlationId });
+    await audit(ctx, actor, { action: "operations.facility_task.update", entityType: "facility_task", entityId: updated.publicId, entityLabel: updated.title, summary: "Maintenance job updated", before, after: await facilityView(ctx, actor, updated), branchId: publicBranchId(branch) });
     return await facilityView(ctx, actor, updated);
   }
   const publicId = `facility-${crypto.randomUUID()}`;
   const id = await ctx.db.insert("facilityTasks", { organizationId: actor.organization._id, publicId, ...fields, createdAt: now });
   const created = await ctx.db.get(id);
-  if (!created) domainError("NOT_FOUND", "Facility task could not be created.", { correlationId: actor.correlationId });
-  await audit(ctx, actor, { action: "operations.facility_task.create", entityType: "facility_task", entityId: created.publicId, entityLabel: created.title, summary: "Facility task created", after: await facilityView(ctx, actor, created), branchId: publicBranchId(branch) });
+  if (!created) domainError("NOT_FOUND", "Maintenance job could not be created.", { correlationId: actor.correlationId });
+  await audit(ctx, actor, { action: "operations.facility_task.create", entityType: "facility_task", entityId: created.publicId, entityLabel: created.title, summary: "Maintenance job created", after: await facilityView(ctx, actor, created), branchId: publicBranchId(branch) });
   return await facilityView(ctx, actor, created);
 }
 
@@ -1685,17 +1685,17 @@ async function upsertEquipmentAsset(ctx: MutationCtx, actor: ActorContext, input
   if ((expectedServiceIntervalDays !== undefined && (!Number.isSafeInteger(expectedServiceIntervalDays) || expectedServiceIntervalDays < 1)) || (expectedUsefulLifeMonths !== undefined && (!Number.isSafeInteger(expectedUsefulLifeMonths) || expectedUsefulLifeMonths < 1 || expectedUsefulLifeMonths > 600))) domainError("VALIDATION_ERROR", "Equipment service intervals must be positive whole numbers and useful life must be between 1 and 600 months.", { correlationId: actor.correlationId });
   const inputId = optionalText(input.id);
   const existing = inputId ? await assetByPublicId(ctx, actor, inputId) : null;
-  if (existing && existing.branchId !== branch._id) domainError("CONFLICT", "Equipment assets cannot be reassigned between branches; use a future transfer workflow.", { correlationId: actor.correlationId });
+  if (existing && existing.branchId !== branch._id) domainError("CONFLICT", "A machine cannot be moved to another branch here.", { correlationId: actor.correlationId });
   if (existing && input.status !== undefined && input.status !== existing.status) {
     const allowed = existing.status === "active"
       ? ["maintenance", "retired", "replaced"]
       : existing.status === "maintenance" ? ["active", "retired", "replaced"] : [];
-    if (!allowed.includes(status)) domainError("CONFLICT", `An equipment asset cannot move from ${existing.status} to ${status}.`, { correlationId: actor.correlationId });
+    if (!allowed.includes(status)) domainError("CONFLICT", "This machine cannot be changed to that status. Refresh and check its current status.", { correlationId: actor.correlationId });
   }
   if (input.status === "active" && existing) {
     const issues = await ctx.db.query("equipmentIssues").withIndex("by_asset", (q) => q.eq("organizationId", actor.organization._id).eq("assetId", existing._id)).collect();
     if (issues.some((issue) => issue.status !== "resolved" && issue.status !== "cancelled" && issue.safetyStatus === "out_of_service")) {
-      domainError("CONFLICT", "This equipment has an unresolved out-of-service issue. Resolve the issue before marking the asset active.", { correlationId: actor.correlationId });
+      domainError("CONFLICT", "This machine is unsafe to use. Fix the reported problem before marking it ready.", { correlationId: actor.correlationId });
     }
   }
   // Retired/replaced assets remain available for maintenance and accounting
@@ -1719,16 +1719,16 @@ async function upsertEquipmentAsset(ctx: MutationCtx, actor: ActorContext, input
     const before = await equipmentAssetViewResolved(ctx, actor, existing);
     await ctx.db.patch(existing._id, fields);
     const updated = await ctx.db.get(existing._id);
-    if (!updated) domainError("NOT_FOUND", "Equipment asset could not be loaded after update.", { correlationId: actor.correlationId });
-    await audit(ctx, actor, { action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: updated.publicId, entityLabel: updated.code, summary: "Equipment asset updated", before, after: await equipmentAssetViewResolved(ctx, actor, updated), branchId: publicBranchId(branch) });
+    if (!updated) domainError("NOT_FOUND", "Machine could not be loaded after update.", { correlationId: actor.correlationId });
+    await audit(ctx, actor, { action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: updated.publicId, entityLabel: updated.code, summary: "Machine updated", before, after: await equipmentAssetViewResolved(ctx, actor, updated), branchId: publicBranchId(branch) });
     return await equipmentAssetViewResolved(ctx, actor, updated);
   }
   const now = Date.now();
   const publicId = `asset-${crypto.randomUUID()}`;
   const id = await ctx.db.insert("equipmentAssets", { organizationId: actor.organization._id, publicId, ...fields, createdAt: now });
   const created = await ctx.db.get(id);
-  if (!created) domainError("NOT_FOUND", "Equipment asset could not be created.", { correlationId: actor.correlationId });
-  await audit(ctx, actor, { action: "operations.equipment_asset.create", entityType: "equipment_asset", entityId: created.publicId, entityLabel: created.code, summary: "Equipment asset created", after: await equipmentAssetViewResolved(ctx, actor, created), branchId: publicBranchId(branch) });
+  if (!created) domainError("NOT_FOUND", "Machine could not be created.", { correlationId: actor.correlationId });
+  await audit(ctx, actor, { action: "operations.equipment_asset.create", entityType: "equipment_asset", entityId: created.publicId, entityLabel: created.code, summary: "Machine created", after: await equipmentAssetViewResolved(ctx, actor, created), branchId: publicBranchId(branch) });
   return await equipmentAssetViewResolved(ctx, actor, created);
 }
 
@@ -1756,14 +1756,14 @@ async function reportEquipmentIssue(ctx: MutationCtx, actor: ActorContext, input
   requireOperationsWrite(actor);
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
   const asset = await assetByPublicId(ctx, actor, optionalText(input.assetId));
-  if (asset.branchId !== branch._id) domainError("VALIDATION_ERROR", "Equipment asset must belong to the selected branch.", { correlationId: actor.correlationId });
-  if (asset.status === "retired" || asset.status === "replaced") domainError("CONFLICT", "Retired or replaced equipment cannot receive new issues.", { correlationId: actor.correlationId });
+  if (asset.branchId !== branch._id) domainError("VALIDATION_ERROR", "Machine must belong to the selected branch.", { correlationId: actor.correlationId });
+  if (asset.status === "retired" || asset.status === "replaced") domainError("CONFLICT", "You cannot report problems for a retired or replaced machine.", { correlationId: actor.correlationId });
   const title = text(input.title).trim();
-  if (!title || title.length > 160) domainError("VALIDATION_ERROR", "Issue title must be between 1 and 160 characters.", { correlationId: actor.correlationId });
-  const severity = assertOneOf(input.severity, ISSUE_SEVERITIES, "Equipment issue severity", actor.correlationId);
+  if (!title || title.length > 160) domainError("VALIDATION_ERROR", "Problem title must be between 1 and 160 characters.", { correlationId: actor.correlationId });
+  const severity = assertOneOf(input.severity, ISSUE_SEVERITIES, "Machine problem severity", actor.correlationId);
   const safety = assertOneOf(input.safetyStatus ?? "unknown", ["unknown", "safe_to_operate", "out_of_service"] as const, "Equipment safety status", actor.correlationId);
   const downtimeDays = input.downtimeDays === undefined ? undefined : finite(input.downtimeDays, Number.NaN);
-  if (downtimeDays !== undefined && (!Number.isFinite(downtimeDays) || downtimeDays < 0)) domainError("VALIDATION_ERROR", "Downtime days must be non-negative.", { correlationId: actor.correlationId });
+  if (downtimeDays !== undefined && (!Number.isFinite(downtimeDays) || downtimeDays < 0)) domainError("VALIDATION_ERROR", "Days out of use must be zero or more.", { correlationId: actor.correlationId });
   const now = Date.now();
   const publicId = `issue-${crypto.randomUUID()}`;
   const id = await ctx.db.insert("equipmentIssues", { organizationId: actor.organization._id, publicId, branchId: branch._id, assetId: asset._id, title, description: optionalText(input.description), severity, status: "open", reportedAt: now, downtimeDays, safetyStatus: safety, createdByUserId: actor.user._id });
@@ -1771,12 +1771,12 @@ async function reportEquipmentIssue(ctx: MutationCtx, actor: ActorContext, input
     const beforeAsset = await equipmentAssetViewResolved(ctx, actor, asset);
     await ctx.db.patch(asset._id, { status: "maintenance", updatedAt: now });
     const updatedAsset = await ctx.db.get(asset._id);
-    if (!updatedAsset) domainError("NOT_FOUND", "Equipment asset could not be loaded after issue report.", { correlationId: actor.correlationId });
-    await audit(ctx, actor, { action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: updatedAsset.publicId, entityLabel: updatedAsset.code, summary: "Equipment marked for maintenance after an out-of-service issue", before: beforeAsset, after: await equipmentAssetViewResolved(ctx, actor, updatedAsset), branchId: publicBranchId(branch) });
+    if (!updatedAsset) domainError("NOT_FOUND", "The machine could not be loaded. Refresh and try again.", { correlationId: actor.correlationId });
+    await audit(ctx, actor, { action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: updatedAsset.publicId, entityLabel: updatedAsset.code, summary: "Machine marked for repair because it is unsafe to use", before: beforeAsset, after: await equipmentAssetViewResolved(ctx, actor, updatedAsset), branchId: publicBranchId(branch) });
   }
   const created = await ctx.db.get(id);
-  if (!created) domainError("NOT_FOUND", "Equipment issue could not be created.", { correlationId: actor.correlationId });
-  await audit(ctx, actor, { action: "operations.equipment_issue.create", entityType: "equipment_issue", entityId: created.publicId, entityLabel: created.title, summary: "Equipment issue reported", after: equipmentIssueView(created, publicOrganizationId(actor.organization), publicBranchId(branch), asset.publicId), branchId: publicBranchId(branch) });
+  if (!created) domainError("NOT_FOUND", "Machine problem could not be created.", { correlationId: actor.correlationId });
+  await audit(ctx, actor, { action: "operations.equipment_issue.create", entityType: "equipment_issue", entityId: created.publicId, entityLabel: created.title, summary: "Machine problem reported", after: equipmentIssueView(created, publicOrganizationId(actor.organization), publicBranchId(branch), asset.publicId), branchId: publicBranchId(branch) });
   return equipmentIssueView(created, publicOrganizationId(actor.organization), publicBranchId(branch), asset.publicId);
 }
 
@@ -1785,20 +1785,20 @@ async function updateEquipmentIssue(ctx: MutationCtx, actor: ActorContext, input
   requireOperationsWrite(actor);
   const issueId = optionalText(input.id);
   const issue = issueId ? await ctx.db.query("equipmentIssues").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", issueId)).unique() : null;
-  if (!issue) domainError("NOT_FOUND", "Equipment issue not found.", { correlationId: actor.correlationId });
+  if (!issue) domainError("NOT_FOUND", "Machine problem not found.", { correlationId: actor.correlationId });
   const branch = await ctx.db.get(issue.branchId);
   assertBranchAccess(actor, branch);
-  const status = input.status === undefined ? issue.status : assertOneOf(input.status, ISSUE_STATUSES, "Equipment issue status", actor.correlationId);
+  const status = input.status === undefined ? issue.status : assertOneOf(input.status, ISSUE_STATUSES, "Machine problem status", actor.correlationId);
   const safetyStatus = input.safetyStatus === undefined ? issue.safetyStatus : assertOneOf(input.safetyStatus, EQUIPMENT_SAFETY_STATUSES, "Equipment safety status", actor.correlationId);
-  if (status === "resolved" && safetyStatus !== "safe_to_operate") domainError("VALIDATION_ERROR", "An issue can only be resolved when the equipment is safe to operate.", { correlationId: actor.correlationId });
+  if (status === "resolved" && safetyStatus !== "safe_to_operate") domainError("VALIDATION_ERROR", "Mark the problem fixed only when the machine is safe to use.", { correlationId: actor.correlationId });
   if (status !== issue.status) {
     const allowed = issue.status === "open" ? ["in_progress", "resolved", "cancelled"] : issue.status === "in_progress" ? ["resolved", "cancelled"] : [];
-    if (!allowed.includes(status)) domainError("CONFLICT", `An equipment issue cannot move from ${issue.status} to ${status}.`, { correlationId: actor.correlationId });
+    if (!allowed.includes(status)) domainError("CONFLICT", "This problem cannot be changed to that status. Refresh and check its current status.", { correlationId: actor.correlationId });
   }
   const downtimeDays = input.downtimeDays === undefined ? issue.downtimeDays : finite(input.downtimeDays, Number.NaN);
-  if (downtimeDays !== undefined && (!Number.isFinite(downtimeDays) || downtimeDays < 0)) domainError("VALIDATION_ERROR", "Downtime days must be non-negative.", { correlationId: actor.correlationId });
+  if (downtimeDays !== undefined && (!Number.isFinite(downtimeDays) || downtimeDays < 0)) domainError("VALIDATION_ERROR", "Days out of use must be zero or more.", { correlationId: actor.correlationId });
   const issueAsset = await ctx.db.get(issue.assetId);
-  if (!issueAsset) domainError("NOT_FOUND", "Equipment asset not found.", { correlationId: actor.correlationId });
+  if (!issueAsset) domainError("NOT_FOUND", "Machine not found.", { correlationId: actor.correlationId });
   const before = equipmentIssueView(issue, publicOrganizationId(actor.organization), publicBranchId(branch), issueAsset.publicId);
   const resolvedAt = status === "resolved" ? issue.resolvedAt ?? Date.now() : undefined;
   await ctx.db.patch(issue._id, { status, safetyStatus, downtimeDays, resolvedAt });
@@ -1806,23 +1806,23 @@ async function updateEquipmentIssue(ctx: MutationCtx, actor: ActorContext, input
     const beforeAsset = await equipmentAssetViewResolved(ctx, actor, issueAsset);
     await ctx.db.patch(issueAsset._id, { status: "maintenance", updatedAt: Date.now() });
     const updatedAsset = await ctx.db.get(issueAsset._id);
-    if (!updatedAsset) domainError("NOT_FOUND", "Equipment asset could not be loaded after issue update.", { correlationId: actor.correlationId });
-    await audit(ctx, actor, { action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: updatedAsset.publicId, entityLabel: updatedAsset.code, summary: "Equipment marked for maintenance after an out-of-service issue", before: beforeAsset, after: await equipmentAssetViewResolved(ctx, actor, updatedAsset), branchId: publicBranchId(branch) });
+    if (!updatedAsset) domainError("NOT_FOUND", "The machine could not be loaded. Refresh and try again.", { correlationId: actor.correlationId });
+    await audit(ctx, actor, { action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: updatedAsset.publicId, entityLabel: updatedAsset.code, summary: "Machine marked for repair because it is unsafe to use", before: beforeAsset, after: await equipmentAssetViewResolved(ctx, actor, updatedAsset), branchId: publicBranchId(branch) });
   } else if (status === "resolved" && safetyStatus === "safe_to_operate" && issueAsset.status === "maintenance") {
     const remainingIssues = await ctx.db.query("equipmentIssues").withIndex("by_asset", (q) => q.eq("organizationId", actor.organization._id).eq("assetId", issueAsset._id)).collect();
     if (!remainingIssues.some((candidate) => candidate._id !== issue._id && candidate.status !== "resolved" && candidate.status !== "cancelled")) {
       const beforeAsset = await equipmentAssetViewResolved(ctx, actor, issueAsset);
       await ctx.db.patch(issueAsset._id, { status: "active", updatedAt: Date.now() });
       const updatedAsset = await ctx.db.get(issueAsset._id);
-      if (!updatedAsset) domainError("NOT_FOUND", "Equipment asset could not be loaded after issue resolution.", { correlationId: actor.correlationId });
-      await audit(ctx, actor, { action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: updatedAsset.publicId, entityLabel: updatedAsset.code, summary: "Equipment returned to active use after all issues were resolved", before: beforeAsset, after: await equipmentAssetViewResolved(ctx, actor, updatedAsset), branchId: publicBranchId(branch) });
+      if (!updatedAsset) domainError("NOT_FOUND", "The machine could not be loaded. Refresh and try again.", { correlationId: actor.correlationId });
+      await audit(ctx, actor, { action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: updatedAsset.publicId, entityLabel: updatedAsset.code, summary: "Machine ready to use after all problems were fixed", before: beforeAsset, after: await equipmentAssetViewResolved(ctx, actor, updatedAsset), branchId: publicBranchId(branch) });
     }
   }
   const updated = await ctx.db.get(issue._id);
-  if (!updated) domainError("NOT_FOUND", "Equipment issue could not be loaded after update.", { correlationId: actor.correlationId });
+  if (!updated) domainError("NOT_FOUND", "Machine problem could not be loaded after update.", { correlationId: actor.correlationId });
   const asset = issueAsset;
   const after = equipmentIssueView(updated, publicOrganizationId(actor.organization), publicBranchId(branch), asset.publicId);
-  await audit(ctx, actor, { action: "operations.equipment_issue.update", entityType: "equipment_issue", entityId: updated.publicId, entityLabel: updated.title, summary: status === "resolved" ? "Equipment issue resolved" : "Equipment issue updated", before, after, branchId: publicBranchId(branch) });
+  await audit(ctx, actor, { action: "operations.equipment_issue.update", entityType: "equipment_issue", entityId: updated.publicId, entityLabel: updated.title, summary: status === "resolved" ? "Machine problem resolved" : "Machine problem updated", before, after, branchId: publicBranchId(branch) });
   return after;
 }
 
@@ -1834,7 +1834,7 @@ async function workOrderViewResolved(ctx: ReadContext, actor: ActorContext, orde
   const branch = await ctx.db.get(order.branchId);
   const asset = await ctx.db.get(order.assetId);
   assertBranchAccess(actor, branch);
-  if (!asset) domainError("NOT_FOUND", "Equipment asset not found.", { correlationId: actor.correlationId });
+  if (!asset) domainError("NOT_FOUND", "Machine not found.", { correlationId: actor.correlationId });
   const issue = order.issueId ? await ctx.db.get(order.issueId) : undefined;
   return workOrderView(order, publicOrganizationId(actor.organization), publicBranchId(branch), asset.publicId, issue?.publicId);
 }
@@ -1854,11 +1854,11 @@ async function upsertEquipmentWorkOrder(ctx: MutationCtx, actor: ActorContext, i
   requireOperationsWrite(actor);
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
   const asset = await assetByPublicId(ctx, actor, optionalText(input.assetId));
-  if (asset.branchId !== branch._id) domainError("VALIDATION_ERROR", "Equipment asset must belong to the selected branch.", { correlationId: actor.correlationId });
+  if (asset.branchId !== branch._id) domainError("VALIDATION_ERROR", "Machine must belong to the selected branch.", { correlationId: actor.correlationId });
   const issue = input.issueId ? await ctx.db.query("equipmentIssues").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", optionalText(input.issueId)!)).unique() : undefined;
-  if (input.issueId && (!issue || issue.branchId !== branch._id || issue.assetId !== asset._id)) domainError("NOT_FOUND", "Equipment issue not found for this asset.", { correlationId: actor.correlationId });
+  if (input.issueId && (!issue || issue.branchId !== branch._id || issue.assetId !== asset._id)) domainError("NOT_FOUND", "This problem was not found for this machine.", { correlationId: actor.correlationId });
   const description = text(input.description).trim();
-  if (!description || description.length > 240) domainError("VALIDATION_ERROR", "Work-order description must be between 1 and 240 characters.", { correlationId: actor.correlationId });
+  if (!description || description.length > 240) domainError("VALIDATION_ERROR", "Repair job description must be between 1 and 240 characters.", { correlationId: actor.correlationId });
   const requestedStatus = input.status === undefined ? undefined : assertOneOf(input.status, WORK_ORDER_STATUSES, "Work-order status", actor.correlationId);
   const status = requestedStatus ?? "draft";
   const partsCost = requireNonNegativeMoney(input.partsCost, actor.organization.currency, "Parts cost", actor.correlationId);
@@ -1871,12 +1871,12 @@ async function upsertEquipmentWorkOrder(ctx: MutationCtx, actor: ActorContext, i
   }
   const inputId = optionalText(input.id);
   const existing = inputId ? await ctx.db.query("equipmentWorkOrders").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", inputId)).unique() : null;
-  if (existing && (existing.branchId !== branch._id || existing.assetId !== asset._id)) domainError("VALIDATION_ERROR", "A work order cannot move between assets or branches.", { correlationId: actor.correlationId });
+  if (existing && (existing.branchId !== branch._id || existing.assetId !== asset._id)) domainError("VALIDATION_ERROR", "A repair job cannot move to another machine or branch.", { correlationId: actor.correlationId });
   if (existing && requestedStatus !== undefined && requestedStatus !== existing.status && !(
     (existing.status === "draft" && ["approved", "cancelled"].includes(requestedStatus)) ||
     (existing.status === "approved" && ["in_progress", "cancelled"].includes(requestedStatus)) ||
     (existing.status === "in_progress" && ["completed", "cancelled"].includes(requestedStatus))
-  )) domainError("CONFLICT", `A work order cannot move from ${existing.status} to ${requestedStatus}.`, { correlationId: actor.correlationId });
+  )) domainError("CONFLICT", "This repair job cannot be changed to that status. Refresh and check its current status.", { correlationId: actor.correlationId });
   const now = Date.now();
   const effectiveStatus = existing ? requestedStatus ?? existing.status : status;
   const immutableStatus = existing ? await immutableAccountingStatus(ctx, actor, "equipment_repair", existing.publicId, existing.financialPostingStatus) : undefined;
@@ -1903,22 +1903,22 @@ async function upsertEquipmentWorkOrder(ctx: MutationCtx, actor: ActorContext, i
     replacementEstimateMinor !== existing.replacementEstimateMinor ||
     costCurrency !== existing.costCurrency
   )) {
-    rejectImmutableAccountingMutation(actor, "This equipment work order", immutableStatus);
+    rejectImmutableAccountingMutation(actor, "This repair job", immutableStatus);
   }
   const fields = { branchId: branch._id, assetId: asset._id, issueId, status: effectiveStatus, description, assigneeId: assignee ? publicUserId(assignee) : undefined, vendorName: optionalText(input.vendorName), partsCostMinor, laborCostMinor, totalCostMinor: totalCostForSource, replacementEstimateMinor, costCurrency: immutableStatus ? costCurrency : actor.organization.currency, financialPostingStatus: existing?.financialPostingStatus ?? "not_posted", financialSourceId: existing?.financialSourceId, completedAt, updatedAt: now };
   if (existing) {
     const before = await workOrderViewResolved(ctx, actor, existing);
     await ctx.db.patch(existing._id, fields);
     const updated = await ctx.db.get(existing._id);
-    if (!updated) domainError("NOT_FOUND", "Work order could not be loaded after update.", { correlationId: actor.correlationId });
-    await audit(ctx, actor, { action: "operations.equipment_work_order.update", entityType: "equipment_work_order", entityId: updated.publicId, entityLabel: updated.description, summary: "Equipment work order updated", before, after: await workOrderViewResolved(ctx, actor, updated), branchId: publicBranchId(branch) });
+    if (!updated) domainError("NOT_FOUND", "Repair job could not be loaded after update.", { correlationId: actor.correlationId });
+    await audit(ctx, actor, { action: "operations.equipment_work_order.update", entityType: "equipment_work_order", entityId: updated.publicId, entityLabel: updated.description, summary: "Repair job updated", before, after: await workOrderViewResolved(ctx, actor, updated), branchId: publicBranchId(branch) });
     return await workOrderViewResolved(ctx, actor, updated);
   }
   const publicId = `work-order-${crypto.randomUUID()}`;
   const id = await ctx.db.insert("equipmentWorkOrders", { organizationId: actor.organization._id, publicId, ...fields, openedAt: now });
   const created = await ctx.db.get(id);
-  if (!created) domainError("NOT_FOUND", "Work order could not be created.", { correlationId: actor.correlationId });
-  await audit(ctx, actor, { action: "operations.equipment_work_order.create", entityType: "equipment_work_order", entityId: created.publicId, entityLabel: created.description, summary: "Equipment work order created", after: await workOrderViewResolved(ctx, actor, created), branchId: publicBranchId(branch) });
+  if (!created) domainError("NOT_FOUND", "Repair job could not be created.", { correlationId: actor.correlationId });
+  await audit(ctx, actor, { action: "operations.equipment_work_order.create", entityType: "equipment_work_order", entityId: created.publicId, entityLabel: created.description, summary: "Repair job created", after: await workOrderViewResolved(ctx, actor, created), branchId: publicBranchId(branch) });
   return await workOrderViewResolved(ctx, actor, created);
 }
 
@@ -1937,22 +1937,22 @@ async function getEquipmentRecommendation(ctx: QueryCtx, actor: ActorContext, in
   const issueCount = relevantIssues.length;
   const ageMonths = asset.purchaseDate ? Math.max(0, Math.floor((Date.now() - Date.parse(asset.purchaseDate)) / (30.44 * 86_400_000))) : undefined;
   const rationale: string[] = [];
-  if (repairCostMinor === 0) rationale.push("No recorded repair cost is available.");
-  if (replacementEstimateMinor === undefined) rationale.push("No recorded replacement estimate is available.");
-  if (asset.purchaseDate === undefined) rationale.push("Purchase date is not recorded, so age cannot be assessed.");
-  if (asset.expectedUsefulLifeMonths === undefined) rationale.push("Expected useful life is not recorded.");
+  if (repairCostMinor === 0) rationale.push("Repair cost has not been recorded.");
+  if (replacementEstimateMinor === undefined) rationale.push("Replacement cost has not been estimated.");
+  if (asset.purchaseDate === undefined) rationale.push("Add the purchase date to check the machine’s age.");
+  if (asset.expectedUsefulLifeMonths === undefined) rationale.push("Add how many months the machine is expected to last.");
   const safetyIssue = relevantIssues.some((issue) => issue.status !== "resolved" && issue.safetyStatus === "out_of_service");
-  if (safetyIssue) rationale.push("An unresolved issue marks the asset out of service.");
-  if (issueCount > 0) rationale.push(`${issueCount} issue${issueCount === 1 ? "" : "s"} recorded; downtime totals ${downtimeDays} day${downtimeDays === 1 ? "" : "s"}.`);
+  if (safetyIssue) rationale.push("An open problem means this machine cannot be used.");
+  if (issueCount > 0) rationale.push(`${issueCount} problem${issueCount === 1 ? "" : "s"} reported. Out of use for ${downtimeDays} day${downtimeDays === 1 ? "" : "s"}.`);
   let decision: "fix" | "replace" | "insufficient_data" = "insufficient_data";
   if (repairCostMinor > 0 && replacementEstimateMinor !== undefined && asset.purchaseDate !== undefined && asset.expectedUsefulLifeMonths !== undefined) {
     const agedOut = ageMonths !== undefined && ageMonths >= asset.expectedUsefulLifeMonths;
     const repairRatioHigh = repairCostMinor >= replacementEstimateMinor * 0.6;
     const reliabilityConcern = issueCount >= 3 || downtimeDays >= 14;
     decision = agedOut || repairRatioHigh || (reliabilityConcern && repairCostMinor >= replacementEstimateMinor * 0.4) || safetyIssue ? "replace" : "fix";
-    rationale.push(agedOut ? "Recorded age meets or exceeds useful life." : `Recorded age is ${ageMonths} months against ${asset.expectedUsefulLifeMonths} months useful life.`);
-    rationale.push(`Recorded repair cost is ${Math.round((repairCostMinor / replacementEstimateMinor) * 100)}% of the replacement estimate.`);
-    if (!agedOut && !repairRatioHigh && !reliabilityConcern && !safetyIssue) rationale.push("Recorded repair cost is below the replacement threshold and issue history is limited.");
+    rationale.push(agedOut ? "The machine has reached its expected lifespan." : `The machine is ${ageMonths} months old. Its expected lifespan is ${asset.expectedUsefulLifeMonths} months.`);
+    rationale.push(`Repairs cost ${Math.round((repairCostMinor / replacementEstimateMinor) * 100)}% of the estimated replacement cost.`);
+    if (!agedOut && !repairRatioHigh && !reliabilityConcern && !safetyIssue) rationale.push("Repair costs are low enough to keep this machine. Few problems have been reported.");
   }
   return { assetId: asset.publicId, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor > 0 ? { amount: repairCostMinor, currency: actor.organization.currency } : undefined, replacementEstimate: replacementEstimateMinor !== undefined ? { amount: replacementEstimateMinor, currency: actor.organization.currency } : undefined, issueCount, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale };
 }

@@ -157,7 +157,7 @@ function MembershipsWorkspace() {
                   <TableCell className="text-[12.5px]">
                     {m.planName}
                     {m.remainingVisits != null ? (
-                      <span className="block text-[11px] text-ink-3 tabular">
+                      <span className="block text-[12px] text-ink-3 tabular">
                         {m.remainingVisits} of {m.totalVisits} visits left
                       </span>
                     ) : null}
@@ -166,7 +166,7 @@ function MembershipsWorkspace() {
                     <span className="whitespace-nowrap text-[12px] tabular">
                       {formatDate(m.startDate)} – {formatDate(m.endDate)}
                     </span>
-                    <DaysUntilText date={m.endDate} className="block text-[11px]" />
+                    <DaysUntilText date={m.endDate} className="block text-[12px]" />
                   </TableCell>
                   <TableCell>
                     <MembershipStatusChip status={m.status} />
@@ -178,7 +178,7 @@ function MembershipsWorkspace() {
                     {m.outstanding.amount > 0 ? (
                       <MoneyText money={m.outstanding} className="text-warning-deep" />
                     ) : (m.upcomingAmount?.amount ?? 0) > 0 ? (
-                      <span className="text-[11px] text-ink-3"><MoneyText money={m.upcomingAmount!} /> due on {formatDate(m.startDate)}</span>
+                      <span className="text-[12px] text-ink-3"><MoneyText money={m.upcomingAmount!} /> due on {formatDate(m.startDate)}</span>
                     ) : (
                       <span className="text-[12px] tabular text-ink-4">—</span>
                     )}

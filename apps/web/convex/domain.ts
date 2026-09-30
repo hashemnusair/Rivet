@@ -1382,7 +1382,7 @@ function requireWorkspaceModule(actor: ActorContext, access: Data, moduleKey: Wo
       enabledModules: (data(access.preferences).enabledModules ?? []) as WorkspaceModuleKey[],
     });
   } catch {
-    domainError("FEATURE_NOT_AVAILABLE", `The ${moduleKey} workspace module is not enabled for this organization.`, { correlationId: actor.correlationId, details: { module: moduleKey, reason: status?.lockedReason ?? "not_entitled" } });
+    domainError("FEATURE_NOT_AVAILABLE", "This feature is not available for your gym. Ask your gym owner.", { correlationId: actor.correlationId, details: { module: moduleKey, reason: status?.lockedReason ?? "not_entitled" } });
   }
 }
 
@@ -1394,7 +1394,7 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   const classBooking = data(value.classBooking);
   const retention = data(value.retention);
   const outstandingBalance = stringValue(entry.outstandingBalance, "warn");
-  if (!["allow", "warn", "block"].includes(outstandingBalance)) domainError("VALIDATION_ERROR", "Outstanding-balance policy is invalid.", { correlationId: actor.correlationId });
+  if (!["allow", "warn", "block"].includes(outstandingBalance)) domainError("VALIDATION_ERROR", "Unpaid-balance policy is invalid.", { correlationId: actor.correlationId });
   const expiryWarningDays = numberValue(entry.expiryWarningDays, 7);
   const duplicateScanWindowMinutes = numberValue(entry.duplicateScanWindowMinutes, 2);
   const renewalWindowDays = numberValue(membership.renewalWindowDays, 14);
@@ -1403,7 +1403,7 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   const bookingHorizonDays = numberValue(personalTraining.bookingHorizonDays, 30);
   const cancellationCutoffHours = numberValue(personalTraining.cancellationCutoffHours, 12);
   const integerInRange = (candidate: number, minimum: number, maximum: number) => Number.isInteger(candidate) && candidate >= minimum && candidate <= maximum;
-  if (!integerInRange(expiryWarningDays, 0, 30)) domainError("VALIDATION_ERROR", "Expiry warning must be between 0 and 30 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(expiryWarningDays, 0, 30)) domainError("VALIDATION_ERROR", "End date warning must be between 0 and 30 days.", { correlationId: actor.correlationId });
   if (!integerInRange(duplicateScanWindowMinutes, 1, 15)) domainError("VALIDATION_ERROR", "Duplicate-scan window must be between 1 and 15 minutes.", { correlationId: actor.correlationId });
   if (!integerInRange(renewalWindowDays, 1, 90)) domainError("VALIDATION_ERROR", "Renewal window must be between 1 and 90 days.", { correlationId: actor.correlationId });
   if (!integerInRange(minimumFreezeDays, 1, 30)) domainError("VALIDATION_ERROR", "Minimum freeze must be between 1 and 30 days.", { correlationId: actor.correlationId });
@@ -3637,13 +3637,13 @@ function automationInteger(value: unknown, label: string, correlationId: string,
 
 function normalizedAutomationTriggerParams(trigger: string, raw: Data, correlationId: string): Data {
   if (trigger === "membership_expiring") {
-    const daysBefore = [...new Set(arrayValue(raw.daysBefore).map((value) => automationInteger(value, "Expiry checkpoints", correlationId, 1)))].sort((left, right) => left - right);
-    if (daysBefore.length === 0) domainError("VALIDATION_ERROR", "Add at least one expiry checkpoint.", { correlationId });
+    const daysBefore = [...new Set(arrayValue(raw.daysBefore).map((value) => automationInteger(value, "End date checkpoints", correlationId, 1)))].sort((left, right) => left - right);
+    if (daysBefore.length === 0) domainError("VALIDATION_ERROR", "Add at least one end date checkpoint.", { correlationId });
     return { daysBefore };
   }
-  if (trigger === "membership_expired") return { daysAfter: automationInteger(raw.daysAfter, "Days after expiry", correlationId, 0) };
+  if (trigger === "membership_expired") return { daysAfter: automationInteger(raw.daysAfter, "Days after end date", correlationId, 0) };
   if (trigger === "member_inactive") return { days: automationInteger(raw.days, "Inactive days", correlationId, 1) };
-  if (trigger === "payment_outstanding") return { days: automationInteger(raw.days, "Outstanding days", correlationId, 1) };
+  if (trigger === "payment_outstanding") return { days: automationInteger(raw.days, "Unpaid days", correlationId, 1) };
   if (trigger === "lead_untouched") return { hours: automationInteger(raw.hours, "Untouched hours", correlationId, 1) };
   if (trigger === "follow_up_overdue") return { hours: automationInteger(raw.hours, "Overdue hours", correlationId, 1) };
   domainError("VALIDATION_ERROR", "Automation trigger is invalid.", { correlationId });
@@ -3743,7 +3743,7 @@ async function automationSubjectName(ctx: ReadContext, actor: ActorContext, subj
     if (member) return stringValue(data(member.data).fullName, linkedMemberId);
   }
   if (subjectType === "task") return stringValue(value.title, "Follow-up task");
-  if (subjectType === "charge") return stringValue(value.description, "Outstanding charge");
+  if (subjectType === "charge") return stringValue(value.description, "Unpaid charge");
   return stringValue(value.planName, "Membership");
 }
 
@@ -4557,10 +4557,10 @@ const STAFF_EXPORT_TITLES: Record<StaffExportKind, string> = {
   members: "Member directory",
   leads: "CRM leads",
   payments: "Payment ledger",
-  audit: "Audit log",
-  membership_liabilities: "Outstanding member balances",
+  audit: "Activity log",
+  membership_liabilities: "Unpaid member balances",
   personal_training: "Personal training package orders",
-  operations: "Products, suppliers, and inventory activity",
+  operations: "Products, suppliers, and stock activity",
 };
 
 const STAFF_EXPORT_HEADERS: Record<StaffExportKind, string[]> = {
@@ -4777,7 +4777,7 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
   const operationRows: Data[] = [
     ...products.map((row) => ({ recordType: "Product", id: row.publicId, sku: row.sku, itemName: row.name, unit: row.unit, reorderPoint: row.reorderPoint, status: row.status, amountMinor: row.retailPriceMinor, currency: row.retailPriceCurrency })),
     ...suppliers.map((row) => ({ recordType: "Supplier", id: row.publicId, itemName: row.name, contactName: row.contactName, email: row.email, phone: row.phone, status: row.status })),
-    ...scoped(balances).map((row) => ({ recordType: "Inventory balance", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: productById.get(String(row.productId))?.sku, itemName: productById.get(String(row.productId))?.name, quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency })),
+    ...scoped(balances).map((row) => ({ recordType: "Stock balance", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: productById.get(String(row.productId))?.sku, itemName: productById.get(String(row.productId))?.name, quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency })),
     ...scoped(movements).map((row) => ({ recordType: "Stock movement", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: row.productSku, itemName: row.productName, movementType: row.type, quantityChange: row.quantityDelta, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency, reason: row.reason, referenceType: row.referenceType, occurredAt: utcIso(row.occurredAt) })),
   ];
   return operationRows.filter((row) => exportMatchesFilters(row, filters, timezone)).map((row) => ({
@@ -5033,8 +5033,8 @@ function workspacePages(actor: ActorContext): Data[] {
     { id: "leads", title: "Leads", subtitle: "CRM pipeline", href: "/crm/pipeline", permission: "crm.read" },
     { id: "followups", title: "Follow-ups", subtitle: "Due and overdue CRM work", href: "/crm/queues", permission: "crm.read" },
     { id: "payments", title: "Payments", subtitle: "Transactions and receipts", href: "/payments", permission: "reports.financial.read" },
-    { id: "exports", title: "Data exports", subtitle: "Portable CSV datasets", href: "/exports", anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
-    { id: "audit", title: "Audit log", subtitle: "Sensitive action history", href: "/audit", permission: "audit.read" },
+    { id: "exports", title: "Downloads", subtitle: "Download your gym records", href: "/exports", anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
+    { id: "audit", title: "Activity log", subtitle: "Sensitive action history", href: "/audit", permission: "audit.read" },
     { id: "automations", title: "Automation monitoring", subtitle: "Rules, providers and execution history", href: "/automations", permission: "automations.manage" },
     // Every active gym employee can open Settings for their personal profile;
     // the page filters organization sections and each server mutation still
@@ -6497,13 +6497,13 @@ async function evaluateCheckIn(ctx: ReadContext, actor: ActorContext, member: Da
         if (outstanding && balancePolicy !== "allow") codes.push("OUTSTANDING_BALANCE");
         if (outstanding && balancePolicy === "block") {
           decision = "blocked";
-          message = "Entry blocked because this member has an outstanding balance.";
+          message = "Entry blocked because this member has an unpaid amount.";
         }
         if (codes.length > 0) {
           if (decision !== "blocked") decision = "warning";
           const parts: string[] = [];
           if (codes.includes("EXPIRES_SOON")) parts.push(daysLeft === 0 ? "membership expires today" : `membership expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`);
-          if (codes.includes("OUTSTANDING_BALANCE")) parts.push("outstanding balance due");
+          if (codes.includes("OUTSTANDING_BALANCE")) parts.push("unpaid amount due");
           if (decision !== "blocked") message = `Allowed with notice — ${parts.join("; ")}.`;
         }
       }
@@ -6602,13 +6602,13 @@ async function paymentRecord(
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const charge = chargeRecordsList
     .find((record) => requestedChargeId ? record.publicId === requestedChargeId : data(record.data).memberId === memberId && collectibleOutstandingValue(data(record.data), today) > 0);
-  if (!charge) domainError("NO_OUTSTANDING_BALANCE", "No outstanding balance is available for this member.", { correlationId: actor.correlationId });
+  if (!charge) domainError("NO_OUTSTANDING_BALANCE", "No unpaid amount is available for this member.", { correlationId: actor.correlationId });
   const chargeData = data(charge.data);
   if (chargeData.memberId !== memberId) domainError("NOT_FOUND", "Charge not found.", { correlationId: actor.correlationId });
   if (!chargeIsCollectibleValue(chargeData, today)) domainError("VALIDATION_ERROR", `This invoice becomes collectible on ${chargeDueDateValue(chargeData)}.`, { correlationId: actor.correlationId, fieldErrors: { chargeId: ["Upcoming invoices cannot be paid before their due date"] } });
   const outstanding = amountOf(chargeData.outstandingAmount);
   const allocation = paymentAllocation(amount, outstanding);
-  if (!allocation.ok) domainError("VALIDATION_ERROR", allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Payment cannot exceed the outstanding balance." : "Payment amount must be greater than zero.", { correlationId: actor.correlationId, fieldErrors: { amount: [allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Cannot exceed outstanding balance" : "Must be a positive integer"] } });
+  if (!allocation.ok) domainError("VALIDATION_ERROR", allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Payment cannot exceed the unpaid amount." : "Payment amount must be greater than zero.", { correlationId: actor.correlationId, fieldErrors: { amount: [allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Cannot exceed unpaid amount" : "Must be a positive integer"] } });
   const method = stringValue(input.method, "cash");
   const externalReference = optionalString(input.externalReference)?.trim();
   if (["card", "bank_transfer", "cliq"].includes(method) && !externalReference) {
@@ -7001,7 +7001,7 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
       createdAt: isoNow(),
     }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
     chargeVersion = String((await recordOf(ctx, actor, "charge", chargeId)).updatedAt);
-    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Opening balance imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Outstanding as of ${stringValue(importData.migrationCutoffDate)}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: importData.id, chargeId, sourceRowNumber: row.rowNumber } });
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Opening balance imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Unpaid as of ${stringValue(importData.migrationCutoffDate)}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: importData.id, chargeId, sourceRowNumber: row.rowNumber } });
   }
   let evidenceId: string | undefined;
   let evidenceVersion: string | undefined;
@@ -7129,7 +7129,7 @@ async function undoMemberImport(ctx: MutationCtx, actor: ActorContext, input: Da
   const importRecord = await recordOf(ctx, actor, "memberImport", importId);
   const importData = data(importRecord.data);
   if (!["completed", "undoing"].includes(stringValue(importData.status))) domainError("CONFLICT", "Only a completed import can be undone.", { correlationId: actor.correlationId });
-  if (Date.parse(stringValue(importData.undoExpiresAt)) < Date.now()) domainError("CONFLICT", "The seven-day undo window for this import has expired.", { correlationId: actor.correlationId });
+  if (Date.parse(stringValue(importData.undoExpiresAt)) < Date.now()) domainError("CONFLICT", "The seven-day undo window for this import has ended.", { correlationId: actor.correlationId });
   const expectedCursor = numberValue(importData.undoCursor);
   if (cursor !== expectedCursor) domainError("CONFLICT", "Undo cursor is stale. Resume from the latest cursor.", { correlationId: actor.correlationId });
   const createdMembers = arrayValue(importData.createdMembers).map(data);
@@ -8188,7 +8188,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const outcome = stringValue(input.outcome);
     if (outcome !== "accepted" && outcome !== "declined") domainError("VALIDATION_ERROR", "Choose accept or decline.", { correlationId: request.correlationId });
     if (current.status === outcome) return await publicOfferView(ctx, token);
-    if (current.status === "expired") domainError("CONFLICT", "This offer has expired.", { correlationId: request.correlationId });
+    if (current.status === "expired") domainError("CONFLICT", "This offer has ended.", { correlationId: request.correlationId });
     if (current.status !== "sent") domainError("CONFLICT", "This offer is not ready for a response.", { correlationId: request.correlationId });
     const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 240) : "";
     await enforcePublicRateLimit(ctx, { scope: "public-offer-response", fingerprint: await privacyFingerprint({ token }), maxRequests: 5, windowMs: 60 * 60_000, correlationId: request.correlationId });
@@ -8809,7 +8809,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     let issuedTermInvoice: { invoiceId: string; amountMinor: number; creditMinor: number; creditDays: number; periodEnd: string } | undefined;
     if (organization) {
       const modulePlan = workspacePlan(nextPlan);
-      if (!modulePlan) domainError("CONFIGURATION_ERROR", "This organization has no configured workspace entitlement plan.", { correlationId: admin.correlationId });
+      if (!modulePlan) domainError("CONFIGURATION_ERROR", "This gym has no configured workspace entitlement plan.", { correlationId: admin.correlationId });
       const organizationStatus = nextStatus === "overdue" ? "past_due" : nextStatus;
       await ctx.db.patch(organization._id, {
         status: organizationStatus,
@@ -9207,7 +9207,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       action = "invoice.mark_past_due";
       summary = "Marked platform invoice past due";
     } else if (operation === "platform.invoice.payment") {
-      if (!["open", "past_due", "failed"].includes(status)) domainError("VALIDATION_ERROR", "Only an outstanding invoice can be marked paid.", { correlationId: admin.correlationId });
+      if (!["open", "past_due", "failed"].includes(status)) domainError("VALIDATION_ERROR", "Only an unpaid invoice can be marked paid.", { correlationId: admin.correlationId });
       requireReason(input.reason, admin.correlationId);
       reason = input.reason.trim();
       const reference = stringValue(input.reference).trim();
@@ -9741,7 +9741,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         domainError("CONFLICT", "This archived member still has an active or scheduled membership.", { correlationId: actor.correlationId });
       }
       if (amountOf(await outstandingForMember(ctx, actor, record.publicId)) > 0) {
-        domainError("CONFLICT", "Settle the member's outstanding balance before deletion.", { correlationId: actor.correlationId });
+        domainError("CONFLICT", "Collect what the member owes before deleting their record.", { correlationId: actor.correlationId });
       }
       const [reservedBookings, confirmedBookings] = await Promise.all([
         ctx.db.query("ptBookings").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "reserved")).collect(),
@@ -10872,7 +10872,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const plan = await recordOf(ctx, actor, "plan", recordId(input.planId));
       const expiresInDays = numberValue(input.expiresInDays, 7);
       const price = amountOf(input.price);
-      if (!Number.isInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > 60) domainError("VALIDATION_ERROR", "Offer expiry must be between 1 and 60 days.", { correlationId: actor.correlationId });
+      if (!Number.isInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > 60) domainError("VALIDATION_ERROR", "Offer end date must be between 1 and 60 days.", { correlationId: actor.correlationId });
       if (!Number.isSafeInteger(price) || price < 0) domainError("VALIDATION_ERROR", "Enter a valid offer price.", { correlationId: actor.correlationId });
       const token = publicOfferToken();
       const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: price, currency: actor.organization.currency }, expiresAt: new Date(Date.now() + expiresInDays * 86_400_000).toISOString(), status: "draft", publicToken: token, createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
@@ -10911,7 +10911,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (stringValue(current.status) !== "sent") domainError("CONFLICT", "Only a delivered offer can receive an outcome.", { correlationId: actor.correlationId });
       const expiresAt = optionalString(current.expiresAt);
       if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
-        domainError("CONFLICT", "This offer has expired.", { correlationId: actor.correlationId });
+        domainError("CONFLICT", "This offer has ended.", { correlationId: actor.correlationId });
       }
       const outcome = stringValue(input.outcome);
       if (outcome !== "accepted" && outcome !== "declined") domainError("VALIDATION_ERROR", "Choose a valid offer outcome.", { correlationId: actor.correlationId });
@@ -11107,7 +11107,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
       const entryPassToken = optionalString(input.entryPassToken);
       const entryPass = entryPassToken ? await resolveEntryPass(ctx, actor, entryPassToken, branchId) : null;
-      if (entryPassToken && !entryPass) domainError("NOT_FOUND", "Entry pass is invalid, expired, or already used.", { correlationId: actor.correlationId });
+      if (entryPassToken && !entryPass) domainError("NOT_FOUND", "This entry pass cannot be used. Ask the member for a new one.", { correlationId: actor.correlationId });
       const memberRecord = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const member = data(memberRecord.data);
       if (entryPass && entryPass.payload.memberId && entryPass.payload.memberId !== member.id) domainError("NOT_FOUND", "Entry pass is not valid for this member.", { correlationId: actor.correlationId });
@@ -11133,7 +11133,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
       const entryPassToken = optionalString(input.entryPassToken);
       const entryPass = entryPassToken ? await resolveEntryPass(ctx, actor, entryPassToken, branchId) : null;
-      if (entryPassToken && !entryPass) domainError("NOT_FOUND", "Entry pass is invalid, expired, or already used.", { correlationId: actor.correlationId });
+      if (entryPassToken && !entryPass) domainError("NOT_FOUND", "This entry pass cannot be used. Ask the member for a new one.", { correlationId: actor.correlationId });
       const memberRecord = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const member = data(memberRecord.data);
       if (entryPass && entryPass.payload.memberId && entryPass.payload.memberId !== member.id) domainError("NOT_FOUND", "Entry pass is not valid for this member.", { correlationId: actor.correlationId });
@@ -11152,7 +11152,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "payments.create": {
       requirePermission(actor, "payments.collect");
       if (!optionalString(input.chargeId)) {
-        domainError("VALIDATION_ERROR", "Select the specific outstanding charge before collecting payment.", { correlationId: actor.correlationId, fieldErrors: { chargeId: ["Required"] } });
+        domainError("VALIDATION_ERROR", "Select the specific unpaid charge before collecting payment.", { correlationId: actor.correlationId, fieldErrors: { chargeId: ["Required"] } });
       }
       const idempotencyKey = recordId(input.idempotencyKey);
       const result = await paymentRecord(ctx, actor, input, idempotencyKey);
@@ -11297,7 +11297,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const decision = stringValue(input.decision);
       if (decision !== "approved" && decision !== "rejected") domainError("VALIDATION_ERROR", "Approval decision is invalid.", { correlationId: actor.correlationId });
       const updated = await patchRecord(ctx, actor, record, { varianceApprovalStatus: decision });
-      await insertAudit(ctx, actor, { category: "reconciliation", action: `shift.variance.${decision}`, entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: `${decision === "approved" ? "Approved" : "Rejected"} cash variance`, reason: stringValue(input.note), before: { varianceApprovalStatus: "pending" }, after: { varianceApprovalStatus: decision }, branchId: optionalString(shift.branchId) });
+      await insertAudit(ctx, actor, { category: "reconciliation", action: `shift.variance.${decision}`, entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: `${decision === "approved" ? "Approved" : "Rejected"} cash difference`, reason: stringValue(input.note), before: { varianceApprovalStatus: "pending" }, after: { varianceApprovalStatus: decision }, branchId: optionalString(shift.branchId) });
       return updated;
     }
     case "automations.rule.create": {
@@ -11447,7 +11447,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (requestedLogoId) {
         logo = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", requestedLogoId)).unique();
         if (!logo || logo.ownerType !== "gym_logo" || logo.ownerPublicId !== publicOrganizationId(actor.organization) || logo.visibility !== "public" || !["pending", "active"].includes(logo.status)) {
-          domainError("NOT_FOUND", "Brand logo was not found in this organization.", { correlationId: actor.correlationId });
+          domainError("NOT_FOUND", "Brand logo was not found in this gym.", { correlationId: actor.correlationId });
         }
       }
       const previousLogoId = (actor.organization as Organization & { brandLogoAssetId?: string }).brandLogoAssetId;
@@ -11893,7 +11893,7 @@ export async function operatingBriefData(ctx: QueryCtx, actor: ActorContext, inp
         kind: "renewal",
         priority: "normal",
         title: `Win back ${stringValue(member.fullName)}`,
-        detail: `${planName} · expired ${daysSince === 0 ? "today" : `${daysSince} day${daysSince === 1 ? "" : "s"} ago`}, not renewed`,
+        detail: `${planName} · ended ${daysSince === 0 ? "today" : `${daysSince} day${daysSince === 1 ? "" : "s"} ago`}, not renewed`,
         subjectName: stringValue(member.fullName),
         subject: { kind: "member", id: stringValue(member.id) },
         ...(homeBranchId && branchNameById.get(homeBranchId) ? { branchName: branchNameById.get(homeBranchId) } : {}),

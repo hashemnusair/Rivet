@@ -465,8 +465,8 @@ export const recordAttempt = internalMutation({
         organizationId: delivery.organizationId,
         branchId: delivery.branchId,
         kind: "operational_email_failed",
-        title: "An operational email needs attention",
-        body: `${delivery.kind.replaceAll("_", " ")} could not be delivered after ${attempts.length} attempts.`,
+        title: "A gym email could not be delivered",
+        body: `An email could not be delivered after ${attempts.length} attempts. Check email settings.`,
         // The automation workspace is intentionally deferred. Email delivery
         // failures belong with the authoritative activation/provider controls.
         href: "/settings?section=email",
@@ -504,8 +504,8 @@ export const recordWebhook = internalMutation({
         organizationId: delivery.organizationId,
         branchId: delivery.branchId,
         kind: "operational_email_failed",
-        title: "An operational email needs attention",
-        body: `${delivery.kind.replaceAll("_", " ")} received a terminal provider event.`,
+        title: "A gym email could not be delivered",
+        body: `The email service could not deliver an email. Check email settings.`,
         href: "/settings?section=email",
         dedupeKey: `operational-email-failed:${delivery.publicId}`,
       });

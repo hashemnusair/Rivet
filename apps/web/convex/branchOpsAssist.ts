@@ -232,7 +232,7 @@ export function handoverGroups(items: readonly HandoverItem[], spaces: ReadonlyM
   for (const item of items) if (item.zoneId && !placed.has(item.key)) bySpace.set(item.zoneId, [...(bySpace.get(item.zoneId) ?? []), item]);
   for (const [zoneId, members] of bySpace) {
     if (members.length < 2) continue;
-    groups.push({ id: `space:${zoneId}`, kind: "space", label: spaces.get(zoneId) ?? "Same gym space", reason: "Linked to the same gym space. Different items can still be different problems.", items: members });
+    groups.push({ id: `space:${zoneId}`, kind: "space", label: spaces.get(zoneId) ?? "Same area of the gym", reason: "These items are in the same area. They may be different problems.", items: members });
     members.forEach((member) => placed.add(member.key));
   }
   const ungrouped = items.filter((item) => !placed.has(item.key));

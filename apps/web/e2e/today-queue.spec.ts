@@ -19,13 +19,13 @@ test.describe("Unified Today queue", () => {
 
     const layout = await page.evaluate(() => {
       const today = document.querySelector<HTMLElement>('[aria-labelledby="today-queue-title"]');
-      const alerts = document.querySelector<HTMLElement>('[aria-label="Needs attention"]');
+      const alerts = document.querySelector<HTMLElement>('[data-testid="needs-attention"]');
       return {
         noHorizontalOverflow: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-        queueBeforeAlerts: Boolean(today && alerts && today.getBoundingClientRect().top < alerts.getBoundingClientRect().top),
+        attentionBeforeQueue: Boolean(today && alerts && alerts.getBoundingClientRect().top < today.getBoundingClientRect().top),
       };
     });
-    expect(layout).toEqual({ noHorizontalOverflow: true, queueBeforeAlerts: true });
+    expect(layout).toEqual({ noHorizontalOverflow: true, attentionBeforeQueue: true });
 
     const before = Number(await queue.locator("header p.tabular").innerText());
     const complete = queue.locator('button[aria-label^="Complete "]').first();

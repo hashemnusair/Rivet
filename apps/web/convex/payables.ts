@@ -158,7 +158,7 @@ function payableStatusFor(ledger: PostingStatus, paidMinor: number, remainingMin
  */
 function requirePayablesRead(actor: ActorContext): void {
   if (!hasPermission(actor, "operations.manage") && !hasPermission(actor, "reports.financial.read")) {
-    domainError("FORBIDDEN", "Supplier payables are limited to purchasing managers and finance readers.", { correlationId: actor.correlationId });
+    domainError("FORBIDDEN", "You do not have access to supplier bills. Ask your gym owner.", { correlationId: actor.correlationId });
   }
 }
 
@@ -326,25 +326,25 @@ async function projectReconciliationItems(ctx: ReadContext, actor: ActorContext,
     const privateSource = !order.supplierId || order.sourceType === "private";
     const foreignCurrency = order.currency.toUpperCase() !== currency;
     if (!privateSource && !foreignCurrency) continue;
-    push({ sourceType: "purchase_order", sourceId: order.publicId, sourceLabel: purchaseOrderLabel(order), vendorHint: privateSource ? undefined : order.supplierName, branchId: order.branchId, recordedAt: order.receivedAt ?? order.updatedAt, amountMinor, currency: order.currency.toUpperCase(), reason: foreignCurrency ? `Recorded in ${order.currency.toUpperCase()}, not ${currency}; settle it with a manual journal.` : "Private purchase: no supplier is recorded, so this balance cannot be assigned to a supplier account.", ledgerPostingStatus: order.financialPostingStatus ?? "not_posted", href: purchaseOrderHref(order) });
+    push({ sourceType: "purchase_order", sourceId: order.publicId, sourceLabel: purchaseOrderLabel(order), vendorHint: privateSource ? undefined : order.supplierName, branchId: order.branchId, recordedAt: order.receivedAt ?? order.updatedAt, amountMinor, currency: order.currency.toUpperCase(), reason: foreignCurrency ? `Recorded in ${order.currency.toUpperCase()}, not ${currency}; settle it with a manual journal.` : "No supplier was recorded for this purchase. Check this cost in the Management ledger.", ledgerPostingStatus: order.financialPostingStatus ?? "not_posted", href: purchaseOrderHref(order) });
   }
   const movements = await ctx.db.query("stockMovements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   for (const movement of movements) {
     if (movement.type !== "receive" || movement.referenceType === "purchase_order") continue;
     const amountMinor = movement.totalCostMinor ?? (movement.unitCostMinor === undefined ? undefined : movement.unitCostMinor * movement.quantity);
     if (amountMinor === undefined || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
-    push({ sourceType: "stock_receive", sourceId: movement.publicId, sourceLabel: truncateLabel(`Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`), branchId: movement.branchId, recordedAt: movement.occurredAt, amountMinor, currency: (movement.totalCostCurrency ?? movement.unitCostCurrency ?? currency).toUpperCase(), reason: "Stock was received outside a purchase order, so no supplier is recorded for this cost.", ledgerPostingStatus: movement.financialPostingStatus, href: `/operations?tab=inventory&movement=${encodeURIComponent(movement.publicId)}` });
+    push({ sourceType: "stock_receive", sourceId: movement.publicId, sourceLabel: truncateLabel(`Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`), branchId: movement.branchId, recordedAt: movement.occurredAt, amountMinor, currency: (movement.totalCostCurrency ?? movement.unitCostCurrency ?? currency).toUpperCase(), reason: "Stock was received without an order. No supplier was recorded.", ledgerPostingStatus: movement.financialPostingStatus, href: `/operations?tab=inventory&movement=${encodeURIComponent(movement.publicId)}` });
   }
   const tasks = await ctx.db.query("facilityTasks").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   for (const task of tasks) {
     if (task.status !== "completed" || task.suppliesCostMinor === undefined || task.suppliesCostMinor <= 0) continue;
-    push({ sourceType: "facility_supplies", sourceId: task.publicId, sourceLabel: truncateLabel(`Facility supplies · ${task.title}`), branchId: task.branchId, recordedAt: task.completedAt ?? task.updatedAt, amountMinor: task.suppliesCostMinor, currency: (task.suppliesCostCurrency ?? currency).toUpperCase(), reason: "Supplies cost was recorded on a completed maintenance task; no supplier is recorded.", ledgerPostingStatus: task.financialPostingStatus, href: `/maintenance?task=${encodeURIComponent(task.publicId)}` });
+    push({ sourceType: "facility_supplies", sourceId: task.publicId, sourceLabel: truncateLabel(`Facility supplies · ${task.title}`), branchId: task.branchId, recordedAt: task.completedAt ?? task.updatedAt, amountMinor: task.suppliesCostMinor, currency: (task.suppliesCostCurrency ?? currency).toUpperCase(), reason: "This completed maintenance job has a supplies cost. No supplier was recorded.", ledgerPostingStatus: task.financialPostingStatus, href: `/maintenance?task=${encodeURIComponent(task.publicId)}` });
   }
   const assets = await ctx.db.query("equipmentAssets").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   for (const asset of assets) {
     if (asset.purchaseCostMinor === undefined || asset.purchaseCostMinor <= 0) continue;
     const purchaseTimestamp = asset.purchaseDate ? Date.parse(`${asset.purchaseDate}T12:00:00.000Z`) : Number.NaN;
-    push({ sourceType: "equipment_acquisition", sourceId: asset.publicId, sourceLabel: truncateLabel(`Equipment purchase · ${asset.code} ${asset.name}`), vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: Number.isFinite(purchaseTimestamp) ? purchaseTimestamp : asset.createdAt, amountMinor: asset.purchaseCostMinor, currency: (asset.purchaseCostCurrency ?? currency).toUpperCase(), reason: "Equipment purchase cost is recorded on the machine; the manufacturer is not a supplier account.", ledgerPostingStatus: "not_posted", href: `/operations?tab=equipment&asset=${encodeURIComponent(asset.publicId)}` });
+    push({ sourceType: "equipment_acquisition", sourceId: asset.publicId, sourceLabel: truncateLabel(`Equipment purchase · ${asset.code} ${asset.name}`), vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: Number.isFinite(purchaseTimestamp) ? purchaseTimestamp : asset.createdAt, amountMinor: asset.purchaseCostMinor, currency: (asset.purchaseCostCurrency ?? currency).toUpperCase(), reason: "This machine has a purchase cost. Its maker’s name does not identify the supplier.", ledgerPostingStatus: "not_posted", href: `/operations?tab=equipment&asset=${encodeURIComponent(asset.publicId)}` });
   }
   const workOrders = await ctx.db.query("equipmentWorkOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   for (const order of workOrders) {
@@ -352,7 +352,7 @@ async function projectReconciliationItems(ctx: ReadContext, actor: ActorContext,
     const combined = (order.partsCostMinor ?? 0) + (order.laborCostMinor ?? 0);
     const amountMinor = order.totalCostMinor ?? (Number.isSafeInteger(combined) ? combined : undefined);
     if (amountMinor === undefined || amountMinor <= 0) continue;
-    push({ sourceType: "equipment_repair", sourceId: order.publicId, sourceLabel: truncateLabel(`Equipment repair · ${order.description}`), vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amountMinor, currency: (order.costCurrency ?? currency).toUpperCase(), reason: "Repair cost is recorded on a completed work order; the vendor name is a note, not a supplier account.", ledgerPostingStatus: order.financialPostingStatus, href: `/operations?tab=equipment&workOrder=${encodeURIComponent(order.publicId)}` });
+    push({ sourceType: "equipment_repair", sourceId: order.publicId, sourceLabel: truncateLabel(`Equipment repair · ${order.description}`), vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amountMinor, currency: (order.costCurrency ?? currency).toUpperCase(), reason: "This repair cost has no linked supplier bill. The repairer’s name is saved as a note.", ledgerPostingStatus: order.financialPostingStatus, href: `/operations?tab=equipment&workOrder=${encodeURIComponent(order.publicId)}` });
   }
   items.sort((left, right) => right.recordedAt - left.recordedAt || left.id.localeCompare(right.id));
   return items;
@@ -437,7 +437,7 @@ async function listPayables(ctx: QueryCtx, actor: ActorContext, input: Data): Pr
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, integer(input.pageSize, DEFAULT_PAGE_SIZE)));
   const cursorText = optionalText(input.cursor);
   const offset = cursorText === undefined ? 0 : Number.parseInt(cursorText, 10);
-  if (cursorText !== undefined && (!Number.isSafeInteger(offset) || offset < 0)) domainError("VALIDATION_ERROR", "Payables cursor is invalid.", { correlationId: actor.correlationId });
+  if (cursorText !== undefined && (!Number.isSafeInteger(offset) || offset < 0)) domainError("VALIDATION_ERROR", "This page of supplier bills could not be loaded. Refresh and try again.", { correlationId: actor.correlationId });
   const matched = (await projectPayables(ctx, actor, { branch: filters.branch })).filter((payable) => matchesFilters(payable, filters));
   const page = matched.slice(offset, offset + pageSize);
   const supplierTotals = new Map<string, { supplierId: string; supplierName: string; outstandingMinor: number; openCount: number; oldestReceivedAt?: number }>();
@@ -616,16 +616,16 @@ async function recordSupplierPayment(ctx: MutationCtx, actor: ActorContext, inpu
   const notes = optionalText(input.notes);
   if (notes && notes.length > MAX_NOTES_LENGTH) domainError("VALIDATION_ERROR", "Payment notes are too long.", { correlationId: actor.correlationId, fieldErrors: { notes: [`Keep it under ${MAX_NOTES_LENGTH} characters`] } });
   const rawAllocations = Array.isArray(input.allocations) ? input.allocations : [];
-  if (rawAllocations.length === 0 || rawAllocations.length > MAX_ALLOCATIONS) domainError("VALIDATION_ERROR", `Allocate the payment to between 1 and ${MAX_ALLOCATIONS} payables.`, { correlationId: actor.correlationId, fieldErrors: { allocations: ["Choose at least one payable"] } });
+  if (rawAllocations.length === 0 || rawAllocations.length > MAX_ALLOCATIONS) domainError("VALIDATION_ERROR", `Choose between 1 and ${MAX_ALLOCATIONS} supplier bills for this payment.`, { correlationId: actor.correlationId, fieldErrors: { allocations: ["Choose at least one supplier bill"] } });
   const allocations = rawAllocations.map((raw) => ({ payableId: optionalText(value(raw).payableId) ?? "", amountMinor: requirePositiveMoney(value(raw).amount, currency, "allocation", actor) })).sort((left, right) => left.payableId.localeCompare(right.payableId));
-  if (allocations.some((allocation) => !allocation.payableId)) domainError("VALIDATION_ERROR", "Every allocation needs a payable.", { correlationId: actor.correlationId });
-  if (new Set(allocations.map((allocation) => allocation.payableId)).size !== allocations.length) domainError("VALIDATION_ERROR", "A payable can appear only once in an allocation.", { correlationId: actor.correlationId });
+  if (allocations.some((allocation) => !allocation.payableId)) domainError("VALIDATION_ERROR", "Choose a supplier bill for each payment amount.", { correlationId: actor.correlationId });
+  if (new Set(allocations.map((allocation) => allocation.payableId)).size !== allocations.length) domainError("VALIDATION_ERROR", "Choose each supplier bill only once.", { correlationId: actor.correlationId });
   let allocatedMinor = 0;
   for (const allocation of allocations) {
-    if (!Number.isSafeInteger(allocatedMinor + allocation.amountMinor)) domainError("VALIDATION_ERROR", "Allocation total is too large.", { correlationId: actor.correlationId });
+    if (!Number.isSafeInteger(allocatedMinor + allocation.amountMinor)) domainError("VALIDATION_ERROR", "The total payment amount is too large.", { correlationId: actor.correlationId });
     allocatedMinor += allocation.amountMinor;
   }
-  if (allocatedMinor !== amountMinor) domainError("VALIDATION_ERROR", "Allocations must add up to the payment amount exactly.", { correlationId: actor.correlationId, fieldErrors: { allocations: ["Allocated total does not match the payment amount"] } });
+  if (allocatedMinor !== amountMinor) domainError("VALIDATION_ERROR", "The amounts for each bill must add up to the payment total.", { correlationId: actor.correlationId, fieldErrors: { allocations: ["Bill amounts do not match the payment total"] } });
   const expectedShiftId = optionalText(input.expectedShiftId);
   const requestHash = JSON.stringify({ supplierId: supplier.publicId, branchId: publicBranchId(branch), method, amountMinor, reference, notes, allocations });
   // Tenant, supplier, and branch access are established before the
@@ -639,11 +639,11 @@ async function recordSupplierPayment(ctx: MutationCtx, actor: ActorContext, inpu
   const payableSourceTypes = new Map<string, PayableSourceType>();
   for (const allocation of allocations) {
     const payable = payablesById.get(allocation.payableId);
-    if (!payable) domainError("NOT_FOUND", `Payable ${allocation.payableId} is not an open supplier balance you can see.`, { correlationId: actor.correlationId });
-    if (payable.supplierId !== supplier._id) domainError("VALIDATION_ERROR", `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. One payment settles one supplier.`, { correlationId: actor.correlationId });
-    if (payable.currency !== currency) domainError("VALIDATION_ERROR", "Payables in another currency cannot be settled here.", { correlationId: actor.correlationId });
+    if (!payable) domainError("NOT_FOUND", "This supplier bill is unavailable or no longer unpaid. Refresh the list.", { correlationId: actor.correlationId });
+    if (payable.supplierId !== supplier._id) domainError("VALIDATION_ERROR", `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. Each payment must be for one supplier.`, { correlationId: actor.correlationId });
+    if (payable.currency !== currency) domainError("VALIDATION_ERROR", "Bills in another currency cannot be paid here.", { correlationId: actor.correlationId });
     if (payable.status === "paid" || payable.status === "reversed") domainError("CONFLICT", `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { correlationId: actor.correlationId, details: { payableId: payable.id, status: payable.status } });
-    if (allocation.amountMinor > payable.remainingMinor) domainError("CONFLICT", `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remainingMinor, currency)} outstanding; the allocation would overpay it.`, { correlationId: actor.correlationId, details: { payableId: payable.id, remainingMinor: payable.remainingMinor, requestedMinor: allocation.amountMinor } });
+    if (allocation.amountMinor > payable.remainingMinor) domainError("CONFLICT", `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remainingMinor, currency)} unpaid. Enter a smaller amount.`, { correlationId: actor.correlationId, details: { payableId: payable.id, remainingMinor: payable.remainingMinor, requestedMinor: allocation.amountMinor } });
     payableSourceTypes.set(allocation.payableId, payable.sourceType);
   }
 
@@ -755,7 +755,7 @@ export async function payablesQuery(ctx: QueryCtx, actor: ActorContext, operatio
     case "operations.payables.reconciliation": return await listReconciliationItems(ctx, actor, input);
     case "operations.supplier_payments.list": return await listSupplierPayments(ctx, actor, input);
     case "operations.supplier_payment.get": return await getSupplierPayment(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown payables query ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown supplier bills query ${operation}.`, { correlationId: actor.correlationId });
   }
 }
 
@@ -763,6 +763,6 @@ export async function payablesMutation(ctx: MutationCtx, actor: ActorContext, op
   switch (operation) {
     case "operations.supplier_payment.record": return await recordSupplierPayment(ctx, actor, input);
     case "operations.supplier_payment.reverse": return await reverseSupplierPayment(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown payables mutation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown supplier bills mutation ${operation}.`, { correlationId: actor.correlationId });
   }
 }

@@ -4,7 +4,7 @@ test.describe("stock and purchasing workflows", () => {
   test("gates writes on a concrete branch, moves purchasing into tabs, and resolves an equipment issue", async ({ page }) => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /owner/i }).click();
-    await page.getByRole("button", { name: /Open .+ workspace/i }).click();
+    await page.getByRole("button", { name: /Sign in as .+/i }).click();
     // The persona is stored once the sign-in resolves; jumping to a deep
     // route before that leaves the workspace guard waiting for nobody.
     await expect(page).toHaveURL(/\/dashboard$/);

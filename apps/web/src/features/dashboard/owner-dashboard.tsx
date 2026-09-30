@@ -131,7 +131,7 @@ export function OwnerDashboard() {
                   {data.leaderboard.map((rep, i) => (
                     <tr key={rep.userId} className="border-b border-line/70 last:border-0">
                       <td className="whitespace-nowrap px-4 py-2.5">
-                        <span className="me-2 text-[11px] text-ink-4 tabular">{String(i + 1).padStart(2, "0")}</span>
+                        <span className="me-2 text-[12px] text-ink-4 tabular">{String(i + 1).padStart(2, "0")}</span>
                         <span className="font-medium">{rep.name}</span>
                       </td>
                       <td className="px-3 py-2.5 text-end">

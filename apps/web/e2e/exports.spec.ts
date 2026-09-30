@@ -10,7 +10,7 @@ async function downloadedText(download: Download): Promise<string> {
 async function signInOwner(page: Page) {
   await page.goto("/login/gym");
   await page.getByRole("radio", { name: /owner/i }).click();
-  await page.getByRole("button", { name: /^Open .+ workspace$/i }).click();
+  await page.getByRole("button", { name: /^Sign in as .+$/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
 

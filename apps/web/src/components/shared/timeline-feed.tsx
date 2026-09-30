@@ -118,12 +118,12 @@ export function TimelineFeed({
                     </Link>
                   ) : null}
                 </p>
-                <span className="shrink-0 text-[11.5px] text-ink-3">
+                <span className="shrink-0 text-[12px] text-ink-3">
                   <RelativeText iso={event.occurredAt} />
                 </span>
               </div>
               {event.body ? <p className="mt-0.5 text-[12.5px] leading-snug text-ink-2">{event.body}</p> : null}
-              <p className="mt-0.5 text-[11.5px] text-ink-3">
+              <p className="mt-0.5 text-[12px] text-ink-3">
                 {showActor && event.actorName ? <span>{event.actorName} · </span> : null}
                 <DateTimeText iso={event.occurredAt} />
               </p>

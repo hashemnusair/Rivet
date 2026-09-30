@@ -112,7 +112,7 @@ test.describe("RIVET platform subscription entitlements", () => {
     // changes the tenant subscription in the same browser/runtime. This is
     // the path that previously required a reload or a fresh login to observe.
     await page.goto("/login/gym");
-    await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
+    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Stock & purchasing", exact: true })).toBeVisible();
 

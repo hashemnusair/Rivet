@@ -123,13 +123,13 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           <div className="flex flex-col items-center border-b border-dashed border-line-3 pb-4 text-center">
             <Image src="/brand/rivet-glyph.png" alt="" width={19} height={30} className="mb-2" />
             <h1 className="font-display text-[17px] font-semibold tracking-tight">{detail.organization.name}</h1>
-            <p className="mt-0.5 text-[11px] text-ink-2">
+            <p className="mt-0.5 text-[12px] text-ink-2">
               {detail.branch.name} · {detail.branch.address}
             </p>
-            <p className="text-[11px] text-ink-2" dir="ltr">{detail.branch.phone}</p>
+            <p className="text-[12px] text-ink-2" dir="ltr">{detail.branch.phone}</p>
           </div>
 
-          <div className="flex justify-between border-b border-dashed border-line-3 py-3 text-[11.5px]">
+          <div className="flex justify-between border-b border-dashed border-line-3 py-3 text-[12px]">
             <div>
               <p className="text-ink-3">RECEIPT</p>
               <p className="text-[14px] font-semibold">{detail.receipt.receiptNumber}</p>
@@ -142,7 +142,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
           <div className="border-b border-dashed border-line-3 py-3">
             <p className="text-[13px] font-semibold">{customerName}</p>
-            <p className="text-[11px] text-ink-2">{retailCustomer?.memberNumber ? `Member ${retailCustomer.memberNumber}` : retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? (retailCustomer?.kind === "guest" ? "Guest sale" : "Walk-in sale")}</p>
+            <p className="text-[12px] text-ink-2">{retailCustomer?.memberNumber ? `Member ${retailCustomer.memberNumber}` : retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? (retailCustomer?.kind === "guest" ? "Guest sale" : "Walk-in sale")}</p>
           </div>
 
           <table className="w-full border-b border-dashed border-line-3 py-3 text-[12px]">
@@ -198,7 +198,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
             ) : null}
           </div>
 
-          <div className="space-y-0.5 py-3 text-[11px] text-ink-2">
+          <div className="space-y-0.5 py-3 text-[12px] text-ink-2">
             <p>Served by: {payment.collectedByName}</p>
             {payment.externalReference ? <p>Reference: {payment.externalReference}</p> : null}
             {isRefund && paymentRecord?.refundReason ? <p>Reason: {paymentRecord.refundReason}</p> : null}

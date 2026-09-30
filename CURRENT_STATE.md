@@ -1,8 +1,30 @@
 # GymOS / RIVET current implementation state
 
+## 30 September 2026 — plain-language follow-up (in progress)
+
+Synced Elias’s committed pass `0970df0`. Follow-up scope covers his remaining
+English wording, helper sizes, screenshot references, paused-automation staging
+coverage and coordinated server release. Arabic localization is excluded.
+The historical frontend handoff and existing untracked audits/outputs stay intact.
+
+- Simplified server access/payment/repair errors, repair advice, supplier-bill
+  explanations, search labels and new delivery-failure notifications. Existing
+  stored audit and notification text is historical and is not rewritten.
+- Aligned staff access names, offline recovery, demo sign-in and marketing
+  product previews. Helper copy is at least 12px; short technical metadata and
+  dense table headings retain the documented DESIGN.md exceptions.
+- Replaced the obsolete staging automation create/run scenario with owner and
+  manager checks of the paused, view-only monitor and history. Its manifest now
+  identifies this supported journey as implemented; live automation stays paused.
+- Updated browser selectors for Elias’s new greeting, report labels, access
+  wording and attention-panel order. Screenshot thresholds remain unchanged.
+- Assumptions: preserve API identifiers, permissions, data and money behavior.
+  CSV column contracts remain stable. Production deployment and final browser
+  evidence are pending; do not infer release from this working section.
+
 ## 30 Sep 2026 — plain-language pass
 
-What changed (uncommitted; the wording rules are in `docs/22_PLAIN_LANGUAGE_GUIDE.md`):
+What changed (committed as `0970df0`; the wording rules are in `docs/22_PLAIN_LANGUAGE_GUIDE.md`):
 
 - The member-page Resolve section was removed as redundant. This also removed
   `convex/resolutionAssist.ts`, `src/features/resolution` and the API methods.

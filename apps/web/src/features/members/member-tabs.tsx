@@ -173,7 +173,7 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
               <TableCell>
                 <span className="font-medium">{m.planName}</span>
                 {m.remainingVisits != null ? (
-                  <span className="block text-[11px] text-ink-3 tabular">
+                  <span className="block text-[12px] text-ink-3 tabular">
                     {m.remainingVisits} of {m.totalVisits} visits left
                   </span>
                 ) : null}
@@ -182,14 +182,14 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
                 <span className="whitespace-nowrap text-[12px] tabular">
                   {formatDate(m.startDate)} – {formatDate(m.endDate)}
                 </span>
-                <span className="block text-[11px]">
+                <span className="block text-[12px]">
                   <DaysUntilText date={m.endDate} />
                 </span>
               </TableCell>
               <TableCell>
                 <MembershipStatusChip status={m.status} />
                 {m.activeFreeze ? (
-                  <span className="block text-[11px] text-ink-3">frozen until {formatDate(m.activeFreeze.endDate)}</span>
+                  <span className="block text-[12px] text-ink-3">frozen until {formatDate(m.activeFreeze.endDate)}</span>
                 ) : null}
               </TableCell>
               <TableCell className="text-end">
@@ -210,12 +210,12 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
               <TableCell>
                 <PaymentStatusChip status={m.paymentStatus} />
                 {m.outstanding.amount > 0 ? (
-                  <span className="block text-[11px] text-warning-deep tabular">
+                  <span className="block text-[12px] text-warning-deep tabular">
                     Owes <MoneyText money={m.outstanding} />
                   </span>
                 ) : null}
                 {(m.upcomingAmount?.amount ?? 0) > 0 ? (
-                  <span className="block text-[11px] text-ink-3 tabular">
+                  <span className="block text-[12px] text-ink-3 tabular">
                     <MoneyText money={m.upcomingAmount!} /> due on {formatDate(m.startDate)}
                   </span>
                 ) : null}

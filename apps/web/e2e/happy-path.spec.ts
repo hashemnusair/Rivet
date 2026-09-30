@@ -13,7 +13,7 @@ async function signIn(page: Page, persona: "Owner" | "Manager" | "Sales" | "Rece
   // Every sign-in starts at /login; the gym team has its own portal beneath it.
   await page.goto("/login/gym");
   await page.getByRole("radio", { name: new RegExp(persona, "i") }).click();
-  await page.getByRole("button", { name: /^Open .+ workspace$/i }).click();
+  await page.getByRole("button", { name: /^Sign in as .+$/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
 
@@ -207,7 +207,7 @@ test.describe("role restrictions", () => {
     await expect(nav.getByRole("link", { name: /^Activity log$/ })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
     await page.goto("/settings?section=organization");
-    await expect(page.getByText(/needs the Manage settings permission/i)).toBeVisible();
+    await expect(page.getByText(/needs the “Manage settings” access/i)).toBeVisible();
   });
 
   test("refuses the transaction ledger by URL, not just by hiding the link", async ({ page }) => {

@@ -561,10 +561,10 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   return (
     <ExperienceContext.Provider value={value}>
       {showStaleNotice ? (
-        <div data-experience-notice className="sticky top-0 z-[60] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[11.5px] text-warning-deep" role="status" aria-live="polite">
-          <span>Showing the last known RIVET data while the live connection recovers.</span>
+        <div data-experience-notice className="sticky top-0 z-[60] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[12px] text-warning-deep" role="status" aria-live="polite">
+          <span>Could not connect. Showing your last saved information.</span>
           <button type="button" onClick={retryExperience} className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline">
-            <RefreshCcw className="size-3" aria-hidden /> Retry
+            <RefreshCcw className="size-3" aria-hidden /> Try again
           </button>
         </div>
       ) : null}

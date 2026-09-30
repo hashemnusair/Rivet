@@ -10,7 +10,7 @@ test.use({
 async function signIn(page: Page, persona: "Owner" | "Reception") {
   await page.goto("/login/gym");
   await page.getByRole("radio", { name: new RegExp(persona, "i") }).click();
-  await page.getByRole("button", { name: /^Open .+ workspace$/i }).click();
+  await page.getByRole("button", { name: /^Sign in as .+$/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
 

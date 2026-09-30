@@ -48,7 +48,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     key: "operations",
     version: 1,
     label: "Daily operations",
-    description: "Inventory, checkout, suppliers, purchase orders, and machines.",
+    description: "Stock, checkout, suppliers, purchase orders, and machines.",
     dependencies: ["foundation"],
     required: false,
     configurable: true,
@@ -59,7 +59,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     key: "finance",
     version: 1,
     label: "Financial operating system",
-    description: "Purchasing, expenses, assets, ledger entries, reconciliation, and cash control.",
+    description: "Purchasing, expenses, assets, ledger entries, end-of-day cash count, and cash control.",
     dependencies: ["foundation", "operations"],
     required: false,
     configurable: true,
@@ -207,7 +207,7 @@ export function requireWorkspaceModule(moduleKey: WorkspaceModuleKey, access: Wo
   const enabled = access.enabledModules.includes(moduleKey);
   const missingDependency = entry?.dependencies.find((dependency) => !access.enabledModules.includes(dependency));
   if (!entry || !entitled || !enabled || missingDependency) {
-    throw new Error(`The ${moduleKey} workspace module is not enabled for this organization.`);
+    throw new Error("This feature is not available for your gym. Ask your gym owner.");
   }
 }
 

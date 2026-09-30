@@ -29,7 +29,7 @@ export const STAGING_JOURNEY_READINESS: Record<StagingJourney, Exclude<StagingJo
   "membership-lifecycle": "implemented",
   "reception-entry": "implemented",
   "finance-reconciliation": "implemented",
-  automation: "deferred",
+  automation: "implemented",
   "member-portal": "implemented",
   "isolation-audit": "implemented",
   "personal-training": "implemented",

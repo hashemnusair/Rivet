@@ -190,7 +190,7 @@ async function firstActiveMembership(ctx: ReadCtx, userId: Id<"users">): Promise
     routable.push({ row, organization });
   }
   if (routable.length > 1) {
-    domainError("ORGANIZATION_SELECTION_REQUIRED", "Select a gym workspace before continuing.", {
+    domainError("ORGANIZATION_SELECTION_REQUIRED", "Select a gym before continuing.", {
       details: { membershipCount: routable.length },
     });
   }
@@ -199,7 +199,7 @@ async function firstActiveMembership(ctx: ReadCtx, userId: Id<"users">): Promise
 
 export async function requireAuthenticated(ctx: ReadCtx) {
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity) domainError("UNAUTHENTICATED", "Authentication is required.");
+  if (!identity) domainError("UNAUTHENTICATED", "Sign in to continue.");
 
   const user = await findUser(ctx, identity.subject);
   // Invitation rows are deliberately inert until users.ensureCurrent claims
@@ -229,7 +229,7 @@ export async function requireMember(ctx: ReadCtx) {
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
   if (memberships.some((membership) => membership.active && membershipInvitationAccepted(membership as MaybeMembership))) {
-    domainError("FORBIDDEN", "Gym team accounts must use their gym workspace.");
+    domainError("FORBIDDEN", "Sign in through the gym staff page.");
   }
 
   return { identity, user } as { identity: NonNullable<typeof identity>; user: NonNullable<MaybeUser> };
@@ -240,25 +240,25 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promis
   const membership = args.organizationId
     ? await (async () => {
         const organization = await findOrganization(ctx, args.organizationId);
-        if (!organization) domainError("NOT_FOUND", "Organization not found.");
+        if (!organization) domainError("NOT_FOUND", "Gym not found.");
         return await findMembership(ctx, organization._id, user._id);
       })()
     : await firstActiveMembership(ctx, user._id);
 
   if (!membership || !membership.active) {
-    domainError("FORBIDDEN", "You are not an active member of this organization.");
+    domainError("FORBIDDEN", "You are not an active member of this gym.");
   }
 
   if (!membershipInvitationAccepted(membership)) {
     // Deliberately do not distinguish pending, revoked, or failed invitation
     // state to callers. The invitation flow must prove acceptance before a
     // workspace becomes routable; an email match alone is not sufficient.
-    domainError("FORBIDDEN", "This workspace invitation has not been accepted.");
+    domainError("FORBIDDEN", "This gym invitation has not been accepted.");
   }
 
   const organization = (await ctx.db.get(membership.organizationId)) as MaybeOrganization;
   if (!organization || organization.status === "suspended" || organization.status === "cancelled") {
-    domainError("FORBIDDEN", "This organization is not available.");
+    domainError("FORBIDDEN", "This gym is not available.");
   }
 
   const roleDefinition = await ctx.db
@@ -297,7 +297,7 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promis
     });
   }
   if (!requestedBranchId && branchScope === "selected" && branchIds.length === 0) {
-    domainError("FORBIDDEN", "No active branch is available for this workspace.");
+    domainError("FORBIDDEN", "No active branch is available for this gym.");
   }
 
   return {
@@ -321,7 +321,7 @@ export async function requirePlatformAdmin(ctx: ReadCtx, correlationId?: string)
 
 export function requirePermission(actor: ActorContext, permission: Permission): void {
   if (!actor.permissions.includes(permission)) {
-    domainError("FORBIDDEN", `Your role is missing the ${permission} permission.`, { correlationId: actor.correlationId });
+    domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
   }
 }
 

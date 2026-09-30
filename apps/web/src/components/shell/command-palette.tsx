@@ -102,7 +102,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <Command.Group heading={<GroupHeading>Go to</GroupHeading>}>{pages.map((page) => <PaletteItem key={page.href} onSelect={() => go({ kind: "page", ...page })} icon={page.icon} title={page.title} subtitle={page.subtitle} />)}</Command.Group>
         </>}
       </Command.List>
-      <div className="hidden items-center gap-4 border-t border-line bg-paper/70 px-4 py-2 text-[11px] text-ink-3 sm:flex"><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">↑↓</kbd> move</span><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">⏎</kbd> open</span><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">esc</kbd> close</span></div>
+      <div className="hidden items-center gap-4 border-t border-line bg-paper/70 px-4 py-2 text-[12px] text-ink-3 sm:flex"><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">↑↓</kbd> move</span><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">⏎</kbd> open</span><span><kbd className="rounded-sm border border-line bg-surface px-1 font-mono">esc</kbd> close</span></div>
     </div>
   </Command.Dialog>;
 }

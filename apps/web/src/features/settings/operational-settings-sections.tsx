@@ -466,7 +466,7 @@ export function HoursAndTrialsSection() {
         >
           {selectedSchedule && selectedTrialSchedule ? (
             <div>
-              <div className="hidden grid-cols-[150px_minmax(240px,1fr)_minmax(280px,1fr)] gap-5 border-b border-line bg-sunken/60 px-5 py-2 text-[11.5px] font-semibold text-ink-3 lg:grid">
+              <div className="hidden grid-cols-[150px_minmax(240px,1fr)_minmax(280px,1fr)] gap-5 border-b border-line bg-sunken/60 px-5 py-2 text-[12px] font-semibold text-ink-3 lg:grid">
                 <span>Day</span><span>Branch hours</span><span>Free trial times</span>
               </div>
               <div className="divide-y divide-line">

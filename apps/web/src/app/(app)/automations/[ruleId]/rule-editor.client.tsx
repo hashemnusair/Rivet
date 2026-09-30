@@ -251,13 +251,13 @@ export default function RuleEditorPageClient() {
                   <li key={e.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
                     <div className="min-w-0">
                       <p className="truncate text-[12.5px] font-medium">{e.subjectName}</p>
-                      <p className="truncate text-[11.5px] text-ink-3">{e.detail}</p>
+                      <p className="truncate text-[12px] text-ink-3">{e.detail}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <Badge variant={e.status === "success" ? "success" : e.status === "failed" ? "signal" : "neutral"}>
                         {automationExecutionLabel(e.status)}
                       </Badge>
-                      <span className="text-[11px] text-ink-3 whitespace-nowrap">
+                      <span className="text-[12px] text-ink-3 whitespace-nowrap">
                         <DateTimeText iso={e.executedAt} />
                       </span>
                     </div>

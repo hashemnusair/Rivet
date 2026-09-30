@@ -9639,7 +9639,7 @@ export class MockGymOSApi implements GymOSApi {
         headers = ["Member", "Member number", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status"];
         rows = this.db.charges.filter((charge) => charge.outstandingAmount.amount > 0 && (!requestedBranchId || members.get(charge.memberId)?.homeBranchId === requestedBranchId) && matches([charge.description, members.get(charge.memberId)?.fullName])).map((charge) => [members.get(charge.memberId)?.fullName, members.get(charge.memberId)?.memberNumber, charge.description, charge.issueDate, charge.dueDate, formatMinorUnits(charge.total.amount, charge.total.currency), formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency), formatMinorUnits(charge.outstandingAmount.amount, charge.outstandingAmount.currency), charge.total.currency, exportStatusLabel(charge.status)]);
       } else if (input.kind === "audit") {
-        title = "Audit log";
+        title = "Activity log";
         headers = ["When", "Branch", "Recorded by", "Role", "Category", "Action", "Record type", "Record", "Summary", "Reason", "Approval status"];
         rows = this.db.audits.filter((event) => (!requestedBranchId || !event.branchId || event.branchId === requestedBranchId) && matches([event.actorName, event.action, event.entityLabel, event.summary])).map((event) => [formatExportDateTime(event.occurredAt, TZ), event.branchId ? branches.get(event.branchId) : "Organization-wide", event.actorName, exportStatusLabel(event.actorRole), exportStatusLabel(event.category), exportStatusLabel(event.action), exportStatusLabel(event.entityType), event.entityLabel, event.summary, event.reason, exportStatusLabel(event.approvalStatus)]);
       } else if (input.kind === "personal_training") {
@@ -10739,27 +10739,27 @@ export class MockGymOSApi implements GymOSApi {
       const privateSource = !order.supplierId || order.sourceType === "private";
       const foreignCurrency = order.currency !== currency;
       if (amountMinor <= 0 || (!privateSource && !foreignCurrency)) continue;
-      push({ sourceType: "purchase_order", sourceId: order.id, sourceLabel: mockPurchaseOrderLabel(order), vendorHint: privateSource ? undefined : order.supplierName, branchId: order.branchId, recordedAt: order.receivedAt ?? order.updatedAt, amount: money(amountMinor, order.currency), reason: foreignCurrency ? `Recorded in ${order.currency}, not ${currency}; settle it with a manual journal.` : "Private purchase: no supplier is recorded, so this balance cannot be assigned to a supplier account.", ledgerPostingStatus: this.immutableAccountingStatus("purchase_order_receipt", order.id) ?? "not_posted", href: `/operations?tab=orders&order=${encodeURIComponent(order.id)}` });
+      push({ sourceType: "purchase_order", sourceId: order.id, sourceLabel: mockPurchaseOrderLabel(order), vendorHint: privateSource ? undefined : order.supplierName, branchId: order.branchId, recordedAt: order.receivedAt ?? order.updatedAt, amount: money(amountMinor, order.currency), reason: foreignCurrency ? `Recorded in ${order.currency}, not ${currency}; settle it with a manual journal.` : "No supplier was recorded for this purchase. Check this cost in the Management ledger.", ledgerPostingStatus: this.immutableAccountingStatus("purchase_order_receipt", order.id) ?? "not_posted", href: `/operations?tab=orders&order=${encodeURIComponent(order.id)}` });
     }
     for (const movement of this.db.stockMovements) {
       if (movement.type !== "receive" || movement.referenceType === "purchase_order") continue;
       const amountMinor = movement.totalCost?.amount ?? (movement.unitCost ? movement.unitCost.amount * movement.quantity : undefined);
       if (amountMinor === undefined || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
-      push({ sourceType: "stock_receive", sourceId: movement.id, sourceLabel: `Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`, branchId: movement.branchId, recordedAt: movement.occurredAt, amount: money(amountMinor, movement.totalCost?.currency ?? movement.unitCost?.currency ?? currency), reason: "Stock was received outside a purchase order, so no supplier is recorded for this cost.", ledgerPostingStatus: this.immutableAccountingStatus("stock_movement", movement.id) ?? movement.financialPostingStatus, href: `/operations?tab=inventory&movement=${encodeURIComponent(movement.id)}` });
+      push({ sourceType: "stock_receive", sourceId: movement.id, sourceLabel: `Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`, branchId: movement.branchId, recordedAt: movement.occurredAt, amount: money(amountMinor, movement.totalCost?.currency ?? movement.unitCost?.currency ?? currency), reason: "Stock was received without an order. No supplier was recorded.", ledgerPostingStatus: this.immutableAccountingStatus("stock_movement", movement.id) ?? movement.financialPostingStatus, href: `/operations?tab=inventory&movement=${encodeURIComponent(movement.id)}` });
     }
     for (const task of this.db.facilityTasks) {
       if (task.status !== "completed" || !task.suppliesCost || task.suppliesCost.amount <= 0) continue;
-      push({ sourceType: "facility_supplies", sourceId: task.id, sourceLabel: `Facility supplies · ${task.title}`, branchId: task.branchId, recordedAt: task.completedAt ?? task.updatedAt, amount: { ...task.suppliesCost }, reason: "Supplies cost was recorded on a completed maintenance task; no supplier is recorded.", ledgerPostingStatus: this.immutableAccountingStatus("facility_supplies", task.id) ?? task.financialPostingStatus ?? "not_posted", href: `/maintenance?task=${encodeURIComponent(task.id)}` });
+      push({ sourceType: "facility_supplies", sourceId: task.id, sourceLabel: `Facility supplies · ${task.title}`, branchId: task.branchId, recordedAt: task.completedAt ?? task.updatedAt, amount: { ...task.suppliesCost }, reason: "This completed maintenance job has a supplies cost. No supplier was recorded.", ledgerPostingStatus: this.immutableAccountingStatus("facility_supplies", task.id) ?? task.financialPostingStatus ?? "not_posted", href: `/maintenance?task=${encodeURIComponent(task.id)}` });
     }
     for (const asset of this.db.equipmentAssets) {
       if (!asset.purchaseCost || asset.purchaseCost.amount <= 0) continue;
-      push({ sourceType: "equipment_acquisition", sourceId: asset.id, sourceLabel: `Equipment purchase · ${asset.code} ${asset.name}`, vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, amount: { ...asset.purchaseCost }, reason: "Equipment purchase cost is recorded on the machine; the manufacturer is not a supplier account.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_acquisition", asset.id) ?? "not_posted", href: `/operations?tab=equipment&asset=${encodeURIComponent(asset.id)}` });
+      push({ sourceType: "equipment_acquisition", sourceId: asset.id, sourceLabel: `Equipment purchase · ${asset.code} ${asset.name}`, vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, amount: { ...asset.purchaseCost }, reason: "This machine has a purchase cost. Its maker’s name does not identify the supplier.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_acquisition", asset.id) ?? "not_posted", href: `/operations?tab=equipment&asset=${encodeURIComponent(asset.id)}` });
     }
     for (const order of this.db.equipmentWorkOrders) {
       if (order.status !== "completed") continue;
       const amountMinor = order.totalCost?.amount ?? (order.partsCost?.amount ?? 0) + (order.laborCost?.amount ?? 0);
       if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
-      push({ sourceType: "equipment_repair", sourceId: order.id, sourceLabel: `Equipment repair · ${order.description}`, vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amount: money(amountMinor, order.totalCost?.currency ?? currency), reason: "Repair cost is recorded on a completed work order; the vendor name is a note, not a supplier account.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_repair", order.id) ?? order.financialPostingStatus ?? "not_posted", href: `/operations?tab=equipment&workOrder=${encodeURIComponent(order.id)}` });
+      push({ sourceType: "equipment_repair", sourceId: order.id, sourceLabel: `Equipment repair · ${order.description}`, vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amount: money(amountMinor, order.totalCost?.currency ?? currency), reason: "This repair cost has no linked supplier bill. The repairer’s name is saved as a note.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_repair", order.id) ?? order.financialPostingStatus ?? "not_posted", href: `/operations?tab=equipment&workOrder=${encodeURIComponent(order.id)}` });
     }
     return items.sort((left, right) => right.recordedAt.localeCompare(left.recordedAt) || left.id.localeCompare(right.id));
   }
@@ -12091,10 +12091,10 @@ export class MockGymOSApi implements GymOSApi {
       const downtimeDays = relevantIssues.reduce((sum, issue) => sum + (issue.downtimeDays ?? 0), 0);
       const ageMonths = asset.purchaseDate ? Math.max(0, Math.floor((Date.now() - Date.parse(asset.purchaseDate)) / (30.44 * 86_400_000))) : undefined;
       const rationale: string[] = [];
-      if (!repairCostMinor) rationale.push("No recorded repair cost is available.");
-      if (!replacement?.replacementEstimate) rationale.push("No recorded replacement estimate is available.");
-      if (!asset.purchaseDate) rationale.push("Purchase date is not recorded, so age cannot be assessed.");
-      if (!asset.expectedUsefulLifeMonths) rationale.push("Expected useful life is not recorded.");
+      if (!repairCostMinor) rationale.push("Repair cost has not been recorded.");
+      if (!replacement?.replacementEstimate) rationale.push("Replacement cost has not been estimated.");
+      if (!asset.purchaseDate) rationale.push("Add the purchase date to check the machine’s age.");
+      if (!asset.expectedUsefulLifeMonths) rationale.push("Add how many months the machine is expected to last.");
       const safetyIssue = relevantIssues.some((issue) => issue.status !== "resolved" && issue.safetyStatus === "out_of_service");
       let decision: T.EquipmentRecommendation["decision"] = "insufficient_data";
       if (repairCostMinor > 0 && replacement?.replacementEstimate && asset.purchaseDate && asset.expectedUsefulLifeMonths) decision = ageMonths! >= asset.expectedUsefulLifeMonths || repairCostMinor >= replacement.replacementEstimate.amount * 0.6 || safetyIssue ? "replace" : "fix";

@@ -98,7 +98,7 @@ export function BranchRevenueBars({ data }: { data: DashboardData["branchRevenue
               style={{ width: `${Math.max(2, (b.collected.amount / max) * 100)}%` }}
             />
           </div>
-          <p className="mt-1 text-[11.5px] text-ink-3 tabular">
+          <p className="mt-1 text-[12px] text-ink-3 tabular">
             {b.activeMembers} active members · {b.checkInsToday} check-ins today
           </p>
         </div>
@@ -126,16 +126,16 @@ export function LeadFunnel({ data }: { data: DashboardData["funnel"] }) {
                 className="flex h-full items-center rounded-sm bg-ink ps-2 transition-[width] duration-200 ease-out"
                 style={{ width: `${Math.max(stage.count > 0 ? 10 : 0, (stage.count / max) * 100)}%` }}
               >
-                <span className="text-[11px] font-medium text-paper tabular">{stage.count}</span>
+                <span className="text-[12px] font-medium text-paper tabular">{stage.count}</span>
               </div>
             </div>
-            <span className="w-10 shrink-0 text-end text-[11px] text-ink-3 tabular">
+            <span className="w-10 shrink-0 text-end text-[12px] text-ink-3 tabular">
               {conv !== undefined ? `${conv}%` : ""}
             </span>
           </div>
         );
       })}
-      <p className="pt-1 text-[11.5px] text-ink-3">
+      <p className="pt-1 text-[12px] text-ink-3">
         Percentages are stage-to-stage of the current pipeline snapshot.
       </p>
     </div>

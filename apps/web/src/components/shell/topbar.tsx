@@ -292,7 +292,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
                     </span>
                     <span>
                       <span className="block font-medium">{ROLE_LABELS[d.role]}</span>
-                      <span className="block text-[11.5px] text-ink-3">{d.blurb}</span>
+                      <span className="block text-[12px] text-ink-3">{d.blurb}</span>
                     </span>
                   </DropdownMenuItem>
                 ))}

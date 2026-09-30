@@ -410,7 +410,7 @@ export default function ReceptionPage() {
               ) : (
                 (recentQuery.data?.items ?? []).map((c) => (
                   <li key={c.id} className="flex items-start gap-2.5 px-5 py-2.5">
-                    <span className="mt-0.5 text-[11px] tabular text-night-ink-3">{formatTime(c.occurredAt)}</span>
+                    <span className="mt-0.5 text-[12px] tabular text-night-ink-3">{formatTime(c.occurredAt)}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[12.5px] text-night-ink">{c.memberName}</p>
                       <p className="truncate font-mono text-[10.5px] text-night-ink-3">{c.memberNumber}</p>
@@ -426,7 +426,7 @@ export default function ReceptionPage() {
               )}
             </ul>
             {recentQuery.data && recentQuery.data.totalPages > 1 ? (
-              <div className="flex items-center justify-between gap-2 border-t border-night-line px-4 py-2.5 text-[11px] text-night-ink-3">
+              <div className="flex items-center justify-between gap-2 border-t border-night-line px-4 py-2.5 text-[12px] text-night-ink-3">
                 <span className="tabular" dir="ltr">
                   {(recentQuery.data.page - 1) * recentQuery.data.pageSize + 1}–{Math.min(recentQuery.data.totalItems, recentQuery.data.page * recentQuery.data.pageSize)} of {recentQuery.data.totalItems}
                 </span>

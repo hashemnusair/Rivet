@@ -110,7 +110,7 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
     if (shoot) await capture(page, `pass-5-automation-rule-${width}.png`, width);
 
     await signIn(page, "Manager");
-    await visit(page, "/dashboard", /^Operations, Layla$/);
+    await visit(page, "/dashboard", /^(Good morning|Good afternoon|Good evening), Layla$/);
     await expect(page.getByRole("region", { name: "Today" }).getByText("Do this first")).toBeVisible();
     await fits(page);
     if (shoot) await capture(page, `pass-5-dashboard-manager-${width}.png`, width);
@@ -127,12 +127,12 @@ test("report views and scope live in the URL and survive a refresh", async ({ pa
   await page.getByRole("group", { name: "Date range" }).getByRole("button", { name: "90 days" }).click();
   await expect(page).toHaveURL(/range=90/);
   await expect(page.getByText(/8 Jun 2026 – 5 Sept 2026/)).toBeVisible();
-  await page.getByRole("navigation", { name: "Report views" }).getByRole("link", { name: "Collections" }).click();
+  await page.getByRole("navigation", { name: "Report views" }).getByRole("link", { name: "Charged and paid" }).click();
   await expect(page).toHaveURL(/view=collections/);
   await expect(page).toHaveURL(/range=90/);
   await expect(page.getByRole("heading", { name: "Charged and paid" })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("link", { name: "Collections" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "Charged and paid" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("button", { name: "90 days" })).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("End date").fill("2026-08-31");
   await expect(page).toHaveURL(/to=2026-08-31/);

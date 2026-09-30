@@ -48,7 +48,7 @@ async function notifyMemberOnce(ctx: MutationCtx, input: {
     organizationId: input.organizationId,
     branchId: input.branchId,
     kind: input.kind,
-    title: input.kind === "renewal_reminder" ? "Membership renewal approaching" : "Membership expiry approaching",
+    title: input.kind === "renewal_reminder" ? "Membership renewal approaching" : "Membership end date approaching",
     body: `Your current membership term ends ${input.endDate}.`,
     href: "/customer/my-gyms",
     dedupeKey,

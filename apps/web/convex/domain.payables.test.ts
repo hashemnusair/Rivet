@@ -58,7 +58,7 @@ describe("supplier payables and supplier payments", () => {
     const { owner, t } = await seeded(currency);
     const { supplier, payableId } = await seededPayable(owner, "payables-branch-a", "currency", currency);
     const input = (amount: number, idempotencyKey: string) => ({ supplierId: supplier.id, branchId: "payables-branch-a", method: "bank_transfer", reference: "CURRENCY-TEST", amount: { amount, currency }, allocations: [{ payableId, amount: { amount, currency } }], idempotencyKey });
-    await expect(owner.mutation(api.domain.mutate, operation("operations.supplier_payment.record", input(1_650_001, "overpay")))).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT", message: expect.stringContaining(`${currency} ${balanceText} outstanding`) }) });
+    await expect(owner.mutation(api.domain.mutate, operation("operations.supplier_payment.record", input(1_650_001, "overpay")))).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT", message: expect.stringContaining(`${currency} ${balanceText} unpaid`) }) });
 
     const payment = await owner.mutation(api.domain.mutate, operation("operations.supplier_payment.record", input(4_000, "pay"))) as PaymentDetail;
     expect(payment.amount).toEqual({ amount: 4_000, currency });
@@ -244,8 +244,8 @@ describe("supplier payables and supplier payments", () => {
     const reconciliation = await owner.query(api.domain.query, operation("operations.payables.reconciliation")) as { count: number; total: { amount: number }; items: Array<{ sourceType: string; sourceId: string; amount: { amount: number }; reason: string; vendorHint?: string }> };
     expect(reconciliation.count).toBe(2);
     expect(reconciliation.total).toEqual(JOD(3_000_000));
-    expect(reconciliation.items.find((item) => item.sourceType === "purchase_order")).toMatchObject({ sourceId: privateOrder.id, amount: { amount: 100_000 }, reason: expect.stringMatching(/private purchase/i) });
-    expect(reconciliation.items.find((item) => item.sourceType === "equipment_acquisition")).toMatchObject({ amount: { amount: 2_900_000 }, reason: expect.stringMatching(/not a supplier account/i) });
+    expect(reconciliation.items.find((item) => item.sourceType === "purchase_order")).toMatchObject({ sourceId: privateOrder.id, amount: { amount: 100_000 }, reason: expect.stringMatching(/No supplier was recorded for this purchase/i) });
+    expect(reconciliation.items.find((item) => item.sourceType === "equipment_acquisition")).toMatchObject({ amount: { amount: 2_900_000 }, reason: expect.stringMatching(/does not identify the supplier/i) });
     const payables = await owner.query(api.domain.query, operation("operations.payables.list")) as PayablesPage;
     expect(payables.items).toHaveLength(1);
     expect(payables.items[0]!.supplierName).toBe(supplier.name);

@@ -93,7 +93,7 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("link", { name: /Gym team/i }).click();
     await expect(page).toHaveURL(/\/login\/gym$/);
     // The label uses a typographic apostrophe, so match either form.
-    await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
+    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);
     await page.getByRole("link", { name: /^(Follow-ups|Leads)$/ }).first().click();
     await expect(page.getByRole("article", { name: /Yousef Nasser, Trial/i })).toBeVisible();
@@ -183,7 +183,7 @@ test.describe("RIVET gym applications", () => {
   test("recovers the public network after a preview live-subscription failure", async ({ page }) => {
     await page.goto("/login/gym");
     await page.getByRole("radio", { name: /Omar Al-Khatib/i }).click();
-    await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
+    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);
 
     await page.getByRole("button", { name: "Demo controls" }).click();
@@ -200,11 +200,11 @@ test.describe("RIVET gym applications", () => {
     await expect(page).toHaveURL(/\/login$/);
     await page.goto("/");
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByText(/Showing the last known RIVET data/i)).toBeVisible();
+    await expect(page.getByText(/Could not connect. Showing your last saved information/i)).toBeVisible();
 
-    await page.getByRole("button", { name: "Retry" }).click();
+    await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("link", { name: /Forge Fitness Club/i }).first()).toBeVisible();
-    await expect(page.getByText(/Showing the last known RIVET data/i)).toHaveCount(0);
+    await expect(page.getByText(/Could not connect. Showing your last saved information/i)).toHaveCount(0);
   });
 
   test("shows four tiers, annual savings, and carries pricing selection into the application", async ({ page }) => {
