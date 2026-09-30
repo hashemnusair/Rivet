@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OperatingBrief } from "@/lib/domain/types";
+import { LocaleProvider } from "@/lib/i18n/provider";
 import { BRANCH_SWF } from "@/lib/mock/seed";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { NeedsAttention } from "./needs-attention";
@@ -65,5 +66,20 @@ describe("Needs attention", () => {
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findAllByTestId("needs-attention-line");
     expect(vi.mocked(api.getOperatingBrief).mock.calls.length).toBe(calls + 1);
+  });
+
+  it("shows Arabic wording, with money and times kept left-to-right, when the language is Arabic", async () => {
+    const { api } = await renderWithApp(<LocaleProvider initialLocale="ar"><NeedsAttention /></LocaleProvider>, { role: "owner" });
+    const brief = await api.getOperatingBrief({});
+    expect(await screen.findByRole("heading", { name: "تحتاج إلى انتباه" })).toBeInTheDocument();
+    const lines = await screen.findAllByTestId("needs-attention-line");
+    expect(lines).toHaveLength(brief.attention.length);
+    for (const [index, line] of brief.attention.entries()) {
+      const text = within(lines[index]!).getByRole("link").textContent ?? "";
+      expect(text).toMatch(/[\u0600-\u06FF]/);
+      expect(text).not.toContain(line.text);
+    }
+    expect(screen.getByTestId("needs-attention-scope")).toHaveTextContent(/^آخر تحديث .*\d{1,2}:\d{2}.*\.$/);
+    expect(screen.getByRole("button", { name: "تحديث" })).toBeInTheDocument();
   });
 });
