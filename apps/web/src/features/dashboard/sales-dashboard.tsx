@@ -41,7 +41,7 @@ export function SalesDashboard() {
       <PageHeader
         sectionLabel={formatDate(today)}
         title={`Your day, ${session?.user.name.split(" ")[0] ?? ""}`}
-        description="Everything due now, then everything that makes this month count."
+        description="What to do now, and how your month is going."
         actions={
           <Button asChild>
             <Link href="/crm/queues">
@@ -53,10 +53,10 @@ export function SalesDashboard() {
 
       <section aria-label="Your numbers" className="panel grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
         {[
-          { label: "Overdue follow-ups", value: overdueFollowUps, danger: overdueFollowUps > 0 },
+          { label: "Late follow-ups", value: overdueFollowUps, danger: overdueFollowUps > 0 },
           { label: "Due today", value: Math.max(0, dueFollowUps - overdueFollowUps), danger: false },
           { label: "Collected this month", value: <MoneyText money={me?.revenueCollected ?? money(0)} compact />, danger: false },
-          { label: "Leads converted", value: me?.leadsConverted ?? 0, danger: false },
+          { label: "Leads who joined", value: me?.leadsConverted ?? 0, danger: false },
         ].map((cell) => (
           <div key={cell.label} className="px-4 py-3.5">
             <p className="context-label">{cell.label}</p>

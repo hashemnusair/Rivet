@@ -28,8 +28,8 @@ export function MemberInstallAndNotifications() {
   const [installed, setInstalled] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>(() => typeof Notification === "undefined" ? "default" : Notification.permission);
   const subscriptions = useApiQuery(qk.pushSubscriptions, (api) => api.listPushSubscriptions());
-  const save = useApiMutation((api, input: { endpoint: string; p256dh: string; auth: string; label?: string }) => api.savePushSubscription(input), { onSuccess: async () => { await invalidate(); toast.success("Notifications enabled for this device."); } });
-  const revoke = useApiMutation((api, id: string) => api.revokePushSubscription(id), { onSuccess: async () => { await invalidate(); toast.success("Device notifications disabled."); } });
+  const save = useApiMutation((api, input: { endpoint: string; p256dh: string; auth: string; label?: string }) => api.savePushSubscription(input), { onSuccess: async () => { await invalidate(); toast.success("Reminders are on for this device."); } });
+  const revoke = useApiMutation((api, id: string) => api.revokePushSubscription(id), { onSuccess: async () => { await invalidate(); toast.success("Reminders are off for that device."); } });
   const markComplete = useApiMutation((api, step: string) => api.updateOnboardingProgress({ audience: "member", completedStepKey: step }));
   const vapidKey = process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY;
 
@@ -51,7 +51,7 @@ export function MemberInstallAndNotifications() {
       const choice = await installPrompt.userChoice;
       if (choice.outcome === "accepted") { setInstalled(true); setCanInstall(false); markComplete.mutate("member_install"); }
     } catch {
-      toast.error("RIVET could not open the install prompt. Use your browser’s Add to Home Screen command instead.");
+      toast.error("Could not install RIVET. Use Add to Home Screen in your browser menu instead.");
     }
   };
   const enablePush = async () => {
@@ -59,34 +59,34 @@ export function MemberInstallAndNotifications() {
     try {
       const nextPermission = await Notification.requestPermission();
       setPermission(nextPermission);
-      if (nextPermission !== "granted") { toast.info("Notifications remain off. You can enable them later in browser settings."); return; }
+      if (nextPermission !== "granted") { toast.info("Reminders are still off. You can turn them on later in your browser settings."); return; }
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodeVapidKey(vapidKey) });
       const json = subscription.toJSON();
       if (!json.endpoint || !json.keys?.p256dh || !json.keys.auth) throw new Error("Incomplete push subscription");
       save.mutate({ endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth, label: deviceLabel() });
     } catch {
-      toast.error("This browser could not enable reminders. Check its notification settings and try again.");
+      toast.error("Reminders could not be turned on. Check your browser's notification settings and try again.");
     }
   };
 
   const deviceCount = subscriptions.data?.length ?? 0;
   const notificationsCopy = !vapidKey
-    ? "Push delivery is not set up yet. Nothing will be requested from your browser."
+    ? "Reminders are not available yet."
     : permission === "denied"
-      ? "Your browser has blocked notifications for RIVET. Allow them in the browser settings to turn reminders on."
+      ? "Your browser blocks notifications from RIVET. Allow them in your browser settings to get reminders."
       : deviceCount > 0
-        ? `Reminders are on for ${deviceCount} device${deviceCount === 1 ? "" : "s"}. Turn one off at any time.`
-        : "Turn on reminders only on devices you control.";
+        ? `Reminders are on for ${deviceCount} device${deviceCount === 1 ? "" : "s"}. You can turn them off at any time.`
+        : "Only turn on reminders on your own devices.";
 
   return (
     <section id="install" className="panel mt-4 scroll-mt-24 p-4 sm:p-5" aria-labelledby="install-title">
       <h2 id="install-title" className="text-[15px] font-semibold">Install and notifications</h2>
-      <p className="mt-1 text-[13px] text-ink-2">Add RIVET to your home screen for one-tap access. Notifications always ask your browser first and can be turned off per device.</p>
+      <p className="mt-1 text-[13px] text-ink-2">Add RIVET to your home screen to open it in one tap. You can turn reminders on or off for each device.</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="rounded-md border border-line p-4">
           <h3 className="text-[13.5px] font-semibold">Home-screen app</h3>
-          <p className="mt-1 text-[12.5px] text-ink-2">{installed ? "RIVET is running as an installed app." : canInstall ? "Your browser is ready to install RIVET." : "Use your browser\u2019s Add to Home Screen command. Some browsers never show an install button."}</p>
+          <p className="mt-1 text-[12.5px] text-ink-2">{installed ? "RIVET is installed on this device." : canInstall ? "You can install RIVET on this device." : "Use Add to Home Screen in your browser menu."}</p>
           {installed ? (
             <p className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-success-deep" role="status"><Check className="size-4" aria-hidden /> Installed</p>
           ) : canInstall ? (
@@ -94,10 +94,10 @@ export function MemberInstallAndNotifications() {
           ) : null}
         </div>
         <div className="rounded-md border border-line p-4">
-          <h3 className="text-[13.5px] font-semibold">Reminder notifications</h3>
+          <h3 className="text-[13.5px] font-semibold">Reminders</h3>
           <p className="mt-1 text-[12.5px] text-ink-2">{notificationsCopy}</p>
           {vapidKey && permission !== "denied" ? (
-            <Button className="mt-3" size="sm" variant="secondary" loading={save.isPending} onClick={() => void enablePush()}><Bell /> Enable on this device</Button>
+            <Button className="mt-3" size="sm" variant="secondary" loading={save.isPending} onClick={() => void enablePush()}><Bell /> Turn on for this device</Button>
           ) : null}
           {deviceCount > 0 ? (
             <ul className="mt-3 divide-y divide-line border-t border-line" aria-label="Devices with reminders">
@@ -111,7 +111,7 @@ export function MemberInstallAndNotifications() {
           ) : null}
         </div>
       </div>
-      <p className="mt-3 flex gap-2 text-[12px] leading-relaxed text-ink-3"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />The app shell caches only the public offline screen and brand assets. It never caches member records, receipts or entry passes.</p>
+      <p className="mt-3 flex gap-2 text-[12px] leading-relaxed text-ink-3"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />The installed app does not keep your membership details, receipts or entry codes for offline use.</p>
     </section>
   );
 }

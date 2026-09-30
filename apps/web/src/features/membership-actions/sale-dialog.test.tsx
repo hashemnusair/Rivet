@@ -82,7 +82,7 @@ describe("MembershipSaleDialog reason gates", () => {
     await renderWithApp(<MembershipSaleDialog open onOpenChange={() => undefined} member={expiringMember} renewalOf={renewalOf} onCompleted={onCompleted} />);
 
     expect(screen.getByRole("switch", { name: "Collect payment now" })).toBeDisabled();
-    expect(screen.getByText(/upcoming invoice becomes collectible when the successor term begins/i)).toBeInTheDocument();
+    expect(screen.getByText(/you can take this payment once the new membership starts/i)).toBeInTheDocument();
     await user.click(screen.getByTestId("confirm-sale"));
     await waitFor(() => expect(onCompleted).toHaveBeenCalledTimes(1));
     expect(onCompleted.mock.calls[0]?.[0].payment).toBeUndefined();
@@ -100,7 +100,7 @@ describe("MembershipSaleDialog reason gates", () => {
     await renderWithApp(<MembershipSaleDialog open onOpenChange={onOpenChange} member={expiredMember} onCompleted={onCompleted} />);
     await chooseMonthlyPlan(user);
 
-    expect(screen.queryByPlaceholderText("Why does this sale need an exception?")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Why is the price or date different?")).not.toBeInTheDocument();
     await user.click(screen.getByRole("switch", { name: "Collect payment now" }));
     await user.click(screen.getByTestId("confirm-sale"));
 
@@ -138,19 +138,19 @@ describe("MembershipSaleDialog reason gates", () => {
 
     const price = screen.getAllByPlaceholderText("40.000")[0];
     if (!price) throw new Error("missing price override input");
-    expect(screen.queryByPlaceholderText("Why does this sale need an exception?")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Why is the price or date different?")).not.toBeInTheDocument();
     await user.type(price, "35");
-    expect(screen.getByPlaceholderText("Why does this sale need an exception?")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Why is the price or date different?")).toBeInTheDocument();
 
     await user.clear(price);
-    expect(screen.queryByPlaceholderText("Why does this sale need an exception?")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Why is the price or date different?")).not.toBeInTheDocument();
 
     const startDate = screen.getByDisplayValue(todayISODate());
     fireEvent.change(startDate, { target: { value: addDays(todayISODate(), 1) } });
-    expect(screen.getByPlaceholderText("Why does this sale need an exception?")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Why is the price or date different?")).toBeInTheDocument();
 
     await user.click(screen.getByTestId("confirm-sale"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/reason is required for price or date overrides/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/add a reason for the price or date change/i);
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
@@ -167,10 +167,10 @@ describe("MembershipSaleDialog reason gates", () => {
 
     await user.click(screen.getByRole("combobox", { name: "Payment method" }));
     await user.click(await screen.findByRole("option", { name: /Card/i }));
-    const reference = screen.getByPlaceholderText("e.g. POS-88213");
+    const reference = screen.getByPlaceholderText("For example: POS-88213");
 
     await user.click(screen.getByTestId("confirm-sale"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/reference is required/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/type the reference number/i);
     expect(onCompleted).not.toHaveBeenCalled();
 
     await user.type(reference, "TEST-POS-1001");

@@ -65,7 +65,7 @@ describe("onboarding completion", () => {
     mocks.get.mockResolvedValue({ ...experience, tasks: [{ ...experience.tasks[0], complete: false }] });
     mocks.update.mockRejectedValue(new Error("Save failed"));
     show();
-    fireEvent.click(await screen.findByRole("button", { name: "Mark complete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Mark as done" }));
     await waitFor(() => expect(mocks.error).toHaveBeenCalled());
     expect(mocks.success).not.toHaveBeenCalled();
   });
@@ -73,7 +73,7 @@ describe("onboarding completion", () => {
     mocks.get.mockResolvedValue({ ...experience, tasks: [{ ...experience.tasks[0], complete: false }] });
     mocks.update.mockResolvedValue(experience.progress);
     show();
-    fireEvent.click(await screen.findByRole("button", { name: "Mark complete" }));
-    await waitFor(() => expect(mocks.success).toHaveBeenCalledWith("Step marked complete."));
+    fireEvent.click(await screen.findByRole("button", { name: "Mark as done" }));
+    await waitFor(() => expect(mocks.success).toHaveBeenCalledWith("Step marked as done."));
   });
 });

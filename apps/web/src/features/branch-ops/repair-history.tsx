@@ -4,8 +4,8 @@ import { History } from "lucide-react";
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { EquipmentAsset, EquipmentIssue, EquipmentWorkOrder } from "@/lib/domain/types";
-import { StatusBadge } from "@/features/operations/operations-shared";
-import { DateTimeText } from "@/components/shared/data-display";
+import { StatusBadge, severityLabel } from "@/features/operations/operations-shared";
+import { DateText, DateTimeText } from "@/components/shared/data-display";
 import { OPEN_ISSUE_STATUSES, relatedRepairHistory } from "../../../convex/branchOpsAssist";
 
 /**
@@ -19,20 +19,21 @@ export function RepairHistoryPanel({ asset, issues, workOrders }: { asset: Equip
   const machineIssues = useMemo(() => issues.filter((issue) => issue.assetId === asset.id).sort((left, right) => right.reportedAt.localeCompare(left.reportedAt)), [issues, asset.id]);
   const anchor = machineIssues.find((issue) => OPEN_ISSUE_STATUSES.has(issue.status)) ?? machineIssues[0];
   if (!anchor) {
-    return <section className="space-y-2 border-t border-line p-5" aria-label="Related repair history" data-testid="repair-history"><ContextLine /><p className="text-[12.5px] text-ink-3">No report exists for this machine yet. Other machines and other branches are not included, even with the same name.</p></section>;
+    return <section className="space-y-2 border-t border-line p-5" aria-label="Repair history" data-testid="repair-history"><ContextLine /><p className="text-[12.5px] text-ink-3">No problems reported for this machine yet.</p></section>;
   }
   const history = relatedRepairHistory(anchor, machineIssues, workOrders);
   const similarReports = history.entries.filter((entry) => entry.similarWording).length;
+  const firstReportedAt = machineIssues[machineIssues.length - 1]?.reportedAt;
   return (
-    <section className="space-y-3 border-t border-line p-5" aria-label="Related repair history" data-testid="repair-history">
+    <section className="space-y-3 border-t border-line p-5" aria-label="Repair history" data-testid="repair-history">
       <ContextLine />
       <div className="rounded-md border border-line bg-sunken/40 p-3">
-        <p className="text-[12px] text-ink-3">{OPEN_ISSUE_STATUSES.has(anchor.status) ? "Current report" : "Latest report"}</p>
+        <p className="text-[12px] text-ink-3">{OPEN_ISSUE_STATUSES.has(anchor.status) ? "Current problem" : "Latest problem"}</p>
         <p className="mt-0.5 text-[13px] font-medium">{anchor.title}</p>
-        <p className="mt-0.5 text-[12px] text-ink-3"><StatusBadge status={anchor.status} /> · {anchor.severity} · <StatusBadge status={anchor.safetyStatus} /> · reported <DateTimeText iso={anchor.reportedAt} /></p>
+        <p className="mt-0.5 text-[12px] text-ink-3"><StatusBadge status={anchor.status} /> · How serious: {severityLabel(anchor.severity)} · <StatusBadge status={anchor.safetyStatus} /> · reported <DateTimeText iso={anchor.reportedAt} /></p>
       </div>
-      <p className="text-[12px] text-ink-3" data-testid="repair-history-disclosure">{history.disclosure}</p>
-      <p className="text-[12.5px] text-ink-2" data-testid="repair-history-recurring">{similarReports ? `${similarReports} earlier report${similarReports === 1 ? "" : "s"} share wording with the current report. Review the recorded details before treating it as recurrence.` : "No earlier report shares wording with the current report."}</p>
+      <p className="text-[12px] text-ink-3" data-testid="repair-history-disclosure">{history.entries.length ? <>{machineIssues.length} problems reported on this machine since <DateText iso={firstReportedAt} />.</> : "No earlier problems on this machine."}</p>
+      <p className="text-[12.5px] text-ink-2" data-testid="repair-history-recurring">{similarReports ? `${similarReports} earlier ${similarReports === 1 ? "problem uses" : "problems use"} similar words. Check the details to see if it is the same fault.` : "No earlier problem uses similar words."}</p>
       {history.entries.length ? (
         <ul className="space-y-2" data-testid="repair-history-entries">
           {history.entries.map((entry) => (
@@ -40,12 +41,12 @@ export function RepairHistoryPanel({ asset, issues, workOrders }: { asset: Equip
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[13px] font-medium">{entry.issue.title}</p>
-                  <p className="mt-0.5 text-[12px] text-ink-3">{entry.issue.severity} · <StatusBadge status={entry.issue.safetyStatus} /> · reported <DateTimeText iso={entry.issue.reportedAt} />{entry.issue.resolvedAt ? <> · resolved <DateTimeText iso={entry.issue.resolvedAt} /></> : null}</p>
+                  <p className="mt-0.5 text-[12px] text-ink-3">How serious: {severityLabel(entry.issue.severity)} · <StatusBadge status={entry.issue.safetyStatus} /> · reported <DateTimeText iso={entry.issue.reportedAt} />{entry.issue.resolvedAt ? <> · fixed <DateTimeText iso={entry.issue.resolvedAt} /></> : null}</p>
                   {entry.issue.description ? <p className="mt-1 text-[12.5px] text-ink-2">{entry.issue.description}</p> : null}
                 </div>
-                <div className="flex flex-wrap gap-1"><StatusBadge status={entry.issue.status} />{entry.similarWording ? <Badge variant="outline" data-testid="repair-history-similar">similar wording</Badge> : null}</div>
+                <div className="flex flex-wrap gap-1"><StatusBadge status={entry.issue.status} />{entry.similarWording ? <Badge variant="outline" data-testid="repair-history-similar">Similar words</Badge> : null}</div>
               </div>
-              {entry.workOrders.length ? <ul className="mt-2 space-y-1 text-[12px] text-ink-2">{entry.workOrders.map((order) => <li key={order.id}>Work order: {order.description} · <StatusBadge status={order.status} />{order.vendorName ? ` · ${order.vendorName}` : ""}</li>)}</ul> : null}
+              {entry.workOrders.length ? <ul className="mt-2 space-y-1 text-[12px] text-ink-2">{entry.workOrders.map((order) => <li key={order.id}>Repair job: {order.description} · <StatusBadge status={order.status} />{order.vendorName ? ` · ${order.vendorName}` : ""}</li>)}</ul> : null}
             </li>
           ))}
         </ul>
@@ -55,5 +56,5 @@ export function RepairHistoryPanel({ asset, issues, workOrders }: { asset: Equip
 }
 
 function ContextLine() {
-  return <p className="context-label flex items-center gap-1.5"><History className="size-3.5" aria-hidden /> Related repair history</p>;
+  return <p className="context-label flex items-center gap-1.5"><History className="size-3.5" aria-hidden /> Repair history</p>;
 }

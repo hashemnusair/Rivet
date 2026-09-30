@@ -54,7 +54,6 @@ import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { resolveMessagingMode } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
-import { RESOLUTION_CLASS_HORIZON_DAYS, RESOLUTION_TRAINER_HORIZON_DAYS, chargeService, classEligibility, permittedResolutionPanels, resolutionFacts, selectResolutionEvidence, type ClassBookingPolicyLike, type MemberResolutionContext, type ResolutionCharge, type ResolutionClassOption, type ResolutionMembership, type ResolutionMoney, type ResolutionPayment, type ResolutionPlan, type ResolutionPtOrder, type ResolutionService, type ResolutionTrainerOption } from "./resolutionAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
@@ -1354,209 +1353,6 @@ async function relatedTaskLink(ctx: ReadContext, actor: ActorContext, input: Dat
   if (!sameSubject) domainError("VALIDATION_ERROR", "The related task is about someone else.", { correlationId: actor.correlationId });
   if (stringValue(related.status, "open") !== "open") domainError("VALIDATION_ERROR", "The related task is no longer open. Review the suggestion again.", { correlationId: actor.correlationId });
   return { id: relatedTaskId, title: stringValue(related.title) };
-}
-
-
-/**
- * The member resolution workspace's deterministic context: charges and
- * payments matched by service through their own links (a PT payment settles
- * the PT charge it was recorded against and nothing else), the current
- * term, PT orders and credits, typed evidence read from the whole record,
- * open work, every active plan's terms, the classes the member may actually
- * join under the booking rules, and the trainers whose profiles record an
- * open slot at the member's branch. Payments are listed only for actors who
- * may read the transaction ledger; the panels themselves are decided here.
- */
-export async function memberResolutionContextData(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<MemberResolutionContext> {
-  requirePermission(actor, "members.read");
-  const memberRecord = await recordOf(ctx, actor, "member", memberId);
-  const member = data(memberRecord.data);
-  const timezone = actor.organization.timezone || TZ_FALLBACK;
-  const currency = actor.organization.currency;
-  const today = todayIn(timezone);
-  const now = Date.now();
-  const nowIso = utcIso(now);
-  const identityIds = await memberIdentityIds(ctx, actor, memberId);
-  const homeBranchId = stringValue(member.homeBranchId);
-  const moneyOf = (value: unknown): ResolutionMoney => ({ amount: amountOf(value), currency: currencyOf(value, currency) });
-  const [branches, chargeRows, paymentRows, timelineRows, planRows, settings, ptOrderRows, entitlementRows, bookingRows, trainerRows] = await Promise.all([
-    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
-    recordsOfMemberIdentity(ctx, actor, memberId, "charge"),
-    recordsOfMemberIdentity(ctx, actor, memberId, "payment"),
-    recordsOfMemberIdentity(ctx, actor, memberId, "timeline"),
-    recordsOf(ctx, actor, "plan"),
-    settingsData(ctx, actor),
-    Promise.all(identityIds.map((id) => ctx.db.query("ptPackageOrders").withIndex("by_organization_member", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", id)).collect())),
-    Promise.all(identityIds.map((id) => ctx.db.query("ptEntitlements").withIndex("by_organization_member", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", id)).collect())),
-    Promise.all(identityIds.map((id) => ctx.db.query("ptBookings").withIndex("by_member_start", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", id)).collect())),
-    ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
-  ]);
-  const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
-  const homeBranch = branches.find((branch) => publicBranchId(branch) === homeBranchId);
-  const plansById = new Map(planRows.map((row) => [row.publicId, data(row.data)]));
-  const ptOrders = ptOrderRows.flat().sort((left, right) => right.createdAt - left.createdAt);
-  const ptChargeIds = new Set(ptOrders.map((order) => order.chargePublicId));
-  const ptOrderByCharge = new Map(ptOrders.map((order) => [order.chargePublicId, order.publicId]));
-
-  const charges: ResolutionCharge[] = chargeRows
-    .map((row) => data(row.data))
-    .filter((charge) => identityIds.includes(stringValue(charge.memberId)))
-    .map((raw) => {
-      const charge = chargeProjection(raw, today);
-      const id = stringValue(charge.id);
-      return {
-        id,
-        description: stringValue(charge.description),
-        service: chargeService({ membershipId: optionalString(charge.membershipId) }, ptChargeIds, id),
-        membershipId: optionalString(charge.membershipId),
-        ptOrderId: ptOrderByCharge.get(id),
-        total: moneyOf(charge.total),
-        paidAmount: moneyOf(charge.paidAmount),
-        outstandingAmount: moneyOf(charge.outstandingAmount),
-        status: stringValue(charge.status, "unpaid"),
-        issueDate: optionalString(charge.issueDate),
-        dueDate: optionalString(charge.dueDate),
-        collectible: booleanValue(charge.collectible, false),
-        createdAt: stringValue(charge.createdAt),
-      };
-    })
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  const chargeById = new Map(charges.map((charge) => [charge.id, charge]));
-  const canSeePayments = hasPermission(actor, "reports.financial.read");
-  const payments: ResolutionPayment[] = canSeePayments
-    ? paymentRows
-      .map((row) => data(row.data))
-      .filter((payment) => identityIds.includes(stringValue(payment.memberId)))
-      .map((payment) => {
-        const chargeId = optionalString(payment.chargeId);
-        const charge = chargeId ? chargeById.get(chargeId) : undefined;
-        const service: ResolutionService = charge?.service ?? (chargeId && ptChargeIds.has(chargeId) ? "personal_training" : stringValue(payment.type) === "retail_sale" ? "retail" : "other");
-        return { id: stringValue(payment.id), type: stringValue(payment.type, "payment"), amount: moneyOf(payment.amount), method: stringValue(payment.method), status: stringValue(payment.status, "completed"), receiptId: stringValue(payment.receiptId), receiptNumber: stringValue(payment.receiptNumber), occurredAt: stringValue(payment.occurredAt), chargeId, service, chargeDescription: charge?.description, collectedByName: stringValue(payment.collectedByName), originalPaymentId: optionalString(payment.originalPaymentId) };
-      })
-      .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
-    : [];
-
-  const currentTerm = await currentMembership(ctx, actor, memberId);
-  const membership: ResolutionMembership | undefined = currentTerm
-    ? (() => {
-        const plan = plansById.get(stringValue(currentTerm.planId)) ?? {};
-        const freeze = data(currentTerm.activeFreeze);
-        const termId = stringValue(currentTerm.id);
-        const own = charges.filter((charge) => charge.membershipId === termId && charge.service === "membership");
-        const chargeTotal = own.reduce((sum, charge) => sum + charge.total.amount, 0);
-        const chargePaid = own.reduce((sum, charge) => sum + charge.paidAmount.amount, 0);
-        return {
-          id: termId,
-          planId: stringValue(currentTerm.planId),
-          planName: stringValue(plan.name, "Plan"),
-          kind: stringValue(plan.kind, "time"),
-          startDate: stringValue(currentTerm.startDate),
-          endDate: stringValue(currentTerm.endDate),
-          status: statusOfMembership(currentTerm, today),
-          daysUntilExpiry: diffDays(today, stringValue(currentTerm.endDate)),
-          freezeAllowanceDays: numberValue(plan.freezeAllowanceDays),
-          frozenDaysUsed: numberValue(currentTerm.frozenDaysUsed),
-          activeFreeze: optionalString(freeze.startDate) && optionalString(freeze.endDate) ? { startDate: stringValue(freeze.startDate), endDate: stringValue(freeze.endDate), status: stringValue(freeze.status, "active") } : undefined,
-          totalVisits: typeof currentTerm.totalVisits === "number" ? currentTerm.totalVisits : undefined,
-          remainingVisits: typeof currentTerm.remainingVisits === "number" ? currentTerm.remainingVisits : undefined,
-          salePrice: moneyOf(currentTerm.salePrice),
-          outstanding: { amount: own.reduce((sum, charge) => sum + (charge.collectible ? charge.outstandingAmount.amount : 0), 0), currency },
-          paymentStatus: chargeTotal === 0 || chargePaid >= chargeTotal ? "paid" : chargePaid > 0 ? "partial" : "unpaid",
-          includedPtSessions: numberValue(plan.includedPtSessions),
-          branchAccess: stringValue(plan.branchAccess, "all") === "selected" ? "selected" : "all",
-          previousMembershipId: optionalString(currentTerm.previousMembershipId),
-        };
-      })()
-    : undefined;
-
-  const orderViews = await Promise.all(ptOrders.map((order) => ptPackageOrderView(ctx, actor.organization, order)));
-  const ptOrderViews: ResolutionPtOrder[] = orderViews.map((order) => ({ id: stringValue(order.id), packageName: stringValue(order.packageName), sessionCount: numberValue(order.sessionCountSnapshot), totalPrice: moneyOf(order.totalPriceSnapshot), status: stringValue(order.status), chargeId: stringValue(order.chargeId), paidAt: optionalString(order.paidAt), createdAt: stringValue(order.createdAt), entitlementId: optionalString(order.entitlementId) }));
-  const entitlementViews = entitlementRows.flat().map((row) => ptEntitlementView(actor.organization, row));
-  const upcomingBookings = await Promise.all(bookingRows.flat().filter((row) => ["reserved", "confirmed"].includes(row.status)).sort((left, right) => left.startsAt - right.startsAt).map((row) => ptBookingView(ctx, actor.organization, row)));
-  const pt = {
-    available: entitlementViews.reduce((sum, item) => sum + numberValue(item.available), 0),
-    reserved: entitlementViews.reduce((sum, item) => sum + numberValue(item.reserved), 0),
-    upcomingBookings: upcomingBookings.map((booking) => ({ id: stringValue(booking.id), trainerName: stringValue(booking.trainerName), startsAt: stringValue(booking.startsAt), branchName: stringValue(booking.branchName), status: stringValue(booking.status) })),
-  };
-
-  const { evidence, taskEvents } = selectResolutionEvidence(timelineRows.map((row) => data(row.data)).filter((event) => identityIds.includes(stringValue(event.memberId))).map((event) => ({ id: stringValue(event.id), type: stringValue(event.type), title: stringValue(event.title), body: optionalString(event.body), occurredAt: stringValue(event.occurredAt), actorName: optionalString(event.actorName), meta: data(event.meta) })));
-  const tasks = hasPermission(actor, "crm.read") ? await followUpRelatedTasks(ctx, actor, { memberId }) : [];
-
-  const plans: ResolutionPlan[] = planRows
-    .map((row) => data(row.data))
-    .filter((plan) => stringValue(plan.status, "active") === "active")
-    .map((plan) => {
-      const branchIds = arrayValue(plan.branchIds).map(String);
-      return {
-        id: stringValue(plan.id),
-        name: stringValue(plan.name),
-        code: stringValue(plan.code),
-        kind: stringValue(plan.kind, "time"),
-        durationDays: typeof plan.durationDays === "number" ? plan.durationDays : undefined,
-        visitAllowance: typeof plan.visitAllowance === "number" ? plan.visitAllowance : undefined,
-        visitValidityDays: typeof plan.visitValidityDays === "number" ? plan.visitValidityDays : undefined,
-        price: moneyOf(plan.basePrice),
-        branchAccess: stringValue(plan.branchAccess, "all") === "selected" ? "selected" as const : "all" as const,
-        branchIds,
-        branchNames: branchIds.map((id) => branchNames.get(id) ?? id),
-        freezeAllowanceDays: numberValue(plan.freezeAllowanceDays),
-        includedPtSessions: numberValue(plan.includedPtSessions),
-        status: "active",
-      };
-    })
-    .sort((left, right) => left.name.localeCompare(right.name));
-
-  const rawPolicy = data(data(settings.operationalPolicies).classBooking);
-  const classPolicy: ClassBookingPolicyLike = { enabled: booleanValue(rawPolicy.enabled, true), eligibilityMode: stringValue(rawPolicy.eligibilityMode, "all_active_memberships"), eligiblePlanIds: arrayValue(rawPolicy.eligiblePlanIds).map(String), maxActiveBookingsPerMember: numberValue(rawPolicy.maxActiveBookingsPerMember, 8), waitlistEnabled: booleanValue(rawPolicy.waitlistEnabled, true), waitlistSize: numberValue(rawPolicy.waitlistSize, 12), bookingHorizonDays: numberValue(rawPolicy.bookingHorizonDays, 30) };
-  const occurrences = homeBranch ? (await classesQuery(ctx as QueryCtx, actor, "classes.occurrences.list", { branchId: homeBranchId, fromDate: today, toDate: addDays(today, RESOLUTION_CLASS_HORIZON_DAYS) })) as Data[] : [];
-  const rosterOf = (occurrence: Data) => arrayValue(occurrence.roster).map(data);
-  const memberActive = (entry: Data) => identityIds.includes(stringValue(entry.memberId)) && ["booked", "waitlisted"].includes(stringValue(entry.status));
-  const activeBookings = occurrences.reduce((count, occurrence) => count + (stringValue(occurrence.startsAt) >= nowIso ? rosterOf(occurrence).filter(memberActive).length : 0), 0);
-  const currentPlan = currentTerm ? plansById.get(stringValue(currentTerm.planId)) : undefined;
-  const classOptions: ResolutionClassOption[] = occurrences.map((occurrence) => {
-    const alreadyBooked = rosterOf(occurrence).some(memberActive);
-    const freeze = currentTerm ? data(currentTerm.activeFreeze) : {};
-    const eligibility = classEligibility({
-      occurrence: { id: stringValue(occurrence.id), date: stringValue(occurrence.date), startsAt: stringValue(occurrence.startsAt), endsAt: stringValue(occurrence.endsAt), status: stringValue(occurrence.status, "scheduled"), audience: stringValue(occurrence.audience, "mixed"), capacity: numberValue(occurrence.capacity), bookedCount: numberValue(occurrence.bookedCount), waitlistCount: numberValue(occurrence.waitlistCount), branchId: stringValue(occurrence.branchId) },
-      policy: classPolicy,
-      member: { id: memberId, gender: optionalString(member.gender) },
-      membership: currentTerm ? { planId: stringValue(currentTerm.planId), startDate: stringValue(currentTerm.startDate), endDate: stringValue(currentTerm.endDate), cancelledAt: optionalString(currentTerm.cancelledAt), activeFreeze: { startDate: optionalString(freeze.startDate), endDate: optionalString(freeze.endDate), status: optionalString(freeze.status) }, homeBranchId: stringValue(currentTerm.homeBranchId), remainingVisits: typeof currentTerm.remainingVisits === "number" ? currentTerm.remainingVisits : undefined, totalVisits: typeof currentTerm.totalVisits === "number" ? currentTerm.totalVisits : undefined } : undefined,
-      plan: currentPlan ? { branchAccess: stringValue(currentPlan.branchAccess, "all"), branchIds: arrayValue(currentPlan.branchIds).map(String) } : undefined,
-      activeBookings,
-      alreadyBooked,
-      now,
-    });
-    return { id: stringValue(occurrence.id), name: stringValue(occurrence.name), date: stringValue(occurrence.date), startsAt: stringValue(occurrence.startsAt), endsAt: stringValue(occurrence.endsAt), branchId: stringValue(occurrence.branchId), branchName: stringValue(occurrence.branchName), coachName: optionalString(occurrence.coachName), audience: stringValue(occurrence.audience, "mixed"), capacity: numberValue(occurrence.capacity), spotsRemaining: numberValue(occurrence.spotsRemaining), waitlistCount: numberValue(occurrence.waitlistCount), status: stringValue(occurrence.status, "scheduled"), eligible: eligibility.eligible, wouldWaitlist: eligibility.wouldWaitlist, blockReason: eligibility.reason, alreadyBooked };
-  });
-
-  const slotsUntil = addDays(today, RESOLUTION_TRAINER_HORIZON_DAYS);
-  const trainerOptions: ResolutionTrainerOption[] = homeBranch
-    ? await Promise.all(trainerRows.filter((trainer) => trainer.status === "published" && trainer.branchIds.includes(homeBranch._id)).map(async (trainer) => {
-        const slots = await ptSlots(ctx, actor.organization, trainer, homeBranch, today, slotsUntil);
-        const trainerBranches = trainer.branchIds.map((id) => branches.find((branch) => branch._id === id)).filter((branch): branch is NonNullable<typeof branch> => Boolean(branch));
-        return { id: trainer.publicId, displayName: trainer.displayName, specialties: [...trainer.specialties], languages: [...trainer.languages], branchIds: trainerBranches.map((branch) => publicBranchId(branch)), branchNames: trainerBranches.map((branch) => branch.name), published: true, nextSlotAt: optionalString(slots[0]?.startsAt), openSlots: slots.length, slotsCheckedUntil: slotsUntil };
-      }))
-    : [];
-
-  const base = { charges, ptOrders: ptOrderViews, pt, membership, tasks, classes: { policyEnabled: classPolicy.enabled, horizonDays: RESOLUTION_CLASS_HORIZON_DAYS, options: classOptions }, trainers: { credits: pt.available, options: trainerOptions }, plans };
-  return {
-    memberId,
-    memberName: stringValue(member.fullName),
-    gender: member.gender === "male" || member.gender === "female" ? member.gender : undefined,
-    preferredLanguage: stringValue(member.preferredLanguage) === "ar" ? "ar" : "en",
-    homeBranchId,
-    homeBranchName: homeBranch?.name ?? "—",
-    currency,
-    timezone,
-    generatedAt: nowIso,
-    panels: permittedResolutionPanels(actor.permissions).map((panel) => panel.id),
-    access: { payments: canSeePayments, tasks: hasPermission(actor, "crm.read"), roster: hasPermission(actor, "members.write") || hasPermission(actor, "pt.book_for_member"), sell: hasPermission(actor, "memberships.sell"), collect: hasPermission(actor, "payments.collect") },
-    facts: resolutionFacts(base),
-    ...base,
-    payments,
-    evidence,
-    taskEvents,
-  };
 }
 
 
@@ -6135,8 +5931,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
           return [];
         });
     }
-    case "members.resolution":
-      return await memberResolutionContextData(ctx, actor, recordId(input.memberId));
     case "members.followup_context":
       return await memberFollowUpContextData(ctx, actor, recordId(input.memberId));
     case "members.timeline": {
@@ -12307,8 +12101,10 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
     return facts && !facts.hasConversion && !facts.hasLoss;
   }).length;
   const overdue = tasks.filter((task) => task.status === "open" && stringValue(task.dueAt) < isoNow()).length;
-  const renewals = memberships.filter((membership) => { const status = statusOfMembership(membership, today); const days = diffDays(today, stringValue(membership.endDate)); return (status === "expiring" || status === "active") && days <= 7 && days >= 0; }).length;
-  const expiredUnactioned = memberships.filter((membership) => statusOfMembership(membership, today) === "expired" && !memberships.some((other) => other.previousMembershipId === membership.id)).length;
+  // A membership that already has a renewal is not "ending" work any more; the Today list skips it too.
+  const renewedMembershipIds = new Set(memberships.map((membership) => optionalString(membership.previousMembershipId)).filter(Boolean));
+  const renewals = memberships.filter((membership) => { const status = statusOfMembership(membership, today); const days = diffDays(today, stringValue(membership.endDate)); return (status === "expiring" || status === "active") && days <= 7 && days >= 0 && !renewedMembershipIds.has(stringValue(membership.id)); }).length;
+  const expiredUnactioned = memberships.filter((membership) => statusOfMembership(membership, today) === "expired" && !renewedMembershipIds.has(stringValue(membership.id))).length;
   const checkinsToday = checkins.filter((checkin) => checkin.decision !== "blocked" && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length;
   const branchRows = await accessibleBranches(ctx, actor);
   const branchRevenue = await Promise.all(branchRows.map(async (branch) => { const id = publicBranchId(branch); const collected = validPayments.filter((payment) => payment.branchId === id && ["payment", "retail_sale"].includes(stringValue(payment.type))).reduce((sum, payment) => sum + amountOf(payment.amount), 0); const branchMembers = members.filter((member) => member.homeBranchId === id); return { branchId: id, branchName: branch.name, collected: money(collected, actor.organization.currency), checkInsToday: checkins.filter((checkin) => checkin.branchId === id && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length, activeMembers: branchMembers.filter((member) => member.status === "active").length }; }));
@@ -12456,7 +12252,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
         id: `at-risk:${risk.memberId}`,
         kind: "at_risk",
         priority: risk.priority,
-        title: `Reconnect with ${stringValue(member.fullName)}`,
+        title: `Contact ${stringValue(member.fullName)}`,
         detail: `${risk.reasons.map((reason) => reason.label).join(" · ")}${plan ? ` · ${stringValue(plan.name)}` : ""}`,
         subjectName: stringValue(member.fullName),
         subject: { kind: "member", id: risk.memberId },
@@ -12481,7 +12277,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
         kind: "outstanding_balance",
         priority: "high",
         title: `Collect from ${stringValue(member.fullName)}`,
-        detail: "Outstanding member balance",
+        detail: "Owes money",
         subjectName: stringValue(member.fullName),
         subject: { kind: "member", id: memberId },
         branchName: homeBranchId ? branchNameById.get(homeBranchId) : undefined,
@@ -12506,8 +12302,8 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
         id: `access:${stringValue(checkin.memberId)}`,
         kind: "access_denial",
         priority: "urgent",
-        title: `Resolve entry for ${stringValue(checkin.memberName)}`,
-        detail: arrayValue(checkin.reasonCodes).map((reason) => stringValue(reason).toLowerCase().replaceAll("_", " ")).join(" · ") || "Entry blocked",
+        title: `${stringValue(checkin.memberName)} was refused entry`,
+        detail: arrayValue(checkin.reasonCodes).map((reason) => stringValue(reason).toLowerCase().replaceAll("_", " ")).join(" · ") || "Entry refused",
         subjectName: stringValue(checkin.memberName),
         branchName: checkinBranchId ? branchNameById.get(checkinBranchId) : undefined,
         occurredAt: stringValue(checkin.occurredAt),
@@ -12543,8 +12339,8 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
         id: `variance:${stringValue(shift.id)}`,
         kind: "cash_variance",
         priority: "urgent",
-        title: `Review ${shiftBranchId ? branchNameById.get(shiftBranchId) ?? "branch" : "branch"} cash variance`,
-        detail: `Closed shift opened by ${stringValue(shift.openedByName)}`,
+        title: `Check the cash difference at ${shiftBranchId ? branchNameById.get(shiftBranchId) ?? "the branch" : "the branch"}`,
+        detail: `Shift opened by ${stringValue(shift.openedByName)}`,
         branchName: shiftBranchId ? branchNameById.get(shiftBranchId) : undefined,
         occurredAt: optionalString(shift.closedAt),
         amount: money(amountOf(shift.variance), stringValue(data(shift.variance).currency, actor.organization.currency)),

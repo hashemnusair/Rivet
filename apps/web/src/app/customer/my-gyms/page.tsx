@@ -66,13 +66,13 @@ function MemberHome() {
       <header>
         <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight">Hi, {customer.name.split(" ")[0]}</h1>
         <p className="mt-1 text-[13.5px] text-ink-2">
-          {count > 0 ? "Your entry pass and memberships, ready when you are." : "Your memberships appear here as soon as a gym activates one."}
+          {count > 0 ? "Your memberships and entry codes." : "When a gym adds your membership, it shows here."}
         </p>
       </header>
 
       <section className="mt-7" aria-labelledby="subscribed-gyms-title">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 id="subscribed-gyms-title" className="text-[17px] font-semibold">Subscribed gyms</h2>
+          <h2 id="subscribed-gyms-title" className="text-[17px] font-semibold">Your gyms</h2>
           <span className="text-[12px] tabular text-ink-3">{count} {count === 1 ? "gym" : "gyms"}</span>
         </div>
         {count > 0 ? (
@@ -87,7 +87,7 @@ function MemberHome() {
             className="mt-3"
             icon={Search}
             title="No gym membership yet"
-            description="Find a gym on RIVET and book a free trial. Your membership appears here as soon as the gym activates it."
+            description="Find a gym and book a free trial. When the gym adds your membership, it shows here."
             action={<Button asChild><Link href="/customer/discover"><Search /> Find a gym</Link></Button>}
           />
         )}
@@ -129,7 +129,7 @@ function MembershipPass({ membership, gym, onShowPass }: { membership: CustomerM
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
-        <Button size="sm" onClick={onShowPass}><QrCode /> Entry QR</Button>
+        <Button size="sm" onClick={onShowPass}><QrCode /> Entry code</Button>
         <Button asChild size="sm" variant="secondary"><Link href={href}>Membership <ArrowRight /></Link></Button>
         <span className="ms-auto font-mono text-[12px] text-ink-3">{membership.memberNumber}</span>
       </div>
@@ -150,7 +150,7 @@ function SignedOut() {
     <main className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center">
       <span className="flex size-11 items-center justify-center rounded-lg border border-line-2 bg-surface text-ink-2"><UserRound className="size-5" aria-hidden /></span>
       <h1 className="mt-5 font-display text-[22px] font-semibold tracking-tight">Sign in to your member account</h1>
-      <p className="mt-2 text-[13.5px] text-ink-2">Your gym memberships and personal profile are available after sign in.</p>
+      <p className="mt-2 text-[13.5px] text-ink-2">Sign in to see your memberships and profile.</p>
       <div className="mt-6 flex gap-2">
         <Button asChild><Link href="/login">Sign in</Link></Button>
         <Button asChild variant="secondary"><Link href="/login/member/create">Create an account</Link></Button>

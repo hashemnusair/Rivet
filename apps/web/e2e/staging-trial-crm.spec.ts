@@ -31,8 +31,8 @@ test.describe("staged trial and simple CRM sale", () => {
     let originalTrialClosesAt = "";
 
     try {
-      await owner.goto("/settings?section=operations", { waitUntil: "domcontentloaded" });
-      await owner.getByRole("tab", { name: "Rules & hours" }).click();
+      await owner.goto("/settings?section=hours", { waitUntil: "domcontentloaded" });
+      await owner.getByRole("tab", { name: "Hours & trials" }).click();
       await chooseFirstAvailableOption(owner, "Branch schedule");
       for (const day of DAYS) {
         const open = owner.getByRole("checkbox", { name: `${day} open` });
@@ -55,13 +55,13 @@ test.describe("staged trial and simple CRM sale", () => {
       }
       if (!dayLabel) throw new Error("The staging gym needs one open branch day with at least a 60-minute window.");
       policyCleanup = cleanup.plan({ targetType: "operational_policy", targetId: dayLabel, action: "preserve", reason: "Restore the original trial schedule after the CRM journey" });
-      await owner.getByRole("button", { name: "Save operational rules" }).click();
-      await expect(owner.getByText("Operational rules saved and audited.")).toBeVisible();
+      await owner.getByRole("button", { name: "Save hours" }).click();
+      await expect(owner.getByText("Branch hours and trial times saved.")).toBeVisible();
 
       await member.goto("/customer/discover", { waitUntil: "domcontentloaded" });
-      const gymCard = member.getByRole("article").filter({ has: member.getByRole("link", { name: "View & book" }) }).first();
+      const gymCard = member.getByRole("article").filter({ has: member.getByRole("link", { name: "View gym" }) }).first();
       await expect(gymCard, "The staging tenant needs one published gym with a configured trial schedule.").toBeVisible();
-      await gymCard.getByRole("link", { name: "View & book" }).click();
+      await gymCard.getByRole("link", { name: "View gym" }).click();
       const fullName = await member.getByRole("textbox", { name: "Full name" }).inputValue();
       expect(fullName.trim(), "The member Clerk storage state must resolve to a named customer profile.").not.toBe("");
       await member.getByRole("textbox", { name: "What are you looking for?" }).fill(`Staging CRM verification ${guard.runId}`);
@@ -123,12 +123,12 @@ test.describe("staged trial and simple CRM sale", () => {
       }
       if (policyCleanup !== undefined && dayLabel) {
         try {
-          await owner.goto("/settings?section=operations", { waitUntil: "domcontentloaded" });
-          await owner.getByRole("tab", { name: "Rules & hours" }).click();
+          await owner.goto("/settings?section=hours", { waitUntil: "domcontentloaded" });
+          await owner.getByRole("tab", { name: "Hours & trials" }).click();
           await chooseFirstAvailableOption(owner, "Branch schedule");
           await restoreTrialWindow(owner, dayLabel, originalTrialEnabled, originalTrialOpensAt, originalTrialClosesAt);
-          await owner.getByRole("button", { name: "Save operational rules" }).click();
-          await expect(owner.getByText("Operational rules saved and audited.")).toBeVisible();
+          await owner.getByRole("button", { name: "Save hours" }).click();
+          await expect(owner.getByText("Branch hours and trial times saved.")).toBeVisible();
           cleanup.complete(policyCleanup);
         } catch (error) {
           cleanup.fail(policyCleanup, error);

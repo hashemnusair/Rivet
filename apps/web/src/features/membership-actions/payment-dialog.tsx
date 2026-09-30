@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const schema = z.object({
-  amount: z.string().min(1, "Amount is required"),
+  amount: z.string().min(1, "Enter an amount"),
   method: z.enum(["cash", "card", "bank_transfer", "cliq", "other"]),
   reference: z.string().optional(),
 });
@@ -38,10 +38,10 @@ type FormValues = z.infer<typeof schema>;
 
 /** Methods RIVET only records: the money moved somewhere RIVET cannot see. */
 const RECORDED_ONLY_NOTE: Partial<Record<PaymentMethodKey, string>> = {
-  card: "RIVET records the card payment as received. It does not charge the card or confirm settlement.",
-  cliq: "RIVET records the CliQ transfer as received. It does not confirm it with the bank.",
-  bank_transfer: "RIVET records the transfer as received. It does not confirm it with the bank.",
-  other: "RIVET records this payment as received; nothing is processed through a provider.",
+  card: "RIVET does not charge the card. Make sure the card machine approved it.",
+  cliq: "RIVET does not check CliQ with the bank. Make sure the money arrived.",
+  bank_transfer: "RIVET does not check transfers with the bank. Make sure the money arrived.",
+  other: "RIVET only saves this payment. Make sure you received the money.",
 };
 
 /**
@@ -156,7 +156,7 @@ export function CollectPaymentDialog({
         setCollected(receipt);
         onCollected?.(receipt);
       },
-      onError: (e) => setServerError(isApiError(e) ? e.message : "Payment failed. Nothing was recorded; check the connection and try again."),
+      onError: (e) => setServerError(isApiError(e) ? e.message : "The payment was not saved. Check the connection and try again."),
     },
   );
 
@@ -173,7 +173,7 @@ export function CollectPaymentDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
-          <DialogTitle>{collected ? (collectedPayment?.method === "cash" ? "Cash collected" : `${collectedMethodLabel} payment recorded`) : "Collect payment"}</DialogTitle>
+          <DialogTitle>{collected ? (collectedPayment?.method === "cash" ? "Cash collected" : `${collectedMethodLabel} payment saved`) : "Collect payment"}</DialogTitle>
           <DialogDescription>
             {member.fullName} · <span className="font-mono">{member.memberNumber}</span>
           </DialogDescription>
@@ -203,7 +203,7 @@ export function CollectPaymentDialog({
                     <dd><MoneyText money={collected.charge.outstandingAmount} className={collected.charge.outstandingAmount.amount > 0 ? "font-semibold text-warning-deep" : "font-semibold text-success-deep"} /></dd>
                   </>
                 ) : null}
-                <dt className="text-ink-3">Recorded by</dt>
+                <dt className="text-ink-3">Collected by</dt>
                 <dd>{collectedPayment.collectedByName}</dd>
               </dl>
               {RECORDED_ONLY_NOTE[collectedPayment.method] ? <p className="text-[12px] text-ink-3">{RECORDED_ONLY_NOTE[collectedPayment.method]}</p> : null}
@@ -222,7 +222,7 @@ export function CollectPaymentDialog({
           onSubmit={form.handleSubmit((values) => {
             setServerError(null);
             if (!amountRead.ok) {
-              form.setError("amount", { message: amountRead.problem === "empty" ? "Amount is required" : amountRead.message });
+              form.setError("amount", { message: amountRead.problem === "empty" ? "Enter an amount" : amountRead.message });
               return;
             }
             if (amountValue.amount <= 0) {
@@ -230,11 +230,11 @@ export function CollectPaymentDialog({
               return;
             }
             if (amountValue.amount > outstanding.amount) {
-              form.setError("amount", { message: `Cannot exceed the ${toMajorString(outstanding)} ${currency} owed on this invoice` });
+              form.setError("amount", { message: `Can't be more than the ${toMajorString(outstanding)} ${currency} owed on this invoice` });
               return;
             }
             if (referenceRequired && !values.reference?.trim()) {
-              form.setError("reference", { message: "Reference is required for this payment method" });
+              form.setError("reference", { message: "Type the reference number for this payment" });
               return;
             }
             const method = methods.find((m) => m.key === values.method);
@@ -248,26 +248,26 @@ export function CollectPaymentDialog({
           <DialogBody className="space-y-4">
             {initialChargeMissing && !selectedCharge ? (
               <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2.5 text-[13px] text-warning-deep">
-                The invoice this payment was opened for is no longer outstanding. Choose the invoice to collect below.
+                This invoice no longer needs payment. Choose an invoice below.
               </p>
             ) : null}
             {outstanding.amount <= 0 && !initialChargeMissing ? (
               <p className="rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[13px] text-ink-2">
-                No outstanding balance — this member is fully paid up.
+                Nothing to pay. This member owes nothing.
               </p>
             ) : (
               <>
                 {selectedCharge ? (
                   <div className="flex items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2.5">
                     <span className="min-w-0">
-                      <span className="block text-[13px] font-medium text-warning-deep">Outstanding balance</span>
+                      <span className="block text-[13px] font-medium text-warning-deep">Unpaid</span>
                       <span className="block truncate text-[12px] text-ink-2" data-testid="payment-invoice">{selectedCharge.description}</span>
                     </span>
                     <MoneyText money={outstanding} className="shrink-0 text-[15px] font-semibold text-warning-deep" />
                   </div>
                 ) : outstanding.amount > 0 ? (
                   <div className="flex items-center justify-between rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2.5">
-                    <span className="text-[13px] font-medium text-warning-deep">Outstanding balance</span>
+                    <span className="text-[13px] font-medium text-warning-deep">Unpaid</span>
                     <MoneyText money={outstanding} className="text-[15px] font-semibold text-warning-deep" />
                   </div>
                 ) : null}
@@ -284,12 +284,12 @@ export function CollectPaymentDialog({
                       }}
                     >
                       <SelectTrigger aria-label="Invoice to collect">
-                        <SelectValue placeholder="Select an invoice" />
+                        <SelectValue placeholder="Choose an invoice" />
                       </SelectTrigger>
                       <SelectContent>
                         {charges.map((charge) => (
                           <SelectItem key={charge.id} value={charge.id}>
-                            {charge.description} · {toMajorString(charge.outstandingAmount)} {charge.outstandingAmount.currency} due
+                            {charge.description} · {toMajorString(charge.outstandingAmount)} {charge.outstandingAmount.currency} unpaid
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -324,11 +324,11 @@ export function CollectPaymentDialog({
                         />
                       </Field>
                     </FieldGrid>
-                    <Field label="External reference" required={referenceRequired} error={form.formState.errors.reference?.message} hint={referenceRequired ? `Enter the POS slip or provider reference. ${RECORDED_ONLY_NOTE[selectedMethod] ?? ""}`.trim() : "Optional for this payment method."}>
-                      <Input {...form.register("reference")} placeholder="e.g. POS-88213" dir="ltr" />
+                    <Field label="Reference number" required={referenceRequired} error={form.formState.errors.reference?.message} hint={referenceRequired ? `Type the number from the card machine slip or bank app. ${RECORDED_ONLY_NOTE[selectedMethod] ?? ""}`.trim() : "Optional for this payment method."}>
+                      <Input {...form.register("reference")} placeholder="For example: POS-88213" dir="ltr" />
                     </Field>
                     <div className="flex items-center justify-between border-t border-line pt-3 text-[13px]">
-                      <span className="text-ink-3">Remaining after this payment</span>
+                      <span className="text-ink-3">Still owed after this payment</span>
                       <MoneyText money={after} className={after.amount > 0 ? "font-semibold text-warning-deep" : "font-semibold text-success-deep"} />
                     </div>
                   </>
@@ -342,7 +342,7 @@ export function CollectPaymentDialog({
               Cancel
             </Button>
             <Button type="submit" loading={mutation.isPending} disabled={outstanding.amount <= 0} data-testid="confirm-payment">
-              {mutation.isPending ? "Recording…" : `Collect ${amountValue.amount > 0 ? `${toMajorString(amountValue)} ${currency}` : "payment"}`}
+              {mutation.isPending ? "Saving…" : `Collect ${amountValue.amount > 0 ? `${toMajorString(amountValue)} ${currency}` : "payment"}`}
             </Button>
           </DialogFooter>
         </form>

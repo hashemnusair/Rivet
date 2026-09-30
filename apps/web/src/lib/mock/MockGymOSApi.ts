@@ -76,7 +76,6 @@ import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO
 import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
-import { RESOLUTION_CLASS_HORIZON_DAYS, RESOLUTION_TRAINER_HORIZON_DAYS, chargeService, classEligibility, permittedResolutionPanels, resolutionFacts, selectResolutionEvidence, type ClassBookingPolicyLike } from "../../../convex/resolutionAssist";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
 import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
@@ -4505,8 +4504,10 @@ export class MockGymOSApi implements GymOSApi {
         .reduce((s, c) => s + c.outstandingAmount.amount, 0);
 
       const statuses = this.db.memberships.map((m) => ({ m, s: this.membershipStatusOf(m) }));
+      // A membership that already has a renewal is not "ending" work any more; the Today list skips it too.
+      const renewedMembershipIds = new Set(this.db.memberships.map((membership) => membership.previousMembershipId).filter(Boolean));
       const renewalsDue = statuses.filter(
-        ({ m, s }) => (s === "active" || s === "expiring") && inBranch(m) && diffDays(today, m.endDate) >= 0 && diffDays(today, m.endDate) <= 7,
+        ({ m, s }) => (s === "active" || s === "expiring") && inBranch(m) && diffDays(today, m.endDate) >= 0 && diffDays(today, m.endDate) <= 7 && !renewedMembershipIds.has(m.id),
       ).length;
       const expiredUnactioned = statuses.filter(({ m, s }) => {
         if (s !== "expired" || !inBranch(m)) return false;
@@ -4707,7 +4708,7 @@ export class MockGymOSApi implements GymOSApi {
             id: `at-risk:${risk.memberId}`,
             kind: "at_risk",
             priority: risk.priority,
-            title: `Reconnect with ${member.fullName}`,
+            title: `Contact ${member.fullName}`,
             detail: `${risk.reasons.map((reason) => reason.label).join(" · ")}${plan ? ` · ${plan.name}` : ""}`,
             subjectName: member.fullName,
             subject: { kind: "member", id: member.id },
@@ -4732,7 +4733,7 @@ export class MockGymOSApi implements GymOSApi {
             kind: "outstanding_balance",
             priority: "high",
             title: `Collect from ${member.fullName}`,
-            detail: "Outstanding member balance",
+            detail: "Owes money",
             subjectName: member.fullName,
             subject: { kind: "member", id: member.id },
             branchName: branchNameById.get(member.homeBranchId),
@@ -4755,8 +4756,8 @@ export class MockGymOSApi implements GymOSApi {
             id: `access:${checkIn.memberId}`,
             kind: "access_denial",
             priority: "urgent",
-            title: `Resolve entry for ${checkIn.memberName}`,
-            detail: checkIn.reasonCodes.map((reason) => reason.toLowerCase().replaceAll("_", " ")).join(" · ") || "Entry blocked",
+            title: `${checkIn.memberName} was refused entry`,
+            detail: checkIn.reasonCodes.map((reason) => reason.toLowerCase().replaceAll("_", " ")).join(" · ") || "Entry refused",
             subjectName: checkIn.memberName,
             branchName: branchNameById.get(checkIn.branchId),
             occurredAt: checkIn.occurredAt,
@@ -4790,8 +4791,8 @@ export class MockGymOSApi implements GymOSApi {
             id: `variance:${shift.id}`,
             kind: "cash_variance",
             priority: "urgent",
-            title: `Review ${branchNameById.get(shift.branchId) ?? "branch"} cash variance`,
-            detail: `Closed by ${shift.closedById ? this.db.users.find((user) => user.id === shift.closedById)?.name ?? shift.openedByName : shift.openedByName}`,
+            title: `Check the cash difference at ${branchNameById.get(shift.branchId) ?? "the branch"}`,
+            detail: `Shift closed by ${shift.closedById ? this.db.users.find((user) => user.id === shift.closedById)?.name ?? shift.openedByName : shift.openedByName}`,
             branchName: branchNameById.get(shift.branchId),
             occurredAt: shift.closedAt,
             amount: shift.variance,
@@ -4850,7 +4851,7 @@ export class MockGymOSApi implements GymOSApi {
             id: `checklist-due:${template.id}:${today}`,
             kind: "branch_checklist",
             priority: pastDue ? "high" : "normal",
-            title: `${pastDue ? "Overdue" : "Due"}: ${template.name}`,
+            title: `${pastDue ? "Late" : "Due"}: ${template.name}`,
             detail: `${branchNameById.get(template.branchId) ?? "Branch"} · ${done}/${items.length} done · due ${template.dueTime}`,
             branchName: branchNameById.get(template.branchId),
             overdue: pastDue,
@@ -7406,137 +7407,6 @@ export class MockGymOSApi implements GymOSApi {
     }
     return slots;
   }
-
-  /** The preview's equivalent of `members.resolution`: the same builders over the seeded records, with the same permission gates. */
-  private memberResolutionContextSync(memberId: string): T.MemberResolutionContext {
-    this.require("members.read");
-    const member = this.db.members.find((item) => item.id === memberId);
-    if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
-    const permissions = permissionsFor(this.db, currentRole(this.db));
-    const has = (permission: Permission) => permissions.includes(permission);
-    const today = this.today();
-    const now = Date.now();
-    const nowIso = nowISO();
-    const currency = this.db.organization.currency;
-    const timezone = this.db.organization.timezone || TZ;
-    const homeBranch = this.db.branches.find((branch) => branch.id === member.homeBranchId);
-    const orders = this.ptOrders.filter((order) => order.memberId === member.id).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-    const ptChargeIds = new Set(orders.map((order) => order.chargeId));
-    const ptOrderByCharge = new Map(orders.map((order) => [order.chargeId, order.id]));
-    const charges: T.ResolutionCharge[] = this.db.charges
-      .filter((charge) => charge.memberId === member.id)
-      .map((charge) => ({ id: charge.id, description: charge.description, service: chargeService({ membershipId: charge.membershipId }, ptChargeIds, charge.id), membershipId: charge.membershipId, ptOrderId: ptOrderByCharge.get(charge.id), total: { ...charge.total }, paidAmount: { ...charge.paidAmount }, outstandingAmount: { ...charge.outstandingAmount }, status: charge.status, issueDate: charge.issueDate, dueDate: charge.dueDate, collectible: chargeIsCollectible(charge, today), createdAt: charge.createdAt }))
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-    const chargeById = new Map(charges.map((charge) => [charge.id, charge]));
-    const canSeePayments = has("reports.financial.read");
-    const payments: T.ResolutionPayment[] = canSeePayments
-      ? this.db.payments
-        .filter((payment) => payment.memberId === member.id)
-        .map((payment) => {
-          const charge = payment.chargeId ? chargeById.get(payment.chargeId) : undefined;
-          const service: T.ResolutionService = charge?.service ?? (payment.chargeId && ptChargeIds.has(payment.chargeId) ? "personal_training" : payment.type === "retail_sale" ? "retail" : "other");
-          return { id: payment.id, type: payment.type, amount: { ...payment.amount }, method: payment.method, status: payment.status, receiptId: payment.receiptId, receiptNumber: payment.receiptNumber, occurredAt: payment.occurredAt, chargeId: payment.chargeId, service, chargeDescription: charge?.description, collectedByName: payment.collectedByName, originalPaymentId: payment.originalPaymentId };
-        })
-        .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
-      : [];
-    const currentTerm = this.currentMembership(member.id);
-    const currentPlan = currentTerm ? this.db.plans.find((plan) => plan.id === currentTerm.planId) : undefined;
-    const membership: T.ResolutionMembership | undefined = currentTerm
-      ? (() => {
-          const own = charges.filter((charge) => charge.membershipId === currentTerm.id && charge.service === "membership");
-          const chargeTotal = own.reduce((sum, charge) => sum + charge.total.amount, 0);
-          const chargePaid = own.reduce((sum, charge) => sum + charge.paidAmount.amount, 0);
-          return {
-            id: currentTerm.id,
-            planId: currentTerm.planId,
-            planName: currentPlan?.name ?? "Plan",
-            kind: currentPlan?.kind ?? "time",
-            startDate: currentTerm.startDate,
-            endDate: currentTerm.endDate,
-            status: this.membershipStatusOf(currentTerm),
-            daysUntilExpiry: diffDays(today, currentTerm.endDate),
-            freezeAllowanceDays: currentPlan?.freezeAllowanceDays ?? 0,
-            frozenDaysUsed: currentTerm.frozenDaysUsed,
-            activeFreeze: currentTerm.activeFreeze ? { startDate: currentTerm.activeFreeze.startDate, endDate: currentTerm.activeFreeze.endDate, status: currentTerm.activeFreeze.status } : undefined,
-            totalVisits: currentTerm.totalVisits,
-            remainingVisits: currentTerm.remainingVisits,
-            salePrice: { ...currentTerm.salePrice },
-            outstanding: { amount: own.reduce((sum, charge) => sum + (charge.collectible ? charge.outstandingAmount.amount : 0), 0), currency },
-            paymentStatus: chargeTotal === 0 || chargePaid >= chargeTotal ? "paid" : chargePaid > 0 ? "partial" : "unpaid",
-            includedPtSessions: currentPlan?.includedPtSessions ?? 0,
-            branchAccess: currentPlan?.branchAccess ?? "all",
-            previousMembershipId: currentTerm.previousMembershipId,
-          };
-        })()
-      : undefined;
-    const entitlements = this.ptEntitlements.filter((item) => item.memberId === member.id).map((item) => ({ ...item, available: ptAvailableCredits(item) }));
-    const pt = {
-      available: entitlements.reduce((sum, item) => sum + item.available, 0),
-      reserved: entitlements.reduce((sum, item) => sum + item.reserved, 0),
-      upcomingBookings: this.ptBookings.filter((item) => item.memberId === member.id && ["reserved", "confirmed"].includes(item.status)).sort((left, right) => left.startsAt.localeCompare(right.startsAt)).map((item) => this.ptBookingView(item)).map((booking) => ({ id: booking.id, trainerName: booking.trainerName, startsAt: booking.startsAt, branchName: booking.branchName, status: booking.status })),
-    };
-    const ptOrders: T.ResolutionPtOrder[] = orders.map((order) => ({ id: order.id, packageName: order.packageNameSnapshot ?? order.packageName ?? this.ptPackages.find((item) => item.id === order.packageId)?.name ?? "PT package", sessionCount: order.sessionCountSnapshot ?? 0, totalPrice: { ...(order.totalPriceSnapshot ?? zeroMoney(currency)) }, status: order.status, chargeId: order.chargeId, paidAt: order.paidAt, createdAt: order.createdAt, entitlementId: order.entitlementId }));
-    const { evidence, taskEvents } = selectResolutionEvidence(this.db.activities.filter((event) => event.memberId === member.id));
-    const tasks = has("crm.read") ? this.followUpRelatedTasks({ memberId: member.id }) : [];
-    const plans: T.ResolutionPlan[] = this.db.plans.filter((plan) => plan.status === "active").map((plan) => ({ id: plan.id, name: plan.name, code: plan.code, kind: plan.kind, durationDays: plan.durationDays, visitAllowance: plan.visitAllowance, visitValidityDays: plan.visitValidityDays, price: { ...plan.basePrice }, branchAccess: plan.branchAccess, branchIds: [...plan.branchIds], branchNames: plan.branchIds.map((id) => this.db.branches.find((branch) => branch.id === id)?.name ?? id), freezeAllowanceDays: plan.freezeAllowanceDays, includedPtSessions: plan.includedPtSessions ?? 0, status: plan.status })).sort((left, right) => left.name.localeCompare(right.name));
-    const policy = this.db.operationalPolicies.classBooking;
-    const classPolicy: ClassBookingPolicyLike = { enabled: policy.enabled, eligibilityMode: policy.eligibilityMode, eligiblePlanIds: [...policy.eligiblePlanIds], maxActiveBookingsPerMember: policy.maxActiveBookingsPerMember, waitlistEnabled: policy.waitlistEnabled, waitlistSize: policy.waitlistSize, bookingHorizonDays: policy.bookingHorizonDays };
-    const toDate = addDays(today, RESOLUTION_CLASS_HORIZON_DAYS);
-    if (homeBranch) {
-      for (let date = today; date <= toDate; date = addDays(date, 1)) {
-        const day = new Date(`${date}T12:00:00Z`).getUTCDay();
-        for (const template of this.classSessions.filter((candidate) => candidate.branchId === homeBranch.id && candidate.dayOfWeek === day)) this.materializeClassOccurrence(template, date);
-      }
-    }
-    const occurrences = homeBranch ? this.classOccurrences.filter((candidate) => candidate.branchId === homeBranch.id && candidate.date >= today && candidate.date <= toDate).sort((left, right) => left.startsAt.localeCompare(right.startsAt)).map((candidate) => this.refreshClassOccurrence(candidate)) : [];
-    const memberActive = (entry: T.ClassOccurrenceRosterEntry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status);
-    const activeBookings = occurrences.reduce((count, occurrence) => count + (occurrence.startsAt >= nowIso ? occurrence.roster.filter(memberActive).length : 0), 0);
-    const classOptions: T.ResolutionClassOption[] = occurrences.map((occurrence) => {
-      const alreadyBooked = occurrence.roster.some(memberActive);
-      const eligibility = classEligibility({
-        occurrence: { id: occurrence.id, date: occurrence.date, startsAt: occurrence.startsAt, endsAt: occurrence.endsAt, status: occurrence.status, audience: occurrence.audience, capacity: occurrence.capacity, bookedCount: occurrence.bookedCount, waitlistCount: occurrence.waitlistCount, branchId: occurrence.branchId },
-        policy: classPolicy,
-        member: { id: member.id, gender: member.gender },
-        membership: currentTerm ? { planId: currentTerm.planId, startDate: currentTerm.startDate, endDate: currentTerm.endDate, cancelledAt: currentTerm.cancelledAt, activeFreeze: currentTerm.activeFreeze ? { startDate: currentTerm.activeFreeze.startDate, endDate: currentTerm.activeFreeze.endDate, status: currentTerm.activeFreeze.status } : undefined, homeBranchId: currentTerm.homeBranchId, remainingVisits: currentTerm.remainingVisits, totalVisits: currentTerm.totalVisits } : undefined,
-        plan: currentPlan ? { branchAccess: currentPlan.branchAccess, branchIds: currentPlan.branchIds } : undefined,
-        activeBookings,
-        alreadyBooked,
-        now,
-      });
-      return { id: occurrence.id, name: occurrence.name, date: occurrence.date, startsAt: occurrence.startsAt, endsAt: occurrence.endsAt, branchId: occurrence.branchId, branchName: occurrence.branchName, coachName: occurrence.coachName, audience: occurrence.audience, capacity: occurrence.capacity, spotsRemaining: occurrence.spotsRemaining, waitlistCount: occurrence.waitlistCount, status: occurrence.status, eligible: eligibility.eligible, wouldWaitlist: eligibility.wouldWaitlist, blockReason: eligibility.reason, alreadyBooked };
-    });
-    const slotsUntil = addDays(today, RESOLUTION_TRAINER_HORIZON_DAYS);
-    const trainerOptions: T.ResolutionTrainerOption[] = homeBranch
-      ? this.ptTrainers.filter((trainer) => trainer.status === "published" && trainer.branchIds.includes(homeBranch.id)).map((trainer) => {
-          const slots = this.ptOpenSlots(trainer, homeBranch.id, today, slotsUntil);
-          return { id: trainer.id, displayName: trainer.displayName, specialties: [...trainer.specialties], languages: [...trainer.languages], branchIds: [...trainer.branchIds], branchNames: trainer.branchIds.map((id) => this.db.branches.find((branch) => branch.id === id)?.name ?? id), published: true, nextSlotAt: slots[0]?.startsAt, openSlots: slots.length, slotsCheckedUntil: slotsUntil };
-        })
-      : [];
-    const base = { charges, ptOrders, pt, membership, tasks, classes: { policyEnabled: policy.enabled, horizonDays: RESOLUTION_CLASS_HORIZON_DAYS, options: classOptions }, trainers: { credits: pt.available, options: trainerOptions }, plans };
-    return {
-      memberId: member.id,
-      memberName: member.fullName,
-      gender: member.gender,
-      preferredLanguage: member.preferredLanguage,
-      homeBranchId: member.homeBranchId,
-      homeBranchName: homeBranch?.name ?? "—",
-      currency,
-      timezone,
-      generatedAt: nowIso,
-      panels: permittedResolutionPanels(permissions).map((panel) => panel.id),
-      access: { payments: canSeePayments, tasks: has("crm.read"), roster: has("members.write") || has("pt.book_for_member"), sell: has("memberships.sell"), collect: has("payments.collect") },
-      facts: resolutionFacts(base),
-      ...base,
-      payments,
-      evidence,
-      taskEvents,
-    };
-  }
-
-  getMemberResolutionContext(memberId: T.UUID): Promise<T.MemberResolutionContext> {
-    return this.respond(() => this.memberResolutionContextSync(memberId));
-  }
-
 
   getMemberFollowUpContext(memberId: T.UUID): Promise<T.MemberFollowUpContext> {
     return this.respond(() => this.memberFollowUpContextSync(memberId));

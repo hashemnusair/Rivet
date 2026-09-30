@@ -65,7 +65,7 @@ function ProfileCompletionForm() {
           <UserRound className="size-4 text-signal" /> Finish setting up your profile
         </p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">
-          You are signed in{user?.primaryEmailAddress ? <> as <span className="font-medium">{user.primaryEmailAddress.emailAddress}</span></> : null}, but this account has no name yet. Enter the name your gym team or membership should display — you only do this once.
+          You are signed in{user?.primaryEmailAddress ? <> as <span className="font-medium">{user.primaryEmailAddress.emailAddress}</span></> : null}. Add your name to continue. You only do this once.
         </p>
 
         <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={submit} noValidate>

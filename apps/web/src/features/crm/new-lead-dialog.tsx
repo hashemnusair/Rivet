@@ -22,9 +22,9 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const schema = z.object({
-  fullName: z.string().min(3, "Name is required"),
-  phone: z.string().refine((value) => isValidLeadPhone(value), "Enter a valid phone"),
-  email: z.string().refine((value) => isValidOptionalEmail(value), "Invalid email").optional(),
+  fullName: z.string().min(3, "Enter the full name"),
+  phone: z.string().refine((value) => isValidLeadPhone(value), "Enter a valid phone number"),
+  email: z.string().refine((value) => isValidOptionalEmail(value), "Enter a valid email").optional(),
   branchId: z.string().min(1, "Choose a branch"),
   source: z.enum(["instagram", "walk_in", "referral", "whatsapp", "google", "phone_call", "other"]),
   ownerId: z.string().optional(),
@@ -108,7 +108,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         await invalidate();
         onOpenChange(false);
       },
-      onError: (e) => setServerError(isApiError(e) ? e.message : "Could not create the lead."),
+      onError: (e) => setServerError(isApiError(e) ? e.message : "The lead was not saved. Try again."),
     },
   );
 
@@ -122,7 +122,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         <form onSubmit={form.handleSubmit((v) => {
           const selectedBranchId = visibleBranchId(session?.branches, v.branchId);
           if (!selectedBranchId) {
-            form.setError("branchId", { message: "Choose a visible branch" });
+            form.setError("branchId", { message: "Choose one of your branches" });
             return;
           }
           mutation.mutate({ ...v, branchId: selectedBranchId });
@@ -145,8 +145,8 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden />
               </summary>
               <div className="space-y-4 border-t border-line p-3">
-                <Field label="Email" htmlFor="lead-email" hint="Optional — used for follow-up and identity matching." error={form.formState.errors.email?.message}>
-                  <Input id="lead-email" type="email" autoComplete="email" placeholder="prospect@example.com" {...form.register("email")} />
+                <Field label="Email" htmlFor="lead-email" hint="Optional." error={form.formState.errors.email?.message}>
+                  <Input id="lead-email" type="email" autoComplete="email" placeholder="name@example.com" {...form.register("email")} />
                 </Field>
                 <FieldGrid className="sm:grid-cols-2">
                   <Field label="Branch" required error={form.formState.errors.branchId?.message}>
@@ -213,7 +213,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                       )}
                     />
                   </Field>
-                  <Field label="Expected value (JOD)">
+                  <Field label="Expected sale amount (JOD)">
                     <Input inputMode="decimal" placeholder="105.000" {...form.register("expectedValue")} />
                   </Field>
                   <Field label="First follow-up">

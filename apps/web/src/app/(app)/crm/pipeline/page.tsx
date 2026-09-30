@@ -31,10 +31,10 @@ import type { BulkOperationKind } from "@/lib/domain/qol";
 
 type PipelineColumn = "trial" | "sold" | "not_sold" | "no_answer";
 const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; label: string; hint: string }> = [
-  { column: "trial", label: "Trial", hint: "New leads and active trial work" },
-  { column: "sold", label: "Membership sold", hint: "Completed membership sales" },
-  { column: "not_sold", label: "Membership not sold", hint: "Closed without a membership" },
-  { column: "no_answer", label: "Did not answer", hint: "Contact attempts still unanswered" },
+  { column: "trial", label: "Trial", hint: "New leads and trials in progress" },
+  { column: "sold", label: "Membership sold", hint: "Bought a membership" },
+  { column: "not_sold", label: "Membership not sold", hint: "Did not buy" },
+  { column: "no_answer", label: "Did not answer", hint: "Called, no answer yet" },
 ];
 
 function pipelineColumn(lead: LeadSummary): PipelineColumn {
@@ -127,10 +127,10 @@ function PipelinePageInner() {
   const moveLead = useApiMutation((api, input: { lead: LeadSummary; target: PipelineColumn }) => {
     const { lead, target } = input;
     if (target === "sold") return Promise.reject(new Error("Open the lead to complete the membership sale."));
-    if (target === "not_sold") return Promise.reject(new Error("A reason is required before closing a lead."));
+    if (target === "not_sold") return Promise.reject(new Error("Give a reason before marking it not sold."));
     // No stage is forced: the server moves a new lead to "attempted" and leaves a
     // booked trial where it is. The column is derived from the outcome itself.
-    if (target === "no_answer") return api.logContactAttempt(lead.id, { outcome: "no_answer", notes: "Moved to Did not answer from the pipeline." });
+    if (target === "no_answer") return api.logContactAttempt(lead.id, { outcome: "no_answer", notes: "Moved to Did not answer on the Leads page." });
     return api.updateLead(lead.id, { stage: "contacted", lostReason: undefined });
   }, {
     onSuccess: async (_updated, input) => {
@@ -141,7 +141,7 @@ function PipelinePageInner() {
     onError: (error, input) => {
       setDragOverColumn(undefined);
       if (input.target === "sold") {
-        toast.error("Open the lead to complete and record the membership sale.");
+        toast.error("Open the lead to record the sale.");
         router.push(`/crm/leads/${input.lead.id}`);
       } else {
         toast.error(error instanceof Error ? error.message : "The lead could not be moved.");
@@ -163,7 +163,7 @@ function PipelinePageInner() {
         setLossReason("");
         setLossError(undefined);
       },
-      onError: (error) => setLossError(error instanceof Error ? error.message : "The lead could not be closed."),
+      onError: (error) => setLossError(error instanceof Error ? error.message : "Not saved. Try again."),
     },
   );
 
@@ -196,7 +196,7 @@ function PipelinePageInner() {
     if (target === "sold") {
       setDragOverColumn(undefined);
       router.push(`/crm/leads/${lead.id}`);
-      toast.info("Complete the membership sale from the lead record.");
+      toast.info("Record the sale on the lead page.");
       return;
     }
     moveLead.mutate({ lead, target });
@@ -206,7 +206,7 @@ function PipelinePageInner() {
     <div className="flex h-full flex-col space-y-4">
       <PageHeader
         title="Leads"
-        description="Contact a lead, follow up on a trial, or finish a membership sale."
+        description="Call leads, follow up on trials, and record sales."
         actions={
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-line-2 p-0.5" role="group" aria-label="Lead view">
@@ -235,10 +235,10 @@ function PipelinePageInner() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="w-full max-w-xs"><Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Filter by name or phone…" aria-label="Filter leads" /></div>
+        <div className="w-full max-w-xs"><Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name or phone…" aria-label="Search leads" /></div>
       </div>
 
-      {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> Bulk action</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>Clear selection</button></div> : null}
+      {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> Change selected</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>Clear selection</button></div> : null}
 
       {isBackgroundError ? <ErrorState layout="inline" title="Leads could not refresh" onRetry={() => refetch()} /> : null}
       {isLoading && !data ? (
@@ -250,7 +250,7 @@ function PipelinePageInner() {
       ) : isError && !data ? (
         // A role without CRM access lands here by direct URL; say so instead
         // of offering a retry that can never succeed.
-        <QueryErrorState error={error} onRetry={() => refetch()} forbiddenDescription="Leads need the CRM permission that sales, managers and owners have." />
+        <QueryErrorState error={error} onRetry={() => refetch()} forbiddenDescription="Only sales staff, managers and owners can see leads." />
       ) : view === "list" ? (
         <LeadListView
           leads={leads}
@@ -304,7 +304,7 @@ function PipelinePageInner() {
         </div>
       )}
 
-      {data && data.totalPages > 1 && view === "board" ? <p className="text-[12px] text-ink-2">Column counts and expected values cover this page of leads.</p> : null}
+      {data && data.totalPages > 1 && view === "board" ? <p className="text-[12px] text-ink-2">Counts and amounts are for this page only.</p> : null}
       {data ? <DataPagination page={data} onPage={(next) => { setPage(next); replaceParams({ page: next === 1 ? undefined : String(next) }); }} className="border-t border-line pt-3" /> : null}
 
       <NewLeadDialog open={newOpen} onOpenChange={setNewOpen} />
@@ -313,7 +313,7 @@ function PipelinePageInner() {
           <DialogHeader>
             <DialogTitle>Mark membership as not sold?</DialogTitle>
             <DialogDescription>
-              {lossLead?.fullName ?? "This lead"} will leave the active pipeline. Record the real reason so the team can learn from it later.
+              {lossLead?.fullName ?? "This lead"} leaves the active leads. Write the real reason so the team can learn from it.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -324,7 +324,7 @@ function PipelinePageInner() {
               className="mt-1.5"
               value={lossReason}
               onChange={(event) => { setLossReason(event.target.value); setLossError(undefined); }}
-              placeholder="e.g. Price too high; asked us to follow up next quarter"
+              placeholder="For example: price too high, call again in 3 months"
             />
             {lossError ? <p role="alert" className="mt-2 text-[12.5px] text-danger">{lossError}</p> : null}
           </DialogBody>
@@ -342,7 +342,7 @@ function PipelinePageInner() {
         </DialogContent>
       </Dialog>
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-        <DialogContent><DialogHeader><DialogTitle>Update {selected.size} leads</DialogTitle><DialogDescription>Each lead is permission-checked and the batch result is recorded in the audit history.</DialogDescription></DialogHeader><DialogBody className="space-y-4"><label className="grid gap-1.5 text-[12.5px] font-medium">Action<Select value={bulkKind} onValueChange={(value) => { setBulkKind(value as BulkOperationKind); setBulkValue(""); setBulkReason(""); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="leads_create_follow_up">Create follow-up</SelectItem><SelectItem value="leads_assign_owner">Assign owner</SelectItem><SelectItem value="leads_close_lost">Close as not sold</SelectItem></SelectContent></Select></label>{bulkKind === "leads_create_follow_up" ? <label className="grid gap-1.5 text-[12.5px] font-medium">Due date and time<Input type="datetime-local" value={bulkValue} onChange={(event) => setBulkValue(event.target.value)} /></label> : bulkKind === "leads_assign_owner" ? <label className="grid gap-1.5 text-[12.5px] font-medium">Owner<Select value={bulkValue || "none"} onValueChange={setBulkValue}><SelectTrigger><SelectValue placeholder="Choose owner" /></SelectTrigger><SelectContent><SelectItem value="none" disabled>Choose owner</SelectItem>{(users.data?.items ?? []).map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent></Select></label> : <label className="grid gap-1.5 text-[12.5px] font-medium">Reason<Textarea value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="Why were these leads not sold?" /></label>}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setBulkOpen(false)}>Cancel</Button><Button variant={bulkKind === "leads_close_lost" ? "danger" : "primary"} disabled={!selected.size || (bulkKind === "leads_close_lost" ? bulkReason.trim().length < 3 : !bulkValue)} loading={runBulk.isPending} onClick={() => runBulk.mutate()}>Apply to {selected.size}</Button></DialogFooter></DialogContent>
+        <DialogContent><DialogHeader><DialogTitle>Update {selected.size} leads</DialogTitle><DialogDescription>Choose what to change for the selected leads.</DialogDescription></DialogHeader><DialogBody className="space-y-4"><label className="grid gap-1.5 text-[12.5px] font-medium">What to do<Select value={bulkKind} onValueChange={(value) => { setBulkKind(value as BulkOperationKind); setBulkValue(""); setBulkReason(""); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="leads_create_follow_up">Add a follow-up</SelectItem><SelectItem value="leads_assign_owner">Change owner</SelectItem><SelectItem value="leads_close_lost">Mark as not sold</SelectItem></SelectContent></Select></label>{bulkKind === "leads_create_follow_up" ? <label className="grid gap-1.5 text-[12.5px] font-medium">Due date and time<Input type="datetime-local" value={bulkValue} onChange={(event) => setBulkValue(event.target.value)} /></label> : bulkKind === "leads_assign_owner" ? <label className="grid gap-1.5 text-[12.5px] font-medium">Owner<Select value={bulkValue || "none"} onValueChange={setBulkValue}><SelectTrigger><SelectValue placeholder="Choose owner" /></SelectTrigger><SelectContent><SelectItem value="none" disabled>Choose owner</SelectItem>{(users.data?.items ?? []).map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent></Select></label> : <label className="grid gap-1.5 text-[12.5px] font-medium">Reason<Textarea value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="Why were these leads not sold?" /></label>}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setBulkOpen(false)}>Cancel</Button><Button variant={bulkKind === "leads_close_lost" ? "danger" : "primary"} disabled={!selected.size || (bulkKind === "leads_close_lost" ? bulkReason.trim().length < 3 : !bulkValue)} loading={runBulk.isPending} onClick={() => runBulk.mutate()}>Update {selected.size} leads</Button></DialogFooter></DialogContent>
       </Dialog>
     </div>
   );
@@ -413,11 +413,11 @@ function LeadCard({
 
 function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange }: { leads: LeadSummary[]; onNoAnswer: (lead: LeadSummary) => void; onNotSold: (lead: LeadSummary) => void; selected: Set<string>; onSelectedChange: (selected: Set<string>) => void }) {
   if (leads.length === 0) {
-    return <EmptyState layout="section" title="No leads match this view" description="Try another name or phone number, or create a lead to start a new conversation." />;
+    return <EmptyState layout="section" title="No leads found" description="Try another name or phone number, or add a new lead." />;
   }
   return (
     <div className="panel overflow-hidden">
-      <ul className="divide-y divide-line xl:hidden" aria-label="Lead records">
+      <ul className="divide-y divide-line xl:hidden" aria-label="Leads">
         {leads.map((lead) => <li key={lead.id} className="p-4" data-testid="lead-compact-row">
           <div className="mb-3 flex items-center justify-between gap-3"><Checkbox checked={selected.has(lead.id)} onCheckedChange={(checked) => { const next = new Set(selected); if (checked) next.add(lead.id); else next.delete(lead.id); onSelectedChange(next); }} aria-label={`Select ${lead.fullName}`} /><span className="text-[12px] text-ink-2">{columnLabel(pipelineColumn(lead))}</span></div>
           <LeadCard embedded lead={lead} column={pipelineColumn(lead)} onNoAnswer={() => onNoAnswer(lead)} onNotSold={() => onNotSold(lead)} />
@@ -428,7 +428,7 @@ function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange
           <thead>
             <tr className="border-b border-line">
               <th className="w-10 px-3 py-2 text-start"><Checkbox checked={leads.length > 0 && leads.every((lead) => selected.has(lead.id))} onCheckedChange={(checked) => { const next = new Set(selected); leads.forEach((lead) => { if (checked) next.add(lead.id); else next.delete(lead.id); }); onSelectedChange(next); }} aria-label="Select all leads on this page" /></th>
-              {["Lead", "Stage", "Owner", "Source", "Expected", "Next follow-up", "Actions"].map((h) => (
+              {["Lead", "Stage", "Owner", "Source", "Expected sale", "Next follow-up", "Actions"].map((h) => (
                 <th key={h} className="whitespace-nowrap px-3 py-2 text-start text-[12px] font-medium text-ink-3">
                   {h}
                 </th>

@@ -140,7 +140,7 @@ describe("CRM pipeline semantics", () => {
     const user = userEvent.setup();
     render(<PipelinePage />);
 
-    expect(screen.getByText("1–100 of 101")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1 to 100 of 101")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(state.queryKey).toEqual(qk.leads({
       branchId: "branch-1",

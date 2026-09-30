@@ -121,7 +121,7 @@ describe("CRM lead workflow language and transitions", () => {
     await screen.findByRole("dialog", { name: "Edit lead contact" });
     await user.clear(screen.getByRole("textbox", { name: "Full name" }));
     await user.type(screen.getByRole("textbox", { name: "Full name" }), "Corrected Contact");
-    expect(screen.getByRole("status", { name: "" })).toHaveTextContent("Unsaved contact changes");
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent("Changes not saved yet");
     await user.clear(screen.getByRole("textbox", { name: "Email" }));
     await user.type(screen.getByRole("textbox", { name: "Email" }), "  UPDATED@EXAMPLE.COM ");
     await user.click(screen.getByRole("button", { name: "Save contact" }));

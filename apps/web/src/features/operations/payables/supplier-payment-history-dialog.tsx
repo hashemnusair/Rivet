@@ -39,12 +39,12 @@ export function ReverseSupplierPaymentDialog({ payment, open, onOpenChange, onRe
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Reverse supplier payment</DialogTitle>
-          <DialogDescription>{payment ? <>Reverses <MoneyText money={payment.amount} /> paid to {payment.supplierName} by {SUPPLIER_PAYMENT_METHOD_LABELS[payment.method].toLowerCase()}. The allocated balances reopen{payment.method === "cash" ? " and the cash goes back into the open drawer" : ""}. The original payment stays on record.</> : null}</DialogDescription>
+          <DialogDescription>{payment ? <>This cancels the <MoneyText money={payment.amount} /> paid to {payment.supplierName} by {payment.method === "cliq" ? SUPPLIER_PAYMENT_METHOD_LABELS.cliq : SUPPLIER_PAYMENT_METHOD_LABELS[payment.method].toLowerCase()}. The bills it paid will show as owed again{payment.method === "cash" ? ", and the cash goes back into the open drawer" : ""}.</> : null}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-3">
-          <p className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[12.5px] text-danger">This is audited with your name attached and can be done only once.</p>
+          <p className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[12.5px] text-danger">This cannot be undone. Your name is saved with it.</p>
           <Field label="Reason" required>
-            <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. Paid the same invoice twice" data-testid="reverse-supplier-payment-reason" />
+            <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="For example: paid the same invoice twice" data-testid="reverse-supplier-payment-reason" />
           </Field>
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
@@ -64,18 +64,18 @@ export function SupplierPaymentRow({ payment, writeEnabled, onReverse }: { payme
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[13px] font-medium"><MoneyText money={payment.amount} /> · {SUPPLIER_PAYMENT_METHOD_LABELS[payment.method]}{payment.reference ? <span className="font-mono text-[12px] text-ink-2"> · {payment.reference}</span> : null}</p>
-          <p className="text-[11.5px] text-ink-3"><DateTimeText iso={payment.occurredAt} /> · {payment.recordedByName} · {payment.branchName}</p>
+          <p className="text-[12px] text-ink-3"><DateTimeText iso={payment.occurredAt} /> · {payment.recordedByName} · {payment.branchName}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {reversed ? <Badge variant="danger" dot>Reversed</Badge> : <Badge variant="success" dot>Recorded</Badge>}
           <LedgerStatusBadge status={payment.ledgerPostingStatus} />
         </div>
       </div>
-      <ul className="text-[11.5px] text-ink-2">{payment.allocations.map((allocation) => <li key={allocation.payableId} className="flex justify-between gap-3"><span className="truncate">{allocation.sourceLabel}</span><MoneyText money={allocation.amount} /></li>)}</ul>
-      {payment.reversal ? <p className="text-[11.5px] text-danger">Reversed <DateTimeText iso={payment.reversal.reversedAt} /> by {payment.reversal.reversedByName}: {payment.reversal.reason}</p> : null}
+      <ul className="text-[12px] text-ink-2">{payment.allocations.map((allocation) => <li key={allocation.payableId} className="flex justify-between gap-3"><span className="truncate">{allocation.sourceLabel}</span><MoneyText money={allocation.amount} /></li>)}</ul>
+      {payment.reversal ? <p className="text-[12px] text-danger">Reversed <DateTimeText iso={payment.reversal.reversedAt} /> by {payment.reversal.reversedByName}: {payment.reversal.reason}</p> : null}
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
-        <Button asChild size="xs" variant="ghost"><Link href={supplierPaymentHref(payment.id)}><ExternalLink /> Confirmation</Link></Button>
-        {writeEnabled && !reversed && onReverse ? <Button size="xs" variant="ghost" onClick={() => onReverse(payment)}><Undo2 /> Reverse…</Button> : null}
+        <Button asChild size="xs" variant="ghost"><Link href={supplierPaymentHref(payment.id)}><ExternalLink /> View confirmation</Link></Button>
+        {writeEnabled && !reversed && onReverse ? <Button size="xs" variant="ghost" onClick={() => onReverse(payment)}><Undo2 /> Reverse payment…</Button> : null}
       </div>
     </li>
   );
@@ -97,7 +97,7 @@ export function SupplierPaymentHistoryDialog({ open, onOpenChange, query, title,
           <DialogBody className="max-h-[60vh] overflow-y-auto p-0">
             {historyQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
               : historyQuery.isError ? <div className="p-4"><QueryErrorState error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /></div>
-                : (historyQuery.data?.items.length ?? 0) === 0 ? <EmptyState compact title="No payments yet" description="Payments recorded against this balance will appear here." className="m-4" />
+                : (historyQuery.data?.items.length ?? 0) === 0 ? <EmptyState compact title="No payments yet" description="Payments for this bill will show here." className="m-4" />
                   : <ul className="divide-y divide-line">{historyQuery.data!.items.map((payment) => <SupplierPaymentRow key={payment.id} payment={payment} writeEnabled={writeEnabled} onReverse={setReversing} />)}</ul>}
           </DialogBody>
           <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button></DialogFooter>

@@ -70,12 +70,12 @@ test.describe("staged finance and reconciliation", () => {
 
       await manager.goto("/payments/shifts", { waitUntil: "domcontentloaded" });
       await chooseFirstAvailableOption(manager, "Branch");
-      await manager.getByRole("button", { name: "Approve variance" }).first().click();
-      const review = manager.getByRole("dialog", { name: "Approve cash variance" });
+      await manager.getByRole("button", { name: "Approve cash difference" }).first().click();
+      const review = manager.getByRole("dialog", { name: "Approve cash difference" });
       await review.getByRole("textbox").fill("Verified by the isolated staging reconciliation journey");
-      await review.getByRole("button", { name: "Approve variance" }).click();
+      await review.getByRole("button", { name: "Approve cash difference" }).click();
       await expect(review).toBeHidden();
-      await expect(manager.getByText("variance approved").first()).toBeVisible();
+      await expect(manager.getByText("difference approved").first()).toBeVisible();
       if (shiftCleanup !== undefined) cleanup.complete(shiftCleanup);
     } finally {
       if (shiftOpened && shiftCleanup !== undefined) {
@@ -102,7 +102,7 @@ async function collectPartialPayment(page: Page, method: "Card" | "Cash", refere
   await dialog.getByTestId("payment-amount").fill("1.000");
   await dialog.getByTestId("payment-method").click();
   await page.getByRole("option", { name: method, exact: true }).click();
-  if (reference) await dialog.getByRole("textbox", { name: "External reference" }).fill(reference);
+  if (reference) await dialog.getByRole("textbox", { name: "Reference number" }).fill(reference);
   await dialog.getByTestId("confirm-payment").click();
   await expect(dialog).toBeHidden();
 }

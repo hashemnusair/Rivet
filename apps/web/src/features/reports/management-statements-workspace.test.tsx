@@ -82,7 +82,7 @@ describe("ManagementStatementPage", () => {
 
     fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2099-01-02" } });
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Choose a from date on or before the to date.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The from date must be on or before the to date.");
     expect(screen.getByRole("button", { name: /^Reload$/i })).toBeDisabled();
     await userEvent.setup().click(screen.getByRole("button", { name: /^Reload$/i }));
     expect(incomeSpy).not.toHaveBeenCalled();
@@ -96,7 +96,7 @@ describe("ManagementStatementPage", () => {
     expect(await screen.findByTestId("income-statement")).toBeInTheDocument();
     await waitFor(() => expect(incomeSpy).toHaveBeenCalled());
     expect(incomeSpy.mock.calls.every(([input]) => input.branchId === undefined)).toBe(true);
-    expect(screen.getAllByText("All accessible branches").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("All your branches").length).toBeGreaterThan(0);
     await waitFor(() => expect(routerMock.replace).toHaveBeenCalledWith(expect.not.stringContaining("not-a-session-branch"), { scroll: false }));
   });
 
@@ -131,7 +131,7 @@ describe("ManagementStatementPage", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /^Reload$/i }));
 
-    expect(await screen.findByRole("status", { name: "Stale statement data" })).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Numbers may be out of date" })).toBeInTheDocument();
     expect(screen.getByTestId("income-statement")).toBeInTheDocument();
     expect(screen.queryByText(/Temporary report outage/i)).not.toBeInTheDocument();
   });
@@ -160,9 +160,9 @@ describe("ManagementStatementPage", () => {
 
     expect(screen.getAllByRole("status", { name: "Statement warnings" })).toHaveLength(1);
     expect(screen.getAllByText("Some figures may be incomplete")).toHaveLength(1);
-    expect(screen.getAllByText("Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.")).toHaveLength(1);
-    expect(screen.getAllByText("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.")).toHaveLength(1);
-    expect(screen.getAllByText("Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.")).toHaveLength(1);
+    expect(screen.getAllByText("Some sales or costs may not be in the books yet. Refresh the list in Bookkeeping before you rely on these numbers.")).toHaveLength(1);
+    expect(screen.getAllByText("Some membership income may be missing. Money paid in advance counts as earned only after its monthly schedule is added to the books.")).toHaveLength(1);
+    expect(screen.getAllByText("Some equipment is missing details, so its value is not reduced over time. Add the purchase date, cost and useful life.")).toHaveLength(1);
     expect(screen.queryByText("Deferred membership sales are not presented as earned revenue until a recognition policy is configured.")).not.toBeInTheDocument();
   });
 
@@ -174,21 +174,21 @@ describe("ManagementStatementPage", () => {
       await api.updatePlatformGym({ gymId: "forge-fitness", plan: "Starter", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Verify direct reporting route entitlement lock." });
     });
 
-    expect(await screen.findByText("Management reporting is not included", { exact: true })).toBeInTheDocument();
+    expect(await screen.findByText("Financial statements are not in your plan", { exact: true })).toBeInTheDocument();
     expect(screen.queryByTestId("management-statements-workspace")).not.toBeInTheDocument();
   });
 
   it("keeps management reporting behind the financial-report permission", async () => {
     await renderWithApp(<ManagementStatementPage kind="income" />, { role: "receptionist" });
 
-    expect(await screen.findByText(/limited to roles with financial reporting access/i)).toBeInTheDocument();
+    expect(await screen.findByText(/You don't have access to the financial statements/i)).toBeInTheDocument();
     expect(screen.queryByTestId("management-statements-workspace")).not.toBeInTheDocument();
   });
 
-  it("links ledger controls only for owner and manager roles", async () => {
+  it("links Bookkeeping only for owner and manager roles", async () => {
     await renderWithApp(<ManagementStatementPage kind="income" />);
     expect(await screen.findByTestId("income-statement")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Ledger controls" })).toHaveAttribute("href", "/finance/controls");
+    expect(screen.getByRole("link", { name: "Bookkeeping" })).toHaveAttribute("href", "/finance/controls");
 
     cleanup();
     resetApiForTests();
@@ -198,7 +198,7 @@ describe("ManagementStatementPage", () => {
       await api.updateRolePermissions("manager", { permissions: managerPermissions });
     } });
     expect(await screen.findByTestId("income-statement")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Ledger controls" })).not.toBeInTheDocument();
-    expect(screen.getByText("Read-only access")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Bookkeeping" })).not.toBeInTheDocument();
+    expect(screen.getByText("View only")).toBeInTheDocument();
   });
 });

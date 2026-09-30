@@ -1,5 +1,50 @@
 # GymOS / RIVET current implementation state
 
+## 30 Sep 2026 — plain-language pass
+
+What changed (uncommitted; the wording rules are in `docs/22_PLAIN_LANGUAGE_GUIDE.md`):
+
+- The member-page Resolve section was removed as redundant. This also removed
+  `convex/resolutionAssist.ts`, `src/features/resolution` and the API methods.
+- The dashboard "Operating brief" was replaced by a short "Needs attention"
+  panel (`src/features/brief/needs-attention.tsx`), backed by
+  `convex/operatingBrief.ts`, which now returns attention, missing and
+  totals.urgent. The panel shows the load error when an older server sends the
+  old shape.
+- The owner/manager "Ending this week" count no longer counts memberships that
+  were already renewed (`convex/domain.ts` and the mock).
+- Wording across the gym workspace, member app and sign-in now follows the new
+  guide. Tests and e2e specs were updated to match.
+
+Checks (Playwright was not run locally): `pnpm typecheck`,
+`pnpm convex:typecheck`, `pnpm lint` and `git diff --check` passed. Unit tests
+(`pnpm exec vitest run --maxWorkers=3 --testTimeout=60000` in `apps/web`): 264
+files, 1,667 tests passed.
+
+Release notes:
+
+- The Convex changes need `pnpm convex:deploy -- --yes`. Until then, Needs
+  attention in production shows "This could not be loaded" and the Today list
+  keeps its old wording.
+- Screenshot references were not refreshed. The visual specs are expected to
+  fail in CI until they are regenerated, and the `-linux.png` references need
+  the throwaway CI workflow.
+
+Still to do:
+
+- Server-generated error and notification text was not reworded.
+- Permission labels in `src/lib/domain/permissions.ts`, such as "Approve cash
+  variances", "Override check-in blocks" and "Inventory".
+- The member offline banner "Showing the last known RIVET data…" in
+  `src/lib/providers/experience-provider.tsx`.
+- The "asset"/"issue" repair reasons in `convex/operations.ts` and
+  `convex/payables.ts`. "Same gym space" in `convex/branchOpsAssist.ts`.
+- Helper text below 12px in 14 files. The demo sign-in button "Open Omar's
+  workspace".
+- `e2e/staging-automation.spec.ts`, which was already stale.
+- An Arabic interface is a possible next step. The old `arabic-localisation`
+  branch has a bilingual foundation.
+
 ## Walkthrough follow-up and release closure, 28 September 2026
 
 Hashem and Elias already performed an exploratory Production walkthrough on

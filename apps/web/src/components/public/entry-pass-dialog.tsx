@@ -44,7 +44,7 @@ export function EntryPassDialog({
       setToken(pass.token);
       setExpiresAt(pass.expiresAt);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The entry pass could not be prepared.");
+      setError(caught instanceof Error ? caught.message : "We could not get your entry code.");
     } finally {
       setLoading(false);
     }
@@ -68,14 +68,14 @@ export function EntryPassDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Entry QR</DialogTitle>
+          <DialogTitle>Entry code</DialogTitle>
           <p className="mt-1 text-[13px] text-ink-2">{gymName}</p>
         </DialogHeader>
         <DialogBody className="text-center">
           {loading ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-[13px] text-ink-3" role="status">
               <span className="h-1 w-32 overflow-hidden rounded-full bg-sunken-2"><span className="block h-full w-1/2 animate-pulse rounded-full bg-ink" /></span>
-              Preparing a short-lived entry pass…
+              Getting your entry code…
             </div>
           ) : error ? (
             <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-start text-[13px] text-danger">
@@ -89,12 +89,12 @@ export function EntryPassDialog({
               </div>
               <p className="mt-4 font-mono text-[18px] tracking-wide text-ink">{memberNumber}</p>
               {expired ? (
-                <p className="mt-2 text-[13px] font-medium text-warning-deep" role="status">This pass has expired. Refresh to get a new one.</p>
+                <p className="mt-2 text-[13px] font-medium text-warning-deep" role="status">This code has expired. Get a new code to check in.</p>
               ) : (
-                <p className="mt-2 text-[13px] text-ink-2" role="status">Expires at {expiresAt ? formatTime(expiresAt) : "the time shown by the desk"}. Show it at reception, then close this window.</p>
+                <p className="mt-2 text-[13px] text-ink-2" role="status">{expiresAt ? `Expires at ${formatTime(expiresAt)}.` : "Expires soon."} Show it at reception.</p>
               )}
               <Button className="mt-4" size="sm" variant={expired ? "primary" : "secondary"} onClick={() => void load()}>
-                <RefreshCcw /> {expired ? "Refresh pass" : "Get a fresh pass"}
+                <RefreshCcw /> Get a new code
               </Button>
             </>
           ) : null}

@@ -33,13 +33,13 @@ export function MemberProfileCompletion({ identity, onComplete }: { identity: Ri
       await getApi().registerCustomer(parsed.data);
       await onComplete();
     } catch {
-      setError("We could not finish your member setup. Your account is still signed in. Please try again.");
+      setError("We could not save your details. You are still signed in. Try again.");
     } finally { setBusy(false); }
   };
 
   return <form onSubmit={submit} className="space-y-4" noValidate>
     <h1 className="font-display text-[23px] font-semibold">Finish your member profile</h1>
-    <p className="text-[13px] text-ink-2">You are signed in as {identity.email}. Add these details to open your member dashboard.</p>
+    <p className="text-[13px] text-ink-2">You are signed in as {identity.email}. Add these details to see your memberships.</p>
     <Field label="Full name" htmlFor="member-setup-name" required><Input id="member-setup-name" value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" /></Field>
     <Field label="Mobile number" htmlFor="member-setup-phone" required><Input id="member-setup-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" /></Field>
     <Field label="Gender" htmlFor="member-setup-gender" required><select id="member-setup-gender" value={gender} onChange={(event) => setGender(event.target.value)} className="h-11 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" required>

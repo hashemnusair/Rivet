@@ -33,7 +33,7 @@ describe("GymPublicProfileSection draft safety", () => {
     await user.type(shortName, "Newer unsaved profile");
     const review = screen.getByRole("button", { name: "Send to RIVET for review" });
     expect(review).toBeDisabled();
-    expect(review).toHaveAttribute("title", "Save or discard the unsaved edits first.");
+    expect(review).toHaveAttribute("title", "Save or discard your changes first.");
   });
 
   it("previews logo and cover locally and defers server upload until draft save", async () => {
@@ -42,7 +42,7 @@ describe("GymPublicProfileSection draft safety", () => {
     const upload = vi.spyOn(api, "uploadMediaAsset");
     const logoInput = await screen.findByLabelText("Logo");
     const coverInput = await screen.findByLabelText("Cover image");
-    const altTextInputs = await screen.findAllByLabelText("Accessible image description");
+    const altTextInputs = await screen.findAllByLabelText("Image description");
 
     await user.upload(logoInput, new File(["logo"], "logo.png", { type: "image/png" }));
     await user.type(altTextInputs[0]!, "Gym logo");
@@ -50,7 +50,7 @@ describe("GymPublicProfileSection draft safety", () => {
     await user.type(altTextInputs[1]!, "Gym cover");
 
     expect(upload).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/local preview only/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/preview only/i).length).toBeGreaterThanOrEqual(2);
 
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));

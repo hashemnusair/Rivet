@@ -48,7 +48,7 @@ describe("related open work when creating a task", () => {
 
     const before = await api.listTasks({ status: "open", memberId: seeded!.member.id, pageSize: 10 });
     expect(before.totalItems).toBe(1);
-    await user.click(within(related).getByRole("button", { name: "Create as follow-on" }));
+    await user.click(within(related).getByRole("button", { name: "Create as next step" }));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     const after = await api.listTasks({ status: "open", memberId: seeded!.member.id, pageSize: 10 });
     expect(after.totalItems).toBe(2);
@@ -65,8 +65,8 @@ describe("related open work when creating a task", () => {
     const { api } = await renderWithApp(<Probe onOpenChange={onOpenChange} />, { prepare: async (mock) => { seeded = await prepare(mock, { type: "follow_up", title: "Follow up — renewal chat" }); } });
     const related = await screen.findByTestId("related-work");
     await api.completeTask(seeded!.task.id, { outcome: "Done elsewhere" });
-    await user.click(within(related).getByRole("button", { name: "Create as follow-on" }));
-    expect(await screen.findByTestId("related-task-stale")).toHaveTextContent("changed since it was listed");
+    await user.click(within(related).getByRole("button", { name: "Create as next step" }));
+    expect(await screen.findByTestId("related-task-stale")).toHaveTextContent("has changed");
     expect(onOpenChange).not.toHaveBeenCalled();
     expect((await api.listTasks({ status: "open", memberId: seeded!.member.id, pageSize: 10 })).totalItems).toBe(0);
   });

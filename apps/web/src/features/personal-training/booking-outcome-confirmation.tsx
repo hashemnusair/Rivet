@@ -56,7 +56,7 @@ export function BookingOutcomeConfirmation({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{TITLE[action]}</DialogTitle><DialogDescription>Review the member, trainer, time, and ledger impact before recording this audited outcome.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{TITLE[action]}</DialogTitle><DialogDescription>Check the details, then confirm.</DialogDescription></DialogHeader>
         <DialogBody className="space-y-4">
           <dl className="grid gap-3 rounded-md border border-line bg-sunken p-3 text-[12px] sm:grid-cols-2">
             <div><dt className="context-label">Member</dt><dd className="mt-1 font-medium text-ink">{booking.memberName}</dd></div>
@@ -65,12 +65,12 @@ export function BookingOutcomeConfirmation({
           </dl>
           {action === "cancelled" && allowCancellationChoice ? (
             <RadioGroup aria-label="Who is cancelling" value={byGym ? "gym" : "member"} onValueChange={(value) => setByGym(value === "gym")}>
-              <RadioCard value="gym"><span className="block text-[13px] font-medium text-ink">The gym is cancelling</span><span className="mt-0.5 block text-[12px] text-ink-2">The reserved credit goes back to the member.</span></RadioCard>
-              <RadioCard value="member"><span className="block text-[13px] font-medium text-ink">The member asked to cancel</span><span className="mt-0.5 block text-[12px] text-ink-2">The gym&apos;s {cutoffHours}-hour cutoff decides whether the credit is returned.</span></RadioCard>
+              <RadioCard value="gym"><span className="block text-[13px] font-medium text-ink">The gym is cancelling</span><span className="mt-0.5 block text-[12px] text-ink-2">The member gets the credit back.</span></RadioCard>
+              <RadioCard value="member"><span className="block text-[13px] font-medium text-ink">The member asked to cancel</span><span className="mt-0.5 block text-[12px] text-ink-2">The member gets the credit back if they cancel at least {cutoffHours} hours before the session.</span></RadioCard>
             </RadioGroup>
           ) : null}
           <p className={consequence.effect === "consume" ? "rounded-md border border-warning/30 bg-warning-bg p-3 text-[12px] text-warning-deep" : "rounded-md border border-success/30 bg-success-bg p-3 text-[12px] text-success-deep"} role="status">{consequence.text}</p>
-          {reasonRequired ? <Field label={action === "no_show" ? "No-show reason" : "Cancellation reason"} htmlFor={reasonId} required hint="This explanation is included in the immutable audit history."><Textarea id={reasonId} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={action === "no_show" ? "What happened?" : byGym ? "Why is the gym cancelling this session?" : "What did the member say?"} /></Field> : <p className="text-[12px] text-ink-3">Routine completion stays fast: no reason is required.</p>}
+          {reasonRequired ? <Field label={action === "no_show" ? "No-show reason" : "Cancellation reason"} htmlFor={reasonId} required><Textarea id={reasonId} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={action === "no_show" ? "What happened?" : byGym ? "Why is the gym cancelling this session?" : "What did the member say?"} /></Field> : <p className="text-[12px] text-ink-3">No reason is needed to complete a session.</p>}
         </DialogBody>
         <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Back</Button><Button variant={action === "completed" ? "primary" : action === "cancelled" ? "danger" : "secondary"} loading={pending} disabled={reasonRequired && reason.trim().length < 3} onClick={() => onConfirm({ booking, action, reason: reason.trim() || undefined, cancelledByGym: action === "cancelled" && byGym })}>{ACTION[action]}</Button></DialogFooter>
       </DialogContent>

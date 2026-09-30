@@ -30,16 +30,16 @@ test("the public application requires a gym address and uses an explicit phone p
   const submit = page.getByRole("button", { name: /Send gym application/i });
   await expect(submit).toBeEnabled({ timeout: 60_000 });
   await expect(page.getByLabel("Gym address")).toBeVisible();
-  await expect(page.getByLabel("Contact number")).toHaveAttribute("placeholder", "Enter a reachable number");
+  await expect(page.getByLabel("Contact number")).toHaveAttribute("placeholder", "Enter your phone number");
   await submit.click();
-  await expect(page.getByText("Enter the gym's physical address.")).toBeVisible();
+  await expect(page.getByText("Enter the gym's address.")).toBeVisible();
 });
 
 test("staff can open personal settings and the getting-started role anchor", async ({ page }) => {
   await signInGym(page, "Manager");
   await page.goto("/settings?section=my-profile", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { level: 2, name: "My profile" })).toBeVisible();
-  const name = page.getByLabel("Display name");
+  const name = page.getByLabel("Your name");
   await expect(name).toBeVisible();
   await expect(page.getByLabel("Phone")).toBeVisible();
   const updatedName = `${await name.inputValue()} QA`;
@@ -65,15 +65,16 @@ test("the platform gym record exposes staff and member directories", async ({ pa
   await expect(page.getByRole("textbox", { name: "Search members" })).toBeVisible();
 });
 
-test("a member record keeps the Resolve workspace visible", async ({ page }) => {
+test("a member record opens straight to the member's details and tabs", async ({ page }) => {
   await signInGym(page, "Manager");
   await page.goto("/members", { waitUntil: "domcontentloaded" });
   const firstMember = page.getByTestId("member-row").first();
   await expect(firstMember).toBeVisible();
   await firstMember.click();
   await page.waitForURL(/\/members\/[^/]+$/, { timeout: 60_000 });
-  await expect(page.getByTestId("resolution-area")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Resolve" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Member sections" })).toBeVisible();
+  // The old "Resolve" box repeated what the header, tabs and sidebar already show; it was removed.
+  await expect(page.getByTestId("resolution-area")).toHaveCount(0);
 });
 
 test("changed feedback surfaces fit a 390px viewport", async ({ page }) => {
@@ -97,7 +98,7 @@ test("changed feedback surfaces fit a 390px viewport", async ({ page }) => {
   await fits(page);
   await firstMember.getByRole("link").click();
   await page.waitForURL(/\/members\/[^/]+$/, { timeout: 60_000 });
-  await expect(page.getByTestId("resolution-area")).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Member sections" })).toBeVisible();
   await fits(page);
 
   await signInPlatform(page);

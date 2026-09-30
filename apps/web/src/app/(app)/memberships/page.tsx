@@ -11,6 +11,7 @@ import type { MembershipSummary } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { money } from "@/lib/utils/money";
+import { formatDate } from "@/lib/utils/dates";
 import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
@@ -66,7 +67,7 @@ function MembershipsWorkspace() {
     <div className="space-y-4">
       <PageHeader
         title="Memberships"
-        description="Every term ever sold — current, past, frozen and cancelled."
+        description="Every membership sold: current, past, frozen and cancelled."
       />
 
       <FreezeRequestsPanel />
@@ -90,7 +91,7 @@ function MembershipsWorkspace() {
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="expiring">Expiring</SelectItem>
+            <SelectItem value="expiring">Ends within 14 days</SelectItem>
             <SelectItem value="expired">Expired</SelectItem>
             <SelectItem value="frozen">Frozen</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -105,13 +106,13 @@ function MembershipsWorkspace() {
           <SelectContent>
             <SelectItem value="all">Any payment</SelectItem>
             <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="partial">Partial</SelectItem>
+            <SelectItem value="partial">Part paid</SelectItem>
             <SelectItem value="unpaid">Unpaid</SelectItem>
             <SelectItem value="refunded">Refunded</SelectItem>
           </SelectContent>
         </Select>
         {filtersActive ? <Button variant="ghost" size="sm" className="justify-self-start lg:ms-1" onClick={clearFilters}>Clear filters</Button> : null}
-        {data ? <span className="justify-self-end text-[12px] text-ink-3 tabular lg:ms-auto">{data.totalItems} terms</span> : null}
+        {data ? <span className="justify-self-end text-[12px] text-ink-3 tabular lg:ms-auto">{data.totalItems} {data.totalItems === 1 ? "membership" : "memberships"}</span> : null}
       </div>
 
       <div className="panel overflow-hidden">
@@ -125,9 +126,9 @@ function MembershipsWorkspace() {
           </div>
         ) : !data || data.items.length === 0 ? (
           filtersActive ? (
-            <EmptyState title="No memberships match" description="Try widening the filters or the search." className="border-0" action={<Button variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button>} />
+            <EmptyState title="No memberships match" description="Try other filters or another search." className="border-0" action={<Button variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button>} />
           ) : (
-            <EmptyState title="No memberships sold yet" description="Terms appear here as soon as a membership is sold from a member record or reception." className="border-0" />
+            <EmptyState title="No memberships sold yet" description="Memberships show here once you sell one from a member's page or at reception." className="border-0" />
           )
         ) : (
           <>
@@ -139,10 +140,10 @@ function MembershipsWorkspace() {
               <TableRow className="hover:bg-transparent">
                 <TableHead>Member</TableHead>
                 <TableHead>Plan</TableHead>
-                <TableHead>Term</TableHead>
+                <TableHead>Dates</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Payment</TableHead>
-                <TableHead className="text-end">Balance</TableHead>
+                <TableHead className="text-end">Owes</TableHead>
                 <TableHead>Branch</TableHead>
               </TableRow>
             </TableHeader>
@@ -157,13 +158,13 @@ function MembershipsWorkspace() {
                     {m.planName}
                     {m.remainingVisits != null ? (
                       <span className="block text-[11px] text-ink-3 tabular">
-                        {m.remainingVisits}/{m.totalVisits} visits
+                        {m.remainingVisits} of {m.totalVisits} visits left
                       </span>
                     ) : null}
                   </TableCell>
                   <TableCell>
                     <span className="whitespace-nowrap text-[12px] tabular">
-                      {m.startDate} → {m.endDate}
+                      {formatDate(m.startDate)} – {formatDate(m.endDate)}
                     </span>
                     <DaysUntilText date={m.endDate} className="block text-[11px]" />
                   </TableCell>
@@ -177,7 +178,7 @@ function MembershipsWorkspace() {
                     {m.outstanding.amount > 0 ? (
                       <MoneyText money={m.outstanding} className="text-warning-deep" />
                     ) : (m.upcomingAmount?.amount ?? 0) > 0 ? (
-                      <span className="text-[11px] text-ink-3"><MoneyText money={m.upcomingAmount!} /> upcoming · {m.startDate}</span>
+                      <span className="text-[11px] text-ink-3"><MoneyText money={m.upcomingAmount!} /> due on {formatDate(m.startDate)}</span>
                     ) : (
                       <span className="text-[12px] tabular text-ink-4">—</span>
                     )}
@@ -210,8 +211,8 @@ function MembershipCompactRow({ membership, onOpen }: { membership: MembershipSu
         <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]">
           <div><p className="text-ink-3">Plan</p><p className="mt-0.5 font-medium text-ink">{membership.planName}</p></div>
           <div><p className="text-ink-3">Payment</p><div className="mt-0.5"><PaymentStatusChip status={membership.paymentStatus} /></div></div>
-          <div><p className="text-ink-3">Term</p><p className="mt-0.5 tabular text-ink">{membership.startDate} → {membership.endDate}</p><DaysUntilText date={membership.endDate} className="mt-0.5 block text-[12px]" /></div>
-          <div><p className="text-ink-3">Balance</p><p className={`mt-0.5 font-medium ${membership.outstanding.amount > 0 ? "text-warning-deep" : "text-ink-3"}`}>{membership.outstanding.amount > 0 ? <MoneyText money={membership.outstanding} /> : "Settled"}</p></div>
+          <div><p className="text-ink-3">Dates</p><p className="mt-0.5 tabular text-ink">{formatDate(membership.startDate)} – {formatDate(membership.endDate)}</p><DaysUntilText date={membership.endDate} className="mt-0.5 block text-[12px]" /></div>
+          <div><p className="text-ink-3">Owes</p><p className={`mt-0.5 font-medium ${membership.outstanding.amount > 0 ? "text-warning-deep" : "text-ink-3"}`}>{membership.outstanding.amount > 0 ? <MoneyText money={membership.outstanding} /> : "Nothing"}</p></div>
         </div>
       </button>
     </li>
@@ -231,42 +232,42 @@ function FreezeRequestsPanel() {
       setNote("");
       await invalidate([["freezeRequests", "pending"], ["memberships"]]);
     },
-    successMessage: "Freeze request decided and audited.",
+    successMessage: "Freeze request answered.",
   });
 
   if (requestsQuery.isLoading) return <Skeleton className="h-24 w-full" />;
   if (requestsQuery.isError) {
-    return <section className="rounded-lg border border-line bg-surface p-4" aria-label="Freeze requests"><ErrorState title="Freeze requests could not be loaded" description="No request has been approved or denied. Retry before handling member requests." onRetry={() => requestsQuery.refetch()} /></section>;
+    return <section className="rounded-lg border border-line bg-surface p-4" aria-label="Freeze requests"><ErrorState title="Could not load freeze requests" description="No request was approved or declined. Try again before answering members." onRetry={() => requestsQuery.refetch()} /></section>;
   }
   const pending = requestsQuery.data ?? [];
   if (pending.length === 0) return null;
   return (
     <section className="rounded-lg border border-warning/40 bg-warning-bg/30 p-4" aria-label="Freeze requests">
       <h2 className="text-[15px] font-semibold">{pending.length} freeze request{pending.length === 1 ? "" : "s"} waiting</h2>
-      <p className="mt-1 text-[12px] text-ink-3">RIVET recalculates any fee when you approve, using the gym&apos;s current policy.</p>
+      <p className="mt-1 text-[12px] text-ink-3">The fee is worked out again when you approve, using your current freeze rules.</p>
       <div className="mt-3 grid gap-2">
         {pending.map((request) => (
           <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2.5">
             <div className="min-w-0 text-[12.5px]">
               <p className="font-semibold">{request.memberName}</p>
-              <p className="text-ink-3">{request.days} days from {request.startDate} · “{request.reason}” · {request.expectedFeeMinor > 0 ? <>fee <MoneyText money={money(request.expectedFeeMinor, session?.organization.currency ?? "JOD")} /></> : "free under policy"}</p>
+              <p className="text-ink-3">{request.days} days from {formatDate(request.startDate)} · “{request.reason}” · {request.expectedFeeMinor > 0 ? <>fee <MoneyText money={money(request.expectedFeeMinor, session?.organization.currency ?? "JOD")} /></> : "no fee"}</p>
             </div>
             <div className="flex gap-1.5">
               <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>Approve</Button>
-              <Button size="sm" variant="secondary" onClick={() => { setDenyId(request.id); setNote(""); }}>Deny</Button>
+              <Button size="sm" variant="secondary" onClick={() => { setDenyId(request.id); setNote(""); }}>Decline</Button>
             </div>
           </div>
         ))}
       </div>
       <Dialog open={Boolean(denyId)} onOpenChange={(open) => { if (!open) setDenyId(undefined); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Deny this freeze request?</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Decline this freeze request?</DialogTitle></DialogHeader>
           <DialogBody>
             <label className="grid gap-1.5 text-[12px] font-medium">Reason the member will see<Textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDenyId(undefined)}>Cancel</Button>
-            <Button variant="danger" loading={decide.isPending} disabled={!note.trim()} onClick={() => decide.mutate({ requestId: denyId!, decision: "denied", note: note.trim() })}>Deny request</Button>
+            <Button variant="danger" loading={decide.isPending} disabled={!note.trim()} onClick={() => decide.mutate({ requestId: denyId!, decision: "denied", note: note.trim() })}>Decline request</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

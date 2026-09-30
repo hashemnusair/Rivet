@@ -461,7 +461,7 @@ export async function checklistTodayQueueItems(ctx: ReadContext, actor: ActorCon
         id: `checklist-due:${template.publicId}:${today}`,
         kind: "branch_checklist",
         priority: pastDue ? "high" : "normal",
-        title: `${pastDue ? "Overdue" : "Due"}: ${template.name}`,
+        title: `${pastDue ? "Late" : "Due"}: ${template.name}`,
         detail: `${branch.name} · ${assignedUserName ?? template.assignedRole} · ${progress.done}/${progress.total} done · due ${template.dueTime}`,
         branchName: branch.name,
         overdue: pastDue,

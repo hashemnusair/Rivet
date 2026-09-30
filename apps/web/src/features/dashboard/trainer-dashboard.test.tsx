@@ -27,14 +27,14 @@ describe("trainer dashboard setup guidance", () => {
     render(<TrainerDashboard />);
     expect(screen.queryByTestId("trainer-setup-notice")).not.toBeInTheDocument();
     expect(screen.getByText("No PT sessions today")).toBeInTheDocument();
-    expect(screen.getByText(/Sessions the front desk or a member books with you/)).toBeInTheDocument();
+    expect(screen.getByText(/Sessions booked with you show up here/)).toBeInTheDocument();
   });
 
   it("names the missing profile as the gym's step rather than showing an empty calendar", () => {
     state.data = { ...empty, trainers: [] };
     render(<TrainerDashboard />);
     expect(screen.getByTestId("trainer-setup-notice")).toHaveTextContent("Your trainer profile is not set up yet");
-    expect(screen.getByText("Bookings open once your profile and hours are set up.")).toBeInTheDocument();
+    expect(screen.getByText("Set up your profile and hours so members can book you.")).toBeInTheDocument();
   });
 
   it("sends a published trainer without hours to the PT workspace to add them", () => {

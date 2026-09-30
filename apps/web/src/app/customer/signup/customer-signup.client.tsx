@@ -223,7 +223,7 @@ export function CustomerSignupClient() {
   const finishProfile = async (profileDraft: CustomerSignupDraft, returnTo = finalizedReturnTo) => {
     const parsedProfile = signupSchema.safeParse(profileDraft);
     if (!parsedProfile.success) {
-      setProfileError("Review the required profile details and try again.");
+      setProfileError("Check your details and try again.");
       setStep("details");
       return;
     }
@@ -242,7 +242,7 @@ export function CustomerSignupClient() {
       navigateToReturn(returnTo);
     } catch {
       setStep("profile-pending");
-      setProfileError("Your account is ready, but we could not finish the member profile. Try again.");
+      setProfileError("Your account is ready, but we could not finish setting it up. Try again.");
     } finally {
       setSubmitting(false);
     }
@@ -252,7 +252,7 @@ export function CustomerSignupClient() {
     if (!signUp) return;
     const parsedProfile = signupSchema.safeParse(profileDraft);
     if (!parsedProfile.success) {
-      setFormError("Review the required account details and try again.");
+      setFormError("Check your details and try again.");
       setStep("details");
       return;
     }
@@ -271,7 +271,7 @@ export function CustomerSignupClient() {
     });
     if (result.error) {
       setStep("verify-email");
-      setFormError(clerkMessage(result.error, "Your account could not be activated. Please try again."));
+      setFormError(clerkMessage(result.error, "We could not finish creating your account. Try again."));
       setSubmitting(false);
       return;
     }
@@ -281,9 +281,9 @@ export function CustomerSignupClient() {
   };
 
   const startVerification = async (profileDraft: CustomerSignupDraft): Promise<VerificationStart> => {
-    if (!signUp) return { status: "error", message: "The signup session is not ready. Please try again." };
+    if (!signUp) return { status: "error", message: "Sign-up is not ready yet. Try again." };
     const parsedProfile = signupSchema.safeParse(profileDraft);
-    if (!parsedProfile.success) return { status: "error", message: "Review the required account details and try again." };
+    if (!parsedProfile.success) return { status: "error", message: "Check your details and try again." };
     const profileValues = parsedProfile.data;
 
     // Clerk v7 can require a phone number at the identity boundary even when
@@ -293,7 +293,7 @@ export function CustomerSignupClient() {
     if (hasField(signUp.missingFields, "phone_number", "phoneNumber")) {
       const updated = await signUp.update({ phoneNumber: normalizePhoneForClerk(profileValues.phone) });
       if (updated.error) {
-        const message = clerkMessage(updated.error, "We could not save your mobile number. Please check it and try again.");
+        const message = clerkMessage(updated.error, "We could not save your mobile number. Check it and try again.");
         setFieldErrors((current) => ({ ...current, phone: message }));
         return { status: "error", message };
       }
@@ -303,13 +303,13 @@ export function CustomerSignupClient() {
 
     if (hasField(signUp.unverifiedFields, "email_address", "emailAddress")) {
       const verification = await signUp.verifications.sendEmailCode();
-      if (verification.error) return { status: "error", message: clerkMessage(verification.error, "We could not send the verification code. Please try again.") };
+      if (verification.error) return { status: "error", message: clerkMessage(verification.error, "We could not send your code. Try again.") };
       return { status: "verification", kind: "email" };
     }
 
     if (hasField(signUp.unverifiedFields, "phone_number", "phoneNumber")) {
       const verification = await signUp.verifications.sendPhoneCode();
-      if (verification.error) return { status: "error", message: clerkMessage(verification.error, "We could not send a phone verification code. Please try again.") };
+      if (verification.error) return { status: "error", message: clerkMessage(verification.error, "We could not send a code to your phone. Try again.") };
       return { status: "verification", kind: "phone" };
     }
 
@@ -317,8 +317,8 @@ export function CustomerSignupClient() {
     return {
       status: "error",
       message: missing
-        ? `Your account still needs: ${missing}. Please update those details and try again.`
-        : "Your account needs another required detail before it can be verified. Please try again or contact RIVET support.",
+        ? `Your account still needs: ${missing}. Add them and try again.`
+        : "Your account needs one more detail. Try again or contact RIVET support.",
     };
   };
 
@@ -353,7 +353,7 @@ export function CustomerSignupClient() {
       const field = clerkFieldFor(result.error);
       if (field) setFieldErrors((current) => ({ ...current, [field]: clerkMessage(result.error, "Check this value and try again.") }));
       if (isExistingIdentifierError(result.error) || signUp.isTransferable) setExistingAccount(true);
-      setFormError(clerkMessage(result.error, "We could not create the account. Please check your details."));
+      setFormError(clerkMessage(result.error, "We could not create your account. Check your details and try again."));
       return;
     }
     if (signUp.isTransferable) {
@@ -388,7 +388,7 @@ export function CustomerSignupClient() {
     if (!signUp || busy) return;
     const trimmedCode = code.trim();
     if (!/^\d{6}$/.test(trimmedCode)) {
-      setFormError("Enter the six-digit code from your email.");
+      setFormError("Enter the 6-digit code we sent you.");
       return;
     }
     setFormError(undefined);
@@ -398,7 +398,7 @@ export function CustomerSignupClient() {
       : await signUp.verifications.verifyPhoneCode({ code: trimmedCode });
     setSubmitting(false);
     if (result.error) {
-      setFormError(clerkMessage(result.error, "That verification code is not valid."));
+      setFormError(clerkMessage(result.error, "That code is not correct. Try again."));
       return;
     }
     if (signUp.status === "complete") {
@@ -427,7 +427,7 @@ export function CustomerSignupClient() {
     const result = verificationKind === "email"
       ? await signUp.verifications.sendEmailCode()
       : await signUp.verifications.sendPhoneCode();
-    if (result.error) setFormError(clerkMessage(result.error, "A new code could not be sent."));
+    if (result.error) setFormError(clerkMessage(result.error, "We could not send a new code. Try again."));
   };
 
   const startOver = async () => {
@@ -457,7 +457,7 @@ export function CustomerSignupClient() {
     <LoginLayout
       portal={PORTALS.member}
       mode="sign-up"
-      footer={<p className="text-center font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-4">Secure identity by Clerk · data by Convex</p>}
+      footer={<p className="text-center text-[12px] text-ink-3">Secure sign-up</p>}
     >
       <PortalHeading portal={PORTALS.member} mode="sign-up" />
 
@@ -490,8 +490,8 @@ export function CustomerSignupClient() {
           {formError ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{formError}</p> : null}
           {existingAccount ? <p className="text-[12px] text-ink-2">Already have an account? <Link href={signInHref(context.returnTo)} className="font-semibold underline underline-offset-4">Sign in</Link>.</p> : null}
           <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!signUp || !authLoaded}>Create account <ArrowRight /></Button>
-          <div id="clerk-captcha" role="group" aria-label="Security verification" />
-          <p className="text-center text-[12.5px] leading-relaxed text-ink-3">We will email you a verification code. Your password is handled by Clerk and never stored by RIVET.</p>
+          <div id="clerk-captcha" role="group" aria-label="Security check" />
+          <p className="text-center text-[12.5px] leading-relaxed text-ink-3">We will email you a code to confirm your email address.</p>
         </form>
       ) : null}
 
@@ -500,26 +500,25 @@ export function CustomerSignupClient() {
           <div className="text-center">
             <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-sunken text-ink"><MailCheck className="size-5" /></span>
             <h2 className="mt-4 font-display text-[21px] font-semibold tracking-tight">Check your {verificationKind === "email" ? "email" : "phone"}</h2>
-            <p className="mx-auto mt-2 max-w-sm text-[12.5px] leading-relaxed text-ink-3">We sent a six-digit code to verify your {verificationKind === "email" ? "email address" : "mobile number"}. Enter it below to finish signing up.</p>
+            <p className="mx-auto mt-2 max-w-sm text-[12.5px] leading-relaxed text-ink-3">We sent a 6-digit code to your {verificationKind === "email" ? "email address" : "mobile number"}. Enter it to finish signing up.</p>
           </div>
           <form onSubmit={submitCode} className="mt-6 space-y-5" noValidate>
-            <Field label={`${verificationKind === "email" ? "Email" : "Phone"} verification code`} htmlFor="customer-signup-code" error={formError} required>
+            <Field label={`Code from your ${verificationKind === "email" ? "email" : "phone"}`} htmlFor="customer-signup-code" error={formError} required>
               <Input id="customer-signup-code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="123456" aria-invalid={Boolean(formError)} />
             </Field>
             <Button type="submit" size="lg" className="w-full" loading={busy} disabled={code.length !== 6}>Verify and continue <ArrowRight /></Button>
           </form>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-[12px]">
-            <button type="button" onClick={() => void startOver()} className="inline-flex items-center gap-1.5 text-ink-3 transition-colors hover:text-ink"><ArrowLeft className="size-3.5" /> Use another account</button>
-            <button type="button" onClick={() => void resendCode()} className="inline-flex items-center gap-1.5 font-medium text-ink-2 transition-colors hover:text-ink"><RefreshCcw className="size-3.5" /> Resend code</button>
+            <button type="button" onClick={() => void startOver()} className="inline-flex items-center gap-1.5 text-ink-3 transition-colors hover:text-ink"><ArrowLeft className="size-3.5" /> Start over</button>
+            <button type="button" onClick={() => void resendCode()} className="inline-flex items-center gap-1.5 font-medium text-ink-2 transition-colors hover:text-ink"><RefreshCcw className="size-3.5" /> Send a new code</button>
           </div>
-          <p className="mt-4 flex items-center justify-center gap-1.5 text-center font-mono text-[10.5px] uppercase tracking-[0.11em] text-ink-4"><ShieldCheck className="size-3" /> Secure verification by Clerk</p>
         </div>
       ) : null}
 
       {step === "profile-pending" ? (
         <div className="mt-7 rounded-lg border border-warning/30 bg-warning-bg p-5">
-          <p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><ShieldCheck className="size-4" /> Account created securely</p>
-          <p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep">Your Clerk account is active. RIVET still needs to create the member profile before opening the selected gym.</p>
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><ShieldCheck className="size-4" /> Your account is created</p>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep">We still need to finish setting up your member account before you continue.</p>
           {profileError ? <p className="mt-3 text-[12px] text-danger" role="alert">{profileError}</p> : null}
           <Button type="button" size="lg" className="mt-5 w-full" loading={busy} onClick={() => void finishProfile(values)}><Check /> Finish member setup</Button>
         </div>

@@ -110,12 +110,12 @@ export function CheckoutWorkspace() {
     onSettled: () => { submitting.current = false; },
   });
 
-  if (!can("members.read")) return <ForbiddenState description="Checkout is limited to gym team members with operational read access." />;
-  if (!can("payments.collect")) return <ForbiddenState description="Checkout requires permission to collect payments." />;
-  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title="Checkout" description="Loading workspace access…" /><Skeleton className="h-48 w-full" /></div>;
+  if (!can("members.read")) return <ForbiddenState description="Checkout needs access to members. Ask the owner or a manager." />;
+  if (!can("payments.collect")) return <ForbiddenState description="Checkout needs access to take payments. Ask the owner or a manager." />;
+  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title="Checkout" description="Loading…" /><Skeleton className="h-48 w-full" /></div>;
   if (workspaceQuery.isError || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
-  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title="Checkout is not included" description="The Growth workspace module adds stock, checkout, suppliers, and purchase orders." className="mt-4" />;
-  if (!operationsModule.enabled) return <StatePanel icon={Boxes} title="Checkout is paused" description="An organization owner can enable the operations module from workspace settings." className="mt-4" />;
+  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title="Checkout is not included in your plan" description="The Growth plan and above include stock, checkout, suppliers and purchase orders." className="mt-4" />;
+  if (!operationsModule.enabled) return <StatePanel icon={Boxes} title="Checkout is turned off" description="Ask the gym owner to turn on stock and checkout." className="mt-4" />;
 
   const branchPicker = branches.length > 1 ? (
     <div className="flex flex-wrap items-center gap-2">
@@ -127,7 +127,7 @@ export function CheckoutWorkspace() {
       {branchSelectionError ? <p className="basis-full text-[12px] text-danger" role="alert">{branchSelectionError}</p> : null}
     </div>
   ) : null;
-  const header = <PageHeader title="Checkout" description={branchName ? `Selling from ${branchName}. Walk-in by default; attach a member only when it matters.` : "Sell stock at the desk. The server records the payment, receipt, and stock movement together."} actions={<Button asChild variant="secondary" size="sm"><Link href={concreteBranchId ? `/operations?branch=${encodeURIComponent(concreteBranchId)}` : "/operations"}><Boxes /> Stock & purchasing</Link></Button>} />;
+  const header = <PageHeader title="Checkout" description={branchName ? `Selling from ${branchName}.` : "Sell stock at the desk."} actions={<Button asChild variant="secondary" size="sm"><Link href={concreteBranchId ? `/operations?branch=${encodeURIComponent(concreteBranchId)}` : "/operations"}><Boxes /> Stock & purchasing</Link></Button>} />;
 
   if (completed) {
     return (
@@ -143,7 +143,7 @@ export function CheckoutWorkspace() {
       <div className="mx-auto max-w-6xl space-y-5" data-testid="retail-checkout">
         {header}
         {branchPicker}
-        <EmptyState title={branches.length ? "Choose a branch to check out" : "No branch available"} description={branches.length ? "Checkout needs one specific branch so stock and the receipt are recorded correctly." : "Configure an active branch before opening checkout."} />
+        <EmptyState title={branches.length ? "Choose a branch to check out" : "No branch available"} description={branches.length ? "Choose the branch you are selling from." : "Ask the gym owner to set up a branch first."} />
       </div>
     );
   }
@@ -182,7 +182,7 @@ export function CheckoutWorkspace() {
           ? <DesktopCart lines={cartLines} inventory={inventory} currency={currency} total={total} onQuantity={updateQuantity} onRemove={removeLine}>{salePanel}</DesktopCart>
           : <MobileCart lines={cartLines} inventory={inventory} currency={currency} total={total} open={sheetOpen} onOpenChange={setSheetOpen} onQuantity={updateQuantity} onRemove={removeLine}>{salePanel}</MobileCart>}
       </div>
-      <p className="text-[12px] text-ink-3">The receipt and stock update together. If a connection fails during payment, retrying the same sale will not sell the items twice.</p>
+      <p className="text-[12px] text-ink-3">If the connection drops during payment, try the same sale again. The items will not be sold twice.</p>
     </div>
   );
 }

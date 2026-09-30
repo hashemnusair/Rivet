@@ -8,11 +8,11 @@ import { Badge } from "@/components/ui/badge";
  */
 export function ledgerStatusLabel(status: FinancialPostingStatus | undefined): string {
   switch (status) {
-    case "posted": return "Posted to ledger";
-    case "reversed": return "Reversed in ledger";
-    case "pending": return "Awaiting ledger posting";
-    case "failed": return "Ledger posting failed";
-    default: return "Not posted to ledger yet";
+    case "posted": return "In the accounts";
+    case "reversed": return "Taken out of the accounts";
+    case "pending": return "Waiting to go into the accounts";
+    case "failed": return "Could not go into the accounts";
+    default: return "Not in the accounts yet";
   }
 }
 

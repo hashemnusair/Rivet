@@ -65,7 +65,7 @@ describe("accept gym invitation", () => {
     fireEvent.change(screen.getByLabelText(/Last name/), { target: { value: "Hreish" } });
     fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "password-1" } });
     fireEvent.change(screen.getByLabelText(/Confirm password/), { target: { value: "password-1" } });
-    fireEvent.click(screen.getByRole("button", { name: /Open gym workspace/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Create account/i }));
 
     await waitFor(() => {
       expect(state.signUp?.create).toHaveBeenCalledWith({ strategy: "ticket", ticket: "ticket-1", firstName: "Elias", lastName: "Hreish", password: "password-1" });
@@ -104,7 +104,7 @@ describe("accept gym invitation", () => {
     };
 
     const view = render(<AcceptInvitation />);
-    expect(screen.getByText("Verifying your invitation")).toBeInTheDocument();
+    expect(screen.getByText("Checking your invitation")).toBeInTheDocument();
     expect(create).not.toHaveBeenCalled();
 
     state.auth = { isLoaded: true, isSignedIn: true };
@@ -146,7 +146,7 @@ describe("accept gym invitation", () => {
 
     view.rerender(<AcceptInvitation />);
     expect(screen.queryByText("You are already signed in")).not.toBeInTheDocument();
-    expect(screen.getByText("Verifying your invitation")).toBeInTheDocument();
+    expect(screen.getByText("Checking your invitation")).toBeInTheDocument();
 
     resolveClaim?.({ claimed: true });
     await waitFor(() => expect(state.replace).toHaveBeenCalledWith("/login"));
@@ -169,12 +169,12 @@ describe("accept gym invitation", () => {
     fireEvent.change(screen.getByLabelText(/Last name/), { target: { value: "Hreish" } });
     fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "password-1" } });
     fireEvent.change(screen.getByLabelText(/Confirm password/), { target: { value: "password-1" } });
-    fireEvent.click(screen.getByRole("button", { name: /Open gym workspace/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Create account/i }));
 
     await waitFor(() => expect(state.claimInvitation).toHaveBeenCalledWith({}));
     view.rerender(<AcceptInvitation />);
     expect(screen.queryByText("You are already signed in")).not.toBeInTheDocument();
-    expect(screen.getByText("Verifying your invitation")).toBeInTheDocument();
+    expect(screen.getByText("Checking your invitation")).toBeInTheDocument();
 
     resolveClaim?.({ claimed: true });
     await waitFor(() => expect(state.replace).toHaveBeenCalledWith("/login"));
@@ -187,12 +187,12 @@ describe("accept gym invitation", () => {
     fireEvent.change(screen.getByLabelText(/Last name/), { target: { value: "Hreish" } });
     fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "password-1" } });
     fireEvent.change(screen.getByLabelText(/Confirm password/), { target: { value: "password-1" } });
-    fireEvent.click(screen.getByRole("button", { name: /Open gym workspace/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Create account/i }));
 
     await waitFor(() => {
       expect(state.claimInvitation).toHaveBeenCalledWith({});
       expect(state.replace).not.toHaveBeenCalled();
-      expect(screen.getByRole("alert")).toHaveTextContent(/verify this invitation|resend/i);
+      expect(screen.getByRole("alert")).toHaveTextContent(/confirm this invitation|send it again/i);
     });
   });
 
@@ -210,7 +210,7 @@ describe("accept gym invitation", () => {
     await waitFor(() => {
       expect(state.claimInvitation).toHaveBeenCalledWith({});
       expect(state.replace).not.toHaveBeenCalled();
-      expect(screen.getByRole("alert")).toHaveTextContent(/verify this invitation|resend/i);
+      expect(screen.getByRole("alert")).toHaveTextContent(/confirm this invitation|send it again/i);
     });
   });
 
@@ -219,14 +219,14 @@ describe("accept gym invitation", () => {
     render(<AcceptInvitation />);
     expect(screen.getByRole("status")).toHaveTextContent("This invitation was already accepted");
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
-    expect(screen.queryByText(/Verifying your invitation/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Checking your invitation/)).not.toBeInTheDocument();
     expect(state.replace).not.toHaveBeenCalled();
   });
 
   it("says that a build without the RIVET backend cannot accept an invitation, instead of throwing", () => {
     state.convexEnabled = false;
     render(<AcceptInvitation />);
-    expect(screen.getByRole("status")).toHaveTextContent("Invitations need the connected RIVET backend");
+    expect(screen.getByRole("status")).toHaveTextContent("Invitations cannot be accepted here");
     expect(screen.queryByLabelText(/First name/)).not.toBeInTheDocument();
     expect(state.claimInvitation).not.toHaveBeenCalled();
 

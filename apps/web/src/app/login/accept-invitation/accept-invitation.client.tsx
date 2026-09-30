@@ -44,17 +44,17 @@ function normalizeInvitationStatus(value: string | null): InvitationStatus {
 export function invitationErrorMessage(error: unknown): string {
   const record = error && typeof error === "object" ? error as { code?: unknown; message?: unknown; longMessage?: unknown; long_message?: unknown } : {};
   const code = typeof record.code === "string" ? record.code.toLowerCase() : "";
-  if (code.includes("expired")) return "This invitation has expired. Ask your RIVET contact to send a new one.";
-  if (code.includes("revoked")) return "This invitation was revoked. Ask your RIVET contact to send a new one.";
-  if (code.includes("already_accepted")) return "This invitation has already been accepted. Sign in with the invited email address.";
-  if (code.includes("email_address_mismatch") || code.includes("email_mismatch")) return "This invitation belongs to a different email address. Open it from the invited inbox.";
-  if (code.includes("invitation_not_accepted")) return "We could not verify this invitation. Open the original invitation link again or ask your RIVET contact to resend it.";
+  if (code.includes("expired")) return "This invitation has expired. Ask the person who invited you to send a new one.";
+  if (code.includes("revoked")) return "This invitation was cancelled. Ask the person who invited you to send a new one.";
+  if (code.includes("already_accepted")) return "This invitation was already used. Sign in with the email address it was sent to.";
+  if (code.includes("email_address_mismatch") || code.includes("email_mismatch")) return "This invitation is for a different email address. Open it from the email it was sent to.";
+  if (code.includes("invitation_not_accepted")) return "We could not confirm this invitation. Open the link in the email again, or ask the person who invited you to send it again.";
   const message = [record.longMessage, record.long_message, record.message].find((value): value is string => typeof value === "string" && value.trim().length > 0);
-  return message ? message.replace(/(?:__clerk_ticket|ticket)=?[^&\s]*/gi, "invitation link").slice(0, 240) : "We could not accept this invitation. Ask your RIVET contact to send a new one.";
+  return message ? message.replace(/(?:__clerk_ticket|ticket)=?[^&\s]*/gi, "invitation link").slice(0, 240) : "We could not accept this invitation. Ask the person who invited you to send a new one.";
 }
 
 function InvitationFrame({ children }: { children: ReactNode }) {
-  return <LoginLayout portal={PORTALS.staff} footer={<p className="text-center text-[12px] text-ink-3">Secure identity by Clerk · gym access issued by RIVET</p>}>{children}</LoginLayout>;
+  return <LoginLayout portal={PORTALS.staff} footer={<p className="text-center text-[12px] text-ink-3">Secure sign-in</p>}>{children}</LoginLayout>;
 }
 
 /**
@@ -82,18 +82,18 @@ export function AcceptInvitation() {
   }, [router, signedIn, status]);
 
   if (!ticket || status === "invalid") {
-    return <InvitationFrame><InvitationError title="Invitation link not recognized" body="Open the invitation link from the email RIVET sent you. If it still fails, ask your RIVET contact to resend it." /></InvitationFrame>;
+    return <InvitationFrame><InvitationError title="This invitation link does not work" body="Open the link from your invitation email. If it still does not work, ask the person who invited you to send it again." /></InvitationFrame>;
   }
 
   if (status === "expired" || status === "revoked") {
-    return <InvitationFrame><InvitationError title={status === "expired" ? "Invitation expired" : "Invitation revoked"} body={invitationErrorMessage({ code: status })} /></InvitationFrame>;
+    return <InvitationFrame><InvitationError title={status === "expired" ? "Invitation expired" : "Invitation cancelled"} body={invitationErrorMessage({ code: status })} /></InvitationFrame>;
   }
 
   // Clerk marks a ticket complete once its account exists. Opened again while
   // signed out, the link has nothing left to do except point at sign-in.
   if (status === "complete") {
     if (signedIn) return <InvitationFrame><InvitationProgress state="success" /></InvitationFrame>;
-    if (identityKnown) return <InvitationFrame><InvitationError tone="done" title="This invitation was already accepted" body="Your gym account exists. Sign in with the invited email address to open the workspace; the invitation link itself is single-use." action="Sign in" /></InvitationFrame>;
+    if (identityKnown) return <InvitationFrame><InvitationError tone="done" title="This invitation was already accepted" body="Your account is ready. Sign in with the email address the invitation was sent to. The link works only once." action="Sign in" /></InvitationFrame>;
     return <InvitationFrame><InvitationProgress state="processing" /></InvitationFrame>;
   }
 
@@ -109,7 +109,7 @@ export function AcceptInvitation() {
   }
 
   if (!CONVEX_ENABLED) {
-    return <InvitationFrame><InvitationError tone="done" title="Invitations need the connected RIVET backend" body="This build has no identity service connected, so an invitation cannot be verified or accepted here. Open the link on the RIVET address in your invitation email." action="Back to sign in" /></InvitationFrame>;
+    return <InvitationFrame><InvitationError tone="done" title="Invitations cannot be accepted here" body="This is a test version of RIVET. Open the link in your invitation email instead." action="Back to sign in" /></InvitationFrame>;
   }
 
   return <InvitationFlow ticket={ticket} status={status} onSignInStarted={markInvitationFlowStarted} />;
@@ -135,7 +135,7 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
       const result = await signIn.create({ strategy: "ticket", ticket });
       if (result.error) throw result.error;
       if (signIn.status !== "complete") {
-        throw new Error("This invitation needs another sign-in step before it can be accepted.");
+        throw new Error("This invitation needs one more sign-in step before you can accept it.");
       }
       const finalized = await signIn.finalize();
       if (finalized.error) throw finalized.error;
@@ -178,7 +178,7 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
       });
       if (result.error) throw result.error;
       if (signUp.status !== "complete") {
-        throw new Error("Your account still needs information before the invitation can be accepted.");
+        throw new Error("Your account needs more details before you can accept this invitation.");
       }
       const finalized = await signUp.finalize();
       if (finalized.error) throw finalized.error;
@@ -200,7 +200,7 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
         <div className="animate-fade-up">
           <div className="flex items-start gap-3.5">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper" aria-hidden><ShieldCheck className="size-5" /></span>
-            <div><h1 className="font-display text-[23px] font-semibold leading-tight tracking-tight">Create your RIVET account</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">Your invitation is verified. Set a password to open your gym workspace; your role and branches were set by the person who invited you.</p></div>
+            <div><h1 className="font-display text-[23px] font-semibold leading-tight tracking-tight">Create your RIVET account</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">Your invitation is confirmed. Add your name and a password to open your gym. The person who invited you already chose your role.</p></div>
           </div>
           <form className="mt-7 grid gap-4" onSubmit={(event) => void submit(event)} noValidate>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -210,23 +210,23 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
             <Field label="Password" htmlFor="invitation-password" hint="At least 8 characters" error={fieldErrors.password} required><PasswordInput id="invitation-password" autoComplete="new-password" value={values.password} onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))} aria-describedby={fieldErrors.password ? "invitation-password-error" : "invitation-password-hint"} /></Field>
             <Field label="Confirm password" htmlFor="invitation-confirm-password" error={fieldErrors.confirmPassword} required><PasswordInput id="invitation-confirm-password" autoComplete="new-password" value={values.confirmPassword} onChange={(event) => setValues((current) => ({ ...current, confirmPassword: event.target.value }))} aria-describedby={fieldErrors.confirmPassword ? "invitation-confirm-password-error" : undefined} /></Field>
             {error ? <p className="flex items-start gap-2 rounded-md border border-danger/25 bg-danger-bg px-3 py-2.5 text-[12px] leading-relaxed text-danger" role="alert"><CircleAlert className="mt-0.5 size-4 shrink-0" />{error}</p> : null}
-            <Button type="submit" size="lg" className="mt-1 w-full" loading={signUpFetchStatus === "fetching"} disabled={signUpFetchStatus === "fetching"}>Open gym workspace <ArrowRight className="size-4" /></Button>
+            <Button type="submit" size="lg" className="mt-1 w-full" loading={signUpFetchStatus === "fetching"} disabled={signUpFetchStatus === "fetching"}>Create account <ArrowRight className="size-4" /></Button>
           </form>
-          <p className="mt-5 flex items-center gap-2 text-[12.5px] leading-relaxed text-ink-3"><LockKeyhole className="size-3.5 shrink-0" aria-hidden />This link is single-use and tied to the invited email address.</p>
+          <p className="mt-5 flex items-center gap-2 text-[12.5px] leading-relaxed text-ink-3"><LockKeyhole className="size-3.5 shrink-0" aria-hidden />This link works only once, for the email address it was sent to.</p>
         </div>
       </InvitationFrame>
     );
   }
 
   if (state === "error") {
-    return <InvitationFrame><InvitationError title="Invitation could not be accepted" body={error ?? "Ask your RIVET contact to resend the invitation."} /></InvitationFrame>;
+    return <InvitationFrame><InvitationError title="Invitation could not be accepted" body={error ?? "Ask the person who invited you to send it again."} /></InvitationFrame>;
   }
 
   return <InvitationFrame><InvitationProgress state={state === "success" ? "success" : "processing"} /></InvitationFrame>;
 }
 
 function InvitationProgress({ state }: { state: "processing" | "success" }) {
-  return <div className="flex min-h-56 flex-col items-center justify-center text-center" role="status" aria-live="polite"><div className="relative flex size-16 items-center justify-center"><span className="absolute inset-0 animate-ping rounded-full border border-line-3 opacity-30" aria-hidden /><span className="absolute inset-2 rounded-full bg-sunken" aria-hidden /><MailCheck className="relative size-7 text-signal" aria-hidden /></div><p className="mt-5 font-display text-[18px] font-semibold tracking-tight">{state === "success" ? "Invitation accepted" : "Verifying your invitation"}</p><p className="mt-1.5 text-[12.5px] text-ink-3">{state === "success" ? "Opening your workspace…" : "This only takes a moment…"}</p><AuthProgressBar className="mt-5 w-36" /></div>;
+  return <div className="flex min-h-56 flex-col items-center justify-center text-center" role="status" aria-live="polite"><div className="relative flex size-16 items-center justify-center"><span className="absolute inset-0 animate-ping rounded-full border border-line-3 opacity-30" aria-hidden /><span className="absolute inset-2 rounded-full bg-sunken" aria-hidden /><MailCheck className="relative size-7 text-signal" aria-hidden /></div><p className="mt-5 font-display text-[18px] font-semibold tracking-tight">{state === "success" ? "Invitation accepted" : "Checking your invitation"}</p><p className="mt-1.5 text-[12.5px] text-ink-3">{state === "success" ? "Opening your gym…" : "This only takes a moment…"}</p><AuthProgressBar className="mt-5 w-36" /></div>;
 }
 
 function InvitationError({ title, body, tone = "error", action = "Back to sign in" }: { title: string; body: string; tone?: "error" | "done"; action?: string }) {
@@ -243,5 +243,5 @@ function InvitationError({ title, body, tone = "error", action = "Back to sign i
 }
 
 function InvitationConflict({ onSignOut }: { onSignOut: () => void }) {
-  return <div className="mt-7" role="status"><div className="rounded-lg border border-warning/30 bg-warning-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><CircleAlert className="size-4" aria-hidden />You are already signed in</p><p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep/90">Sign out first so this invitation is accepted by the invited email, not the account currently open in this browser.</p></div><Button className="mt-5 w-full" size="lg" onClick={onSignOut}>Sign out and continue <ArrowRight className="size-4" /></Button></div>;
+  return <div className="mt-7" role="status"><div className="rounded-lg border border-warning/30 bg-warning-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><CircleAlert className="size-4" aria-hidden />You are already signed in</p><p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep/90">Sign out first. The invitation must be accepted by the email address it was sent to.</p></div><Button className="mt-5 w-full" size="lg" onClick={onSignOut}>Sign out and continue <ArrowRight className="size-4" /></Button></div>;
 }

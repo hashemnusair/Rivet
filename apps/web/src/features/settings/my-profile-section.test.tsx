@@ -17,12 +17,12 @@ describe("My profile", () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<MyProfileSection />, { role: "receptionist" });
 
-    const displayName = await screen.findByLabelText(/Display name/);
+    const displayName = await screen.findByLabelText(/Your name/);
     await user.clear(displayName);
     await user.type(displayName, "Reception lead");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
 
-    await waitFor(() => expect(screen.getByLabelText(/Display name/)).toHaveValue("Reception lead"));
+    await waitFor(() => expect(screen.getByLabelText(/Your name/)).toHaveValue("Reception lead"));
     expect((await api.getMyProfile()).name).toBe("Reception lead");
     expect((await api.getSession()).user.name).toBe("Reception lead");
   });

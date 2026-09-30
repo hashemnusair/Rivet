@@ -53,7 +53,7 @@ describe("new member duplicate pre-check", () => {
 
     await user.click(screen.getByTestId("save-member"));
 
-    expect(await screen.findByText(/confirm these results belong to a different person/i)).toBeInTheDocument();
+    expect(await screen.findByText(/confirm this is a different person/i)).toBeInTheDocument();
     expect(createMember).not.toHaveBeenCalled();
   });
 
@@ -72,14 +72,14 @@ describe("new member duplicate pre-check", () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText(/could not check for an existing member/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry check" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Continue without pre-check" }));
-    expect(screen.getByRole("button", { name: "Continuing without pre-check" })).toBeDisabled();
+    expect(await screen.findByText(/could not check if this member already exists/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check again" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continue without checking" }));
+    expect(screen.getByRole("button", { name: "Continuing without checking" })).toBeDisabled();
 
     duplicateCheck.mockResolvedValueOnce([]);
-    await user.click(screen.getByRole("button", { name: "Retry check" }));
-    await waitFor(() => expect(screen.queryByText(/could not check for an existing member/i)).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(screen.queryByText(/could not check if this member already exists/i)).not.toBeInTheDocument());
     expect(duplicateCheck).toHaveBeenCalledTimes(2);
   });
 
@@ -100,7 +100,7 @@ describe("new member duplicate pre-check", () => {
     await waitFor(() => expect(screen.queryByText(/Checking for duplicates/i)).not.toBeInTheDocument());
     await user.click(screen.getByRole("combobox", { name: "Gender" }));
     await user.click(await screen.findByRole("option", { name: "Female" }));
-    await user.click(screen.getByRole("button", { name: /Create & sell membership/i }));
+    await user.click(screen.getByRole("button", { name: /Save and sell membership/i }));
 
     expect(await screen.findByText(/Choose Walk-in Guest's membership/i)).toBeInTheDocument();
     expect(createMember).not.toHaveBeenCalled();
@@ -113,7 +113,7 @@ describe("new member duplicate pre-check", () => {
 
     await waitFor(() => expect(createMemberSale).toHaveBeenCalledOnce());
     expect(await screen.findByRole("heading", { name: "Member ready" })).toBeInTheDocument();
-    expect(screen.getByText("Balance recorded")).toBeInTheDocument();
+    expect(screen.getByText("Still owes")).toBeInTheDocument();
     expect(router.push).not.toHaveBeenCalled();
   });
 });

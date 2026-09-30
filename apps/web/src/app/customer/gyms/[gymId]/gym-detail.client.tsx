@@ -128,7 +128,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
           error={experienceError}
           onRetry={retryExperience}
           emptyTitle="Gym not found"
-          emptyDescription="This gym is not currently available in the RIVET network."
+          emptyDescription="This gym is not on RIVET right now."
         />
       </main>
     );
@@ -137,7 +137,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
     return (
       <main className="mx-auto max-w-md px-5 py-20 text-center">
         <h1 className="font-display text-[24px] font-semibold tracking-tight">Gym not found</h1>
-        <p className="mt-2 text-[13.5px] text-ink-2">This gym is not currently available in the RIVET network.</p>
+        <p className="mt-2 text-[13.5px] text-ink-2">This gym is not on RIVET right now.</p>
         <Button asChild className="mt-5"><Link href="/customer/discover">Back to all gyms</Link></Button>
       </main>
     );
@@ -190,7 +190,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
         <GymFact label="Branches" value={String(gym.branchCount)} />
         <GymFact label="Members" value={gym.memberCount.toLocaleString()} />
         <GymFact label="PT trainers" value={String(trainerCount)} />
-        <GymFact label="From" value={gym.fromPriceMinor > 0 ? `${formatMoney(money(gym.fromPriceMinor))} / month` : "Ask the gym"} />
+        <GymFact label="From" value={gym.fromPriceMinor > 0 ? `${formatMoney(money(gym.fromPriceMinor))} a month` : "Ask the gym"} />
       </dl>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-8">
@@ -209,7 +209,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                 <div key={branch.id} className="panel p-4">
                   <h3 className="text-[14px] font-semibold">{branch.name}</h3>
                   <p className="mt-1 flex items-start gap-1.5 text-[13px] text-ink-2"><MapPin className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden /> {branch.address}</p>
-                  <p className="mt-2 flex items-center gap-1.5 text-[12.5px] text-ink-3"><Clock className="size-3.5 shrink-0" aria-hidden /> {branch.trialSchedule ? "Trial times available by date" : "Trial hours not set yet. Contact the gym."}</p>
+                  <p className="mt-2 flex items-center gap-1.5 text-[12.5px] text-ink-3"><Clock className="size-3.5 shrink-0" aria-hidden /> {branch.trialSchedule ? "You can book a free trial online" : "No online trial times yet. Contact the gym."}</p>
                 </div>
               ))}
             </div>
@@ -231,8 +231,8 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                     <div className="min-w-0">
                       <h3 className="text-[14px] font-semibold">{plan.name}</h3>
                       <p className="mt-0.5 text-[12.5px] text-ink-3">
-                        {plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits${plan.visitValidityDays ? ` · valid ${plan.visitValidityDays} days` : ""}`}
-                        {" · "}{plan.branchAccess === "all" ? "All branches" : `${plan.branchIds.length} selected branch${plan.branchIds.length === 1 ? "" : "es"}`}
+                        {plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits${plan.visitValidityDays ? ` · use within ${plan.visitValidityDays} days` : ""}`}
+                        {" · "}{plan.branchAccess === "all" ? "All branches" : `${plan.branchIds.length} branch${plan.branchIds.length === 1 ? "" : "es"}`}
                         {plan.includedPtSessions > 0 ? ` · includes ${plan.includedPtSessions} PT session${plan.includedPtSessions === 1 ? "" : "s"}` : ""}
                       </p>
                     </div>
@@ -282,17 +282,17 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                   <article key={item.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3">
                     <div className="min-w-0">
                       <h3 className="text-[14px] font-semibold">{item.name}</h3>
-                      <p className="mt-0.5 text-[12.5px] text-ink-3">{item.sessionCount} sessions · valid {item.validityDays} days</p>
+                      <p className="mt-0.5 text-[12.5px] text-ink-3">{item.sessionCount} sessions · use within {item.validityDays} days</p>
                     </div>
                     <MoneyText money={item.totalPrice} className="text-[15px] font-semibold" />
                   </article>
                 ))}
               </div>
-              <p className="mt-2 text-[12.5px] text-ink-3">An active membership is required to book. Package credits activate after the gym records full payment.</p>
+              <p className="mt-2 text-[12.5px] text-ink-3">You need an active membership to book. You can use the sessions after you pay the gym in full.</p>
             </section>
           ) : null}
 
-          <p className="border-t border-line pt-4 text-[12.5px] text-ink-3">A verified RIVET gym · {gym.memberCount.toLocaleString()} active member records · {trainerCount} published PT trainer{trainerCount === 1 ? "" : "s"}</p>
+          <p className="border-t border-line pt-4 text-[12.5px] text-ink-3">A verified RIVET gym · {gym.memberCount.toLocaleString()} active members · {trainerCount} PT trainer{trainerCount === 1 ? "" : "s"}</p>
         </div>
 
         <aside id="book-trial" className="panel h-fit scroll-mt-24 p-4 sm:p-5 lg:sticky lg:top-24" aria-labelledby="book-trial-title">
@@ -301,18 +301,18 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
               <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-bg text-success-deep"><Check className="size-6" aria-hidden /></span>
               <p className="mt-4 text-[12px] font-medium text-ink-3">Sent to {gym.name}</p>
               <h2 id="book-trial-title" className="mt-1 text-[20px] font-semibold leading-tight">Your free trial request is recorded.</h2>
-              <p className="mt-2 text-[13.5px] leading-relaxed text-ink-2">The request is now in the gym&rsquo;s follow-ups. The team can review it and record the outcome.</p>
+              <p className="mt-2 text-[13.5px] leading-relaxed text-ink-2">The gym will review it and confirm your visit.</p>
               <div className="mt-4 rounded-md border border-line bg-sunken p-3 text-start">
                 <p className="text-[13.5px] font-medium">{confirmedBranch?.name ?? "Selected branch"}</p>
-                <p className="mt-1 text-[12.5px] text-ink-2">{referralToken ? "The member referral is attached to this request. The reward is considered only after your first membership is sold." : customerSignedIn ? "Your request is saved under My Gyms." : "Sign in or create a member account to keep future bookings under your name."}</p>
+                <p className="mt-1 text-[12.5px] text-ink-2">{referralToken ? "Your friend's referral is saved with this request. They get their reward only after you buy your first membership." : customerSignedIn ? "The gym has your request and your contact details." : "Sign in or create a member account to keep future bookings under your name."}</p>
               </div>
-              <Button asChild className="mt-4 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login/member"}>{customerSignedIn ? "Open My Gyms" : "Sign in"}</Link></Button>
+              <Button asChild className="mt-4 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login/member"}>{customerSignedIn ? "Open your gyms" : "Sign in"}</Link></Button>
             </div>
           ) : (
             <>
               <p className="text-[12px] font-medium text-ink-3">Free first visit</p>
               <h2 id="book-trial-title" className="mt-0.5 text-[20px] font-semibold leading-tight">Book a trial at {gym.shortName}</h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">No payment required. Choose a branch and a time; the gym confirms.</p>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">It is free. Choose a branch and a time. The gym will confirm.</p>
               {!customerSignedIn ? (
                 <p className="mt-4 rounded-md border border-line bg-sunken px-3 py-2.5 text-[12.5px] text-ink-2">
                   You can fill this in now. <Link href={memberSignupHref} className="font-semibold text-ink underline underline-offset-4">Sign in or create a free account</Link> to keep it under your name.
@@ -347,14 +347,13 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                 {availableTrialWindow ? (
                   <p role="status" className="text-[12.5px] text-ink-2">Choose any time from {availableTrialWindow.opensAt} to {availableTrialWindow.closesAt}. The gym will confirm your request.</p>
                 ) : (
-                  <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2.5 text-[12.5px] text-ink-2">{selectedBranch?.trialSchedule ? "This branch is closed for trial requests on the selected date. Choose another date." : selectedBranch ? "This branch has not set online trial hours yet. Contact the gym directly." : "Choose a branch to see its trial hours."}</p>
+                  <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2.5 text-[12.5px] text-ink-2">{selectedBranch?.trialSchedule ? "This branch has no trial times on this date. Choose another date." : selectedBranch ? "This branch has no online trial times yet. Contact the gym." : "Choose a branch to see trial times."}</p>
                 )}
                 <Field label="What are you looking for?" htmlFor="trial-goal" error={errors.goal?.message}>
                   <Textarea id="trial-goal" aria-invalid={Boolean(errors.goal) || undefined} {...register("goal")} />
                 </Field>
                 <Button type="submit" variant="signal" size="lg" className="w-full" loading={submitting} disabled={!selectedBranch || !availableTrialWindow}><CalendarCheck /> Send trial request</Button>
               </form>
-              <p className="mt-3 text-center text-[12.5px] text-ink-3">The gym controls confirmation and follow-up.</p>
             </>
           )}
         </aside>

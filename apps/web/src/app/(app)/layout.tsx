@@ -95,7 +95,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (!workspaceReady) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Loading workspace">
+      <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Loading your gym">
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
           <div className="h-full w-1/2 animate-[loading-bar_1s_ease-in-out_infinite] rounded-full bg-ink" />
         </div>

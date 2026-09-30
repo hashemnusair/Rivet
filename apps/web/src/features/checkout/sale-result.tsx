@@ -21,7 +21,7 @@ export function SaleResult({ result, canAdjust, onNextSale }: { result: RetailCh
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success text-white" aria-hidden><CheckCircle2 className="size-5" /></span>
         <div>
           <h2 id="sale-result-heading" className="text-[17px] font-semibold">Sale completed</h2>
-          <p className="text-[12.5px] text-ink-2">Receipt <span className="font-mono">{result.receipt.receiptNumber}</span> · stock updated for {units} {units === 1 ? "item" : "items"}.</p>
+          <p className="text-[12.5px] text-ink-2">Receipt <span className="font-mono">{result.receipt.receiptNumber}</span> · {units} {units === 1 ? "item" : "items"} sold.</p>
           <p className="text-[12px] text-ink-3"><DateTimeText iso={result.receipt.issuedAt} /> · {result.branch.name}</p>
         </div>
       </div>
@@ -31,15 +31,15 @@ export function SaleResult({ result, canAdjust, onNextSale }: { result: RetailCh
         <dt className="text-ink-3">Status</dt><dd><TransactionStatusChip status={result.payment.status} /></dd>
         <dt className="text-ink-3">Receipt</dt><dd className="font-mono">{result.receipt.receiptNumber}</dd>
         {customer.kind === "member" ? <><dt className="text-ink-3">Member</dt><dd>{customer.fullName}{customer.memberNumber ? <span className="font-mono text-[12px] text-ink-2"> · {customer.memberNumber}</span> : null}</dd></> : null}
-        {customer.kind === "guest" ? <><dt className="text-ink-3">Receipt name</dt><dd>{customer.fullName}</dd></> : null}
+        {customer.kind === "guest" ? <><dt className="text-ink-3">Name on receipt</dt><dd>{customer.fullName}</dd></> : null}
         <dt className="text-ink-3">Items</dt><dd><ul className="space-y-0.5">{sale.lines.map((line) => <li key={line.productId} className="flex justify-between gap-3"><span>{line.productName} × {line.quantity}</span><MoneyText money={line.lineTotal} hideCurrency /></li>)}</ul></dd>
       </dl>
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-4">
         <Button type="button" size="lg" className="h-12 w-full sm:h-10 sm:w-auto" onClick={onNextSale} data-testid="next-sale" autoFocus><ShoppingBag /> Next sale</Button>
         <Button asChild variant="secondary" size="lg" className="h-12 w-full sm:h-10 sm:w-auto"><Link href={`/payments/receipts/${encodeURIComponent(result.receiptId)}`}><ExternalLink /> Open receipt</Link></Button>
-        {canAdjust ? <Button asChild variant="ghost" size="sm" className="w-full sm:w-auto"><Link href={`/payments/receipts/${encodeURIComponent(result.receiptId)}`}><RotateCcw /> Refund or void from the receipt</Link></Button> : null}
+        {canAdjust ? <Button asChild variant="ghost" size="sm" className="w-full sm:w-auto"><Link href={`/payments/receipts/${encodeURIComponent(result.receiptId)}`}><RotateCcw /> Refund or cancel this sale</Link></Button> : null}
       </div>
-      <p className="px-5 pb-4 text-[11.5px] text-ink-3">{sale.method !== "cash" ? `${CHECKOUT_PAYMENT_METHOD_LABELS[sale.method]} payment recorded as received; RIVET did not verify it with the terminal or bank. ` : ""}Print or download the receipt from its page. {customer.kind === "walk_in" ? "No customer profile was created for this sale." : ""}</p>
+      <p className="px-5 pb-4 text-[12px] text-ink-3">{sale.method !== "cash" ? `RIVET did not check this ${CHECKOUT_PAYMENT_METHOD_LABELS[sale.method]} payment with the bank. ` : ""}Open the receipt to print or download it. {customer.kind === "walk_in" ? "This sale is not linked to any member." : ""}</p>
     </section>
   );
 }

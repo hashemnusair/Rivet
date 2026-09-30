@@ -64,7 +64,7 @@ export function reportScopeFrom(scope: ReportScope): string {
 }
 
 export function scopeBranchName(branches: readonly ScopeBranch[], branchId: string): string {
-  return branchId === "all" ? "All accessible branches" : branches.find((branch) => branch.id === branchId)?.name ?? "Selected branch";
+  return branchId === "all" ? "All your branches" : branches.find((branch) => branch.id === branchId)?.name ?? "Selected branch";
 }
 
 /**
@@ -118,13 +118,13 @@ export function ReportScopeBar({
 }) {
   const from = reportScopeFrom(scope);
   return (
-    <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Report scope">
+    <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Report filters">
       {branches.length > 1 ? (
         <Field label="Branch" className="w-full sm:w-52">
           <Select value={scope.branchId} onValueChange={(branchId) => onChange({ branchId })}>
             <SelectTrigger aria-label="Branch filter"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All accessible branches</SelectItem>
+              <SelectItem value="all">All your branches</SelectItem>
               {branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
             </SelectContent>
           </Select>

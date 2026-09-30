@@ -74,7 +74,7 @@ export function EmptyState(props: {
 
 export function ErrorState({
   title = "Something went wrong",
-  description = "The request could not be completed. Your last loaded data is preserved; try again.",
+  description = "Please try again. If this keeps happening, check your internet connection.",
   onRetry,
   className,
   layout,
@@ -105,7 +105,7 @@ export function ErrorState({
 }
 
 export function ForbiddenState({
-  description = "Your account role does not have permission to view this area.",
+  description = "Your role cannot open this page. Ask the owner or a manager if you need it.",
   className,
   layout,
 }: {
@@ -116,7 +116,7 @@ export function ForbiddenState({
   return (
     <StatePanel
       icon={Lock}
-      title="Not allowed for this role"
+      title="You don't have access"
       description={description}
       className={className}
       layout={layout}
@@ -163,7 +163,7 @@ export function QueryErrorState({
 
 export function NotFoundState({
   title = "Not found",
-  description = "The record you are looking for does not exist — it may have been removed, or the link is wrong.",
+  description = "We could not find this. It may have been removed, or the link is wrong.",
   className,
   layout,
 }: {

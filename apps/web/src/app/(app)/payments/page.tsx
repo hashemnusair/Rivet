@@ -70,7 +70,7 @@ function TransactionsPageInner() {
   // error instead of being told they lack permission.
   if (!can("reports.financial.read")) {
     return (
-      <ForbiddenState description="Reading the branch transaction ledger needs financial-report permission. Reception can still collect payments and reconcile their own shift." />
+      <ForbiddenState description="You can't see payment details. You can still collect payments and close your own shift." />
     );
   }
 
@@ -78,7 +78,7 @@ function TransactionsPageInner() {
     <div className="space-y-5">
       <PageHeader
         title="Payments"
-        description="Every payment, refund and void — the immutable money trail."
+        description="All payments and refunds."
         actions={
           <Button onClick={() => replaceParams({ collect: "1" }, { keepPage: true })}>
             <Plus /> Collect payment
@@ -91,10 +91,10 @@ function TransactionsPageInner() {
       <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:items-center">
         <div className="relative sm:col-span-3 lg:w-full lg:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search transactions" data-touch-target />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search payments" data-touch-target />
         </div>
         <Select value={method} onValueChange={(value) => replaceParams({ method: value === "all" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Method filter" data-touch-target>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Payment method" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -105,7 +105,7 @@ function TransactionsPageInner() {
           </SelectContent>
         </Select>
         <Select value={type} onValueChange={(value) => replaceParams({ type: value === "all" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Type filter" data-touch-target>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Payment or refund" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -127,7 +127,7 @@ function TransactionsPageInner() {
         </Select>
         {data ? (
           <span className="text-[12px] text-ink-3 tabular sm:col-span-2 lg:ms-auto lg:whitespace-nowrap">
-            {data.totalItems} records · page net <MoneyText money={money(pageTotal)} />
+            {data.totalItems} results · total on this page <MoneyText money={money(pageTotal)} />
           </span>
         ) : null}
         {["q", "method", "type", "range"].some((key) => params.has(key)) ? (
@@ -147,10 +147,10 @@ function TransactionsPageInner() {
             <ErrorState onRetry={() => refetch()} />
           </div>
         ) : !data || data.items.length === 0 ? (
-          <EmptyState title="No transactions match" description="Try a wider date range or clear the filters." className="border-0" />
+          <EmptyState title="No payments found" description="Try a wider date range or clear the filters." className="border-0" />
         ) : (
           <>
-          <ul className="divide-y divide-line lg:hidden" aria-label="Transactions">
+          <ul className="divide-y divide-line lg:hidden" aria-label="Payments">
             {data.items.map((transaction) => <TransactionCompactRow key={transaction.id} transaction={transaction} />)}
           </ul>
           <Table className="hidden lg:table">
@@ -163,7 +163,7 @@ function TransactionsPageInner() {
                 <TableHead>Method</TableHead>
                 <TableHead className="text-end">Amount</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>By</TableHead>
+                <TableHead>Staff</TableHead>
                 <TableHead>Branch</TableHead>
               </TableRow>
             </TableHeader>

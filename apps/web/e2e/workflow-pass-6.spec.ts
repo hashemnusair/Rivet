@@ -26,7 +26,7 @@ async function signIn(page: Page, role: "Owner" | "Manager" = "Owner") {
 /**
  * Full-page visits in the dev server occasionally coincide with a forced
  * Fast Refresh reload, which can leave the preview session gate on
- * "Loading workspace". One reload recovers it; anything else is a real failure.
+ * "Loading your gym". One reload recovers it; anything else is a real failure.
  */
 async function visit(page: Page, path: string, heading: RegExp | string, level: 1 | 2 = 1) {
   await page.goto(path);
@@ -34,7 +34,7 @@ async function visit(page: Page, path: string, heading: RegExp | string, level: 
   try {
     await expect(title).toBeVisible({ timeout: 30_000 });
   } catch (error) {
-    if (!(await page.getByRole("status", { name: "Loading workspace" }).isVisible())) throw error;
+    if (!(await page.getByRole("status", { name: "Loading your gym" }).isVisible())) throw error;
     await page.reload();
     await expect(title).toBeVisible({ timeout: 60_000 });
   }
@@ -60,20 +60,20 @@ async function capture(page: Page, name: string, width: number) {
 type Section = { id: string; label: string; ready: (page: Page) => Promise<void> };
 
 const SECTIONS: Section[] = [
-  { id: "organization", label: "Organization", ready: async (page) => { await expect(page.getByLabel("Organization name")).toHaveValue(/./); } },
-  { id: "brand", label: "Brand Kit", ready: async (page) => { await expect(page.getByRole("radiogroup", { name: "Workspace palette" })).toBeVisible(); } },
+  { id: "organization", label: "Gym details", ready: async (page) => { await expect(page.getByLabel("Gym name")).toHaveValue(/./); } },
+  { id: "brand", label: "Brand kit", ready: async (page) => { await expect(page.getByRole("radiogroup", { name: "Palette" })).toBeVisible(); } },
   { id: "profile", label: "Public profile", ready: async (page) => { await expect(page.getByLabel(/Short name/)).toHaveValue(/./); await expect(page.getByRole("heading", { name: "Version history", exact: true })).toBeVisible(); } },
   { id: "branches", label: "Branches", ready: async (page) => { await expect(page.getByText("Forge — Abdoun", { exact: true }).locator("visible=true").first()).toBeVisible(); } },
-  { id: "spaces", label: "Gym spaces", ready: async (page) => { await expect(page.getByRole("heading", { name: /^Spaces in / })).toBeVisible(); } },
+  { id: "spaces", label: "Gym areas", ready: async (page) => { await expect(page.getByRole("heading", { name: /^Areas in / })).toBeVisible(); } },
   { id: "agreement", label: "Agreement", ready: async (page) => { await expect(page.getByTestId("agreement-record")).toBeVisible(); } },
   { id: "subscription", label: "Subscription & invoices", ready: async (page) => { await expect(page.getByTestId("subscription-summary")).toBeVisible(); await expect(page.getByRole("heading", { name: "Invoices", exact: true })).toBeVisible(); } },
-  { id: "users", label: "Users", ready: async (page) => { await expect(page.getByRole("button", { name: "Invite user", exact: true })).toBeVisible(); await expect(page.locator("main").getByText("Omar Al-Khatib", { exact: true }).locator("visible=true").first()).toBeVisible(); } },
-  { id: "roles", label: "Roles & permissions", ready: async (page) => { await expect(page.getByRole("switch").first()).toBeVisible(); } },
+  { id: "users", label: "Staff", ready: async (page) => { await expect(page.getByRole("button", { name: "Invite staff", exact: true })).toBeVisible(); await expect(page.locator("main").getByText("Omar Al-Khatib", { exact: true }).locator("visible=true").first()).toBeVisible(); } },
+  { id: "roles", label: "Roles & access", ready: async (page) => { await expect(page.getByRole("switch").first()).toBeVisible(); } },
   { id: "payments", label: "Payments", ready: async (page) => { await expect(page.getByRole("switch", { name: "Cash" })).toBeVisible(); await expect(page.getByLabel("Manager discount limit")).toHaveValue(/./); } },
   { id: "receipts", label: "Receipts & tax", ready: async (page) => { await expect(page.getByLabel("Receipt prefix")).toHaveValue(/./); } },
-  { id: "notifications", label: "Notifications", ready: async (page) => { await expect(page.getByRole("switch", { name: "Renewal recovery" })).toBeVisible(); await expect(page.getByTestId("messaging-status")).toBeVisible(); } },
-  { id: "email", label: "Operational email", ready: async (page) => { await expect(page.getByTestId("email-delivery-mode")).toBeVisible(); await expect(page.getByRole("checkbox", { name: "Payment receipt" })).toBeVisible(); } },
-  { id: "operations", label: "Operational rules", ready: async (page) => { await expect(page.getByRole("spinbutton", { name: "Expiry warning, days" })).toHaveValue(/./); } },
+  { id: "notifications", label: "Notifications", ready: async (page) => { await expect(page.getByRole("switch", { name: "Renewal reminders" })).toBeVisible(); await expect(page.getByTestId("messaging-status")).toBeVisible(); } },
+  { id: "email", label: "Emails", ready: async (page) => { await expect(page.getByTestId("email-delivery-mode")).toBeVisible(); await expect(page.getByRole("checkbox", { name: "Payment receipt" })).toBeVisible(); } },
+  { id: "operations", label: "Gym rules", ready: async (page) => { await expect(page.getByRole("spinbutton", { name: "Ending soon warning, days" })).toHaveValue(/./); } },
   { id: "hours", label: "Hours & trials", ready: async (page) => { await expect(page.getByRole("checkbox", { name: "Sunday open" })).toBeVisible(); } },
   { id: "checklists", label: "Daily checklists", ready: async (page) => { await expect(page.getByRole("heading", { name: /^Checklists/ })).toBeVisible(); await expect(page.getByRole("list", { name: "Checklists" }).getByRole("listitem").first()).toBeVisible(); } },
 ];
@@ -114,45 +114,45 @@ test("the selected section survives search, refresh, leaving and coming back", a
   await fixClock(page);
   await signIn(page);
   await visit(page, "/settings", "Settings");
-  await expect(page.getByRole("tab", { name: "Organization" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Gym details" })).toHaveAttribute("aria-selected", "true");
   await expect(page).not.toHaveURL(/section=/);
 
-  await page.getByRole("tab", { name: "Users" }).click();
+  await page.getByRole("tab", { name: "Staff" }).click();
   await expect(page).toHaveURL(/section=users/);
-  await expect(page.getByRole("heading", { level: 2, name: "Users" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Staff" })).toBeVisible();
 
   // Searching narrows the rail without losing the open section.
   const search = page.getByRole("textbox", { name: "Search settings" });
   await search.fill("freeze");
   await expect(page.getByRole("tab")).toHaveCount(1);
-  await expect(page.getByRole("tab", { name: "Operational rules" })).toHaveAttribute("aria-selected", "false");
-  await expect(page.getByText("Showing Users. Choose a match to change section.")).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Users" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Gym rules" })).toHaveAttribute("aria-selected", "false");
+  await expect(page.getByText("Showing Staff. Choose a match to change section.")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Staff" })).toBeVisible();
   await search.press("Escape");
   await expect(search).toHaveValue("");
-  await expect(page.getByRole("tab", { name: "Users" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Staff" })).toHaveAttribute("aria-selected", "true");
 
   await page.reload();
-  await expect(page.getByRole("heading", { level: 2, name: "Users" })).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole("tab", { name: "Users" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { level: 2, name: "Staff" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("tab", { name: "Staff" })).toHaveAttribute("aria-selected", "true");
 
   // Leave through the sidebar and come back with the browser.
   await page.getByRole("navigation").first().getByRole("link", { name: /^Dashboard$/ }).click();
   await expect(page).toHaveURL(/\/dashboard/);
   await page.goBack();
   await expect(page).toHaveURL(/section=users/);
-  await expect(page.getByRole("heading", { level: 2, name: "Users" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { level: 2, name: "Staff" })).toBeVisible({ timeout: 60_000 });
 });
 
 test("the rail is operable from the keyboard", async ({ page }) => {
   await fixClock(page);
   await signIn(page);
-  await visit(page, "/settings?section=organization", "Organization", 2);
+  await visit(page, "/settings?section=organization", "Gym details", 2);
 
-  const active = page.getByRole("tab", { name: "Organization" });
+  const active = page.getByRole("tab", { name: "Gym details" });
   await active.focus();
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("tab", { name: "Brand Kit" })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Brand kit" })).toBeFocused();
   await page.keyboard.press("End");
   await expect(page.getByRole("tab", { name: "Daily checklists" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
@@ -161,7 +161,7 @@ test("the rail is operable from the keyboard", async ({ page }) => {
   await page.keyboard.press("ArrowUp");
   await expect(page.getByRole("tab", { name: "Hours & trials" })).toBeFocused();
   // Browsing never changes the section; choosing does.
-  await expect(page.getByRole("tab", { name: "Organization" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Gym details" })).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/section=hours/);
   await expect(page.getByRole("heading", { level: 2, name: "Hours & trials" })).toBeVisible();
@@ -171,9 +171,9 @@ test("the rail is operable from the keyboard", async ({ page }) => {
 test("edits are protected, saved from the shared bar and discarded cleanly", async ({ page }) => {
   await fixClock(page);
   await signIn(page);
-  await visit(page, "/settings?section=organization", "Organization", 2);
+  await visit(page, "/settings?section=organization", "Gym details", 2);
 
-  const name = page.getByLabel("Organization name");
+  const name = page.getByLabel("Gym name");
   await expect(page.getByTestId("settings-save-bar")).toHaveCount(0);
   await name.fill("Forge Fitness Club Amman");
   const bar = page.getByTestId("settings-save-bar");
@@ -186,19 +186,19 @@ test("edits are protected, saved from the shared bar and discarded cleanly", asy
   await guard.getByRole("button", { name: "Stay" }).click();
   await expect(guard).toBeHidden();
   await expect(name).toHaveValue("Forge Fitness Club Amman");
-  await expect(page.getByRole("tab", { name: "Organization" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Gym details" })).toHaveAttribute("aria-selected", "true");
 
   // An empty required field disables saving and says why.
   await name.fill("");
-  await expect(bar.getByRole("button", { name: "Save organization" })).toBeDisabled();
+  await expect(bar.getByRole("button", { name: "Save gym details" })).toBeDisabled();
   await expect(bar).toContainText("Enter the gym's name before saving.");
   await name.fill("Forge Fitness Club Amman");
 
   // The keyboard shortcut saves; the bar reports success and clears.
   await name.press("ControlOrMeta+s");
-  await expect(page.getByText("Organization settings saved — audited.")).toBeVisible();
+  await expect(page.getByText("Gym details saved.")).toBeVisible();
   await expect(bar).toContainText("Changes saved");
-  await expect(bar.getByRole("button", { name: "Save organization" })).toHaveCount(0);
+  await expect(bar.getByRole("button", { name: "Save gym details" })).toHaveCount(0);
 
   // Discard restores the saved value without a round trip.
   await name.fill("Scratch");
@@ -229,7 +229,7 @@ test("payment methods and discount limits save as one draft", async ({ page }) =
   await sales.fill("15");
 
   await bar.getByRole("button", { name: "Save payment settings" }).click();
-  await expect(page.getByText("Payment settings saved — audited.")).toBeVisible();
+  await expect(page.getByText("Payment settings saved.")).toBeVisible();
   await expect(bar).toContainText("Changes saved");
   await expect(other).toHaveAttribute("data-state", "checked");
   await expect(sales).toHaveValue("15.000");
@@ -240,7 +240,7 @@ test("notifications and quiet hours save together and discard together", async (
   await signIn(page);
   await visit(page, "/settings?section=notifications", "Notifications", 2);
 
-  const renewal = page.getByRole("switch", { name: "Renewal recovery" });
+  const renewal = page.getByRole("switch", { name: "Renewal reminders" });
   await expect(renewal).toHaveAttribute("data-state", "unchecked");
   await renewal.click();
   await page.getByLabel("Quiet hours from").fill("21:30");
@@ -260,13 +260,13 @@ test("notifications and quiet hours save together and discard together", async (
 test("the permission matrix works cell by cell with the keyboard", async ({ page }) => {
   await fixClock(page);
   await signIn(page);
-  await visit(page, "/settings?section=roles", "Roles & permissions", 2);
+  await visit(page, "/settings?section=roles", "Roles & access", 2);
 
   const cell = page.getByRole("switch", { name: "Sales — Archive members" });
   await expect(cell).toHaveAttribute("aria-checked", "false");
   await cell.focus();
   await page.keyboard.press("Space");
-  await expect(page.getByText("Permissions updated — audited.")).toBeVisible();
+  await expect(page.getByText("Access updated.")).toBeVisible();
   await expect(cell).toHaveAttribute("aria-checked", "true");
 });
 
@@ -276,27 +276,27 @@ test("phones get one role at a time, record lists and stacked dialogs", async ({
   await signIn(page);
 
   // Roles: a role picker and one permission per row.
-  await visit(page, "/settings?section=roles", "Roles & permissions", 2);
-  await expect(page.getByRole("heading", { name: "Permissions by role", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Permission matrix", exact: true })).toBeHidden();
+  await visit(page, "/settings?section=roles", "Roles & access", 2);
+  await expect(page.getByRole("heading", { name: "Access by role", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What each role can do", exact: true })).toBeHidden();
   await page.getByRole("combobox", { name: "Role to edit" }).click();
   await page.getByRole("option", { name: "Sales" }).click();
   const archive = page.getByRole("switch", { name: "Archive members" });
   await expect(archive).toHaveAttribute("data-state", "unchecked");
   await archive.click();
-  await expect(page.getByText("Permissions updated — audited.")).toBeVisible();
+  await expect(page.getByText("Access updated.")).toBeVisible();
   await expect(archive).toHaveAttribute("data-state", "checked");
   await fits(page);
 
   // Users: a list instead of a squeezed table; the invite dialog stacks its fields.
-  await visit(page, "/settings?section=users", "Users", 2);
+  await visit(page, "/settings?section=users", "Staff", 2);
   await expect(page.getByRole("list", { name: "Staff" })).toBeVisible();
   await expect(page.getByRole("table")).toBeHidden();
-  await page.getByRole("button", { name: "Invite user" }).click();
-  const dialog = page.getByRole("dialog", { name: "Invite user" });
+  await page.getByRole("button", { name: "Invite staff" }).click();
+  const dialog = page.getByRole("dialog", { name: "Invite staff" });
   await expect(dialog).toBeVisible();
   const role = await dialog.getByRole("combobox", { name: "Role" }).boundingBox();
-  const scope = await dialog.getByRole("combobox", { name: "Branch scope" }).boundingBox();
+  const scope = await dialog.getByRole("combobox", { name: "Branch access" }).boundingBox();
   expect(role && scope && scope.y > role.y + role.height - 1).toBe(true);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
@@ -326,9 +326,9 @@ test("the public profile keeps its draft, publication and preview apart", async 
   const bar = page.getByTestId("settings-save-bar");
   await expect(bar).toContainText("Unsaved changes");
   await expect(review).toBeDisabled();
-  await expect(review).toHaveAttribute("title", "Save or discard the unsaved edits first.");
+  await expect(review).toHaveAttribute("title", "Save or discard your changes first.");
   await bar.getByRole("button", { name: "Save draft" }).click();
-  await expect(page.getByText("Public profile draft saved and audited.")).toBeVisible();
+  await expect(page.getByText("Draft saved.")).toBeVisible();
   await expect(review).toBeEnabled();
-  await expect(page.getByText(/Draft · v/)).toBeVisible();
+  await expect(page.getByText(/Draft · version/)).toBeVisible();
 });

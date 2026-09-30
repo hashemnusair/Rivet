@@ -84,16 +84,16 @@ test("retention preserves filters, pagination and member context on refresh", as
   await expect(page).toHaveURL(/reason=expired/);
   await page.reload();
   await expect(page.getByRole("button", { name: "Win back", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "All attention", exact: true }).click();
+  await page.getByRole("button", { name: "All", exact: true }).click();
   await page.getByRole("button", { name: "Next page", exact: true }).click();
   await expect(page).toHaveURL(/page=2/);
   await page.reload();
   await expect(page.getByRole("button", { name: "Previous page", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Renewals", exact: true }).click();
-  await page.getByRole("button", { name: "Expired", exact: true }).click();
+  await page.getByRole("button", { name: "Ended", exact: true }).click();
   await expect(page).toHaveURL(/bucket=expired/);
   await page.reload();
-  await expect(page.getByRole("button", { name: "Expired", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Ended", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("touch lead actions retain loss reasons and Board/List preference", async ({ browser }) => {
@@ -122,7 +122,7 @@ test("class agenda opens the correct dated roster and preserves weekly view", as
   const row = page.getByTestId("class-agenda-row").filter({ hasText: "Morning HIIT" });
   await row.getByRole("button", { name: "Who booked" }).click();
   const roster = page.getByRole("dialog", { name: /Who booked/ });
-  await expect(roster.getByRole("button", { name: "Finalize attendance" })).toBeDisabled();
+  await expect(roster.getByRole("button", { name: "Finish attendance" })).toBeDisabled();
   await roster.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: "Weekly timetable" }).click();
   await expect(page).toHaveURL(/view=timetable/);
@@ -142,7 +142,7 @@ test("PT starts from a member and keeps package credit rules visible", async ({ 
   await page.getByRole("dialog").getByRole("link", { name: /Yara Sweidan/ }).click();
   await expect(page).toHaveURL(/tab=pt/);
   await expect(page.getByRole("heading", { name: "Book a session" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Package catalog" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "PT packages" })).toBeVisible();
 });
 
 for (const role of ["Manager", "Trainer"]) {
@@ -152,16 +152,16 @@ for (const role of ["Manager", "Trainer"]) {
     if (role === "Manager") {
       await expect(page.getByRole("heading", { name: "Trainer profiles" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Book session", exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Package", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Add package", exact: true })).toBeVisible();
     } else {
       await expect(page.getByRole("button", { name: "Book session", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Package", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Add package", exact: true })).toHaveCount(0);
       // The preview adapter scopes the workspace the way Convex does: the
       // trainer sees their own profile and controls, never the gym's catalogue.
       await expect(page.getByRole("heading", { name: "Your trainer profile" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Availability" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "PT packages" })).toHaveCount(0);
-      await expect(page.getByRole("heading", { name: "Not allowed for this role" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "You don't have access" })).toHaveCount(0);
     }
   });
 }
@@ -170,10 +170,10 @@ test("attendance requires a review after a class ends", async ({ page }) => {
   await enter(page);
   await page.goto("/classes?from=2026-08-29");
   await page.getByTestId("class-agenda-row").filter({ hasText: "Weekend Open Gym" }).getByRole("button", { name: "Who booked" }).click();
-  await page.getByRole("button", { name: "Finalize attendance", exact: true }).click();
-  const review = page.getByRole("dialog", { name: "Finalize attendance?", exact: true });
-  await expect(review).toContainText("Unmarked confirmed bookings will be recorded as no-shows");
-  await review.getByRole("button", { name: "Review roster" }).click();
+  await page.getByRole("button", { name: "Finish attendance", exact: true }).click();
+  const review = page.getByRole("dialog", { name: "Finish attendance?", exact: true });
+  await expect(review).toContainText("anyone booked but not ticked is marked as a no-show");
+  await review.getByRole("button", { name: "Check the list" }).click();
   await expect(page.getByRole("dialog", { name: /Who booked/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Finalize attendance", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Finish attendance", exact: true })).toBeEnabled();
 });

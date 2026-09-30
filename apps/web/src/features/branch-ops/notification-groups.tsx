@@ -19,7 +19,7 @@ export function NotificationGroupedView({ notifications, renderRow }: { notifica
     <div data-testid="notification-grouped">
       {grouping.mandatory.length ? (
         <div data-testid="notification-mandatory">
-          <p className="px-4 pt-3 text-[11.5px] font-medium uppercase tracking-wide text-danger">Always shown</p>
+          <p className="px-4 pt-3 text-[12px] font-medium text-danger">Important</p>
           {grouping.mandatory.map(renderRow)}
         </div>
       ) : null}

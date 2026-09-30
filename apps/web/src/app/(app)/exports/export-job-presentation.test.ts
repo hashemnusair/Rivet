@@ -16,9 +16,9 @@ describe("exportJobPresentation", () => {
   });
 
   it("distinguishes pending, partial, failed and cancelled work", () => {
-    expect(exportJobPresentation(job({ status: "queued" }), NOW)).toMatchObject({ label: "Queued", download: "pending" });
-    expect(exportJobPresentation(job({ status: "running" }), NOW)).toMatchObject({ label: "Running", download: "pending" });
-    expect(exportJobPresentation(job({ status: "partially_completed", content: "a" }), NOW)).toMatchObject({ label: "Partial", variant: "warning", download: "ready" });
+    expect(exportJobPresentation(job({ status: "queued" }), NOW)).toMatchObject({ label: "Waiting", download: "pending" });
+    expect(exportJobPresentation(job({ status: "running" }), NOW)).toMatchObject({ label: "Preparing", download: "pending" });
+    expect(exportJobPresentation(job({ status: "partially_completed", content: "a" }), NOW)).toMatchObject({ label: "Partly done", variant: "warning", download: "ready" });
     expect(exportJobPresentation(job({ status: "failed", failureMessage: "Too many rows" }), NOW)).toMatchObject({ label: "Failed", variant: "danger", download: "unavailable" });
     expect(exportJobPresentation(job({ status: "cancelled" }), NOW)).toMatchObject({ label: "Cancelled", download: "unavailable" });
   });

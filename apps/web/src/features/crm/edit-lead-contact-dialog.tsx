@@ -14,9 +14,9 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
 const schema = z.object({
-  fullName: z.string().trim().min(3, "Full name must be at least 3 characters."),
-  phone: z.string().refine((value) => isValidLeadPhone(value), "Enter a valid phone"),
-  email: z.string().refine((value) => isValidOptionalEmail(value), "Invalid email").optional(),
+  fullName: z.string().trim().min(3, "Enter at least 3 letters for the name."),
+  phone: z.string().refine((value) => isValidLeadPhone(value), "Enter a valid phone number"),
+  email: z.string().refine((value) => isValidOptionalEmail(value), "Enter a valid email").optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -57,16 +57,16 @@ export function EditLeadContactDialog({
     }),
     {
       onSuccess: async () => {
-        toast.success("Lead contact details updated.");
+        toast.success("Contact details saved.");
         await invalidate();
         onOpenChange(false);
       },
-      onError: (error) => setServerError(isApiError(error) ? error.message : "Could not update the lead contact.",),
+      onError: (error) => setServerError(isApiError(error) ? error.message : "Contact details were not saved. Try again.",),
     },
   );
 
   const close = (nextOpen: boolean) => {
-    if (nextOpen || !form.formState.isDirty || mutation.isPending || typeof window === "undefined" || window.confirm("Discard unsaved contact changes?")) onOpenChange(nextOpen);
+    if (nextOpen || !form.formState.isDirty || mutation.isPending || typeof window === "undefined" || window.confirm("Close without saving your changes?")) onOpenChange(nextOpen);
   };
 
   return (
@@ -74,7 +74,7 @@ export function EditLeadContactDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit lead contact</DialogTitle>
-          <DialogDescription>Correct the lead identity details without changing pipeline progress.</DialogDescription>
+          <DialogDescription>Fix the name, phone or email. The lead&apos;s progress does not change.</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((values) => { setServerError(null); mutation.mutate(values); })}>
           <DialogBody className="space-y-4">
@@ -84,10 +84,10 @@ export function EditLeadContactDialog({
             <Field label="Phone" required error={form.formState.errors.phone?.message}>
               <Input type="tel" autoComplete="tel" dir="ltr" {...form.register("phone")} />
             </Field>
-            <Field label="Email" hint="Optional — leave blank to remove it." error={form.formState.errors.email?.message}>
+            <Field label="Email" hint="Optional. Leave empty to remove it." error={form.formState.errors.email?.message}>
               <Input type="email" autoComplete="email" {...form.register("email")} />
             </Field>
-            {form.formState.isDirty ? <p role="status" className="text-[12px] text-ink-3">Unsaved contact changes</p> : null}
+            {form.formState.isDirty ? <p role="status" className="text-[12px] text-ink-3">Changes not saved yet</p> : null}
             {serverError ? <p role="alert" className="text-[12.5px] text-danger">{serverError}</p> : null}
           </DialogBody>
           <DialogFooter>

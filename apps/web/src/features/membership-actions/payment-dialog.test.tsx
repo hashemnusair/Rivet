@@ -43,13 +43,13 @@ function member(overrides: Partial<MemberSummary> = {}): MemberSummary {
 }
 
 describe("CollectPaymentDialog", () => {
-  it("names the member and states the outstanding balance", async () => {
+  it("names the member and states what is unpaid", async () => {
     await renderWithApp(<CollectPaymentDialog open onOpenChange={() => {}} member={member()} />);
 
     expect(screen.getByText("Collect payment")).toBeInTheDocument();
     expect(screen.getByText(/Lina Qasem/)).toBeInTheDocument();
     expect(screen.getByText("ABD-1052")).toBeInTheDocument();
-    expect(screen.getByText("Outstanding balance")).toBeInTheDocument();
+    expect(screen.getByText("Unpaid")).toBeInTheDocument();
     expect(screen.getByText("JOD 45.000")).toBeInTheDocument();
   });
 
@@ -67,7 +67,7 @@ describe("CollectPaymentDialog", () => {
     await user.type(amount, "20");
 
     // 45.000 owed − 20.000 paid leaves 25.000 still due
-    expect(screen.getByText("Remaining after this payment")).toBeInTheDocument();
+    expect(screen.getByText("Still owed after this payment")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("JOD 25.000")).toBeInTheDocument());
   });
 
@@ -104,7 +104,7 @@ describe("CollectPaymentDialog", () => {
     await user.clear(amount);
     await user.click(screen.getByTestId("confirm-payment"));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/required/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/enter an amount/i);
   });
 
   it("collects the payment through the API and reports the receipt back", async () => {
@@ -214,7 +214,7 @@ describe("CollectPaymentDialog", () => {
     await renderWithApp(<CollectPaymentDialog open onOpenChange={onOpenChange} member={withBalance} />, { latencyMs: 300 });
     await user.click(await screen.findByTestId("confirm-payment"));
 
-    await waitFor(() => expect(screen.getByTestId("confirm-payment")).toHaveTextContent("Recording…"));
+    await waitFor(() => expect(screen.getByTestId("confirm-payment")).toHaveTextContent("Saving…"));
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
     await user.keyboard("{Escape}");
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
@@ -240,10 +240,10 @@ describe("CollectPaymentDialog", () => {
     });
     await renderWithApp(<CollectPaymentDialog open onOpenChange={() => {}} initialChargeId="charge-gone" member={member({ outstanding: money(45_000), outstandingCharges: [charge("charge-1", "Membership", 45_000)] })} />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/no longer outstanding/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/no longer needs payment/i);
     expect(screen.getByRole("combobox", { name: "Invoice to collect" })).toBeInTheDocument();
     expect(screen.queryByTestId("payment-amount")).not.toBeInTheDocument();
-    expect(screen.queryByText(/fully paid up/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/owes nothing/i)).not.toBeInTheDocument();
   });
 
   it("says so plainly and blocks collection when nothing is owed", async () => {
@@ -251,7 +251,7 @@ describe("CollectPaymentDialog", () => {
       <CollectPaymentDialog open onOpenChange={() => {}} member={member({ outstanding: money(0) })} />,
     );
 
-    expect(screen.getByText(/fully paid up/i)).toBeInTheDocument();
+    expect(screen.getByText(/owes nothing/i)).toBeInTheDocument();
     expect(screen.getByTestId("confirm-payment")).toBeDisabled();
     expect(screen.queryByTestId("payment-amount")).not.toBeInTheDocument();
   });

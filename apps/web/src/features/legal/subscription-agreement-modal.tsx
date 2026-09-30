@@ -81,11 +81,11 @@ function SubscriptionAgreementModal({ onSigned, onFinished }: { onSigned: () => 
         {query.isLoading ? (
           <div className="space-y-4 p-6"><Skeleton className="h-7 w-72" /><Skeleton className="h-64 w-full" /></div>
         ) : query.isError || !context ? (
-          <div className="p-6"><DialogTitle className="sr-only">Subscription agreement</DialogTitle><DialogDescription className="sr-only">The agreement could not be loaded.</DialogDescription><QueryErrorState error={query.error} onRetry={() => void query.refetch()} /></div>
+          <div className="p-6"><DialogTitle className="sr-only">Subscription agreement</DialogTitle><DialogDescription className="sr-only">The agreement could not load.</DialogDescription><QueryErrorState error={query.error} onRetry={() => void query.refetch()} /></div>
         ) : record ? (
           <SignedConfirmation agreement={record} finishing={finishing} onContinue={() => void finish()} />
         ) : !context.canSign ? (
-          <div className="p-6"><DialogTitle className="sr-only">Subscription agreement</DialogTitle><DialogDescription className="sr-only">Only the owner can sign.</DialogDescription><StatePanel icon={FileSignature} title="The gym owner signs this agreement" description="Only the owner account can sign RIVET's subscription agreement." /></div>
+          <div className="p-6"><DialogTitle className="sr-only">Subscription agreement</DialogTitle><DialogDescription className="sr-only">Only the owner can sign.</DialogDescription><StatePanel icon={FileSignature} title="The gym owner signs this agreement" description="Only the owner can sign the agreement with RIVET." /></div>
         ) : (
           <SigningFlow context={context} onSigned={(agreement) => { onSigned(); setSigned(agreement); }} />
         )}
@@ -213,7 +213,7 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
         setFieldErrors(mapped);
         // A detail the server rejected is fixed on the details step.
         if (Object.keys(mapped).some((key) => ["legalName", "address", "signatoryName", "idNumber", "idType", "startDate", "email"].includes(key))) setStep("details");
-      } else setError("The agreement could not be signed. Try again.");
+      } else setError("The agreement was not signed. Try again.");
     },
   });
 
@@ -224,7 +224,7 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
   const submit = () => {
     setError(null);
     if (!canSign) {
-      setError("Sign, and accept both declarations.");
+      setError("Sign and tick both boxes.");
       return;
     }
     mutation.mutate({
@@ -281,7 +281,7 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
                 </div>
                 <Field label="ID number" required hint={idHint} error={fieldErrors.idNumber}><Input value={form.idNumber} onChange={set("idNumber")} inputMode={form.idType === "national" ? "numeric" : "text"} dir="ltr" autoComplete="off" required /></Field>
               </div>
-              <p className="flex gap-2 rounded-md border border-line bg-sunken/40 px-3 py-2 text-[11.5px] text-ink-2"><ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Your ID number ties the agreement to you. It is kept only in the contract record, never shown to gym staff, and masked in every copy.</p>
+              <p className="flex gap-2 rounded-md border border-line bg-sunken/40 px-3 py-2 text-[11.5px] text-ink-2"><ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />Your ID number is kept only with the signed agreement. Gym staff never see it, and it is partly hidden in every copy.</p>
             </section>
             <section className="space-y-3">
               <p className="context-label">The contract</p>
@@ -289,7 +289,7 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
                 <Field label="Contract start date" required error={fieldErrors.startDate}><Input type="date" value={form.startDate} onChange={set("startDate")} dir="ltr" required /></Field>
                 <Field label="Plan" hint="Set up by RIVET on your account."><Input value={prefill.plan} readOnly aria-readonly /></Field>
               </div>
-              <p className="text-[12px] text-ink-3">Your signed copy will be emailed to <span dir="ltr" className="text-ink">{prefill.email}</span>. The date of signing is recorded by RIVET&apos;s server.</p>
+              <p className="text-[12px] text-ink-3">We will email your signed copy to <span dir="ltr" className="text-ink">{prefill.email}</span>. RIVET records the date and time you sign.</p>
             </section>
             {fieldErrors.email ? <p role="alert" className="text-[12.5px] text-danger">{fieldErrors.email}</p> : null}
           </form>
@@ -312,7 +312,7 @@ function SigningFlow({ context, onSigned }: { context: SubscriptionAgreementCont
               <div><dt className="text-ink-3">Contract start</dt><dd className="text-ink" dir="ltr">{form.startDate}</dd></div>
             </dl>
             <section className="space-y-3">
-              <div><p className="context-label">Signature</p><p className="mt-1 text-[12.5px] text-ink-3">Sign with your finger, a pen or the mouse, or type your full name to adopt it as your signature.</p></div>
+              <div><p className="context-label">Signature</p><p className="mt-1 text-[12.5px] text-ink-3">Sign with your finger, a pen or the mouse. Or type your full name to use it as your signature.</p></div>
               <SignaturePad value={signature} onChange={setSignature} signatoryName={form.signatoryName} invalid={Boolean(fieldErrors.signature)} />
               {fieldErrors.signature ? <p className="text-[12px] text-danger" role="alert">{fieldErrors.signature}</p> : null}
             </section>
@@ -352,7 +352,7 @@ function SignedConfirmation({ agreement, finishing, onContinue }: { agreement: S
           <div className="flex justify-between gap-4 rounded-md border border-line px-3 py-2"><dt className="text-ink-3">Your copy</dt><dd className="text-ink" dir="ltr">{agreement.signatory.email}</dd></div>
           <div className="flex justify-between gap-4 rounded-md border border-line px-3 py-2"><dt className="text-ink-3">RIVET&apos;s copies</dt><dd className="text-end text-ink" dir="ltr">{AGREEMENT_COPY_RECIPIENTS.join(" · ")}</dd></div>
         </dl>
-        <p className="mt-5 max-w-md text-[12.5px] text-ink-3">Your copy is attached to that email as a PDF. RIVET will countersign and send the completed agreement. You can download it again any time under Settings → Agreement.</p>
+        <p className="mt-5 max-w-md text-[12.5px] text-ink-3">Your copy is attached to that email as a PDF. RIVET will sign it too and send you the completed agreement. You can download it again any time in Settings, under Agreement.</p>
       </div>
       <Footer>
         <Button variant="secondary" onClick={() => downloadAgreementPdf(agreement)} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>

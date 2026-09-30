@@ -15,7 +15,7 @@ test.describe("Unified Today queue", () => {
 
     const queue = page.getByRole("region", { name: "Today" });
     await expect(queue).toBeVisible();
-    await expect(queue.getByText("Next priority")).toBeVisible();
+    await expect(queue.getByText("Do this first")).toBeVisible();
 
     const layout = await page.evaluate(() => {
       const today = document.querySelector<HTMLElement>('[aria-labelledby="today-queue-title"]');
@@ -38,7 +38,7 @@ test.describe("Unified Today queue", () => {
     const outcomeDialog = page.getByRole("dialog", { name: "What happened?" });
     if (await outcomeDialog.isVisible({ timeout: 1_500 }).catch(() => false)) {
       await outcomeDialog.getByRole("radio", { name: "Not interested" }).click();
-      await outcomeDialog.getByRole("button", { name: "Log contact and finish" }).click();
+      await outcomeDialog.getByRole("button", { name: "Save and finish" }).click();
       await expect(outcomeDialog).toBeHidden();
     }
 

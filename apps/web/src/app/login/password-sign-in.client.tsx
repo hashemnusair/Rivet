@@ -2,7 +2,7 @@
 
 import { loginHref, safeInternalRedirect } from "@/lib/routing/host-routing";
 import { useSignIn } from "@clerk/nextjs";
-import { ArrowLeft, ArrowRight, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
@@ -43,14 +43,14 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         },
       });
       if (error) {
-        setLocalError(messageFrom(error, "Your session could not be started. Please try again."));
+        setLocalError(messageFrom(error, "We could not sign you in. Try again."));
         return false;
       }
       if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
       else router.replace(decoratedRedirect);
       return true;
     } catch (error) {
-      setLocalError(messageFrom(error, "Your session could not be started. Please try again."));
+      setLocalError(messageFrom(error, "We could not sign you in. Try again."));
       return false;
     } finally {
       setFinishing(false);
@@ -82,7 +82,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
       return;
     }
 
-    throw new Error("This account requires a verification method that is not available on this page.");
+    throw new Error("This account needs a sign-in step we cannot show here. Contact RIVET support.");
   };
 
   const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
@@ -107,12 +107,12 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         try {
           await beginVerification();
         } catch (verificationError) {
-          setLocalError(messageFrom(verificationError, "Additional verification could not be started."));
+          setLocalError(messageFrom(verificationError, "We could not start the next sign-in step. Try again."));
         }
         return;
       }
 
-      setLocalError("Sign-in needs an additional step. Please try again or contact RIVET support.");
+      setLocalError("Sign-in needs another step. Try again or contact RIVET support.");
     } catch (error) {
       setLocalError(messageFrom(error, "The email or password is incorrect."));
     } finally {
@@ -137,14 +137,14 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
               : await signIn.mfa.verifyBackupCode({ code: code.trim() });
 
       if (result.error) {
-        setLocalError(messageFrom(result.error, "That verification code is not valid."));
+        setLocalError(messageFrom(result.error, "That code is not correct. Try again."));
         return;
       }
       if (!(await finish()) && signIn.status !== "complete") {
-        setLocalError("Verification is not complete yet. Please try again.");
+        setLocalError("Sign-in is not finished yet. Try again.");
       }
     } catch (error) {
-      setLocalError(messageFrom(error, "That verification code is not valid."));
+      setLocalError(messageFrom(error, "That code is not correct. Try again."));
     } finally {
       setSubmitting(false);
     }
@@ -156,9 +156,9 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
     setSubmitting(true);
     try {
       const result = verification === "email_code" ? await signIn.mfa.sendEmailCode() : await signIn.mfa.sendPhoneCode();
-      if (result.error) setLocalError(messageFrom(result.error, "A new code could not be sent."));
+      if (result.error) setLocalError(messageFrom(result.error, "We could not send a new code. Try again."));
     } catch (error) {
-      setLocalError(messageFrom(error, "A new code could not be sent."));
+      setLocalError(messageFrom(error, "We could not send a new code. Try again."));
     } finally {
       setSubmitting(false);
     }
@@ -173,7 +173,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
       setCode("");
       setLocalError(null);
     } catch (error) {
-      setLocalError(messageFrom(error, "We could not restart sign-in. Please try again."));
+      setLocalError(messageFrom(error, "We could not start over. Try again."));
     } finally {
       setSubmitting(false);
     }
@@ -186,7 +186,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
       ? "Check your email"
       : verification === "phone_code"
         ? "Check your phone"
-        : "Two-step verification";
+        : "One more step";
     return (
       <div className="mt-7 rounded-lg border border-line-2 bg-surface px-5 py-6 sm:px-7">
         <div className="text-center">
@@ -196,10 +196,10 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
           <h2 className="mt-4 font-display text-[21px] font-semibold tracking-tight">{title}</h2>
           <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-ink-2">
             {sentCode
-              ? `We sent a six-digit security code to your ${verification === "email_code" ? "email address" : "phone number"}. Enter it below to finish signing in.`
+              ? `We sent a 6-digit code to your ${verification === "email_code" ? "email" : "phone"}. Enter it to finish signing in.`
               : verification === "totp"
-                ? "Enter the six-digit code from your authenticator app to finish signing in."
-                : "Enter one of the backup codes saved when two-step verification was enabled."}
+                ? "Enter the 6-digit code from your authenticator app."
+                : "Enter one of your saved backup codes."}
           </p>
         </div>
         <form onSubmit={submitCode} className="mt-6 space-y-5" noValidate>
@@ -228,13 +228,10 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
             </button>
           {sentCode ? (
             <button type="button" onClick={() => void resend()} disabled={busy} className="font-medium text-ink-2 transition-colors hover:text-ink disabled:pointer-events-none disabled:opacity-50">
-              Didn’t receive it? Resend
+              Didn’t get it? Send a new code
             </button>
           ) : null}
         </div>
-        <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[12px] text-ink-3">
-          <LockKeyhole className="size-3.5" aria-hidden /> Secure verification by Clerk
-        </p>
       </div>
     );
   }
@@ -318,8 +315,8 @@ function VerificationCodeInput({ value, onChange, invalid }: { value: string; on
 
   return (
     <fieldset>
-      <legend className="mb-3 w-full text-center text-[12px] font-medium text-ink-2">Verification code</legend>
-      <div className="grid grid-cols-6 gap-2" aria-label="Verification code">
+      <legend className="mb-3 w-full text-center text-[12px] font-medium text-ink-2">Sign-in code</legend>
+      <div className="grid grid-cols-6 gap-2" aria-label="Sign-in code">
         {digits.map((digit, index) => (
           <input
             key={index}

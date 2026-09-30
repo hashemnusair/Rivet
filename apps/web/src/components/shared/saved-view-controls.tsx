@@ -73,20 +73,20 @@ export function SavedViewControls({ surface, state, onApply, hasExplicitState = 
           <DropdownMenuTrigger asChild><Button type="button" size="icon-sm" className="size-11 min-[1180px]:size-7" variant="ghost" aria-label={`Manage saved view ${selected.name}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => openDialog("edit")}><Pencil /> Update view</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => openDialog("duplicate")}><Copy /> Duplicate view</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openDialog("duplicate")}><Copy /> Copy view</DropdownMenuItem>
             <DropdownMenuItem destructive disabled={remove.isPending} onSelect={() => remove.mutate(selected)}><Trash2 /> Delete view</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
       {selected && !compact ? <Button type="button" size="icon" variant="ghost" aria-label={`Update saved view ${selected.name}`} onClick={() => openDialog("edit")}><Pencil /></Button> : null}
-      {selected && !compact ? <Button type="button" size="icon" variant="ghost" aria-label={`Duplicate saved view ${selected.name}`} onClick={() => openDialog("duplicate")}><Copy /></Button> : null}
+      {selected && !compact ? <Button type="button" size="icon" variant="ghost" aria-label={`Copy saved view ${selected.name}`} onClick={() => openDialog("duplicate")}><Copy /></Button> : null}
       {selected && !compact ? <Button type="button" size="icon" variant="ghost" aria-label={`Delete saved view ${selected.name}`} loading={remove.isPending} onClick={() => remove.mutate(selected)}><Trash2 /></Button> : null}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{dialogMode === "edit" ? "Update saved view" : dialogMode === "duplicate" ? "Duplicate saved view" : "Save this view"}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{dialogMode === "edit" ? "Update saved view" : dialogMode === "duplicate" ? "Copy saved view" : "Save this view"}</DialogTitle></DialogHeader>
           <DialogBody className="space-y-4">
-            <label className="grid gap-1.5 text-[12.5px] font-medium">View name<Input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="e.g. Expiring in 14 days" /></label>
+            <label className="grid gap-1.5 text-[12.5px] font-medium">View name<Input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="For example: Ending in 14 days" /></label>
             <label className="flex items-center gap-2 text-[12.5px]"><Checkbox checked={isDefault} onCheckedChange={(checked) => setIsDefault(checked === true)} />Use this as my default view</label>
           </DialogBody>
           <DialogFooter><Button variant="secondary" onClick={() => setDialogOpen(false)}>Cancel</Button><Button disabled={!name.trim()} loading={save.isPending} onClick={() => save.mutate()}>{dialogMode === "edit" ? "Update view" : "Save view"}</Button></DialogFooter>

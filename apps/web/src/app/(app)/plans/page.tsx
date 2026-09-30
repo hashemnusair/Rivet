@@ -39,7 +39,7 @@ function PlansWorkspace() {
 
   const archivePlan = useApiMutation((api, plan: MembershipPlan) => api.updatePlan(plan.id, { status: "archived" }), {
     onSuccess: async () => {
-      toast.success("Plan archived — existing memberships are unaffected.");
+      toast.success("Plan archived. Memberships already sold on it do not change.");
       await invalidate();
     },
   });
@@ -55,7 +55,7 @@ function PlansWorkspace() {
     <div className="space-y-4">
       <PageHeader
         title="Membership plans"
-        description="The catalogue you sell from. Editing a plan never rewrites past sales."
+        description="The plans you sell. Changing a plan does not change memberships already sold."
         actions={
           <Gate permission="settings.manage">
             <Button
@@ -64,7 +64,7 @@ function PlansWorkspace() {
                 setDialogOpen(true);
               }}
             >
-              <Plus /> New plan
+              <Plus /> Add plan
             </Button>
           </Gate>
         }
@@ -101,7 +101,7 @@ function PlansWorkspace() {
         ) : (query.data?.items.length ?? 0) === 0 ? (
           <EmptyState
             title={showArchived ? "No archived plans" : "No plans yet"}
-            description={showArchived ? "Archived plans are kept here for reference." : "Create the first plan to start selling memberships."}
+            description={showArchived ? "Plans you archive are kept here." : "Add your first plan to start selling memberships."}
             className="border-0"
           />
         ) : (
@@ -121,12 +121,12 @@ function PlansWorkspace() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Plan</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead>Length</TableHead>
                 <TableHead className="text-end">Price</TableHead>
-                <TableHead>Access</TableHead>
-                <TableHead className="text-end">Freeze</TableHead>
-                <TableHead className="text-end">Included PT</TableHead>
-                <TableHead className="text-end">Subscribers</TableHead>
+                <TableHead>Branches</TableHead>
+                <TableHead className="text-end">Freeze days</TableHead>
+                <TableHead className="text-end">PT sessions</TableHead>
+                <TableHead className="text-end">Active members</TableHead>
                 <TableHead aria-label="Actions" />
               </TableRow>
             </TableHeader>
@@ -142,7 +142,7 @@ function PlansWorkspace() {
                       <span className="tabular">{plan.durationDays} days</span>
                     ) : (
                       <span className="tabular">
-                        {plan.visitAllowance} visits · {plan.visitValidityDays}d validity
+                        {plan.visitAllowance} visits{plan.visitValidityDays ? ` in ${plan.visitValidityDays} days` : ""}
                       </span>
                     )}
                   </TableCell>
@@ -151,7 +151,7 @@ function PlansWorkspace() {
                   </TableCell>
                   <TableCell className="text-[12.5px] text-ink-2">{branchLabel(plan)}</TableCell>
                   <TableCell className="text-end text-[12.5px] tabular text-ink-2">
-                    {plan.freezeAllowanceDays > 0 ? `${plan.freezeAllowanceDays}d` : "—"}
+                    {plan.freezeAllowanceDays > 0 ? plan.freezeAllowanceDays : "—"}
                   </TableCell>
                   <TableCell className="text-end text-[12.5px] tabular text-ink-2">
                     {plan.includedPtSessions > 0 ? plan.includedPtSessions : "—"}
@@ -210,10 +210,10 @@ function PlanCompactRow({ plan, branchLabel, onEdit, onArchive }: { plan: Member
         <MoneyText money={plan.basePrice} className="text-[13.5px] font-semibold" />
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]">
-        <div><dt className="text-ink-3">Type</dt><dd className="mt-0.5 tabular">{plan.kind === "time" ? `${plan.durationDays} days` : `${plan.visitAllowance} visits · ${plan.visitValidityDays}d validity`}</dd></div>
-        <div><dt className="text-ink-3">Access</dt><dd className="mt-0.5">{branchLabel}</dd></div>
-        <div><dt className="text-ink-3">Subscribers</dt><dd className="mt-0.5 tabular">{plan.activeSubscribers}</dd></div>
-        <div><dt className="text-ink-3">Allowances</dt><dd className="mt-0.5 tabular">{plan.freezeAllowanceDays > 0 ? `${plan.freezeAllowanceDays} freeze days` : "No freeze"}{plan.includedPtSessions > 0 ? ` · ${plan.includedPtSessions} PT` : ""}</dd></div>
+        <div><dt className="text-ink-3">Length</dt><dd className="mt-0.5 tabular">{plan.kind === "time" ? `${plan.durationDays} days` : `${plan.visitAllowance} visits${plan.visitValidityDays ? ` in ${plan.visitValidityDays} days` : ""}`}</dd></div>
+        <div><dt className="text-ink-3">Branches</dt><dd className="mt-0.5">{branchLabel}</dd></div>
+        <div><dt className="text-ink-3">Active members</dt><dd className="mt-0.5 tabular">{plan.activeSubscribers}</dd></div>
+        <div><dt className="text-ink-3">Freeze and PT</dt><dd className="mt-0.5 tabular">{plan.freezeAllowanceDays > 0 ? `${plan.freezeAllowanceDays} freeze days` : "No freeze"}{plan.includedPtSessions > 0 ? ` · ${plan.includedPtSessions} PT sessions` : ""}</dd></div>
       </dl>
       <Gate permission="settings.manage">
         <div className="flex justify-end gap-2 border-t border-line pt-3">

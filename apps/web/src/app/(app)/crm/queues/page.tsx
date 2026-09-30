@@ -31,8 +31,8 @@ import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 type RenewalBucket = "expiring" | "expired";
 
 const BUCKETS: Array<{ value: RenewalBucket; label: string; hint: string }> = [
-  { value: "expiring", label: "Expiring", hint: "Memberships ending soon." },
-  { value: "expired", label: "Expired", hint: "Memberships that ended recently." },
+  { value: "expiring", label: "Ending soon", hint: "Memberships that end soon." },
+  { value: "expired", label: "Ended", hint: "Memberships that ended recently." },
 ];
 
 export default function QueuesPage() {
@@ -58,8 +58,8 @@ function RetentionWorkspace() {
   const view = params.get("view") === "renewals" ? "renewals" : "at-risk";
   const setView = (next: string) => update({ view: next, page: undefined, member: undefined });
   return <div className="space-y-4">
-    <PageHeader title="Retention" description="Follow up with members who stopped visiting or need to renew." />
-    <div className={tabListClassName} role="group" aria-label="Retention workspace">
+    <PageHeader title="Follow-ups" description="Call members who stopped coming or need to renew." />
+    <div className={tabListClassName} role="group" aria-label="Follow-up lists">
       <button type="button" aria-pressed={view === "at-risk"} onClick={() => setView("at-risk")} className={tabTriggerClassName}><Activity className="size-3.5" /> At risk</button>
       <button type="button" aria-pressed={view === "renewals"} onClick={() => setView("renewals")} className={tabTriggerClassName}><CalendarClock className="size-3.5" /> Renewals</button>
     </div>
@@ -68,10 +68,10 @@ function RetentionWorkspace() {
 }
 
 const RISK_FILTERS: Array<{ value: RetentionRiskKind | "all"; label: string; hint: string }> = [
-  { value: "all", label: "All attention", hint: "The most urgent inactive, expiring, and expired members." },
-  { value: "inactive", label: "Not visiting", hint: "Active members who have stopped checking in." },
-  { value: "expiring", label: "Expiring", hint: "Active memberships inside the gym's renewal window." },
-  { value: "expired", label: "Win back", hint: "Recently expired members with no newer term." },
+  { value: "all", label: "All", hint: "Members who stopped coming, or whose membership ends soon or has ended. Most urgent first." },
+  { value: "inactive", label: "Not visiting", hint: "Members with a membership who stopped coming." },
+  { value: "expiring", label: "Ending soon", hint: "Memberships that end soon." },
+  { value: "expired", label: "Win back", hint: "Membership ended recently and they have not renewed." },
 ];
 
 function AtRiskQueuePage() {
@@ -103,7 +103,7 @@ function AtRiskQueuePage() {
     <aside className="panel h-fit self-start lg:sticky lg:top-20" aria-label="At-risk filters">
       
       <div className="space-y-4 p-4">
-        <label htmlFor="risk-search" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Find a member<div className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-4" /><Input id="risk-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone or number" className="ps-9" /></div></label>
+        <label htmlFor="risk-search" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Find a member<div className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-4" /><Input id="risk-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone or member number" className="ps-9" /></div></label>
         <div className="border-t border-line pt-4">
           <p className="text-[12px] font-medium text-ink-2">Reason</p>
           <div className="mt-2 grid grid-cols-2 gap-1 lg:grid-cols-1" role="group" aria-label="At-risk reason">
@@ -111,16 +111,16 @@ function AtRiskQueuePage() {
           </div>
           <p className="mt-2 text-[12px] leading-relaxed text-ink-3">{RISK_FILTERS.find((option) => option.value === reason)?.hint}</p>
         </div>
-        <p className="hidden text-[12px] leading-relaxed text-ink-2 lg:block">Frozen and newly joined members are excluded. Thresholds follow Settings → Operational rules.</p>
+        <p className="hidden text-[12px] leading-relaxed text-ink-2 lg:block">Frozen and new members are not shown. An owner or manager can change these day limits in Settings.</p>
       </div>
     </aside>
 
     <div className={cn("grid gap-4", selectedItem && "2xl:grid-cols-[minmax(0,1fr)_340px]")}>
       {selectedId && !selectedItem && risks.data && !risks.isLoading ? <MissingSelectionNotice memberId={selectedId} onClear={() => setSelectedId(undefined)} /> : null}
       <section className="panel min-h-[420px] overflow-hidden self-start" aria-labelledby="risk-results-title">
-        <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div><h2 id="risk-results-title" className="mt-1 text-[15px] font-semibold">Recommended follow-ups</h2><p className="mt-0.5 text-[12px] text-ink-3">Each member appears once, with every current reason shown.</p></div><div className="flex shrink-0 items-center gap-2"><span className="text-[12px] tabular text-ink-3">{risks.data?.totalItems ?? "…"}</span><Button type="button" variant="ghost" size="icon-sm" onClick={() => void risks.refetch()} aria-label="Refresh at-risk members"><RefreshCw className="size-3.5" /></Button></div></header>
-        {risks.isBackgroundError ? <ErrorState layout="inline" title="Queue could not refresh" onRetry={() => void risks.refetch()} /> : null}
-        {risks.isLoading && !risks.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : risks.isError && !risks.data ? <ErrorState className="m-4" title="At-risk members could not be loaded" onRetry={() => void risks.refetch()} /> : items.length === 0 ? <EmptyState title="Nobody matches this view" description="No members meet the current risk filters. Try another reason or search." compact className="m-4" icon={Activity} action={(search || reason !== "all") ? <Button type="button" variant="secondary" size="sm" onClick={() => { update({ q: undefined, reason: undefined, page: undefined, member: undefined }); }}>Clear filters</Button> : undefined} /> : <ul className="divide-y divide-line">{items.map((item) => <AtRiskRow key={item.member.id} item={item} selected={selectedItem?.member.id === item.member.id} onClick={() => setSelectedId(item.member.id)} />)}</ul>}
+        <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div><h2 id="risk-results-title" className="mt-1 text-[15px] font-semibold">Members to contact</h2><p className="mt-0.5 text-[12px] text-ink-3">Most urgent first.</p></div><div className="flex shrink-0 items-center gap-2"><span className="text-[12px] tabular text-ink-3">{risks.data?.totalItems ?? "…"}</span><Button type="button" variant="ghost" size="icon-sm" onClick={() => void risks.refetch()} aria-label="Refresh at-risk members"><RefreshCw className="size-3.5" /></Button></div></header>
+        {risks.isBackgroundError ? <ErrorState layout="inline" title="List could not refresh" onRetry={() => void risks.refetch()} /> : null}
+        {risks.isLoading && !risks.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : risks.isError && !risks.data ? <ErrorState className="m-4" title="At-risk members could not be loaded" onRetry={() => void risks.refetch()} /> : items.length === 0 ? <EmptyState title="No members found" description="Try another reason or search." compact className="m-4" icon={Activity} action={(search || reason !== "all") ? <Button type="button" variant="secondary" size="sm" onClick={() => { update({ q: undefined, reason: undefined, page: undefined, member: undefined }); }}>Clear filters</Button> : undefined} /> : <ul className="divide-y divide-line">{items.map((item) => <AtRiskRow key={item.member.id} item={item} selected={selectedItem?.member.id === item.member.id} onClick={() => setSelectedId(item.member.id)} />)}</ul>}
         {risks.data && risks.data.totalPages > 1 ? <DataPagination page={risks.data} onPage={(next) => update({ page: String(next), member: undefined })} className="border-t border-line p-4" /> : null}
       </section>
       {selectedItem ? <AtRiskPanel ref={panelRef} item={selectedItem} onClose={() => setSelectedId(undefined)} /> : null}
@@ -137,7 +137,7 @@ function MissingSelectionNotice({ memberId, onClear }: { memberId: string; onCle
   return <aside className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3 animate-fade-in" data-testid="at-risk-missing-selection" aria-label="Selected member not in this view">
     <div className="min-w-0">
       <p className="text-[13px] font-medium">That member is not in this view</p>
-      <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-3">They may be on another page, outside the current filters, snoozed, or no longer at risk. Their record has the full history and every follow-up action.</p>
+      <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-3">They may be on another page, hidden by a filter or by “Remind me later”, or no longer at risk. Open their record to see everything.</p>
     </div>
     <div className="flex flex-wrap gap-2">
       <Button asChild size="sm"><Link href={`/members/${memberId}`}>Open member record <ArrowUpRight /></Link></Button>
@@ -166,13 +166,13 @@ function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: 
     <FollowUpHeader member={item.member} onClose={onClose} />
     <div className="space-y-4 px-4 py-4">
       <div className="space-y-1">{item.reasons.map((reason) => <p key={reason.kind} className="text-[13px] font-medium">{reason.label}</p>)}</div>
-      {lapsedSnooze ? <p className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] leading-relaxed text-ink-2" data-testid="at-risk-lapsed-snooze">Snoozed until {formatDate(lapsedSnooze)} and back in the queue since. The snooze note is on the timeline.</p> : null}
+      {lapsedSnooze ? <p className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] leading-relaxed text-ink-2" data-testid="at-risk-lapsed-snooze">Hidden until {formatDate(lapsedSnooze)}, and back on this list since then. The note is on the timeline.</p> : null}
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]">
         <ContextRow label="Plan">{item.membership.planName}</ContextRow>
         <ContextRow label="Membership ends">{formatDate(item.membership.endDate)}</ContextRow>
-        <ContextRow label="Last visit">{item.lastVisitAt ? <RelativeText iso={item.lastVisitAt} /> : "No recorded visit"}</ContextRow>
-        <ContextRow label="Last contact">{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">never contacted</span>}</ContextRow>
-        {item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}
+        <ContextRow label="Last visit">{item.lastVisitAt ? <RelativeText iso={item.lastVisitAt} /> : "No visits recorded"}</ContextRow>
+        <ContextRow label="Last contact">{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">Not contacted yet</span>}</ContextRow>
+        {item.membership.outstanding.amount > 0 ? <ContextRow label="Owes"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}
       </dl>
     </div>
     <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3" aria-label="Follow-up actions">
@@ -180,7 +180,7 @@ function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: 
       <WhatsAppHandoff subject="member" subjectId={item.member.id} recipientName={item.member.fullName} phone={item.member.phone} initialMessage={initialMessage} onLogged={onClose} />
       <LogContactDialog subject="member" memberId={item.member.id} onLogged={onClose} />
       {needsRenewal && canSell ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=renew`}><RotateCcw /> Renew</Link></Button> : null}
-      {item.membership.outstanding.amount > 0 && canCollect ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=collect`}><Banknote /> Collect</Link></Button> : null}
+      {item.membership.outstanding.amount > 0 && canCollect ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=collect`}><Banknote /> Collect payment</Link></Button> : null}
       <SnoozeRiskDialog item={item} onSnoozed={onClose} />
     </footer>
   </aside>;
@@ -197,8 +197,8 @@ function SnoozeRiskDialog({ item, onSnoozed }: { item: AtRiskMemberItem; onSnooz
     setUntil(addDays(today, item.recommendedSnoozeDays));
     setReason("");
   }, [item.member.id, item.recommendedSnoozeDays, today]);
-  const snooze = useApiMutation((api) => api.snoozeAtRiskMember({ memberId: item.member.id, until, reason: reason.trim() || undefined }), { onSuccess: async () => { toast.success(`Follow-up snoozed until ${formatDate(until)}.`); setOpen(false); await invalidate(); onSnoozed(); }, onError: () => toast.error("Follow-up could not be snoozed.") });
-  return <><Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}><CalendarClock /> Snooze</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Snooze this follow-up</DialogTitle><DialogDescription>{item.member.fullName} leaves the active queue until the selected date. The decision stays in the timeline and audit trail.</DialogDescription></DialogHeader><DialogBody className="space-y-3"><label htmlFor="risk-snooze-until" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Return to queue<Input id="risk-snooze-until" type="date" min={addDays(today, 1)} max={addDays(today, 90)} value={until} onChange={(event) => setUntil(event.target.value)} /></label><label htmlFor="risk-snooze-reason" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Note <span className="font-normal text-ink-4">Optional</span><Input id="risk-snooze-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travelling, asked us to call next week…" /></label></DialogBody><DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" loading={snooze.isPending} disabled={!until} onClick={() => snooze.mutate()}>Snooze follow-up</Button></DialogFooter></DialogContent></Dialog></>;
+  const snooze = useApiMutation((api) => api.snoozeAtRiskMember({ memberId: item.member.id, until, reason: reason.trim() || undefined }), { onSuccess: async () => { toast.success(`Hidden until ${formatDate(until)}.`); setOpen(false); await invalidate(); onSnoozed(); }, onError: () => toast.error("Not saved. Try again.") });
+  return <><Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}><CalendarClock /> Remind me later</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Remind me later</DialogTitle><DialogDescription>{item.member.fullName} leaves this list until the date you choose. This is noted on their timeline.</DialogDescription></DialogHeader><DialogBody className="space-y-3"><label htmlFor="risk-snooze-until" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Show again on<Input id="risk-snooze-until" type="date" min={addDays(today, 1)} max={addDays(today, 90)} value={until} onChange={(event) => setUntil(event.target.value)} /></label><label htmlFor="risk-snooze-reason" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Note <span className="font-normal text-ink-4">Optional</span><Input id="risk-snooze-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travelling, asked us to call next week…" /></label></DialogBody><DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" loading={snooze.isPending} disabled={!until} onClick={() => snooze.mutate()}>Hide until then</Button></DialogFooter></DialogContent></Dialog></>;
 }
 
 function RenewalQueuePage() {
@@ -255,18 +255,18 @@ function RenewalQueuePage() {
           </div>
 
           <div className="border-t border-line pt-4">
-            <p className="text-[12px] font-medium text-ink-2">Window</p>
+            <p className="text-[12px] font-medium text-ink-2">Time period</p>
             <div className="mt-2 space-y-3">
               <label htmlFor="follow-up-days" className="grid gap-1.5 text-[12px] font-medium text-ink-2">
                 Days
                 <Input id="follow-up-days" type="number" min={1} max={365} value={days} onChange={(event) => { update({ days: event.target.value, from: undefined, to: undefined, page: undefined, member: undefined }); }} aria-label="Follow-up days" />
               </label>
-              <p className="text-[12px] text-ink-4">Use an exact range below instead when you need a specific review period.</p>
+              <p className="text-[12px] text-ink-4">Or choose exact dates below.</p>
             </div>
           </div>
 
           <details className="border-t border-line pt-4" open={Boolean(fromDate || toDate) || undefined}>
-            <summary className="min-h-9 cursor-pointer text-[12px] font-medium text-ink-2">Exact end-date range</summary>
+            <summary className="min-h-9 cursor-pointer text-[12px] font-medium text-ink-2">Exact end dates</summary>
             <div className="mt-2 space-y-3">
               <label htmlFor="follow-up-from-date" className="grid gap-1.5 text-[12px] font-medium text-ink-2">
                 From date
@@ -281,7 +281,7 @@ function RenewalQueuePage() {
 
           <Button type="button" variant="secondary" onClick={reset} className="w-full"><RotateCcw /> Reset filters</Button>
         </div>
-        <footer className="border-t border-line px-4 py-3 text-[12px] leading-relaxed text-ink-3">Date ranges can go back one year. Results update as soon as a filter changes.</footer>
+        <footer className="border-t border-line px-4 py-3 text-[12px] leading-relaxed text-ink-3">Dates can go back one year.</footer>
       </aside>
 
       <div className={cn("grid gap-4", selectedItem && "2xl:grid-cols-[minmax(0,1fr)_340px]")}>
@@ -289,16 +289,16 @@ function RenewalQueuePage() {
           <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
             <div>
               
-              <h2 id="follow-up-results-title" className="mt-1 text-[15px] font-semibold">Found matches</h2>
-              <p className="mt-0.5 text-[12px] text-ink-3">{BUCKETS.find((option) => option.value === bucket)?.label} memberships · {fromDate || toDate ? `${fromDate || oldestDate} → ${toDate || today}` : `${days || "—"} day window`}</p>
+              <h2 id="follow-up-results-title" className="mt-1 text-[15px] font-semibold">Memberships found</h2>
+              <p className="mt-0.5 text-[12px] text-ink-3">{BUCKETS.find((option) => option.value === bucket)?.label} · {fromDate || toDate ? `${formatDate(fromDate || oldestDate)} to ${formatDate(toDate || today)}` : days ? `${bucket === "expired" ? "last" : "next"} ${days} days` : "—"}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <span className="text-[12px] text-ink-3 tabular">{renewals.data?.totalItems ?? "…"}</span>
-              <Button type="button" variant="ghost" size="icon-sm" onClick={() => { void renewals.refetch(); }} aria-label="Refresh follow-up matches" title="Refresh matches"><RefreshCw className="size-3.5" /></Button>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => { void renewals.refetch(); }} aria-label="Refresh list" title="Refresh list"><RefreshCw className="size-3.5" /></Button>
             </div>
           </header>
           {renewals.isBackgroundError ? <ErrorState layout="inline" title="Renewals could not refresh" onRetry={() => void renewals.refetch()} /> : null}
-          {renewals.isLoading && !renewals.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div> : renewals.isError && !renewals.data ? <ErrorState className="m-4" title="Follow-up data could not be loaded" onRetry={() => { void renewals.refetch(); }} /> : items.length === 0 ? <EmptyQueue text={bucket === "expiring" ? "No memberships match this expiring filter." : "No memberships match this expired filter."} description="Try a wider day window or an exact end-date range." onReset={reset} /> : <ul className="divide-y divide-line">{items.map((item) => <RenewalRow key={item.membership.id} item={item} selected={selectedItem?.membership.id === item.membership.id} onClick={() => setSelectedId(item.membership.id)} />)}</ul>}
+          {renewals.isLoading && !renewals.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div> : renewals.isError && !renewals.data ? <ErrorState className="m-4" title="Renewals could not be loaded" onRetry={() => { void renewals.refetch(); }} /> : items.length === 0 ? <EmptyQueue text={bucket === "expiring" ? "No memberships end in this period." : "No memberships ended in this period."} description="Try more days or other dates." onReset={reset} /> : <ul className="divide-y divide-line">{items.map((item) => <RenewalRow key={item.membership.id} item={item} selected={selectedItem?.membership.id === item.membership.id} onClick={() => setSelectedId(item.membership.id)} />)}</ul>}
           {renewals.data && renewals.data.totalPages > 1 ? <DataPagination page={renewals.data} onPage={(next) => update({ page: String(next), member: undefined })} className="border-t border-line p-4" /> : null}
         </section>
 
@@ -311,7 +311,7 @@ function RenewalQueuePage() {
           <WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} />
           <LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} />
           {(session?.permissions ?? []).includes("memberships.sell") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=renew`}><RotateCcw /> Renew</Link></Button> : null}
-          {selectedItem.membership.outstanding.amount > 0 && (session?.permissions ?? []).includes("payments.collect") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=collect`}><Banknote /> Collect</Link></Button> : null}
+          {selectedItem.membership.outstanding.amount > 0 && (session?.permissions ?? []).includes("payments.collect") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=collect`}><Banknote /> Collect payment</Link></Button> : null}
         </footer>
         </aside> : null}
       </div>
@@ -327,7 +327,7 @@ function EmptyQueue({ text, description, onReset }: { text: string; description:
 }
 
 function RenewalContext({ item }: { item: RenewalQueueItem }) {
-  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends"><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Balance"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact">{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
+  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label="Plan">{item.membership.planName}</ContextRow><ContextRow label="Ends"><span className="tabular">{formatDate(item.membership.endDate)}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Owes"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label="Last contact">{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></ContextRow> : <ContextRow label="Last contact"><span className="font-medium text-warning-deep">Not contacted yet</span></ContextRow>}</dl>;
 }
 
 function FollowUpHeader({ member, onClose }: { member: { id: string; fullName: string; phone: string }; onClose: () => void }) {

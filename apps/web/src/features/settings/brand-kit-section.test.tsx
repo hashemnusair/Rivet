@@ -19,12 +19,12 @@ function ShellBrandProbe() {
   return <output data-testid="shell-brand" data-palette={session?.organization.brand?.paletteKey ?? "none"} data-logo={session?.organization.brand?.logoUrl ?? "none"} />;
 }
 
-describe("Brand Kit editor", () => {
+describe("Brand kit editor", () => {
   it("uses derived foreground contrast in the unsaved preview", async () => {
     const user = userEvent.setup();
     await renderWithApp(<BrandKitSection />);
-    const color = await screen.findByLabelText("Primary color hex");
-    const action = await screen.findByRole("button", { name: "Primary action" });
+    const color = await screen.findByLabelText("Primary color code");
+    const action = await screen.findByRole("button", { name: "Main button" });
 
     expect(action).toHaveStyle({ color: "#ffffff" });
     await user.clear(color);
@@ -44,8 +44,8 @@ describe("Brand Kit editor", () => {
 
     await user.click(await screen.findByRole("radio", { name: "gold palette" }));
     const logo = new File(["logo"], "workspace-logo.png", { type: "image/png" });
-    await user.upload(await screen.findByLabelText("Upload workspace logo"), logo);
-    const save = await screen.findByRole("button", { name: "Save Brand Kit" });
+    await user.upload(await screen.findByLabelText("Upload logo"), logo);
+    const save = await screen.findByRole("button", { name: "Save brand kit" });
     await waitFor(() => expect(save).toBeEnabled());
     await user.click(save);
 
@@ -59,9 +59,9 @@ describe("Brand Kit editor", () => {
     const user = userEvent.setup();
     await renderWithApp(<BrandKitSection />);
 
-    expect(screen.queryByRole("button", { name: "Save Brand Kit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save brand kit" })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("radio", { name: "gold palette" }));
-    expect(await screen.findByRole("button", { name: "Save Brand Kit" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Save brand kit" })).toBeEnabled();
     expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
   });
 });

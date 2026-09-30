@@ -30,7 +30,7 @@ export function receiptTextLines(detail: CustomerReceipt): string[] {
     "",
     `Receipt number: ${detail.receipt.receiptNumber}`,
     `Issued: ${new Date(detail.receipt.issuedAt).toLocaleString("en-JO")}`,
-    `Customer: ${customerName}`,
+    `Member: ${customerName}`,
     ...(customerNumber ? [`Member number: ${customerNumber}`] : []),
     "",
     ...(retail?.lines.length
@@ -38,13 +38,13 @@ export function receiptTextLines(detail: CustomerReceipt): string[] {
       : [`Description: ${detail.charge?.description ?? (payment.type === "refund" ? "Refund" : "Payment")}`]),
     "",
     `${payment.type === "refund" ? "Refunded" : "Total"}: ${formatMoney(amount)}`,
-    ...(detail.charge?.outstandingAmount.amount ? [`Balance remaining: ${formatMoney(detail.charge.outstandingAmount)}`] : []),
+    ...(detail.charge?.outstandingAmount.amount ? [`Unpaid: ${formatMoney(detail.charge.outstandingAmount)}`] : []),
     `Payment method: ${PAYMENT_METHOD_LABELS[payment.method] ?? exportStatusLabel(payment.method)}`,
     `Status: ${exportStatusLabel(payment.status)}`,
     `Recorded by: ${payment.collectedByName}`,
     ...(payment.externalReference ? [`Payment reference: ${payment.externalReference}`] : []),
     ...(payment.refundReason ? [`Refund reason: ${payment.refundReason}`] : []),
-    ...(payment.voidReason ? [`Void reason: ${payment.voidReason}`] : []),
+    ...(payment.voidReason ? [`Cancellation reason: ${payment.voidReason}`] : []),
     "",
     detail.organization.receiptFooter,
   ].filter((line) => line !== undefined);
@@ -70,7 +70,7 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
           icon={notFound ? SearchX : AlertTriangle}
           role={notFound ? "status" : "alert"}
           title={notFound ? "Receipt not found" : "The receipt could not be loaded"}
-          description={notFound ? "This receipt is not linked to your account, or the link is out of date." : "Nothing about your payments changed. Try again in a moment."}
+          description={notFound ? "This receipt is not on your account, or the link is old." : "Nothing about your payments changed. Try again in a moment."}
           action={
             <div className="flex flex-wrap justify-center gap-2">
               {notFound ? null : <Button size="sm" onClick={() => query.refetch()}>Try again</Button>}
@@ -151,7 +151,7 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
           </div>
           {outstanding ? (
             <div className="mt-2 flex items-baseline justify-between gap-4 text-[13.5px] font-medium text-warning-deep">
-              <span>Balance remaining</span>
+              <span>Unpaid</span>
               <MoneyText money={outstanding} />
             </div>
           ) : null}
@@ -162,12 +162,12 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
           <ReceiptFact label="Recorded by">{payment.collectedByName}</ReceiptFact>
           {payment.externalReference ? <ReceiptFact label="Payment reference"><span className="font-mono text-[12px]">{payment.externalReference}</span></ReceiptFact> : null}
           {payment.refundReason ? <ReceiptFact label="Refund reason">{payment.refundReason}</ReceiptFact> : null}
-          {payment.voidReason ? <ReceiptFact label="Void reason">{payment.voidReason}</ReceiptFact> : null}
+          {payment.voidReason ? <ReceiptFact label="Cancellation reason">{payment.voidReason}</ReceiptFact> : null}
         </dl>
 
         <footer className="border-t border-line pt-4 text-[12px] leading-relaxed text-ink-3">
           <p>{detail.organization.receiptFooter}</p>
-          <p className="mt-2">Only you can open this receipt while signed in. The gym&apos;s recorded payment status is the source of truth.</p>
+          <p className="mt-2">If something looks wrong, ask your gym.</p>
         </footer>
       </article>
     </main>

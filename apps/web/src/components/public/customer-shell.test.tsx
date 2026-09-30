@@ -79,7 +79,7 @@ describe("CustomerShell", () => {
     expect(items).toEqual([
       ["Profile", "/customer/profile"],
       ["Getting started", "/customer/getting-started"],
-      ["Communication settings", "/customer/profile#communication"],
+      ["Offers and news", "/customer/profile#communication"],
     ]);
     expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: /Payments and receipts/ })).not.toBeInTheDocument();

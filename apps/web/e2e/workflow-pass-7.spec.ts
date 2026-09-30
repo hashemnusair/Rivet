@@ -63,7 +63,7 @@ async function visit(page: Page, path: string, ready: (page: Page) => Locator) {
   try {
     await expect(ready(page)).toBeVisible({ timeout: 45_000 });
   } catch (error) {
-    const gate = page.getByRole("status", { name: /Loading workspace|Checking access|Checking sign-in|Verifying your invitation/ });
+    const gate = page.getByRole("status", { name: /Loading your gym|Checking access|Checking sign-in|Checking your invitation/ });
     if (!(await gate.isVisible())) throw error;
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(ready(page)).toBeVisible({ timeout: 60_000 });
@@ -94,13 +94,13 @@ type Route = { path: string; slug: string; ready: (page: Page) => Locator; shoot
 const SIGN_IN_ROUTES: Route[] = [
   { path: "/login", slug: "login", ready: (page) => page.getByRole("link", { name: "Platform admin preview" }), shoot: true },
   { path: "/login/gym", slug: "login-gym", ready: (page) => page.getByRole("radiogroup", { name: "Staff role" }), shoot: true },
-  { path: "/login/gym?preview=unavailable-gym", slug: "login-gym-unavailable", ready: (page) => page.getByText("Your gym workspace is unavailable") },
+  { path: "/login/gym?preview=unavailable-gym", slug: "login-gym-unavailable", ready: (page) => page.getByText("Your gym is not active on RIVET") },
   { path: "/login/admin", slug: "login-admin", ready: (page) => page.getByRole("button", { name: /Open platform console/i }), shoot: true },
-  { path: "/login/accept-invitation", slug: "invitation-invalid", ready: (page) => page.getByText("Invitation link not recognized") },
+  { path: "/login/accept-invitation", slug: "invitation-invalid", ready: (page) => page.getByText("This invitation link does not work") },
   { path: "/login/accept-invitation?__clerk_status=expired&__clerk_ticket=demo", slug: "invitation-expired", ready: (page) => page.getByText("Invitation expired") },
   { path: "/login/accept-invitation?__clerk_status=complete&__clerk_ticket=demo", slug: "invitation-complete", ready: (page) => page.getByText("This invitation was already accepted"), shoot: true },
   // With a Convex URL (local, Preview) the account form renders; CI's mock run has no backend and shows the truthful notice.
-  { path: "/login/accept-invitation?__clerk_status=sign_up&__clerk_ticket=demo", slug: "invitation-signup", ready: (page) => page.getByText(/Create your RIVET account|Invitations need the connected RIVET backend/) },
+  { path: "/login/accept-invitation?__clerk_status=sign_up&__clerk_ticket=demo", slug: "invitation-signup", ready: (page) => page.getByText(/Create your RIVET account|Invitations cannot be accepted here/) },
 ];
 
 const PUBLIC_ROUTES: Route[] = [
@@ -109,11 +109,11 @@ const PUBLIC_ROUTES: Route[] = [
   { path: "/privacy", slug: "privacy", ready: h1("Privacy policy") },
   { path: "/terms", slug: "terms", ready: h1("Terms of service") },
   { path: "/offline", slug: "offline", ready: h1("Reconnect to open RIVET") },
-  { path: "/this-route-does-not-exist", slug: "not-found", ready: h1(/not on the floor plan/), shoot: true },
+  { path: "/this-route-does-not-exist", slug: "not-found", ready: h1(/could not find this page/), shoot: true },
 ];
 
 const OWNER_ROUTES: Route[] = [
-  { path: "/getting-started", slug: "getting-started", ready: h1("Open your gym with confidence"), shoot: true },
+  { path: "/getting-started", slug: "getting-started", ready: h1("Get your gym ready"), shoot: true },
   { path: "/onboarding/agreement", slug: "onboarding-agreement", ready: h1("Your subscription agreement"), shoot: true },
 ];
 
@@ -318,7 +318,7 @@ test("the not-found page keeps the visitor's place and offers a role-safe way in
   await go(page, "/login/gym");
   await expect(page.getByRole("heading", { level: 1, name: "Gym team" })).toBeVisible();
   await go(page, "/records/this-does-not-exist");
-  await expect(page.getByRole("heading", { level: 1, name: /not on the floor plan/ })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /could not find this page/ })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open RIVET" })).toHaveAttribute("href", "/login");
   // The dev server paints the page before it hydrates, so a click can land on an inert button; keep clicking until history moves.
   await expect.poll(async () => {

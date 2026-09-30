@@ -16,6 +16,8 @@ import { formatDateTime } from "@/lib/utils/dates";
 import { formatMoney, money, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { WhatsAppHandoff } from "./whatsapp-handoff";
 
+const OFFER_STATUS_LABEL: Partial<Record<Offer["status"], string>> = { draft: "not sent yet", sent: "sent", accepted: "accepted", declined: "declined", expired: "ended" };
+
 interface OfferWorkPanelProps {
   leadId: string;
   leadName: string;
@@ -48,7 +50,7 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
     (api) => api.createOffer({ leadId: props.leadId, planId, price: priceRead.ok ? priceRead.money : money(0, props.currency), expiresInDays: Number(expiresInDays) }),
     {
       onSuccess: async () => {
-        toast.success("Offer link created. Share it, then confirm when it has actually been sent.");
+        toast.success("Offer link ready. Send it, then tap “Confirm sent”.");
         setOpen(false);
         await invalidate([qk.lead(props.leadId)]);
       },
@@ -63,18 +65,18 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
         <div>
           
           <h2 className="mt-1 font-display text-[15px] font-semibold">Membership offers</h2>
-          <p className="mt-1 text-[12px] leading-relaxed text-ink-3">Send a branded link the lead can accept or decline without creating an account.</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink-3">Send the lead a link to accept or decline. They don&apos;t need an account.</p>
         </div>
         <Button type="button" size="sm" onClick={() => setOpen(true)} disabled={!activePlans.length}><Plus /> New offer</Button>
       </div>
 
-      {sortedOffers.length ? <div className="mt-4 space-y-2">{sortedOffers.map((offer) => <OfferRow key={offer.id} {...props} offer={offer} />)}</div> : <p className="mt-4 rounded-md border border-dashed border-line px-3 py-3 text-[12px] text-ink-3">No offers yet. The direct membership-sale flow remains available.</p>}
+      {sortedOffers.length ? <div className="mt-4 space-y-2">{sortedOffers.map((offer) => <OfferRow key={offer.id} {...props} offer={offer} />)}</div> : <p className="mt-4 rounded-md border border-dashed border-line px-3 py-3 text-[12px] text-ink-3">No offers yet. You can still sell a membership directly.</p>}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create membership offer</DialogTitle>
-            <DialogDescription>Choose the plan, price, and response window. The link stays private until you share it.</DialogDescription>
+            <DialogDescription>Choose the plan, the price and how long the offer lasts. Nobody sees the link until you share it.</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
             <Field label="Membership plan" required>
@@ -85,7 +87,7 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
             </Field>
             <FieldGrid alignFrom="base" className="grid-cols-2">
               <Field label={`Offer price (${props.currency})`} required error={priceProblem}><Input inputMode="decimal" dir="ltr" value={price} aria-invalid={priceProblem ? true : undefined} onChange={(event) => setPrice(event.target.value)} /></Field>
-              <Field label="Expires after" hint="1–60 days"><Input type="number" min="1" max="60" value={expiresInDays} onChange={(event) => setExpiresInDays(event.target.value)} /></Field>
+              <Field label="Ends after (days)" hint="1 to 60 days"><Input type="number" min="1" max="60" value={expiresInDays} onChange={(event) => setExpiresInDays(event.target.value)} /></Field>
             </FieldGrid>
           </DialogBody>
           <DialogFooter><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" loading={create.isPending} disabled={!planId || !priceRead.ok || Number(expiresInDays) < 1 || Number(expiresInDays) > 60} onClick={() => create.mutate()}><Link2 /> Create link</Button></DialogFooter>
@@ -108,7 +110,7 @@ function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
 
   const confirmSent = useApiMutation((api) => api.markOfferDelivered(offer.id, { channel: shareChannel, reference: shareChannel === "whatsapp" ? "Branded public offer link · WhatsApp handoff" : "Branded public offer link · shared by hand" }), {
     onSuccess: async () => {
-      toast.success("Offer marked sent. The public link can now accept a response.");
+      toast.success("Marked as sent. The lead can now answer using the link.");
       await invalidate([qk.lead(props.leadId)]);
     },
   });
@@ -128,13 +130,13 @@ function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
   return (
     <div className="border-t border-line py-3">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0"><p className="truncate text-[12.5px] font-semibold">{offer.planName}</p><p className="mt-0.5 text-[12px] text-ink-3">{formatMoney(offer.price)}{offer.expiresAt ? <> · expires {formatDateTime(offer.expiresAt)}</> : null}</p></div>
-        <Badge variant={variant}>{offer.status}</Badge>
+        <div className="min-w-0"><p className="truncate text-[12.5px] font-semibold">{offer.planName}</p><p className="mt-0.5 text-[12px] text-ink-3">{formatMoney(offer.price)}{offer.expiresAt ? <> · ends {formatDateTime(offer.expiresAt)}</> : null}</p></div>
+        <Badge variant={variant}>{OFFER_STATUS_LABEL[offer.status] ?? offer.status}</Badge>
       </div>
-      {path ? <a href={path} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-9 items-center text-[12px] font-medium underline underline-offset-4">Open offer</a> : <p className="mt-2 text-[12px] text-warning-deep">Legacy offer — create a new offer to get a public link.</p>}
+      {path ? <a href={path} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-9 items-center text-[12px] font-medium underline underline-offset-4">Open offer</a> : <p className="mt-2 text-[12px] text-warning-deep">Old offer. Create a new offer to get a link.</p>}
       {path && offer.status === "draft" ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => void copy()}><Copy /> Copy link</Button><WhatsAppHandoff subject="lead" subjectId={props.leadId} recipientName={props.leadName} phone={props.phone} organizationName={props.organizationName} defaultCountryCallingCode={props.defaultCountryCallingCode} initialMessage={`Hi ${props.leadName.split(/\s+/)[0]}, ${props.organizationName} prepared a membership offer for you: ${url}`} buttonLabel="Open WhatsApp" className="" onLogged={() => setShareChannel("whatsapp")} /><Button type="button" size="sm" loading={confirmSent.isPending} onClick={() => confirmSent.mutate()}><Check /> {shareChannel === "whatsapp" ? "Confirm sent via WhatsApp" : "Confirm sent"}</Button></div> : null}
-      {offer.status === "sent" ? <p className="mt-3 flex items-center gap-1.5 text-[12px] text-warning-deep"><Clock3 className="size-3.5" /> Waiting for the recipient&apos;s response.</p> : null}
-      {offer.status === "accepted" ? <p className="mt-3 text-[12px] font-medium text-success-deep">Accepted. Complete the membership sale when payment and dates are agreed.</p> : null}
+      {offer.status === "sent" ? <p className="mt-3 flex items-center gap-1.5 text-[12px] text-warning-deep"><Clock3 className="size-3.5" /> Waiting for their answer.</p> : null}
+      {offer.status === "accepted" ? <p className="mt-3 text-[12px] font-medium text-success-deep">Accepted. Record the sale once you agree on payment and dates.</p> : null}
       {offer.status === "declined" && offer.responseReason ? <p className="mt-3 text-[12px] text-ink-2">Reason: {offer.responseReason}</p> : null}
     </div>
   );

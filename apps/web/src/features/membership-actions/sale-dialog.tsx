@@ -20,7 +20,7 @@ import type {
   UUID,
 } from "@/lib/domain/types";
 import { usePermissions } from "@/lib/providers/app-providers";
-import { addDays, todayISODate } from "@/lib/utils/dates";
+import { addDays, formatDate, isCalendarDate, todayISODate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils/cn";
 import { money, moneyInputError, parseMoneyInput, toMajorString } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
@@ -40,9 +40,12 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
+/** A date people can read at a glance ("18 Nov 2026"). Half-typed input stays as typed. */
+const readableDate = (value: string | undefined) => (value && isCalendarDate(value) ? formatDate(value) : value || "—");
+
 const schema = z.object({
   planId: z.string().min(1, "Choose a plan"),
-  startDate: z.string().min(1, "Start date is required"),
+  startDate: z.string().min(1, "Choose a start date"),
   priceOverride: z.string().optional(),
   overrideReason: z.string().optional(),
   discount: z.string().optional(),
@@ -201,7 +204,7 @@ export function MembershipSaleDialog({
         void invalidate();
       },
       onError: (e) => {
-        setServerError(isApiError(e) ? e.message : "Sale failed.");
+        setServerError(isApiError(e) ? e.message : "The sale was not saved. Try again.");
       },
     },
   );
@@ -225,19 +228,19 @@ export function MembershipSaleDialog({
       return;
     }
     if (values.payNow && payingNow.amount > total.amount) {
-      form.setError("payAmount", { message: `Cannot exceed the ${toMajorString(total)} ${currency} total` });
+      form.setError("payAmount", { message: `Can't be more than the ${toMajorString(total)} ${currency} total` });
       return;
     }
     if (discount.amount > 0 && !values.discountReason?.trim()) {
-      form.setError("discountReason", { message: "A reason is required for discounts" });
+      form.setError("discountReason", { message: "Add a reason for the discount" });
       return;
     }
     if (needsOverrideReason && !values.overrideReason?.trim()) {
-      form.setError("overrideReason", { message: "A reason is required for price or date overrides" });
+      form.setError("overrideReason", { message: "Add a reason for the price or date change" });
       return;
     }
     if (values.payNow && payingNow.amount > 0 && paymentReferenceRequired && !values.paymentReference?.trim()) {
-      form.setError("paymentReference", { message: "Reference is required for this payment method" });
+      form.setError("paymentReference", { message: "Type the reference number for this payment" });
       return;
     }
     const chosenMethod = methods.find((m) => m.key === values.payMethod);
@@ -290,7 +293,7 @@ export function MembershipSaleDialog({
             {isRenewal && renewalOf ? (
               <>
                 {" "}
-                — current term ends <span className="tabular">{renewalOf.endDate}</span>
+                — current membership ends <span className="tabular">{readableDate(renewalOf.endDate)}</span>
               </>
             ) : null}
           </DialogDescription>
@@ -311,7 +314,7 @@ export function MembershipSaleDialog({
                         {plans.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
                             {p.name} — {p.basePrice.currency} {toMajorString(p.basePrice)}
-                            {p.kind === "visits" ? ` · ${p.visitAllowance} visits` : ` · ${p.durationDays}d`}
+                            {p.kind === "visits" ? ` · ${p.visitAllowance} visits` : ` · ${p.durationDays} days`}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -328,9 +331,9 @@ export function MembershipSaleDialog({
                   <Input type="date" {...form.register("startDate")} />
                 </Field>
                 <Field
-                  label={`Price override (${currency})`}
+                  label={`Special price (${currency})`}
                   error={form.formState.errors.priceOverride?.message ?? (showProblem("priceOverride") ? priceProblem : undefined)}
-                  hint={canOverridePrice ? undefined : "Manager permission required"}
+                  hint={canOverridePrice ? undefined : "Only a manager can change the price"}
                 >
                   <Input
                     inputMode="decimal"
@@ -343,25 +346,24 @@ export function MembershipSaleDialog({
               </FieldGrid>
 
               {needsOverrideReason ? (
-                <Field label="Override reason" required error={form.formState.errors.overrideReason?.message} hint="Price and date changes are recorded in the audit trail.">
-                  <Input placeholder="Why does this sale need an exception?" {...form.register("overrideReason")} />
+                <Field label="Reason for the change" required error={form.formState.errors.overrideReason?.message}>
+                  <Input placeholder="Why is the price or date different?" {...form.register("overrideReason")} />
                 </Field>
               ) : null}
 
               <FieldGrid alignFrom="base" className="grid-cols-2">
-                <Field label={`Discount (${currency})`} error={form.formState.errors.discount?.message ?? (showProblem("discount") ? discountProblem : undefined)} hint={canDiscount ? undefined : "No discount permission"}>
+                <Field label={`Discount (${currency})`} error={form.formState.errors.discount?.message ?? (showProblem("discount") ? discountProblem : undefined)} hint={canDiscount ? undefined : "You can't give discounts"}>
                   <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(money(0, currency))} disabled={!canDiscount} {...form.register("discount")} />
                 </Field>
                 <Field label="Discount reason" error={form.formState.errors.discountReason?.message}>
-                  <Input placeholder="e.g. Corporate rate" disabled={!canDiscount} {...form.register("discountReason")} />
+                  <Input placeholder="For example: Corporate rate" disabled={!canDiscount} {...form.register("discountReason")} />
                 </Field>
               </FieldGrid>
 
               {needsApproval ? (
                 <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  This discount exceeds your limit. It will be recorded as
-                  <strong className="font-semibold">pending manager approval</strong> and appear in the audit log.
+                  This discount is over your limit. A manager will need to approve it.
                 </div>
               ) : null}
 
@@ -401,18 +403,18 @@ export function MembershipSaleDialog({
                       />
                     </Field>
                     {paymentReferenceRequired ? (
-                      <Field className="col-span-2" label="External reference" required error={form.formState.errors.paymentReference?.message} hint="Enter the POS slip or provider reference.">
-                        <Input {...form.register("paymentReference")} placeholder="e.g. POS-88213" />
+                      <Field className="col-span-2" label="Reference number" required error={form.formState.errors.paymentReference?.message} hint="Type the number from the card machine slip or bank app.">
+                        <Input {...form.register("paymentReference")} placeholder="For example: POS-88213" />
                       </Field>
                     ) : null}
                   </FieldGrid>
                 ) : renewalStartsInFuture ? (
                   <p className="mt-2 text-[12px] text-ink-3">
-                    This upcoming invoice becomes collectible when the successor term begins.
+                    You can take this payment once the new membership starts.
                   </p>
                 ) : (
                   <p className="mt-2 text-[12px] text-ink-3">
-                    The full amount becomes an outstanding balance on the member account.
+                    The member will owe the full amount.
                   </p>
                 )}
               </div>
@@ -423,10 +425,10 @@ export function MembershipSaleDialog({
               <p className="context-label">Summary</p>
               <dl className="mt-3 space-y-2 text-[13px]">
                 <Row label="Plan">{plan?.name ?? "—"}</Row>
-                <Row label="Term">
+                <Row label="Dates">
                   {plan ? (
                     <span className="font-mono text-[12px]">
-                      {form.watch("startDate")} → {plan.kind === "visits" ? addDays(form.watch("startDate"), plan.visitValidityDays ?? 90) : addDays(form.watch("startDate"), plan.durationDays ?? 30)}
+                      {readableDate(form.watch("startDate"))} to {readableDate(plan.kind === "visits" ? addDays(form.watch("startDate"), plan.visitValidityDays ?? 90) : addDays(form.watch("startDate"), plan.durationDays ?? 30))}
                     </span>
                   ) : (
                     "—"
@@ -446,7 +448,7 @@ export function MembershipSaleDialog({
                 <Row label="Paying now">
                   <MoneyText money={payingNow} />
                 </Row>
-                <Row label="Remaining" tone={remaining.amount > 0 ? "warn" : undefined}>
+                <Row label="Still owed" tone={remaining.amount > 0 ? "warn" : undefined}>
                   <MoneyText money={remaining} />
                 </Row>
               </dl>

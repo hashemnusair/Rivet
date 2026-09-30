@@ -41,7 +41,7 @@ describe("CustomerReceiptClient", () => {
     expect(article).toHaveTextContent("Lina Haddad");
     expect(article).toHaveTextContent("ABD-2214");
     expect(article).toHaveTextContent("6-Month All Access");
-    expect(article).toHaveTextContent("Balance remaining");
+    expect(article).toHaveTextContent("Unpaid");
     expect(article).toHaveTextContent("JOD 15.000");
     expect(article).toHaveTextContent("Recorded by");
     expect(screen.getByRole("link", { name: /Payments/ })).toHaveAttribute("href", "/customer/finance");
@@ -52,10 +52,10 @@ describe("CustomerReceiptClient", () => {
   it("produces a readable plain-text copy", () => {
     const lines = receiptTextLines(receipt);
     expect(lines).toContain("Receipt number: RV-001042");
-    expect(lines).toContain("Customer: Lina Haddad");
+    expect(lines).toContain("Member: Lina Haddad");
     expect(lines).toContain("Member number: ABD-2214");
     expect(lines).toContain(`Total: ${formatMoney(money(85_000))}`);
-    expect(lines).toContain(`Balance remaining: ${formatMoney(money(15_000))}`);
+    expect(lines).toContain(`Unpaid: ${formatMoney(money(15_000))}`);
     expect(lines).toContain("Payment method: Cash");
     expect(lines.at(-1)).toBe("Thank you for training with us.");
   });

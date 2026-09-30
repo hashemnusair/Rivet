@@ -59,7 +59,7 @@ describe("gym application pricing selection", () => {
     await user.type(screen.getByPlaceholderText("Omar Khalil"), "Annual Owner");
     await user.type(screen.getByPlaceholderText("owner@example.com"), "annual-owner@example.test");
     await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Annual Gym");
-    await user.type(screen.getByPlaceholderText("Enter a reachable number"), "+962790000999");
+    await user.type(screen.getByPlaceholderText("Enter your phone number"), "+962790000999");
     await user.type(screen.getByPlaceholderText("Street, area, city"), "12 King Abdullah II Street, Amman");
     await user.click(screen.getByRole("button", { name: /Send gym application/ }));
 
@@ -82,11 +82,11 @@ describe("gym application pricing selection", () => {
     await screen.findByRole("radio", { name: /Enterprise/ });
     await user.type(screen.getByPlaceholderText("Omar Khalil"), "Annual Owner");
     await user.type(screen.getByPlaceholderText("owner@example.com"), "annual-owner@example.test");
-    await user.type(screen.getByPlaceholderText("Enter a reachable number"), "+962790000999");
+    await user.type(screen.getByPlaceholderText("Enter your phone number"), "+962790000999");
     await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Annual Gym");
     await user.click(screen.getByRole("button", { name: /Send gym application/ }));
 
-    expect(await screen.findByText("Enter the gym's physical address.")).toBeInTheDocument();
+    expect(await screen.findByText("Enter the gym's address.")).toBeInTheDocument();
     expect(state.submitGymApplication).not.toHaveBeenCalled();
   });
 });

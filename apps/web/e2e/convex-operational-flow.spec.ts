@@ -50,7 +50,7 @@ test.describe("staged Convex operational flow", () => {
       await page.getByRole("option", { name: /Monthly All Access/i }).click();
       await sale.getByRole("combobox", { name: "Payment method" }).click();
       await page.getByRole("option", { name: "Card" }).click();
-      await sale.getByPlaceholder("e.g. POS-88213").fill(`STAGING-${guard.runId}`);
+      await sale.getByPlaceholder("For example: POS-88213").fill(`STAGING-${guard.runId}`);
       await sale.getByTestId("confirm-sale").click();
       await expect(sale).toBeHidden();
 
@@ -75,7 +75,7 @@ test.describe("staged Convex operational flow", () => {
       await expect(page.getByTestId("member-timeline")).toContainText(/checked in/i);
 
       await page.goto("/audit", { waitUntil: "domcontentloaded" });
-      const auditSearch = page.getByLabel("Search audit log");
+      const auditSearch = page.getByLabel("Search activity log");
       await auditSearch.fill(fullName);
       await expect(page.getByRole("button", { name: /membership\.sale/i }).first()).toBeVisible();
       await expect(page.getByRole("button", { name: /payment\.collect/i }).first()).toBeVisible();

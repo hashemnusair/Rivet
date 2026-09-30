@@ -23,30 +23,30 @@ test.describe("staged staff authorization", () => {
 
     try {
       await owner.goto("/settings?section=users", { waitUntil: "domcontentloaded" });
-      await owner.getByRole("tab", { name: "Users" }).click();
-      await owner.getByRole("button", { name: "Invite user" }).click();
-      const invite = owner.getByRole("dialog", { name: "Invite user" });
+      await owner.getByRole("tab", { name: "Staff" }).click();
+      await owner.getByRole("button", { name: "Invite staff" }).click();
+      const invite = owner.getByRole("dialog", { name: "Invite staff" });
       await invite.getByRole("textbox", { name: "Full name" }).fill(displayName);
       await invite.getByRole("textbox", { name: "Email" }).fill(email);
       await invite.getByRole("combobox", { name: "Role" }).click();
       await owner.getByRole("option", { name: "Reception", exact: true }).click();
-      await invite.getByRole("combobox", { name: "Branch scope" }).click();
-      await owner.getByRole("option", { name: "Selected branches" }).click();
+      await invite.getByRole("combobox", { name: "Branch access" }).click();
+      await owner.getByRole("option", { name: "Only some branches" }).click();
       const firstBranch = invite.getByRole("checkbox").first();
       if ((await firstBranch.getAttribute("aria-checked")) !== "true") await firstBranch.click();
       await invite.getByRole("button", { name: "Send invite" }).click();
       await expect(invite).toBeHidden();
       cleanupEntry = cleanup.plan({ targetType: "staff_user", targetId: email, action: "deactivate", reason: "Disposable staff-authorization journey invitation" });
       await owner.reload({ waitUntil: "domcontentloaded" });
-      await owner.getByRole("tab", { name: "Users" }).click();
+      await owner.getByRole("tab", { name: "Staff" }).click();
       await expect(owner.getByRole("row", { name: new RegExp(displayName) })).toContainText("invited");
 
       for (const role of ["manager", "receptionist", "trainer"] as const) {
         const context = await newRoleContext(browser, role, baseURL);
         const page = await context.newPage();
         await page.goto("/settings", { waitUntil: "domcontentloaded" });
-        await expect(page.getByRole("heading", { name: "Not allowed for this role" })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Invite user" })).toHaveCount(0);
+        await expect(page.getByRole("heading", { name: "You don't have access" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Invite staff" })).toHaveCount(0);
         await context.close();
       }
     } finally {
@@ -71,7 +71,7 @@ async function deactivateInvitedStaff(page: Page, displayName: string): Promise<
   try {
     await page.goto("/settings?section=users", { waitUntil: "domcontentloaded" });
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.getByRole("tab", { name: "Users" }).click();
+    await page.getByRole("tab", { name: "Staff" }).click();
     await page.getByRole("button", { name: `Edit access for ${displayName}` }).click();
     const dialog = page.getByRole("dialog", { name: `Access — ${displayName}` });
     const active = dialog.getByRole("switch", { name: "Account active" });
@@ -79,7 +79,7 @@ async function deactivateInvitedStaff(page: Page, displayName: string): Promise<
     await dialog.getByRole("button", { name: "Save access" }).click();
     await expect(dialog).toBeHidden();
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.getByRole("tab", { name: "Users" }).click();
+    await page.getByRole("tab", { name: "Staff" }).click();
     await expect(page.getByRole("row", { name: new RegExp(displayName) })).toContainText("deactivated");
     return undefined;
   } catch (error) {

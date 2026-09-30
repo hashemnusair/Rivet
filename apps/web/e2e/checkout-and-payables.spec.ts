@@ -23,7 +23,7 @@ test.describe("canonical checkout", () => {
     await expect(page.getByTestId("customer-attach")).toContainText("Walk-in customer");
     await expect(page.getByRole("textbox", { name: "Guest name" })).toHaveCount(0);
 
-    await page.getByRole("textbox", { name: "Search sellable stock" }).fill("Protein");
+    await page.getByRole("textbox", { name: "Search items" }).fill("Protein");
     await page.getByRole("button", { name: "Add Protein bar" }).click();
     await expect(page.getByTestId("checkout-cart")).toContainText("Protein bar");
     await expect(page.getByTestId("payment-section")).toContainText(/Cash goes into the open shift/);
@@ -32,7 +32,7 @@ test.describe("canonical checkout", () => {
     const result = page.getByTestId("sale-result");
     await expect(result).toContainText("Sale completed");
     await expect(result).toContainText(/Receipt R-/);
-    await expect(result).toContainText("No customer profile was created");
+    await expect(result).toContainText("This sale is not linked to any member");
     await result.getByRole("link", { name: /Open receipt/ }).click();
     await expect(page).toHaveURL(/\/payments\/receipts\//);
     await expect(page.getByText("Walk-in customer")).toBeVisible();
@@ -95,23 +95,23 @@ test.describe("supplier payables", () => {
     await expect(dialog.getByRole("status")).toContainText(/Open cash shift/);
     const amount = dialog.getByRole("textbox", { name: "Amount paid" });
     await amount.fill("650");
-    await expect(dialog.getByRole("textbox", { name: /Allocate to Purchase order/ })).toHaveValue("650.000");
+    await expect(dialog.getByRole("textbox", { name: /Amount for Purchase order/ })).toHaveValue("650.000");
     await dialog.getByTestId("confirm-supplier-payment").click();
 
     await expect(page).toHaveURL(/\/operations\/payables\/payments\//);
     const confirmation = page.getByTestId("supplier-payment-confirmation");
     await expect(confirmation).toContainText("Supplier payment confirmation");
     await expect(confirmation).toContainText("Jordan Sports Supply");
-    await expect(confirmation).toContainText("Not posted to ledger yet");
+    await expect(confirmation).toContainText("Not in the accounts yet");
     await expect(confirmation).toContainText("1,000.000");
 
     await page.getByTestId("reverse-supplier-payment").click();
     await page.getByTestId("reverse-supplier-payment-reason").fill("Paid the same invoice twice");
     await page.getByTestId("confirm-reverse-supplier-payment").click();
-    await expect(confirmation).toContainText("REVERSED");
+    await expect(confirmation).toContainText("Reversed");
     await expect(page.getByTestId("reverse-supplier-payment")).toHaveCount(0);
 
-    await page.getByRole("link", { name: "All payables" }).click();
+    await page.getByRole("link", { name: "All supplier bills" }).click();
     await expect(page.getByTestId("payable-row").first()).toContainText("Unpaid");
   });
 });

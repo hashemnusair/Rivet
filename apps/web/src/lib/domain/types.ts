@@ -3769,21 +3769,6 @@ export interface UpdateRolePermissionsInput {
   discountLimitMinor?: number;
 }
 
-// Member resolution workspace: one deterministic projection per member, shared with the preview adapter.
-export type {
-  MemberResolutionContext,
-  PlanAttributeId,
-  ResolutionCharge,
-  ResolutionClassOption,
-  ResolutionEvidence,
-  ResolutionMembership,
-  ResolutionPanelId,
-  ResolutionPayment,
-  ResolutionPlan,
-  ResolutionPtOrder,
-  ResolutionService,
-  ResolutionTrainerOption,
-} from "../../../convex/resolutionAssist";
 
 export type {
   ContactConsequences,
@@ -3809,13 +3794,10 @@ export type {
   RepairHistoryEntry,
 } from "../../../convex/branchOpsAssist";
 
-// The daily operating brief: sections, figures, sources, mandatory items and related pairs (shared module).
+// The dashboard's "Needs attention" summary: counts, plain sentences and sources (shared module).
 export type {
-  BriefEmphasisKey,
-  BriefEvidenceLink,
+  BriefAttentionLine,
   BriefFigure,
-  BriefItem,
-  BriefRelatedPair,
   BriefScope,
   BriefSection,
   BriefSectionKey,

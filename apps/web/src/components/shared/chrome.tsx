@@ -90,14 +90,14 @@ export function DataPagination<T>({
     <div className={cn("flex items-center justify-between gap-3 pt-3 text-[12.5px] text-ink-3", className)}>
       {/* Ranges and page ratios stay LTR so bidi cannot reverse them. */}
       <span className="tabular" dir="ltr">
-        {from}–{to} of {page.totalItems}
+        Showing {from} to {to} of {page.totalItems}
       </span>
       <div className="flex items-center gap-1">
         <Button variant="secondary" size="icon-sm" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)} aria-label="Previous page">
           <ChevronLeft />
         </Button>
         <span className="px-2 tabular" dir="ltr">
-          {page.page} / {page.totalPages}
+          Page {page.page} of {page.totalPages}
         </span>
         <Button
           variant="secondary"

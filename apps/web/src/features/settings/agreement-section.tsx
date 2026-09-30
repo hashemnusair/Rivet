@@ -15,14 +15,14 @@ export function AgreementSection() {
   const query = useApiQuery(qk.legalAgreement, (api) => api.getSubscriptionAgreementContext());
   if (query.isLoading) {
     return (
-      <SettingsSection title="Agreement" description="The subscription agreement between this gym and RIVET, as signed.">
+      <SettingsSection title="Agreement" description="Your signed agreement with RIVET.">
         <Skeleton className="h-64 w-full" />
       </SettingsSection>
     );
   }
   if (query.isError || !query.data) {
     return (
-      <SettingsSection title="Agreement" description="The subscription agreement between this gym and RIVET, as signed.">
+      <SettingsSection title="Agreement" description="Your signed agreement with RIVET.">
         <QueryErrorState error={query.error} onRetry={() => void query.refetch()} />
       </SettingsSection>
     );
@@ -30,23 +30,23 @@ export function AgreementSection() {
   const context = query.data;
   if (!context.agreement) {
     return (
-      <SettingsSection title="Agreement" description="The subscription agreement between this gym and RIVET, as signed.">
+      <SettingsSection title="Agreement" description="Your signed agreement with RIVET.">
         {context.canSign
-          ? <StatePanel icon={FileSignature} title="Your subscription agreement is not signed yet" description="The agreement opens automatically when the gym owner signs in and must be signed before RIVET can be used. The signed copy will appear here." />
-          : <StatePanel icon={FileSignature} title="Waiting for the owner's signature" description="Only the owner account can sign RIVET's subscription agreement. The signed copy will appear here." />}
+          ? <StatePanel icon={FileSignature} title="Your agreement is not signed yet" description="The owner must sign the agreement before your gym can use RIVET. It opens when the owner signs in. The signed copy will show here." />
+          : <StatePanel icon={FileSignature} title="Waiting for the owner's signature" description="Only the owner can sign the agreement with RIVET. The signed copy will show here." />}
       </SettingsSection>
     );
   }
   const agreement = context.agreement;
   const status = agreement.status === "countersigned"
-    ? "Countersigned by RIVET"
+    ? "Signed by you and RIVET"
     : agreement.status === "void"
-      ? "Void"
-      : "Signed, awaiting RIVET's countersignature";
+      ? "Cancelled"
+      : "Signed by you, waiting for RIVET";
   return (
     <SettingsSection
       title="Agreement"
-      description={<>Version {agreement.version} · {status}. The signed copy below is the record both parties keep.</>}
+      description={<>Version {agreement.version} · {status}</>}
       actions={<Button variant="secondary" onClick={() => downloadAgreementPdf(agreement, context.sections)} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>}
     >
       <AgreementRecord agreement={agreement} sections={context.sections} />

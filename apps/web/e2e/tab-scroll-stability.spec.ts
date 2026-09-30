@@ -64,7 +64,7 @@ test("horizontal tabs stay usable through desktop-to-phone emulation and slow fr
   }
   await expect.poll(() => tabs.evaluate((list) => list.scrollLeft)).toBeGreaterThan(100);
   expect(page.url()).toBe(initialUrl);
-  await expect(page.getByRole("tab", { name: "Inventory", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Stock", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(shell).toHaveCSS("transform", "none");
   const supplier = page.getByRole("tab", { name: "Suppliers", exact: true });
   await supplier.scrollIntoViewIfNeeded();
@@ -73,7 +73,7 @@ test("horizontal tabs stay usable through desktop-to-phone emulation and slow fr
   await protocol.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await expect(page).toHaveURL(/tab=suppliers/);
   await expect(page.getByTestId("operations-suppliers")).toBeVisible();
-  await page.getByRole("combobox", { name: "Operations branch" }).click();
+  await page.getByRole("combobox", { name: "Branch", exact: true }).click();
   await expect(page.getByRole("option", { name: "All branches", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(shell).toHaveCSS("transform", "none");

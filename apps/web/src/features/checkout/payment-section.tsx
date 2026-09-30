@@ -33,15 +33,15 @@ export function PaymentSection({ method, onMethod, enabledMethods, reference, on
         })}
       </div>
       {method === "cliq" || method === "card" ? (
-        <Field className="mt-3" label={`${CHECKOUT_PAYMENT_METHOD_LABELS[method]} reference`} required hint="Type the transaction reference as shown on the terminal or app. RIVET records it; it does not verify it.">
+        <Field className="mt-3" label={`${CHECKOUT_PAYMENT_METHOD_LABELS[method]} reference number`} required hint="Type the number from the card machine or app. RIVET does not check it, so make sure the payment went through.">
           <Input value={reference} onChange={(event) => onReference(event.target.value)} placeholder="Reference number" dir="ltr" required className="h-11 sm:h-9" />
         </Field>
       ) : cashShift.known ? (
         cashShift.loading ? <p role="status" className="mt-3 text-[12px] text-ink-3">Checking the cash shift…</p>
-          : cashShift.error ? <p role="alert" className="mt-3 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">The cash shift could not be checked. <button type="button" className="font-medium underline" onClick={cashShift.onRetry}>Try again</button>. The sale is still protected by the server.</p>
+          : cashShift.error ? <p role="alert" className="mt-3 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">Could not check the cash shift. <button type="button" className="font-medium underline" onClick={cashShift.onRetry}>Try again</button>.</p>
             : cashShift.shift ? <p role="status" className="mt-3 text-[12px] text-ink-3">Cash goes into the open shift{branchName ? ` at ${branchName}` : ""} (opened by {cashShift.shift.openedByName}, <DateTimeText iso={cashShift.shift.openedAt} />).</p>
               : <p role="alert" className="mt-3 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep" data-testid="no-open-shift">No cash shift is open{branchName ? ` at ${branchName}` : ""}. <Link href="/payments/shifts" className="font-medium underline">Open a shift</Link> before taking cash, or choose CliQ or card.</p>
-      ) : <p className="mt-3 text-[12px] text-ink-3">Cash is counted in the branch’s open shift; the server refuses cash sales when no shift is open.</p>}
+      ) : <p className="mt-3 text-[12px] text-ink-3">Cash sales need an open shift at this branch.</p>}
     </section>
   );
 }

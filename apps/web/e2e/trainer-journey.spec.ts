@@ -50,15 +50,15 @@ test.describe("trainer account journey (preview)", () => {
   test("an owner invites a trainer, and only active trainer accounts can carry a profile", async ({ page }) => {
     await enterOwner(page);
     await page.goto("/settings?section=users");
-    await page.getByRole("tab", { name: "Users" }).click();
-    await page.getByRole("button", { name: "Invite user" }).click();
-    const invite = page.getByRole("dialog", { name: "Invite user" });
+    await page.getByRole("tab", { name: "Staff" }).click();
+    await page.getByRole("button", { name: "Invite staff" }).click();
+    const invite = page.getByRole("dialog", { name: "Invite staff" });
     await invite.getByRole("textbox", { name: "Full name" }).fill("Nour Coach");
     await invite.getByRole("textbox", { name: "Email" }).fill("nour.coach@forgefitness.jo");
     await invite.getByRole("combobox", { name: "Role" }).click();
     await page.getByRole("option", { name: "Trainer", exact: true }).click();
-    await invite.getByRole("combobox", { name: "Branch scope" }).click();
-    await page.getByRole("option", { name: "Selected branches" }).click();
+    await invite.getByRole("combobox", { name: "Branch access" }).click();
+    await page.getByRole("option", { name: "Only some branches" }).click();
     const firstBranch = invite.getByRole("checkbox").first();
     if ((await firstBranch.getAttribute("aria-checked")) !== "true") await firstBranch.click();
     await invite.getByRole("button", { name: "Send invite" }).click();
@@ -68,7 +68,7 @@ test.describe("trainer account journey (preview)", () => {
     // Client-side navigation keeps the invited row in the preview's memory.
     await openSidebarLink(page, "Personal training");
     await expect(page.getByRole("heading", { name: "Trainer profiles" })).toBeVisible();
-    await page.getByRole("button", { name: "Trainer", exact: true }).click();
+    await page.getByRole("button", { name: "Add trainer", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Add a trainer profile" });
     const accounts = dialog.getByRole("combobox", { name: "Trainer account" });
     await expect(accounts.locator("option", { hasText: "Fadi Khoury" })).toHaveCount(1);
@@ -94,16 +94,16 @@ test.describe("trainer account journey (preview)", () => {
     const times = booking.getByText("Available times", { exact: true }).locator("..").getByRole("button");
     await expect.poll(() => times.count()).toBeGreaterThan(0);
     await times.first().click();
-    await expect(page.getByText("PT session reserved.")).toBeVisible();
+    await expect(page.getByText("PT session booked.")).toBeVisible();
 
     await switchToTrainer(page);
     await expect(page.getByRole("heading", { name: /^Today, Fadi/ })).toBeVisible();
     await expect(page.getByTestId("trainer-setup-notice")).toHaveCount(0);
-    const outcomes = page.getByRole("heading", { name: "Session outcomes" }).locator("xpath=ancestor::section[1]");
+    const outcomes = page.getByRole("heading", { name: "Mark your sessions" }).locator("xpath=ancestor::section[1]");
     await expect(outcomes).toContainText("Yara Sweidan");
-    await expect(outcomes).toContainText("Outcome controls unlock when the session begins.");
+    await expect(outcomes).toContainText("You can mark this session once it starts.");
     await expect(outcomes.getByRole("button", { name: "Complete" })).toBeDisabled();
-    await expect(page.getByRole("heading", { name: "Assigned members" }).locator("xpath=ancestor::section[1]")).toContainText("Yara Sweidan");
+    await expect(page.getByRole("heading", { name: "Your members" }).locator("xpath=ancestor::section[1]")).toContainText("Yara Sweidan");
 
     await openSidebarLink(page, "Personal training");
     await expect(page.getByRole("heading", { name: "Your trainer profile" })).toBeVisible();
@@ -129,8 +129,8 @@ test.describe("trainer account journey (preview)", () => {
     // Later that day the session has started: the trainer records it.
     await page.clock.setFixedTime(new Date(MONDAY_EVENING));
     await openSidebarLink(page, "Dashboard");
-    const started = page.getByRole("heading", { name: "Session outcomes" }).locator("xpath=ancestor::section[1]");
-    await expect(started).toContainText("Awaiting outcome");
+    const started = page.getByRole("heading", { name: "Mark your sessions" }).locator("xpath=ancestor::section[1]");
+    await expect(started).toContainText("Needs marking");
     await started.getByRole("button", { name: "Complete" }).click();
     const confirm = page.getByRole("dialog", { name: "Complete PT session?" });
     await expect(confirm).toContainText("Yara Sweidan");
@@ -144,7 +144,7 @@ test.describe("trainer account journey (preview)", () => {
     await page.goto("/pt");
     await page.getByRole("button", { name: "Edit profile" }).first().click();
     const edit = page.getByRole("dialog", { name: "Edit trainer profile" });
-    await edit.getByRole("combobox", { name: "Publication" }).selectOption("draft");
+    await edit.getByRole("combobox", { name: "Status" }).selectOption("draft");
     await edit.getByRole("button", { name: "Save trainer" }).click();
     await expect(page.getByText("Trainer profile saved.")).toBeVisible();
 
@@ -152,7 +152,7 @@ test.describe("trainer account journey (preview)", () => {
     const notice = page.getByTestId("trainer-setup-notice");
     await expect(notice).toContainText("Your trainer profile is still a draft");
     await expect(notice).toContainText("owner or manager publishes");
-    await expect(page.getByText("Bookings open once your profile and hours are set up.")).toBeVisible();
+    await expect(page.getByText("Set up your profile and hours so members can book you.")).toBeVisible();
     await notice.getByRole("link", { name: "Set availability" }).click();
     await expect(page).toHaveURL(/\/pt$/);
     await page.getByTestId("trainer-setup-notice").getByRole("button", { name: "Set availability" }).click();
@@ -164,7 +164,7 @@ test.describe("trainer account journey (preview)", () => {
     const sidebar = page.locator('aside[aria-label="Primary navigation"]');
     await expect(sidebar.getByRole("link", { name: "Personal training" })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
-    for (const hidden of ["Leads", "Follow-ups", "Payments", "Reports", "Audit log", "Checkout"]) {
+    for (const hidden of ["Leads", "Follow-ups", "Payments", "Reports", "Activity log", "Checkout"]) {
       await expect(sidebar.getByRole("link", { name: hidden })).toHaveCount(0);
     }
     // Selected-branch staff get their branch as a fixed label, not a picker.
@@ -177,13 +177,13 @@ test.describe("trainer account journey (preview)", () => {
 
     await page.goto("/settings");
     await expect(page.getByRole("heading", { name: "My profile", exact: true })).toBeVisible();
-    await expect(page.getByLabel("Display name")).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Organization", exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Your name")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Gym details", exact: true })).toHaveCount(0);
 
     for (const path of ["/settings?section=organization", "/settings?section=users", "/finance", "/audit", "/payments", "/crm/pipeline", "/checkout"]) {
       await page.goto(path);
       // A cold dev-server compile of a route can outlast the default expectation.
-      await expect(page.getByRole("heading", { name: "Not allowed for this role" }), path).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole("heading", { name: "You don't have access" }), path).toBeVisible({ timeout: 30_000 });
     }
     await page.goto("/platform");
     await expect(page).toHaveURL(/\/dashboard$/);

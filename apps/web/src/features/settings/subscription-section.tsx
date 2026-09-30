@@ -18,9 +18,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 const STATUS: Record<string, { label: string; variant: "success" | "warning" | "danger" | "neutral" }> = {
   open: { label: "Open", variant: "warning" },
   paid: { label: "Paid", variant: "success" },
-  past_due: { label: "Past due", variant: "danger" },
+  past_due: { label: "Overdue", variant: "danger" },
   failed: { label: "Payment failed", variant: "danger" },
-  void: { label: "Void", variant: "neutral" },
+  void: { label: "Cancelled", variant: "neutral" },
   trial: { label: "Trial", variant: "neutral" },
   draft: { label: "Draft", variant: "neutral" },
 };
@@ -28,12 +28,12 @@ const STATUS: Record<string, { label: string; variant: "success" | "warning" | "
 const PLAN_STATUS: Record<string, { label: string; variant: "success" | "warning" | "danger" | "neutral" }> = {
   trial: { label: "Trial", variant: "neutral" },
   active: { label: "Active", variant: "success" },
-  past_due: { label: "Past due", variant: "danger" },
+  past_due: { label: "Overdue", variant: "danger" },
   suspended: { label: "Suspended", variant: "danger" },
   cancelled: { label: "Cancelled", variant: "neutral" },
 };
 
-const DESCRIPTION = "The RIVET plan this gym is on, what it costs, and every invoice RIVET has issued for it.";
+const DESCRIPTION = "Your RIVET plan, what it costs, and every invoice RIVET has sent your gym.";
 
 /** The plan this gym is on, what it costs, and when the paid term ends. */
 function SubscriptionSummary() {
@@ -46,11 +46,11 @@ function SubscriptionSummary() {
   const rows: Array<{ label: string; value: string }> = [
     { label: "Plan", value: subscription.plan ?? "—" },
     { label: "Billing", value: subscription.billingInterval === "annual" ? "Yearly, paid once a year" : "Monthly" },
-    ...(plan ? [{ label: "Fee", value: `${feeLabel(plan.priceMinor, subscription.billingInterval)}, excluding any applicable tax` }] : []),
-    { label: subscription.status === "trial" ? "Trial ends" : "Paid through", value: term ? formatBillingDate(new Date(term)) : "—" },
+    ...(plan ? [{ label: "Fee", value: `${feeLabel(plan.priceMinor, subscription.billingInterval)}, plus any tax` }] : []),
+    { label: subscription.status === "trial" ? "Trial ends" : "Paid until", value: term ? formatBillingDate(new Date(term)) : "—" },
   ];
   return (
-    <SettingsPanel title="This gym’s RIVET subscription" control={<Badge variant={status.variant} dot>{status.label}</Badge>} ariaLabel="Subscription summary" testId="subscription-summary">
+    <SettingsPanel title="Your RIVET plan" control={<Badge variant={status.variant} dot>{status.label}</Badge>} ariaLabel="Plan summary" testId="subscription-summary">
       <dl className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
         {rows.map((row) => (
           <div key={row.label} className="flex items-baseline justify-between gap-3 border-b border-line pb-2 last:border-b-0 sm:last:border-b">
@@ -59,7 +59,7 @@ function SubscriptionSummary() {
           </div>
         ))}
       </dl>
-      <p className="mt-3 text-[12px] leading-5 text-ink-3">To change the plan or the billing cadence, ask RIVET through support. A change starts a new term the day it is made, and the unused days of this one are credited against the invoice for it.</p>
+      <p className="mt-3 text-[12px] leading-5 text-ink-3">To change your plan or how often you pay, ask RIVET on the Support page. The new plan starts the day you change it. Days you have not used are taken off the new invoice.</p>
     </SettingsPanel>
   );
 }
@@ -89,9 +89,9 @@ export function SubscriptionSection() {
     <SettingsSection title="Subscription & invoices" description={DESCRIPTION} testId={invoices.length ? "subscription-invoices" : undefined}>
       <SubscriptionSummary />
       {invoices.length === 0 ? (
-        <EmptyState icon={Receipt} layout="section" title="No invoices yet" description="RIVET's invoices for this gym's subscription appear here, each with the PDF that was emailed with it." />
+        <EmptyState icon={Receipt} layout="section" title="No invoices yet" description="Invoices from RIVET will show here. Each one has a PDF." />
       ) : (
-        <SettingsPanel title="Invoices" description="Every invoice RIVET has issued for this gym. Open one to see the PDF that was emailed with it." bodyClassName="p-0">
+        <SettingsPanel title="Invoices" description="Every invoice RIVET has sent your gym. Open one to see its PDF." bodyClassName="p-0">
           <ul className="divide-y divide-line md:hidden" aria-label="Invoices">
             {invoices.map((invoice) => {
               const status = STATUS[invoice.status] ?? { label: invoice.status, variant: "neutral" as const };
@@ -102,7 +102,7 @@ export function SubscriptionSection() {
                       <span className="font-mono text-[12px]" dir="ltr">{invoice.id}</span>
                       <Badge variant={status.variant} dot>{status.label}</Badge>
                     </div>
-                    <p className="mt-1 text-[12.5px] text-ink-2"><span className="font-semibold tabular text-ink">{invoice.amount}</span> · issued <span dir="ltr">{invoice.issuedAt ? formatDate(invoice.issuedAt) : invoice.date}</span>{invoice.dueAt ? <> · due <span dir="ltr">{formatDate(invoice.dueAt)}</span></> : null}</p>
+                    <p className="mt-1 text-[12.5px] text-ink-2"><span className="font-semibold tabular text-ink">{invoice.amount}</span> · sent <span dir="ltr">{invoice.issuedAt ? formatDate(invoice.issuedAt) : invoice.date}</span>{invoice.dueAt ? <> · due <span dir="ltr">{formatDate(invoice.dueAt)}</span></> : null}</p>
                   </div>
                   <Button size="sm" variant="secondary" onClick={() => openInvoicePdf(invoice, customer)} aria-label={`View invoice ${invoice.id}`} data-testid="view-invoice-pdf"><FileText /> PDF</Button>
                 </li>
@@ -113,7 +113,7 @@ export function SubscriptionSection() {
             <TableHeader>
               <TableRow>
                 <TableHead>Invoice</TableHead>
-                <TableHead>Issued</TableHead>
+                <TableHead>Sent</TableHead>
                 <TableHead>Due</TableHead>
                 <TableHead className="text-end">Amount</TableHead>
                 <TableHead>Status</TableHead>

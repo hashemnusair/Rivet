@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   BRIEF_STALE_DAYS,
-  applicableEmphases,
-  briefEmphasisFacts,
-  briefRelatedPairs,
   buildOperatingBrief,
   type BriefInput,
   type BriefQueueItem,
@@ -57,8 +54,8 @@ function input(overrides: Partial<BriefInput> = {}): BriefInput {
   };
 }
 
-describe("the operating brief computes every figure in code", () => {
-  it("sums balances, counts renewals, follow-ups, controls and machine reports exactly, per authored section", () => {
+describe("the needs-attention summary computes every number in code", () => {
+  it("sums balances and counts renewals, follow-ups, approvals, cash, entry and machines exactly, per section", () => {
     const brief = buildOperatingBrief(input());
     const figures = (key: string) => Object.fromEntries((brief.sections.find((section) => section.key === key)?.figures ?? []).map((figure) => [figure.key, figure.value.kind === "count" ? figure.value.value : figure.value.money.amount]));
     expect(figures("collections")).toEqual({ outstanding: 165_000, members: 2, largest: 120_000 });
@@ -71,88 +68,70 @@ describe("the operating brief computes every figure in code", () => {
     expect(figures("checklists")).toEqual({ failed: 0, due: 1, overdue: 0 });
     expect(figures("stock")).toEqual({ products: 1 });
     expect(figures("support")).toEqual({ open: 1, urgent: 1 });
-    expect(brief.sections.map((section) => section.key)).toEqual(["collections", "renewals", "followups", "retention", "controls", "facilities", "equipment", "checklists", "stock", "support"]);
-    expect(brief.totals).toEqual({ items: 19, mandatory: 4, overdue: 4, stale: 2 });
+    expect(brief.totals).toEqual({ items: 19, urgent: 4, overdue: 4, stale: 2 });
+    expect(BRIEF_STALE_DAYS).toBe(7);
     expect(brief.coverage).toBe("complete");
+    expect(brief.missing).toEqual([]);
     expect(brief.truncated).toBe(false);
   });
 
-  it("keeps mandatory items on top and in their sections, orders the complete queue deterministically, and flags stale work with the exact days", () => {
+  it("says each problem in one plain sentence, most urgent first, and links to the page where it is fixed", () => {
     const brief = buildOperatingBrief(input());
-    // Queue order: priority, then the earliest recorded time, then id; an item without a time goes last.
-    expect(brief.mandatory.map((entry) => entry.id)).toEqual(["equipment:e-1", "variance:s-1", "access:m-5", "support:SUP-1"]);
-    expect(brief.sections.find((section) => section.key === "controls")?.items.map((entry) => entry.id)).toEqual(["variance:s-1", "access:m-5", "approval:a-1"]);
-    expect(brief.queue.slice(0, 4).every((entry) => entry.priority === "urgent")).toBe(true);
-    // Priority first, then time, then id: the same order the Today queue uses.
-    expect(brief.queue.map((entry) => entry.id)).toEqual([...brief.queue].sort((left, right) => {
-      const rank = { urgent: 0, high: 1, normal: 2 } as const;
-      return rank[left.priority] - rank[right.priority] || (left.dueAt ?? left.occurredAt ?? "9999").localeCompare(right.dueAt ?? right.occurredAt ?? "9999") || left.id.localeCompare(right.id);
-    }).map((entry) => entry.id));
-    const stale = brief.queue.find((entry) => entry.id === "task:t-1");
-    expect(stale).toMatchObject({ overdueDays: 12, stale: true });
-    const recent = brief.queue.find((entry) => entry.id === "task:t-3");
-    expect(recent).toMatchObject({ overdueDays: 2, stale: false });
-    expect(BRIEF_STALE_DAYS).toBe(7);
-    // Evidence links keep the original action and add the record's own pages.
-    expect(brief.queue.find((entry) => entry.id === "balance:m-1")?.evidence).toEqual([
-      { label: "Collect", href: "/members/m-1?action=collect" },
-      { label: "Member record", href: "/members/m-1" },
-      { label: "Timeline", href: "/members/m-1?tab=timeline" },
-      { label: "Payments", href: "/members/m-1?tab=payments" },
+    expect(brief.attention.map((line) => [line.urgent, line.text, line.href])).toEqual([
+      [true, '1 machine is marked "do not use"', "/x/equipment:e-1"],
+      [true, "1 cash difference to check", "/payments/shifts"],
+      [true, "1 member was refused entry today", "/reception"],
+      [true, "1 urgent request with RIVET support", "/x/support:SUP-1"],
+      [false, "1 request is waiting for your approval", "/audit?approval=pending"],
+      [false, "2 members owe money", "/members?membership=outstanding&sort=-outstanding"],
+      [false, "2 memberships end in the next 7 days", "/crm/queues?view=renewals"],
+      [false, "1 membership ended in the last 30 days and was not renewed", "/crm/queues?view=renewals"],
+      [false, "2 follow-ups are late, and 1 more is due today", "/crm/queues"],
+      [false, "1 member may not come back", "/crm/queues?view=at-risk"],
+      [false, "1 machine problem is not fixed yet", "/x/equipment:e-2"],
+      [false, "2 maintenance jobs are open", "/maintenance"],
+      [false, "1 daily checklist is not finished", "/checklists"],
+      [false, "1 product is running low", "/operations?tab=inventory&stock=attention"],
     ]);
+    // The money line carries the exact total beside the sentence.
+    expect(brief.attention.find((line) => line.key === "unpaid")?.money).toEqual({ amount: 165_000, currency: "JOD" });
+    // No sentence uses symbols or internal words.
+    for (const line of brief.attention) expect(line.text).not.toMatch(/≤|≥|→|queue|variance|outstanding|term|coverage|source/i);
   });
 
-  it("reports missing, disabled and forbidden sources as partial coverage without dropping the rest", () => {
+  it("names only sources that could not be read, and ignores ones switched off or hidden by role", () => {
     const brief = buildOperatingBrief(input({ sources: [
       { key: "expired", status: "ok", items: [] },
       { key: "equipment", status: "not_enabled", message: "The operations module is off for this gym." },
-      { key: "stock", status: "unavailable", message: "This source could not be read just now; the rest of the brief is current." },
+      { key: "stock", status: "unavailable", message: "This source could not be read just now." },
       { key: "support", status: "no_permission" },
     ] }));
     expect(brief.coverage).toBe("partial");
+    expect(brief.missing).toEqual(["stock levels"]);
     expect(brief.sources.map((source) => [source.key, source.status, source.itemCount])).toEqual([["queue", "ok", 14], ["expired", "empty", 0], ["equipment", "not_enabled", 0], ["stock", "unavailable", 0], ["support", "no_permission", 0]]);
-    expect(brief.sources.every((source) => source.asOf === NOW)).toBe(true);
     expect(brief.sections.find((section) => section.key === "collections")?.totalItems).toBe(2);
-    expect(brief.sections.find((section) => section.key === "equipment")?.totalItems).toBe(0);
-    expect(brief.mandatory.map((entry) => entry.id)).toEqual(["variance:s-1", "access:m-5"]);
+    expect(brief.attention.some((line) => line.key.startsWith("machines"))).toBe(false);
   });
 
-  it("shows a cut queue as partial coverage and an empty scope as complete and empty", () => {
+  it("marks a cut list as partial and a quiet gym as all clear", () => {
     const cut = buildOperatingBrief(input({ queueTotal: 5_000 }));
     expect(cut.coverage).toBe("partial");
     expect(cut.truncated).toBe(true);
-    expect(cut.sources[0]?.message).toContain("first 14 of 5000");
     const empty = buildOperatingBrief(input({ queue: [], sources: [{ key: "expired", status: "ok", items: [] }, { key: "equipment", status: "ok", items: [] }, { key: "stock", status: "ok", items: [] }, { key: "support", status: "ok", items: [] }] }));
     expect(empty.coverage).toBe("complete");
-    expect(empty.totals).toEqual({ items: 0, mandatory: 0, overdue: 0, stale: 0 });
+    expect(empty.totals).toEqual({ items: 0, urgent: 0, overdue: 0, stale: 0 });
     expect(empty.sections.every((section) => section.totalItems === 0)).toBe(true);
-    expect(empty.defaultEmphasis).toBe("steady");
-    expect(empty.applicableEmphases).toEqual(["steady"]);
-  });
-});
-
-describe("prepared emphasis", () => {
-  it("offers only emphases whose deterministic precondition holds and defaults to the first by rank", () => {
-    const brief = buildOperatingBrief(input());
-    expect(brief.applicableEmphases).toEqual(["safety_first", "collections", "renewals", "followups", "retention", "facilities", "checklists", "support", "steady"]);
-    expect(brief.defaultEmphasis).toBe("safety_first");
-    const quiet = buildOperatingBrief(input({ queue: QUEUE.filter((entry) => entry.kind === "renewal"), sources: [] }));
-    expect(applicableEmphases(quiet)).toEqual(["renewals", "steady"]);
-    expect(quiet.defaultEmphasis).toBe("renewals");
-    const facts = briefEmphasisFacts(brief);
-    expect(JSON.stringify(facts)).not.toMatch(/Aya|Omar|Rania|Treadmill|TREAD/);
-    expect(facts).toMatchObject({ scope: "all_branches", branchCount: 2, mandatoryItems: 4, figures: { collections: { items: 2, outstanding: 165_000 } } });
-  });
-});
-
-describe("related matter", () => {
-  it("proposes only same-branch operational pairs with overlapping wording and never touches commercial items", () => {
-    const brief = buildOperatingBrief(input());
-    expect(brief.related).toEqual([{ firstId: "equipment:e-1", secondId: "facility:f-1", sharedTokens: expect.any(Number) }]);
-    expect(brief.related[0]!.sharedTokens).toBeGreaterThanOrEqual(2);
-    // The Sweifieh shower task and the Abdoun treadmill task never pair across branches even with shared words.
-    const crossBranch = briefRelatedPairs(buildOperatingBrief(input({ sources: [], queue: [...QUEUE, item({ id: "facility:f-3", kind: "facility_task", title: "Treadmill belt noise", description: "TREAD-01 belt squeals at speed 10; members complaining.", branchName: "Sweifieh" })] })).queue);
-    expect(crossBranch.some((pair) => pair.secondId === "facility:f-3" && pair.firstId === "facility:f-1")).toBe(false);
+    expect(empty.attention).toEqual([]);
   });
 
+  it("uses singular and plural correctly and folds due-today follow-ups into one sentence", () => {
+    const onlyToday = buildOperatingBrief(input({ queue: [item({ id: "task:t-9", kind: "follow_up", title: "Call Lina", dueAt: "2026-09-22T12:00:00.000Z" })], sources: [] }));
+    expect(onlyToday.attention.map((line) => line.text)).toEqual(["1 follow-up is due today"]);
+    const twoMachines = buildOperatingBrief(input({ queue: [], sources: [{ key: "equipment", status: "ok", items: [
+      item({ id: "equipment:a", kind: "equipment_issue", priority: "urgent", title: "A", safetyStatus: "out_of_service", href: "/operations?tab=equipment&branch=b-a" }),
+      item({ id: "equipment:b", kind: "equipment_issue", priority: "urgent", title: "B", safetyStatus: "out_of_service", href: "/operations?tab=equipment&branch=b-b" }),
+    ] }] }));
+    // Two machines in two branches: the line links to the machines list, not one branch.
+    expect(twoMachines.attention[0]).toMatchObject({ text: '2 machines are marked "do not use"', href: "/operations?tab=equipment", urgent: true });
+  });
 });

@@ -20,7 +20,7 @@ const routes = [
   ["orders", `/operations?tab=orders&branch=${branch}`, "Purchase orders"],
   ["suppliers", `/operations?tab=suppliers&branch=${branch}`, "Jordan Sports Supply"],
   ["equipment", `/operations?tab=equipment&branch=${branch}`, "Treadmill"],
-  ["payables", `/operations/payables?branch=${branch}`, "Outstanding"],
+  ["payables", `/operations/payables?branch=${branch}`, "You owe"],
   ["maintenance", `/maintenance?branch=${branch}`, "Main floor inspection"],
 ] as const;
 for (const width of [360, 390, 768, 820, 1280, 1440]) {
@@ -36,10 +36,10 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
       await expect(page.locator("main").getByText(ready, { exact: false }).first()).toBeVisible();
       if (name === "orders") await expect(page.getByTestId("operations-orders")).toBeVisible();
       if (name === "equipment") {
-        await expect(page.getByRole("heading", { name: "Machine register" })).toBeVisible();
-        await expect(page.getByRole("combobox", { name: "Report machine" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Machines", exact: true })).toBeVisible();
+        await expect(page.getByRole("combobox", { name: "Machine", exact: true })).toBeVisible();
         await expect(page.getByTestId("report-intake-file-issue")).toBeDisabled();
-        await expect(page.getByText("Repair decision support", { exact: true })).toBeVisible();
+        await expect(page.getByText("Repair or replace?", { exact: true })).toBeVisible();
       }
       await fits(page);
       if (width === 390 || width === 1440) {
@@ -57,15 +57,15 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
 test("stock tabs, branch and filters survive refresh", async ({ page }) => {
   await enter(page);
   await page.goto(`/operations?branch=${branch}`);
-  await page.getByRole("button", { name: "Needs replenishing", exact: true }).click();
+  await page.getByRole("button", { name: "Low stock only", exact: true }).click();
   await expect(page).toHaveURL(/stock=attention/);
   await page.reload();
-  await expect(page.getByRole("button", { name: "Needs replenishing", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Low stock only", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("tab", { name: "Purchase orders", exact: true }).click();
   await expect(page).toHaveURL(/tab=orders/);
   await page.reload();
   await expect(page.getByRole("tab", { name: "Purchase orders", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("combobox", { name: "Operations branch" })).toHaveText("Forge — Abdoun");
+  await expect(page.getByRole("combobox", { name: "Branch", exact: true })).toHaveText("Forge — Abdoun");
   await page.getByRole("button", { name: "Received", exact: true }).click();
   await expect(page).toHaveURL(/orders=received/);
   await page.reload();
@@ -83,11 +83,11 @@ test("phone checklist failure opens its maintenance task", async ({ page }) => {
   await expect(problem.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await problem.getByLabel(/Why\?/).fill("Shower drain is blocked.");
   await problem.getByRole("button", { name: "Save", exact: true }).click();
-  await page.getByRole("button", { name: "Create maintenance task", exact: true }).click();
-  const task = page.getByRole("dialog", { name: "Create maintenance task" });
-  await expect(task.getByText(/starts unassigned/)).toBeVisible();
-  await task.getByRole("button", { name: "Create task", exact: true }).click();
-  await page.getByRole("link", { name: "Open maintenance task" }).click();
+  await page.getByRole("button", { name: "Create maintenance job", exact: true }).click();
+  const task = page.getByRole("dialog", { name: "Create maintenance job" });
+  await expect(task.getByText(/No one is assigned to the job yet/)).toBeVisible();
+  await task.getByRole("button", { name: "Create job", exact: true }).click();
+  await page.getByRole("link", { name: "Open maintenance job" }).click();
   await expect(page).toHaveURL(/\/maintenance\?branch=.+&task=/);
   await expect(page.getByRole("article", { name: /Check changing rooms are clean/ })).toBeVisible();
   await fits(page);
@@ -96,11 +96,11 @@ test("phone checklist failure opens its maintenance task", async ({ page }) => {
 test("payables filters and maintenance history survive refresh", async ({ page }) => {
   await enter(page);
   await page.goto(`/operations/payables?branch=${branch}`);
-  await page.getByRole("combobox", { name: "Payables status" }).click();
+  await page.getByRole("combobox", { name: "Bill status" }).click();
   await page.getByRole("option", { name: "Paid", exact: true }).click();
   await expect(page).toHaveURL(/status=paid/);
   await page.reload();
-  await expect(page.getByRole("combobox", { name: "Payables status" })).toHaveText("Paid");
+  await expect(page.getByRole("combobox", { name: "Bill status" })).toHaveText("Paid");
   await page.goto(`/maintenance?branch=${branch}`);
   await page.getByRole("button", { name: "Show history" }).click();
   await expect(page).toHaveURL(/history=1/);
@@ -117,7 +117,7 @@ test("branch work dialogs fit a short phone viewport", async ({ page }) => {
     [`/operations?branch=${branch}&tab=orders`, "New purchase order", "Create purchase order", "Save draft"],
     [`/operations?branch=${branch}&tab=suppliers`, "Add supplier", "Add supplier", "Save supplier"],
     [`/operations/payables?branch=${branch}`, "Record payment", "Record supplier payment", "Record payment"],
-    [`/maintenance?branch=${branch}`, "New task", "Add maintenance task", "Add to work list"],
+    [`/maintenance?branch=${branch}`, "New job", "Add maintenance job", "Add job"],
   ]) {
     await page.goto(route!);
     await page.getByRole("button", { name: button, exact: true }).click();
@@ -139,11 +139,11 @@ test("supplier payment confirmation keeps amount, posting and reversal distinct"
   await page.getByRole("button", { name: /^Pay Jordan Sports Supply for/ }).click();
   const dialog = page.getByRole("dialog", { name: "Record supplier payment" });
   await dialog.getByRole("textbox", { name: "Amount paid" }).fill("650");
-  await expect(dialog.getByRole("textbox", { name: /Allocate to Purchase order/ })).toHaveValue("650.000");
+  await expect(dialog.getByRole("textbox", { name: /Amount for Purchase order/ })).toHaveValue("650.000");
   await dialog.getByTestId("confirm-supplier-payment").click();
   await expect(page).toHaveURL(/\/operations\/payables\/payments\//);
   await expect(page.getByTestId("supplier-payment-confirmation")).toBeVisible();
-  await expect(page.getByText("Not posted to ledger yet", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Not in the accounts yet", { exact: true }).first()).toBeVisible();
   await fits(page);
   await page.getByTestId("reverse-supplier-payment").click();
   const reversal = page.getByRole("dialog", { name: "Reverse supplier payment" });

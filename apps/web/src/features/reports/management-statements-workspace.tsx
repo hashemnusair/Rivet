@@ -49,13 +49,13 @@ export function scopedJournalsHref(branchFilter: string): string {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  available: "Available",
-  not_available: "Not available",
-  not_configured: "Not configured",
-  proven: "Proven",
-  unproven: "Unproven",
-  refresh_required: "Refresh required",
-  unavailable: "Unavailable",
+  available: "Matches",
+  not_available: "Does not match",
+  not_configured: "Not set up",
+  proven: "Matches",
+  unproven: "Not confirmed",
+  refresh_required: "Needs a refresh",
+  unavailable: "Not checked",
 };
 
 const STATUS_VARIANTS: Record<string, "success" | "warning" | "neutral"> = {
@@ -74,7 +74,7 @@ function statusLabel(value: string): string {
 
 function StatementLoading() {
   return (
-    <div className="space-y-4" role="status" aria-label="Loading management statement">
+    <div className="space-y-4" role="status" aria-label="Loading statement">
       <div className="grid gap-3 sm:grid-cols-3">
         {(["a", "b", "c"] as const).map((key) => <Skeleton key={key} className="h-24" />)}
       </div>
@@ -92,7 +92,7 @@ function ReportStatusBadge({ status }: { status: string }) {
   );
 }
 
-function SectionLines({ section, emptyLabel = "No posted lines in this scope." }: { section: ManagementStatementSection; emptyLabel?: string }) {
+function SectionLines({ section, emptyLabel = "Nothing here for these dates." }: { section: ManagementStatementSection; emptyLabel?: string }) {
   if (section.lines.length === 0) return <p className="px-4 py-5 text-[12px] text-ink-3">{emptyLabel}</p>;
   return (
     <div className="divide-y divide-line">
@@ -115,11 +115,11 @@ function JournalsLink({ href, label = "View journal entries" }: { href?: string;
   return <Link href={href} className="text-[12px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">{label}</Link>;
 }
 
-function StatementSectionCard({ title, section, tone, journalsHref }: { title: string; section: ManagementStatementSection; tone?: "positive" | "negative"; journalsHref?: string }) {
+function StatementSectionCard({ title, description, section, tone, journalsHref }: { title: string; description: string; section: ManagementStatementSection; tone?: "positive" | "negative"; journalsHref?: string }) {
   return (
     <section className="panel overflow-hidden" aria-label={title}>
       <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <div className="min-w-0"><h3 className="text-[14px] font-semibold">{title}</h3>{section.lines.length > 0 ? <JournalsLink href={journalsHref} /> : null}</div>
+        <div className="min-w-0"><h3 className="text-[14px] font-semibold">{title}</h3><p className="text-[12px] text-ink-3">{description}</p>{section.lines.length > 0 ? <JournalsLink href={journalsHref} /> : null}</div>
         <MoneyText money={section.total} className={tone === "positive" ? "text-success-deep" : tone === "negative" ? "text-warning-deep" : undefined} />
       </header>
       <SectionLines section={section} />
@@ -139,11 +139,29 @@ function SummaryCard({ label, value, context, tone = "default" }: { label: strin
 
 function ReportErrorOrLoading({ loading, error, onRetry, title }: { loading: boolean; error: unknown; onRetry: () => void; title: string }) {
   if (loading) return <StatementLoading />;
-  if (error) return <QueryErrorState error={error} onRetry={onRetry} notFoundTitle={`${title} unavailable`} />;
+  if (error) return <QueryErrorState error={error} onRetry={onRetry} notFoundTitle={`${title} is not available`} />;
   return null;
 }
 
 const MEMBERSHIP_RECOGNITION_WARNING_KEY = "membership-revenue-recognition";
+
+/**
+ * The server words some notes in accounting terms. These are the known ones in
+ * plain English; any other text is shown exactly as the server sent it.
+ */
+const PLAIN_REPORT_TEXT: Record<string, string> = {
+  "accounting source queue coverage is not proven for this report. refresh the source queue before relying on completeness.": "Some sales or costs may not be in the books yet. Refresh the list in Bookkeeping before you rely on these numbers.",
+  "membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.": "Some membership income may be missing. Money paid in advance counts as earned only after its monthly schedule is added to the books.",
+  "fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.": "Some equipment is missing details, so its value is not reduced over time. Add the purchase date, cost and useful life.",
+  "management accounting projection for operational decision support. this is not statutory, tax, audit, or jurisdiction-specific financial reporting.": "These figures are for running the gym. They are not for tax or official accounts.",
+  "cash arithmetic agrees with the current ledger projection, but source queue coverage is not proven. refresh the source queue before treating this reconciliation as complete.": "The cash numbers add up, but some sales or costs may not be in the books yet. Refresh the list in Bookkeeping first.",
+  "the classified cash movement does not agree with the independent cash-account position through the as-of date.": "The cash that moved does not match the cash in your cash accounts on the end date. Ask your accountant to check.",
+  "cash on hand and card/bank-transfer clearing accounts are treated as cash. each posted entry's cash movement is classified by its non-cash counterpart lines: investing when any counterpart is a non-current asset, otherwise financing when any counterpart is equity or a non-current liability, otherwise operating. entries that only move money between cash accounts are internal transfers and are excluded from the classified sections.": "Cash in the drawer and card and bank transfer money count as cash. Equipment purchases and sales count as investing. Money the owner puts in or takes out, and loans, count as financing. Everything else counts as operating. Moving money between your own cash accounts is left out.",
+};
+
+function plainReportText(text: string): string {
+  return PLAIN_REPORT_TEXT[text.trim().replace(/\s+/g, " ").toLowerCase()] ?? text;
+}
 
 function normalizedWarningKey(warning: string): string {
   const normalized = warning.trim().replace(/\s+/g, " ").toLowerCase();
@@ -169,29 +187,29 @@ function statementWarnings(report: ManagementReportCompleteness | undefined, kin
   const warnings = [...report.warnings];
   const membershipRevenueRecognition = kind === "income" ? (report as IncomeStatement).membershipRevenueRecognition : undefined;
   if (membershipRevenueRecognition === "not_configured" && !warnings.some((warning) => normalizedWarningKey(warning) === MEMBERSHIP_RECOGNITION_WARNING_KEY)) {
-    warnings.push("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
+    warnings.push("Some membership income may be missing. Money paid in advance counts as earned only after its monthly schedule is added to the books.");
   }
-  return dedupeStatementWarnings(warnings);
+  return dedupeStatementWarnings(warnings).map(plainReportText);
 }
 
 function ReportQuality({ report, warnings, kind, controlsHref }: { report?: ManagementReportCompleteness; warnings?: readonly string[]; kind?: ManagementStatementKind; controlsHref?: string }) {
   if (!report) return null;
-  const visibleWarnings = warnings ?? dedupeStatementWarnings(report.warnings);
+  const visibleWarnings = warnings ?? dedupeStatementWarnings(report.warnings).map(plainReportText);
   const needsAttention = report.queueCoverage !== "proven" || visibleWarnings.length > 0;
   return (
-    <section className="space-y-2" aria-label="Statement quality and scope">
+    <section className="space-y-2" aria-label="About these numbers">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
         {/* A balance sheet is a cumulative position, not period activity. */}
         <span dir="ltr">{kind === "balance" ? `As of ${formatDate(report.toDate)}` : `${formatDate(report.fromDate)} – ${formatDate(report.toDate)}`}</span>
         <span aria-hidden>·</span>
-        <span>{report.branchId ? "Selected branch" : "All accessible branches"}</span>
+        <span>{report.branchId ? "Selected branch" : "All your branches"}</span>
         <span aria-hidden>·</span>
         <span dir="ltr">{report.currency}</span>
-        {report.queueCoverage !== "proven" ? <Badge variant="warning">Data coverage: {STATUS_LABELS[report.queueCoverage] ?? statusLabel(report.queueCoverage)}</Badge> : null}
-        {!needsAttention ? <span className="inline-flex items-center gap-1 text-success-deep"><CheckCircle2 className="size-3.5" aria-hidden /> All sources accounted for</span> : null}
+        {report.queueCoverage !== "proven" ? <Badge variant="warning">May be missing items</Badge> : null}
+        {!needsAttention ? <span className="inline-flex items-center gap-1 text-success-deep"><CheckCircle2 className="size-3.5" aria-hidden /> Everything is in the books</span> : null}
       </div>
-      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul>{controlsHref ? <p className="mt-2"><Link href={controlsHref} className="font-medium underline underline-offset-2">Resolve in Ledger controls</Link></p> : null}</div></div></section> : report.queueCoverage !== "proven" && controlsHref ? <p className="text-[12px] text-ink-3">Hit <Link href={controlsHref} className="font-medium text-ink-2 underline underline-offset-2">Refresh queue in Ledger controls</Link> to re-prove coverage.</p> : null}
-      <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3"><CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden /><p>{report.disclaimer}</p></div>
+      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul>{controlsHref ? <p className="mt-2"><Link href={controlsHref} className="font-medium underline underline-offset-2">Fix this in Bookkeeping</Link></p> : null}</div></div></section> : report.queueCoverage !== "proven" && controlsHref ? <p className="text-[12px] text-ink-3">Some items may not be in the books yet. <Link href={controlsHref} className="font-medium text-ink-2 underline underline-offset-2">Refresh the list in Bookkeeping</Link>.</p> : null}
+      <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3"><CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden /><p>{plainReportText(report.disclaimer)}</p></div>
     </section>
   );
 }
@@ -200,22 +218,22 @@ function IncomeStatementView({ report, journalsHref }: { report: IncomeStatement
   return (
     <div className="space-y-4" data-testid="income-statement">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="Total revenue" value={<MoneyText money={report.totalRevenue} />} tone="positive" context="Membership and shop income earned in this period." />
-        <SummaryCard label="Total costs" value={<MoneyText money={report.totalCosts} />} tone="warning" context="Stock, repairs, depreciation, and other running costs." />
-        <SummaryCard label="Net income" value={<MoneyText money={report.netIncome} />} tone={report.netIncome.amount >= 0 ? "positive" : "danger"} context="Revenue and other income, less cost of sales, operating expenses, and other expenses." />
+        <SummaryCard label="Total revenue" value={<MoneyText money={report.totalRevenue} />} tone="positive" context="Membership and shop income earned in these dates." />
+        <SummaryCard label="Total costs" value={<MoneyText money={report.totalCosts} />} tone="warning" context="Stock, repairs, equipment wear and other running costs." />
+        <SummaryCard label="Net income" value={<MoneyText money={report.netIncome} />} tone={report.netIncome.amount >= 0 ? "positive" : "danger"} context="Your profit or loss: all income minus all costs." />
       </div>
       {report.membershipRevenueRecognition !== "not_available" ? (
         <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3">
           <CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <p><span className="font-medium text-ink-2">Why fils can appear:</span> memberships sold under the retired deferred policy are earned by service day, so their monthly amounts can carry fils — those months always add back to the exact sale price. Memberships sold under the current policy post their full whole price as revenue on the day of sale.</p>
+          <p><span className="font-medium text-ink-2">Why you may see fils:</span> older memberships are counted as earned day by day, so a month can include fils. Together, those months always add up to the full price. New memberships count their full price on the day of sale.</p>
         </div>
       ) : null}
       <div className="grid gap-4 lg:grid-cols-2">
-        <StatementSectionCard journalsHref={journalsHref} title="Revenue" section={report.revenue} tone="positive" />
-        <StatementSectionCard journalsHref={journalsHref} title="Cost of sales" section={report.costOfSales} tone="negative" />
-        <StatementSectionCard journalsHref={journalsHref} title="Operating expenses" section={report.operatingExpenses} tone="negative" />
-        <StatementSectionCard journalsHref={journalsHref} title="Other income" section={report.otherIncome} tone="positive" />
-        <StatementSectionCard journalsHref={journalsHref} title="Other expenses" section={report.otherExpenses} tone="negative" />
+        <StatementSectionCard journalsHref={journalsHref} title="Revenue" description="Money the gym earned from members and sales." section={report.revenue} tone="positive" />
+        <StatementSectionCard journalsHref={journalsHref} title="Cost of sales" description="What the things you sold cost you." section={report.costOfSales} tone="negative" />
+        <StatementSectionCard journalsHref={journalsHref} title="Operating expenses" description="Running costs, like repairs, supplies and equipment wear." section={report.operatingExpenses} tone="negative" />
+        <StatementSectionCard journalsHref={journalsHref} title="Other income" description="Income from outside normal gym work." section={report.otherIncome} tone="positive" />
+        <StatementSectionCard journalsHref={journalsHref} title="Other expenses" description="Costs from outside normal gym work." section={report.otherExpenses} tone="negative" />
       </div>
     </div>
   );
@@ -227,28 +245,34 @@ function BalanceSheetView({ report, journalsHref }: { report: BalanceSheet; jour
   return (
     <div className="space-y-4" data-testid="balance-sheet">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="Total assets" value={<MoneyText money={report.totalAssets} />} context="Cash, stock, and equipment the gym controls." />
+        <SummaryCard label="Total assets" value={<MoneyText money={report.totalAssets} />} context="Cash, stock and equipment the gym owns." />
         <SummaryCard label="Liabilities" value={<MoneyText money={report.totalLiabilities} />} context="What the gym still owes suppliers and members." />
-        <SummaryCard label="Liabilities + equity" value={<MoneyText money={report.totalLiabilitiesAndEquity} />} tone={report.balanced ? "positive" : "danger"} context="Always equals total assets when the books balance." />
+        <SummaryCard label="Liabilities and equity" value={<MoneyText money={report.totalLiabilitiesAndEquity} />} tone={report.balanced ? "positive" : "danger"} context="Should equal total assets. If not, the books need checking." />
       </div>
-      <section className={cn("rounded-md border px-4 py-3", report.balanced ? "border-success/40 bg-success-bg text-success-deep" : "border-danger/40 bg-danger-bg text-danger")} role="status" aria-label="Balance sheet equation">
-        <div className="flex flex-wrap items-center gap-2"><Scale className="size-4" aria-hidden /><p className="font-medium">{report.balanced ? "Balance sheet equation reconciles" : "Balance sheet equation needs review"}</p><ReportStatusBadge status={report.balanced ? "available" : "not_available"} /></div>
-        <p className="mt-1 text-[12px]">Assets = liabilities + equity + cumulative earnings · difference <span dir="ltr" className="font-medium"><MoneyText money={report.difference} /></span></p>
+      <section className={cn("rounded-md border px-4 py-3", report.balanced ? "border-success/40 bg-success-bg text-success-deep" : "border-danger/40 bg-danger-bg text-danger")} role="status" aria-label="Balance check">
+        <div className="flex flex-wrap items-center gap-2"><Scale className="size-4" aria-hidden /><p className="font-medium">{report.balanced ? "The balance sheet balances" : "The balance sheet does not balance"}</p><ReportStatusBadge status={report.balanced ? "available" : "not_available"} /></div>
+        <p className="mt-1 text-[12px]">Assets should equal liabilities plus equity plus earnings to date. Difference: <span dir="ltr" className="font-medium"><MoneyText money={report.difference} /></span></p>
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
-        <StatementSectionCard journalsHref={journalsHref} title="Current assets" section={report.assets.current} />
-        <StatementSectionCard journalsHref={journalsHref} title="Non-current assets" section={report.assets.noncurrent} />
-        <StatementSectionCard journalsHref={journalsHref} title="Current liabilities" section={report.liabilities.current} />
-        <StatementSectionCard journalsHref={journalsHref} title="Non-current liabilities" section={report.liabilities.noncurrent} />
-        <StatementSectionCard journalsHref={journalsHref} title="Equity" section={report.equity} />
-        <SummaryCard label="Cumulative earnings" value={<MoneyText money={cumulativeEarnings} />} context="Revenue less costs accumulated from ledger inception through the as-of date; closes the equation because no period-end earnings roll-up exists yet." />
+        <StatementSectionCard journalsHref={journalsHref} title="Current assets" description="Cash, stock and money members owe you." section={report.assets.current} />
+        <StatementSectionCard journalsHref={journalsHref} title="Non-current assets" description="Equipment and other things you keep for years." section={report.assets.noncurrent} />
+        <StatementSectionCard journalsHref={journalsHref} title="Current liabilities" description="What you owe within a year, like supplier bills and prepaid memberships." section={report.liabilities.current} />
+        <StatementSectionCard journalsHref={journalsHref} title="Non-current liabilities" description="What you owe over more than a year." section={report.liabilities.noncurrent} />
+        <StatementSectionCard journalsHref={journalsHref} title="Equity" description="What the owner has put into the gym." section={report.equity} />
+        <SummaryCard label="Earnings to date" value={<MoneyText money={cumulativeEarnings} />} context="All income minus all costs, from the start of your books to this date." />
       </div>
     </div>
   );
 }
 
+const CASHFLOW_SECTION_DESCRIPTIONS: Record<string, string> = {
+  operating: "Cash from running the gym day to day.",
+  investing: "Cash spent on or received for equipment.",
+  financing: "Cash put in or taken out by the owner, and loans.",
+};
+
 function CashflowSectionCard({ section, journalsHref }: { section: CashflowSection; journalsHref?: string }) {
-  return <section className="panel overflow-hidden" aria-label={`${section.category} cashflow`}><header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><h3 className="text-[14px] font-semibold capitalize">{section.category} activities</h3>{section.lines.length > 0 ? <JournalsLink href={journalsHref} /> : null}</div><MoneyText money={section.netChange} signed /></header><SectionLines section={{ lines: section.lines, total: section.netChange }} emptyLabel={`No ${section.category} cash movements in this scope.`} /></section>;
+  return <section className="panel overflow-hidden" aria-label={`${section.category} cash flow`}><header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><h3 className="text-[14px] font-semibold capitalize">{section.category} activities</h3>{CASHFLOW_SECTION_DESCRIPTIONS[section.category] ? <p className="text-[12px] text-ink-3">{CASHFLOW_SECTION_DESCRIPTIONS[section.category]}</p> : null}{section.lines.length > 0 ? <JournalsLink href={journalsHref} /> : null}</div><MoneyText money={section.netChange} signed /></header><SectionLines section={{ lines: section.lines, total: section.netChange }} emptyLabel="No cash moved here in these dates." /></section>;
 }
 
 function CashflowView({ report, journalsHref }: { report: CashflowStatement; journalsHref?: string }) {
@@ -257,21 +281,21 @@ function CashflowView({ report, journalsHref }: { report: CashflowStatement; jou
   return (
     <div className="space-y-4" data-testid="cashflow-statement">
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="Opening cash" value={<MoneyText money={report.openingCash} />} context="Drawer plus card and transfer clearing at the start." />
-        <SummaryCard label="Net change" value={<MoneyText money={report.netChange} signed />} tone={report.netChange.amount >= 0 ? "positive" : "danger"} context="Cash in minus cash out during this period." />
-        <SummaryCard label="Closing cash" value={<MoneyText money={report.closingCash} />} tone={report.balanced ? "positive" : "warning"} context="Drawer plus clearing at the end of the period." />
+        <SummaryCard label="Opening cash" value={<MoneyText money={report.openingCash} />} context="Cash in the drawer plus card and bank transfer money, at the start." />
+        <SummaryCard label="Change in cash" value={<MoneyText money={report.netChange} signed />} tone={report.netChange.amount >= 0 ? "positive" : "danger"} context="Cash in minus cash out in these dates." />
+        <SummaryCard label="Closing cash" value={<MoneyText money={report.closingCash} />} tone={report.balanced ? "positive" : "warning"} context="Cash in the drawer plus card and bank transfer money, at the end." />
       </div>
-      <section className={cn("rounded-md border px-4 py-3", reconciliationProven ? "border-success/40 bg-success-bg text-success-deep" : "border-warning/40 bg-warning-bg text-warning-deep")} role="status" aria-label="Cashflow reconciliation"><div className="flex flex-wrap items-center gap-2">{reconciliationProven ? <CheckCircle2 className="size-4" aria-hidden /> : <AlertTriangle className="size-4" aria-hidden />}<p className="font-medium">{reconciliationProven ? "Cashflow reconciles" : "Cashflow reconciliation needs review"}</p><ReportStatusBadge status={report.reconciliationStatus} /></div><p className="mt-1 text-[12px]">Opening cash + net change = expected closing cash <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.expectedClosingCash} /></span> · independent as-of cash <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.asOfCash} /></span> · difference <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.difference} /></span></p>{reconciliation.note ? <p className="mt-1 text-[12px]">{reconciliation.note}</p> : null}</section>
+      <section className={cn("rounded-md border px-4 py-3", reconciliationProven ? "border-success/40 bg-success-bg text-success-deep" : "border-warning/40 bg-warning-bg text-warning-deep")} role="status" aria-label="Cash check"><div className="flex flex-wrap items-center gap-2">{reconciliationProven ? <CheckCircle2 className="size-4" aria-hidden /> : <AlertTriangle className="size-4" aria-hidden />}<p className="font-medium">{reconciliationProven ? "The cash numbers match" : "The cash numbers need checking"}</p><ReportStatusBadge status={report.reconciliationStatus} /></div><p className="mt-1 text-[12px]">Expected closing cash (opening cash plus change): <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.expectedClosingCash} /></span> · Cash in your cash accounts on the end date: <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.asOfCash} /></span> · Difference: <span dir="ltr" className="font-medium"><MoneyText money={reconciliation.difference} /></span></p>{reconciliation.note ? <p className="mt-1 text-[12px]">{plainReportText(reconciliation.note)}</p> : null}</section>
       <div className="grid gap-4 lg:grid-cols-3"><CashflowSectionCard section={report.operating} journalsHref={journalsHref} /><CashflowSectionCard section={report.investing} journalsHref={journalsHref} /><CashflowSectionCard section={report.financing} journalsHref={journalsHref} /></div>
-      <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3"><Banknote className="mt-0.5 size-4 shrink-0" aria-hidden /><p><span className="font-medium text-ink-2">Classification policy:</span> {report.classificationPolicy.description} <span dir="ltr">({report.classificationPolicy.code} v{report.classificationPolicy.version})</span></p></div>
+      <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3"><Banknote className="mt-0.5 size-4 shrink-0" aria-hidden /><p><span className="font-medium text-ink-2">How cash is sorted:</span> {plainReportText(report.classificationPolicy.description)}</p></div>
     </div>
   );
 }
 
 const STATEMENT_LABELS: Record<ManagementStatementKind, { label: string; description: string }> = {
-  income: { label: "Income statement", description: "Revenue, costs, and net income for the selected period." },
-  balance: { label: "Balance sheet", description: "Assets, liabilities, and equity as of the selected date." },
-  cashflow: { label: "Cash flow statement", description: "Cash movement by operating, investing, and financing activity." },
+  income: { label: "Income statement", description: "What the gym earned and spent in these dates, and the profit or loss." },
+  balance: { label: "Balance sheet", description: "What the gym owns and owes on the end date." },
+  cashflow: { label: "Cash flow statement", description: "Where cash came from and where it went in these dates." },
 };
 
 function validDateParam(value: string | null, fallback: string): string {
@@ -334,7 +358,7 @@ function StatementScopeFilters({
   const validRange = fromDate.length > 0 && toDate.length > 0 && fromDate <= toDate;
   const presets = rangePresets();
   return (
-    <section className="panel flex flex-col gap-3 p-4" aria-label="Statement scope filters">
+    <section className="panel flex flex-col gap-3 p-4" aria-label="Dates and branch">
       <ScopePills
         label="Quick date ranges"
         value={presets.find((preset) => preset.from === fromDate && preset.to === toDate)?.key}
@@ -344,10 +368,10 @@ function StatementScopeFilters({
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <Field label="From date" className="w-full sm:w-44"><Input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} dir="ltr" /></Field>
         <Field label="To date" className="w-full sm:w-44"><Input type="date" value={toDate} onChange={(event) => onToDateChange(event.target.value)} dir="ltr" /></Field>
-        <Field label="Branch scope" className="w-full sm:w-64"><Select value={branchFilter} onValueChange={onBranchChange}><SelectTrigger aria-label="Statement branch scope"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
-        <div className="flex items-center gap-2 text-[12px] text-ink-3 sm:ms-auto"><CalendarDays className="size-4" aria-hidden /><span>{branchFilter === "all" ? "Consolidated accessible scope" : branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
+        <Field label="Branch" className="w-full sm:w-64"><Select value={branchFilter} onValueChange={onBranchChange}><SelectTrigger aria-label="Branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All your branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
+        <div className="flex items-center gap-2 text-[12px] text-ink-3 sm:ms-auto"><CalendarDays className="size-4" aria-hidden /><span>{branchFilter === "all" ? "All your branches together" : branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
       </div>
-      {!validRange ? <p className="basis-full text-[12px] text-danger" role="alert">Choose a from date on or before the to date.</p> : null}
+      {!validRange ? <p className="basis-full text-[12px] text-danger" role="alert">The from date must be on or before the to date.</p> : null}
     </section>
   );
 }
@@ -454,21 +478,21 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
   const reportView = report ? kind === "income" ? <IncomeStatementView report={report as IncomeStatement} journalsHref={journalsHref} /> : kind === "balance" ? <BalanceSheetView report={report as BalanceSheet} journalsHref={journalsHref} /> : <CashflowView report={report as CashflowStatement} journalsHref={journalsHref} /> : null;
   const reportWarnings = statementWarnings(report, kind);
 
-  if (sessionLoading && !session) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
-  if (!canRead) return <ForbiddenState description="Management statements are limited to roles with financial reporting access." />;
-  if (workspaceQuery.isLoading) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading your reporting workspace…" /><StatementLoading /></>;
+  if (sessionLoading && !session) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading the statement…" /><StatementLoading /></>;
+  if (!canRead) return <ForbiddenState description="You don't have access to the financial statements. Ask the gym owner if you need them." />;
+  if (workspaceQuery.isLoading) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading the statement…" /><StatementLoading /></>;
   if (workspaceQuery.error || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
-  if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Management reporting is not included" description="The Pro reporting workspace module adds the income statement, balance sheet, and cash flow statement." className="mt-4" />;
-  if (!reportingModule.enabled) return <StatePanel icon={LockKeyhole} title="Management reporting is paused" description="An organization owner can enable the reporting module from workspace settings." className="mt-4" />;
+  if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Financial statements are not in your plan" description="Your plan does not include the income statement, balance sheet and cash flow statement. Contact RIVET to add them." className="mt-4" />;
+  if (!reportingModule.enabled) return <StatePanel icon={LockKeyhole} title="Financial statements are turned off" description="The gym owner can turn them on in Settings." className="mt-4" />;
 
   return (
     <div className="space-y-5" data-testid="management-statements-workspace" data-kind={kind}>
       {/* Same back link as Ledger controls, so the three statements and the controls read as one place. */}
       <Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 text-[12px] text-ink-2 underline-offset-2 hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link>
-      <PageHeader sectionLabel="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Badge variant="outline">{readOnly ? "Read-only access" : "Posted facts"}</Badge>{!readOnly ? <Button asChild variant="secondary"><Link href={effectiveBranchFilter === "all" ? "/finance/controls" : `/finance/controls?branchId=${encodeURIComponent(effectiveBranchFilter)}`}>Ledger controls</Link></Button> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
+      <PageHeader sectionLabel="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Badge variant="outline">{readOnly ? "View only" : "From the books"}</Badge>{!readOnly ? <Button asChild variant="secondary"><Link href={effectiveBranchFilter === "all" ? "/finance/controls" : `/finance/controls?branchId=${encodeURIComponent(effectiveBranchFilter)}`}>Bookkeeping</Link></Button> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
       <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} onRangeChange={(from, to) => { setFromDate(from); setToDate(to); }} />
       <ReportQuality report={report} warnings={reportWarnings} kind={kind} controlsHref={!readOnly ? "/finance/controls" : undefined} />
-      {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale statement data">Showing the last successful statement data. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Reload</button></div> : null}
+      {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Numbers may be out of date">These numbers may be out of date. The last reload failed. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Try again</button></div> : null}
       <ReportErrorOrLoading loading={statementQuery.isLoading} error={statementQuery.isError ? statementQuery.error : undefined} onRetry={refresh} title={definition.label} />
       {reportView}
     </div>

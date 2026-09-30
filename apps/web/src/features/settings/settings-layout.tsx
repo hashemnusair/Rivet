@@ -130,7 +130,7 @@ export function SettingsSaveBar({
   saveDisabledReason,
   error,
   guardTitle = "Unsaved settings changes",
-  guardDescription = "Save these settings before leaving, discard the local edits, or stay on this page.",
+  guardDescription = "Save your changes before you leave, discard them, or stay on this page.",
 }: {
   dirty: boolean;
   saving: boolean;
@@ -161,7 +161,7 @@ export function SettingsSaveBar({
     setGuard({
       title: guardTitle,
       description: guardDescription,
-      detail: saveDisabledReason ?? "Your saved settings remain active until you confirm these edits.",
+      detail: saveDisabledReason ?? "Your saved settings stay in use until you save these changes.",
       saveDisabledReason,
       save: () => actions.current.onSave(),
       discard: async () => { await actions.current.onDiscard(); },
@@ -197,10 +197,10 @@ export function SettingsSaveBar({
   const saved = savedVisible && !dirty && !saving;
   const title = saved ? "Changes saved" : saving ? "Saving changes…" : "Unsaved changes";
   const detail = saved
-    ? "The new settings are now active."
+    ? "Your new settings are now in use."
     : saving
-      ? "Keep this page open until the save completes."
-      : error ?? saveDisabledReason ?? "Save before leaving this section, or discard the edits.";
+      ? "Keep this page open until saving is done."
+      : error ?? saveDisabledReason ?? "Save before you leave this section, or discard your changes.";
 
   return (
     <div

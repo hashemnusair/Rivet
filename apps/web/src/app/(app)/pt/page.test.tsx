@@ -36,8 +36,8 @@ describe("PT workspace states", () => {
 
   it("lets a trainer edit their availability without exposing payment or package management", async () => {
     render(<PersonalTrainingPage />);
-    expect(screen.queryByRole("button", { name: "Package" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Pending package orders" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add package" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Unpaid package orders" })).not.toBeInTheDocument();
     expect(screen.queryByText("PT package revenue")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Availability" }));
     expect(screen.getByRole("dialog", { name: "Fadi Khoury availability" })).toBeInTheDocument();
@@ -56,7 +56,7 @@ describe("PT workspace states", () => {
   it("separates denied access from a retryable failure", () => {
     Object.assign(state, { data: undefined, isError: true, error: ApiError.of(ERR.FORBIDDEN, "This role cannot open PT reports.") });
     render(<PersonalTrainingPage />);
-    expect(screen.getByRole("heading", { name: "Not allowed for this role" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "You don't have access" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   });
 });
@@ -74,7 +74,7 @@ describe("PT workspace trainer guidance", () => {
     expect(screen.getByRole("heading", { name: "Your trainer profile" })).toBeInTheDocument();
     expect(screen.getByText("No profile is linked to your account")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "PT packages" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Pending package orders" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Unpaid package orders" })).not.toBeInTheDocument();
   });
 
   it("lets a trainer with a draft profile set hours now and says publication is the gym's step", async () => {
@@ -118,12 +118,12 @@ describe("PT workspace trainer guidance", () => {
     render(<PersonalTrainingPage />);
     expect(screen.queryByTestId("trainer-setup-notice")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "PT packages" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Pending package orders" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Unpaid package orders" })).toBeInTheDocument();
     expect(screen.getByText("No trainer profiles")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Trainer" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add trainer" }));
     const dialog = screen.getByRole("dialog", { name: "Add a trainer profile" });
-    expect(within(dialog).getByRole("status")).toHaveTextContent("No active trainer accounts yet.");
-    expect(within(dialog).getByRole("link", { name: "Settings → Users" })).toHaveAttribute("href", "/settings?section=users");
+    expect(within(dialog).getByRole("status")).toHaveTextContent("No active trainers yet.");
+    expect(within(dialog).getByRole("link", { name: "Staff in Settings" })).toHaveAttribute("href", "/settings?section=users");
   });
 });
 
@@ -133,7 +133,7 @@ describe("PT package editor money handling", () => {
 
   async function openCreate() {
     render(<PersonalTrainingPage />);
-    await userEvent.click(screen.getByRole("button", { name: "Package" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add package" }));
     return screen.getByRole("dialog", { name: "Create a PT package" });
   }
 
@@ -144,7 +144,7 @@ describe("PT package editor money handling", () => {
     expect(within(dialog).getByText("Guide total").parentElement).toHaveTextContent("JOD 240.000");
     await userEvent.clear(price);
     await userEvent.type(price, "٢٤٠٫٥٠٠");
-    expect(dialog).toHaveTextContent("Current rate: JOD 20.042 / session");
+    expect(dialog).toHaveTextContent("Current rate: JOD 20.042 per session");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save package" }));
     expect(state.api.upsertPtPackage).toHaveBeenCalledWith(expect.objectContaining({ sessionCount: 12, totalPrice: { amount: 240_500, currency: "JOD" } }));
   });
@@ -178,12 +178,12 @@ describe("PT package editor money handling", () => {
     const price = within(dialog).getByLabelText(/Total price \(USD\)/);
     expect(price).toHaveValue("");
     expect(price).toHaveAttribute("placeholder", "240.00");
-    expect(dialog).toHaveTextContent("The reference ladder is priced in JOD; this gym sells in USD");
+    expect(dialog).toHaveTextContent("The price guide is in JOD. Your gym sells in USD");
     expect(within(dialog).queryByText("Guide total")).not.toBeInTheDocument();
     expect(dialog).toHaveTextContent("JOD 240.000");
     expect(dialog).not.toHaveTextContent("USD 240");
     await userEvent.type(price, "45.50");
-    expect(dialog).toHaveTextContent("Current rate: USD 3.79 / session");
+    expect(dialog).toHaveTextContent("Current rate: USD 3.79 per session");
     expect(dialog).not.toHaveTextContent("Guide rate");
     await userEvent.type(price, "5");
     await userEvent.tab();
@@ -202,7 +202,7 @@ describe("PT package editor money handling", () => {
     const dialog = screen.getByRole("dialog", { name: "Edit PT package" });
     const price = within(dialog).getByLabelText(/Total price \(USD\)/);
     expect(price).toHaveValue("48.00");
-    expect(dialog).toHaveTextContent("Current rate: USD 4.80 / session");
+    expect(dialog).toHaveTextContent("Current rate: USD 4.80 per session");
     await userEvent.clear(price);
     await userEvent.type(price, "USD 50");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save package" }));
@@ -222,11 +222,11 @@ describe("PT workspace outcome context", () => {
       ] },
     });
     render(<PersonalTrainingPage />);
-    expect(screen.getByRole("heading", { name: "Needs an outcome" })).toBeInTheDocument();
-    expect(screen.getByText("Awaiting outcome")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Mark your sessions" })).toBeInTheDocument();
+    expect(screen.getByText("Needs marking")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Complete" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "No-show" })).toHaveLength(1);
     expect(screen.getByText(/Basel Future/)).toBeInTheDocument();
-    expect(screen.getByText("Outcome controls unlock when the session begins.")).toBeInTheDocument();
+    expect(screen.getByText("You can mark this session once it starts.")).toBeInTheDocument();
   });
 });

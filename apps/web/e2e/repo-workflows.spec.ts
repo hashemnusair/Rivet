@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 
 test("changes a promised delivery date and clears the overdue filter", async ({ page }) => {
   await page.goto("/operations");
-  await page.getByRole("combobox", { name: "Operations branch" }).click();
+  await page.getByRole("combobox", { name: "Branch", exact: true }).click();
   await page.getByRole("option", { name: "Forge — Abdoun" }).click();
   await page.getByRole("tab", { name: "Purchase orders" }).click();
   await page.getByRole("button", { name: "New purchase order" }).click();
@@ -21,7 +21,7 @@ test("changes a promised delivery date and clears the overdue filter", async ({ 
   await row.getByRole("button", { name: "Approve", exact: true }).click();
   await page.getByRole("button", { name: "Overdue", exact: true }).click();
   const overdue = page.getByTestId("purchase-order-row");
-  await expect(overdue).toContainText("Delivery overdue: 2020-01-01");
+  await expect(overdue).toContainText("Delivery overdue: 1 Jan 2020");
   await overdue.getByRole("button", { name: "Change date" }).click();
   await overdue.getByLabel("Expected delivery date").fill("2099-01-01");
   await overdue.getByRole("button", { name: "Save date" }).click();
@@ -31,9 +31,9 @@ test("changes a promised delivery date and clears the overdue filter", async ({ 
 test("assigns today's checklist to an individual without losing its results", async ({ page }) => {
   await page.goto("/checklists");
   const opening = page.getByRole("region", { name: "Opening walkthrough checklist" });
-  await opening.getByRole("button", { name: "Assign this day" }).click();
+  await opening.getByRole("button", { name: "Assign a person" }).click();
   await opening.getByLabel("Responsible person").selectOption({ label: "Omar Al-Khatib" });
   await opening.getByRole("button", { name: "Save assignment" }).click();
   await expect(opening).toContainText("Omar Al-Khatib");
-  await expect(opening).toContainText("0/4");
+  await expect(opening).toContainText("0 of 4");
 });

@@ -31,10 +31,10 @@ describe("CommandPalette remote search", () => {
     await user.type(screen.getByRole("combobox", { name: "Global search" }), "Li");
 
     const failure = await screen.findByRole("alert");
-    expect(failure).toHaveTextContent(/workspace search is unavailable/i);
-    expect(screen.queryByText(/No records, receipts, pages, or actions match/i)).not.toBeInTheDocument();
+    expect(failure).toHaveTextContent(/search is not working right now/i);
+    expect(screen.queryByText(/Nothing matches/i)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Retry search" }));
+    await user.click(screen.getByRole("button", { name: "Search again" }));
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     expect((await screen.findAllByText(/Lina/i)).length).toBeGreaterThan(0);
   });

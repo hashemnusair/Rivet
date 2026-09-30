@@ -72,7 +72,7 @@ export function CartLines({ lines, inventory, currency, onQuantity, onRemove }: 
           <li key={line.product.id} className="flex items-start gap-3 px-4 py-3" data-testid="cart-line">
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-medium">{line.product.name}</p>
-              <p className="mt-0.5 text-[11px] text-ink-3"><span className="font-mono">{line.product.sku}</span> · <MoneyText money={price} hideCurrency /> each · {available} available</p>
+              <p className="mt-0.5 text-[12px] text-ink-3"><span className="font-mono">{line.product.sku}</span> · <MoneyText money={price} hideCurrency /> each · {available} in stock</p>
               <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-line-2 p-0.5" role="group" aria-label={`${line.product.name} quantity`}>
                 <Button type="button" variant="ghost" size="icon" className="size-10 sm:size-8" onClick={() => (line.quantity > 1 ? onQuantity(line.product.id, line.quantity - 1) : onRemove(line.product.id))} aria-label={`Decrease ${line.product.name}`}><Minus /></Button>
                 <QuantityInput name={line.product.name} quantity={line.quantity} available={available} onCommit={(quantity) => onQuantity(line.product.id, quantity)} />
@@ -128,7 +128,7 @@ export function MobileCart({ lines, total, open, onOpenChange, children, ...prop
     <>
       <div className={cn("fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface px-3 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-[0_-4px_16px_rgba(16,16,14,0.08)]", open && "hidden")} data-testid="mobile-cart-bar">
         <Button type="button" size="lg" className="flex h-12 w-full items-center justify-between" onClick={() => onOpenChange(true)} disabled={lines.length === 0} aria-label={`Review sale, ${itemCount} items, ${toMajorString(total)} ${total.currency}`}>
-          <span className="flex items-center gap-2"><ShoppingBag /> {itemCount === 0 ? "No items yet" : `Review & pay · ${itemCount} ${itemCount === 1 ? "item" : "items"}`}</span>
+          <span className="flex items-center gap-2"><ShoppingBag /> {itemCount === 0 ? "No items yet" : `Review and pay · ${itemCount} ${itemCount === 1 ? "item" : "items"}`}</span>
           <span className="flex items-center gap-1 tabular" dir="ltr">{toMajorString(total)} {total.currency} <ChevronUp /></span>
         </Button>
       </div>
@@ -146,7 +146,7 @@ export function MobileCart({ lines, total, open, onOpenChange, children, ...prop
                 <Button type="button" variant="ghost" size="icon" aria-label="Close current sale"><X /></Button>
               </DialogPrimitive.Close>
             </header>
-            <DialogPrimitive.Description id="mobile-cart-description" className="sr-only">Review the items, optionally attach a member, choose payment, and complete this sale.</DialogPrimitive.Description>
+            <DialogPrimitive.Description id="mobile-cart-description" className="sr-only">Check the items, add a member if needed, choose how they pay, and complete the sale.</DialogPrimitive.Description>
             <CartLines lines={lines} {...props} />
             <CartTotals total={total} itemCount={itemCount} />
             <div className="space-y-4 p-4">{children}</div>

@@ -987,8 +987,6 @@ export interface GymOSApi {
   logMemberContactAttempt(memberId: UUID, input: ContactAttemptInput): Promise<TimelineEvent>;
   /** The deterministic follow-up context for one member: renewal target, journey status, consent and suppression, quiet hours, queued reminders with truthful wording, recorded evidence and open work. */
   getMemberFollowUpContext(memberId: UUID): Promise<import("@/lib/domain/types").MemberFollowUpContext>;
-  /** The member resolution workspace: charges and payments by service, current term, PT orders and credits, typed evidence, open work, plan terms, joinable classes and available trainers. */
-  getMemberResolutionContext(memberId: UUID): Promise<import("@/lib/domain/types").MemberResolutionContext>;
 
   // Plans
   listPlans(query: PlanListQuery): Promise<Page<MembershipPlan>>;

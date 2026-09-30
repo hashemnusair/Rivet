@@ -31,14 +31,14 @@ test.describe("staged automation", () => {
       await owner.getByRole("button", { name: "Run now", exact: true }).click();
       const runDialog = owner.getByRole("dialog", { name: "Run automation now" });
       await runDialog.getByRole("textbox", { name: "Reason" }).fill("Verify the isolated automation execution path");
-      await runDialog.getByRole("button", { name: "Run eligible records", exact: true }).click();
-      await expect(owner.getByText(/Created \d+ execution/i)).toBeVisible();
+      await runDialog.getByRole("button", { name: "Run now", exact: true }).click();
+      await expect(owner.getByText(/Started \d+ run/i)).toBeVisible();
 
       await manager.goto(ruleUrl, { waitUntil: "domcontentloaded" });
       await expect(manager.getByRole("heading", { name: ruleName })).toBeVisible();
-      const enabled = manager.getByRole("switch", { name: "Enable rule" });
+      const enabled = manager.getByRole("switch", { name: "Turn on automation" });
       if (await enabled.isChecked()) await enabled.click();
-      await expect(manager.getByText("Paused", { exact: true })).toBeVisible();
+      await expect(manager.getByText("Off", { exact: true })).toBeVisible();
       cleanup.complete(cleanupEntry);
     } finally {
       if (ruleUrl && cleanupEntry !== undefined) {
@@ -56,9 +56,9 @@ test.describe("staged automation", () => {
 async function pauseRule(page: Page, ruleUrl: string): Promise<boolean> {
   try {
     await page.goto(ruleUrl, { waitUntil: "domcontentloaded" });
-    const enabled = page.getByRole("switch", { name: "Enable rule" });
+    const enabled = page.getByRole("switch", { name: "Turn on automation" });
     if (await enabled.isChecked()) await enabled.click();
-    await expect(page.getByText("Paused", { exact: true })).toBeVisible();
+    await expect(page.getByText("Off", { exact: true })).toBeVisible();
     return true;
   } catch {
     return false;

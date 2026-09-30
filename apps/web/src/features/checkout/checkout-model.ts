@@ -79,13 +79,13 @@ export interface SaleDraft {
 /** Client-side pre-checks in the operator's words; the server re-validates everything. */
 export function validateSaleDraft(draft: SaleDraft, inventory: InventoryBalance[], currency: string, options: { cashShiftOpen?: boolean } = {}): string | undefined {
   if (!draft.branchId) return "Choose the branch you are selling from.";
-  if (draft.lines.length === 0) return "Add at least one priced item to the sale.";
+  if (draft.lines.length === 0) return "Add at least one item to the sale.";
   const unpriced = draft.lines.find((line) => !retailPriceOf(line.product, currency));
   if (unpriced) return `${unpriced.product.name} has no selling price.`;
   const overStock = draft.lines.find((line) => line.quantity > availableFor(line.product.id, inventory));
-  if (overStock) return `${overStock.product.name} has only ${availableFor(overStock.product.id, inventory)} available.`;
-  if (draft.customer.kind === "guest" && (!draft.customer.fullName.trim() || !draft.customer.phone.trim())) return "Add the receipt name and phone number, or remove the receipt details.";
-  if ((draft.method === "cliq" || draft.method === "card") && !draft.reference.trim()) return `A reference number is required for ${CHECKOUT_PAYMENT_METHOD_LABELS[draft.method]}.`;
+  if (overStock) return `Only ${availableFor(overStock.product.id, inventory)} ${overStock.product.name} left in stock.`;
+  if (draft.customer.kind === "guest" && (!draft.customer.fullName.trim() || !draft.customer.phone.trim())) return "Add the name and phone number for the receipt, or remove them.";
+  if ((draft.method === "cliq" || draft.method === "card") && !draft.reference.trim()) return `Type the ${CHECKOUT_PAYMENT_METHOD_LABELS[draft.method]} reference number.`;
   if (draft.method === "cash" && options.cashShiftOpen === false) return "Open a cash shift at this branch before taking cash.";
   return undefined;
 }

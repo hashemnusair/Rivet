@@ -24,13 +24,13 @@ describe("Settings sections follow the signed-in role's permissions", () => {
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
-    expect(tabs).toEqual(["My profile", "Public profile", "Users", "Roles & permissions", "Daily checklists"]);
-    expect(screen.queryByRole("tab", { name: "Organization" })).not.toBeInTheDocument();
+    expect(tabs).toEqual(["My profile", "Public profile", "Staff", "Roles & access", "Daily checklists"]);
+    expect(screen.queryByRole("tab", { name: "Gym details" })).not.toBeInTheDocument();
 
-    // The URL still names Organization; the section says why it is closed instead of an editable form that would be refused.
-    expect(screen.getByRole("status")).toHaveTextContent("Not allowed for this role");
-    expect(screen.getByRole("status")).toHaveTextContent("needs the Manage settings permission");
-    expect(screen.queryByLabelText("Organization name")).not.toBeInTheDocument();
+    // The URL still names Gym details; the section says why it is closed instead of an editable form that would be refused.
+    expect(screen.getByRole("status")).toHaveTextContent("You don't have access");
+    expect(screen.getByRole("status")).toHaveTextContent("needs the “Manage settings” access");
+    expect(screen.queryByLabelText("Gym name")).not.toBeInTheDocument();
   });
 
   it("gives a staff role access to personal settings while keeping organization settings closed", async () => {
@@ -38,19 +38,19 @@ describe("Settings sections follow the signed-in role's permissions", () => {
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["My profile"]);
-    expect(screen.getByRole("status")).toHaveTextContent("Not allowed for this role");
+    expect(screen.getByRole("status")).toHaveTextContent("You don't have access");
 
     // The account section is available without widening the receptionist's
     // organization-management permissions.
     const profileTab = await screen.findByRole("tab", { name: "My profile" });
     await profileTab.click();
     expect(await screen.findByRole("heading", { name: "My profile", level: 2 })).toBeInTheDocument();
-    expect(await screen.findByLabelText(/Display name/)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Your name/)).toBeInTheDocument();
   });
 
   it("lets the owner reach every section", async () => {
     await renderWithApp(<SettingsPageInner />);
-    expect(await screen.findByRole("heading", { name: "Organization", level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Gym details", level: 2 })).toBeInTheDocument();
     expect(screen.getAllByRole("tab")).toHaveLength(17);
   });
 });

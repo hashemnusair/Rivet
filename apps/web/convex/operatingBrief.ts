@@ -1,34 +1,21 @@
 import { finalizeTodayQueue } from "../src/lib/dashboard/today-queue";
 
-function contentTokens(value: string): string[] {
-  return value.normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/).filter((token) => token.length >= 2);
-}
-
-function sharedTokenCount(left: string, right: string): number {
-  const rightTokens = new Set(contentTokens(right));
-  return [...new Set(contentTokens(left))].filter((token) => rightTokens.has(token)).length;
-}
-
 /**
- * The evidence-backed daily operating brief: the pure logic shared by the
+ * The dashboard's "Needs attention" summary: the pure logic shared by the
  * Convex query, the preview adapter and the dashboard.
  *
- * The brief is a working view of unresolved commercial and operational
- * issues. Everything in it is computed here from records the adapters read:
- * the queue items (the same items the Today queue already builds, without
- * its page limit), the extra sources (lapsed terms, machine reports, low
- * stock, open RIVET cases), every balance, count, overdue condition and
- * branch scope, the deterministic order, which items are mandatory, and how
- * complete the coverage is. Headings and related wording comparisons are
- * deterministic; neither hides, merges, closes or reorders anything.
+ * It counts the unresolved work a gym has right now — the same items the
+ * Today list builds, plus ended memberships, machine reports, low stock and
+ * open RIVET support requests — and turns each non-zero count into one plain
+ * sentence that links to the page where the work is done. Every number is
+ * computed here; the dashboard only renders the sentences. The Today list
+ * below it stays the one ordered list of individual tasks.
  *
  * No Convex or path-alias imports: the browser preview adapter shares it.
  */
 export const BRIEF_QUEUE_LIMIT = 2_000;
-/** A follow-up this far overdue is reported as stale, not merely overdue. */
+/** A follow-up this far overdue is reported as waiting, not merely late. */
 export const BRIEF_STALE_DAYS = 7;
-export const BRIEF_RELATED_MAX_PAIRS = 6;
-export const BRIEF_RELATED_MIN_TOKENS = 2;
 
 export type BriefItemKind =
   | "follow_up"
@@ -74,17 +61,13 @@ export type BriefSectionKey = "collections" | "renewals" | "followups" | "retent
 export type BriefSourceKey = "queue" | "expired" | "equipment" | "stock" | "support";
 export type BriefSourceStatus = "ok" | "empty" | "unavailable" | "not_enabled" | "no_permission";
 
-export interface BriefEvidenceLink { label: string; href: string }
-
-export interface BriefItem extends BriefQueueItem {
+/** One queue item with the facts the counts need. Internal to the summary; never sent to the page. */
+interface BriefItem extends BriefQueueItem {
   section: BriefSectionKey;
-  /** Urgent by the existing queue rules: always listed on top and never folded away. */
-  mandatory: boolean;
-  /** Whole days past the due date at generation time, when the item has one and is overdue. */
+  /** Whole days past the due date at generation time, when the item has one and is late. */
   overdueDays?: number;
-  /** Overdue by `BRIEF_STALE_DAYS` or more: the work has been waiting too long to be routine. */
+  /** Late by `BRIEF_STALE_DAYS` or more. */
   stale: boolean;
-  evidence: BriefEvidenceLink[];
 }
 
 export type BriefFigureValue = { kind: "count"; value: number } | { kind: "money"; money: BriefMoney };
@@ -93,28 +76,32 @@ export interface BriefFigure {
   key: string;
   label: string;
   value: BriefFigureValue;
-  href?: string;
 }
 
 export interface BriefSection {
   key: BriefSectionKey;
   label: string;
-  kind: "commercial" | "operational";
-  source: BriefSourceKey;
   figures: BriefFigure[];
-  items: BriefItem[];
-  /** The section's complete count; equals `items.length` unless the queue was truncated. */
   totalItems: number;
-  href?: string;
+  href: string;
 }
 
 export interface BriefSource {
   key: BriefSourceKey;
-  label: string;
   status: BriefSourceStatus;
   asOf: string;
   itemCount: number;
-  message?: string;
+}
+
+/** One plain sentence on the dashboard, with the page where the work is done. */
+export interface BriefAttentionLine {
+  key: string;
+  /** Safety, cash and entry problems: shown first and marked. */
+  urgent: boolean;
+  text: string;
+  /** A money total shown beside the sentence, when the line is about money. */
+  money?: BriefMoney;
+  href: string;
 }
 
 export interface BriefScope {
@@ -133,45 +120,42 @@ export interface OperatingBrief {
   scope: BriefScope;
   coverage: "complete" | "partial";
   sources: BriefSource[];
+  /** Plain names of sources that could not be read just now (not those switched off or hidden by role). */
+  missing: string[];
   sections: BriefSection[];
-  mandatory: BriefItem[];
-  totals: { items: number; mandatory: number; overdue: number; stale: number };
-  /** Every item in the deterministic order (priority, time, id), for the complete-queue view. */
-  queue: BriefItem[];
-  /** True when the queue source held more than `BRIEF_QUEUE_LIMIT` items and the tail was cut. */
+  totals: { items: number; urgent: number; overdue: number; stale: number };
+  /** The sentences to show, most urgent first; empty when nothing needs attention. */
+  attention: BriefAttentionLine[];
+  /** True when the Today list held more than `BRIEF_QUEUE_LIMIT` items and the counts stop there. */
   truncated: boolean;
-  /** The prepared emphasis chosen without a model: the first applicable one in rank order. */
-  defaultEmphasis: BriefEmphasisKey;
-  /** Every prepared emphasis whose deterministic precondition holds, in rank order. */
-  applicableEmphases: BriefEmphasisKey[];
-  related: BriefRelatedPair[];
 }
 
 // ---------------------------------------------------------------------------
-// Authored sections and headings
+// Sections: where each kind of work is counted and where it is done
 // ---------------------------------------------------------------------------
 
 const SECTION_ORDER: readonly BriefSectionKey[] = ["collections", "renewals", "followups", "retention", "controls", "facilities", "equipment", "checklists", "stock", "support"];
 
-const SECTION_META: Record<BriefSectionKey, { label: string; kind: BriefSection["kind"]; source: BriefSourceKey; kinds: readonly BriefItemKind[]; href?: string }> = {
-  collections: { label: "Balances to collect", kind: "commercial", source: "queue", kinds: ["outstanding_balance"], href: "/payments" },
-  renewals: { label: "Renewals and lapsed terms", kind: "commercial", source: "queue", kinds: ["renewal"], href: "/crm/queues?view=renewals" },
-  followups: { label: "Follow-ups due", kind: "commercial", source: "queue", kinds: ["follow_up"], href: "/crm/queues" },
-  retention: { label: "Members at risk", kind: "commercial", source: "queue", kinds: ["at_risk"], href: "/crm/queues?view=at-risk" },
-  controls: { label: "Approvals, cash and entry", kind: "operational", source: "queue", kinds: ["approval", "cash_variance", "access_denial"], href: "/audit?approval=pending" },
-  facilities: { label: "Maintenance work", kind: "operational", source: "queue", kinds: ["facility_task"], href: "/operations?tab=facilities" },
-  equipment: { label: "Machine reports", kind: "operational", source: "equipment", kinds: ["equipment_issue"], href: "/operations?tab=equipment" },
-  checklists: { label: "Daily checklists", kind: "operational", source: "queue", kinds: ["branch_checklist"], href: "/checklists" },
-  stock: { label: "Low stock", kind: "operational", source: "stock", kinds: ["low_stock"], href: "/operations?tab=inventory&stock=attention" },
-  support: { label: "Open RIVET cases", kind: "operational", source: "support", kinds: ["support_case"], href: "/support" },
+const SECTION_META: Record<BriefSectionKey, { label: string; kinds: readonly BriefItemKind[]; href: string }> = {
+  collections: { label: "Unpaid balances", kinds: ["outstanding_balance"], href: "/members?membership=outstanding&sort=-outstanding" },
+  renewals: { label: "Renewals", kinds: ["renewal"], href: "/crm/queues?view=renewals" },
+  followups: { label: "Follow-ups", kinds: ["follow_up"], href: "/crm/queues" },
+  retention: { label: "Members who may not come back", kinds: ["at_risk"], href: "/crm/queues?view=at-risk" },
+  controls: { label: "Approvals, cash and entry", kinds: ["approval", "cash_variance", "access_denial"], href: "/audit?approval=pending" },
+  facilities: { label: "Maintenance jobs", kinds: ["facility_task"], href: "/maintenance" },
+  equipment: { label: "Machines", kinds: ["equipment_issue"], href: "/operations?tab=equipment" },
+  checklists: { label: "Daily checklists", kinds: ["branch_checklist"], href: "/checklists" },
+  stock: { label: "Stock", kinds: ["low_stock"], href: "/operations?tab=inventory&stock=attention" },
+  support: { label: "RIVET support", kinds: ["support_case"], href: "/support" },
 };
 
-export const BRIEF_SOURCE_LABELS: Record<BriefSourceKey, string> = {
-  queue: "Today queue (follow-ups, renewals, balances, at-risk members, approvals, cash, entry, maintenance, checklists)",
-  expired: "Lapsed memberships",
-  equipment: "Machine reports",
-  stock: "Stock levels",
-  support: "RIVET support cases",
+/** Plain names for the sources, used only when one could not be read. */
+const SOURCE_NAMES: Record<BriefSourceKey, string> = {
+  queue: "today's work",
+  expired: "ended memberships",
+  equipment: "machine reports",
+  stock: "stock levels",
+  support: "RIVET support requests",
 };
 
 export function briefSectionLabel(key: BriefSectionKey): string {
@@ -184,7 +168,7 @@ export function briefSectionForKind(kind: BriefItemKind): BriefSectionKey {
 }
 
 // ---------------------------------------------------------------------------
-// Building the brief
+// Building the summary
 // ---------------------------------------------------------------------------
 
 export interface BriefSourceInput {
@@ -229,52 +213,13 @@ function localDate(iso: string, timezone: string): string {
   }
 }
 
-function itemEvidence(item: BriefQueueItem): BriefEvidenceLink[] {
-  const links: BriefEvidenceLink[] = [];
-  if (item.subject?.kind === "member") links.push({ label: "Member record", href: `/members/${item.subject.id}` }, { label: "Timeline", href: `/members/${item.subject.id}?tab=timeline` });
-  if (item.subject?.kind === "lead") links.push({ label: "Lead record", href: `/crm/leads/${item.subject.id}` });
-  switch (item.kind) {
-    case "outstanding_balance":
-      if (item.subject) links.push({ label: "Payments", href: `/members/${item.subject.id}?tab=payments` });
-      break;
-    case "renewal":
-      links.push({ label: "Renewals queue", href: "/crm/queues?view=renewals" });
-      break;
-    case "follow_up":
-      links.push({ label: "Work queue", href: "/crm/queues" });
-      break;
-    case "at_risk":
-      links.push({ label: "At-risk queue", href: "/crm/queues?view=at-risk" });
-      break;
-    case "approval":
-      links.push({ label: "Audit trail", href: "/audit?approval=pending" });
-      break;
-    case "cash_variance":
-      links.push({ label: "Shifts", href: "/payments/shifts" });
-      break;
-    case "access_denial":
-      links.push({ label: "Reception", href: "/reception" });
-      break;
-    case "facility_task":
-    case "equipment_issue":
-    case "low_stock":
-    case "support_case":
-    case "branch_checklist":
-      break;
-  }
-  if (!links.some((link) => link.href === item.href)) links.unshift({ label: item.action.label === "Done" ? "Open" : item.action.label, href: item.href });
-  return links;
-}
-
 function toBriefItem(item: BriefQueueItem, today: string, timezone: string): BriefItem {
   const overdueDays = item.dueAt && item.overdue ? Math.max(0, briefDaysBetween(localDate(item.dueAt, timezone), today)) : undefined;
   return {
     ...item,
     section: briefSectionForKind(item.kind),
-    mandatory: item.priority === "urgent",
     ...(overdueDays !== undefined ? { overdueDays } : {}),
     stale: overdueDays !== undefined && overdueDays >= BRIEF_STALE_DAYS,
-    evidence: itemEvidence(item),
   };
 }
 
@@ -284,8 +229,8 @@ function sumMoney(items: readonly BriefItem[], currency: string): BriefMoney {
   return { amount, currency: items.find((item) => item.amount)?.amount?.currency ?? currency };
 }
 
-function count(label: string, key: string, value: number, href?: string): BriefFigure {
-  return { key, label, value: { kind: "count", value }, ...(href ? { href } : {}) };
+function count(label: string, key: string, value: number): BriefFigure {
+  return { key, label, value: { kind: "count", value } };
 }
 
 function sectionFigures(key: BriefSectionKey, items: readonly BriefItem[], input: BriefInput): BriefFigure[] {
@@ -295,71 +240,136 @@ function sectionFigures(key: BriefSectionKey, items: readonly BriefItem[], input
       const total = sumMoney(items, input.currency);
       const largest = items.reduce((best, item) => (item.amount && item.amount.amount > (best?.amount?.amount ?? 0) ? item : best), undefined as BriefItem | undefined);
       return [
-        { key: "outstanding", label: "Outstanding", value: { kind: "money", money: total }, href: "/payments" },
-        count("Members with a balance", "members", items.length),
-        ...(largest?.amount ? [{ key: "largest", label: "Largest balance", value: { kind: "money" as const, money: largest.amount }, href: largest.href }] : []),
+        { key: "outstanding", label: "Unpaid", value: { kind: "money", money: total } },
+        count("Members who owe money", "members", items.length),
+        ...(largest?.amount ? [{ key: "largest", label: "Largest unpaid balance", value: { kind: "money" as const, money: largest.amount } }] : []),
       ];
     }
     case "renewals": {
       const expired = items.filter((item) => item.id.startsWith("expired:"));
       const ending = items.filter((item) => !item.id.startsWith("expired:"));
       const endingToday = ending.filter((item) => item.dueAt && localDate(item.dueAt, input.timezone) === today).length;
-      return [count("Ending within 7 days", "ending", ending.length, "/crm/queues?view=renewals"), count("Ending today", "today", endingToday), count("Expired, not renewed (30 days)", "expired", expired.length, "/crm/queues?view=renewals")];
+      return [count("Ending in the next 7 days", "ending", ending.length), count("Ending today", "today", endingToday), count("Ended in the last 30 days, not renewed", "expired", expired.length)];
     }
     case "followups": {
       const overdue = items.filter((item) => item.overdue).length;
-      return [count("Overdue", "overdue", overdue, "/crm/queues"), count("Due today", "today", items.length - overdue), count(`Waiting ${BRIEF_STALE_DAYS}+ days`, "stale", items.filter((item) => item.stale).length)];
+      return [count("Late", "overdue", overdue), count("Due today", "today", items.length - overdue), count(`Waiting ${BRIEF_STALE_DAYS} days or more`, "stale", items.filter((item) => item.stale).length)];
     }
     case "retention":
-      return [count("Members to reconnect with", "members", items.length, "/crm/queues?view=at-risk")];
+      return [count("Members to contact", "members", items.length)];
     case "controls": {
       const variances = items.filter((item) => item.kind === "cash_variance");
       return [
-        count("Pending approvals", "approvals", items.filter((item) => item.kind === "approval").length, "/audit?approval=pending"),
-        count("Cash variances", "variances", variances.length, "/payments/shifts"),
-        { key: "variance_total", label: "Variance total", value: { kind: "money", money: { amount: variances.reduce((sum, item) => sum + Math.abs(item.amount?.amount ?? 0), 0), currency: variances.find((item) => item.amount)?.amount?.currency ?? input.currency } } },
-        count("Entry denied today", "entry", items.filter((item) => item.kind === "access_denial").length),
+        count("Waiting for approval", "approvals", items.filter((item) => item.kind === "approval").length),
+        count("Cash differences", "variances", variances.length),
+        { key: "variance_total", label: "Cash difference total", value: { kind: "money", money: { amount: variances.reduce((sum, item) => sum + Math.abs(item.amount?.amount ?? 0), 0), currency: variances.find((item) => item.amount)?.amount?.currency ?? input.currency } } },
+        count("Entry refused today", "entry", items.filter((item) => item.kind === "access_denial").length),
       ];
     }
     case "facilities":
-      return [count("Open tasks", "open", items.length, "/operations?tab=facilities"), count("Overdue", "overdue", items.filter((item) => item.overdue).length), count("Blocked or critical", "urgent", items.filter((item) => item.mandatory).length)];
+      return [count("Open", "open", items.length), count("Late", "overdue", items.filter((item) => item.overdue).length), count("Blocked or critical", "urgent", items.filter((item) => item.priority === "urgent").length)];
     case "equipment":
-      return [count("Open reports", "open", items.length, "/operations?tab=equipment"), count("Out of service", "out_of_service", items.filter((item) => item.safetyStatus === "out_of_service").length), count("Safety not assessed", "unknown", items.filter((item) => item.safetyStatus === "unknown").length)];
+      return [count("Open problems", "open", items.length), count("Do not use", "out_of_service", items.filter((item) => item.safetyStatus === "out_of_service").length), count("Not checked yet", "unknown", items.filter((item) => item.safetyStatus === "unknown").length)];
     case "checklists":
-      return [count("Checklists with failed items", "failed", items.filter((item) => item.id.startsWith("checklist-failed:")).length, "/checklists"), count("Checklists still due", "due", items.filter((item) => item.id.startsWith("checklist-due:")).length), count("Past due time", "overdue", items.filter((item) => item.overdue).length)];
+      return [count("With failed items", "failed", items.filter((item) => item.id.startsWith("checklist-failed:")).length), count("Not finished", "due", items.filter((item) => item.id.startsWith("checklist-due:")).length), count("Past their time", "overdue", items.filter((item) => item.overdue).length)];
     case "stock":
-      return [count("Products at or below reorder point", "products", items.length, "/operations?tab=inventory&stock=attention")];
+      return [count("Running low", "products", items.length)];
     case "support":
-      return [count("Open cases", "open", items.length, "/support"), count("Urgent", "urgent", items.filter((item) => item.mandatory).length)];
+      return [count("Open", "open", items.length), count("Urgent", "urgent", items.filter((item) => item.priority === "urgent").length)];
   }
 }
 
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** The single link for a line: the one record when every item points at the same place, otherwise the section's list. */
+function lineHref(items: readonly BriefItem[], fallback: string): string {
+  const hrefs = new Set(items.map((item) => item.href));
+  return hrefs.size === 1 ? [...hrefs][0]! : fallback;
+}
+
 /**
- * Build the brief. Sections keep the authored order; items inside a section
- * and in the complete queue follow the Today queue's own order (priority,
- * then time, then stable id). Mandatory items are the urgent ones by the
- * existing rules and are listed on top as well as in their sections.
+ * Turn the counts into the dashboard's sentences, most urgent first. Only
+ * non-zero lines are returned, so a quiet day shows nothing but "all clear".
+ */
+function attentionLines(itemsBySection: Map<BriefSectionKey, BriefItem[]>, currency: string): BriefAttentionLine[] {
+  const items = (key: BriefSectionKey) => itemsBySection.get(key) ?? [];
+  const lines: BriefAttentionLine[] = [];
+  const add = (key: string, urgent: boolean, matching: readonly BriefItem[], text: string, href: string, money?: BriefMoney) => {
+    if (matching.length) lines.push({ key, urgent, text, href, ...(money ? { money } : {}) });
+  };
+
+  const machines = items("equipment");
+  const doNotUse = machines.filter((item) => item.safetyStatus === "out_of_service");
+  add("machines-do-not-use", true, doNotUse, `${plural(doNotUse.length, "machine is", "machines are")} marked "do not use"`, lineHref(doNotUse, SECTION_META.equipment.href));
+  const controls = items("controls");
+  const cash = controls.filter((item) => item.kind === "cash_variance");
+  add("cash-differences", true, cash, `${plural(cash.length, "cash difference", "cash differences")} to check`, "/payments/shifts");
+  const refused = controls.filter((item) => item.kind === "access_denial");
+  add("entry-refused", true, refused, `${plural(refused.length, "member was", "members were")} refused entry today`, "/reception");
+  const checklists = items("checklists");
+  const failed = checklists.filter((item) => item.id.startsWith("checklist-failed:"));
+  add("checklists-failed", true, failed, `${plural(failed.length, "daily checklist has", "daily checklists have")} failed items`, SECTION_META.checklists.href);
+  const support = items("support");
+  const urgentSupport = support.filter((item) => item.priority === "urgent");
+  add("support-urgent", true, urgentSupport, `${plural(urgentSupport.length, "urgent request", "urgent requests")} with RIVET support`, lineHref(urgentSupport, SECTION_META.support.href));
+
+  const approvals = controls.filter((item) => item.kind === "approval");
+  add("approvals", false, approvals, `${plural(approvals.length, "request is", "requests are")} waiting for your approval`, SECTION_META.controls.href);
+  const owed = items("collections");
+  add("unpaid", false, owed, `${plural(owed.length, "member owes", "members owe")} money`, SECTION_META.collections.href, owed.length ? sumMoney(owed, currency) : undefined);
+  const renewals = items("renewals");
+  const ending = renewals.filter((item) => !item.id.startsWith("expired:"));
+  add("renewals-ending", false, ending, `${plural(ending.length, "membership ends", "memberships end")} in the next 7 days`, SECTION_META.renewals.href);
+  const ended = renewals.filter((item) => item.id.startsWith("expired:"));
+  add("renewals-ended", false, ended, `${plural(ended.length, "membership", "memberships")} ended in the last 30 days and ${ended.length === 1 ? "was" : "were"} not renewed`, SECTION_META.renewals.href);
+  const followups = items("followups");
+  const late = followups.filter((item) => item.overdue);
+  const dueToday = followups.length - late.length;
+  if (late.length) lines.push({ key: "followups", urgent: false, text: `${plural(late.length, "follow-up is", "follow-ups are")} late${dueToday ? `, and ${dueToday} more ${dueToday === 1 ? "is" : "are"} due today` : ""}`, href: SECTION_META.followups.href });
+  else add("followups", false, followups, `${plural(followups.length, "follow-up is", "follow-ups are")} due today`, SECTION_META.followups.href);
+  const atRisk = items("retention");
+  add("at-risk", false, atRisk, `${plural(atRisk.length, "member", "members")} may not come back`, SECTION_META.retention.href);
+  const otherMachines = machines.filter((item) => item.safetyStatus !== "out_of_service");
+  add("machines-open", false, otherMachines, `${plural(otherMachines.length, "machine problem is", "machine problems are")} not fixed yet`, lineHref(otherMachines, SECTION_META.equipment.href));
+  const maintenance = items("facilities");
+  add("maintenance", false, maintenance, `${plural(maintenance.length, "maintenance job is", "maintenance jobs are")} open`, SECTION_META.facilities.href);
+  const unfinished = checklists.filter((item) => item.id.startsWith("checklist-due:"));
+  add("checklists-due", false, unfinished, `${plural(unfinished.length, "daily checklist is", "daily checklists are")} not finished`, SECTION_META.checklists.href);
+  const stock = items("stock");
+  add("stock", false, stock, `${plural(stock.length, "product is", "products are")} running low`, SECTION_META.stock.href);
+  const otherSupport = support.filter((item) => item.priority !== "urgent");
+  add("support-open", false, otherSupport, `${plural(otherSupport.length, "open request", "open requests")} with RIVET support`, lineHref(otherSupport, SECTION_META.support.href));
+  return lines;
+}
+
+/**
+ * Build the summary. Counts cover every item the Today list and the extra
+ * sources hold for the viewer's own branches and role.
  */
 export function buildOperatingBrief(input: BriefInput): OperatingBrief {
   const timezone = input.timezone || "UTC";
   const collected: BriefQueueItem[] = [...input.queue];
   const sources: BriefSource[] = [];
   const queueTruncated = (input.queueTotal ?? input.queue.length) > input.queue.length;
-  sources.push({ key: "queue", label: BRIEF_SOURCE_LABELS.queue, status: input.queue.length ? "ok" : "empty", asOf: input.generatedAt, itemCount: input.queue.length, ...(queueTruncated ? { message: `Showing the first ${input.queue.length} of ${input.queueTotal} queue items.` } : {}) });
+  sources.push({ key: "queue", status: input.queue.length ? "ok" : "empty", asOf: input.generatedAt, itemCount: input.queue.length });
   for (const source of input.sources) {
     const items = source.status === "ok" || source.status === "empty" ? source.items ?? [] : [];
     collected.push(...items);
-    sources.push({ key: source.key, label: BRIEF_SOURCE_LABELS[source.key], status: source.status === "ok" && !items.length ? "empty" : source.status, asOf: input.generatedAt, itemCount: items.length, ...(source.message ? { message: source.message } : {}) });
+    sources.push({ key: source.key, status: source.status === "ok" && !items.length ? "empty" : source.status, asOf: input.generatedAt, itemCount: items.length });
   }
   const ordered = finalizeTodayQueue(collected, input.generatedAt, BRIEF_QUEUE_LIMIT);
   const queue = ordered.items.map((item) => toBriefItem(item, input.today, timezone));
+  const itemsBySection = new Map<BriefSectionKey, BriefItem[]>();
+  for (const item of queue) itemsBySection.set(item.section, [...(itemsBySection.get(item.section) ?? []), item]);
   const sections: BriefSection[] = SECTION_ORDER.map((key) => {
-    const meta = SECTION_META[key];
-    const items = queue.filter((item) => item.section === key);
-    return { key, label: meta.label, kind: meta.kind, source: meta.source, figures: sectionFigures(key, items, input), items, totalItems: items.length, ...(meta.href ? { href: meta.href } : {}) };
+    const items = itemsBySection.get(key) ?? [];
+    return { key, label: SECTION_META[key].label, figures: sectionFigures(key, items, input), totalItems: items.length, href: SECTION_META[key].href };
   });
-  const mandatory = queue.filter((item) => item.mandatory);
-  const brief: OperatingBrief = {
+  // Switched off or hidden by role is the gym's own setup, not missing information.
+  const missing = sources.filter((source) => source.status === "unavailable").map((source) => SOURCE_NAMES[source.key]);
+  return {
     generatedAt: input.generatedAt,
     today: input.today,
     timezone,
@@ -367,129 +377,15 @@ export function buildOperatingBrief(input: BriefInput): OperatingBrief {
     scope: input.scope,
     coverage: sources.every((source) => source.status === "ok" || source.status === "empty") && !queueTruncated ? "complete" : "partial",
     sources,
+    missing,
     sections,
-    mandatory,
-    totals: { items: queue.length, mandatory: mandatory.length, overdue: queue.filter((item) => item.overdue).length, stale: queue.filter((item) => item.stale).length },
-    queue,
+    totals: { items: queue.length, urgent: queue.filter((item) => item.priority === "urgent").length, overdue: queue.filter((item) => item.overdue).length, stale: queue.filter((item) => item.stale).length },
+    attention: attentionLines(itemsBySection, input.currency),
     truncated: queueTruncated || ordered.totalItems > queue.length,
-    defaultEmphasis: "steady",
-    applicableEmphases: [],
-    related: [],
   };
-  brief.applicableEmphases = applicableEmphases(brief);
-  brief.defaultEmphasis = brief.applicableEmphases[0] ?? "steady";
-  brief.related = briefRelatedPairs(brief.queue);
-  return brief;
 }
 
-/** The section a figure belongs to, for the section links in the emphasis card. */
+/** One section by key. */
 export function briefSection(brief: Pick<OperatingBrief, "sections">, key: BriefSectionKey): BriefSection | undefined {
   return brief.sections.find((section) => section.key === key);
-}
-
-// ---------------------------------------------------------------------------
-// Prepared emphasis (brief.emphasis)
-// ---------------------------------------------------------------------------
-
-export type BriefEmphasisKey = "safety_first" | "collections" | "renewals" | "followups" | "retention" | "facilities" | "checklists" | "support" | "steady";
-
-export interface BriefEmphasis {
-  key: BriefEmphasisKey;
-  heading: string;
-  /** Which sections' figures the heading is about; they are the evidence shown under it. */
-  sections: BriefSectionKey[];
-  /** Deterministic precondition, computed from the brief's own figures. */
-  applies: (brief: Pick<OperatingBrief, "sections" | "mandatory" | "totals">) => boolean;
-  /** The order used without a model and to break ties. */
-  rank: number;
-}
-
-const figureCount = (brief: Pick<OperatingBrief, "sections">, section: BriefSectionKey, key: string): number => {
-  const figure = briefSection(brief, section)?.figures.find((candidate) => candidate.key === key);
-  return figure?.value.kind === "count" ? figure.value.value : figure?.value.kind === "money" ? figure.value.money.amount : 0;
-};
-
-export const BRIEF_EMPHASES: readonly BriefEmphasis[] = [
-  { key: "safety_first", heading: "Safety, cash and entry problems come first", sections: ["controls", "facilities", "equipment", "checklists"], applies: (brief) => brief.mandatory.length > 0, rank: 0 },
-  { key: "collections", heading: "Collections are the largest open amount", sections: ["collections"], applies: (brief) => figureCount(brief, "collections", "outstanding") > 0, rank: 1 },
-  { key: "renewals", heading: "Renewals decide this week's revenue", sections: ["renewals"], applies: (brief) => figureCount(brief, "renewals", "ending") + figureCount(brief, "renewals", "expired") > 0, rank: 2 },
-  { key: "followups", heading: "Follow-up work is overdue", sections: ["followups"], applies: (brief) => figureCount(brief, "followups", "overdue") > 0, rank: 3 },
-  { key: "retention", heading: "Members are slipping away quietly", sections: ["retention"], applies: (brief) => figureCount(brief, "retention", "members") > 0, rank: 4 },
-  { key: "facilities", heading: "Repairs and machine reports are waiting", sections: ["facilities", "equipment"], applies: (brief) => figureCount(brief, "facilities", "open") + figureCount(brief, "equipment", "open") > 0, rank: 5 },
-  { key: "checklists", heading: "Daily checklists were not completed", sections: ["checklists"], applies: (brief) => figureCount(brief, "checklists", "failed") + figureCount(brief, "checklists", "due") > 0, rank: 6 },
-  { key: "support", heading: "RIVET is waiting on an open case", sections: ["support"], applies: (brief) => figureCount(brief, "support", "open") > 0, rank: 7 },
-  { key: "steady", heading: "Routine day: keep to the standard order", sections: [], applies: () => true, rank: 8 },
-];
-
-export function briefEmphasis(key: string): BriefEmphasis | undefined {
-  return BRIEF_EMPHASES.find((emphasis) => emphasis.key === key);
-}
-
-export function applicableEmphases(brief: Pick<OperatingBrief, "sections" | "mandatory" | "totals">): BriefEmphasisKey[] {
-  return [...BRIEF_EMPHASES].sort((left, right) => left.rank - right.rank).filter((emphasis) => emphasis.applies(brief)).map((emphasis) => emphasis.key);
-}
-
-/** Counts and amounts used by the brief's deterministic summaries. */
-export function briefEmphasisFacts(brief: Pick<OperatingBrief, "sections" | "mandatory" | "totals" | "coverage" | "scope" | "today">): Record<string, unknown> {
-  const figures: Record<string, Record<string, number>> = {};
-  for (const section of brief.sections) {
-    const values: Record<string, number> = { items: section.totalItems };
-    for (const figure of section.figures) values[figure.key] = figure.value.kind === "count" ? figure.value.value : figure.value.money.amount;
-    figures[section.key] = values;
-  }
-  return {
-    today: brief.today,
-    scope: brief.scope.branchId ? "one_branch" : brief.scope.branchScope === "all" ? "all_branches" : "assigned_branches",
-    branchCount: brief.scope.branchId ? 1 : brief.scope.branches.length,
-    coverage: brief.coverage,
-    mandatoryItems: brief.mandatory.length,
-    overdueItems: brief.totals.overdue,
-    staleItems: brief.totals.stale,
-    figures,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Related matter (brief.related_matter)
-// ---------------------------------------------------------------------------
-
-const RELATABLE_KINDS: ReadonlySet<BriefItemKind> = new Set(["facility_task", "equipment_issue", "branch_checklist", "support_case"]);
-
-export function briefItemText(item: Pick<BriefQueueItem, "title" | "detail" | "description">): string {
-  return [item.title, item.detail, item.description ?? ""].filter(Boolean).join(". ");
-}
-
-export interface BriefRelatedPair {
-  firstId: string;
-  secondId: string;
-  sharedTokens: number;
-}
-
-export function briefPairKey(firstId: string, secondId: string): string {
-  return [firstId, secondId].sort().join("+");
-}
-
-/**
- * Operational items in the same branch whose wording overlaps. Wording
- * only proposes a comparison; both items stay listed as recorded.
- */
-export function briefRelatedPairs(items: readonly BriefItem[]): BriefRelatedPair[] {
-  const candidates = items.filter((item) => RELATABLE_KINDS.has(item.kind));
-  const pairs: BriefRelatedPair[] = [];
-  for (let index = 0; index < candidates.length; index += 1) {
-    for (let other = index + 1; other < candidates.length; other += 1) {
-      const first = candidates[index]!;
-      const second = candidates[other]!;
-      if (first.branchName && second.branchName && first.branchName !== second.branchName) continue;
-      const shared = sharedTokenCount(briefItemText(first), briefItemText(second));
-      if (shared >= BRIEF_RELATED_MIN_TOKENS) pairs.push({ firstId: first.id, secondId: second.id, sharedTokens: shared });
-    }
-  }
-  return pairs.sort((left, right) => right.sharedTokens - left.sharedTokens || left.firstId.localeCompare(right.firstId) || left.secondId.localeCompare(right.secondId)).slice(0, BRIEF_RELATED_MAX_PAIRS);
-}
-
-/** Which content words two items share, for the comparison's own evidence line. */
-export function briefSharedWords(first: Pick<BriefQueueItem, "title" | "detail" | "description">, second: Pick<BriefQueueItem, "title" | "detail" | "description">): string[] {
-  const left = new Set(contentTokens(briefItemText(first)));
-  return [...new Set(contentTokens(briefItemText(second)))].filter((token) => left.has(token)).slice(0, 8);
 }

@@ -52,8 +52,8 @@ test.describe("RIVET member experience", () => {
     // password, and points at the seeded member personas instead.
     await page.goto("/customer/signup");
 
-    await expect(page.getByRole("heading", { name: /Member signup runs through Clerk/i })).toBeVisible();
-    await expect(page.getByText(/does not create accounts or store passwords/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /You cannot create an account in this demo/i })).toBeVisible();
+    await expect(page.getByText(/does not create accounts or save passwords/i)).toBeVisible();
     await page.getByRole("link", { name: /Open member preview/i }).click();
     await expect(page).toHaveURL(/\/login\/member/);
     await expect(page.getByRole("radio", { name: /Yousef Nasser/i })).toBeVisible();
@@ -75,11 +75,11 @@ test.describe("RIVET member experience", () => {
     await expect(sendAuthenticatedTrial).toBeEnabled();
     await sendAuthenticatedTrial.click();
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
-    await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
+    await expect(page.getByText(/The gym will review it/i)).toBeVisible();
 
-    await page.getByRole("link", { name: /Open My Gyms/i }).click();
-    await expect(page.getByRole("region", { name: "Subscribed gyms" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
+    await page.getByRole("link", { name: /Open your gyms/i }).click();
+    await expect(page.getByRole("region", { name: "Your gyms" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your gyms" })).toBeVisible();
     await expect(page.getByText("0 gyms")).toBeVisible();
     await expect(page.getByRole("region", { name: "Free trials" })).toHaveCount(0);
 
@@ -114,7 +114,7 @@ test.describe("RIVET member experience", () => {
     await sendPublicTrial.click();
 
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
-    await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
+    await expect(page.getByText(/The gym will review it/i)).toBeVisible();
     await expect(page.getByText(/Sign in or create a member account to keep future bookings under your name/i)).toBeVisible();
     await expect(page.locator("main").getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/login/member");
   });
@@ -125,10 +125,10 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("button", { name: /Continue as Lina/i }).click();
     await page.goto("/customer/my-gyms/membership-lina-forge");
 
-    await expect(page.getByRole("button", { name: "Show entry QR" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show entry code" })).toBeVisible();
     await expect(page.locator("svg[aria-label*='QR']")).toHaveCount(0);
-    await page.getByRole("button", { name: "Show entry QR" }).click();
-    const dialog = page.getByRole("dialog", { name: /entry QR/i });
+    await page.getByRole("button", { name: "Show entry code" }).click();
+    const dialog = page.getByRole("dialog", { name: /entry code/i });
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("svg[aria-label*='QR']")).toBeVisible();
     await expect(dialog.getByText(/Expires /)).toBeVisible();
@@ -145,7 +145,7 @@ test.describe("RIVET member experience", () => {
 
     const referrals = page.getByRole("region", { name: /Bring a friend\. Earn 7 free days\./i });
     await expect(referrals).toBeVisible();
-    await expect(referrals.getByText("0/30 days")).toBeVisible();
+    await expect(referrals.getByText("0 of 30 days")).toBeVisible();
     await referrals.getByRole("button", { name: "Create my link" }).click();
     await expect(referrals.getByRole("button", { name: "Share link" })).toBeVisible();
     await expect(referrals.getByRole("button", { name: "Copy" })).toBeVisible();

@@ -102,7 +102,7 @@ export function WhatsAppHandoff({
     },
     {
       onSuccess: async () => {
-        toast.success("WhatsApp opened. Handoff logged; delivery is not confirmed by RIVET.");
+        toast.success("WhatsApp opened and noted on the timeline. Remember to send the message there.");
         setOpen(false);
         await invalidate();
         onLogged?.();
@@ -110,7 +110,7 @@ export function WhatsAppHandoff({
       // Keep the dialog, the message and the date: nothing is lost on a failed log.
       onError: () => {
         setLogFailed(true);
-        setError("WhatsApp opened, but RIVET could not log the handoff. Your message and follow-up date are kept here — retry the log, or close without logging.");
+        setError("WhatsApp opened, but this was not saved on the timeline. Your message and date are still here. Try again, or close without saving.");
       },
     },
   );
@@ -125,7 +125,7 @@ export function WhatsAppHandoff({
     if (!handoff) {
       // Nothing opened, so nothing is logged: a blocked popup is not a contact.
       setBlockedUrl(url);
-      setError("Your browser blocked the WhatsApp window. Open it with the link below; the handoff is logged when you do.");
+      setError("Your browser blocked the WhatsApp window. Open it with the link below.");
       return;
     }
     handoff.opener = null;
@@ -143,18 +143,18 @@ export function WhatsAppHandoff({
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Message {recipientName}</DialogTitle>
-            <DialogDescription>RIVET opens WhatsApp with this message ready. You stay in control of sending it.</DialogDescription>
+            <DialogDescription>WhatsApp opens with this message ready. You press send there.</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
             <div className="rounded-md border border-line bg-sunken px-3 py-2.5">
-              <p className="context-label">Destination</p>
+              <p className="context-label">Phone number</p>
               <p className="mt-1 font-mono text-[13px]" dir="ltr">{phone}</p>
-              <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Local numbers use the gym&apos;s +{callingCode} default. A number beginning with + or 00 always keeps its own country.</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-ink-3">Numbers without a country code use +{callingCode}. Numbers starting with + or 00 keep their own country code.</p>
             </div>
             <Field label="Message" required>
               <Textarea rows={5} value={message} onChange={(event) => setMessage(event.target.value)} aria-label="WhatsApp message" disabled={logFailed || Boolean(blockedUrl)} />
             </Field>
-            <Field label="Follow up on" hint="Keeps this person visible even if they do not reply. Clear it if no follow-up is needed.">
+            <Field label="Follow up on" hint="Keeps them on your list if they don&apos;t reply. Clear it if no follow-up is needed.">
               <Input type="date" value={nextFollowUp} onChange={(event) => setNextFollowUp(event.target.value)} aria-label="WhatsApp follow-up date" disabled={logFailed} />
             </Field>
             {error ? <p role="alert" className="rounded-md border border-danger/25 bg-danger-bg px-3 py-2 text-[12.5px] text-danger">{error}</p> : null}
@@ -165,12 +165,11 @@ export function WhatsAppHandoff({
                 </a>
               </Button>
             ) : null}
-            <p className="text-[11.5px] leading-relaxed text-ink-3">Opening WhatsApp is logged on the timeline with the message that was prepared. RIVET does not claim that the message was sent, delivered, or read.</p>
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>{logFailed ? "Close without logging" : "Cancel"}</Button>
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>{logFailed ? "Close without saving" : "Cancel"}</Button>
             {logFailed ? (
-              <Button type="button" loading={logHandoff.isPending} onClick={() => { setError(undefined); logHandoff.mutate(); }}>Retry logging</Button>
+              <Button type="button" loading={logHandoff.isPending} onClick={() => { setError(undefined); logHandoff.mutate(); }}>Try again</Button>
             ) : blockedUrl ? null : (
               <Button type="button" loading={logHandoff.isPending} disabled={!message.trim()} onClick={launch}><Send /> Open WhatsApp</Button>
             )}

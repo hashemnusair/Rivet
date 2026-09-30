@@ -136,8 +136,8 @@ export function ptBookingCreditConsequence(input: {
   cutoffHours?: number;
   cancelledByGym?: boolean;
 }): { effect: "consume" | "return"; text: string } {
-  if (input.action === "completed") return { effect: "consume", text: "One reserved PT credit will be consumed." };
-  if (input.action === "no_show") return { effect: "consume", text: "One reserved PT credit will be consumed for this no-show." };
+  if (input.action === "completed") return { effect: "consume", text: "One reserved PT credit will be used." };
+  if (input.action === "no_show") return { effect: "consume", text: "One reserved PT credit will be used for this no-show." };
   const result = ptCancellationResult({
     startsAt: input.startsAt,
     cancelledAt: input.cancelledAt ?? Date.now(),
@@ -146,7 +146,7 @@ export function ptBookingCreditConsequence(input: {
   });
   return result.restoreCredit
     ? { effect: "return", text: "The reserved PT credit will be returned to the member." }
-    : { effect: "consume", text: "This is after the cancellation cutoff, so one reserved PT credit will be consumed." };
+    : { effect: "consume", text: "This is after the cancellation cutoff, so one reserved PT credit will be used." };
 }
 
 export function ptIntervalsOverlap(left: { startsAt: number; endsAt: number }, right: { startsAt: number; endsAt: number }): boolean {

@@ -28,6 +28,7 @@ import { ChecklistsSection } from "@/features/settings/checklists-section";
 import { MyProfileSection } from "@/features/settings/my-profile-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { usePermissions } from "@/lib/providers/app-providers";
+import { PERMISSION_LABELS, type Permission } from "@/lib/domain/permissions";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ContextLabel } from "@/components/ui/typography";
 
@@ -56,11 +57,11 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     label: "Gym",
     entries: [
-      { id: "organization", label: "Organization", keywords: "identity contact gym name timezone locale language phone country", permission: "settings.manage", component: OrganizationSection },
-      { id: "brand", label: "Brand Kit", keywords: "identity sidebar logo palette primary color theme", permission: "settings.manage", component: BrandKitSection },
+      { id: "organization", label: "Gym details", keywords: "organization identity contact gym name timezone time zone locale language phone country", permission: "settings.manage", component: OrganizationSection },
+      { id: "brand", label: "Brand kit", keywords: "identity sidebar menu logo palette primary main color colour theme", permission: "settings.manage", component: BrandKitSection },
       { id: "profile", label: "Public profile", keywords: "page publish website directory photos banner cover tagline amenities category", permission: "profiles.manage", component: GymPublicProfileSection },
       { id: "branches", label: "Branches", keywords: "locations address codes", permission: "settings.manage", component: BranchesSection },
-      { id: "spaces", label: "Gym spaces", keywords: "zones areas rooms floors studios", permission: "settings.manage", component: GymSpacesSection },
+      { id: "spaces", label: "Gym areas", keywords: "spaces zones areas rooms floors studios", permission: "settings.manage", component: GymSpacesSection },
       { id: "agreement", label: "Agreement", keywords: "legal contract subscription agreement signature signed terms privacy", permission: "settings.manage", component: AgreementSection },
       { id: "subscription", label: "Subscription & invoices", keywords: "billing invoice invoices pdf plan rivet fees paid past due receipt", permission: "settings.manage", component: SubscriptionSection },
     ],
@@ -68,8 +69,8 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     label: "People",
     entries: [
-      { id: "users", label: "Users", keywords: "staff accounts invite deactivate branch access", permission: "users.manage", component: UsersSection },
-      { id: "roles", label: "Roles & permissions", keywords: "access matrix owner manager receptionist coach", permission: "users.manage", component: RolesSection },
+      { id: "users", label: "Staff", keywords: "users team accounts invite deactivate branch access", permission: "users.manage", component: UsersSection },
+      { id: "roles", label: "Roles & access", keywords: "permissions matrix owner manager receptionist trainer coach", permission: "users.manage", component: RolesSection },
     ],
   },
   {
@@ -80,16 +81,16 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
     ],
   },
   {
-    label: "Communication",
+    label: "Messages",
     entries: [
       { id: "notifications", label: "Notifications", keywords: "reminders templates manager alerts automation delivery whatsapp sms email renewals variance quiet hours", permission: "settings.manage", component: NotificationsSection },
-      { id: "email", label: "Operational email", keywords: "sender outbox delivery member service preferences mandatory notices", permission: "settings.manage", component: OperationalEmailSection },
+      { id: "email", label: "Emails", keywords: "operational email sender outbox delivery member service preferences mandatory notices", permission: "settings.manage", component: OperationalEmailSection },
     ],
   },
   {
-    label: "Operations",
+    label: "Daily work",
     entries: [
-      { id: "operations", label: "Operational rules", keywords: "policies entry check-in scan freeze referral renewal lifecycle retention class booking waitlist", permission: "settings.manage", component: OperationalRulesSection },
+      { id: "operations", label: "Gym rules", keywords: "operational rules policies entry check-in scan freeze referral renewal lifecycle retention class booking waitlist", permission: "settings.manage", component: OperationalRulesSection },
       { id: "hours", label: "Hours & trials", keywords: "opening closing operating schedule free trial windows branch", permission: "settings.manage", component: HoursAndTrialsSection },
       { id: "checklists", label: "Daily checklists", keywords: "opening closing walkthrough morning night tasks", permission: "operations.manage", component: ChecklistsSection },
     ],
@@ -98,11 +99,15 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
 
 const ALL_ENTRIES = SETTINGS_GROUPS.flatMap((group) => group.entries);
 
+/** The access is named exactly as it is on the Roles & access page, so the two never drift apart. */
+const accessNeeded = (permission: Permission, task: string) =>
+  `${task} needs the “${PERMISSION_LABELS[permission].label}” access. Ask the owner if you need it.`;
+
 const PERMISSION_COPY: Record<string, string> = {
-  "settings.manage": "This section changes gym-wide settings and needs the Manage settings permission.",
-  "users.manage": "This section changes who can sign in and what each role may do, and needs the Manage staff permission.",
-  "profiles.manage": "This section edits the public gym page and needs the Manage gym profile permission.",
-  "operations.manage": "This section edits branch checklists and needs the Manage stock and purchasing permission.",
+  "settings.manage": accessNeeded("settings.manage", "Changing gym settings"),
+  "users.manage": accessNeeded("users.manage", "Changing staff and roles"),
+  "profiles.manage": accessNeeded("profiles.manage", "Changing the public gym page"),
+  "operations.manage": accessNeeded("operations.manage", "Changing daily checklists"),
 };
 
 export function SettingsPageInner() {
@@ -195,7 +200,7 @@ export function SettingsPageInner() {
     <div className="-mt-2 mx-auto max-w-[1480px] space-y-3 lg:-mt-3">
       <PageHeader
         title="Settings"
-        description="Identity, people, money, messaging and daily operations. Sensitive changes are audited."
+        description="Your gym, staff, money, messages and daily rules."
         className="bg-paper py-0.5 lg:sticky lg:top-14 lg:z-20 lg:h-[72px] lg:border-b lg:border-line/80 lg:py-2"
       />
       <div className="space-y-3 lg:grid lg:grid-cols-[224px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:space-y-0">
@@ -246,7 +251,7 @@ export function SettingsPageInner() {
                     {!focusRail ? <p className="px-3 pt-2 text-[12px] leading-5 text-ink-3">Showing {active.label}. Choose a match to change section.</p> : null}
                   </div>
                 ) : (
-                  <p className="px-3 py-2 text-[12px] leading-5 text-ink-3">No settings match “{query.trim()}”. Try a word from the section, such as “freeze” or “logo”.</p>
+                  <p className="px-3 py-2 text-[12px] leading-5 text-ink-3">No settings match “{query.trim()}”. Try another word, like “freeze” or “logo”.</p>
                 )
               ) : (
                 visibleGroups.map((group) => (

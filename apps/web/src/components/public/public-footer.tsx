@@ -52,7 +52,7 @@ export function PublicFooter() {
         <div>
             <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={36} />
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
-            The revenue and operations system for gyms — and the simplest way for members to find, join, and enter them.
+            RIVET helps gyms sell memberships, collect payments and run the front desk. Members use it to find a gym, join and get in.
           </p>
           <p className="mt-6 text-[12px] font-medium text-night-ink-3">صُنع في عمّان · Made in Amman</p>
         </div>

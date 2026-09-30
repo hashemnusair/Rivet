@@ -69,15 +69,15 @@ describe("payables workspace", () => {
     expect(rows[0]).toHaveTextContent("JSS-INV-2026-0147");
     expect(rows[0]).toHaveTextContent(/\d+ days/);
     expect(rows[0]).toHaveTextContent("Unpaid");
-    expect(rows[0]).toHaveTextContent("Not posted to ledger yet");
+    expect(rows[0]).toHaveTextContent("Not in the accounts yet");
     expect(rows[0]).not.toHaveTextContent(/due/i);
-    expect(screen.getByText("Outstanding").parentElement).toHaveTextContent("1,650.000");
+    expect(screen.getByText("You owe").parentElement).toHaveTextContent("1,650.000");
     expect(await screen.findByTestId("payables-reconciliation")).toHaveTextContent("Equipment purchase · TREAD-01");
   });
 
   it("keeps reads capability-gated and hides write actions from finance readers", async () => {
     await renderWithApp(<PayablesWorkspace />, { role: "salesperson" });
-    expect(await screen.findByText("Not allowed for this role")).toBeInTheDocument();
+    expect(await screen.findByText("You don't have access")).toBeInTheDocument();
     resetApiForTests();
     await renderWithApp(<PayablesWorkspace />, { role: "manager", prepare: async (api) => {
       const managerPermissions = (await api.switchDemoRole("manager")).permissions.filter((permission) => permission !== "operations.manage");
@@ -100,7 +100,7 @@ describe("payables workspace", () => {
     expect(amount).toHaveValue("1650.000");
     await user.clear(amount);
     await user.type(amount, "650");
-    const allocation = within(dialog).getByRole("textbox", { name: /Allocate to Purchase order/i });
+    const allocation = within(dialog).getByRole("textbox", { name: /Amount for Purchase order/i });
     await waitFor(() => expect(allocation).toHaveValue("650.000"));
     expect(within(dialog).getByRole("status")).toHaveTextContent(/Open cash shift/i);
     await user.click(within(dialog).getByTestId("confirm-supplier-payment"));
@@ -122,10 +122,10 @@ describe("payables workspace", () => {
     await user.type(within(dialog).getByRole("textbox", { name: "Amount paid" }), "2000");
     const confirm = within(dialog).getByTestId("confirm-supplier-payment");
     expect(confirm).toBeDisabled();
-    expect(await within(dialog).findByText(/Not yet applied/i)).toBeInTheDocument();
+    expect(await within(dialog).findByText(/Not on a bill yet/i)).toBeInTheDocument();
     await user.clear(within(dialog).getByRole("textbox", { name: "Amount paid" }));
     await user.type(within(dialog).getByRole("textbox", { name: "Amount paid" }), "1650");
-    await waitFor(() => expect(within(dialog).queryByText(/Not yet applied/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(within(dialog).queryByText(/Not on a bill yet/i)).not.toBeInTheDocument());
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByRole("textbox", { name: "Bank transfer reference" }), "TRF-2026-0091");
     await waitFor(() => expect(confirm).toBeEnabled());
@@ -135,11 +135,11 @@ describe("payables workspace", () => {
     const user = userEvent.setup();
     await renderWithApp(<PayablesWorkspace />, { role: "owner" });
     await screen.findAllByTestId("payable-row");
-    await user.click(screen.getByRole("button", { name: /Export CSV/i }));
+    await user.click(screen.getByRole("button", { name: /Download CSV/i }));
     await waitFor(() => expect(downloadMock.downloadTextFile).toHaveBeenCalledTimes(1));
     const content = downloadMock.downloadTextFile.mock.calls[0]![0].content as string;
     expect(content).toContain("Jordan Sports Supply");
-    expect(content).toContain("Remaining (JOD)");
+    expect(content).toContain("Still owed (JOD)");
     expect(content).toContain("1650.000");
     expect(content).not.toContain("purchase_order:");
   });
@@ -152,13 +152,13 @@ describe("payables workspace", () => {
     expect(confirmation).toHaveTextContent("Supplier payment confirmation");
     expect(confirmation).toHaveTextContent("Jordan Sports Supply");
     expect(confirmation).toHaveTextContent("CLIQ-77");
-    expect(confirmation).toHaveTextContent("Not posted to ledger yet");
-    expect(confirmation).toHaveTextContent("still owed after this payment");
+    expect(confirmation).toHaveTextContent("Not in the accounts yet");
+    expect(confirmation).toHaveTextContent("Still owed to Jordan Sports Supply after this payment");
     expect(confirmation).not.toHaveTextContent(/receipt number/i);
     await user.click(screen.getByTestId("reverse-supplier-payment"));
     await user.type(await screen.findByTestId("reverse-supplier-payment-reason"), "Paid the same invoice twice");
     await user.click(screen.getByTestId("confirm-reverse-supplier-payment"));
-    await waitFor(() => expect(screen.getByTestId("supplier-payment-confirmation")).toHaveTextContent("REVERSED"));
+    await waitFor(() => expect(screen.getByTestId("supplier-payment-confirmation")).toHaveTextContent("Reversed on"));
     expect(screen.queryByTestId("reverse-supplier-payment")).not.toBeInTheDocument();
     expect((await getApi().listPayables()).items[0]).toMatchObject({ status: "unpaid" });
   });

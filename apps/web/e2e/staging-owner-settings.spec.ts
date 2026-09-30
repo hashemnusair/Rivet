@@ -27,9 +27,9 @@ test.describe("staged owner settings and trial scheduling", () => {
     let originalTrialClosesAt = "";
     let restored = false;
     try {
-      await page.goto("/settings?section=operations", { waitUntil: "domcontentloaded" });
+      await page.goto("/settings?section=hours", { waitUntil: "domcontentloaded" });
       await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-      await page.getByRole("tab", { name: "Rules & hours" }).click();
+      await page.getByRole("tab", { name: "Hours & trials" }).click();
       await expect(page.getByRole("heading", { name: "Branch hours and free trials" })).toBeVisible();
       await chooseFirstAvailableOption(page, "Branch schedule");
 
@@ -56,30 +56,30 @@ test.describe("staged owner settings and trial scheduling", () => {
       }
       if (!dayLabel) throw new Error("The staging gym needs one open branch day with at least a 60-minute window.");
       cleanupEntry = cleanup.plan({ targetType: "operational_policy", targetId: dayLabel, action: "preserve", reason: "Restore the original trial schedule after staging verification" });
-      await page.getByRole("button", { name: "Save operational rules" }).click();
-      await expect(page.getByText("Operational rules saved and audited.")).toBeVisible();
+      await page.getByRole("button", { name: "Save hours" }).click();
+      await expect(page.getByText("Branch hours and trial times saved.")).toBeVisible();
       const changedOpening = await page.getByLabel(`${dayLabel} trial window opening time`).inputValue();
       expect(changedOpening).not.toBe(originalTrialOpensAt);
 
       await page.reload({ waitUntil: "domcontentloaded" });
-      await page.getByRole("tab", { name: "Rules & hours" }).click();
+      await page.getByRole("tab", { name: "Hours & trials" }).click();
       await chooseFirstAvailableOption(page, "Branch schedule");
       await expect(page.getByLabel(`${dayLabel} trial window opening time`)).toHaveValue(changedOpening);
 
       await restoreTrialWindow(page, dayLabel, originalTrialEnabled, originalTrialOpensAt, originalTrialClosesAt);
-      await page.getByRole("button", { name: "Save operational rules" }).click();
-      await expect(page.getByText("Operational rules saved and audited.")).toBeVisible();
+      await page.getByRole("button", { name: "Save hours" }).click();
+      await expect(page.getByText("Branch hours and trial times saved.")).toBeVisible();
       restored = true;
       if (cleanupEntry !== undefined) cleanup.complete(cleanupEntry);
     } finally {
       if (cleanupEntry !== undefined && dayLabel && !restored) {
         try {
-          await page.goto("/settings?section=operations", { waitUntil: "domcontentloaded" });
-          await page.getByRole("tab", { name: "Rules & hours" }).click();
+          await page.goto("/settings?section=hours", { waitUntil: "domcontentloaded" });
+          await page.getByRole("tab", { name: "Hours & trials" }).click();
           await chooseFirstAvailableOption(page, "Branch schedule");
           await restoreTrialWindow(page, dayLabel, originalTrialEnabled, originalTrialOpensAt, originalTrialClosesAt);
-          await page.getByRole("button", { name: "Save operational rules" }).click();
-          await expect(page.getByText("Operational rules saved and audited.")).toBeVisible();
+          await page.getByRole("button", { name: "Save hours" }).click();
+          await expect(page.getByText("Branch hours and trial times saved.")).toBeVisible();
           cleanup.complete(cleanupEntry);
         } catch (error) {
           cleanup.fail(cleanupEntry, error);

@@ -42,7 +42,7 @@ describe("public membership offer", () => {
   it("preserves loaded terms when a refresh fails", () => {
     query.isBackgroundError = true;
     render(<PublicOfferClient token={offer.token} />);
-    expect(screen.getByRole("heading", { name: "Offer could not refresh" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Offer could not be updated" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: offer.planName })).toBeInTheDocument();
   });
 

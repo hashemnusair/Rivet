@@ -20,8 +20,8 @@ describe("primary workspace navigation", () => {
       "Payments",
       "Reports",
       "Statements",
-      "Audit log",
-      "Data exports",
+      "Activity log",
+      "Downloads",
       "Support",
       "Settings",
     ]);

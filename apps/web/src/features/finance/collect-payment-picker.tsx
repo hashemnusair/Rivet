@@ -40,7 +40,7 @@ export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boole
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Collect payment</DialogTitle>
-            <DialogDescription>Find the member first — balances show so you pick the right person.</DialogDescription>
+            <DialogDescription>Find the member. You will see what each person owes.</DialogDescription>
           </DialogHeader>
           <div className="px-5 pb-5">
             <div className="relative">
@@ -73,7 +73,7 @@ export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boole
                         {m.outstanding.amount > 0 ? (
                           <MoneyText money={m.outstanding} className="text-[12px] font-medium text-warning-deep" />
                         ) : (
-                          <span className="font-mono text-[11px] text-ink-4">paid up</span>
+                          <span className="text-[12px] text-ink-4">Nothing owed</span>
                         )}
                       </button>
                     </li>

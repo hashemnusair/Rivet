@@ -177,7 +177,7 @@ function useOperationalPoliciesDraft() {
   return { settingsQuery, policies, setPolicies, dirty, discard, markSaved };
 }
 
-/** A numeric rule with its unit inside the control: "Expiry warning" · 7 days. */
+/** A numeric rule with its unit inside the control: "Ending soon warning" · 7 days. */
 function NumberSetting({ label, unit, hint, ...props }: Omit<ComponentProps<typeof Input>, "type"> & { label: string; unit: string; hint?: string }) {
   return (
     <Field label={label} hint={hint}>
@@ -217,7 +217,7 @@ function Governed({ enabled, children }: { enabled: boolean; children: ReactNode
   );
 }
 
-const RULES_DESCRIPTION = "The rules the desk, the member app and the automations follow. They apply to every branch and are enforced by the server.";
+const RULES_DESCRIPTION = "Rules for the front desk, the member app and automatic reminders. They apply to every branch.";
 
 export function OperationalRulesSection() {
   const invalidate = useInvalidate();
@@ -227,14 +227,14 @@ export function OperationalRulesSection() {
   const { settingsQuery, policies, setPolicies, dirty, discard, markSaved } = useOperationalPoliciesDraft();
   const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
     onSuccess: async () => {
-      toast.success("Operational rules saved and audited.");
+      toast.success("Gym rules saved.");
       await invalidate([qk.settings, qk.renewalQueue({}), qk.checkIns({}), qk.customerClasses("all")]);
     },
-    onError: (error) => toast.error(isApiError(error) ? error.message : "Could not save operational rules."),
+    onError: (error) => toast.error(isApiError(error) ? error.message : "Could not save the gym rules."),
   });
 
-  if (settingsQuery.isError) return <SettingsSection title="Operational rules" description={RULES_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
-  if (settingsQuery.isLoading || !policies) return <SettingsSection title="Operational rules" description={RULES_DESCRIPTION}><Skeleton className="h-96 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title="Gym rules" description={RULES_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading || !policies) return <SettingsSection title="Gym rules" description={RULES_DESCRIPTION}><Skeleton className="h-96 w-full" /></SettingsSection>;
 
   const updateEntry = <K extends keyof OperationalPolicies["entry"]>(key: K, value: OperationalPolicies["entry"][K]) =>
     setPolicies((current) => current ? { ...current, entry: { ...current.entry, [key]: value } } : current);
@@ -255,44 +255,44 @@ export function OperationalRulesSection() {
   const lastHourOptions = Array.from({ length: 24 }, (_, index) => index + 1);
 
   return (
-    <SettingsSection title="Operational rules" description={RULES_DESCRIPTION}>
+    <SettingsSection title="Gym rules" description={RULES_DESCRIPTION}>
       <div className="space-y-4">
-        <SettingsPanel title="Entry and access" description="Checked for every QR scan and manual check-in.">
+        <SettingsPanel title="Entry and access" description="Used for every QR scan and every check-in at the desk.">
           <FieldGrid className="md:grid-cols-3">
-            <Field label="Outstanding balance" hint="What happens when a member with a balance due scans in.">
+            <Field label="Member owes money" hint="What happens when a member who owes money scans in.">
               <Select value={policies.entry.outstandingBalance} onValueChange={(value) => updateEntry("outstandingBalance", value as OperationalPolicies["entry"]["outstandingBalance"])}>
-                <SelectTrigger aria-label="Outstanding balance policy"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="When a member owes money"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="allow">Allow silently</SelectItem>
-                  <SelectItem value="warn">Allow with warning</SelectItem>
-                  <SelectItem value="block">Block entry</SelectItem>
+                  <SelectItem value="allow">Let in, no warning</SelectItem>
+                  <SelectItem value="warn">Let in with a warning</SelectItem>
+                  <SelectItem value="block">Refuse entry</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
-            <NumberSetting label="Expiry warning" unit="days" hint="Warn the desk this many days before a membership ends." min={0} max={30} value={policies.entry.expiryWarningDays} onChange={(event) => updateEntry("expiryWarningDays", Number(event.target.value))} />
-            <NumberSetting label="Duplicate scan window" unit="min" hint="A second scan inside this window is ignored." min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onChange={(event) => updateEntry("duplicateScanWindowMinutes", Number(event.target.value))} />
+            <NumberSetting label="Ending soon warning" unit="days" hint="Warn the desk this many days before a membership ends." min={0} max={30} value={policies.entry.expiryWarningDays} onChange={(event) => updateEntry("expiryWarningDays", Number(event.target.value))} />
+            <NumberSetting label="Ignore repeat scans for" unit="minutes" hint="A second scan within this time is ignored." min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onChange={(event) => updateEntry("duplicateScanWindowMinutes", Number(event.target.value))} />
           </FieldGrid>
           <div className="mt-4 border-t border-line">
-            <SettingsToggleRow label="Enforce branch hours" hint="Outside-hours entries require a manager override. Hours are set under Hours & trials." checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} />
+            <SettingsToggleRow label="Only let members in during opening hours" hint="Outside opening hours, a manager must let the member in anyway. Set the hours in Hours & trials." checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} />
           </div>
         </SettingsPanel>
 
         <SettingsPanel
           title="Class booking"
-          description="Self-booking from the member app, plan eligibility, waitlists and attendance follow-up."
+          description="Members booking classes in the app, which plans can book, waitlists and no-shows."
           control={<HeaderToggle label="Member booking" checked={policies.classBooking.enabled} onCheckedChange={(value) => updateClassBooking("enabled", value)} />}
         >
           <Governed enabled={policies.classBooking.enabled}>
             <FieldGrid className="md:grid-cols-2 xl:grid-cols-4">
-              <Field label="Membership eligibility">
+              <Field label="Who can book">
                 <Select value={policies.classBooking.eligibilityMode} onValueChange={(value) => updateClassBooking("eligibilityMode", value as OperationalPolicies["classBooking"]["eligibilityMode"])} disabled={!policies.classBooking.enabled}>
-                  <SelectTrigger aria-label="Class membership eligibility"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="all_active_memberships">All active memberships</SelectItem><SelectItem value="selected_plans">Only selected plans</SelectItem></SelectContent>
+                  <SelectTrigger aria-label="Who can book classes"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="all_active_memberships">Any active membership</SelectItem><SelectItem value="selected_plans">Only some plans</SelectItem></SelectContent>
                 </Select>
               </Field>
-              <NumberSetting label="Booking horizon" unit="days" min={1} max={120} value={policies.classBooking.bookingHorizonDays} onChange={(event) => updateClassBooking("bookingHorizonDays", Number(event.target.value))} />
-              <NumberSetting label="Cancellation cutoff" unit="hours" min={0} max={72} value={policies.classBooking.cancellationCutoffHours} onChange={(event) => updateClassBooking("cancellationCutoffHours", Number(event.target.value))} />
-              <NumberSetting label="Active booking limit" unit="bookings" min={1} max={100} value={policies.classBooking.maxActiveBookingsPerMember} onChange={(event) => updateClassBooking("maxActiveBookingsPerMember", Number(event.target.value))} />
+              <NumberSetting label="Book ahead up to" unit="days" min={1} max={120} value={policies.classBooking.bookingHorizonDays} onChange={(event) => updateClassBooking("bookingHorizonDays", Number(event.target.value))} />
+              <NumberSetting label="Late if cancelled within" unit="hours" min={0} max={72} value={policies.classBooking.cancellationCutoffHours} onChange={(event) => updateClassBooking("cancellationCutoffHours", Number(event.target.value))} />
+              <NumberSetting label="Most bookings at once" unit="bookings" min={1} max={100} value={policies.classBooking.maxActiveBookingsPerMember} onChange={(event) => updateClassBooking("maxActiveBookingsPerMember", Number(event.target.value))} />
             </FieldGrid>
             {policies.classBooking.eligibilityMode === "selected_plans" ? (
               <div className="mt-5 border-t border-line pt-4">
@@ -307,16 +307,16 @@ export function OperationalRulesSection() {
             ) : null}
             <div className="mt-5 grid gap-x-8 border-t border-line pt-1 lg:grid-cols-2">
               <div className="divide-y divide-line">
-                <SettingsToggleRow label="Waitlist" hint="Promote the earliest waiting member automatically when a place opens." checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} />
+                <SettingsToggleRow label="Waitlist" hint="When a place opens, give it to the first person waiting." checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} />
                 <div className="py-3">
                   <NumberSetting label="Waitlist limit" unit="members" className="max-w-56" min={1} max={200} value={policies.classBooking.waitlistSize} disabled={!policies.classBooking.waitlistEnabled} onChange={(event) => updateClassBooking("waitlistSize", Number(event.target.value))} />
                 </div>
               </div>
               <div className="divide-y divide-line">
-                <SettingsToggleRow label="Track no-shows" hint="Count a no-show only after attendance is finalized." checked={policies.classBooking.noShowTracking} onCheckedChange={(value) => updateClassBooking("noShowTracking", value)} />
+                <SettingsToggleRow label="Track no-shows" hint="Count a no-show only after attendance is final." checked={policies.classBooking.noShowTracking} onCheckedChange={(value) => updateClassBooking("noShowTracking", value)} />
                 <div className="py-3">
                   <p className="text-[13px] font-medium text-ink">Calendar hours</p>
-                  <p className="mt-0.5 text-[12px] leading-5 text-ink-3">The visible day on the classes calendar. Automatic hugs your first and last class.</p>
+                  <p className="mt-0.5 text-[12px] leading-5 text-ink-3">The hours shown on the classes calendar. Automatic fits your first and last class.</p>
                   <FieldGrid className="mt-2 grid-cols-2">
                     <Field label="First hour">
                       <Select value={policies.classBooking.calendarStartHour === undefined ? "auto" : String(policies.classBooking.calendarStartHour)} onValueChange={(value) => updateClassBooking("calendarStartHour", value === "auto" ? undefined : Number(value))} disabled={!policies.classBooking.enabled}>
@@ -343,39 +343,39 @@ export function OperationalRulesSection() {
           </Governed>
         </SettingsPanel>
 
-        <SettingsPanel title="Membership and retention" description="Lifecycle guardrails, and when the team should contact members.">
+        <SettingsPanel title="Memberships and follow-ups" description="Limits for memberships, and when staff should contact members.">
           <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-line rtl:lg:divide-x-reverse">
             <section>
-              <SectionLead title="Retention radar" description="Create follow-ups for inactive, expiring, and recently expired members." />
+              <SectionLead title="Members to contact" description="Create follow-ups for members who stopped coming, whose membership ends soon, or ended recently." />
               <FieldGrid className="sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                <NumberSetting label="Inactive after" unit="days" min={3} max={180} value={policies.retention.inactivityDays} onChange={(event) => updateRetention("inactivityDays", Number(event.target.value))} />
-                <NumberSetting label="Win-back window" unit="days" min={7} max={365} value={policies.retention.expiredWinBackDays} onChange={(event) => updateRetention("expiredWinBackDays", Number(event.target.value))} />
-                <NumberSetting label="Default snooze" unit="days" min={1} max={90} value={policies.retention.defaultSnoozeDays} onChange={(event) => updateRetention("defaultSnoozeDays", Number(event.target.value))} />
+                <NumberSetting label="No visits for" unit="days" min={3} max={180} value={policies.retention.inactivityDays} onChange={(event) => updateRetention("inactivityDays", Number(event.target.value))} />
+                <NumberSetting label="Contact ended members for" unit="days" min={7} max={365} value={policies.retention.expiredWinBackDays} onChange={(event) => updateRetention("expiredWinBackDays", Number(event.target.value))} />
+                <NumberSetting label="Snooze for" unit="days" min={1} max={90} value={policies.retention.defaultSnoozeDays} onChange={(event) => updateRetention("defaultSnoozeDays", Number(event.target.value))} />
               </FieldGrid>
             </section>
             <section className="border-t border-line pt-5 lg:border-t-0 lg:ps-6 lg:pt-0">
-              <SectionLead title="Membership lifecycle" description="Guard sales, renewals, freezes, and sensitive date changes." />
+              <SectionLead title="Membership limits" description="Limits for renewals, freezes and date changes." />
               <FieldGrid className="sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                <NumberSetting label="Renewal window" unit="days" min={1} max={90} value={policies.membership.renewalWindowDays} onChange={(event) => updateMembership("renewalWindowDays", Number(event.target.value))} />
-                <NumberSetting label="Minimum freeze" unit="days" min={1} max={30} value={policies.membership.minimumFreezeDays} onChange={(event) => updateMembership("minimumFreezeDays", Number(event.target.value))} />
-                <NumberSetting label="Maximum extension" unit="days" min={1} max={365} value={policies.membership.maximumExtensionDays} onChange={(event) => updateMembership("maximumExtensionDays", Number(event.target.value))} />
+                <NumberSetting label="Renewal follow-ups start" unit="days" hint="Days before a membership ends." min={1} max={90} value={policies.membership.renewalWindowDays} onChange={(event) => updateMembership("renewalWindowDays", Number(event.target.value))} />
+                <NumberSetting label="Shortest freeze" unit="days" min={1} max={30} value={policies.membership.minimumFreezeDays} onChange={(event) => updateMembership("minimumFreezeDays", Number(event.target.value))} />
+                <NumberSetting label="Longest extension" unit="days" min={1} max={365} value={policies.membership.maximumExtensionDays} onChange={(event) => updateMembership("maximumExtensionDays", Number(event.target.value))} />
               </FieldGrid>
               <div className="mt-3 border-t border-line">
-                <SettingsToggleRow label="Overlapping memberships" hint="Keep off to prevent duplicate active terms." checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} />
+                <SettingsToggleRow label="Allow two memberships at once" hint="Keep this off so a member cannot have two active memberships at the same time." checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} />
               </div>
             </section>
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Referrals and freeze requests" description="Member benefits stay visible here, with clear limits that staff cannot bypass.">
+        <SettingsPanel title="Referrals and freeze requests" description="Rewards for bringing a friend, and freeze requests from the member app.">
           <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-line rtl:lg:divide-x-reverse">
             <section>
-              <SectionLead title="Referral rewards" description="Grant free membership days after a referred member buys their first term." toggle={<HeaderToggle label="Reward referrals" checked={policies.referrals.enabled} onCheckedChange={(value) => updateReferrals("enabled", value)} />} />
+              <SectionLead title="Referral rewards" description="Give the member free days when a friend they referred buys a first membership." toggle={<HeaderToggle label="Reward referrals" checked={policies.referrals.enabled} onCheckedChange={(value) => updateReferrals("enabled", value)} />} />
               <Governed enabled={policies.referrals.enabled}>
                 <FieldGrid className="sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
                   <NumberSetting label="Reward" unit="days" min={1} max={90} value={policies.referrals.rewardDays} onChange={(event) => updateReferrals("rewardDays", Number(event.target.value))} />
-                  <NumberSetting label="Member cap" unit="days" min={1} max={365} value={policies.referrals.maxRewardDaysPerWindow} onChange={(event) => updateReferrals("maxRewardDaysPerWindow", Number(event.target.value))} />
-                  <NumberSetting label="Cap resets after" unit="days" min={7} max={365} value={policies.referrals.windowDays} onChange={(event) => updateReferrals("windowDays", Number(event.target.value))} />
+                  <NumberSetting label="Most reward days" unit="days" min={1} max={365} value={policies.referrals.maxRewardDaysPerWindow} onChange={(event) => updateReferrals("maxRewardDaysPerWindow", Number(event.target.value))} />
+                  <NumberSetting label="Limit resets after" unit="days" min={7} max={365} value={policies.referrals.windowDays} onChange={(event) => updateReferrals("windowDays", Number(event.target.value))} />
                 </FieldGrid>
               </Governed>
             </section>
@@ -383,10 +383,10 @@ export function OperationalRulesSection() {
               <SectionLead title="Member freeze requests" description="Members request dates in their app. Staff still approve every request." toggle={<HeaderToggle label="Accept requests" checked={policies.memberFreezes.requestsEnabled} onCheckedChange={(value) => updateFreezes("requestsEnabled", value)} />} />
               <Governed enabled={policies.memberFreezes.requestsEnabled}>
                 <FieldGrid className="sm:grid-cols-2">
-                  <NumberSetting label="Free allowance" unit="freezes" min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} onChange={(event) => updateFreezes("freeFreezesPerWindow", Number(event.target.value))} />
-                  <NumberSetting label="Fee after allowance" unit={currency} min={0} max={1000} step={1 / 10 ** exponentFor(currency)} value={policies.memberFreezes.extraFreezeFeeMinor / 10 ** exponentFor(currency)} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(event.target.value) * 10 ** exponentFor(currency)))} />
-                  <NumberSetting label="Maximum length" unit="days" min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} onChange={(event) => updateFreezes("maxDaysPerFreeze", Number(event.target.value))} />
-                  <NumberSetting label="Allowance resets after" unit="days" min={30} max={730} value={policies.memberFreezes.windowDays} onChange={(event) => updateFreezes("windowDays", Number(event.target.value))} />
+                  <NumberSetting label="Free freezes" unit="freezes" min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} onChange={(event) => updateFreezes("freeFreezesPerWindow", Number(event.target.value))} />
+                  <NumberSetting label="Fee for each extra freeze" unit={currency} min={0} max={1000} step={1 / 10 ** exponentFor(currency)} value={policies.memberFreezes.extraFreezeFeeMinor / 10 ** exponentFor(currency)} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(event.target.value) * 10 ** exponentFor(currency)))} />
+                  <NumberSetting label="Longest freeze" unit="days" min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} onChange={(event) => updateFreezes("maxDaysPerFreeze", Number(event.target.value))} />
+                  <NumberSetting label="Free freezes reset after" unit="days" min={30} max={730} value={policies.memberFreezes.windowDays} onChange={(event) => updateFreezes("windowDays", Number(event.target.value))} />
                 </FieldGrid>
               </Governed>
             </section>
@@ -396,17 +396,17 @@ export function OperationalRulesSection() {
       <SettingsSaveBar
         dirty={dirty}
         saving={save.isPending}
-        error={save.isError ? (isApiError(save.error) ? save.error.message : "The operational rules could not be saved. Try again.") : undefined}
+        error={save.isError ? (isApiError(save.error) ? save.error.message : "The gym rules were not saved. Try again.") : undefined}
         onSave={commit}
         onDiscard={discard}
         saveLabel="Save rules"
-        guardTitle="Unsaved operational rules"
+        guardTitle="Unsaved gym rules"
       />
     </SettingsSection>
   );
 }
 
-const HOURS_DESCRIPTION = "When each branch is open, and on which days visitors may request a free trial. Times follow the organization timezone.";
+const HOURS_DESCRIPTION = "When each branch is open, and when visitors can ask for a free trial. Times use your gym’s time zone.";
 
 export function HoursAndTrialsSection() {
   const invalidate = useInvalidate();
@@ -415,7 +415,7 @@ export function HoursAndTrialsSection() {
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
     onSuccess: async () => {
-      toast.success("Branch hours and trial windows saved.");
+      toast.success("Branch hours and trial times saved.");
       await invalidate([qk.settings, qk.checkIns({}), qk.customerClasses("all")]);
     },
     onError: (error) => toast.error(isApiError(error) ? error.message : "Could not save branch hours."),
@@ -448,17 +448,17 @@ export function HoursAndTrialsSection() {
   return (
     <SettingsSection title="Hours & trials" description={HOURS_DESCRIPTION}>
       {branches.length === 0 ? (
-        <EmptyState layout="section" title="No active branches" description="Add or reactivate a branch under Branches before setting its hours." />
+        <EmptyState layout="section" title="No active branches" description="First add a branch, or turn one back on, in Branches." />
       ) : (
         <SettingsPanel
           title="Branch hours and free trials"
-          description={selectedSchedule ? `Open ${openDays} of 7 days · trials offered on ${trialDays}. Set one branch at a time; unsaved edits to other branches are kept until you save.` : "Set one branch at a time."}
+          description={selectedSchedule ? `Open ${openDays} of 7 days. Free trials on ${trialDays} of them. Edit one branch at a time. Changes to other branches are kept until you save.` : "Edit one branch at a time."}
           bodyClassName="p-0"
           control={
             <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
               <span>Branch</span>
               <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
-                <SelectTrigger className="w-52" aria-label="Branch schedule"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                <SelectTrigger className="w-52" aria-label="Branch schedule"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
                 <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
               </Select>
             </label>
@@ -467,7 +467,7 @@ export function HoursAndTrialsSection() {
           {selectedSchedule && selectedTrialSchedule ? (
             <div>
               <div className="hidden grid-cols-[150px_minmax(240px,1fr)_minmax(280px,1fr)] gap-5 border-b border-line bg-sunken/60 px-5 py-2 text-[11.5px] font-semibold text-ink-3 lg:grid">
-                <span>Day</span><span>Branch hours</span><span>Free-trial requests</span>
+                <span>Day</span><span>Branch hours</span><span>Free trial times</span>
               </div>
               <div className="divide-y divide-line">
                 {WEEKDAY_ROWS.map(({ key, label }) => {
@@ -481,7 +481,7 @@ export function HoursAndTrialsSection() {
                         {day.enabled ? <div className="grid grid-cols-2 gap-2"><Input type="time" value={day.opensAt} onChange={(event) => updateHours(key, { opensAt: event.target.value })} aria-label={`${label} opening time`} /><Input type="time" value={day.closesAt} onChange={(event) => updateHours(key, { closesAt: event.target.value })} aria-label={`${label} closing time`} /></div> : <p className="flex min-h-9 items-center text-[12.5px] text-ink-3">Closed</p>}
                       </div>
                       <div>
-                        <p className="mb-1 text-[12px] font-medium text-ink-3 lg:hidden">Free-trial requests</p>
+                        <p className="mb-1 text-[12px] font-medium text-ink-3 lg:hidden">Free trial times</p>
                         <div className="grid gap-2 sm:grid-cols-[124px_1fr] sm:items-center">
                           <label className={cn("flex min-h-9 cursor-pointer items-center gap-2.5 text-[12.5px] font-medium text-ink-2", !day.enabled && "cursor-not-allowed text-ink-3")} data-touch-target><Checkbox checked={trialWindow.enabled} disabled={!day.enabled} onCheckedChange={(value) => updateTrialWindow(key, { enabled: value === true })} aria-label={`${label} trial requests enabled`} />Offer trials</label>
                           {day.enabled && trialWindow.enabled ? <div className="grid grid-cols-2 gap-2"><Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.opensAt} onChange={(event) => updateTrialWindow(key, { opensAt: event.target.value })} aria-label={`${label} trial window opening time`} /><Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.closesAt} onChange={(event) => updateTrialWindow(key, { closesAt: event.target.value })} aria-label={`${label} trial window closing time`} /></div> : <span className="flex min-h-9 items-center text-[12.5px] text-ink-3">{day.enabled ? "Not offered" : "Branch closed"}</span>}
@@ -493,14 +493,14 @@ export function HoursAndTrialsSection() {
               </div>
             </div>
           ) : (
-            <EmptyState layout="section" className="m-4 sm:m-5" title="Choose a branch" description="Pick a branch above to edit its hours and trial window." />
+            <EmptyState layout="section" className="m-4 sm:m-5" title="Choose a branch" description="Choose a branch above to edit its hours and trial times." />
           )}
         </SettingsPanel>
       )}
       <SettingsSaveBar
         dirty={dirty}
         saving={save.isPending}
-        error={save.isError ? (isApiError(save.error) ? save.error.message : "The branch hours could not be saved. Try again.") : undefined}
+        error={save.isError ? (isApiError(save.error) ? save.error.message : "Branch hours were not saved. Try again.") : undefined}
         onSave={commit}
         onDiscard={discard}
         saveLabel="Save hours"

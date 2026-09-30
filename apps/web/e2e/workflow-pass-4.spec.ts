@@ -94,8 +94,8 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
       await fits(page);
       if (shoot) await capture(page, `pass-4-${slug}-${width}.png`, width);
       if (slug === "membership") {
-        await page.getByRole("button", { name: "Show entry QR" }).click();
-        const dialog = page.getByRole("dialog", { name: "Entry QR" });
+        await page.getByRole("button", { name: "Show entry code" }).click();
+        const dialog = page.getByRole("dialog", { name: "Entry code" });
         await expect(dialog.getByLabel("Membership entry QR code")).toBeVisible();
         await expect(dialog.getByText(/Expires at/)).toBeVisible();
         if (shoot) await expect(dialog).toHaveScreenshot(reference(`pass-4-entry-qr-${width}.png`, width), { animations: "disabled", maxDiffPixelRatio: 0.04 });
@@ -177,10 +177,10 @@ test("the account menu reaches communication settings and signs out from the doc
   // artifact no phone produces, and Radix treats mixed pointer types as a
   // dismissed selection.
   await page.getByRole("button", { name: "Open account menu" }).tap();
-  await page.getByRole("menuitem", { name: "Communication settings" }).tap();
+  await page.getByRole("menuitem", { name: "Offers and news" }).tap();
   await expect(page).toHaveURL(/\/customer\/profile#communication$/);
-  await expect(page.getByRole("heading", { name: "Communication updates" })).toBeVisible();
-  await expect(page.getByRole("switch", { name: "Receive marketing updates" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Offers and news" })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Send me offers and news" })).toBeVisible();
   await page.getByRole("button", { name: "Open account menu" }).tap();
   await page.getByRole("menuitem", { name: "Sign out" }).tap();
   await expect(page).toHaveURL(/\/login$/);
@@ -207,7 +207,7 @@ test("membership sections are shareable, keyboard operable and reachable from in
   await expect(page.getByRole("tabpanel", { name: "Personal training" })).toBeVisible();
 
   await page.goto("/customer/my-gyms?entry=1");
-  const dialog = page.getByRole("dialog", { name: "Entry QR" });
+  const dialog = page.getByRole("dialog", { name: "Entry code" });
   await expect(dialog.getByLabel("Membership entry QR code")).toBeVisible();
   await dialog.getByRole("button", { name: "Close dialog" }).click();
   await expect(dialog).toBeHidden();
@@ -253,7 +253,7 @@ test("a visitor books a trial from a phone with the booking panel one tap away",
   await expect(page.getByLabel("Phone")).toHaveAttribute("type", "tel");
   await page.getByRole("button", { name: /Send trial request/i }).tap();
   await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Open My Gyms/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Open your gyms/i })).toBeVisible();
   await fits(page);
   await context.close();
 });

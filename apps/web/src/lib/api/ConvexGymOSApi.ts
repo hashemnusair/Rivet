@@ -768,7 +768,6 @@ export class ConvexGymOSApi implements GymOSApi {
   listUsers(query: UserListQuery): Promise<T.Page<T.StaffUser>> { return this.query("users.list", query); }
   previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview> { return this.mutate("members.import.preview", input); }
   getMemberFollowUpContext(memberId: T.UUID): Promise<T.MemberFollowUpContext> { return this.query("members.followup_context", { memberId }); }
-  getMemberResolutionContext(memberId: T.UUID): Promise<T.MemberResolutionContext> { return this.query("members.resolution", { memberId }); }
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult> { return this.mutate("members.import.commit", input); }
   listMemberImports(): Promise<MemberImportSummary[]> { return this.query("members.import.list"); }
   getMemberImport(importId: T.UUID): Promise<MemberImportPreview> { return this.query("members.import.get", { importId }); }

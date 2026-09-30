@@ -15,7 +15,7 @@ export interface PayablesExportContext {
 export function buildPayablesCsv(exported: PayablesExport, context: PayablesExportContext): string {
   const currency = exported.currency;
   return buildCsvDocument({
-    title: "Supplier payables",
+    title: "Supplier bills",
     metadata: [
       { label: "Generated", value: formatExportDateTime(exported.generatedAt, context.timeZone) },
       { label: "Branch", value: context.branchLabel },
@@ -23,9 +23,9 @@ export function buildPayablesCsv(exported: PayablesExport, context: PayablesExpo
       { label: "Status", value: context.statusLabel },
       { label: "Search", value: context.search ?? "" },
       { label: "Currency", value: currency },
-      ...(exported.truncated ? [{ label: "Note", value: "Row limit reached; narrow the filters to export the rest." }] : []),
+      ...(exported.truncated ? [{ label: "Note", value: "Too many rows for one file. Use the filters to download the rest." }] : []),
     ],
-    headers: ["Supplier", "Source", "Branch", "Received", "Age (days)", "Due date", `Original (${currency})`, `Paid (${currency})`, `Remaining (${currency})`, "Status", "Supplier reference", "Ledger"],
+    headers: ["Supplier", "What was received", "Branch", "Received", "Days since received", "Due date", `Total (${currency})`, `Paid (${currency})`, `Still owed (${currency})`, "Status", "Supplier reference", "Accounts"],
     rows: exported.rows.map((row): CsvValue[] => [
       row.supplierName,
       row.sourceLabel,
@@ -40,7 +40,7 @@ export function buildPayablesCsv(exported: PayablesExport, context: PayablesExpo
       row.externalReference ?? "",
       ledgerStatusLabel(row.ledgerPostingStatus),
     ]),
-    emptyMessage: "No payables matched these filters.",
+    emptyMessage: "No bills match these filters.",
   });
 }
 
@@ -50,7 +50,7 @@ export function buildSupplierPaymentRecordCsv(detail: SupplierPaymentDetail, tim
   return buildSectionedCsvDocument({
     title: "Supplier payment confirmation",
     metadata: [
-      { label: "Organization", value: detail.organization.name },
+      { label: "Gym", value: detail.organization.name },
       { label: "Branch", value: detail.branch.name },
       { label: "Generated", value: formatExportDateTime(new Date(), timeZone) },
     ],
@@ -66,15 +66,15 @@ export function buildSupplierPaymentRecordCsv(detail: SupplierPaymentDetail, tim
           ["Recorded", formatExportDateTime(detail.occurredAt, timeZone)],
           ["Recorded by", detail.recordedByName],
           ["Status", detail.status === "reversed" ? "Reversed" : "Recorded"],
-          ["Ledger", ledgerStatusLabel(detail.ledgerPostingStatus)],
+          ["Accounts", ledgerStatusLabel(detail.ledgerPostingStatus)],
           ...(detail.reversal ? [["Reversal reason", detail.reversal.reason], ["Reversed", formatExportDateTime(detail.reversal.reversedAt, timeZone)], ["Reversed by", detail.reversal.reversedByName]] : []),
           ["Notes", detail.notes ?? ""],
-          [`Supplier balance still owed (${currency})`, formatMinorUnits(detail.supplierRemaining.amount, currency)],
+          [`Still owed to supplier (${currency})`, formatMinorUnits(detail.supplierRemaining.amount, currency)],
         ],
       },
       {
-        title: "Allocated payables",
-        headers: ["Payable", `Allocated (${currency})`, `Payable total (${currency})`, `Paid so far (${currency})`, `Remaining (${currency})`, "Status"],
+        title: "Bills paid",
+        headers: ["Bill", `Paid now (${currency})`, `Bill total (${currency})`, `Paid so far (${currency})`, `Still owed (${currency})`, "Status"],
         rows: detail.allocations.map((allocation) => {
           const payable = detail.payables.find((candidate) => candidate.payableId === allocation.payableId);
           return [
@@ -86,7 +86,7 @@ export function buildSupplierPaymentRecordCsv(detail: SupplierPaymentDetail, tim
             payable ? PAYABLE_STATUS_LABELS[payable.status] : "",
           ];
         }),
-        emptyMessage: "No allocations.",
+        emptyMessage: "No bills.",
       },
     ],
   });

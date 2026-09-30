@@ -8,7 +8,7 @@ export function AutomationComingSoon() {
     <div className="space-y-4">
       <PageHeader
         title="Automations"
-        description="Automated follow-ups and messages are being held while the data foundation is finalized."
+        description="Automatic follow-ups and messages are paused for now."
       />
       <section className="panel flex min-h-80 items-center justify-center p-6 sm:p-10">
         <div className="max-w-md text-center">
@@ -18,7 +18,7 @@ export function AutomationComingSoon() {
           <p className="context-label mt-5">Coming soon</p>
           <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight">Automations are paused for now</h2>
           <p className="mt-3 text-[13px] leading-6 text-ink-2">
-            Automated actions are paused while the delivery and verification path is finalized. Existing runs and audit history remain available.
+            You can still see past runs and their history.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
             <Button asChild variant="secondary">

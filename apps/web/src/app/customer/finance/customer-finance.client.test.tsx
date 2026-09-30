@@ -57,10 +57,10 @@ describe("CustomerFinanceClient", () => {
   it("reads totals as one ledger strip and opens each receipt from its whole row", async () => {
     renderPage();
     const totals = await screen.findByRole("region", { name: "Financial summary" });
-    expect(totals).toHaveTextContent("Outstanding");
+    expect(totals).toHaveTextContent("Unpaid");
     expect(totals).toHaveTextContent("JOD 25.000");
-    expect(totals).toHaveTextContent("Ask the gym about payment options.");
-    expect(totals).toHaveTextContent("1 connected gym");
+    expect(totals).toHaveTextContent("Ask your gym how to pay.");
+    expect(totals).toHaveTextContent("From 1 gym");
 
     const rows = await screen.findAllByTestId("member-transaction");
     expect(rows).toHaveLength(1);

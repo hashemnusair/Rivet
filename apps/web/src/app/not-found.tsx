@@ -21,9 +21,9 @@ export default function NotFound() {
     <main className="flex min-h-screen flex-col items-center justify-center bg-paper px-6 text-center">
       <Image src="/brand/rivet-glyph.png" alt="" width={33} height={52} />
       <p className="mt-6 text-[12px] font-medium text-ink-3">Page not found</p>
-      <h1 className="mt-2 font-display text-[26px] font-semibold leading-tight tracking-tight">This page is not on the floor plan</h1>
+      <h1 className="mt-2 font-display text-[26px] font-semibold leading-tight tracking-tight">We could not find this page</h1>
       <p className="mt-2 max-w-sm text-[13.5px] leading-relaxed text-ink-2">
-        The record may have been removed, or the link may be incorrect. Check the address, or go back to where you were.
+        It may have been removed, or the link may be wrong. Check the address, or go back.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
         <Button onClick={goBack}>Go back</Button>

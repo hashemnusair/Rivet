@@ -63,7 +63,7 @@ function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: str
         <Link href="/customer/getting-started"><GraduationCap /> Getting started</Link>
       </DropdownMenuItem>
       <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/profile#communication"><MessageSquare /> Communication settings</Link>
+        <Link href="/customer/profile#communication"><MessageSquare /> Offers and news</Link>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem className={itemClass} onClick={onSignOut}>
@@ -124,10 +124,10 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   // A cold preview restores its member from sessionStorage after hydration.
   // Mounting the public layout first would replace the page when that finishes,
   // discarding an early tab selection or input focus along with its subtree.
-  if (!previewSessionReady) return <AuthTransition title="Loading your session" detail="Preparing your RIVET pages…" />;
+  if (!previewSessionReady) return <AuthTransition title="Loading your account" detail="Just a moment…" />;
 
   if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
-  if (elevatedDestination) return <AuthTransition title="Opening your workspace" detail="Taking you to the right RIVET area…" />;
+  if (elevatedDestination) return <AuthTransition title="Opening your account" detail="Taking you to the right page…" />;
 
   // A visitor who is not signed in as a member is on the public site: the
   // marketplace and a gym's page wear the site's own bar and footer, with the

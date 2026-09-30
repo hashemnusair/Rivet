@@ -24,7 +24,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { formatTime, todayISODate } from "@/lib/utils/dates";
+import { formatDate, formatTime, todayISODate } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
@@ -36,7 +36,7 @@ import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog"
 import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
 import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
 import { CloseShiftDialog, OpenShiftDialog, authoritativeExpectedCash } from "@/features/finance/shift-dialogs";
-import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
+import { ContextLabel } from "@/components/ui/typography";
 
 export default function ReceptionPage() {
   const { session, setBranch } = useApp();
@@ -221,7 +221,7 @@ export default function ReceptionPage() {
   };
 
   if (!can("members.read")) {
-    return <ForbiddenState description="The reception console needs member lookup permission." />;
+    return <ForbiddenState description="The front desk needs access to look up members. Ask the owner or a manager." />;
   }
 
   if (!branchId || !branch) {
@@ -291,8 +291,8 @@ export default function ReceptionPage() {
                 setResult(null);
                 setQuery(e.target.value);
               }}
-              placeholder="Scan, or type a name, phone or number"
-              aria-label="Member lookup"
+              placeholder="Scan, or type a name, phone or member number"
+              aria-label="Find a member"
               autoComplete="off"
               spellCheck={false}
               data-testid="reception-search"
@@ -309,7 +309,7 @@ export default function ReceptionPage() {
                   <X className="size-4" />
                 </button>
               ) : null}
-              <span className="hidden items-center gap-1 font-mono text-[10.5px] uppercase tracking-wider text-night-ink-3 sm:flex">
+              <span className="hidden items-center gap-1 text-[12px] text-night-ink-3 sm:flex">
                 <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd> clear
               </span>
             </div>
@@ -320,7 +320,7 @@ export default function ReceptionPage() {
             {!lookupActive && !result ? (
               <IdleState />
             ) : previewQuery.isLoading && !result && !preview ? (
-              <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label="Looking up member">
+              <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label="Finding member">
                 <div className="h-4 w-40 animate-pulse rounded-sm bg-night-3" />
                 <div className="mt-3 h-10 w-64 animate-pulse rounded-sm bg-night-3" />
               </div>
@@ -361,21 +361,21 @@ export default function ReceptionPage() {
           </div>
 
           {/* Keyboard legend */}
-          <TechnicalLabel as="div" tone="night" className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-night-line pt-4">
+          <ContextLabel as="div" tone="night" className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-night-line pt-4">
             <span className="flex items-center gap-1.5">
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">
                 <CornerDownLeft className="size-2.5" />
               </Kbd>
-              check in
+              Check in
             </span>
             <span className="flex items-center gap-1.5">
-              <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd> next member
+              <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd> Next member
             </span>
             <span className="flex items-center gap-1.5">
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">⌘</Kbd>
-              <Kbd className="border-night-line bg-night-3 text-night-ink-2">K</Kbd> command palette
+              <Kbd className="border-night-line bg-night-3 text-night-ink-2">K</Kbd> Search
             </span>
-          </TechnicalLabel>
+          </ContextLabel>
         </div>
 
         {/* ---------------------------------------------------------------- */}
@@ -388,7 +388,7 @@ export default function ReceptionPage() {
               <span className="text-[38px] font-medium leading-none tabular text-night-ink">
                 {recentQuery.data?.totalItems ?? "—"}
               </span>
-              <span className="text-[13px] text-night-ink-3">recorded visits</span>
+              <span className="text-[13px] text-night-ink-3">visits</span>
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3">
               <div>
@@ -396,14 +396,14 @@ export default function ReceptionPage() {
                 <dd className="mt-0.5 truncate text-[13px] text-night-ink">{branch.name}</dd>
               </div>
               <div>
-                <ContextLabel as="dt" tone="night">Peak hour</ContextLabel>
+                <ContextLabel as="dt" tone="night">Busiest hour</ContextLabel>
                 <dd className="mt-0.5 text-[15px] tabular text-night-ink">{occupancyQuery.data?.peakHour ?? "—"}</dd>
               </div>
             </dl>
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col">
-            <ContextLabel tone="night" className="border-b border-night-line px-5 py-3">Today&apos;s check-in log</ContextLabel>
+            <ContextLabel tone="night" className="border-b border-night-line px-5 py-3">Who checked in today</ContextLabel>
             <ul className="flex-1 divide-y divide-night-line/70 overflow-y-auto">
               {(recentQuery.data?.items ?? []).length === 0 ? (
                 <li className="px-5 py-8 text-center text-[12.5px] text-night-ink-3">No check-ins yet today.</li>
@@ -415,8 +415,8 @@ export default function ReceptionPage() {
                       <p className="truncate text-[12.5px] text-night-ink">{c.memberName}</p>
                       <p className="truncate font-mono text-[10.5px] text-night-ink-3">{c.memberNumber}</p>
                       {c.overrideReason ? (
-                        <p className="truncate text-[11px] text-night-ink-3" title={c.overrideReason}>
-                          override · {c.overrideReason}
+                        <p className="truncate text-[12px] text-night-ink-3" title={c.overrideReason}>
+                          Let in anyway · {c.overrideReason}
                         </p>
                       ) : null}
                     </div>
@@ -524,8 +524,8 @@ function ReceptionBranchState({
     return (
       <StatePanel
         icon={Building2}
-        title="No active branch is available"
-        description="Ask an owner to activate a branch or assign this account to one before opening Reception."
+        title="No branch to open"
+        description="Ask the gym owner to turn on a branch or add you to one."
       />
     );
   }
@@ -537,7 +537,7 @@ function ReceptionBranchState({
       title={openingOnlyBranch ? "Opening Reception…" : "Choose a branch to open Reception"}
       description={openingOnlyBranch
         ? `Setting this desk to ${branches[0]!.name}.`
-        : "Reception works one branch at a time. Choose where this desk is operating."}
+        : "Choose the branch this desk is in."}
       action={
         openingOnlyBranch ? (
           error ? (
@@ -620,7 +620,7 @@ function ShiftStrip({
     return (
       <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b border-warning/30 bg-warning/10 px-5 py-2.5 lg:px-8" role="alert">
         <AlertTriangle className="size-3.5 text-warning" aria-hidden />
-        <p className="min-w-0 flex-1 text-[12.5px] text-night-ink-2"><span className="font-medium text-night-ink">Drawer status unavailable.</span> Cash collection stays disabled until RIVET can verify the shift.</p>
+        <p className="min-w-0 flex-1 text-[12.5px] text-night-ink-2"><span className="font-medium text-night-ink">Could not check the cash drawer.</span> You can&apos;t take cash until this works again.</p>
         <Button size="xs" variant="night-outline" onClick={onRetry}><RefreshCw /> Try again</Button>
       </div>
     );
@@ -630,8 +630,7 @@ function ShiftStrip({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8">
         <Lock className="size-3.5 text-warning" aria-hidden />
         <p className="text-[12.5px] text-night-ink-2">
-          <span className="font-medium text-night-ink">No shift open.</span> Check-ins work, but cash collection is disabled until the
-          drawer is counted.
+          <span className="font-medium text-night-ink">No shift open.</span> Check-ins work. To take cash, open a shift first.
         </p>
         {canOpen ? (
           <Button size="xs" variant="night" className="ms-auto" onClick={onOpen} data-testid="open-shift">
@@ -647,21 +646,21 @@ function ShiftStrip({
         <span className="size-1.5 rounded-full bg-success" aria-hidden />
         Shift open · {shift.openedByName}
       </span>
-      <span className="text-[11.5px] tabular text-night-ink-3">
-        since {formatTime(shift.openedAt)} · float {formatMoney(shift.openingFloat, { hideCurrency: true })}
+      <span className="text-[12px] tabular text-night-ink-3">
+        since {formatTime(shift.openedAt)} · starting cash {formatMoney(shift.openingFloat, { hideCurrency: true })}
       </span>
       {cashTaken ? (
-        <span className="text-[11.5px] tabular text-night-ink-3">
+        <span className="text-[12px] tabular text-night-ink-3">
           cash taken {formatMoney(cashTaken, { hideCurrency: true })}
         </span>
       ) : null}
       {expected ? (
-        <span className="text-[11.5px] tabular text-night-ink-2">
-          expected {formatMoney(expected, { hideCurrency: true })} {currency}
+        <span className="text-[12px] tabular text-night-ink-2">
+          expected in drawer {formatMoney(expected, { hideCurrency: true })} {currency}
         </span>
       ) : null}
       <div className="ms-auto flex items-center gap-2">
-        {stale ? <span className="text-[11.5px] text-warning">Reconnecting…</span> : null}
+        {stale ? <span className="text-[12px] text-warning">Reconnecting…</span> : null}
         <Button asChild size="xs" variant="night-ghost">
           <Link href="/payments/shifts">Shift history</Link>
         </Button>
@@ -685,7 +684,7 @@ function IdleState() {
       <ScanLine className="size-6 text-night-ink-3" aria-hidden />
       <p className="mt-3 font-display text-[15px] font-medium text-night-ink-2">Ready for the next member</p>
       <p className="mt-1 max-w-sm text-[12.5px] text-night-ink-3">
-        Scan their code or start typing. Three characters is enough to match a name, phone or member number.
+        Scan their code or start typing. Type at least 3 letters or numbers.
       </p>
     </div>
   );
@@ -695,8 +694,8 @@ function LookupErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="rounded-lg border border-warning/35 bg-night-2 px-6 py-8 text-center" role="alert">
       <AlertTriangle className="mx-auto size-5 text-warning" aria-hidden />
-      <p className="mt-3 font-display text-[16px] font-medium text-night-ink">Member lookup is unavailable</p>
-      <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-night-ink-3">No check-in was recorded. Check the connection, then retry the same search.</p>
+      <p className="mt-3 font-display text-[16px] font-medium text-night-ink">Could not search for members</p>
+      <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-night-ink-3">Nobody was checked in. Check the internet connection and try again.</p>
       <Button type="button" size="sm" variant="night-outline" className="mt-4" onClick={onRetry}><RefreshCw /> Try again</Button>
     </div>
   );
@@ -715,7 +714,7 @@ function NoMatchState({ message, query, canCreate }: { message: string; query: s
       {canCreate ? (
         <Button asChild size="sm" variant="night-outline" className="mt-4">
           <Link href={registerHref}>
-            <UserPlus /> Register as a new member
+            <UserPlus /> Add as a new member
           </Link>
         </Button>
       ) : null}
@@ -742,7 +741,7 @@ function CandidatesState({
     <div className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-fade-up" data-testid="checkin-candidates" role="region" aria-label="Choose the member">
       <div className="border-b border-night-line px-5 py-3">
         <p className="font-display text-[16px] font-medium text-night-ink">{message}</p>
-        <p className="mt-0.5 text-[12.5px] text-night-ink-3">Nothing is decided until you pick one person. A scanned or typed member number skips this step.</p>
+        <p className="mt-0.5 text-[12.5px] text-night-ink-3">Scan their code or type their member number to skip this list.</p>
       </div>
       <ul className="divide-y divide-night-line/70">
         {candidates.map((candidate) => {
@@ -776,7 +775,7 @@ function CandidatesState({
                   <span className="block">{candidate.status === "archived" ? "Archived" : candidate.currentPlanName ?? "No membership"}</span>
                   <span className="block text-night-ink-3">
                     {branchName}
-                    {candidate.outstanding.amount > 0 ? ` · ${formatMoney(candidate.outstanding, { hideCurrency: true })} due` : ""}
+                    {candidate.outstanding.amount > 0 ? ` · owes ${formatMoney(candidate.outstanding, { hideCurrency: true })}` : ""}
                   </span>
                 </span>
               </button>
@@ -797,9 +796,9 @@ const VERDICT: Record<
   { band: string; label: string; icon: typeof CheckCircle2 }
 > = {
   allowed: { band: "bg-success text-white", label: "Allowed", icon: CheckCircle2 },
-  warning: { band: "bg-warning text-white", label: "Let in — with a notice", icon: AlertTriangle },
-  blocked: { band: "bg-signal text-white", label: "Blocked", icon: Ban },
-  overridden: { band: "bg-ink text-paper", label: "Overridden", icon: ShieldAlert },
+  warning: { band: "bg-warning text-white", label: "Allowed, with a warning", icon: AlertTriangle },
+  blocked: { band: "bg-signal text-white", label: "Entry refused", icon: Ban },
+  overridden: { band: "bg-ink text-paper", label: "Let in anyway", icon: ShieldAlert },
   // A repeat scan is not a denial: the person is already inside.
   duplicate: { band: "bg-night-3 text-night-ink", label: "Already checked in", icon: CheckCircle2 },
 };
@@ -857,8 +856,8 @@ function VerdictPanel({
     ? `Already checked in at ${formatTime(lastAcceptedCheckIn.occurredAt)}${lastAcceptedCheckIn.actorName ? ` by ${lastAcceptedCheckIn.actorName}` : ""}. No second visit was recorded.`
     : message;
   // A future term has a start, not an expiry; a past one has already ended.
-  const termLabel = membership?.status === "scheduled" ? "Starts" : membership?.status === "expired" ? "Expired" : "Expires";
-  const termValue = membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate ?? "—";
+  const termLabel = membership?.status === "scheduled" ? "Starts" : membership?.status === "expired" ? "Ended" : "Ends";
+  const termValue = formatDate(membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate);
 
   return (
     <div
@@ -893,7 +892,7 @@ function VerdictPanel({
         </div>
 
         <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-4" data-testid="checkin-facts">
-          <Cell label="Plan" value={member.currentPlanName ?? "None"} muted={!member.currentPlanName} />
+          <Cell label="Plan" value={member.currentPlanName ?? "No plan"} muted={!member.currentPlanName} />
           <Cell label={termLabel} value={termValue} mono />
           <Cell
             label="Visits left"
@@ -902,7 +901,7 @@ function VerdictPanel({
             muted={membership?.remainingVisits == null}
           />
           <Cell
-            label="Balance"
+            label="Owes"
             value={formatMoney(outstanding, { hideCurrency: true })}
             mono
             tone={hasBalance ? "warn" : undefined}
@@ -924,7 +923,7 @@ function VerdictPanel({
 
       {criticalNotes ? (
         <div className="border-t border-night-line bg-signal/10 px-5 py-2.5">
-          <ContextLabel tone="night" className="text-signal">Critical note</ContextLabel>
+          <ContextLabel tone="night" className="text-signal">Important note</ContextLabel>
           <p className="mt-0.5 break-words text-[13px] text-night-ink">{criticalNotes}</p>
         </div>
       ) : null}
@@ -941,7 +940,7 @@ function VerdictPanel({
               size="sm"
               variant="night-outline"
               onClick={onCollect}
-              title={cashBlocked ? "No shift open — card, transfer or CliQ only" : undefined}
+              title={cashBlocked ? "No shift is open. Take card, bank transfer or CliQ, not cash." : undefined}
               data-testid="quick-collect"
             >
               <Banknote /> Collect {formatMoney(outstanding, { hideCurrency: true })}
@@ -958,7 +957,7 @@ function VerdictPanel({
             <>
               {duplicateScan && !committed && canOverride ? (
                 <Button size="sm" variant="night-ghost" onClick={onOverride} data-testid="override-checkin">
-                  <ShieldAlert /> Record another entry
+                  <ShieldAlert /> Check in again
                 </Button>
               ) : null}
               <Button size="sm" variant="night" onClick={onNext} data-testid="next-member">
@@ -968,10 +967,10 @@ function VerdictPanel({
           ) : decision === "blocked" ? (
             canOverride ? (
               <Button size="sm" variant="signal" onClick={onOverride} data-testid="override-checkin">
-                <ShieldAlert /> Override
+                <ShieldAlert /> Let in anyway
               </Button>
             ) : (
-              <span className="text-[12px] text-night-ink-3">A manager can override this.</span>
+              <span className="text-[12px] text-night-ink-3">Only a manager can let them in.</span>
             )
           ) : (
             <Button size="sm" variant="night" loading={busy} onClick={onCheckIn} data-testid="confirm-checkin">
@@ -1025,5 +1024,7 @@ function DecisionDot({ decision }: { decision: string }) {
         : decision === "overridden"
           ? "bg-night-ink-2"
           : "bg-signal";
-  return <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", tone)} title={decision} aria-label={decision} />;
+  // Name the dot in desk words, never the stored decision key.
+  const label = VERDICT[decision]?.label ?? VERDICT.blocked!.label;
+  return <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", tone)} title={label} aria-label={label} />;
 }

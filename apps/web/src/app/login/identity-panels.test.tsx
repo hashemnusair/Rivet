@@ -61,7 +61,7 @@ describe("IdentityPanel", () => {
     render(<IdentityPanel audience="member" />);
     await act(async () => { await vi.advanceTimersByTimeAsync(900); });
     expect(screen.getByRole("heading", { name: "Finish your member profile" })).toBeVisible();
-    expect(screen.queryByText("Your member dashboard could not be opened")).not.toBeInTheDocument();
+    expect(screen.queryByText("Your member account could not be opened")).not.toBeInTheDocument();
   });
 
   it("does not treat an unavailable member query as a missing profile", async () => {
@@ -69,7 +69,7 @@ describe("IdentityPanel", () => {
     state.signInAsIdentity.mockRejectedValueOnce(new Error("Network unavailable"));
     render(<IdentityPanel audience="member" />);
     await act(async () => { await vi.advanceTimersByTimeAsync(900); });
-    expect(screen.getByText("Your member dashboard could not be opened")).toBeVisible();
+    expect(screen.getByText("Your member account could not be opened")).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Finish your member profile" })).not.toBeInTheDocument();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -146,7 +146,7 @@ describe("IdentityPanel", () => {
 
     render(<IdentityPanel />);
 
-    expect(screen.getByText("Your gym workspace is unavailable")).toBeVisible();
+    expect(screen.getByText("Your gym is not active on RIVET")).toBeVisible();
     expect(state.signInAsIdentity).not.toHaveBeenCalled();
     await act(async () => {
       screen.getByRole("button", { name: "Sign out and use another account" }).click();
@@ -182,7 +182,7 @@ describe("IdentityPanel", () => {
 
     render(<IdentityPanel />);
 
-    expect(screen.getByText("Choose a branch workspace")).toBeVisible();
+    expect(screen.getByText("Choose a branch")).toBeVisible();
     expect(screen.getByRole("button", { name: /Main/ })).toBeVisible();
     expect(state.signIn).not.toHaveBeenCalled();
 
@@ -209,7 +209,7 @@ describe("IdentityPanel", () => {
     render(<IdentityPanel audience="staff" />);
     expect(screen.getByText("This account was deactivated")).toBeInTheDocument();
     expect(screen.getByText(/restore your access/)).toBeInTheDocument();
-    expect(screen.queryByText("Your role could not be loaded")).not.toBeInTheDocument();
+    expect(screen.queryByText("We could not load your account")).not.toBeInTheDocument();
   });
 
   it("keeps a staff portal account without a gym team out of member bootstrap", () => {
@@ -275,7 +275,7 @@ describe("IdentityPanel", () => {
 
     render(<IdentityPanel audience="member" />);
 
-    expect(screen.getByText("This is the member portal")).toBeVisible();
+    expect(screen.getByText("This sign-in is for gym members")).toBeVisible();
     expect(state.signInAsIdentity).not.toHaveBeenCalled();
     expect(state.replace).not.toHaveBeenCalled();
   });
@@ -326,7 +326,7 @@ describe("IdentityPanel", () => {
     });
 
     expect(state.claimInvitation).toHaveBeenCalledOnce();
-    expect(screen.getByText("Your gym invitation could not be verified")).toBeVisible();
+    expect(screen.getByText("We could not confirm your gym invitation")).toBeVisible();
     expect(state.signInAsIdentity).not.toHaveBeenCalled();
     expect(state.replace).not.toHaveBeenCalled();
   });
@@ -350,7 +350,7 @@ describe("IdentityPanel", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText("Your gym invitation could not be verified")).toBeVisible();
+    expect(screen.getByText("We could not confirm your gym invitation")).toBeVisible();
     expect(state.signInAsIdentity).not.toHaveBeenCalled();
     expect(state.replace).not.toHaveBeenCalled();
   });

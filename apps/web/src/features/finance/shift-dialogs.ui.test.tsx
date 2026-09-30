@@ -60,13 +60,13 @@ describe("CloseShiftDialog totals gate", () => {
     await renderWithApp(<PreparedCloseShift />, { role: "receptionist", latencyMs: 250 });
     const close = await screen.findByTestId("confirm-close-shift");
     expect(close).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent("Loading authoritative shift totals");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading the shift totals");
     await waitFor(() => expect(close).toBeEnabled());
   });
 
   it("refuses a stale shift that is not the branch's current open shift", async () => {
     await renderWithApp(<PreparedStaleShift />, { role: "receptionist" });
-    expect(await screen.findByRole("alert")).toHaveTextContent(/no longer the branch's open shift/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/no longer the open shift at this branch/i);
     expect(screen.getByTestId("confirm-close-shift")).toBeDisabled();
   });
 });

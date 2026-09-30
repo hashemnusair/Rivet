@@ -15,8 +15,8 @@ import { useApp } from "@/lib/providers/app-providers";
 import { RelatedTaskCheck } from "@/features/followup/related-task-check";
 
 const taskSchema = z.object({
-  title: z.string().min(3, "Title is required"),
-  ownerId: z.string().min(1, "Choose an owner"),
+  title: z.string().min(3, "Enter a title"),
+  ownerId: z.string().min(1, "Choose who will do it"),
   dueAt: z.string().min(1, "Choose a due date"),
   type: z.enum(["follow_up", "renewal_call", "payment_collection", "trial_follow_up", "general"]),
 });
@@ -80,7 +80,7 @@ export function CreateTaskDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create task</DialogTitle>
-          <DialogDescription>Linked to {memberName} — appears in queues and on the member timeline.</DialogDescription>
+          <DialogDescription>For {memberName}. It shows in task lists and on their timeline.</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
@@ -88,13 +88,13 @@ export function CreateTaskDialog({
               <Input {...form.register("title")} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Owner" required>
+              <Field label="Assigned to" required>
                 <Controller
                   control={form.control}
                   name="ownerId"
                   render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Task owner">
+                      <SelectTrigger aria-label="Assigned to">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -126,7 +126,7 @@ export function CreateTaskDialog({
                     <SelectContent>
                       <SelectItem value="follow_up">Follow-up</SelectItem>
                       <SelectItem value="renewal_call">Renewal call</SelectItem>
-                      <SelectItem value="payment_collection">Payment collection</SelectItem>
+                      <SelectItem value="payment_collection">Collect payment</SelectItem>
                       <SelectItem value="trial_follow_up">Trial follow-up</SelectItem>
                       <SelectItem value="general">General</SelectItem>
                     </SelectContent>
@@ -140,7 +140,7 @@ export function CreateTaskDialog({
                 subjectId={memberId}
                 personName={memberName}
                 draft={{ type: values.type, title: values.title, dueDate: values.dueAt, ownerName: owner?.name }}
-                onKeepExisting={() => { toast.success("Keeping the existing task; nothing was created."); onOpenChange(false); }}
+                onKeepExisting={() => { toast.success("No new task added. The existing task stays."); onOpenChange(false); }}
                 onLinkAndCreate={(task) => submitWith(task.id)}
                 onCreateSeparately={() => submitWith(undefined)}
                 pending={mutation.isPending}

@@ -20,7 +20,7 @@ test.describe("class calendar roles", () => {
     await expect(page.getByRole("heading", { name: /Who booked/ })).toBeVisible();
     // Desk tools are tucked behind a disclosure so the roster stays a clean list.
     await page.getByText("Add a member at the desk").click();
-    await page.getByLabel("Add member to dated class").fill("Yara Sweidan");
+    await page.getByLabel("Add member to this class").fill("Yara Sweidan");
     await page.getByRole("button", { name: /Yara Sweidan/ }).click();
     await expect(page.getByRole("checkbox", { name: "Mark Yara Sweidan present" })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Edit class" })).toHaveCount(0);
@@ -29,17 +29,17 @@ test.describe("class calendar roles", () => {
   test("cancels one upcoming date with a visible reason", async ({ page }) => {
     await enterStaff(page, "owner");
     await page.goto("/classes");
-    const row = page.getByTestId("class-agenda-row").filter({ has: page.getByRole("button", { name: "Cancel date", exact: true }) }).first();
+    const row = page.getByTestId("class-agenda-row").filter({ has: page.getByRole("button", { name: "Cancel class", exact: true }) }).first();
     const occurrenceId = await row.getAttribute("data-occurrence-id");
-    await row.getByRole("button", { name: "Cancel date", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Cancel this class date?" });
-    await expect(dialog.getByRole("button", { name: "Cancel this date", exact: true })).toBeDisabled();
+    await row.getByRole("button", { name: "Cancel class", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Cancel this class?" });
+    await expect(dialog.getByRole("button", { name: "Cancel class", exact: true })).toBeDisabled();
     await dialog.getByLabel("Cancellation reason").fill("Coach unavailable for this date");
-    await dialog.getByRole("button", { name: "Cancel this date", exact: true }).click();
+    await dialog.getByRole("button", { name: "Cancel class", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     const cancelled = page.locator(`[data-occurrence-id="${occurrenceId}"]`);
     await expect(cancelled).toContainText("Cancelled: Coach unavailable for this date");
-    await expect(cancelled.getByRole("button", { name: "Cancel date", exact: true })).toHaveCount(0);
+    await expect(cancelled.getByRole("button", { name: "Cancel class", exact: true })).toHaveCount(0);
   });
 
   test("keeps scheduling available to the owner", async ({ page }) => {

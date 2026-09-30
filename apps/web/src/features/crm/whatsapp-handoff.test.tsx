@@ -87,10 +87,10 @@ describe("WhatsAppHandoff", () => {
 
     expect(screen.getByRole("dialog", { name: "Message Lina Haddad" })).toBeInTheDocument();
     expect(textarea.value).toBe("Custom draft that must survive");
-    expect(screen.getByRole("alert")).toHaveTextContent(/could not log the handoff/);
-    await user.click(screen.getByRole("button", { name: "Retry logging" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/was not saved on the timeline/);
+    await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(mutate).toHaveBeenCalledTimes(2);
     expect(window.open).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Close without logging" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close without saving" })).toBeInTheDocument();
   });
 });

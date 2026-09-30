@@ -33,7 +33,7 @@ describe("follow-up context for a renewal conversation", () => {
       },
     });
     const panel = await screen.findByTestId("follow-up-context");
-    expect(within(panel).getByTestId("follow-up-opt-out")).toHaveTextContent("Opted out of renewal messages");
+    expect(within(panel).getByTestId("follow-up-opt-out")).toHaveTextContent("Said no to renewal messages");
     expect(within(panel).queryByTestId("reminder-blocked")).not.toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: "Suggest a message" })).not.toBeInTheDocument();
   });
@@ -48,7 +48,7 @@ describe("follow-up context for a renewal conversation", () => {
       },
     });
     const panel = await screen.findByTestId("follow-up-context");
-    expect(within(panel).getByTestId("follow-up-callback")).toHaveTextContent("Agreed");
+    expect(within(panel).getByTestId("follow-up-callback")).toHaveTextContent("Asked");
     expect(within(panel).getByTestId("follow-up-related-work")).toHaveTextContent("after asked for a callback");
     const first = within(panel).getAllByTestId("follow-up-evidence")[0]!;
     expect(first).toHaveTextContent("Asked for a callback");

@@ -109,7 +109,7 @@ describe("GymDetailClient trial form", () => {
     state.experienceStatus = "loading";
     const view = render(<GymDetailClient gymId="forge-fitness" />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Loading the live RIVET network");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading gyms");
     expect(screen.queryByRole("heading", { name: "Gym not found" })).not.toBeInTheDocument();
 
     state.experienceStatus = "ready";

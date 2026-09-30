@@ -45,8 +45,45 @@ export function statusVariant(status: string): "neutral" | "success" | "warning"
   return "neutral";
 }
 
+/** Plain words for the stored status codes shown on orders, suppliers, machines, problems and repair jobs. */
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  approved: "Approved",
+  partially_received: "Partially received",
+  received: "Received",
+  cancelled: "Cancelled",
+  active: "Active",
+  archived: "Archived",
+  maintenance: "In maintenance",
+  retired: "Retired",
+  replaced: "Replaced",
+  open: "Open",
+  in_progress: "In progress",
+  resolved: "Fixed",
+  completed: "Done",
+  blocked: "On hold",
+  unknown: "Not checked yet",
+  safe_to_operate: "Safe to use",
+  out_of_service: "Do not use",
+};
+
+export function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status.replaceAll("_", " ");
+}
+
 export function StatusBadge({ status }: { status: string }) {
-  return <Badge variant={statusVariant(status)} dot>{status.replaceAll("_", " ")}</Badge>;
+  return <Badge variant={statusVariant(status)} dot>{statusLabel(status)}</Badge>;
+}
+
+export const SEVERITY_LABELS: Record<EquipmentIssue["severity"], string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  critical: "Critical",
+};
+
+export function severityLabel(severity: string): string {
+  return (SEVERITY_LABELS as Record<string, string>)[severity] ?? severity;
 }
 
 export const ASSET_STATUS_LABELS: Record<EquipmentAsset["status"], string> = {
@@ -60,7 +97,7 @@ export const WORK_ORDER_STATUS_LABELS: Record<EquipmentWorkOrder["status"], stri
   draft: "Draft",
   approved: "Approved",
   in_progress: "In progress",
-  completed: "Completed",
+  completed: "Done",
   cancelled: "Cancelled",
 };
 
@@ -94,13 +131,13 @@ export function DeleteDialog({ kind = "supplier", label, open, pending, onOpenCh
           <DialogTitle>{isProduct ? "Delete " + label + " permanently?" : "Archive " + label + "?"}</DialogTitle>
           <DialogDescription>
             {isProduct
-              ? "This permanently removes the item and frees its SKU for reuse. Existing receipts, stock movements, purchase orders, and audit history remain available as read-only records. This cannot be undone."
-              : "Historical movements and orders stay intact. The supplier will no longer be available for new operations."}
+              ? "This removes the item for good, and its item code (SKU) can be used again. Past receipts, stock changes and orders are kept. This cannot be undone."
+              : "Past orders stay as they are. You cannot choose this supplier for new orders or payments."}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-3">
           {isProduct ? <Field label={"Type " + label + " to confirm"} required><Input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={label} /></Field> : null}
-          <Field label="Reason" required><Textarea autoFocus={!isProduct} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={isProduct ? "No longer sold or created in error" : "No longer used or created in error"} /></Field>
+          <Field label="Reason" required><Textarea autoFocus={!isProduct} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={isProduct ? "No longer sold, or added by mistake" : "No longer used, or added by mistake"} /></Field>
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
@@ -114,11 +151,11 @@ export function DeleteDialog({ kind = "supplier", label, open, pending, onOpenCh
 }
 
 export function SectionHeader({ icon: Icon, title, description, actions }: { icon: typeof Boxes; title: string; description?: string; actions?: React.ReactNode }) {
-  return <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5"><div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><Icon className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="font-display text-[14px] font-semibold">{title}</h2>{description ? <p className="mt-0.5 text-[11.5px] text-ink-3">{description}</p> : null}</div></div>{actions}</div>;
+  return <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5"><div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><Icon className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="font-display text-[14px] font-semibold">{title}</h2>{description ? <p className="mt-0.5 text-[12px] text-ink-3">{description}</p> : null}</div></div>{actions}</div>;
 }
 
 export function ReadOnlyNotice() {
-  return <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2" role="status">You have read-only access to operations. Managers can add items, suppliers, purchase orders, and machine records.</div>;
+  return <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2" role="status">You can only view this page. Ask a manager to add or change items, suppliers, orders or machines.</div>;
 }
 
 export type OperationsMutations = {
@@ -139,17 +176,17 @@ export type OperationsMutations = {
 export function useOperationsMutations(invalidate: ReturnType<typeof useInvalidate>): OperationsMutations {
   const options = { onSuccess: async () => { await invalidate([qk.operations()]); } };
   const product = useApiMutation((api, input: UpsertProductInput) => api.upsertProduct(input), { ...options, successMessage: "Stock item saved." });
-  const deleteProduct = useApiMutation((api, input: DeleteProductInput) => api.deleteProduct(input), { ...options, successMessage: "Stock item permanently deleted." });
+  const deleteProduct = useApiMutation((api, input: DeleteProductInput) => api.deleteProduct(input), { ...options, successMessage: "Stock item deleted." });
   const supplier = useApiMutation((api, input: UpsertSupplierInput) => api.upsertSupplier(input), { ...options, successMessage: "Supplier saved." });
   const archiveSupplier = useApiMutation((api, input: { id: string; reason: string }) => api.archiveSupplier(input.id, input.reason), { ...options, successMessage: "Supplier archived." });
-  const purchaseOrder = useApiMutation((api, input: Parameters<typeof api.createPurchaseOrder>[0]) => api.createPurchaseOrder(input), { ...options, successMessage: "Purchase order draft created." });
+  const purchaseOrder = useApiMutation((api, input: Parameters<typeof api.createPurchaseOrder>[0]) => api.createPurchaseOrder(input), { ...options, successMessage: "Purchase order saved as a draft." });
   const approveOrder = useApiMutation((api, input: { id: string; reason?: string }) => api.approvePurchaseOrder(input.id, input.reason), { ...options, successMessage: "Purchase order approved." });
-  const receiveOrder = useApiMutation((api, input: Parameters<typeof api.receivePurchaseOrder>[0]) => api.receivePurchaseOrder(input), { ...options, successMessage: "Purchase order received into stock." });
-  const transfer = useApiMutation((api, input: InventoryTransferInput) => api.transferInventory(input), { ...options, successMessage: "Stock moved to the destination branch." });
-  const asset = useApiMutation((api, input: UpsertEquipmentAssetInput) => api.upsertEquipmentAsset(input), { ...options, successMessage: "Equipment saved." });
-  const issue = useApiMutation((api, input: Parameters<typeof api.reportEquipmentIssue>[0]) => api.reportEquipmentIssue(input), { ...options, successMessage: "Equipment issue reported." });
-  const issueUpdate = useApiMutation((api, input: { id: string; input: UpdateEquipmentIssueInput }) => api.updateEquipmentIssue(input.id, input.input), { ...options, successMessage: "Equipment issue updated." });
-  const workOrder = useApiMutation((api, input: UpsertEquipmentWorkOrderInput) => api.upsertEquipmentWorkOrder(input), { ...options, successMessage: "Work order saved." });
+  const receiveOrder = useApiMutation((api, input: Parameters<typeof api.receivePurchaseOrder>[0]) => api.receivePurchaseOrder(input), { ...options, successMessage: "Order received. Stock updated." });
+  const transfer = useApiMutation((api, input: InventoryTransferInput) => api.transferInventory(input), { ...options, successMessage: "Stock moved to the other branch." });
+  const asset = useApiMutation((api, input: UpsertEquipmentAssetInput) => api.upsertEquipmentAsset(input), { ...options, successMessage: "Machine saved." });
+  const issue = useApiMutation((api, input: Parameters<typeof api.reportEquipmentIssue>[0]) => api.reportEquipmentIssue(input), { ...options, successMessage: "Machine problem reported." });
+  const issueUpdate = useApiMutation((api, input: { id: string; input: UpdateEquipmentIssueInput }) => api.updateEquipmentIssue(input.id, input.input), { ...options, successMessage: "Machine problem updated." });
+  const workOrder = useApiMutation((api, input: UpsertEquipmentWorkOrderInput) => api.upsertEquipmentWorkOrder(input), { ...options, successMessage: "Repair job saved." });
   return { product, deleteProduct, supplier, archiveSupplier, purchaseOrder, approveOrder, receiveOrder, transfer, asset, issue, issueUpdate, workOrder } as OperationsMutations;
 }
 

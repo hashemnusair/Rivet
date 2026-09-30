@@ -31,11 +31,11 @@ import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { WorkspaceRecentTracker } from "./workspace-recent-tracker";
 
 const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
-  { role: "owner", blurb: "Full visibility — every branch, finance, audit, settings." },
-  { role: "manager", blurb: "Operations control — approvals, reconciliation, teams." },
-  { role: "salesperson", blurb: "Trials, follow-ups and membership sales." },
-  { role: "receptionist", blurb: "Front desk console — lookup, check-in, collect." },
-  { role: "trainer", blurb: "Own PT schedule, availability and session outcomes." },
+  { role: "owner", blurb: "Sees everything: all branches, money, history and settings." },
+  { role: "manager", blurb: "Runs the gym: approvals, cash counts and staff." },
+  { role: "salesperson", blurb: "Trials, follow-ups and selling memberships." },
+  { role: "receptionist", blurb: "Front desk: find members, check in, take payments." },
+  { role: "trainer", blurb: "Their own PT schedule, free times and session results." },
 ];
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
@@ -68,7 +68,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
     }
   };
 
-  if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
+  if (signingOut) return <AuthTransition title="Signing you out" detail="Going back to the sign-in page…" />;
 
   return (
     <header
@@ -81,7 +81,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
         size="icon"
         onClick={onOpenMobileNav}
         className="-ms-1.5 lg:hidden"
-        aria-label="Open navigation menu"
+        aria-label="Open menu"
       >
         <Menu />
       </Button>
@@ -105,9 +105,9 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
       {session && organizations.length > 1 ? (
         <Select
           value={session.organization.id}
-          onValueChange={(organizationId) => void selectOrganization(organizationId).catch(() => toast.error("That workspace could not be opened."))}
+          onValueChange={(organizationId) => void selectOrganization(organizationId).catch(() => toast.error("That gym could not be opened."))}
         >
-          <SelectTrigger sizeVariant="sm" className="hidden w-48 md:flex" aria-label="Active workspace">
+          <SelectTrigger sizeVariant="sm" className="hidden w-48 md:flex" aria-label="Gym">
             <div className="flex items-center gap-2 truncate">
               <Building2 className="size-3.5 shrink-0 text-ink-3" aria-hidden />
               <SelectValue />
@@ -174,13 +174,13 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
         <PopoverContent align="end" className="w-80">
           <div className="border-b border-line px-4 py-3">
             <p className="font-display text-[14px] font-semibold">Demo controls</p>
-            <p className="text-[12px] text-ink-3">Preview states a real deployment would show.</p>
+            <p className="text-[12px] text-ink-3">Try the states a live gym could see.</p>
           </div>
           <div className="space-y-3 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[13px] font-medium">Simulated latency</p>
-                <p className="text-[12px] text-ink-3">How slow the network feels.</p>
+                <p className="text-[12px] text-ink-3">Make the app feel slower.</p>
               </div>
               <Select
                 value={String(behavior.latencyMs)}
@@ -200,7 +200,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <div>
                 <p className="text-[13px] font-medium">Fail next request</p>
-                <p className="text-[12px] text-ink-3">The next API call returns an error.</p>
+                <p className="text-[12px] text-ink-3">The next load or save shows an error.</p>
               </div>
               <Switch
                 checked={behavior.failNextRequest}
@@ -211,7 +211,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <div>
                 <p className="text-[13px] font-medium">Fail next public subscription</p>
-                <p className="text-[12px] text-ink-3">Public streams stay degraded until Retry or this control is disabled.</p>
+                <p className="text-[12px] text-ink-3">Live updates on public pages fail until you press Retry or turn this off.</p>
               </div>
               <Switch
                 checked={behavior.failNextPublicSubscription}
@@ -222,7 +222,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <div>
                 <p className="text-[13px] font-medium">Force empty lists</p>
-                <p className="text-[12px] text-ink-3">Every list renders its empty state.</p>
+                <p className="text-[12px] text-ink-3">Every list shows as empty.</p>
               </div>
               <Switch
                 checked={behavior.forceEmptyLists}
@@ -233,7 +233,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <div>
                 <p className="text-[13px] font-medium">Manual RTL layout</p>
-                <p className="text-[12px] text-ink-3">Flip direction without changing the language.</p>
+                <p className="text-[12px] text-ink-3">Flip the layout for Arabic without changing the language.</p>
               </div>
               <Switch checked={dir === "rtl"} onCheckedChange={toggleDir} aria-label="Manual RTL layout" />
             </label>
@@ -248,7 +248,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
                 setResetting(true);
                 await resetDemo();
                 setResetting(false);
-                toast.success("Demo data reset to the canonical seed.");
+                toast.success("Demo data is back to how it started.");
               }}
             >
               <RotateCcw className="size-3.5" />

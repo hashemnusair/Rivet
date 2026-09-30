@@ -103,7 +103,7 @@ describe("member visit history", () => {
     const referral = screen.getByRole("region", { name: "Bring a friend. Earn 7 free days." });
     expect(within(referral).getByRole("button", { name: "Share link" })).toBeInTheDocument();
     expect(within(referral).getByRole("button", { name: "Copy" })).toBeInTheDocument();
-    expect(within(referral).getByText("10/30 days")).toBeInTheDocument();
+    expect(within(referral).getByText("10 of 30 days")).toBeInTheDocument();
     expect(within(referral).getByText("2")).toBeInTheDocument();
     expect(within(referral).getByText("20")).toBeInTheDocument();
   });
@@ -166,9 +166,9 @@ describe("member visit history", () => {
     const history = screen.getByRole("list", { name: "Referral reward history" });
     const rows = within(history).getAllByRole("listitem");
     expect(rows).toHaveLength(3);
-    expect(within(rows[0]!).getByText("Applied")).toBeInTheDocument();
+    expect(within(rows[0]!).getByText("Added")).toBeInTheDocument();
     expect(within(rows[0]!).getByText("+7 days")).toBeInTheDocument();
-    expect(within(rows[1]!).getByText("Capped")).toBeInTheDocument();
+    expect(within(rows[1]!).getByText("Limit reached")).toBeInTheDocument();
     expect(within(rows[2]!).getByText("Waiting")).toBeInTheDocument();
     expect(within(rows[2]!).getByText(/first membership/)).toBeInTheDocument();
     // Privacy: history never names the referred person.

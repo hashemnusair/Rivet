@@ -20,8 +20,8 @@ const detail: SupplierPaymentDetail = {
 describe("payables exports", () => {
   it("writes readable payables rows with decimal amounts and no internal ids", () => {
     const csv = buildPayablesCsv(exported, { timeZone: "Asia/Amman", branchLabel: "Abdoun", supplierLabel: "All suppliers", statusLabel: "Open", search: "creatine" });
-    expect(csv).toContain("Supplier,Source,Branch,Received,Age (days),Due date,Original (JOD),Paid (JOD),Remaining (JOD),Status,Supplier reference,Ledger");
-    expect(csv).toContain("Jordan Sports Supply,Purchase order · Creatine × 100,Abdoun,2026-08-12 12:00:00,20,,1650.000,650.000,1000.000,Partially paid,JSS-INV-0147,Not posted to ledger yet");
+    expect(csv).toContain("Supplier,What was received,Branch,Received,Days since received,Due date,Total (JOD),Paid (JOD),Still owed (JOD),Status,Supplier reference,Accounts");
+    expect(csv).toContain("Jordan Sports Supply,Purchase order · Creatine × 100,Abdoun,2026-08-12 12:00:00,20,,1650.000,650.000,1000.000,Partially paid,JSS-INV-0147,Not in the accounts yet");
     expect(csv).not.toContain("po-1");
     expect(csv).not.toContain("{");
     expect(csv).toContain("Search,creatine");
@@ -29,16 +29,16 @@ describe("payables exports", () => {
 
   it("notes a truncated export instead of pretending it is complete", () => {
     const csv = buildPayablesCsv({ ...exported, truncated: true }, { timeZone: "Asia/Amman", branchLabel: "All branches", supplierLabel: "All suppliers", statusLabel: "Everything" });
-    expect(csv).toContain("Row limit reached");
+    expect(csv).toContain("Too many rows for one file");
   });
 
-  it("writes a supplier remittance record that names the ledger state", () => {
+  it("writes a supplier payment record that says whether it is in the accounts", () => {
     const csv = buildSupplierPaymentRecordCsv(detail, "Asia/Amman");
     expect(csv).toContain("Supplier payment confirmation");
     expect(csv).toContain("Amount,1000.000 JOD");
     expect(csv).toContain("Method,Bank transfer");
     expect(csv).toContain("Reference,TRF-2026-0091");
-    expect(csv).toContain("Ledger,Posted to ledger");
+    expect(csv).toContain("Accounts,In the accounts");
     expect(csv).toContain("Purchase order · Creatine × 100,1000.000,1650.000,1650.000,0.000,Paid");
     expect(csv).not.toContain("receipt");
   });

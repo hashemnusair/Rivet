@@ -48,7 +48,7 @@ vi.mock("@/app/login/portals", () => ({
       id: "member",
       href: "/login",
       title: "Gym member",
-      blurb: "Your memberships, visits, receipts and entry QR.",
+      blurb: "See your memberships, visits, receipts and entry code.",
       signUpTitle: "Create a member account",
       icon: () => null,
     },
@@ -141,7 +141,7 @@ describe("CustomerSignupClient", () => {
       expect(signUp.verifications.sendEmailCode).toHaveBeenCalledOnce();
     });
 
-    fireEvent.change(screen.getByLabelText(/verification code/i), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText(/Code from your/i), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify and continue" }));
 
     await waitFor(() => {
@@ -163,8 +163,8 @@ describe("CustomerSignupClient", () => {
     }
     fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "female" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
-    await waitFor(() => expect(screen.getByLabelText(/verification code/i)).toBeVisible());
-    fireEvent.change(screen.getByLabelText(/verification code/i), { target: { value: "123456" } });
+    await waitFor(() => expect(screen.getByLabelText(/Code from your/i)).toBeVisible());
+    fireEvent.change(screen.getByLabelText(/Code from your/i), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify and continue" }));
 
     await waitFor(() => expect(state.router.replace).toHaveBeenCalledWith("/customer/gyms/forge?branchId=abdoun&plan=Pro&interval=annual&__clerk_touch=1"));
@@ -220,7 +220,7 @@ describe("CustomerSignupClient", () => {
       expect(signUp.update).toHaveBeenCalledWith({ phoneNumber: "+962790000000" });
       expect(signUp.verifications.sendPhoneCode).toHaveBeenCalledOnce();
     });
-    fireEvent.change(screen.getByLabelText(/Phone verification code/), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText(/Code from your phone/), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify and continue" }));
 
     await waitFor(() => {
@@ -244,8 +244,8 @@ describe("CustomerSignupClient", () => {
     }
     fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "female" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
-    await waitFor(() => expect(screen.getByLabelText(/verification code/i)).toBeVisible());
-    fireEvent.change(screen.getByLabelText(/verification code/i), { target: { value: "123456" } });
+    await waitFor(() => expect(screen.getByLabelText(/Code from your/i)).toBeVisible());
+    fireEvent.change(screen.getByLabelText(/Code from your/i), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify and continue" }));
 
     await waitFor(() => expect(screen.getByRole("button", { name: /Finish member setup/ })).toBeVisible());

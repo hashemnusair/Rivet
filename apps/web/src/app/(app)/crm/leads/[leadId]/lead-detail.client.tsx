@@ -37,6 +37,12 @@ import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 
 type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
 
+const TRIAL_STATUS_LABEL: Partial<Record<TrialBookingStatus, string>> = { requested: "Requested", confirmed: "Confirmed", completed: "Completed", no_show: "No-show", cancelled: "Cancelled", converted: "Membership sold" };
+
+function trialStatusLabel(status: TrialBookingStatus): string {
+  return TRIAL_STATUS_LABEL[status] ?? status.replaceAll("_", " ");
+}
+
 export default function LeadDetailPageClient() {
   const { leadId } = useParams<{ leadId: string }>();
   const router = useRouter();
@@ -83,7 +89,7 @@ export default function LeadDetailPageClient() {
     (api, reason: string) => api.updateLead(leadId, { stage: "lost", lostReason: reason }),
     {
       onSuccess: async () => {
-        toast.success("Sale marked as not successful.");
+        toast.success("Marked as not sold.");
         setNotSuccessfulOpen(false);
         setNotSuccessfulReason("");
         await invalidate();
@@ -96,7 +102,7 @@ export default function LeadDetailPageClient() {
       api.updateTrialBooking(input.bookingId, { status: input.status, note: input.note }),
     {
       onSuccess: async (updated) => {
-        toast.success(updated.trialBooking?.status === "completed" ? "Trial completed. Record the membership sale next." : updated.trialBooking?.status === "no_show" ? "Trial marked as no-show." : updated.trialBooking?.status === "cancelled" ? "Trial marked as cancelled." : "Trial confirmed.");
+        toast.success(updated.trialBooking?.status === "completed" ? "Trial completed. Next, record if a membership was sold." : updated.trialBooking?.status === "no_show" ? "Trial marked as no-show." : updated.trialBooking?.status === "cancelled" ? "Trial marked as cancelled." : "Trial confirmed.");
         setTrialOutcome(undefined);
         setTrialNote("");
         await invalidate();
@@ -172,10 +178,10 @@ export default function LeadDetailPageClient() {
           </div>
         </div>
 
-        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Simple sales progress" data-testid="lead-stage-progress">
-          <SimpleStep number={1} title="Trial" state={trialDone ? "done" : trialStopped ? "stopped" : "current"} detail={trialDone ? "Completed" : trialStatus ? trialStatus.replaceAll("_", " ") : progressFacts.hasTrialBooking ? "Booked" : "Not booked"} />
+        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Sales steps" data-testid="lead-stage-progress">
+          <SimpleStep number={1} title="Trial" state={trialDone ? "done" : trialStopped ? "stopped" : "current"} detail={trialDone ? "Completed" : trialStatus ? trialStatusLabel(trialStatus) : progressFacts.hasTrialBooking ? "Booked" : "Not booked"} />
           <SimpleStep number={2} title="Membership sale" state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? "Membership sold" : saleFailed ? "Not sold" : trialDone ? "Ready" : "After trial"} />
-          <SimpleStep number={3} title="Member" state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? "Member and membership created" : "Created only after a successful sale"} />
+          <SimpleStep number={3} title="Member" state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? "Member and membership added" : "Added after the sale"} />
         </ol>
       </header>
 
@@ -188,7 +194,7 @@ export default function LeadDetailPageClient() {
 
                 <h2 className="mt-1 font-display text-[16px] font-semibold">Trial</h2>
               </div>
-              {trialStatus ? <Badge variant={trialDone ? "success" : trialStatus === "no_show" || trialStatus === "cancelled" ? "signal" : "warning"}>{trialStatus.replaceAll("_", " ")}</Badge> : null}
+              {trialStatus ? <Badge variant={trialDone ? "success" : trialStatus === "no_show" || trialStatus === "cancelled" ? "signal" : "warning"}>{trialStatusLabel(trialStatus).toLowerCase()}</Badge> : null}
             </div>
 
             {lead.trialBooking ? (
@@ -204,27 +210,27 @@ export default function LeadDetailPageClient() {
                     <Button variant="ghost" onClick={() => setTrialOutcome("cancelled")}>Cancelled</Button>
                   </div>
                 ) : trialDone ? (
-                  <div className="mt-4 rounded-md border border-success/30 bg-success-bg/50 p-3 text-[13px] text-success-deep">Trial complete. Record whether a membership was sold.</div>
+                  <div className="mt-4 rounded-md border border-success/30 bg-success-bg/50 p-3 text-[13px] text-success-deep">Trial complete. Now record if a membership was sold.</div>
                 ) : (
-                  <p className="mt-4 rounded-md border border-line bg-sunken p-3 text-[12.5px] text-ink-2">This trial was not completed. Keep a follow-up note below if you plan to contact them again.</p>
+                  <p className="mt-4 rounded-md border border-line bg-sunken p-3 text-[12.5px] text-ink-2">This trial did not happen. Add a follow-up note below if you will contact them again.</p>
                 )}
               </>
             ) : (
               <div className="mt-3">
-                <p className="text-[12.5px] text-ink-2">Schedule the trial first. The member can choose any time inside the gym&apos;s saved trial window.</p>
+                <p className="text-[12.5px] text-ink-2">Schedule the trial first. Pick a time within the gym&apos;s trial hours.</p>
                 <Button className="mt-4 w-full" onClick={() => setScheduleOpen(true)}><CalendarClock /> Schedule trial</Button>
                 <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Schedule trial</DialogTitle>
-                      <DialogDescription>Choose a date and time inside the gym&apos;s saved trial window.</DialogDescription>
+                      <DialogDescription>Pick a date and a time within the gym&apos;s trial hours.</DialogDescription>
                     </DialogHeader>
                     <DialogBody className="space-y-4">
                       <div className="grid grid-cols-2 gap-2">
                         <Field label="Date" required><Input type="date" min={todayISODate()} value={trialDate} onChange={(event) => setTrialDate(event.target.value)} /></Field>
                         <Field label="Time" required><Input type="time" min={trialWindow?.enabled ? trialWindow.opensAt : undefined} max={trialWindow?.enabled ? trialWindow.closesAt : undefined} disabled={!trialWindow?.enabled} value={trialTime} onChange={(event) => setTrialTime(event.target.value)} /></Field>
                       </div>
-                      {(settingsQuery.isError || settingsQuery.isBackgroundError) ? <ErrorState layout="section" title="Trial hours could not be loaded" onRetry={() => settingsQuery.refetch()} /> : settingsQuery.isLoading ? <p className="text-[12px] text-ink-3">Loading the branch trial hours…</p> : trialWindow?.enabled ? <p className="text-[12px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] text-ink-2">Trials are closed or not configured for this day. Choose another date or ask an owner or manager to update Trial scheduling in Settings.</p>}
+                      {(settingsQuery.isError || settingsQuery.isBackgroundError) ? <ErrorState layout="section" title="Trial hours could not be loaded" onRetry={() => settingsQuery.refetch()} /> : settingsQuery.isLoading ? <p className="text-[12px] text-ink-3">Loading trial hours…</p> : trialWindow?.enabled ? <p className="text-[12px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] text-ink-2">No trials on this day. Choose another date, or ask an owner or manager to set trial hours in Settings.</p>}
                     </DialogBody>
                     <DialogFooter><Button variant="secondary" onClick={() => setScheduleOpen(false)}>Cancel</Button><Button disabled={!trialDate || !trialTime || !trialWindow?.enabled || trialTime < trialWindow.opensAt || trialTime > trialWindow.closesAt} loading={scheduleTrial.isPending} onClick={() => scheduleTrial.mutate()}><CalendarClock /> Schedule trial</Button></DialogFooter>
                   </DialogContent>
@@ -237,7 +243,7 @@ export default function LeadDetailPageClient() {
             <section className="panel p-4" data-testid="membership-sale-step">
 
               <h2 className="mt-1 font-display text-[16px] font-semibold">Was a membership sold?</h2>
-              <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">A successful sale creates the member and membership together. There is no separate conversion step.</p>
+              <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">Selling a membership adds them as a member.</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button data-testid="sell-membership" onClick={() => setSaleOpen(true)}><CreditCard /> Membership sold</Button>
                 <Button variant="secondary" onClick={() => setNotSuccessfulOpen(true)}>Not sold</Button>
@@ -247,8 +253,8 @@ export default function LeadDetailPageClient() {
 
           {saleFailed ? (
             <section className="panel border-signal/25 p-4">
-              <h2 className="font-display text-[15px] font-semibold">Sale not successful</h2>
-              <p className="mt-2 text-[12.5px] text-ink-2">{lead.lostReason ?? "No reason recorded."}</p>
+              <h2 className="font-display text-[15px] font-semibold">Not sold</h2>
+              <p className="mt-2 text-[12.5px] text-ink-2">{lead.lostReason ?? "No reason given."}</p>
             </section>
           ) : null}
 
@@ -259,7 +265,7 @@ export default function LeadDetailPageClient() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="font-display text-[14px] font-semibold">Follow-up note</h2>
-                  <p className="mt-1 text-[12px] text-ink-3">Keep the lead timeline concise while you log the interaction.</p>
+                  <p className="mt-1 text-[12px] text-ink-3">Record each call or message and when to follow up.</p>
                 </div>
                 <LogContactDialog subject="lead" leadId={lead.id} currentStage={lead.stage} open={contactOpen} onOpenChange={(next) => { if (next) setContactOpen(true); else closeContact(); }} />
               </div>
@@ -277,7 +283,7 @@ export default function LeadDetailPageClient() {
               <ContextRow label="Owner">{lead.ownerName ?? "Unassigned"}</ContextRow>
               <ContextRow label="Last contact">{lead.lastContactAt ? <>{describeContactOutcome(lead.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={lead.lastContactAt} /></> : "Not contacted yet"}</ContextRow>
               <ContextRow label="Next follow-up">{lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} className={lead.overdue ? "font-medium text-danger" : undefined} /> : "—"}</ContextRow>
-              <ContextRow label="Created"><DateTimeText iso={lead.createdAt} /></ContextRow>
+              <ContextRow label="Added"><DateTimeText iso={lead.createdAt} /></ContextRow>
             </dl>
           </section>
         </div>
@@ -295,9 +301,9 @@ export default function LeadDetailPageClient() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{trialOutcome === "completed" ? "Trial completed" : trialOutcome === "no_show" ? "Trial marked no-show" : "Trial cancelled"}</DialogTitle>
-            <DialogDescription>{trialOutcome === "completed" ? "Next, record whether the membership sale was successful." : "Record a short reason so the next follow-up has context."}</DialogDescription>
+            <DialogDescription>{trialOutcome === "completed" ? "Next, record if they bought a membership." : "Write a short reason. It helps the next follow-up."}</DialogDescription>
           </DialogHeader>
-          <DialogBody><Field label={trialOutcome === "completed" ? "Note (optional)" : "Reason"} required={trialOutcome !== "completed"}><Input value={trialNote} onChange={(event) => setTrialNote(event.target.value)} placeholder={trialOutcome === "completed" ? "Optional note" : trialOutcome === "no_show" ? "Why did the member miss the trial?" : "Why was the trial cancelled?"} /></Field></DialogBody>
+          <DialogBody><Field label={trialOutcome === "completed" ? "Note (optional)" : "Reason"} required={trialOutcome !== "completed"}><Input value={trialNote} onChange={(event) => setTrialNote(event.target.value)} placeholder={trialOutcome === "completed" ? "Optional note" : trialOutcome === "no_show" ? "Why did they miss the trial?" : "Why was the trial cancelled?"} /></Field></DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setTrialOutcome(undefined)}>Back</Button>
             <Button disabled={!lead.trialBooking || !trialOutcome || (trialOutcome !== "completed" && trialNote.trim().length < 3)} loading={updateTrial.isPending} onClick={() => lead.trialBooking && trialOutcome && updateTrial.mutate({ bookingId: lead.trialBooking.id, status: trialOutcome, note: trialNote.trim() || undefined })}>Save</Button>
@@ -307,11 +313,11 @@ export default function LeadDetailPageClient() {
 
       <Dialog open={notSuccessfulOpen} onOpenChange={setNotSuccessfulOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Membership not sold</DialogTitle><DialogDescription>Choose the main reason. The lead stays in history and no member is created.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Membership not sold</DialogTitle><DialogDescription>Choose the main reason. The lead is kept, but no member is added.</DialogDescription></DialogHeader>
           <DialogBody>
             <Field label="Reason" required>
               <Select value={notSuccessfulReason} onValueChange={setNotSuccessfulReason}>
-                <SelectTrigger aria-label="Sale outcome reason"><SelectValue placeholder="Choose a reason" /></SelectTrigger>
+                <SelectTrigger aria-label="Why not sold"><SelectValue placeholder="Choose a reason" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Not interested after trial">Not interested</SelectItem>
                   <SelectItem value="Price did not work">Price</SelectItem>
@@ -322,7 +328,7 @@ export default function LeadDetailPageClient() {
               </Select>
             </Field>
           </DialogBody>
-          <DialogFooter><Button variant="secondary" onClick={() => setNotSuccessfulOpen(false)}>Back</Button><Button variant="signal" disabled={!notSuccessfulReason} loading={markNotSuccessful.isPending} onClick={() => markNotSuccessful.mutate(notSuccessfulReason)}>Save outcome</Button></DialogFooter>
+          <DialogFooter><Button variant="secondary" onClick={() => setNotSuccessfulOpen(false)}>Back</Button><Button variant="signal" disabled={!notSuccessfulReason} loading={markNotSuccessful.isPending} onClick={() => markNotSuccessful.mutate(notSuccessfulReason)}>Save</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -416,7 +422,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
         router.replace(memberHref);
       },
       onError: (error) => {
-        setServerError(isApiError(error) ? error.message : "Could not complete this membership sale.");
+        setServerError(isApiError(error) ? error.message : "The sale was not saved. Try again.");
         if (isApiError(error) && error.code === ERR.DUPLICATE_MEMBER) {
           const first = Array.isArray(error.details?.matches) ? error.details.matches[0] : undefined;
           if (first && typeof first === "object" && typeof (first as { memberId?: unknown }).memberId === "string") setDuplicateMemberId((first as { memberId: string }).memberId);
@@ -431,7 +437,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!navigationPending) onOpenChange(nextOpen); }}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{navigationPending ? "Opening member record" : "Complete membership sale"}</DialogTitle><DialogDescription>{navigationPending ? "The sale is complete. Opening the new member now…" : "This creates the member, membership, balance, and PT credits together."}</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{navigationPending ? "Opening member record" : "Complete membership sale"}</DialogTitle><DialogDescription>{navigationPending ? "The sale is complete. Opening the new member now…" : "This adds the member, the membership, what they owe, and any PT sessions."}</DialogDescription></DialogHeader>
         <DialogBody className="space-y-4">
           <div className="rounded-md border border-line bg-sunken p-3 text-[13px]"><p className="font-medium">{fullName}</p><p className="font-mono text-[12px] text-ink-3" dir="ltr">{phone}</p></div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -464,7 +470,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
           <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-sunken/40 px-3 py-3">
             <div>
               <p className="text-[13px] font-medium">Marketing messages</p>
-              <p className="text-[12px] text-ink-3">On by default, but recorded as a system preference—not explicit consent—until staff changes it. Marketing sends remain suppressed while consent is unknown.</p>
+              <p className="text-[12px] text-ink-3">It starts on, but that does not mean they agreed. No marketing messages are sent until you change this switch.</p>
             </div>
             <Switch
               checked={marketingOptIn}
@@ -472,12 +478,12 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
                 setMarketingOptIn(checked);
                 setMarketingPreferenceSource("staff_selected");
               }}
-              aria-label="Marketing opt-in"
+              aria-label="Agreed to marketing messages"
               disabled={navigationPending}
             />
           </div>
           <Field label="Membership" required>
-            <Select value={mode} onValueChange={(value) => setMode(value as "existing" | "custom")}><SelectTrigger aria-label="Membership source"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="existing">Choose an existing plan</SelectItem><SelectItem value="custom">Enter a custom membership</SelectItem></SelectContent></Select>
+            <Select value={mode} onValueChange={(value) => setMode(value as "existing" | "custom")}><SelectTrigger aria-label="Plan or custom membership"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="existing">Choose an existing plan</SelectItem><SelectItem value="custom">Enter a custom membership</SelectItem></SelectContent></Select>
           </Field>
 
           {mode === "existing" ? (
@@ -485,7 +491,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
               <Field label="Plan" required>
                 <Select value={planId} onValueChange={setPlanId} disabled={plansQuery.isLoading}><SelectTrigger aria-label="Membership plan"><SelectValue placeholder={plansQuery.isLoading ? "Loading plans…" : "Choose a plan"} /></SelectTrigger><SelectContent>{availablePlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select>
               </Field>
-              {selectedPlan ? <PlanSummary plan={selectedPlan} /> : !plansQuery.isLoading ? <p className="rounded-md border border-line bg-sunken p-3 text-[12.5px] text-ink-2">No active plans are available for this branch. Choose “Enter a custom membership”.</p> : null}
+              {selectedPlan ? <PlanSummary plan={selectedPlan} /> : !plansQuery.isLoading ? <p className="rounded-md border border-line bg-sunken p-3 text-[12.5px] text-ink-2">No plans for this branch. Choose “Enter a custom membership”.</p> : null}
             </>
           ) : (
             <div className="space-y-3 rounded-md border border-line bg-sunken/40 p-3">
@@ -495,14 +501,14 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
                 <Field label="Duration (days)" required><Input type="number" min={1} max={730} value={customDurationDays} onChange={(event) => setCustomDurationDays(event.target.value)} /></Field>
                 <Field label="PT sessions"><Input type="number" min={0} max={100} value={customPtSessions} onChange={(event) => setCustomPtSessions(event.target.value)} /></Field>
               </div>
-              <p className="text-[12px] leading-relaxed text-ink-3">This custom membership is saved as an active plan for this branch, so it can be reused later.</p>
+              <p className="text-[12px] leading-relaxed text-ink-3">It is also saved as a plan for this branch, so you can use it again.</p>
             </div>
           )}
 
           {navigationPending ? <p role="status" className="rounded-md border border-success/30 bg-success-bg/40 px-3 py-2.5 text-[13px] text-success-deep">Membership sold. Opening the member record…</p> : null}
           {serverError ? <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger"><p>{serverError}</p>{duplicateMemberId ? <Link href={`/members/${duplicateMemberId}`} className="mt-1 inline-flex font-medium underline underline-offset-2">Open existing member</Link> : null}</div> : null}
         </DialogBody>
-        <DialogFooter><Button variant="secondary" disabled={navigationPending} onClick={() => onOpenChange(false)}>Cancel</Button><Button data-testid="confirm-membership-sale" disabled={!canSubmit || navigationPending} loading={mutation.isPending || navigationPending} onClick={() => mutation.mutate()}>Create member & membership</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" disabled={navigationPending} onClick={() => onOpenChange(false)}>Cancel</Button><Button data-testid="confirm-membership-sale" disabled={!canSubmit || navigationPending} loading={mutation.isPending || navigationPending} onClick={() => mutation.mutate()}>Add member and membership</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

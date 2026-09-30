@@ -46,7 +46,7 @@ test.describe("staged personal training", () => {
       await member.goto("/customer/my-gyms", { waitUntil: "domcontentloaded" });
       const customerName = (await member.getByRole("heading", { name: /^Hi,/ }).innerText()).replace(/^Hi,\s*/, "").trim();
       expect(customerName, "The PT staging member must resolve to a named member profile.").toBeTruthy();
-      const gymLinks = member.getByRole("region", { name: "Subscribed gyms" }).getByRole("link");
+      const gymLinks = member.getByRole("region", { name: "Your gyms" }).getByRole("link");
       await expect.poll(() => gymLinks.count(), { message: "The PT staging member needs at least one subscribed gym." }).toBeGreaterThan(0);
       const gymLink = gymName ? gymLinks.filter({ hasText: gymName }).first() : gymLinks.first();
       await expect(gymLink, gymName ? `The member must be subscribed to ${gymName}.` : "").toBeVisible();
@@ -68,7 +68,7 @@ test.describe("staged personal training", () => {
         slotDate = isoDateFromToday(offset);
         await member.getByLabel("Date").fill(slotDate);
         const buttons = member.getByText("Available times", { exact: true }).locator("..").getByRole("button");
-        const empty = member.getByText("No open slots on this date.", { exact: true });
+        const empty = member.getByText("No free times on this date.", { exact: true });
         await expect.poll(async () => (await buttons.count()) > 0 || await empty.isVisible(), {
           message: `PT availability for day ${offset} did not finish loading.`,
         }).toBe(true);
@@ -84,7 +84,7 @@ test.describe("staged personal training", () => {
       const priorBookingTexts = await bookingArticles.allTextContents();
 
       await slot.click();
-      await expect(member.getByText("Your PT session is reserved.")).toBeVisible();
+      await expect(member.getByText("Your PT session is booked.")).toBeVisible();
       cleanupEntry = cleanup.plan({ targetType: "pt_booking", targetId: `${trainerName} ${slotDate} ${slotLabel}`, action: "preserve", reason: `Cancel and preserve the audited staging booking created by ${guard.runId}` });
       await expect(availableStat.locator("p").nth(1)).toHaveText(String(before - 1));
       await expect.poll(() => bookingArticles.count(), { message: "The new PT booking must appear in the member schedule." }).toBe(priorBookingTexts.length + 1);
@@ -104,9 +104,9 @@ test.describe("staged personal training", () => {
       await createdBooking.getByRole("button", { name: "Cancel", exact: true }).click();
       const confirm = member.getByRole("dialog", { name: "Cancel your PT session?" });
       await expect(confirm).toContainText(trainerName);
-      await expect(confirm.getByRole("status")).toContainText("Your reserved credit will be returned.");
+      await expect(confirm.getByRole("status")).toContainText("You will get this session back.");
       await confirm.getByRole("button", { name: "Cancel session" }).click();
-      await expect(member.getByText("Booking cancelled. Your credit was returned.")).toBeVisible();
+      await expect(member.getByText("Session cancelled. It goes back to your available sessions.")).toBeVisible();
       createdBooking = undefined;
       await expect(availableStat.locator("p").nth(1)).toHaveText(String(before));
       await expect.poll(() => trainerRows.count(), { message: "The cancelled session must leave the trainer's live schedule." }).toBe(priorTrainerRows.length);
@@ -132,7 +132,7 @@ async function cancelExactBooking(page: Page, booking: Locator): Promise<boolean
     await booking.getByRole("button", { name: "Cancel", exact: true }).click();
     const confirm = page.getByRole("dialog", { name: "Cancel your PT session?" });
     await confirm.getByRole("button", { name: "Cancel session" }).click();
-    await expect(page.getByText(/Booking cancelled\. Your credit was returned\.|Cancelled after the cutoff\. One PT credit was used\./)).toBeVisible();
+    await expect(page.getByText(/Session cancelled\. It goes back to your available sessions\.|Cancelled late\. The session was used\./)).toBeVisible();
     return true;
   } catch {
     return false;

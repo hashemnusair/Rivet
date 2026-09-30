@@ -58,7 +58,7 @@ describe("ReportScopeBar", () => {
     expect(screen.getByRole("combobox", { name: "Branch filter" })).toBeInTheDocument();
     expect(screen.getByLabelText("End date")).toHaveValue("2026-09-05");
     expect(screen.getByText(/7 Aug 2026 – 5 Sept 2026/)).toBeInTheDocument();
-    expect(screen.getByText(/gym local time · All accessible branches/)).toBeInTheDocument();
+    expect(screen.getByText(/gym local time · All your branches/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "90 days" }));
     expect(onChange).toHaveBeenCalledWith({ rangeDays: 90 });
     fireEvent.change(screen.getByLabelText("End date"), { target: { value: "2026-08-31" } });

@@ -69,7 +69,7 @@ export function AgreementText({ version, sections, reference, preview }: { versi
                     { label: "Term", value: "Rolling monthly; either party may end it with 30 days’ written notice" },
                     { label: "Governing law", value: "The laws of the Hashemite Kingdom of Jordan" },
                   ]} />
-                  <p className="text-[12.5px] text-ink-3">Your ID number is recorded in the next step and appears masked beside your signature.</p>
+                  <p className="text-[12.5px] text-ink-3">Your ID number is recorded in the next step. It appears partly hidden beside your signature.</p>
                 </DocumentSection>
               </div>
             </>
@@ -95,9 +95,9 @@ function fullAddress(agreement: SubscriptionAgreement): string {
 }
 
 export function agreementStatusChip(agreement: Pick<SubscriptionAgreement, "status">): { label: string; tone: DocumentTone } {
-  if (agreement.status === "void") return { label: "Void", tone: "muted" };
-  if (agreement.status === "countersigned") return { label: "Signed and countersigned", tone: "success" };
-  return { label: "Signed, awaiting countersignature", tone: "warning" };
+  if (agreement.status === "void") return { label: "Cancelled", tone: "muted" };
+  if (agreement.status === "countersigned") return { label: "Signed by both sides", tone: "success" };
+  return { label: "Signed, waiting for RIVET", tone: "warning" };
 }
 
 /**
@@ -110,7 +110,7 @@ export function AgreementRecord({ agreement, sections, idNumberOverride }: { agr
   const { customer, subscription, signatory } = agreement;
   const chip = agreementStatusChip(agreement);
   const versionNumber = agreement.version.split(" ·")[0] ?? agreement.version;
-  const statusLabel = agreement.status === "countersigned" ? "Signed and countersigned" : agreement.status === "void" ? "Void" : "Signed";
+  const statusLabel = agreement.status === "countersigned" ? "Signed by both sides" : agreement.status === "void" ? "Cancelled" : "Signed";
   const meta = `${agreement.reference} · v${versionNumber} · ${statusLabel} · ${agreement.signedAtLocal.replace(/^(\d{1,2}) ([A-Za-z]{3})[a-z]* (\d{4}).*$/, "$1 $2 $3")}`;
   const role = signatory.title ? signatory.title.charAt(0).toUpperCase() + signatory.title.slice(1) : "Owner";
   const lastNumber = sections && sections.length > 0 ? Number.parseInt(sections[sections.length - 1]!.number, 10) + 1 : 13;
@@ -140,7 +140,7 @@ export function AgreementRecord({ agreement, sections, idNumberOverride }: { agr
               ...(subscription.quote ? [{ label: "Quote", value: subscription.quote }] : []),
               { label: "Governing law", value: "The laws of the Hashemite Kingdom of Jordan" },
               ...(agreement.placeOfSigning ? [{ label: "Place of signing", value: agreement.placeOfSigning }] : []),
-              ...(agreement.status === "void" && agreement.voidReason ? [{ label: "Voided", value: agreement.voidReason }] : []),
+              ...(agreement.status === "void" && agreement.voidReason ? [{ label: "Cancelled", value: agreement.voidReason }] : []),
             ]} />
           </DocumentSection>
         </div>
@@ -166,14 +166,14 @@ export function AgreementRecord({ agreement, sections, idNumberOverride }: { agr
                 imageDataUrl={agreement.countersign?.signature?.method === "drawn" ? agreement.countersign.signature.imageDataUrl : undefined}
                 typedName={agreement.countersign ? agreement.countersign.signature?.typedName ?? agreement.countersign.typedName : undefined}
                 alt={`Signature of ${agreement.countersign?.byName ?? "RIVET"}`}
-                caption={agreement.countersign ? `Countersigned ${agreement.countersign.at.slice(0, 10)}, ${agreement.timezone}. Electronic signature under the Electronic Transactions Law No. 15 of 2015.` : "RIVET will countersign and send the completed agreement."}
-                empty="Awaiting RIVET's countersignature"
+                caption={agreement.countersign ? `Countersigned ${agreement.countersign.at.slice(0, 10)}, ${agreement.timezone}. Electronic signature under the Electronic Transactions Law No. 15 of 2015.` : "RIVET will sign too and send you the completed agreement."}
+                empty="Waiting for RIVET to sign"
               />
             </div>
             <div className="pt-4">
               <DocumentRows rows={[
                 { label: "Document fingerprint (SHA-256)", value: <span dir="ltr">{agreement.documentSha256}</span>, mono: true },
-                ...(agreement.hashMatch ? [] : [{ label: "Fingerprint check", value: "The browser’s fingerprint did not match RIVET’s copy; flagged for review." }]),
+                ...(agreement.hashMatch ? [] : [{ label: "Fingerprint check", value: "The copy you signed did not match RIVET’s copy. RIVET will review it." }]),
               ]} />
             </div>
           </DocumentSection>

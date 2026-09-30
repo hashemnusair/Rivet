@@ -29,7 +29,7 @@ describe("ManagementLedgerHome", () => {
     ]);
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /payments|shifts|cash reports|reports/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Ledger controls" })).toHaveAttribute("href", "/finance/controls");
+    expect(screen.getByRole("link", { name: "Bookkeeping" })).toHaveAttribute("href", "/finance/controls");
     expect(screen.getByTestId("ledger-card-controls")).toHaveAttribute("href", "/finance/controls");
   });
 
@@ -55,7 +55,7 @@ describe("ManagementLedgerHome", () => {
     expect(screen.getByRole("button", { name: /^Back$/i })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: /^Next$/i }));
-    expect(dialog).toHaveTextContent("Refresh finds the facts");
+    expect(dialog).toHaveTextContent("Refresh finds new items");
 
     await user.click(screen.getByRole("tab", { name: /Step 7/i }));
     expect(dialog).toHaveTextContent("Two clicks a month");
@@ -74,7 +74,7 @@ describe("ManagementLedgerHome", () => {
       });
     });
 
-    expect(await screen.findByText("Management reporting is not included", { exact: true })).toBeInTheDocument();
+    expect(await screen.findByText("Financial statements are not in your plan", { exact: true })).toBeInTheDocument();
     expect(screen.queryAllByTestId(/^statement-card-/)).toHaveLength(0);
   });
 });

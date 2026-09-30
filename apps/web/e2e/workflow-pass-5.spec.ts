@@ -26,7 +26,7 @@ async function signIn(page: Page, role: "Owner" | "Manager") {
 /**
  * Full-page visits in the dev server occasionally coincide with a forced
  * Fast Refresh reload, which can leave the preview session gate on
- * "Loading workspace". One reload recovers it; anything else is a real failure.
+ * "Loading your gym". One reload recovers it; anything else is a real failure.
  */
 async function visit(page: Page, path: string, heading: RegExp | string) {
   await page.goto(path);
@@ -34,7 +34,7 @@ async function visit(page: Page, path: string, heading: RegExp | string) {
   try {
     await expect(title).toBeVisible({ timeout: 30_000 });
   } catch (error) {
-    if (!(await page.getByRole("status", { name: "Loading workspace" }).isVisible())) throw error;
+    if (!(await page.getByRole("status", { name: "Loading your gym" }).isVisible())) throw error;
     await page.reload();
     await expect(title).toBeVisible({ timeout: 60_000 });
   }
@@ -60,17 +60,17 @@ async function capture(page: Page, name: string, width: number) {
 type Route = { path: string; slug: string; heading: RegExp; ready: (page: Page) => Promise<void> };
 
 const OWNER_ROUTES: Route[] = [
-  { path: "/dashboard", slug: "dashboard", heading: /^Good morning, Omar$/, ready: async (page) => { await expect(page.getByRole("region", { name: "Today" }).getByText("Next priority")).toBeVisible(); await expect(page.getByRole("region", { name: "Needs attention" })).toBeVisible(); } },
-  { path: "/reports", slug: "reports", heading: /^Reports$/, ready: async (page) => { await expect(page.getByRole("region", { name: "Report totals" })).toBeVisible(); await expect(page.getByRole("region", { name: "Transactions in range" }).getByRole("row").nth(1)).toBeVisible(); } },
-  { path: "/reports?view=collections", slug: "reports-collections", heading: /^Reports$/, ready: async (page) => { await expect(page.getByRole("heading", { name: "Collection efficiency" })).toBeVisible(); } },
+  { path: "/dashboard", slug: "dashboard", heading: /^Good morning, Omar$/, ready: async (page) => { await expect(page.getByRole("region", { name: "Today" }).getByText("Do this first")).toBeVisible(); await expect(page.getByRole("region", { name: "Needs attention" })).toBeVisible(); } },
+  { path: "/reports", slug: "reports", heading: /^Reports$/, ready: async (page) => { await expect(page.getByRole("region", { name: "Report totals" })).toBeVisible(); await expect(page.getByRole("region", { name: "Payments and refunds" }).getByRole("row").nth(1)).toBeVisible(); } },
+  { path: "/reports?view=collections", slug: "reports-collections", heading: /^Reports$/, ready: async (page) => { await expect(page.getByRole("heading", { name: "Charged and paid" })).toBeVisible(); } },
   { path: "/finance", slug: "finance", heading: /^Management ledger$/, ready: async (page) => { await expect(page.getByTestId("management-ledger-home")).toBeVisible(); } },
   { path: "/finance/income-statement", slug: "income-statement", heading: /^Income statement$/, ready: async (page) => { await expect(page.getByTestId("income-statement")).toBeVisible(); } },
   { path: "/finance/cash-flow", slug: "cash-flow", heading: /^Cash flow statement$/, ready: async (page) => { await expect(page.getByTestId("cashflow-statement")).toBeVisible(); } },
-  { path: "/finance/controls?tab=journals", slug: "finance-controls", heading: /^Management ledger$/, ready: async (page) => { await expect(page.getByRole("tab", { name: /journals/i })).toHaveAttribute("aria-selected", "true"); await expect(page.getByRole("heading", { name: "Journal entries" })).toBeVisible(); await expect(page.getByRole("region", { name: "Chart of accounts" })).toHaveCount(0); } },
-  { path: "/audit", slug: "audit", heading: /^Audit log$/, ready: async (page) => { await expect(page.getByRole("button", { name: /Voided JOD 40\.000/ })).toBeVisible(); } },
-  { path: "/exports", slug: "exports", heading: /^Data exports$/, ready: async (page) => { await expect(page.getByRole("heading", { name: "Generate a CSV" })).toBeVisible(); await expect(page.getByText("No exports yet")).toBeVisible(); } },
-  { path: "/automations", slug: "automations", heading: /^Automation monitoring$/, ready: async (page) => { await expect(page.getByRole("region", { name: "Provider readiness" }).locator("article")).toHaveCount(3); await expect(page.getByRole("link", { name: /Renewal reminder/ }).first()).toBeVisible(); await expect(page.getByRole("region", { name: "Recent executions" }).getByText(/1–15 of/)).toBeVisible(); } },
-  { path: "/support", slug: "support", heading: /^RIVET support$/, ready: async (page) => { await page.getByRole("complementary", { name: "Your visible cases" }).getByRole("button", { name: /SUP-218.*Payment retry failed/ }).click(); await expect(page.getByRole("heading", { name: "Payment retry failed", level: 2 })).toBeVisible(); } },
+  { path: "/finance/controls?tab=journals", slug: "finance-controls", heading: /^Bookkeeping$/, ready: async (page) => { await expect(page.getByRole("tab", { name: /journals/i })).toHaveAttribute("aria-selected", "true"); await expect(page.getByRole("heading", { name: "Journal entries" })).toBeVisible(); await expect(page.getByRole("region", { name: "Chart of accounts" })).toHaveCount(0); } },
+  { path: "/audit", slug: "audit", heading: /^Activity log$/, ready: async (page) => { await expect(page.getByRole("button", { name: /Voided JOD 40\.000/ })).toBeVisible(); } },
+  { path: "/exports", slug: "exports", heading: /^Downloads$/, ready: async (page) => { await expect(page.getByRole("heading", { name: "Choose what to download" })).toBeVisible(); await expect(page.getByText("No downloads yet")).toBeVisible(); } },
+  { path: "/automations", slug: "automations", heading: /^Automations$/, ready: async (page) => { await expect(page.getByRole("region", { name: "Connected services" }).locator("article")).toHaveCount(3); await expect(page.getByRole("link", { name: /Renewal reminder/ }).first()).toBeVisible(); await expect(page.getByRole("region", { name: "Recent runs" }).getByText(/Showing 1 to 15 of/)).toBeVisible(); } },
+  { path: "/support", slug: "support", heading: /^RIVET support$/, ready: async (page) => { await page.getByRole("complementary", { name: "Your requests" }).getByRole("button", { name: /SUP-218.*Payment retry failed/ }).click(); await expect(page.getByRole("heading", { name: "Payment retry failed", level: 2 })).toBeVisible(); } },
 ];
 
 for (const width of [360, 390, 768, 820, 1280, 1440]) {
@@ -95,23 +95,23 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
     await visit(page, "/payments/shifts", "Shifts & cash");
     await page.getByRole("combobox", { name: "Branch", exact: true }).click();
     await page.getByRole("option", { name: /Abdoun/ }).click();
-    await expect(page.getByRole("heading", { name: "Daily reconciliation" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "End-of-day cash count" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Shift history" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Approve( variance)?$/ }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Approve( cash difference)?$/ }).first()).toBeVisible();
     await fits(page);
     if (shoot) await capture(page, `pass-5-shifts-oversight-${width}.png`, width);
 
     // A saved rule, read-only, with its own history.
-    await visit(page, "/automations", /^Automation monitoring$/);
+    await visit(page, "/automations", /^Automations$/);
     await page.getByRole("link", { name: /Renewal reminder/ }).first().click();
     await expect(page.getByRole("heading", { level: 1, name: /Renewal reminder/ })).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByRole("region", { name: "Executions for this rule" }).getByText(/recorded|need attention/)).toBeVisible();
+    await expect(page.getByRole("region", { name: "Runs for this automation" }).getByText(/recorded|need attention/)).toBeVisible();
     await fits(page);
     if (shoot) await capture(page, `pass-5-automation-rule-${width}.png`, width);
 
     await signIn(page, "Manager");
     await visit(page, "/dashboard", /^Operations, Layla$/);
-    await expect(page.getByRole("region", { name: "Today" }).getByText("Next priority")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Today" }).getByText("Do this first")).toBeVisible();
     await fits(page);
     if (shoot) await capture(page, `pass-5-dashboard-manager-${width}.png`, width);
 
@@ -130,7 +130,7 @@ test("report views and scope live in the URL and survive a refresh", async ({ pa
   await page.getByRole("navigation", { name: "Report views" }).getByRole("link", { name: "Collections" }).click();
   await expect(page).toHaveURL(/view=collections/);
   await expect(page).toHaveURL(/range=90/);
-  await expect(page.getByRole("heading", { name: "Collection efficiency" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Charged and paid" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("link", { name: "Collections" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("button", { name: "90 days" })).toHaveAttribute("aria-pressed", "true");
@@ -142,8 +142,8 @@ test("report views and scope live in the URL and survive a refresh", async ({ pa
   await page.getByRole("button", { name: "30 days" }).click();
   await page.getByLabel("End date").fill("2026-09-05");
   const totals = page.getByRole("region", { name: "Report totals" });
-  await expect(totals.locator("p.context-label").first()).toHaveText("Outstanding now");
-  await expect(totals.getByRole("link", { name: /Outstanding now/ })).toHaveAttribute("href", "/payments?range=30&type=payment");
+  await expect(totals.locator("p.context-label").first()).toHaveText("Unpaid now");
+  await expect(totals.getByRole("link", { name: /Unpaid now/ })).toHaveAttribute("href", "/payments?range=30&type=payment");
   await expect(page.getByRole("region", { name: "By payment method" }).getByRole("link").first()).toHaveAttribute("href", /\/payments\?range=30&method=/);
 });
 
@@ -156,23 +156,23 @@ test("statements and ledger controls share one scope and trace to the journals",
   await expect(page).toHaveURL(/from=2026-09-01/);
   await expect(page.getByRole("button", { name: "This month" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("link", { name: /All statements/ })).toHaveAttribute("href", /\/finance\?from=2026-09-01/);
-  await page.getByRole("combobox", { name: "Statement branch scope" }).click();
+  await page.getByRole("combobox", { name: "Branch", exact: true }).click();
   await page.getByRole("option", { name: /Abdoun/ }).click();
   await expect(page).toHaveURL(/branchId=/);
-  // Ledger controls opens in the same branch, and its tab is part of the URL.
-  await page.getByRole("link", { name: "Ledger controls", exact: true }).click();
+  // Bookkeeping opens in the same branch, and its tab is part of the URL.
+  await page.getByRole("link", { name: "Bookkeeping", exact: true }).click();
   await expect(page).toHaveURL(/\/finance\/controls\?branchId=/);
-  await expect(page.getByRole("heading", { level: 1, name: "Management ledger" })).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole("combobox", { name: "Ledger branch scope" })).toContainText("Abdoun");
+  await expect(page.getByRole("heading", { level: 1, name: "Bookkeeping" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("combobox", { name: "Branch", exact: true })).toContainText("Abdoun");
   await expect(page.getByRole("tab", { name: /trial balance/i })).toHaveAttribute("aria-selected", "true");
-  await page.getByRole("tab", { name: /source queue/i }).click();
+  await page.getByRole("tab", { name: /items to add/i }).click();
   await expect(page).toHaveURL(/tab=sources/);
   await expect(page).toHaveURL(/branchId=/);
   await page.reload();
-  await expect(page.getByRole("tab", { name: /source queue/i })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Source postings" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Ledger branch scope" })).toContainText("Abdoun");
-  await visit(page, "/finance/controls?tab=journals", /^Management ledger$/);
+  await expect(page.getByRole("tab", { name: /items to add/i })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Items to add to the books" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Branch", exact: true })).toContainText("Abdoun");
+  await visit(page, "/finance/controls?tab=journals", /^Bookkeeping$/);
   await expect(page.getByRole("tab", { name: /journals/i })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Journal entries" })).toBeVisible();
 });
@@ -180,20 +180,20 @@ test("statements and ledger controls share one scope and trace to the journals",
 test("audit questions are shareable and every row opens its evidence", async ({ page }) => {
   await fixClock(page);
   await signIn(page, "Owner");
-  await visit(page, "/audit?category=payments&approval=pending", /^Audit log$/);
+  await visit(page, "/audit?category=payments&approval=pending", /^Activity log$/);
   await expect(page.getByRole("combobox", { name: "Category filter" })).toContainText("Payments");
-  await expect(page.getByRole("combobox", { name: "Approval filter" })).toContainText("Pending approval");
+  await expect(page.getByRole("combobox", { name: "Approval filter" })).toContainText("Waiting for approval");
   const row = page.getByRole("button", { name: /Refunded JOD 40\.000/ });
   await expect(row).toBeVisible();
   await expect(page.getByRole("button", { name: /Voided JOD 40\.000/ })).toHaveCount(0);
   await row.click();
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("Reason", { exact: true })).toBeVisible();
-  await expect(page.getByText(/^Correlation/)).toBeVisible();
-  await page.getByRole("searchbox", { name: "Search audit log" }).or(page.getByLabel("Search audit log")).fill("override");
+  await expect(page.getByText(/^Reference/)).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search activity log" }).or(page.getByLabel("Search activity log")).fill("override");
   await expect(page).toHaveURL(/q=override/);
   await page.getByRole("combobox", { name: "Approval filter" }).click();
-  await page.getByRole("option", { name: "Any approval state" }).click();
+  await page.getByRole("option", { name: "Any approval status" }).click();
   // The approval filter leaves the URL; search and category stay (the shared
   // URL writer keeps existing keys in place, so their order is not asserted).
   await expect(page).toHaveURL(/\/audit\?(?=.*\bq=override\b)(?=.*\bcategory=payments\b)(?!.*approval=)/);
@@ -202,12 +202,12 @@ test("audit questions are shareable and every row opens its evidence", async ({ 
 test("exports read as one list and each request is recorded with its state", async ({ page }) => {
   await fixClock(page);
   await signIn(page, "Owner");
-  await visit(page, "/exports", /^Data exports$/);
+  await visit(page, "/exports", /^Downloads$/);
   const members = page.locator("article").filter({ has: page.getByRole("heading", { name: "Members", exact: true }) });
   const pending = page.waitForEvent("download");
-  await members.getByRole("button", { name: "Generate CSV" }).click();
+  await members.getByRole("button", { name: "Download CSV" }).click();
   await pending;
-  const recent = page.getByRole("region", { name: "Recent exports" });
+  const recent = page.getByRole("region", { name: "Recent downloads" });
   await expect(recent.getByText("Completed")).toBeVisible();
   await expect(recent.getByRole("button", { name: "Download CSV" })).toBeEnabled();
   await expect(recent.getByText(/rows · /)).toBeVisible();
@@ -218,17 +218,17 @@ test("automations read on a phone as lists that keep every state", async ({ brow
   const page = await context.newPage();
   await fixClock(page);
   await signIn(page, "Owner");
-  await visit(page, "/automations", /^Automation monitoring$/);
-  await expect(page.getByRole("list", { name: "Automation rules" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Automation rules" }).getByRole("table")).toBeHidden();
-  await expect(page.getByRole("list", { name: "Recent executions" }).getByText("completed").first()).toBeVisible();
-  await expect(page.getByText("enabled · held").first()).toBeVisible();
-  await expect(page.getByText("paused", { exact: true }).first()).toBeVisible();
+  await visit(page, "/automations", /^Automations$/);
+  await expect(page.getByRole("list", { name: "Automations" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Automations" }).getByRole("table")).toBeHidden();
+  await expect(page.getByRole("list", { name: "Recent runs" }).getByText("done").first()).toBeVisible();
+  await expect(page.getByText("on · on hold").first()).toBeVisible();
+  await expect(page.getByText("off", { exact: true }).first()).toBeVisible();
   await fits(page);
-  await page.getByRole("list", { name: "Automation rules" }).getByRole("link", { name: /Outstanding payment/ }).tap();
+  await page.getByRole("list", { name: "Automations" }).getByRole("link", { name: /Outstanding payment/ }).tap();
   await expect(page.getByRole("heading", { level: 1, name: /Outstanding payment/ })).toBeVisible();
-  await expect(page.getByText("Paused in saved configuration")).toBeVisible();
-  await expect(page.getByRole("list", { name: "Executions for this rule" })).toBeVisible();
+  await expect(page.getByText("Turned off")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Runs for this automation" })).toBeVisible();
   await fits(page);
   await context.close();
 });
@@ -245,8 +245,8 @@ test("support keeps the case, its state and the reply together", async ({ page }
   await expect(thread.getByLabel("Reply to support")).toBeVisible();
   await page.getByRole("button", { name: "Request plan upgrade" }).click();
   await expect(page.getByRole("dialog", { name: "Request a plan upgrade" })).toBeVisible();
-  await expect(page.getByLabel("Requested plan")).toBeVisible();
-  await expect(page.getByLabel("Billing cadence")).toBeVisible();
+  await expect(page.getByLabel("New plan")).toBeVisible();
+  await expect(page.getByLabel("How often you pay")).toBeVisible();
   await page.keyboard.press("Escape");
 });
 
@@ -256,10 +256,10 @@ test("an owner reviews a cash variance from the shifts oversight view", async ({
   await visit(page, "/payments/shifts", "Shifts & cash");
   await page.getByRole("combobox", { name: "Branch", exact: true }).click();
   await page.getByRole("option", { name: /Abdoun/ }).click();
-  await expect(page.getByRole("heading", { name: "Daily reconciliation" })).toBeVisible();
-  await expect(page.getByText("Cash variance", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Approve variance" }).first().click();
-  await expect(page.getByRole("dialog", { name: "Approve cash variance" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "End-of-day cash count" })).toBeVisible();
+  await expect(page.getByText("Cash difference", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Approve cash difference" }).first().click();
+  await expect(page.getByRole("dialog", { name: "Approve cash difference" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });

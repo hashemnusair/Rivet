@@ -22,7 +22,7 @@ describe("DataPagination", () => {
     const onPage = vi.fn();
     const { rerender, container } = render(<DataPagination page={page({ page: 2, totalItems: 25, totalPages: 2 })} onPage={onPage} />);
     expect(onPage).not.toHaveBeenCalled();
-    expect(screen.getByText("21–25 of 25")).toBeInTheDocument();
+    expect(screen.getByText("Showing 21 to 25 of 25")).toBeInTheDocument();
     rerender(<DataPagination page={page({ page: 3, totalItems: 0, totalPages: 0 })} onPage={onPage} />);
     expect(onPage).not.toHaveBeenCalled();
     expect(container).toBeEmptyDOMElement();
@@ -30,6 +30,6 @@ describe("DataPagination", () => {
 
   it("never prints a range that starts after it ends while the page corrects itself", () => {
     render(<DataPagination page={page({ page: 2, totalItems: 2, totalPages: 1 })} onPage={vi.fn()} />);
-    expect(screen.getByText("2–2 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Showing 2 to 2 of 2")).toBeInTheDocument();
   });
 });

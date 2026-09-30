@@ -13,27 +13,27 @@ const BRAND_COPY: Record<Audience | "chooser", { context: string; headline: stri
   chooser: {
     context: "Gym revenue & operations",
     headline: "Never lose a renewal, a lead, or a dinar again.",
-    body: "Members, sales follow-up, reception, payments and cash — one chronological record per member, full accountability per staff action.",
+    body: "Members, sales, reception, payments and cash in one place. Every member has one full history. You always know who did what.",
   },
   account: {
-    context: "One account · the right workspace",
-    headline: "Sign in once. RIVET handles the rest.",
-    body: "Your assigned role decides whether RIVET opens the member dashboard, gym operations, reception, or the platform console.",
+    context: "One sign-in for everyone",
+    headline: "Sign in once. We open the right page for you.",
+    body: "Members see their memberships. Gym staff see their gym. RIVET staff see the platform console.",
   },
   staff: {
     context: "RIVET for gyms",
     headline: "Never lose a renewal, a lead, or a dinar again.",
-    body: "Members, sales follow-up, reception, payments and cash — one chronological record per member, full accountability per staff action.",
+    body: "Members, sales, reception, payments and cash in one place. Every member has one full history. You always know who did what.",
   },
   member: {
     context: "RIVET for members",
     headline: "Every gym you train at, in one account.",
-    body: "Membership status, expiry, visits, balance and receipts — plus a single QR identity that gets you through the door.",
+    body: "See your membership, when it ends, your visits, what you owe and your receipts. Show your entry code to get in.",
   },
   admin: {
     context: "RIVET platform",
-    headline: "Every gym on the network, on one screen.",
-    body: "Tenant health, subscriptions, invoices and support in one console — with the same audit discipline the gyms get.",
+    headline: "Every gym on RIVET, on one screen.",
+    body: "Gym health, plans, invoices and support in one place.",
   },
 };
 
@@ -113,9 +113,6 @@ export function LoginLayout({
                     <Link href={item.href} className="hover:text-ink">{item.label}</Link>
                   </span>
                 ))}
-              </p>
-              <p className="text-[12px] text-ink-3">
-                Secure identity by Clerk · application data by Convex
               </p>
             </div>
           )}

@@ -33,9 +33,9 @@ describe("member import", () => {
 
     await user.upload(screen.getByLabelText("Choose member file"), file);
     expect(await screen.findByText("current-members.csv")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Full name source column" })).toHaveTextContent("full_name");
-    expect(screen.getByRole("combobox", { name: "Phone source column" })).toHaveTextContent("phone");
-    expect(screen.getByRole("combobox", { name: "Gender source column" })).toHaveTextContent("gender");
+    expect(screen.getByRole("combobox", { name: "Column for full name" })).toHaveTextContent("full_name");
+    expect(screen.getByRole("combobox", { name: "Column for phone" })).toHaveTextContent("phone");
+    expect(screen.getByRole("combobox", { name: "Column for gender" })).toHaveTextContent("gender");
     await waitFor(() => expect(screen.getByRole("button", { name: "Check members" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Check members" }));
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, ArrowUpRight, Info, OctagonAlert } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 import { qk } from "@/lib/api/keys";
@@ -8,15 +8,15 @@ import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { addDays, todayISODate, formatDate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
-import { MoneyText, RelativeText } from "@/components/shared/data-display";
+import { MoneyText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { ErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/utils/cn";
-import { OperatingBriefPanel } from "@/features/brief/operating-brief";
+import { NeedsAttention } from "@/features/brief/needs-attention";
 import { BranchRevenueBars, RevenueChart } from "./charts";
-import { dashboardScopeDescription } from "./dashboard-scope";
+import { dashboardScopeDescription, timeOfDayGreeting } from "./dashboard-scope";
 import { TodayQueue } from "./today-queue";
 import { ContextLabel } from "@/components/ui/typography";
 
@@ -47,7 +47,7 @@ export function OwnerDashboard() {
     <div className="space-y-5">
       <PageHeader
         sectionLabel={formatDate(today)}
-        title={`${greeting()}, ${session?.user.name.split(" ")[0] ?? ""}`}
+        title={`${timeOfDayGreeting()}, ${session?.user.name.split(" ")[0] ?? ""}`}
         description={
           dashboardScopeDescription(session?.branches ?? [], branchId)
         }
@@ -59,26 +59,26 @@ export function OwnerDashboard() {
           <MoneyText money={kpis?.revenueToday ?? money(0)} />
         </KpiCell>
         <KpiCell
-          label="This month"
+          label="Collected this month"
           loading={isLoading}
           context={
             monthDelta !== undefined ? (
               <span className={cn("inline-flex items-center gap-0.5", monthDelta >= 0 ? "text-success-deep" : "text-danger")}>
-                <ArrowUpRight className={cn("size-3", monthDelta < 0 && "rotate-90")} />
-                {Math.abs(monthDelta)}% vs last month
+                <ArrowUpRight className={cn("size-3", monthDelta < 0 && "rotate-90")} aria-hidden />
+                {monthDelta >= 0 ? "Up" : "Down"} {Math.abs(monthDelta)}% on last month
               </span>
             ) : undefined
           }
         >
           <MoneyText money={kpis?.revenueThisMonth ?? money(0)} compact />
         </KpiCell>
-        <KpiCell label="Outstanding" loading={isLoading} tone={kpis && kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context="unpaid balances">
+        <KpiCell label="Unpaid" loading={isLoading} tone={kpis && kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context="owed by members">
           <MoneyText money={kpis?.outstandingTotal ?? money(0)} compact />
         </KpiCell>
-        <KpiCell label="New members" loading={isLoading} context="this month">
+        <KpiCell label="New members" loading={isLoading} context="joined this month">
           {kpis?.newMembersThisMonth ?? 0}
         </KpiCell>
-        <KpiCell label="Renewals ≤ 7d" loading={isLoading} tone={kpis && kpis.renewalsDueNext7Days > 0 ? "warning" : undefined} context={`${kpis?.expiredUnactioned ?? 0} expired ≤ 30d`}>
+        <KpiCell label="Ending this week" loading={isLoading} tone={kpis && kpis.renewalsDueNext7Days > 0 ? "warning" : undefined} context="memberships">
           {kpis?.renewalsDueNext7Days ?? 0}
         </KpiCell>
         <KpiCell label="Check-ins today" loading={isLoading} context={`${kpis?.activeLeads ?? 0} open leads`}>
@@ -86,50 +86,9 @@ export function OwnerDashboard() {
         </KpiCell>
       </section>
 
-      <OperatingBriefPanel branchId={branchId} />
+      <NeedsAttention branchId={branchId} />
 
       <TodayQueue data={data?.todayQueue} loading={isLoading || !data} initialVisible={4} />
-
-      {/* Alerts rail */}
-      {data && data.alerts.length > 0 ? (
-        <section aria-label="Needs attention" className="panel overflow-hidden">
-          <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="flex items-center gap-2 text-[13px] font-semibold">
-              <OctagonAlert className="size-4 text-signal" aria-hidden />
-              Needs attention
-              <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep tabular">
-                {data.alerts.length}
-              </span>
-            </h2>
-            <Link href="/audit" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-              Full audit trail <ArrowRight className="size-3" />
-            </Link>
-          </header>
-          <ul className="divide-y divide-line">
-            {data.alerts.slice(0, 5).map((alert) => (
-              <li key={alert.id}>
-                <Link href={alert.href} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-sunken/40">
-                  {alert.severity === "critical" ? (
-                    <OctagonAlert className="size-4 shrink-0 text-signal" aria-hidden />
-                  ) : alert.severity === "warning" ? (
-                    <AlertTriangle className="size-4 shrink-0 text-warning" aria-hidden />
-                  ) : (
-                    <Info className="size-4 shrink-0 text-ink-3" aria-hidden />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium">{alert.title}</span>
-                    <span className="block truncate text-[12px] text-ink-3">{alert.detail}</span>
-                  </span>
-                  {alert.actorName ? <span className="hidden shrink-0 text-[12px] text-ink-3 sm:block">{alert.actorName}</span> : null}
-                  <span className="shrink-0 text-[11.5px] text-ink-3">
-                    <RelativeText iso={alert.occurredAt} />
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
       {/* Revenue + branch context */}
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
@@ -137,7 +96,7 @@ export function OwnerDashboard() {
           {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} currency={session?.organization.currency} />}
         </section>
         <section className="panel p-4">
-          <ContextLabel className="mb-3">Revenue by branch · 30 days</ContextLabel>
+          <ContextLabel className="mb-3">Collected by branch, last 30 days</ContextLabel>
           {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
         </section>
       </div>
@@ -146,9 +105,9 @@ export function OwnerDashboard() {
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
         <section className="panel overflow-hidden">
           <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">Sales this month</h2>
+            <h2 className="text-[13px] font-semibold">Sales team this month</h2>
             <Link href="/crm/pipeline" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-              Pipeline <ArrowRight className="size-3" />
+              Leads <ArrowRight className="size-3 rtl:rotate-180" aria-hidden />
             </Link>
           </header>
           {isLoading || !data ? (
@@ -160,12 +119,12 @@ export function OwnerDashboard() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-line text-start">
-                    <th className="px-4 py-2 text-start text-[11.5px] font-semibold text-ink-3">Rep</th>
+                    <th className="px-4 py-2 text-start text-[11.5px] font-semibold text-ink-3">Salesperson</th>
                     <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">Collected</th>
-                    <th className="px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">New</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">New members</th>
                     <th className="px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">Renewals</th>
-                    <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">Follow-ups</th>
-                    <th className="px-4 py-2 text-end text-[11.5px] font-semibold text-ink-3">Overdue</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">Follow-ups done</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-end text-[11.5px] font-semibold text-ink-3">Late follow-ups</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -231,11 +190,4 @@ function KpiCell({
       {context ? <div className="mt-1 text-[12px] text-ink-3">{context}</div> : null}
     </div>
   );
-}
-
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
 }

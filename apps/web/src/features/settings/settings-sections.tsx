@@ -45,7 +45,7 @@ function StatusBadge({ status }: { status: string }) {
 // ---------------------------------------------------------------------------
 // Organization
 // ---------------------------------------------------------------------------
-const ORGANIZATION_DESCRIPTION = "Identity and locale for the whole gym. Currency is fixed to JOD for this deployment.";
+const ORGANIZATION_DESCRIPTION = "Your gym’s name, time zone and language. Prices are always in JOD.";
 
 export function OrganizationSection() {
   const invalidate = useInvalidate();
@@ -66,13 +66,13 @@ export function OrganizationSection() {
 
   const save = useApiMutation((api) => api.updateOrganizationSettings(form), {
     onSuccess: async () => {
-      toast.success("Organization settings saved — audited.");
+      toast.success("Gym details saved.");
       await invalidate([qk.settings]);
     },
   });
 
-  if (settingsQuery.isLoading) return <SettingsSection title="Organization" description={ORGANIZATION_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Organization" description={ORGANIZATION_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading) return <SettingsSection title="Gym details" description={ORGANIZATION_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title="Gym details" description={ORGANIZATION_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const commit = async () => {
     await save.mutateAsync();
@@ -81,14 +81,14 @@ export function OrganizationSection() {
   const nameMissing = form.name.trim().length === 0;
 
   return (
-    <SettingsSection title="Organization" description={ORGANIZATION_DESCRIPTION}>
+    <SettingsSection title="Gym details" description={ORGANIZATION_DESCRIPTION}>
       <SettingsPanel className="max-w-3xl">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Organization name" required error={nameMissing ? "Enter the gym's name." : undefined}><Input value={form.name} aria-invalid={nameMissing || undefined} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
-          <Field label="Timezone" hint="Shift, report and reminder times follow this zone."><Select value={form.timezone} onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}><SelectTrigger aria-label="Timezone"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Amman">Asia/Amman (UTC+3)</SelectItem><SelectItem value="Asia/Riyadh">Asia/Riyadh (UTC+3)</SelectItem><SelectItem value="Asia/Dubai">Asia/Dubai (UTC+4)</SelectItem></SelectContent></Select></Field>
-          <Field label="Locale" hint="Number and date formatting across the workspace."><Select value={form.locale} onValueChange={(v) => setForm((f) => ({ ...f, locale: v }))}><SelectTrigger aria-label="Locale"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en-JO">English (Jordan)</SelectItem><SelectItem value="ar-JO">العربية (الأردن)</SelectItem></SelectContent></Select></Field>
-          <Field label="Default phone country" hint="Used only for local numbers. Numbers beginning with + or 00 keep their own country code."><div className="relative"><span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3" aria-hidden>+</span><Input className="ps-7 font-mono" inputMode="numeric" aria-label="Default phone country calling code" value={form.phoneCountryCallingCode} onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: event.target.value.replace(/\D/g, "").slice(0, 3) }))} /></div></Field>
-          <Field label="Language for emails and documents" hint="Every email RIVET sends to this gym, and the copies of its agreement, use this language. PDFs are English."><Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}><SelectTrigger aria-label="Default language"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent></Select></Field>
+          <Field label="Gym name" required error={nameMissing ? "Enter the gym's name." : undefined}><Input value={form.name} aria-invalid={nameMissing || undefined} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
+          <Field label="Time zone" hint="Used for shifts, reports and reminders."><Select value={form.timezone} onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}><SelectTrigger aria-label="Time zone"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Amman">Amman (UTC+3)</SelectItem><SelectItem value="Asia/Riyadh">Riyadh (UTC+3)</SelectItem><SelectItem value="Asia/Dubai">Dubai (UTC+4)</SelectItem></SelectContent></Select></Field>
+          <Field label="Number and date format" hint="How numbers and dates look in RIVET."><Select value={form.locale} onValueChange={(v) => setForm((f) => ({ ...f, locale: v }))}><SelectTrigger aria-label="Number and date format"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en-JO">English (Jordan)</SelectItem><SelectItem value="ar-JO">العربية (الأردن)</SelectItem></SelectContent></Select></Field>
+          <Field label="Default phone country" hint="For local numbers only. Numbers that start with + or 00 keep their own country code."><div className="relative"><span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3" aria-hidden>+</span><Input className="ps-7 font-mono" inputMode="numeric" aria-label="Default phone country calling code" value={form.phoneCountryCallingCode} onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: event.target.value.replace(/\D/g, "").slice(0, 3) }))} /></div></Field>
+          <Field label="Language for emails and documents" hint="Emails from RIVET to your gym, and your agreement copies, use this language. PDFs are in English."><Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}><SelectTrigger aria-label="Default language"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent></Select></Field>
         </div>
       </SettingsPanel>
       <SettingsSaveBar
@@ -96,10 +96,10 @@ export function OrganizationSection() {
         saving={save.isPending}
         saveDisabled={nameMissing}
         saveDisabledReason={nameMissing ? "Enter the gym's name before saving." : undefined}
-        error={save.isError ? errorMessage(save.error, "The organization settings could not be saved. Try again.") : undefined}
+        error={save.isError ? errorMessage(save.error, "Gym details were not saved. Try again.") : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}
-        saveLabel="Save organization"
+        saveLabel="Save gym details"
       />
     </SettingsSection>
   );
@@ -108,7 +108,7 @@ export function OrganizationSection() {
 // ---------------------------------------------------------------------------
 // Branches
 // ---------------------------------------------------------------------------
-const BRANCHES_DESCRIPTION = "The gym's physical locations. Each branch code prefixes its member numbers and appears on receipts.";
+const BRANCHES_DESCRIPTION = "Your gym’s locations. The branch code starts each member number and appears on receipts.";
 
 export function BranchesSection() {
   const invalidate = useInvalidate();
@@ -131,7 +131,7 @@ export function BranchesSection() {
     (api) => api.upsertBranch({ id: dialog.branch?.id, ...form, capacity: Number(form.capacity) }),
     {
       onSuccess: async () => {
-        toast.success(dialog.branch ? "Branch updated." : "Branch created.");
+        toast.success(dialog.branch ? "Branch updated." : "Branch added.");
         setDialog({ open: false });
         await invalidate([qk.settings, qk.session, qk.branches]);
         await refreshSession();
@@ -162,7 +162,7 @@ export function BranchesSection() {
                     <span className="font-mono text-[12px] text-ink-2">{b.code}</span>
                     <StatusBadge status={b.status} />
                   </div>
-                  <p className="mt-0.5 text-[12.5px] text-ink-2">{b.address || "No address recorded"}</p>
+                  <p className="mt-0.5 text-[12.5px] text-ink-2">{b.address || "No address yet"}</p>
                   <p className="mt-0.5 text-[12px] text-ink-3">Capacity <span className="tabular">{b.capacity}</span>{b.phone ? <> · <span dir="ltr">{b.phone}</span></> : null}</p>
                 </div>
                 <Button variant="secondary" size="sm" aria-label={`Edit ${b.name}`} data-touch-target onClick={() => setDialog({ open: true, branch: b })}><Pencil /> Edit</Button>
@@ -203,7 +203,7 @@ export function BranchesSection() {
       <Dialog open={dialog.open} onOpenChange={(v) => setDialog({ open: v })}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{dialog.branch ? `Edit ${dialog.branch.name}` : "New branch"}</DialogTitle>
+            <DialogTitle>{dialog.branch ? `Edit ${dialog.branch.name}` : "Add branch"}</DialogTitle>
             <DialogDescription>Branch codes appear on member numbers and receipts.</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
@@ -241,7 +241,7 @@ export function BranchesSection() {
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDialog({ open: false })}>Cancel</Button>
             <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.name.trim() || !form.code.trim()}>
-              {dialog.branch ? "Save branch" : "Create branch"}
+              {dialog.branch ? "Save branch" : "Add branch"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -266,7 +266,7 @@ const SPACE_KIND_LABELS: Record<ZoneKind, string> = {
   other: "Other",
 };
 
-const SPACES_DESCRIPTION = "The places inside a branch—for example Reception, Main floor, Studio, or Locker room. RIVET uses them to locate maintenance work and equipment.";
+const SPACES_DESCRIPTION = "The places inside a branch, like Reception, Main floor, Studio or Locker room. They show where machines are and where maintenance jobs are needed.";
 
 function newSpaceCode(): string {
   return `SP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
@@ -311,36 +311,36 @@ export function GymSpacesSection() {
     }),
     {
       onSuccess: async () => {
-        toast.success(dialog.space ? "Gym space updated." : "Gym space added.");
+        toast.success(dialog.space ? "Gym area updated." : "Gym area added.");
         setDialog({ open: false });
         await invalidate([qk.operations()]);
       },
-      onError: (error) => toast.error(errorMessage(error, "Could not save this gym space.")),
+      onError: (error) => toast.error(errorMessage(error, "Could not save this gym area.")),
     },
   );
 
-  const addAction = <Button onClick={() => setDialog({ open: true })} disabled={!branchId}><Plus /> Add gym space</Button>;
+  const addAction = <Button onClick={() => setDialog({ open: true })} disabled={!branchId}><Plus /> Add gym area</Button>;
 
-  if (settingsQuery.isLoading) return <SettingsSection title="Gym spaces" description={SPACES_DESCRIPTION} actions={addAction}><Skeleton className="h-48 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Gym spaces" description={SPACES_DESCRIPTION} actions={addAction}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading) return <SettingsSection title="Gym areas" description={SPACES_DESCRIPTION} actions={addAction}><Skeleton className="h-48 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title="Gym areas" description={SPACES_DESCRIPTION} actions={addAction}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const branchName = activeBranches.find((branch) => branch.id === branchId)?.name;
   const spaces = spacesQuery.data ?? [];
 
   return (
-    <SettingsSection title="Gym spaces" description={SPACES_DESCRIPTION} actions={addAction}>
+    <SettingsSection title="Gym areas" description={SPACES_DESCRIPTION} actions={addAction}>
       {activeBranches.length === 0 ? (
-        <EmptyState layout="section" title="No active branches" description="Add or reactivate a branch under Branches before describing the spaces inside it." />
+        <EmptyState layout="section" title="No active branches" description="First add a branch, or turn one back on, in Branches." />
       ) : (
         <SettingsPanel
           className="max-w-4xl"
           bodyClassName="p-0"
-          title={branchName ? `Spaces in ${branchName}` : "Spaces"}
+          title={branchName ? `Areas in ${branchName}` : "Areas"}
           control={
             <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
               <span>Branch</span>
               <Select value={branchId} onValueChange={setBranchId}>
-                <SelectTrigger aria-label="Gym spaces branch" className="w-52"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
+                <SelectTrigger aria-label="Gym areas branch" className="w-52"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
                 <SelectContent>
                   {activeBranches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
                 </SelectContent>
@@ -354,14 +354,14 @@ export function GymSpacesSection() {
             <EmptyState
               className="m-4 sm:m-5"
               layout="section"
-              title="No gym spaces in this branch"
-              description="Add the few places employees already use when describing where work happened. You can keep this simple."
-              action={<Button size="sm" onClick={() => setDialog({ open: true })}><Plus /> Add first gym space</Button>}
+              title="No gym areas in this branch"
+              description="Add the places your staff already talk about, like Reception or Main floor. Keep it simple."
+              action={<Button size="sm" onClick={() => setDialog({ open: true })}><Plus /> Add first gym area</Button>}
             />
           ) : null}
           {spaces.length > 0 ? (
             <>
-              <ul className="divide-y divide-line md:hidden" aria-label="Gym spaces">
+              <ul className="divide-y divide-line md:hidden" aria-label="Gym areas">
                 {spaces.map((space) => (
                   <li key={space.id} className="flex items-center gap-3 px-4 py-3">
                     <div className="min-w-0 flex-1">
@@ -402,8 +402,8 @@ export function GymSpacesSection() {
       <Dialog open={dialog.open} onOpenChange={(open) => setDialog({ open, space: open ? dialog.space : undefined })}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{dialog.space ? `Edit ${dialog.space.name}` : "Add gym space"}</DialogTitle>
-            <DialogDescription>{branchName ? `In ${branchName}. ` : ""}Use the everyday name employees will recognize immediately.</DialogDescription>
+            <DialogTitle>{dialog.space ? `Edit ${dialog.space.name}` : "Add gym area"}</DialogTitle>
+            <DialogDescription>{branchName ? `In ${branchName}. ` : ""}Use the name your staff already use.</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
             <Field label="Name" required hint="For example: Reception, Main floor, Ladies studio, or Locker room.">
@@ -412,7 +412,7 @@ export function GymSpacesSection() {
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Type" required>
                 <Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value as ZoneKind }))}>
-                  <SelectTrigger aria-label="Gym space type"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Gym area type"><SelectValue /></SelectTrigger>
                   <SelectContent>{Object.entries(SPACE_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
@@ -422,7 +422,7 @@ export function GymSpacesSection() {
               {dialog.space ? (
                 <Field label="Status">
                   <Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as "active" | "archived" }))}>
-                    <SelectTrigger aria-label="Gym space status"><SelectValue /></SelectTrigger>
+                    <SelectTrigger aria-label="Gym area status"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent>
                   </Select>
                 </Field>
@@ -431,7 +431,7 @@ export function GymSpacesSection() {
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDialog({ open: false })}>Cancel</Button>
-            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || (form.capacity !== "" && Number(form.capacity) < 1)}>{dialog.space ? "Save changes" : "Add gym space"}</Button>
+            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || (form.capacity !== "" && Number(form.capacity) < 1)}>{dialog.space ? "Save changes" : "Add gym area"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -442,7 +442,7 @@ export function GymSpacesSection() {
 // ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------
-const USERS_DESCRIPTION = "Who can sign in, the role they hold and the branches they see. Invitations, role changes and deactivation are audited.";
+const USERS_DESCRIPTION = "Who can sign in, their role, and which branches they can see.";
 
 export function UsersSection() {
   const invalidate = useInvalidate();
@@ -460,15 +460,15 @@ export function UsersSection() {
     ? <>Invited {user.invitedAt ? formatDateTime(user.invitedAt) : "recently"}</>
     : user.lastActiveAt ? <>Active <RelativeText iso={user.lastActiveAt} /></> : <>Not active yet</>;
 
-  const inviteAction = <Button onClick={() => setInviteOpen(true)}><UserPlus /> Invite user</Button>;
+  const inviteAction = <Button onClick={() => setInviteOpen(true)}><UserPlus /> Invite staff</Button>;
   const users = usersQuery.data?.items ?? [];
 
   return (
-    <SettingsSection title="Users" description={USERS_DESCRIPTION} actions={inviteAction}>
+    <SettingsSection title="Staff" description={USERS_DESCRIPTION} actions={inviteAction}>
       {usersQuery.isLoading ? <Skeleton className="h-48 w-full" /> : usersQuery.isError ? (
         <ErrorState layout="section" onRetry={() => usersQuery.refetch()} />
       ) : users.length === 0 ? (
-        <EmptyState layout="section" title="No staff accounts yet" description="Invite the first colleague. They appear as invited until they sign in." />
+        <EmptyState layout="section" title="No staff yet" description="Invite your first staff member. They show as Invited until they sign in." />
       ) : (
         <SettingsPanel bodyClassName="p-0">
           <ul className="divide-y divide-line md:hidden" aria-label="Staff">
@@ -491,9 +491,9 @@ export function UsersSection() {
           <Table className="hidden md:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Person</TableHead>
+                <TableHead>Name</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Branch scope</TableHead>
+                <TableHead>Branches</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Last active</TableHead>
                 <TableHead><span className="sr-only">Actions</span></TableHead>
@@ -556,13 +556,13 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
   const mutation = useApiMutation((api) => api.inviteUser(form), {
     onSuccess: async () => {
-      toast.success("Invitation created. Its current status is available in the staff list.");
+      toast.success("Invite created. You can see it in the staff list.");
       onOpenChange(false);
       // The staff list is not part of the default invalidation set, so the
       // new "invited" row must be requested explicitly.
       await invalidate([qk.users()]);
     },
-    onError: (e) => toast.error(errorMessage(e, "Invite failed.")),
+    onError: (e) => toast.error(errorMessage(e, "The invite was not created. Try again.")),
   });
 
   const needsBranches = form.branchScope === "selected" && form.branchIds.length === 0;
@@ -571,14 +571,14 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Invite user</DialogTitle>
-          <DialogDescription>They appear as invited until they sign in. Access is enforced by role and branch scope.</DialogDescription>
+          <DialogTitle>Invite staff</DialogTitle>
+          <DialogDescription>They show as Invited until they sign in. Their role and branches decide what they can see and do.</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <Field label="Full name" required>
             <Input value={form.name} autoComplete="off" onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </Field>
-          <Field label="Email" required hint="The invitation is sent here.">
+          <Field label="Email" required hint="We send the invite to this email.">
             <Input type="email" inputMode="email" autoComplete="off" dir="ltr" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -594,14 +594,14 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Branch scope">
+            <Field label="Branch access">
               <Select value={form.branchScope} onValueChange={(v) => setForm((f) => ({ ...f, branchScope: v as "all" | "selected" }))}>
-                <SelectTrigger aria-label="Branch scope">
+                <SelectTrigger aria-label="Branch access">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All branches</SelectItem>
-                  <SelectItem value="selected">Selected branches</SelectItem>
+                  <SelectItem value="selected">Only some branches</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -667,7 +667,7 @@ function EditAccessDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Access for {user.name}</DialogTitle>
-          <DialogDescription>Role and account state changes take effect immediately and are audited.</DialogDescription>
+          <DialogDescription>Changes apply right away.</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <Field label="Role">
@@ -683,7 +683,7 @@ function EditAccessDialog({
             </Select>
           </Field>
           <div className="rounded-md border border-line px-3">
-            <SettingsToggleRow label="Account active" hint="Deactivated users lose all access immediately. Their history stays on record." checked={status === "active"} onCheckedChange={(v) => setStatus(v ? "active" : "deactivated")} />
+            <SettingsToggleRow label="Account active" hint="If you turn this off, they lose all access right away. Their history is kept." checked={status === "active"} onCheckedChange={(v) => setStatus(v ? "active" : "deactivated")} />
           </div>
         </DialogBody>
         <DialogFooter>
@@ -700,7 +700,7 @@ function EditAccessDialog({
 // ---------------------------------------------------------------------------
 // Roles & permissions matrix
 // ---------------------------------------------------------------------------
-const ROLES_DESCRIPTION = "What each role may do. System roles are defaults you can tune; the owner role always has full access. Changes apply to new sessions and are audited.";
+const ROLES_DESCRIPTION = "What each role can do. The owner always has full access. Staff get changes the next time they sign in.";
 
 export function RolesSection() {
   const invalidate = useInvalidate();
@@ -714,26 +714,26 @@ export function RolesSection() {
     (api, v: { role: RoleKey; permissions: string[] }) => api.updateRolePermissions(v.role, { permissions: v.permissions }),
     {
       onSuccess: async () => {
-        toast.success("Permissions updated — audited.");
+        toast.success("Access updated.");
         await invalidate([qk.settings, qk.session]);
       },
-      onError: (e) => toast.error(errorMessage(e, "Could not update permissions.")),
+      onError: (e) => toast.error(errorMessage(e, "Could not update access.")),
     },
   );
 
-  if (settingsQuery.isLoading) return <SettingsSection title="Roles & permissions" description={ROLES_DESCRIPTION}><Skeleton className="h-96 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Roles & permissions" description={ROLES_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading) return <SettingsSection title="Roles & access" description={ROLES_DESCRIPTION}><Skeleton className="h-96 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title="Roles & access" description={ROLES_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const flip = (role: (typeof editableRoles)[number], perm: string, checked: boolean) =>
     toggle.mutate({ role: role.key, permissions: checked ? [...role.permissions, perm] : role.permissions.filter((p) => p !== perm) });
   const pendingFor = (role: RoleKey) => toggle.isPending && toggle.variables?.role === role;
 
   return (
-    <SettingsSection title="Roles & permissions" description={ROLES_DESCRIPTION}>
+    <SettingsSection title="Roles & access" description={ROLES_DESCRIPTION}>
       {/* Phones: one role at a time, one permission per row. */}
       <div className="md:hidden">
         <SettingsPanel
-          title="Permissions by role"
+          title="Access by role"
           bodyClassName="p-0"
           control={
             <Select value={selectedPhoneRole?.key ?? ""} onValueChange={(value) => setPhoneRole(value as RoleKey)}>
@@ -764,13 +764,13 @@ export function RolesSection() {
 
       {/* Tablets and desktops: the whole matrix at once. */}
       <div className="hidden md:block">
-        <SettingsPanel title="Permission matrix" description="Tick a cell to grant that role the permission. Each change is saved as you make it." bodyClassName="p-0">
+        <SettingsPanel title="What each role can do" description="Tick a box to give a role that access. Each change saves right away." bodyClassName="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="border-b border-line">
                   <th scope="col" className="sticky start-0 z-10 min-w-[240px] bg-surface px-4 py-2.5 text-start text-[11.5px] font-semibold text-ink-3">
-                    Permission
+                    Access
                   </th>
                   {editableRoles.map((r) => (
                     <th key={r.key} scope="col" className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center text-[11.5px] font-semibold text-ink-3">
@@ -829,7 +829,7 @@ export function RolesSection() {
 // ---------------------------------------------------------------------------
 // Payments
 // ---------------------------------------------------------------------------
-const PAYMENTS_DESCRIPTION = "Which payment methods the desk can use, and how much discount each role may give without a manager's approval.";
+const PAYMENTS_DESCRIPTION = "How the desk can take payments, and how much discount each role can give without a manager.";
 
 type PaymentsForm = { methods: PaymentMethod[]; limits: Record<string, string> };
 
@@ -892,7 +892,7 @@ export function PaymentsSection() {
     if (failures.length > 0) throw ApiError.of("VALIDATION_ERROR", failures.join(" · "));
   }, {
     onSuccess: async () => {
-      toast.success("Payment settings saved — audited.");
+      toast.success("Payment settings saved.");
       await invalidate([qk.settings]);
     },
     onError: async () => { await invalidate([qk.settings]); },
@@ -903,18 +903,18 @@ export function PaymentsSection() {
 
   const invalidLimit = limitRoles.some((role) => parseLimit(form.limits[role.key] ?? "", currency) === null);
   const noMethod = form.methods.every((m) => !m.enabled);
-  const saveDisabledReason = invalidLimit ? "Enter a discount limit of 0 or more for every role." : noMethod ? "Keep at least one payment method enabled." : undefined;
+  const saveDisabledReason = invalidLimit ? "Enter a discount limit of 0 or more for every role." : noMethod ? "Keep at least one payment method turned on." : undefined;
 
   return (
     <SettingsSection title="Payments" description={PAYMENTS_DESCRIPTION}>
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <SettingsPanel title="Payment methods" description="Disabled methods disappear from every collect and checkout flow." bodyClassName="px-4 py-1 sm:px-5">
+        <SettingsPanel title="Payment methods" description="Methods you turn off are hidden when taking payments and at checkout." bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
             {form.methods.map((m) => (
               <SettingsToggleRow
                 key={m.key}
                 label={m.label}
-                hint={m.affectsCashDrawer ? "Counts toward the cash drawer and shift totals." : undefined}
+                hint={m.affectsCashDrawer ? "Counts in the cash drawer and shift totals." : undefined}
                 checked={m.enabled}
                 onCheckedChange={(enabled) => setForm((current) => current ? { ...current, methods: current.methods.map((x) => (x.key === m.key ? { ...x, enabled } : x)) } : current)}
               />
@@ -922,7 +922,7 @@ export function PaymentsSection() {
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Discount approval limits" description="Discounts beyond a role's limit are recorded as pending manager approval." bodyClassName="px-4 py-1 sm:px-5">
+        <SettingsPanel title="Discount limits" description="A discount above the role’s limit waits for a manager to approve it." bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
             {limitRoles.map((r) => {
               const invalid = parseLimit(form.limits[r.key] ?? "", currency) === null;
@@ -950,7 +950,7 @@ export function PaymentsSection() {
         saving={save.isPending}
         saveDisabled={Boolean(saveDisabledReason)}
         saveDisabledReason={saveDisabledReason}
-        error={save.isError ? errorMessage(save.error, "The payment settings could not be saved. Try again.") : undefined}
+        error={save.isError ? errorMessage(save.error, "Payment settings were not saved. Try again.") : undefined}
         onSave={async () => { await save.mutateAsync(); }}
         onDiscard={() => { if (baseline) setForm(baseline); }}
         saveLabel="Save payment settings"
@@ -963,7 +963,7 @@ export function PaymentsSection() {
 // ---------------------------------------------------------------------------
 // Receipts & tax
 // ---------------------------------------------------------------------------
-const RECEIPTS_DESCRIPTION = "How receipts are numbered and what they say. Numbering is sequential and collision-safe.";
+const RECEIPTS_DESCRIPTION = "How receipts are numbered and what they say.";
 
 export function ReceiptsSection() {
   const invalidate = useInvalidate();
@@ -986,7 +986,7 @@ export function ReceiptsSection() {
     (api) => api.updateOrganizationSettings({ receiptPrefix: form.receiptPrefix, receiptFooter: form.receiptFooter, taxRatePercent: Number(form.taxRatePercent) }),
     {
       onSuccess: async () => {
-        toast.success("Receipt settings saved — audited.");
+        toast.success("Receipt settings saved.");
         await invalidate([qk.settings]);
       },
     },
@@ -1008,21 +1008,21 @@ export function ReceiptsSection() {
     <SettingsSection title="Receipts & tax" description={RECEIPTS_DESCRIPTION}>
       <SettingsPanel className="max-w-3xl" title="Numbering and tax" description={<>Next receipt: <span className="font-mono text-ink">{org?.receiptPrefix}{org?.nextReceiptNumber}</span></>}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Receipt prefix" required hint="Up to 6 characters, printed before every receipt number." error={prefixInvalid ? "Enter a receipt prefix." : undefined}>
+          <Field label="Receipt prefix" required hint="Up to 6 characters, like R-. Printed before each receipt number." error={prefixInvalid ? "Enter a receipt prefix." : undefined}>
             <Input value={form.receiptPrefix} aria-invalid={prefixInvalid || undefined} onChange={(e) => setForm((f) => ({ ...f, receiptPrefix: e.target.value }))} className="w-32 font-mono" maxLength={6} />
           </Field>
-          <Field label="Sales tax" hint="0 means tax is not itemized on receipts." error={taxInvalid ? "Enter a rate between 0 and 30." : undefined}>
+          <Field label="Sales tax" hint="Enter 0 if receipts should not show a tax line." error={taxInvalid ? "Enter a rate between 0 and 30." : undefined}>
             <SettingsUnitInput unit="%" type="number" min={0} max={30} step={0.5} inputMode="decimal" className="w-32" aria-invalid={taxInvalid || undefined} value={form.taxRatePercent} onChange={(e) => setForm((f) => ({ ...f, taxRatePercent: e.target.value }))} />
           </Field>
         </div>
-        <Field label="Receipt footer" hint="Printed at the bottom of every receipt. Leave empty for none." className="mt-4"><Textarea rows={2} value={form.receiptFooter} onChange={(e) => setForm((f) => ({ ...f, receiptFooter: e.target.value }))} /></Field>
+        <Field label="Receipt footer" hint="Printed at the bottom of every receipt. You can leave it empty." className="mt-4"><Textarea rows={2} value={form.receiptFooter} onChange={(e) => setForm((f) => ({ ...f, receiptFooter: e.target.value }))} /></Field>
       </SettingsPanel>
       <SettingsSaveBar
         dirty={dirty}
         saving={save.isPending}
         saveDisabled={Boolean(saveDisabledReason)}
         saveDisabledReason={saveDisabledReason}
-        error={save.isError ? errorMessage(save.error, "The receipt settings could not be saved. Try again.") : undefined}
+        error={save.isError ? errorMessage(save.error, "Receipt settings were not saved. Try again.") : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}
         saveLabel="Save receipt settings"
@@ -1034,7 +1034,7 @@ export function ReceiptsSection() {
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------
-const NOTIFICATIONS_DESCRIPTION = "Which events alert managers inside RIVET, and whether automated reminders may leave the sandbox and reach members.";
+const NOTIFICATIONS_DESCRIPTION = "Which alerts managers get in RIVET, and whether reminders are sent to members.";
 
 export function NotificationsSection() {
   const invalidate = useInvalidate();
@@ -1071,9 +1071,9 @@ export function NotificationsSection() {
 
   const alerts = form.managerAlerts;
   const alertRows: Array<{ key: keyof typeof alerts; label: string; hint: string }> = [
-    { key: "cashVariance", label: "Cash variance", hint: "When a shift closes over or short." },
-    { key: "refundOrVoid", label: "Refund or void", hint: "Every refund and void, immediately." },
-    { key: "checkinOverride", label: "Check-in override", hint: "When someone is let in against the rules." },
+    { key: "cashVariance", label: "Cash difference", hint: "When a shift closes with too much or too little cash." },
+    { key: "refundOrVoid", label: "Refund or cancelled payment", hint: "Right away, for every refund or cancelled payment." },
+    { key: "checkinOverride", label: "Member let in anyway", hint: "When someone is let in against the rules." },
     { key: "discountApproval", label: "Discount approvals", hint: "Discounts waiting for a decision." },
   ];
   const update = (patch: Partial<NotificationSettings>) => setForm((current) => current ? { ...current, ...patch } : current);
@@ -1086,7 +1086,7 @@ export function NotificationsSection() {
   return (
     <SettingsSection title="Notifications" description={NOTIFICATIONS_DESCRIPTION}>
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <SettingsPanel title="Manager alerts" description="In-app alerts for sensitive events." bodyClassName="px-4 py-1 sm:px-5">
+        <SettingsPanel title="Manager alerts" description="Alerts shown to managers in RIVET." bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
             {alertRows.map((row) => (
               <SettingsToggleRow
@@ -1100,25 +1100,25 @@ export function NotificationsSection() {
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Automation delivery" description="Reminders are prepared in the delivery ledger. They reach members only when RIVET's provider is live and external delivery is switched on for this gym." bodyClassName="px-4 py-1 sm:px-5">
+        <SettingsPanel title="Automatic reminders" description="Members get reminders only when both WhatsApp from RIVET and “Send reminders to members” are on." bodyClassName="px-4 py-1 sm:px-5">
           <MessagingStatusPanel />
           <div className="divide-y divide-line">
             <SettingsToggleRow
-              label="Renewal recovery"
-              hint="Prepare sandbox reminders at 14, 7 and 3 days before expiry, then create a real staff call task one day before."
+              label="Renewal reminders"
+              hint="Prepare reminders 14, 7 and 3 days before a membership ends. One day before, add a call task for staff."
               checked={form.renewalRecoveryEnabled === true}
               onCheckedChange={(enabled) => update({ renewalRecoveryEnabled: enabled })}
             />
             <SettingsToggleRow
-              label="External delivery"
-              hint={form.automationDeliveryMode === "live" ? "On. Queued WhatsApp reminders are handed to RIVET's provider, subject to RIVET's global messaging mode above." : "Off. Reminders stay in the sandbox ledger and no member receives a message."}
+              label="Send reminders to members"
+              hint={form.automationDeliveryMode === "live" ? "On. Reminders go out by WhatsApp when WhatsApp from RIVET (above) allows it." : "Off. Reminders are kept in RIVET. No member gets a message."}
               checked={form.automationDeliveryMode === "live"}
               onCheckedChange={(enabled) => update({ automationDeliveryMode: enabled ? "live" : "sandbox" })}
             />
           </div>
           <div className="border-t border-line py-4">
             <p className="text-[13.5px] font-medium text-ink">Quiet hours</p>
-            <p className="mt-0.5 text-[12px] leading-5 text-ink-3">Messages queued in this window wait and are sent when it ends, in the gym&rsquo;s timezone.</p>
+            <p className="mt-0.5 text-[12px] leading-5 text-ink-3">Messages due in these hours wait and go out when the quiet hours end. Uses your gym&rsquo;s time zone.</p>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <Field label="From">
                 <Input type="time" value={form.quietHoursStart ?? ""} aria-label="Quiet hours from" onChange={(e) => update({ quietHoursStart: e.target.value })} />
@@ -1135,8 +1135,8 @@ export function NotificationsSection() {
         dirty={dirty}
         saving={save.isPending}
         saveDisabled={quietInvalid}
-        saveDisabledReason={quietInvalid ? "Set both quiet-hour times before saving." : undefined}
-        error={save.isError ? errorMessage(save.error, "The notification settings could not be saved. Try again.") : undefined}
+        saveDisabledReason={quietInvalid ? "Set both quiet hours times before saving." : undefined}
+        error={save.isError ? errorMessage(save.error, "Notification settings were not saved. Try again.") : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}
         saveLabel="Save notifications"
@@ -1146,7 +1146,7 @@ export function NotificationsSection() {
   );
 }
 
-const MESSAGING_MODE_LABELS: Record<string, string> = { off: "Off", sandbox: "Sandbox", allowlist: "Allowlist", live: "Live" };
+const MESSAGING_MODE_LABELS: Record<string, string> = { off: "Off", sandbox: "Test mode", allowlist: "Approved numbers only", live: "On" };
 
 function MessagingStatusPanel() {
   const status = useApiQuery(["settings", "messaging-status"], (api) => api.getMessagingStatus());
@@ -1154,13 +1154,16 @@ function MessagingStatusPanel() {
   const value = status.data;
   return (
     <div className="my-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-sunken/60 px-3 py-2 text-[12.5px] text-ink-2" data-testid="messaging-status">
-      <span className="text-ink-3">RIVET messaging</span>
+      <span className="text-ink-3">WhatsApp from RIVET</span>
       <Badge variant={value.mode === "live" ? "success" : value.mode === "off" ? "neutral" : "warning"} dot>{MESSAGING_MODE_LABELS[value.mode] ?? value.mode}</Badge>
-      <span className="text-ink-3">{value.provider === "twilio" ? `Provider connected · WhatsApp sender ${value.whatsappReady ? "ready" : "not configured"}` : "No provider connected; nothing leaves the sandbox."}</span>
+      <span className="text-ink-3">{value.provider === "twilio" ? (value.whatsappReady ? "WhatsApp is connected and ready." : "WhatsApp is connected, but the sender is not set up yet.") : "WhatsApp is not connected. No messages are sent."}</span>
       {value.warning ? <span className="text-warning-deep">{value.warning}</span> : null}
     </div>
   );
 }
+
+const TEMPLATE_FAMILY_LABELS: Record<string, string> = { renewal: "Renewals", payment: "Payments", class: "Classes", entry: "Entry" };
+const CHANNEL_LABELS: Record<string, string> = { whatsapp: "WhatsApp", sms: "SMS" };
 
 function MessageTemplateCatalogue() {
   const catalogue = useApiQuery(["settings", "message-template-catalogue"], (api) => api.listMessageTemplateCatalogue());
@@ -1169,14 +1172,14 @@ function MessageTemplateCatalogue() {
   return (
     <div className="border-t border-line py-3">
       <button type="button" className="flex min-h-9 w-full cursor-pointer items-center justify-between gap-3 text-start text-[13.5px] font-medium text-ink" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
-        <span>Reviewed message catalogue <span className="font-normal text-ink-3">· {catalogue.data.length} templates, Arabic and English</span></span>
+        <span>Message wording <span className="font-normal text-ink-3">· {catalogue.data.length} messages in Arabic and English</span></span>
         <span className="text-[12.5px] font-normal text-ink-3">{open ? "Hide" : "Show"}</span>
       </button>
       {open ? (
         <ul className="mt-2 divide-y divide-line" data-testid="message-template-catalogue">
           {catalogue.data.map((template) => (
             <li key={template.key} className="py-3 text-[12.5px]">
-              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-ink">{template.name}</span><span className="text-[12px] text-ink-3">{template.family} · {template.channels.join(" / ")}</span></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-ink">{template.name}</span><span className="text-[12px] text-ink-3">{TEMPLATE_FAMILY_LABELS[template.family] ?? template.family} · {template.channels.map((channel) => CHANNEL_LABELS[channel] ?? channel).join(", ")}</span></div>
               <p className="mt-1.5 leading-5 text-ink-2">{template.bodyEn}</p>
               <p className="mt-1 leading-5 text-ink-2" dir="rtl">{template.bodyAr}</p>
             </li>

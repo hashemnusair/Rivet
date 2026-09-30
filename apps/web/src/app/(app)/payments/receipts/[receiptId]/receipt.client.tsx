@@ -14,7 +14,7 @@ import { formatDateTime, todayISODate } from "@/lib/utils/dates";
 import { currencyDisplayName, money, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -98,17 +98,17 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           ) : null}
           {canRetailRefund ? (
             <Button variant="secondary" size="sm" onClick={() => setRefundOpen(true)} data-testid="retail-refund-button">
-              <Undo2 /> Return / refund…
+              <Undo2 /> Return and refund…
             </Button>
           ) : null}
           {canVoid ? (
             <Button variant="danger" size="sm" onClick={() => setVoidOpen(true)}>
-              <XOctagon /> Void…
+              <XOctagon /> Cancel payment…
             </Button>
           ) : null}
           {canRetailVoid ? (
             <Button variant="danger" size="sm" onClick={() => setVoidOpen(true)} data-testid="retail-void-button">
-              <XOctagon /> Void sale…
+              <XOctagon /> Cancel sale…
             </Button>
           ) : null}
           <Button size="sm" onClick={() => window.print()}>
@@ -178,7 +178,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
                 </tr>
               ) : charge ? (
                 <tr className="border-t border-line-2">
-                  <td className="py-2 font-semibold">Charge total</td>
+                  <td className="py-2 font-semibold">Total</td>
                   <td className="py-2 text-end font-semibold tabular">{toMajorString(charge.total)}</td>
                 </tr>
               ) : null}
@@ -192,7 +192,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
             </div>
             {charge && charge.outstandingAmount.amount > 0 ? (
               <div className="flex justify-between font-semibold">
-                <span>Balance remaining</span>
+                <span>Still owed</span>
                 <span className="tabular">{toMajorString(charge.outstandingAmount)}</span>
               </div>
             ) : null}
@@ -202,9 +202,9 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
             <p>Served by: {payment.collectedByName}</p>
             {payment.externalReference ? <p>Reference: {payment.externalReference}</p> : null}
             {isRefund && paymentRecord?.refundReason ? <p>Reason: {paymentRecord.refundReason}</p> : null}
-            {isVoided ? <p className="font-semibold text-danger">VOIDED{payment.voidReason ? ` — ${payment.voidReason}` : ""}</p> : null}
+            {isVoided ? <p className="font-semibold text-danger">CANCELLED{payment.voidReason ? ` — ${payment.voidReason}` : ""}</p> : null}
             {payment.status === "refunded" && !isRefund ? <p className="font-semibold">This {isRetailSale ? "sale" : "payment"} was fully refunded{refundedSoFar ? ` (${toMajorString(refundedSoFar)})` : ""}.</p> : null}
-            {payment.status === "partially_refunded" && !isRefund && refundedSoFar ? <p className="font-semibold">Partially refunded: {toMajorString(refundedSoFar)} returned so far.</p> : null}
+            {payment.status === "partially_refunded" && !isRefund && refundedSoFar ? <p className="font-semibold">Part refunded: {toMajorString(refundedSoFar)} given back so far.</p> : null}
           </div>
 
           <div className="border-t border-dashed border-line-3 pt-3 text-center">
@@ -229,15 +229,15 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
                 Refunded so far: <MoneyText money={retailSale.refundedAmount} />
               </p>
             ) : null}
-            {retailSale?.voidReason ? <p className="mt-2 text-[12px] text-danger">Void reason: {retailSale.voidReason}</p> : null}
+            {retailSale?.voidReason ? <p className="mt-2 text-[12px] text-danger">Reason for cancelling: {retailSale.voidReason}</p> : null}
             {paymentRecord?.originalPaymentId ? (
-              <p className="mt-2 text-[12px] text-ink-3">This refund is linked to the original payment.</p>
+              <p className="mt-2 text-[12px] text-ink-3">This is a refund of an earlier payment.</p>
             ) : null}
           </section>
 
           {detail.relatedPayments?.length > 0 ? (
             <section className="panel p-4">
-              <h3 className="mb-2.5 text-[13px] font-semibold">Linked records</h3>
+              <h3 className="mb-2.5 text-[13px] font-semibold">Related receipts</h3>
               <ul className="space-y-2">
                 {detail.relatedPayments.map((p) => (
                   <li key={p.id} className="flex items-center justify-between text-[12.5px]">
@@ -245,7 +245,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
                       {p.receiptNumber}
                     </Link>
                     <span className="flex items-center gap-2">
-                      <span className="capitalize text-ink-3">{p.type}</span>
+                      <span className="text-ink-3">{TRANSACTION_TYPE_LABELS[p.type]}</span>
                       <MoneyText money={p.amount} />
                     </span>
                   </li>
@@ -255,11 +255,11 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           ) : null}
 
           <section className="panel p-4 text-[12.5px] text-ink-2">
-            <h3 className="mb-2.5 text-[13px] font-semibold">Receipt rules</h3>
+            <h3 className="mb-2.5 text-[13px] font-semibold">Refund or cancel?</h3>
             <ul className="list-disc space-y-1.5 ps-4">
-              <li>Voids are same-day only and fully reverse the payment.</li>
-              <li>Refunds create a linked negative receipt; they never rewrite history.</li>
-              <li>Refunds over JOD 25.000 are flagged for manager review.</li>
+              <li>Cancel a payment only if it was entered by mistake today. The whole payment is cancelled.</li>
+              <li>A refund gives money back. It makes a new refund receipt.</li>
+              <li>A manager checks refunds over JOD 25.000.</li>
             </ul>
           </section>
         </aside>
@@ -271,7 +271,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         onOpenChange={setRefundOpen}
         onDone={async () => {
           setRefundOpen(false);
-          toast.success("Retail refund recorded and stock returned.");
+          toast.success("Refund saved. The items are back in stock.");
           await invalidate();
         }}
       /> : <RefundDialog
@@ -283,7 +283,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         onOpenChange={setRefundOpen}
         onDone={async () => {
           setRefundOpen(false);
-          toast.success("Refund issued — linked to the original payment.");
+          toast.success("Refund saved.");
           await invalidate();
         }}
       />}
@@ -294,7 +294,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         onOpenChange={setVoidOpen}
         onDone={async () => {
           setVoidOpen(false);
-          toast.success(retailSale ? "Retail sale voided and stock restored." : "Payment voided.");
+          toast.success(retailSale ? "Sale cancelled. The items are back in stock." : "Payment cancelled.");
           await invalidate();
         }}
       />
@@ -329,7 +329,7 @@ function RetailRefundDialog({
       setIdempotencyKey(crypto.randomUUID());
       onDone();
     },
-    onError: (e) => setError(isApiError(e) ? e.message : "Retail refund failed."),
+    onError: (e) => setError(isApiError(e) ? e.message : "The refund was not saved. Try again."),
   });
 
   return (
@@ -337,7 +337,7 @@ function RetailRefundDialog({
       <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
           <DialogTitle>Return and refund items</DialogTitle>
-          <DialogDescription>Select the quantities physically returned. RIVET restores stock and creates an immutable refund fact for accounting.</DialogDescription>
+          <DialogDescription>Choose how many of each item the customer gave back. The items go back into stock and the money is refunded. This cannot be undone.</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className="space-y-2" aria-label="Refund quantities">
@@ -345,7 +345,7 @@ function RetailRefundDialog({
               <div key={line.productId} className="grid grid-cols-[1fr_88px] items-center gap-3 rounded-md border border-line px-3 py-2.5">
                 <div>
                   <p className="text-[13px] font-medium">{line.productName}</p>
-                  <p className="text-[11.5px] text-ink-3">Up to {line.remaining} · {toMajorString(line.unitPrice)} each</p>
+                  <p className="text-[12px] text-ink-3">Up to {line.remaining} · {toMajorString(line.unitPrice)} each</p>
                 </div>
                 <Input
                   aria-label={`Return quantity for ${line.productName}`}
@@ -364,13 +364,13 @@ function RetailRefundDialog({
             <MoneyText money={money(refundMinor)} className="font-semibold" />
           </div>
           <Field label="Reason" required>
-            <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. Unopened item returned by customer" data-testid="retail-refund-reason" />
+            <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="For example: Unopened item returned by customer" data-testid="retail-refund-reason" />
           </Field>
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
-          <Button variant="signal" disabled={selected.length === 0 || reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="confirm-retail-refund">Issue refund</Button>
+          <Button variant="signal" disabled={selected.length === 0 || reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="confirm-retail-refund">Give refund</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -429,7 +429,7 @@ function RefundDialog({
       }),
     {
       onSuccess: () => onDone(),
-      onError: (e) => setError(isApiError(e) ? e.message : "Refund failed."),
+      onError: (e) => setError(isApiError(e) ? e.message : "The refund was not saved. Try again."),
     },
   );
 
@@ -444,7 +444,7 @@ function RefundDialog({
       return;
     }
     if (amountRead?.ok && amountRead.money.amount > maxMinor) {
-      setAmountError(`Cannot exceed the refundable ${toMajorString(refundable)} ${currency}.`);
+      setAmountError(`You can refund at most ${toMajorString(refundable)} ${currency}.`);
       return;
     }
     setAmountError(null);
@@ -457,23 +457,23 @@ function RefundDialog({
         <DialogHeader>
           <DialogTitle>Refund payment</DialogTitle>
           <DialogDescription>
-            Creates a separate negative receipt linked to this one. The original payment is never rewritten.
+            This gives money back to the member. It cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className="flex justify-between rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[13px]">
-            <span className="text-ink-2">Refundable remaining</span>
+            <span className="text-ink-2">Can still be refunded</span>
             <MoneyText money={refundable} className="font-semibold" />
           </div>
           <Field label={`Amount (${currency})`} error={amountError ?? undefined} hint={`Leave empty to refund the full ${toMajorString(refundable)}.`}>
             <Input inputMode="decimal" dir="ltr" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountError(null); }} placeholder={toMajorString(refundable)} aria-invalid={amountError ? true : undefined} data-testid="refund-amount" />
           </Field>
           <Field label="Reason" required>
-            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Duplicate charge confirmed with the bank" data-testid="refund-reason" />
+            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="For example: Duplicate charge confirmed with the bank" data-testid="refund-reason" />
           </Field>
           {reviewFlagged ? (
             <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
-              Refunds above {currency} 25.000 are flagged for manager review in the audit log.
+              A manager will check refunds over {currency} 25.000.
             </p>
           ) : null}
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
@@ -481,7 +481,7 @@ function RefundDialog({
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
           <Button variant="signal" disabled={reason.trim().length < 5} loading={mutation.isPending} onClick={submit} data-testid="confirm-refund">
-            Issue refund
+            Give refund
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -516,31 +516,31 @@ function VoidDialog({
 
   const mutation = useApiMutation((api) => retailSaleId ? api.voidRetailSale(retailSaleId, { reason, idempotencyKey }) : api.voidPayment(paymentId, { reason, idempotencyKey }), {
     onSuccess: () => onDone(),
-    onError: (e) => setError(isApiError(e) ? e.message : "Void failed."),
+    onError: (e) => setError(isApiError(e) ? e.message : retailSaleId ? "The sale was not cancelled. Try again." : "The payment was not cancelled. Try again."),
   });
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && mutation.isPending) return; onOpenChange(next); }}>
       <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
-          <DialogTitle>{retailSaleId ? "Void retail sale" : "Void payment"}</DialogTitle>
+          <DialogTitle>{retailSaleId ? "Cancel a sale entered by mistake" : "Cancel a payment entered by mistake"}</DialogTitle>
           <DialogDescription>
-            Same-day correction: {retailSaleId ? "the sale is reversed and every item is returned to stock" : "the payment is marked void and fully reversed"}. Use a refund for anything older.
+            Only for mistakes made today. {retailSaleId ? "The whole sale is cancelled and every item goes back into stock." : "The whole payment is cancelled."} For anything older, give a refund instead.
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className={cn("rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger")}>
-            This is audited with your name attached and cannot be undone.
+            Your name is saved with this. It cannot be undone.
           </div>
           <Field label="Reason" required>
-            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Wrong amount keyed at the terminal" />
+            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="For example: Wrong amount keyed at the terminal" />
           </Field>
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{retailSaleId ? "Keep sale" : "Keep payment"}</Button>
           <Button variant="signal" disabled={reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()}>
-            {retailSaleId ? "Void sale" : "Void payment"}
+            {retailSaleId ? "Cancel sale" : "Cancel payment"}
           </Button>
         </DialogFooter>
       </DialogContent>

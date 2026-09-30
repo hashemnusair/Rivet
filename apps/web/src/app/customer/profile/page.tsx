@@ -73,7 +73,7 @@ export default function MemberProfilePage() {
       await updateCustomerProfile({ ...form, fullName: form.fullName?.trim(), phone: form.phone?.trim() });
       setSaved(true);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Profile could not be saved.");
+      setError(caught instanceof Error ? caught.message : "Your profile was not saved. Try again.");
     } finally {
       setSaving(false);
     }
@@ -81,7 +81,7 @@ export default function MemberProfilePage() {
 
   return (
     <main className="mx-auto max-w-[900px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-      <PageHeader sectionLabel="Your account" title="Profile" description="Keep your contact and emergency details current. The same member-owned information is shared with every gym you join." />
+      <PageHeader sectionLabel="Your account" title="Profile" description="Keep your contact and emergency details up to date. Every gym you join sees these details." />
 
       <form onSubmit={submit} className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-5">
         <div className="space-y-4">
@@ -97,7 +97,7 @@ export default function MemberProfilePage() {
                   <option value="" disabled>Choose female or male</option><option value="female">Female</option><option value="male">Male</option>
                 </select>
               </Field>
-              <Field label="Preferred language" htmlFor="profile-language" hint="Changes the language of service messages only." className="sm:col-span-2">
+              <Field label="Preferred language" htmlFor="profile-language" hint="Used for messages about your bookings and payments." className="sm:col-span-2">
                 <select id="profile-language" value={form.preferredLanguage ?? "en"} onChange={(event) => update("preferredLanguage", event.target.value)} className={SELECT_CLASS}>
                   <option value="en">English</option><option value="ar">العربية</option>
                 </select>
@@ -115,7 +115,7 @@ export default function MemberProfilePage() {
 
           <section className="panel p-4 sm:p-5" aria-labelledby="profile-emergency-title">
             <h2 id="profile-emergency-title" className="text-[15px] font-semibold">Emergency contact</h2>
-            <p className="mt-1 text-[13px] text-ink-2">Only share someone you trust your gyms to contact if needed.</p>
+            <p className="mt-1 text-[13px] text-ink-2">Add someone your gym can call in an emergency.</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label="Name" htmlFor="emergency-name"><Input id="emergency-name" className={FIELD} value={form.emergencyContactName ?? ""} onChange={(event) => update("emergencyContactName", event.target.value)} autoComplete="off" /></Field>
               <Field label="Relationship" htmlFor="emergency-relationship"><Input id="emergency-relationship" className={FIELD} value={form.emergencyContactRelationship ?? ""} onChange={(event) => update("emergencyContactRelationship", event.target.value)} autoComplete="off" placeholder="Parent, spouse…" /></Field>
@@ -126,15 +126,15 @@ export default function MemberProfilePage() {
           {error ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[13px] text-danger">{error}</p> : null}
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" loading={saving} className="w-full sm:w-auto">Save profile</Button>
-            {saved ? <span role="status" className="inline-flex items-center gap-1.5 text-[13px] text-success-deep"><Check className="size-4" aria-hidden /> Saved and shared with linked gyms</span> : null}
+            {saved ? <span role="status" className="inline-flex items-center gap-1.5 text-[13px] text-success-deep"><Check className="size-4" aria-hidden /> Saved. Your gyms can see the changes.</span> : null}
           </div>
         </div>
 
         <aside className="space-y-4">
           <div className="panel p-4 sm:p-5">
-            <h2 className="text-[13px] font-semibold">Privacy boundary</h2>
-            <p className="mt-2 text-[13px] leading-relaxed text-ink-2">Your email, phone, personal details and emergency contact are member-owned. Each gym sees only your synchronized record in that gym.</p>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">Gym staff still control operational notes, tags, branch assignment and membership details. Medical records are not collected here.</p>
+            <h2 className="text-[13px] font-semibold">Who can see your details</h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-ink-2">You own your email, phone, personal details and emergency contact. Each gym you join can see them. A gym cannot see your memberships at other gyms.</p>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">Gym staff manage their notes and tags, your branch and your membership details. We do not ask for medical information here.</p>
           </div>
           <CustomerCommunicationPreferences />
         </aside>

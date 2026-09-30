@@ -55,15 +55,15 @@ describe("Settings public-profile navigation guard", () => {
     await renderWithApp(<SettingsPageInner />);
     await editPublicProfile(user);
 
-    await user.click(screen.getByRole("tab", { name: "Organization" }));
+    await user.click(screen.getByRole("tab", { name: "Gym details" }));
     expect(screen.getByRole("dialog", { name: "Unsaved public profile changes" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stay" }));
     expect(screen.getByRole("tab", { name: "Public profile" })).toHaveAttribute("data-state", "active");
 
-    await user.click(screen.getByRole("tab", { name: "Organization" }));
+    await user.click(screen.getByRole("tab", { name: "Gym details" }));
     await user.click(screen.getByRole("button", { name: "Discard and leave" }));
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Organization" })).toHaveAttribute("data-state", "active"));
-    expect(await screen.findByRole("heading", { name: "Organization" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Gym details" })).toHaveAttribute("data-state", "active"));
+    expect(await screen.findByRole("heading", { name: "Gym details" })).toBeInTheDocument();
   });
 
   it("saves before following an internal navigation link", async () => {
@@ -78,36 +78,36 @@ describe("Settings public-profile navigation guard", () => {
   });
 });
 
-describe("Settings gym spaces", () => {
-  it("explains gym spaces in plain language and lets an owner add one", async () => {
+describe("Settings gym areas", () => {
+  it("explains gym areas in plain language and lets an owner add one", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<SettingsPageInner />);
     const upsertZone = vi.spyOn(api, "upsertZone");
 
-    await user.click(screen.getByRole("tab", { name: "Gym spaces" }));
-    expect(await screen.findByRole("heading", { name: "Gym spaces" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Gym areas" }));
+    expect(await screen.findByRole("heading", { name: "Gym areas" })).toBeInTheDocument();
     expect(screen.getByText(/places inside a branch/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Add gym space" }));
-    const dialog = screen.getByRole("dialog", { name: "Add gym space" });
+    await user.click(screen.getByRole("button", { name: "Add gym area" }));
+    const dialog = screen.getByRole("dialog", { name: "Add gym area" });
     await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "Ladies studio");
-    await user.click(within(dialog).getByRole("button", { name: "Add gym space" }));
+    await user.click(within(dialog).getByRole("button", { name: "Add gym area" }));
 
     await waitFor(() => expect(upsertZone).toHaveBeenCalledWith(expect.objectContaining({ name: "Ladies studio", branchId: expect.any(String), kind: "floor" })));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add gym space" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add gym area" })).not.toBeInTheDocument());
     expect((await screen.findAllByText("Ladies studio")).length).toBeGreaterThan(0);
   });
 });
 
 describe("Settings navigation and operational drafts", () => {
-  it("keeps operational rules and branch hours as separate linkable sections", async () => {
+  it("keeps gym rules and branch hours as separate linkable sections", async () => {
     const user = userEvent.setup();
     const scrollTo = vi.spyOn(window, "scrollTo");
     await renderWithApp(<SettingsPageInner />);
 
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.queryByText("System", { exact: true })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Operational rules" }));
+    await user.click(screen.getByRole("tab", { name: "Gym rules" }));
     expect(await screen.findByRole("heading", { name: "Entry and access" })).toBeInTheDocument();
     expect(navigation.replace).toHaveBeenLastCalledWith("/settings?section=operations", { scroll: false });
 
@@ -118,19 +118,19 @@ describe("Settings navigation and operational drafts", () => {
     scrollTo.mockRestore();
   });
 
-  it("protects edited operational rules and restores the saved value on discard", async () => {
+  it("protects edited gym rules and restores the saved value on discard", async () => {
     const user = userEvent.setup();
     await renderWithApp(<SettingsPageInner />);
-    await user.click(screen.getByRole("tab", { name: "Operational rules" }));
+    await user.click(screen.getByRole("tab", { name: "Gym rules" }));
 
-    const expiry = await screen.findByRole("spinbutton", { name: "Expiry warning, days" });
+    const expiry = await screen.findByRole("spinbutton", { name: "Ending soon warning, days" });
     expect(expiry).toHaveValue(7);
     await user.clear(expiry);
     await user.type(expiry, "12");
     expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
 
-    await user.click(screen.getByRole("tab", { name: "Organization" }));
-    expect(screen.getByRole("dialog", { name: "Unsaved operational rules" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Gym details" }));
+    expect(screen.getByRole("dialog", { name: "Unsaved gym rules" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stay" }));
     await user.click(screen.getByRole("button", { name: "Discard" }));
     expect(expiry).toHaveValue(7);

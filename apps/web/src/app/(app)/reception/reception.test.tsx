@@ -65,7 +65,7 @@ describe("reception console — idle", () => {
     const { api } = await renderWithApp(<ReceptionPage />, { role: "owner" });
 
     expect(await screen.findByRole("heading", { name: /choose a branch to open reception/i })).toBeInTheDocument();
-    expect(screen.queryByText(/not allowed for this role/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/you don't have access/i)).not.toBeInTheDocument();
 
     const session = await api.getSession();
     const branch = session.branches[0]!;
@@ -88,7 +88,7 @@ describe("reception console — idle", () => {
   it("shows today's check-in count and attendance log instead of inferred occupancy", async () => {
     await renderWithApp(<ReceptionPage />, { role: "receptionist" });
     expect(await screen.findByText(/check-ins today/i)).toBeInTheDocument();
-    expect(screen.getByText(/today's check-in log/i)).toBeInTheDocument();
+    expect(screen.getByText(/who checked in today/i)).toBeInTheDocument();
     expect(screen.queryByText(/in the gym now/i)).not.toBeInTheDocument();
   });
 
@@ -116,7 +116,7 @@ describe("reception console — allowed", () => {
     expect(within(verdict).getByText(member.fullName)).toBeInTheDocument();
     expect(within(verdict).getByText(/welcome in/i)).toBeInTheDocument();
     expect(within(verdict).getByText("Plan")).toBeInTheDocument();
-    expect(within(verdict).getByText("Balance")).toBeInTheDocument();
+    expect(within(verdict).getByText("Owes")).toBeInTheDocument();
   });
 
   it("keeps long bilingual identities separate from membership facts", async () => {
@@ -215,7 +215,7 @@ describe("reception console — warning", () => {
 
     const verdict = await screen.findByTestId("checkin-verdict");
     expect(verdict).toHaveAttribute("data-decision", "warning");
-    expect(within(verdict).getByText(/let in — with a notice/i)).toBeInTheDocument();
+    expect(within(verdict).getByText(/allowed, with a warning/i)).toBeInTheDocument();
     // The reason list spells the balance out (the Balance cell also shows it).
     expect(within(verdict).getByText(REASON_CODE_LABELS.OUTSTANDING_BALANCE)).toBeInTheDocument();
     // Entry is still permitted…
@@ -235,7 +235,7 @@ describe("reception console — blocked", () => {
 
     const verdict = await screen.findByTestId("checkin-verdict");
     expect(verdict).toHaveAttribute("data-decision", "blocked");
-    expect(within(verdict).getByText("Blocked")).toBeInTheDocument();
+    expect(within(verdict).getByText("Entry refused")).toBeInTheDocument();
     // The desk is told which rule stopped them, in plain words.
     expect(within(verdict).getByText(reason)).toBeInTheDocument();
 
@@ -244,7 +244,7 @@ describe("reception console — blocked", () => {
     expect(screen.getByTestId("quick-renew")).toBeInTheDocument();
   });
 
-  it("tells a receptionist that only a manager can override", async () => {
+  it("tells a receptionist that only a manager can let them in", async () => {
     const { member } = await findMember("receptionist", (m) => m.membershipStatus === "expired");
 
     await renderWithApp(<ReceptionPage />, { role: "receptionist" });
@@ -252,7 +252,7 @@ describe("reception console — blocked", () => {
 
     await screen.findByTestId("checkin-verdict");
     expect(screen.queryByTestId("override-checkin")).not.toBeInTheDocument();
-    expect(screen.getByText(/a manager can override this/i)).toBeInTheDocument();
+    expect(screen.getByText(/only a manager can let them in/i)).toBeInTheDocument();
   });
 
   it("reports a lookup that matches nobody", async () => {
@@ -274,9 +274,9 @@ describe("reception console — override", () => {
     await user.click(await screen.findByTestId("override-checkin"));
 
     // The dialog restates the block reasons and names who is accountable.
-    expect(await screen.findByText(/override and let in/i)).toBeInTheDocument();
-    expect(screen.getByText(/entry was blocked because/i)).toBeInTheDocument();
-    expect(screen.getByText(/recorded in the audit log/i)).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: /let in anyway/i })).toBeInTheDocument();
+    expect(screen.getByText(/entry was refused because/i)).toBeInTheDocument();
+    expect(screen.getByText(/saved with your name/i)).toBeInTheDocument();
 
     // Cannot commit without a reason.
     expect(screen.getByTestId("confirm-override")).toBeDisabled();
@@ -369,7 +369,7 @@ describe("reception console — repeat scan", () => {
     const verdict = await screen.findByTestId("checkin-verdict");
     expect(within(verdict).getByText("Already checked in")).toBeInTheDocument();
     expect(within(verdict).getByText(/already checked in at .* no second visit was recorded/i)).toBeInTheDocument();
-    expect(within(verdict).queryByText("Blocked")).not.toBeInTheDocument();
+    expect(within(verdict).queryByText("Entry refused")).not.toBeInTheDocument();
     expect(screen.queryByTestId("confirm-checkin")).not.toBeInTheDocument();
     expect(screen.queryByTestId("override-checkin")).not.toBeInTheDocument();
     expect(screen.getByTestId("next-member")).toBeInTheDocument();

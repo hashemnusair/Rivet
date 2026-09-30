@@ -68,7 +68,6 @@ import type * as qolMaintenance from "../qolMaintenance.js";
 import type * as reconciliation from "../reconciliation.js";
 import type * as renewalJobs from "../renewalJobs.js";
 import type * as renewalPolicy from "../renewalPolicy.js";
-import type * as resolutionAssist from "../resolutionAssist.js";
 import type * as security from "../security.js";
 import type * as seed from "../seed.js";
 import type * as subscriptionReconciliation from "../subscriptionReconciliation.js";
@@ -145,7 +144,6 @@ declare const fullApi: ApiFromModules<{
   reconciliation: typeof reconciliation;
   renewalJobs: typeof renewalJobs;
   renewalPolicy: typeof renewalPolicy;
-  resolutionAssist: typeof resolutionAssist;
   security: typeof security;
   seed: typeof seed;
   subscriptionReconciliation: typeof subscriptionReconciliation;

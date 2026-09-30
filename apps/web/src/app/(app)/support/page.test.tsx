@@ -48,8 +48,8 @@ describe("gym support plan requests", () => {
     render(<SupportPage />);
     await user.click(screen.getByRole("button", { name: "Request plan upgrade" }));
     expect(screen.getByRole("heading", { name: "Request a plan upgrade" })).toBeInTheDocument();
-    await user.selectOptions(screen.getByRole("combobox", { name: "Requested plan" }), "Pro");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Billing cadence" }), "annual");
+    await user.selectOptions(screen.getByRole("combobox", { name: "New plan" }), "Pro");
+    await user.selectOptions(screen.getByRole("combobox", { name: "How often you pay" }), "annual");
     await user.type(screen.getByRole("textbox", { name: "Subject" }), "Please upgrade our workspace");
     await user.type(screen.getByRole("textbox", { name: "Why do you need this plan?" }), "We need financial reporting for the next renewal.");
     await user.click(screen.getByRole("button", { name: "Send request" }));

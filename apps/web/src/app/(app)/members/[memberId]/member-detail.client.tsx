@@ -32,7 +32,6 @@ import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { CreateTaskDialog } from "@/features/members/create-task-dialog";
 import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
-import { ResolutionWorkspace } from "@/features/resolution/resolution-workspace";
 
 export default function MemberDetailPageClient() {
   const { memberId } = useParams<{ memberId: string }>();
@@ -95,8 +94,6 @@ export default function MemberDetailPageClient() {
       <Breadcrumbs items={[{ label: "Members", href: "/members" }, { label: member.fullName }]} />
 
       <MemberHeader member={member} currentMembership={currentMembership} renewalTarget={renewalTarget} upcomingMembership={upcomingMembership} branchName={branchName} />
-
-      <ResolutionWorkspace memberId={member.id} memberName={member.fullName} onCreateTask={can("crm.write") ? () => setTaskOpen(true) : undefined} />
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Tabs className="min-w-0" value={activeTab} onValueChange={(tab) => {
@@ -164,7 +161,7 @@ export default function MemberDetailPageClient() {
           </section>
 
           <section className="panel p-4">
-            <h3 className="mb-3 font-display text-[13px] font-semibold">Follow-up context</h3>
+            <h3 className="mb-3 font-display text-[13px] font-semibold">Renewal and contact</h3>
             <FollowUpContextPanel memberId={member.id} />
           </section>
         </aside>
@@ -184,7 +181,7 @@ function AddNoteDialog({ memberId, open, onOpenChange }: { memberId: string; ope
   const [body, setBody] = useState("");
   const mutation = useApiMutation((api) => api.addMemberNote(memberId, { body }), {
     onSuccess: async () => {
-      toast.success("Note added to the timeline.");
+      toast.success("Note saved.");
       setBody("");
       onOpenChange(false);
       await invalidate();
@@ -195,10 +192,10 @@ function AddNoteDialog({ memberId, open, onOpenChange }: { memberId: string; ope
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add note</DialogTitle>
-          <DialogDescription>Notes are plain text, timestamped, and visible to the whole team.</DialogDescription>
+          <DialogDescription>Everyone on your team can see this note.</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <Textarea autoFocus rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder="e.g. Asked about pausing during Ramadan — revisit next week" data-testid="note-body" />
+          <Textarea autoFocus rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder="For example: Asked about pausing during Ramadan. Call again next week." data-testid="note-body" />
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>

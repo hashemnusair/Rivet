@@ -37,7 +37,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     // ---- Work the expiring-members queue ----------------------------------
     await page.goto("/crm/queues");
     await page.getByRole("button", { name: "Renewals", exact: true }).click();
-    await page.getByTestId("follow-up-filters").getByRole("button", { name: "Expiring", exact: true }).click();
+    await page.getByTestId("follow-up-filters").getByRole("button", { name: "Ending soon", exact: true }).click();
 
     const firstRow = page.locator("li > button").filter({ has: page.locator("span") }).first();
     await expect(firstRow).toBeVisible();
@@ -70,7 +70,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     await signIn(page, "Owner");
     await page.goto("/crm/queues");
     await page.getByRole("button", { name: "Renewals", exact: true }).click();
-    await page.getByTestId("follow-up-filters").getByRole("button", { name: "Expiring", exact: true }).click();
+    await page.getByTestId("follow-up-filters").getByRole("button", { name: "Ending soon", exact: true }).click();
     const firstRow = page.locator("li > button").filter({ has: page.locator("span") }).first();
     await firstRow.click();
     await page.getByTestId("follow-up-panel").getByRole("link", { name: "Open member record" }).click();
@@ -79,13 +79,13 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     await page.getByRole("button", { name: "More actions" }).click();
     await page.getByRole("menuitem", { name: /Change plan/ }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText(/no proration/i);
+    await expect(dialog).toContainText(/nothing is taken off for unused days/i);
     await dialog.getByLabel("New membership plan").click();
     await page.getByRole("option").first().click();
-    await dialog.getByPlaceholder("e.g. Member moving to unlimited access at next renewal").fill("Member selected a different tier at renewal.");
+    await dialog.getByPlaceholder("For example: Member moving to unlimited access at next renewal").fill("Member selected a different tier at renewal.");
     await dialog.getByRole("button", { name: "Change plan" }).click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByText(/successor term created/i)).toBeVisible();
+    await expect(page.getByText(/a new membership was added for the new plan/i)).toBeVisible();
   });
 
   test("reception collects an outstanding balance and the receipt is reachable", async ({ page }) => {
@@ -94,7 +94,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     // Find a member who owes money.
     await page.goto("/members");
     await page.getByLabel("Membership status filter").click();
-    await page.getByRole("option", { name: /has balance due/i }).click();
+    await page.getByRole("option", { name: /owes money/i }).click();
 
     // Only click once the filtered result set is on screen: a balance-due row
     // shows a positive "JOD …" amount, while unfiltered rows show "0.000".
@@ -106,7 +106,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     // Collect the balance from the member header.
     await page.getByTestId("collect-outstanding").click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText(/outstanding balance/i);
+    await expect(dialog).toContainText(/unpaid/i);
     await dialog.getByTestId("confirm-payment").click();
     // The dialog confirms what the server recorded before it closes.
     await expect(dialog.getByTestId("payment-collected")).toContainText(/Receipt R-\d+/);
@@ -117,7 +117,7 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     await expect(page.getByText(/payment collected/i).first()).toBeVisible();
 
     // The receipt opens from the timeline and is a real printable document.
-    await page.getByRole("link", { name: /^receipt$/i }).first().click();
+    await page.getByRole("link", { name: /^view receipt$/i }).first().click();
     await expect(page).toHaveURL(/\/payments\/receipts\//);
     const receipt = page.locator("#receipt-print");
     await expect(receipt).toBeVisible();
@@ -132,7 +132,7 @@ test.describe("reception check-in", () => {
     await page.goto("/reception");
 
     await expect(page.getByRole("heading", { name: "Choose a branch to open Reception" })).toBeVisible();
-    await expect(page.getByText("Not allowed for this role")).toHaveCount(0);
+    await expect(page.getByText("You don't have access")).toHaveCount(0);
     await page.getByRole("button", { name: "Forge — Abdoun" }).click();
     await expect(page.getByTestId("reception-search")).toBeFocused();
 
@@ -175,7 +175,7 @@ test.describe("reception check-in", () => {
       await expect(page.getByText(/checked in ·/i)).toBeVisible();
       await expect(page.getByTestId("next-member")).toBeVisible();
       const activity = page.getByRole("complementary", { name: "Branch activity" });
-      await expect(activity.getByText("Today's check-in log")).toBeVisible();
+      await expect(activity.getByText("Who checked in today")).toBeVisible();
       await expect(activity).toContainText(memberName.trim());
     } else {
       // A blocked member offers a remedy instead of entry.
@@ -197,14 +197,14 @@ test.describe("role restrictions", () => {
   test("describes the actual dashboard branch scope", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/dashboard");
-    await expect(page.getByText("All 2 branches, consolidated.")).toBeVisible();
+    await expect(page.getByText("All 2 branches together.").first()).toBeVisible();
   });
 
   test("keeps finance restricted while exposing personal Settings to reception", async ({ page }) => {
     await signIn(page, "Reception");
     const nav = page.getByRole("navigation").first();
     await expect(nav.getByRole("link", { name: /^Payments$/ })).toHaveCount(0);
-    await expect(nav.getByRole("link", { name: /^Audit log$/ })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: /^Activity log$/ })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
     await page.goto("/settings?section=organization");
     await expect(page.getByText(/needs the Manage settings permission/i)).toBeVisible();
@@ -213,14 +213,14 @@ test.describe("role restrictions", () => {
   test("refuses the transaction ledger by URL, not just by hiding the link", async ({ page }) => {
     await signIn(page, "Reception");
     await page.goto("/payments");
-    await expect(page.getByText(/not allowed for this role/i)).toBeVisible();
+    await expect(page.getByText(/you don't have access/i)).toBeVisible();
   });
 
   test("gives the owner the simplified finance and settings entry points", async ({ page }) => {
     await signIn(page, "Owner");
     const nav = page.getByRole("navigation").first();
     await expect(nav.getByRole("link", { name: /^Payments$/ })).toBeVisible();
-    await expect(nav.getByRole("link", { name: /^Audit log$/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /^Activity log$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Support$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
   });
@@ -280,8 +280,8 @@ test.describe("personal training operations", () => {
     await page.goto("/pt");
     await expect(page.getByRole("heading", { name: "Personal training" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Intro credits", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Trainer", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Package", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add trainer", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add package", exact: true })).toBeVisible();
   });
 });
 
@@ -378,7 +378,7 @@ test.describe("settings navigation", () => {
     await expect(mobileSectionPicker).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeHidden();
     await mobileSectionPicker.click();
-    await page.getByRole("option", { name: "Operational rules" }).click();
+    await page.getByRole("option", { name: "Gym rules" }).click();
     await page.evaluate(() => window.scrollTo({ top: 320 }));
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
     await expect.poll(async () => {
@@ -393,7 +393,7 @@ test.describe("settings navigation", () => {
     await expect(sectionPicker).toBeVisible();
     await expect(page.getByRole("tablist")).toHaveCount(0);
     await sectionPicker.click();
-    await page.getByRole("option", { name: "Operational rules" }).click();
+    await page.getByRole("option", { name: "Gym rules" }).click();
     await expect(page).toHaveURL(/section=operations/);
     await expect(page.getByRole("tabpanel")).toContainText(/entry and access|class booking/i);
 
@@ -416,7 +416,7 @@ test.describe("settings navigation", () => {
     // Search narrows by synonyms, not just exact labels.
     await page.getByRole("textbox", { name: "Search settings" }).fill("freeze");
     await expect(page.getByRole("tab")).toHaveCount(1);
-    await expect(page.getByRole("tab", { name: "Operational rules" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Gym rules" })).toBeVisible();
 
     // Selecting a rail item must not jump the page and move the remaining touch targets.
     await page.evaluate(() => window.scrollTo({ top: 360 }));
@@ -430,7 +430,7 @@ test.describe("settings navigation", () => {
       const y = (await settingsNavigation.boundingBox())?.y ?? -1;
       return y >= 139 && y <= 141;
     }).toBe(true);
-    await page.getByRole("tab", { name: "Operational rules" }).click();
+    await page.getByRole("tab", { name: "Gym rules" }).click();
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBeforeSelection);
   });
 
@@ -491,8 +491,8 @@ test.describe("CRM lead capture", () => {
     await expect(leadLink).toBeVisible();
     await leadLink.click();
     await expect(page).toHaveURL(/\/crm\/leads\//);
-    await expect(page.getByRole("list", { name: "Simple sales progress" })).toContainText("Trial");
-    await expect(page.getByRole("list", { name: "Simple sales progress" })).toContainText("Membership sale");
+    await expect(page.getByRole("list", { name: "Sales steps" })).toContainText("Trial");
+    await expect(page.getByRole("list", { name: "Sales steps" })).toContainText("Membership sale");
     await expect(page.getByRole("button", { name: "Create offer" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Convert to member/i })).toHaveCount(0);
   });
@@ -537,7 +537,7 @@ test.describe("sensitive actions are audited", () => {
     // stable cross-tenant contract. The primary navigation's Dashboard link
     // is the accessible, tenant-independent route back to the manager home.
     await page.getByRole("link", { name: "Dashboard", exact: true }).click();
-    await page.getByRole("link", { name: /^Audit trail$/ }).click();
+    await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Activity log", exact: true }).click();
     await expect(page).toHaveURL(/\/audit/);
     await page.getByLabel("Category filter").click();
     await page.getByRole("option", { name: /check-?ins/i }).click();
@@ -552,9 +552,9 @@ test.describe("sensitive actions are audited", () => {
     await expect(row).toBeVisible();
     await row.click();
 
-    // The expanded detail carries the reason and says the trail is append-only.
+    // The expanded detail carries the reason and a reference number.
     await expect(page.getByText(reason)).toBeVisible();
-    await expect(page.getByText(/append-only/i)).toBeVisible();
+    await expect(page.getByText(/^Reference/)).toBeVisible();
   });
 });
 

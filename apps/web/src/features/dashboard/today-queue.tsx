@@ -33,15 +33,15 @@ const KIND_META: Record<TodayQueueKind, { icon: LucideIcon; label: string }> = {
   follow_up: { icon: CalendarClock, label: "Follow-up" },
   at_risk: { icon: UserRoundSearch, label: "At risk" },
   renewal: { icon: ClipboardCheck, label: "Renewal" },
-  outstanding_balance: { icon: Banknote, label: "Balance" },
-  access_denial: { icon: DoorOpen, label: "Entry" },
+  outstanding_balance: { icon: Banknote, label: "Unpaid" },
+  access_denial: { icon: DoorOpen, label: "Entry refused" },
   approval: { icon: ShieldAlert, label: "Approval" },
-  cash_variance: { icon: ListChecks, label: "Cash" },
+  cash_variance: { icon: ListChecks, label: "Cash difference" },
   facility_task: { icon: Wrench, label: "Maintenance" },
   branch_checklist: { icon: ClipboardCheck, label: "Checklist" },
   equipment_issue: { icon: Cog, label: "Machine" },
   low_stock: { icon: Boxes, label: "Stock" },
-  support_case: { icon: LifeBuoy, label: "RIVET case" },
+  support_case: { icon: LifeBuoy, label: "RIVET support" },
 };
 
 export function todayQueueKindLabel(kind: TodayQueueKind): string {
@@ -61,7 +61,7 @@ export function useTodayQueueCompletion(): { requestComplete: (item: TodayQueueI
   const completeTask = useApiMutation(
     (api, taskId: string) => api.completeTask(taskId, { outcome: "Completed from Today" }),
     {
-      successMessage: "Done. The next priority is ready.",
+      successMessage: "Done.",
       onSuccess: async () => {
         setLogging(undefined);
         await invalidate();
@@ -77,7 +77,7 @@ export function useTodayQueueCompletion(): { requestComplete: (item: TodayQueueI
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>What happened?</DialogTitle>
-          <DialogDescription>{logging ? `${logging.title}. Record the outcome so this follow-up closes with it, or move it to the next date.` : ""}</DialogDescription>
+          <DialogDescription>{logging ? `${logging.title}. Say how it went. This finishes the follow-up or moves it to a new date.` : ""}</DialogDescription>
         </DialogHeader>
         {logging?.subject ? (
           <DialogBody>
@@ -85,14 +85,14 @@ export function useTodayQueueCompletion(): { requestComplete: (item: TodayQueueI
               subject={logging.subject.kind}
               leadId={logging.subject.kind === "lead" ? logging.subject.id : undefined}
               memberId={logging.subject.kind === "member" ? logging.subject.id : undefined}
-              submitLabel="Log contact and finish"
+              submitLabel="Save and finish"
               onLogged={() => setLogging(undefined)}
             />
           </DialogBody>
         ) : null}
         <DialogFooter className="justify-between">
           <Button type="button" variant="ghost" size="sm" loading={completeTask.isPending} onClick={() => { if (logging?.action.taskId) completeTask.mutate(logging.action.taskId); }}>
-            Mark done without a contact
+            Done, nothing to record
           </Button>
           <Button type="button" variant="secondary" size="sm" onClick={() => setLogging(undefined)}>Cancel</Button>
         </DialogFooter>
@@ -130,7 +130,7 @@ export function TodayQueue({
             <h2 id="today-queue-title" className="text-[15px] font-semibold tracking-[-0.01em]">Today</h2>
           </div>
           <p className="mt-2 max-w-[56ch] text-[12.5px] leading-relaxed text-ink-3">
-            Start at the top. RIVET has already put the work in order.
+            Start at the top. The most important work comes first.
           </p>
         </div>
         {loading ? (
@@ -152,14 +152,14 @@ export function TodayQueue({
       ) : items.length === 0 ? (
         <div className="px-5 py-12 text-center">
           <CheckCircle2 className="mx-auto size-5 text-success" aria-hidden />
-          <p className="mt-3 text-[13px] font-semibold">You&apos;re clear for now</p>
+          <p className="mt-3 text-[13px] font-semibold">Nothing to do right now</p>
           <p className="mx-auto mt-1 max-w-[42ch] text-[12.5px] leading-relaxed text-ink-3">
-            New follow-ups, balances, entry problems, and approvals will appear here automatically.
+            New work shows up here by itself.
           </p>
         </div>
       ) : (
         <>
-          <ol className="divide-y divide-line" aria-label="Prioritized work for today">
+          <ol className="divide-y divide-line" aria-label="Today's work, most important first">
             {visibleItems.map((item, index) => (
               <TodayQueueRow
                 key={item.id}
@@ -187,7 +187,7 @@ export function TodayQueue({
             </div>
           ) : data && data.totalItems > data.items.length ? (
             <p className="border-t border-line bg-sunken/25 px-4 py-2.5 text-center text-[12px] text-ink-3">
-              Showing the {data.items.length} highest-priority items.
+              Showing the {data.items.length} most important items.
             </p>
           ) : null}
         </>
@@ -223,7 +223,7 @@ export function TodayQueueRow({
       <Icon className={cn("size-4", urgent ? "text-danger" : item.priority === "high" ? "text-warning-deep" : "text-ink-3")} aria-hidden />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {first ? <span className="text-[12.5px] font-semibold text-signal-deep">Next priority</span> : null}
+          {first ? <span className="text-[12.5px] font-semibold text-signal-deep">Do this first</span> : null}
           <span className="text-[12.5px] text-ink-3">{meta.label}</span>
           {item.branchName ? <span className="truncate text-[12px] text-ink-4">{item.branchName}</span> : null}
         </div>

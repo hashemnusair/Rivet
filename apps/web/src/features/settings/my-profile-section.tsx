@@ -14,12 +14,12 @@ import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { SettingsPanel, SettingsSaveBar, SettingsSection } from "@/features/settings/settings-layout";
 
-const DESCRIPTION = "Update the name and phone number your gym team sees. Your sign-in email and access role are managed separately.";
+const DESCRIPTION = "The name and phone number your team sees. You cannot change your email or role here.";
 
 type ProfileForm = Pick<UserProfile, "name" | "phone">;
 
 function errorMessage(error: unknown): string {
-  return isApiError(error) ? error.message : "Your profile could not be saved. Try again.";
+  return isApiError(error) ? error.message : "Your profile was not saved. Try again.";
 }
 
 export function MyProfileSection() {
@@ -69,18 +69,18 @@ export function MyProfileSection() {
 
   return (
     <SettingsSection title="My profile" description={DESCRIPTION}>
-      <SettingsPanel title="Account details" description="These details are personal to your RIVET account and do not change anyone else’s access.">
+      <SettingsPanel title="Account details" description="These details are only for your account. They do not change anyone else’s access.">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Display name" required error={nameInvalid ? "Enter a display name between 2 and 160 characters." : undefined}>
+          <Field label="Your name" required error={nameInvalid ? "Enter a name between 2 and 160 characters." : undefined}>
             <Input value={form.name} autoComplete="name" aria-invalid={nameInvalid || undefined} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
           </Field>
-          <Field label="Phone" hint="Optional. Used for internal contact details." error={phoneInvalid ? "Use 40 characters or fewer." : undefined}>
+          <Field label="Phone" hint="Optional. Your team can see this number." error={phoneInvalid ? "Use 40 characters or fewer." : undefined}>
             <Input dir="ltr" type="tel" inputMode="tel" autoComplete="tel" value={form.phone} aria-invalid={phoneInvalid || undefined} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
           </Field>
-          <Field label="Sign-in email" hint="Change this through your sign-in provider.">
+          <Field label="Sign-in email" hint="You change this in your sign-in account, not here.">
             <Input value={profileQuery.data.email} readOnly aria-readonly="true" />
           </Field>
-          <Field label="Workspace role" hint="Access roles are managed by staff with the Manage staff permission.">
+          <Field label="Your role" hint="Only staff with “Manage staff” access can change roles.">
             <Input value={role ? ROLE_LABELS[role] : "—"} readOnly aria-readonly="true" />
           </Field>
         </div>
@@ -89,7 +89,7 @@ export function MyProfileSection() {
         dirty={dirty}
         saving={save.isPending}
         saveDisabled={nameInvalid || phoneInvalid}
-        saveDisabledReason={nameInvalid ? "Enter a valid display name before saving." : phoneInvalid ? "Use 40 characters or fewer for the phone number." : undefined}
+        saveDisabledReason={nameInvalid ? "Enter a name with at least 2 letters before saving." : phoneInvalid ? "Use 40 characters or fewer for the phone number." : undefined}
         error={save.isError ? errorMessage(save.error) : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}

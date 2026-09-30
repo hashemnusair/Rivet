@@ -24,14 +24,15 @@ import { getApi } from "@/lib/api/client";
 import { qk } from "@/lib/api/keys";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { MoneyText } from "@/components/shared/data-display";
+import { formatDate } from "@/lib/utils/dates";
 import { QuickMembershipStep } from "./quick-membership-step";
 
 const schema = z.object({
-  fullName: z.string().min(3, "Full name is required"),
+  fullName: z.string().min(3, "Enter the full name"),
   fullNameAr: z.string().optional(),
   phone: z
     .string()
-    .min(9, "Phone is required")
+    .min(9, "Enter a phone number")
     .regex(/^\+?[\d\s()-]{9,18}$/, "Enter a valid phone number"),
   email: z.string().email("Enter a valid email").or(z.literal("")).optional(),
   gender: z.enum(["male", "female"], { message: "Choose male or female" }),
@@ -110,7 +111,7 @@ export default function NewMemberPage() {
       setDuplicates(matches);
     } catch {
       if (request !== duplicateCheckRequest.current) return;
-      setDuplicateCheckError("RIVET could not check for an existing member. Retry before saving, or explicitly continue without the pre-check.");
+      setDuplicateCheckError("We could not check if this member already exists. Check again, or continue without checking.");
     } finally {
       if (request === duplicateCheckRequest.current) {
         setCheckingDupes(false);
@@ -137,11 +138,11 @@ export default function NewMemberPage() {
       return false;
     }
     if (duplicateCheckError && !duplicateCheckOverride) {
-      setErrorMsg(`Retry the duplicate check or choose “Continue without pre-check” before ${action}.`);
+      setErrorMsg(`Check again for duplicates, or choose “Continue without checking” before ${action}.`);
       return false;
     }
     if (duplicates.length > 0 && confirmedDuplicateMemberIds.length !== duplicates.length) {
-      setErrorMsg("Open the matching member, or confirm these results belong to a different person before continuing.");
+      setErrorMsg("Open the matching member, or confirm this is a different person.");
       return false;
     }
     return true;
@@ -161,7 +162,7 @@ export default function NewMemberPage() {
       toast.success(`${result.member.fullName} added — ${result.member.memberNumber}.`);
       router.push(`/members/${result.member.id}`);
     } catch (error) {
-      setErrorMsg(isApiError(error) ? error.message : "Could not create the member.");
+      setErrorMsg(isApiError(error) ? error.message : "The member was not saved. Try again.");
     }
   };
 
@@ -191,7 +192,7 @@ export default function NewMemberPage() {
       setCompleted(result);
       toast.success(`${result.member.fullName}'s membership is ready.`);
     } catch (error) {
-      setErrorMsg(isApiError(error) ? error.message : "The member and membership could not be created. Nothing was saved; try again.");
+      setErrorMsg(isApiError(error) ? error.message : "The member and membership were not saved. Try again.");
     }
   };
 
@@ -199,11 +200,11 @@ export default function NewMemberPage() {
     <Dialog open onOpenChange={(open) => { if (!open) router.push("/members"); }}>
       <DialogContent className="max-w-3xl p-0">
         <DialogTitle className="sr-only">{completed ? "Sale complete" : saleDraft ? "Choose membership and payment" : "Add member"}</DialogTitle>
-        <DialogDescription className="sr-only">Create a member profile and optionally complete their first membership sale.</DialogDescription>
+        <DialogDescription className="sr-only">Add a new member. You can also sell their first membership.</DialogDescription>
         <div className="min-w-0 space-y-5 p-5">
       <PageHeader
         title={completed ? "Member ready" : saleDraft ? "Finish membership sale" : "Add member"}
-        description={completed ? "The profile, membership, balance, and receipt are all in place." : saleDraft ? "Choose the plan, record what is paid now, and confirm the sale once." : "Enter the essentials now. Add more detail only when it is useful."}
+        description={completed ? "The member and their membership are saved." : saleDraft ? "Choose the plan and how much they pay now." : "Fill in the main details now. You can add more later."}
       />
 
       {completed ? (
@@ -228,18 +229,18 @@ export default function NewMemberPage() {
         <div className="flex flex-col items-start gap-3 rounded-lg border border-warning/50 bg-warning-bg/60 p-4 sm:flex-row" role="alert">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning-deep" aria-hidden />
           <div className="flex-1">
-            <p className="text-[13.5px] font-semibold text-warning-deep">Possible duplicate — same phone or email exists</p>
+            <p className="text-[13.5px] font-semibold text-warning-deep">Possible duplicate: a member with this phone or email already exists</p>
             <ul className="mt-1.5 space-y-1 text-[13px] text-ink-2">
               {duplicates.map((d) => (
                 <li key={d.memberId}>
                   <Link href={`/members/${d.memberId}`} className="font-medium underline decoration-line-3 underline-offset-2 hover:text-ink">
                     {d.fullName} · {d.memberNumber}
                   </Link>{" "}
-                  <span className="text-ink-3">(matched on {d.matchedOn})</span>
+                  <span className="text-ink-3">(same {d.matchedOn})</span>
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-[12px] text-ink-3">Open the existing profile first. Continue only if this is genuinely a different person.</p>
+            <p className="mt-2 text-[12px] text-ink-3">Open the existing member first. Continue only if this is a different person.</p>
           </div>
           <Button variant="secondary" size="sm" onClick={() => setConfirmedDuplicateMemberIds(duplicates.map((duplicate) => duplicate.memberId))} disabled={confirmedDuplicateMemberIds.length === duplicates.length}>
             {confirmedDuplicateMemberIds.length === duplicates.length ? "Confirmed different person" : "This is a different person"}
@@ -252,12 +253,12 @@ export default function NewMemberPage() {
         className="min-w-0 space-y-5"
       >
         <section className="panel min-w-0 p-5">
-          <h2 className="mb-4 font-display text-[15px] font-semibold">Identity</h2>
+          <h2 className="mb-4 font-display text-[15px] font-semibold">Personal details</h2>
           <FieldGrid className="gap-4 sm:grid-cols-2">
             <Field label="Full name" required error={form.formState.errors.fullName?.message}>
-              <Input autoFocus placeholder="e.g. Layan Al-Masri" data-testid="member-name" {...form.register("fullName")} />
+              <Input autoFocus placeholder="For example: Layan Al-Masri" data-testid="member-name" {...form.register("fullName")} />
             </Field>
-            <Field label="Name (Arabic)" hint="Optional — used on receipts and messages.">
+            <Field label="Name (Arabic)" hint="Optional. Used on receipts and messages.">
               <Input dir="rtl" placeholder="ليان المصري" {...form.register("fullNameAr")} />
             </Field>
             <Field label="Phone" required error={form.formState.errors.phone?.message}>
@@ -305,9 +306,9 @@ export default function NewMemberPage() {
             <div role="alert" className="mt-3 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-3 text-[12.5px] text-warning-deep">
               <p>{duplicateCheckError}</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="secondary" onClick={() => { void checkDuplicates(); }}>Retry check</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => { void checkDuplicates(); }}>Check again</Button>
                 <Button type="button" size="sm" variant="ghost" onClick={() => setDuplicateCheckOverride(true)} disabled={duplicateCheckOverride}>
-                  {duplicateCheckOverride ? "Continuing without pre-check" : "Continue without pre-check"}
+                  {duplicateCheckOverride ? "Continuing without checking" : "Continue without checking"}
                 </Button>
               </div>
             </div>
@@ -363,14 +364,14 @@ export default function NewMemberPage() {
                 )}
               />
             </Field>
-            <Field label="Source">
+            <Field label="How they found us">
               <Controller
                 control={form.control}
                 name="source"
                 render={({ field }) => (
                   <Select value={field.value ?? ""} onValueChange={(v) => field.onChange((v || undefined) as LeadSource | undefined)}>
-                    <SelectTrigger aria-label="Source">
-                      <SelectValue placeholder="How did they find us?" />
+                    <SelectTrigger aria-label="How they found us">
+                      <SelectValue placeholder="Choose one" />
                     </SelectTrigger>
                     <SelectContent>
                       {Object.entries(LEAD_SOURCE_LABELS).map(([key, label]) => (
@@ -383,7 +384,7 @@ export default function NewMemberPage() {
                 )}
               />
             </Field>
-            <Field label="Assigned salesperson">
+            <Field label="Salesperson">
               <Controller
                 control={form.control}
                 name="assignedSalespersonId"
@@ -392,7 +393,7 @@ export default function NewMemberPage() {
                 )}
               />
             </Field>
-            <Field label="Referred by (optional)" hint="The referring member earns the gym's referral reward on this member's first sale.">
+            <Field label="Referred by (optional)" hint="The member who referred them gets the gym's referral reward after this member's first purchase.">
               <Controller
                 control={form.control}
                 name="referredByMemberId"
@@ -405,7 +406,7 @@ export default function NewMemberPage() {
         </section>
 
         <section className="border-t border-line pt-5">
-          <h2 className="mb-4 font-display text-[15px] font-semibold">Emergency & notes</h2>
+          <h2 className="mb-4 font-display text-[15px] font-semibold">Emergency contact and notes</h2>
           <FieldGrid className="gap-4 sm:grid-cols-2">
             <Field label="Emergency contact name">
               <Input {...form.register("emergencyContactName")} />
@@ -415,17 +416,17 @@ export default function NewMemberPage() {
             </Field>
           </FieldGrid>
           <Field label="Notes" className="mt-4">
-            <Textarea placeholder="Anything the team should know — schedule preferences, goals, payment habits…" {...form.register("notes")} />
+            <Textarea placeholder="Anything staff should know, like goals, usual training times or how they pay" {...form.register("notes")} />
           </Field>
           <label className="mt-4 flex items-center justify-between gap-3 cursor-pointer">
             <span>
               <span className="block text-[13px] font-medium">Marketing messages</span>
-              <span className="block text-[12px] text-ink-3">The gym default is on. Marketing stays paused until the member or an authorized employee confirms consent.</span>
+              <span className="block text-[12px] text-ink-3">On by default. No offers are sent until the member agrees to receive them.</span>
             </span>
             <Controller
               control={form.control}
               name="marketingOptIn"
-              render={({ field }) => <Switch checked={field.value} onCheckedChange={(checked) => { field.onChange(checked); form.setValue("marketingPreferenceSource", "staff_selected"); }} aria-label="Marketing opt-in" />}
+              render={({ field }) => <Switch checked={field.value} onCheckedChange={(checked) => { field.onChange(checked); form.setValue("marketingPreferenceSource", "staff_selected"); }} aria-label="Marketing messages" />}
             />
           </label>
         </section>
@@ -438,11 +439,11 @@ export default function NewMemberPage() {
             <Link href="/members">Cancel</Link>
           </Button>
           <Button type="submit" className="max-sm:w-full" variant={can("memberships.sell") ? "secondary" : "primary"} loading={createMember.isPending} disabled={checkingDupes} data-testid="save-member">
-            Create member
+            Save member
           </Button>
           {can("memberships.sell") ? (
             <Button type="button" className="max-sm:w-full" disabled={checkingDupes} onClick={form.handleSubmit(startSale)} data-testid="save-member-and-sell">
-              <WalletCards /> Create &amp; sell membership
+              <WalletCards /> Save and sell membership
             </Button>
           ) : null}
         </div>
@@ -485,17 +486,17 @@ function SaleComplete({ result, onReset }: { result: CreateMemberMembershipSaleR
         <div>
           <p className="context-label text-success-deep">Sale complete</p>
           <h2 className="mt-1 font-display text-xl font-semibold">{result.member.fullName} is ready</h2>
-          <p className="mt-1 text-[13px] text-ink-2"><span className="font-mono">{result.member.memberNumber}</span> · membership begins {result.sale.membership.startDate}</p>
+          <p className="mt-1 text-[13px] text-ink-2"><span className="font-mono">{result.member.memberNumber}</span> · membership starts {formatDate(result.sale.membership.startDate)}</p>
         </div>
         <Button asChild><Link href={`/members/${result.member.id}`}>Open member</Link></Button>
       </div>
       <div className="grid gap-px border-y border-line bg-line sm:grid-cols-3">
-        <CompletionFact icon={<UserRound className="size-4" />} label="Membership" value={`${result.sale.membership.startDate} → ${result.sale.membership.endDate}`} />
-        <CompletionFact icon={<WalletCards className="size-4" />} label="Collected now" value={<MoneyText money={result.sale.payment?.amount} />} />
-        <CompletionFact icon={<ReceiptText className="size-4" />} label={remaining.amount > 0 ? "Balance recorded" : "Receipt"} value={remaining.amount > 0 ? <MoneyText money={remaining} /> : result.sale.receipt?.receiptNumber ?? "Paid in full"} warning={remaining.amount > 0} />
+        <CompletionFact icon={<UserRound className="size-4" />} label="Membership" value={`${formatDate(result.sale.membership.startDate)} – ${formatDate(result.sale.membership.endDate)}`} />
+        <CompletionFact icon={<WalletCards className="size-4" />} label="Paid now" value={<MoneyText money={result.sale.payment?.amount} />} />
+        <CompletionFact icon={<ReceiptText className="size-4" />} label={remaining.amount > 0 ? "Still owes" : "Receipt"} value={remaining.amount > 0 ? <MoneyText money={remaining} /> : result.sale.receipt?.receiptNumber ?? "Paid in full"} warning={remaining.amount > 0} />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 p-5">
-        <p className="text-[12.5px] text-ink-3">{result.sale.receipt ? `Receipt ${result.sale.receipt.receiptNumber} was issued automatically.` : "No payment was collected; the balance is available from the member profile."}</p>
+        <p className="text-[12.5px] text-ink-3">{result.sale.receipt ? `Receipt ${result.sale.receipt.receiptNumber} was created.` : "No payment was taken. You can collect it from the member's page."}</p>
         <Button type="button" variant="secondary" onClick={onReset}>Add another member</Button>
       </div>
     </section>
@@ -517,8 +518,8 @@ function SalesSelect({ value, onChange }: { value?: string; onChange: (v: string
   );
   return (
     <Select value={value ?? ""} onValueChange={(v) => onChange(v || undefined)}>
-      <SelectTrigger aria-label="Assigned salesperson">
-        <SelectValue placeholder="Unassigned" />
+      <SelectTrigger aria-label="Salesperson">
+        <SelectValue placeholder="Not assigned" />
       </SelectTrigger>
       <SelectContent>
         {(usersQuery.data?.items ?? []).map((u) => (
@@ -546,15 +547,15 @@ function ReferrerSearch({ value, onChange }: { value?: string; onChange: (value?
     return (
       <div className="flex h-10 items-center justify-between gap-2 rounded-md border border-line-2 bg-sunken px-3 text-[13px]">
         <span className="truncate">{selectedLabel ?? "Selected member"}</span>
-        <button type="button" className="text-[11px] text-ink-3 hover:text-ink" onClick={() => { onChange(undefined); setSelectedLabel(undefined); setSearch(""); }}>Clear</button>
+        <button type="button" className="text-[12px] text-ink-3 hover:text-ink" onClick={() => { onChange(undefined); setSelectedLabel(undefined); setSearch(""); }}>Clear</button>
       </div>
     );
   }
   return (
     <div className="relative">
       <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search members by name or phone…" />
-      {lookup.isLoading ? <p className="mt-1.5 text-[11px] text-ink-3" role="status">Searching members…</p> : lookup.isError ? (
-        <div className="mt-1.5 flex items-center justify-between gap-3 border border-danger/30 bg-danger-bg px-3 py-2 text-[11px] text-danger" role="alert"><span>Member search is unavailable.</span><Button type="button" size="sm" variant="ghost" onClick={() => lookup.refetch()}>Retry</Button></div>
+      {lookup.isLoading ? <p className="mt-1.5 text-[12px] text-ink-3" role="status">Searching members…</p> : lookup.isError ? (
+        <div className="mt-1.5 flex items-center justify-between gap-3 border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger" role="alert"><span>Could not search members.</span><Button type="button" size="sm" variant="ghost" onClick={() => lookup.refetch()}>Try again</Button></div>
       ) : results.length > 0 ? (
         <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">
           {results.map((member) => (
@@ -564,7 +565,7 @@ function ReferrerSearch({ value, onChange }: { value?: string; onChange: (value?
             </button>
           ))}
         </div>
-      ) : normalizedSearch.length >= 2 ? <p className="mt-1.5 text-[11px] text-ink-3">No members match this search.</p> : null}
+      ) : normalizedSearch.length >= 2 ? <p className="mt-1.5 text-[12px] text-ink-3">No members found.</p> : null}
     </div>
   );
 }

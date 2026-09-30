@@ -41,7 +41,7 @@ async function sellAndVoid(api: MockGymOSApi): Promise<string> {
 }
 
 describe("staff receipt page", () => {
-  it("prints stored facts: number, amount at currency precision, method, remaining balance and currency name", async () => {
+  it("prints stored facts: number, amount at currency precision, method, amount still owed and currency name", async () => {
     let receiptId = "";
     const Show = () => <ReceiptPageClient receiptId={receiptId} />;
     await renderWithApp(<Show />, { prepare: async (api) => { receiptId = await collectOne(api); } });
@@ -50,7 +50,7 @@ describe("staff receipt page", () => {
     expect(printed).toHaveTextContent("PAYMENT");
     expect(printed).toHaveTextContent("Paid (Cash)");
     expect(printed).toHaveTextContent("5.000");
-    expect(printed).toHaveTextContent("Balance remaining");
+    expect(printed).toHaveTextContent("Still owed");
     expect(printed).toHaveTextContent("JOD · amounts in Jordanian Dinar");
     expect(printed).not.toHaveTextContent("undefined");
   });
@@ -75,7 +75,7 @@ describe("staff receipt page", () => {
     await user.clear(amount);
     await user.type(amount, "9");
     await user.click(within(dialog).getByTestId("confirm-refund"));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/cannot exceed the refundable 5.000 JOD/i);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/you can refund at most 5.000 JOD/i);
     expect(refundSpy).not.toHaveBeenCalled();
 
     await user.clear(amount);
@@ -90,8 +90,8 @@ describe("staff receipt page", () => {
     await renderWithApp(<Show />, { role: "owner", prepare: async (api) => { receiptId = await sellAndVoid(api); } });
 
     const printed = (await screen.findByText("RETAIL SALE")).closest("#receipt-print")!;
-    expect(printed).toHaveTextContent("VOIDED — Wrong item keyed at the desk");
-    expect(screen.getByText("Voided")).toBeInTheDocument();
+    expect(printed).toHaveTextContent("CANCELLED — Wrong item keyed at the desk");
+    expect(screen.getByText("Cancelled")).toBeInTheDocument();
     expect(screen.queryByTestId("retail-void-button")).not.toBeInTheDocument();
     expect(screen.queryByTestId("retail-refund-button")).not.toBeInTheDocument();
   });

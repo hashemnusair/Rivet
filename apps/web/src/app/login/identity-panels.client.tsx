@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
 import { destinationFor, INVITATION_CLAIMED_EVENT, useRivetIdentity, type RivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
+import { ROLE_LABELS } from "@/lib/domain/permissions";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import type { Audience } from "./portals";
@@ -30,7 +31,7 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
   const identity = useRivetIdentity();
 
   if (identity.status === "loading" || identity.status === "pending") {
-    return <AutomaticEntry label="Preparing your workspace" />;
+    return <AutomaticEntry label="Getting your account ready" />;
   }
 
   // Only a confirmed synchronization/query failure becomes an error. Normal
@@ -38,8 +39,8 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
   if (identity.status === "error") {
     return (
       <NotEntitled
-        title={identity.accountDeactivated ? "This account was deactivated" : "Your role could not be loaded"}
-        body={identity.errorMessage ?? "You are signed in, but RIVET could not read your account's role. Please try signing in again."}
+        title={identity.accountDeactivated ? "This account was deactivated" : "We could not load your account"}
+        body={identity.errorMessage ?? "You are signed in, but we could not load your account. Sign out and sign in again."}
       />
     );
   }
@@ -141,11 +142,11 @@ function StaffInvitationRecovery() {
       .catch(() => setState("failed"));
   }, [claimInvitation]);
 
-  if (state === "checking" || state === "claimed") return <AutomaticEntry label={state === "claimed" ? "Verifying your gym invitation" : "Checking your gym invitation"} />;
+  if (state === "checking" || state === "claimed") return <AutomaticEntry label={state === "claimed" ? "Confirming your gym invitation" : "Checking your gym invitation"} />;
   return (
     <NotEntitled
-      title="Your gym invitation could not be verified"
-      body="This staff account is not currently routable into a gym workspace. Ask the gym owner to resend the invitation, then try again."
+      title="We could not confirm your gym invitation"
+      body="Ask your gym owner to send the invitation again. Then sign in again."
     />
   );
 }
@@ -154,7 +155,7 @@ function NoGymTeamEntry() {
   return (
     <NotEntitled
       title="This account is not on a gym team"
-      body="The gym team portal is for gym staff. Ask a gym owner or manager to invite this account, or use the member portal if you train at a RIVET gym."
+      body="This sign-in is for gym staff. Ask your gym owner or manager to invite you. If you train at a gym, use member sign-in."
     />
   );
 }
@@ -162,8 +163,8 @@ function NoGymTeamEntry() {
 function WrongAudienceEntry({ audience }: { audience: "member" | "admin" }) {
   return (
     <NotEntitled
-      title={audience === "admin" ? "Platform administrator access required" : "This is the member portal"}
-      body={audience === "admin" ? "Only RIVET platform administrators can open this portal." : "Gym team accounts must use the gym team portal. Member access is kept separate from staff workspaces."}
+      title={audience === "admin" ? "This is for RIVET staff only" : "This sign-in is for gym members"}
+      body={audience === "admin" ? "Only RIVET staff can sign in here." : "Gym staff accounts cannot sign in here. Use gym team sign-in."}
     />
   );
 }
@@ -190,17 +191,17 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
 
   return (
     <NotEntitled
-      title="Choose a gym workspace"
-      body="This account has access to more than one gym. Select the workspace you want to open."
+      title="Choose a gym"
+      body="You work at more than one gym. Choose the one to open."
       action={(
         <div className="mt-4 grid gap-2 text-left">
           {identity.memberships.map((membership) => (
             <Button key={membership.organizationId} variant="secondary" className="h-auto justify-between py-3 text-left" onClick={() => void choose(membership.organizationId)} disabled={Boolean(busy)} loading={busy === membership.organizationId}>
-              <span><span className="block font-medium">{membership.organizationName}</span><span className="mt-0.5 block text-[12px] text-ink-3">{membership.role}</span></span>
+              <span><span className="block font-medium">{membership.organizationName}</span><span className="mt-0.5 block text-[12px] text-ink-3">{ROLE_LABELS[membership.role]}</span></span>
               <span aria-hidden>→</span>
             </Button>
           ))}
-          {error ? <p className="text-[12px] text-danger" role="alert">That workspace could not be opened. Try again.</p> : null}
+          {error ? <p className="text-[12px] text-danger" role="alert">That gym could not be opened. Try again.</p> : null}
         </div>
       )}
     />
@@ -210,8 +211,8 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
 export function UnavailableGymEntry() {
   return (
     <NotEntitled
-      title="Your gym workspace is unavailable"
-      body="This account belongs to a gym that is not currently active. Ask a RIVET platform administrator to restore the gym's subscription, or sign out and use another account."
+      title="Your gym is not active on RIVET"
+      body="Your gym's RIVET plan is not active right now. Contact RIVET to turn it back on, or sign out and use another account."
     />
   );
 }
@@ -223,7 +224,7 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
     return (
       <NotEntitled
         title="This account is not on a gym team"
-        body="Gym staff are added by the gym's owner or manager. Once someone puts your email on the team, this portal opens your workspace automatically."
+        body="Ask your gym owner or manager to add your email to the team. Then sign in here again."
       />
     );
   }
@@ -239,8 +240,8 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
   if (membership.branchScope === "selected" && membership.branches.length === 0) {
     return (
       <NotEntitled
-        title="No active branch is available"
-        body="Your gym role is active, but it is not assigned to an active branch. Ask a gym manager to update your branch access."
+        title="You are not added to a branch"
+        body="Ask your gym manager to add you to a branch."
       />
     );
   }
@@ -271,19 +272,19 @@ function BranchSelection({ identity, membership }: { identity: RivetIdentity; me
     } catch {
       setBusy(undefined);
       setFailed(true);
-      toast.error("Could not open the selected branch.");
+      toast.error("Could not open that branch. Try again.");
     }
   };
 
   return (
     <NotEntitled
-      title="Choose a branch workspace"
-      body="Your role has access to more than one branch. Select the branch you want to open so RIVET can protect branch-specific work."
+      title="Choose a branch"
+      body="You work at more than one branch. Choose the one to open."
       action={(
         <div className="mt-4 grid gap-2 text-left">
           {membership.branches.map((branch) => (
             <Button key={branch.id} variant="secondary" className="h-auto justify-between py-3 text-left" onClick={() => void choose(branch.id)} disabled={Boolean(busy)} loading={busy === branch.id}>
-              <span><span className="block font-medium">{branch.name}</span><span className="mt-0.5 block text-[12px] text-ink-3">Code <span className="font-mono">{branch.code}</span></span></span>
+              <span className="block font-medium">{branch.name}</span>
               <span aria-hidden>→</span>
             </Button>
           ))}
@@ -315,20 +316,20 @@ function AutomaticGymEntry({ identity, membership }: { identity: RivetIdentity; 
       .then(() => router.replace(postSignInPath(destination.href, window.location.search)))
       .catch(() => {
         setFailed(true);
-        toast.error("Could not open the workspace.");
+        toast.error("Could not open your gym. Try again.");
       });
   }, [branchId, destination.href, identity.email, identity.fullName, membership.role, router, signIn]);
 
   if (failed) {
     return (
       <NotEntitled
-        title="The workspace could not be opened"
-        body="Your gym access was found, but RIVET could not initialize this browser session. Sign out and try again."
+        title="Your gym could not be opened"
+        body="We found your gym but could not open it here. Sign out and sign in again."
       />
     );
   }
 
-  return <AutomaticEntry label="Opening your gym workspace" />;
+  return <AutomaticEntry label="Opening your gym" />;
 }
 
 function MemberEntry({ identity }: { identity: RivetIdentity }) {
@@ -362,13 +363,13 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
   if (failed) {
     return (
       <NotEntitled
-        title="Your member dashboard could not be opened"
-        body="Your account is signed in, but RIVET could not initialize this browser session. Sign out and try again."
+        title="Your member account could not be opened"
+        body="You are signed in, but we could not open your account here. Sign out and sign in again."
       />
     );
   }
 
-  return <AutomaticEntry label="Opening your member dashboard" />;
+  return <AutomaticEntry label="Opening your memberships" />;
 }
 
 function AdminEntry({ identity }: { identity: RivetIdentity }) {
@@ -392,8 +393,8 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
   if (!identity.platformAdmin) {
     return (
       <NotEntitled
-        title="This account is not a platform administrator"
-        body="The platform console manages every gym on RIVET, so access is granted deliberately in Convex rather than requested here."
+        title="This account is not RIVET staff"
+        body="Only RIVET staff can open the platform console."
       />
     );
   }

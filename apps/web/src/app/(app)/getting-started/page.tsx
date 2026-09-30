@@ -15,8 +15,8 @@ export default function GettingStartedPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title={audience === "owner" ? "Open your gym with confidence" : "Learn your RIVET workspace"}
-        description={audience === "owner" ? "A resumable readiness checklist separates what must be ready to operate from what can wait." : "A role-aware tour of navigation, member work, follow-ups, and audited actions."}
+        title={audience === "owner" ? "Get your gym ready" : "Learn how to use RIVET"}
+        description={audience === "owner" ? "Finish the required steps first. Optional steps can wait. You can stop and come back any time." : "What your role can do, how to find things, and how to handle money and access."}
       />
       {audience === "staff" && session ? <StaffGettingStartedGuide session={session} /> : null}
       <OnboardingChecklist audience={audience} />
@@ -43,12 +43,12 @@ function StaffGettingStartedGuide({ session }: { session: Session }) {
       <section id="role" aria-labelledby="getting-started-role" className="panel scroll-mt-24 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="context-label">Role access</p>
+            <p className="context-label">Your access</p>
             <h2 id="getting-started-role" className="mt-1 text-[16px] font-semibold">You are signed in as {roleLabel}</h2>
-            <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-ink-2">These are the capabilities currently granted to this account. If your work changes, ask a gym owner or manager to review your role.</p>
+            <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-ink-2">This is what your account can do. If your job changes, ask the owner or a manager to change your role.</p>
           </div>
           <Link href="/settings?section=my-profile" className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-signal-deep underline-offset-4 hover:underline">
-            Open personal settings <ArrowRight className="size-3.5" aria-hidden />
+            Open my profile <ArrowRight className="size-3.5" aria-hidden />
           </Link>
         </div>
         {capabilities.length ? (
@@ -61,7 +61,7 @@ function StaffGettingStartedGuide({ session }: { session: Session }) {
             ))}
           </ul>
         ) : (
-          <p className="mt-4 rounded-md border border-line bg-sunken/35 px-3 py-2.5 text-[12px] text-ink-3">Your role capabilities are still loading. Refresh this page if they do not appear.</p>
+          <p className="mt-4 rounded-md border border-line bg-sunken/35 px-3 py-2.5 text-[12px] text-ink-3">Loading what your role can do. Refresh the page if nothing appears.</p>
         )}
       </section>
 
@@ -69,19 +69,19 @@ function StaffGettingStartedGuide({ session }: { session: Session }) {
         <div className="flex items-start gap-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-signal-bg text-signal-deep"><BookOpen className="size-4" aria-hidden /></span>
           <div className="min-w-0">
-            <p className="context-label">Navigation and search</p>
-            <h2 id="getting-started-navigation" className="mt-1 text-[16px] font-semibold">Start from the sidebar, then search when you know what you need</h2>
-            <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-ink-2">Use the sidebar to move between your workspace areas. Open a member record when work needs to be recorded on their timeline; the timeline keeps calls, visits, memberships, payments, and staff actions together.</p>
+            <p className="context-label">Finding your way</p>
+            <h2 id="getting-started-navigation" className="mt-1 text-[16px] font-semibold">Use the menu to move around, and search when you know what you need</h2>
+            <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-ink-2">Use the menu to move between pages. To record work for a member, open their page. Their timeline keeps calls, visits, memberships, payments and staff actions together.</p>
           </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-md border border-line bg-sunken/35 px-3 py-2.5">
             <p className="flex items-center gap-2 text-[12.5px] font-semibold"><Search className="size-3.5 text-signal-deep" aria-hidden />Find a member, receipt, or page</p>
-            <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Press <kbd className="rounded border border-line-2 bg-surface px-1.5 py-0.5 font-mono text-[10px]">⌘ K</kbd> on macOS or <kbd className="rounded border border-line-2 bg-surface px-1.5 py-0.5 font-mono text-[10px]">Ctrl K</kbd> on Windows, then type a name, phone number, receipt, page, or available action.</p>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Press <kbd className="rounded border border-line-2 bg-surface px-1.5 py-0.5 font-mono text-[10px]">⌘ K</kbd> on a Mac or <kbd className="rounded border border-line-2 bg-surface px-1.5 py-0.5 font-mono text-[10px]">Ctrl K</kbd> on Windows. Then type a name, phone number, receipt number, page or action.</p>
           </div>
           <div className="rounded-md border border-line bg-sunken/35 px-3 py-2.5">
-            <p className="text-[12.5px] font-semibold">Keep your context visible</p>
-            <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Check the active branch and filters before saving. If you switch branches, confirm the member or transaction belongs to the branch you intend to work in.</p>
+            <p className="text-[12.5px] font-semibold">Check the branch first</p>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Check the branch and filters before you save. If you change branch, make sure the member or payment belongs to that branch.</p>
           </div>
         </div>
       </section>
@@ -90,14 +90,14 @@ function StaffGettingStartedGuide({ session }: { session: Session }) {
         <div className="flex items-start gap-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-signal-bg text-signal-deep"><ShieldCheck className="size-4" aria-hidden /></span>
           <div className="min-w-0">
-            <p className="context-label">Sensitive actions</p>
-            <h2 id="getting-started-security" className="mt-1 text-[16px] font-semibold">Leave a clear reason when an action changes money or access</h2>
-            <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-ink-2">Discounts, refunds, voids, membership freezes or date changes, check-in overrides, cash variances, and permission changes are sensitive. Confirm the request, enter a useful reason when asked, and never use another person&apos;s account.</p>
+            <p className="context-label">Money and access</p>
+            <h2 id="getting-started-security" className="mt-1 text-[16px] font-semibold">Give a clear reason when you change money or access</h2>
+            <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-ink-2">Take extra care with discounts, refunds, cancelled payments and freezes. Also take care with membership date changes, letting someone in anyway, cash differences and access changes. Check the request first. Give a clear reason when asked. Never use another person&apos;s account.</p>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning-bg px-3 py-2.5 text-[12px] text-warning-deep">
-          <p>Every sensitive change keeps an immutable audit record with the actor, reason, and affected record.</p>
-          {canReadAudit ? <Link href="/audit" className="inline-flex shrink-0 items-center gap-1.5 font-medium underline underline-offset-4">Open audit log <ArrowRight className="size-3.5" aria-hidden /></Link> : <p className="shrink-0 font-medium">Ask a manager to review the audit log.</p>}
+          <p>Each of these changes is saved with your name and your reason.</p>
+          {canReadAudit ? <Link href="/audit" className="inline-flex shrink-0 items-center gap-1.5 font-medium underline underline-offset-4">Open activity log <ArrowRight className="size-3.5" aria-hidden /></Link> : <p className="shrink-0 font-medium">Managers can check them in the activity log.</p>}
         </div>
       </section>
     </div>

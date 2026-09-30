@@ -42,7 +42,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [{ href: "/dashboard", label: "Dashboard", icon: Gauge }],
   },
   {
-    label: "Workspace",
+    label: "Daily work",
     items: [
       { href: "/reception", label: "Reception", icon: ShieldCheck },
       { href: "/checkout", label: "Checkout", icon: ShoppingCart, anyPermission: ["payments.collect"], moduleKey: "operations" },
@@ -74,10 +74,10 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "System",
+    label: "Admin",
     items: [
-      { href: "/audit", label: "Audit log", icon: ScrollText, anyPermission: ["audit.read"] },
-      { href: "/exports", label: "Data exports", icon: Download, anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
+      { href: "/audit", label: "Activity log", icon: ScrollText, anyPermission: ["audit.read"] },
+      { href: "/exports", label: "Downloads", icon: Download, anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
       { href: "/support", label: "Support", icon: CircleHelp },
       { href: "/settings", label: "Settings", icon: Settings },
     ],

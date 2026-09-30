@@ -16,12 +16,12 @@ describe("EntryPassDialog", () => {
     state.getEntryPass.mockResolvedValue({ token: "rivet://entry/forge/ABD-2214", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), membershipId: "m1" });
     render(<EntryPassDialog open onOpenChange={() => undefined} membershipId="m1" memberNumber="ABD-2214" gymName="Forge Fitness Club" />);
 
-    expect(screen.getByRole("dialog", { name: "Entry QR" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Preparing a short-lived entry pass");
+    expect(screen.getByRole("dialog", { name: "Entry code" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Getting your entry code");
     expect(await screen.findByLabelText("Membership entry QR code")).toBeInTheDocument();
     expect(screen.getByText("ABD-2214")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/Expires at/);
-    expect(screen.getByRole("button", { name: "Get a fresh pass" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Get a new code" })).toBeInTheDocument();
     expect(state.getEntryPass).toHaveBeenCalledTimes(1);
   });
 
@@ -31,8 +31,8 @@ describe("EntryPassDialog", () => {
     state.getEntryPass.mockResolvedValueOnce({ token: "new", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), membershipId: "m1" });
     render(<EntryPassDialog open onOpenChange={() => undefined} membershipId="m1" memberNumber="ABD-2214" gymName="Forge Fitness Club" />);
 
-    expect(await screen.findByText(/This pass has expired/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Refresh pass" }));
+    expect(await screen.findByText(/This code has expired/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Get a new code" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Expires at/));
     expect(state.getEntryPass).toHaveBeenCalledTimes(2);
   });

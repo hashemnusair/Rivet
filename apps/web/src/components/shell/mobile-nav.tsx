@@ -43,10 +43,10 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 backdrop-blur-[2px] data-[state=open]:animate-fade-in lg:hidden" />
         <DialogPrimitive.Content
           className="night-surface fixed inset-y-0 start-0 z-50 flex w-[280px] max-w-[85vw] flex-col bg-night text-night-ink shadow-dialog outline-none data-[state=open]:animate-fade-in lg:hidden"
-          aria-label="Navigation menu"
+          aria-label="Menu"
         >
           <VisuallyHidden>
-            <DialogPrimitive.Title>Navigation menu</DialogPrimitive.Title>
+            <DialogPrimitive.Title>Menu</DialogPrimitive.Title>
           </VisuallyHidden>
 
           {/* Brand + close */}
@@ -57,7 +57,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
             </div>
             <DialogPrimitive.Close
               className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"
-              aria-label="Close navigation"
+              aria-label="Close menu"
             >
               <X className="size-4" />
             </DialogPrimitive.Close>

@@ -66,9 +66,9 @@ export default function GymApplicationPage() {
     const nextErrors: FormErrors = {};
     if (ownerName.trim().length < 2) nextErrors.ownerName = "Enter the owner name.";
     if (gymName.trim().length < 2) nextErrors.gymName = "Enter the gym name.";
-    if (gymAddress.trim().length < 5) nextErrors.gymAddress = "Enter the gym's physical address.";
+    if (gymAddress.trim().length < 5) nextErrors.gymAddress = "Enter the gym's address.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) nextErrors.email = "Enter a valid email address.";
-    if (contactNumber.replace(/\D/g, "").length < 7) nextErrors.contactNumber = "Enter a reachable contact number.";
+    if (contactNumber.replace(/\D/g, "").length < 7) nextErrors.contactNumber = "Enter a phone number we can call.";
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       return;
@@ -109,7 +109,7 @@ export default function GymApplicationPage() {
               <div className="max-w-2xl">
                 <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight">Send a gym application.</h1>
                 <p className="mt-2 text-[14px] leading-relaxed text-ink-2">
-                  Tell us about your gym and the team behind it. We review every application, contact you directly, and create access for approved gyms.
+                  Tell us about your gym. We read every application and contact you. If we approve it, we set up RIVET for your gym.
                 </p>
               </div>
 
@@ -128,13 +128,12 @@ export default function GymApplicationPage() {
                       <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                     <Field label="Contact number" htmlFor="application-phone" error={errors.contactNumber} hint="Use a number where our team can reach you." required>
-                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="Enter a reachable number" autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
+                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="Enter your phone number" autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                   </div>
 
                   <div className="mt-6 border-t border-line pt-5">
-                    <p className="text-[13px] font-medium text-ink">Gym access is issued by RIVET after approval.</p>
-                    <p className="mt-1 text-[12.5px] leading-relaxed text-ink-3">There is no self-serve gym account. Members and gym teams with access use the sign-in portal.</p>
+                    <p className="text-[13px] font-medium text-ink">RIVET sets up your gym&apos;s account after we approve your application.</p>
                   </div>
                 </section>
 
@@ -143,12 +142,12 @@ export default function GymApplicationPage() {
                   <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-4" required>
                     <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" disabled={!hydrated} />
                   </Field>
-                  <Field label="Gym address" htmlFor="application-address" error={errors.gymAddress} hint="The physical location where the gym operates." className="mt-4" required>
+                  <Field label="Gym address" htmlFor="application-address" error={errors.gymAddress} hint="Where your gym is." className="mt-4" required>
                     <Textarea id="application-address" value={gymAddress} onChange={(event) => setGymAddress(event.target.value)} placeholder="Street, area, city" autoComplete="street-address" maxLength={300} disabled={!hydrated} />
                   </Field>
                   <fieldset className="mt-5">
-                    <legend className="text-[13px] font-medium text-ink-2">Billing cadence</legend>
-                    <div role="tablist" aria-label="Billing interval" className="mt-1.5 grid grid-cols-2 rounded-md border border-line bg-sunken p-1">
+                    <legend className="text-[13px] font-medium text-ink-2">How often you pay</legend>
+                    <div role="tablist" aria-label="How often you pay" className="mt-1.5 grid grid-cols-2 rounded-md border border-line bg-sunken p-1">
                       {(["monthly", "annual"] as const).map((interval) => {
                         const selected = billingInterval === interval;
                         return (
@@ -170,8 +169,8 @@ export default function GymApplicationPage() {
                   {usingFallbackCatalog ? (
                     <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning-bg px-3 py-2.5 text-[12.5px] text-warning-deep" role="status">
                       <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                      <span className="min-w-0 flex-1">{experienceStatus === "error" ? (experienceError ?? "The live catalog is temporarily unavailable.") : "The live catalog is loading; approved launch choices are shown for now."}</span>
-                      <Button type="button" variant="ghost" size="sm" onClick={retryExperience} className="-my-1 shrink-0 px-1.5 text-warning-deep" aria-label="Retry loading plans"><RefreshCcw /></Button>
+                      <span className="min-w-0 flex-1">{experienceStatus === "error" ? (experienceError ?? "We could not load the latest prices.") : "Loading the latest prices. Showing our launch prices for now."}</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={retryExperience} className="-my-1 shrink-0 px-1.5 text-warning-deep" aria-label="Try loading prices again"><RefreshCcw /></Button>
                     </div>
                   ) : null}
                   <div className="mt-3 grid gap-2" role="radiogroup" aria-label="RIVET plan">
@@ -184,15 +183,15 @@ export default function GymApplicationPage() {
                       return (
                         <button key={item.name} type="button" role="radio" aria-checked={selected} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 rounded-md border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", selected ? "border-ink bg-sunken/60" : "border-line-2 hover:border-line-3")}>
                           <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-ink bg-ink text-paper" : "border-line-3")} aria-hidden>{selected ? <Check className="size-3" /> : null}</span>
-                          <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[12.5px] text-ink-2">JD {formatJodMinor(price.effectiveMonthlyMinor)} / month{billingInterval === "annual" ? ` · JD ${formatJodMinor(price.annualTotalMinor)} billed annually` : ""}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{capacitySummary}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">Includes: {capabilitySummary}</span></span>
+                          <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[12.5px] text-ink-2">JD {formatJodMinor(price.effectiveMonthlyMinor)} a month{billingInterval === "annual" ? ` · JD ${formatJodMinor(price.annualTotalMinor)} billed annually` : ""}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{capacitySummary}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">Includes: {capabilitySummary}</span></span>
                         </button>
                       );
                     })}
                   </div>
-                  <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">Plan and billing cadence are starting points for the conversation, not a payment or activation.</p>
+                  <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">You do not pay anything now. We will talk about the plan with you.</p>
                   {formError ? <p className="mt-4 rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
                   <Button type="submit" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-6 w-full">Send gym application <ArrowRight /></Button>
-                  <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4 hover:text-ink">Terms of service</Link> and <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">Privacy policy</Link>. The subscription agreement is signed later, inside RIVET, by the gym owner.</p>
+                  <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4 hover:text-ink">Terms of service</Link> and <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">Privacy policy</Link>. The gym owner signs the subscription agreement later, in RIVET.</p>
                   <p className="mt-3 text-center text-[12.5px] text-ink-3">Already have RIVET access? <Link href="/login/gym" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">Sign in</Link>.</p>
                 </section>
               </form>
@@ -208,21 +207,21 @@ function ApplicationReceived({ result, gymName, email }: { result: SubmitGymAppl
   const confirmation = result.notificationStatus === "sent"
     ? `We sent a confirmation to ${email}.`
     : result.notificationStatus === "pending"
-      ? `We queued a confirmation for ${email}.`
-      : "We could not deliver a confirmation email yet, but your application is in our review queue.";
+      ? `We will send a confirmation to ${email} soon.`
+      : "We could not send a confirmation email yet, but we have your application.";
   return (
     <div className="mx-auto max-w-xl rounded-lg border border-line bg-surface p-6 text-center sm:p-10" role="status">
       <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-bg text-success-deep" aria-hidden><CheckCircle2 className="size-6" /></span>
       <p className="mt-5 text-[12px] font-medium text-ink-3">Application received</p>
       <h1 className="mt-2 font-display text-[26px] font-semibold leading-tight tracking-tight">We’ll be in touch soon.</h1>
-      <p className="relative mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>. {result.notificationStatus === "sent" || result.notificationStatus === "pending" ? <>{confirmation} </> : null}Our team will contact you after review.</p>
+      <p className="relative mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>. {result.notificationStatus === "sent" || result.notificationStatus === "pending" ? <>{confirmation} </> : null}Our team will contact you after we review it.</p>
       {result.notificationStatus !== "sent" && result.notificationStatus !== "pending" ? <p className="mt-3 text-[12.5px] text-ink-3">{confirmation}</p> : null}
-      {result.duplicate ? <p className="mt-3 text-[12.5px] text-ink-3">This application is already in our review queue.</p> : null}
+      {result.duplicate ? <p className="mt-3 text-[12.5px] text-ink-3">We already have this application.</p> : null}
       <div className="mt-6 grid gap-2 sm:grid-cols-2">
         <Button asChild size="lg"><Link href="/login/gym">Sign in <ArrowRight /></Link></Button>
         <Button asChild variant="secondary" size="lg"><Link href="/">Return home</Link></Button>
       </div>
-      <p className="mt-4 text-[12.5px] text-ink-3">Gym accounts are created and issued by RIVET after approval.</p>
+      <p className="mt-4 text-[12.5px] text-ink-3">You can sign in after we approve your gym and email you an invitation.</p>
     </div>
   );
 }

@@ -23,10 +23,31 @@ import { downloadTextFile } from "@/lib/exports/download";
 const ACTIVE_STATUSES = new Set<FacilityTaskStatus>(["open", "in_progress", "blocked"]);
 
 const TASK_PRESETS: Array<{ label: string; title: string; kind: FacilityTaskKind; severity: FacilityTaskSeverity }> = [
-  { label: "Cleaning needed", title: "Cleaning required", kind: "cleaning", severity: "medium" },
-  { label: "Inspect location", title: "Location inspection", kind: "inspection", severity: "medium" },
-  { label: "Report incident", title: "Maintenance incident", kind: "incident", severity: "high" },
+  { label: "Cleaning needed", title: "Cleaning needed", kind: "cleaning", severity: "medium" },
+  { label: "Inspect this area", title: "Inspect this area", kind: "inspection", severity: "medium" },
+  { label: "Report incident", title: "Incident in this area", kind: "incident", severity: "high" },
 ];
+
+const STATUS_LABELS: Record<FacilityTaskStatus, string> = {
+  open: "Open",
+  in_progress: "In progress",
+  blocked: "On hold",
+  completed: "Done",
+  cancelled: "Cancelled",
+};
+
+const PRIORITY_LABELS: Record<FacilityTaskSeverity, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  critical: "Critical",
+};
+
+const KIND_LABELS: Record<FacilityTaskKind, string> = {
+  cleaning: "Cleaning",
+  inspection: "Inspection",
+  incident: "Incident",
+};
 
 function taskUpdate(task: FacilityTask, status: FacilityTaskStatus): UpsertFacilityTaskInput {
   return {
@@ -69,8 +90,8 @@ function TaskDialog({ branchId, zones, task, initialZoneId, pending, onClose, on
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit maintenance task" : "Add maintenance task"}</DialogTitle>
-          <DialogDescription>{editing ? "Keep the location, priority, and next action accurate for the team." : "Choose a shortcut, add only what matters, and send it to the team."}</DialogDescription>
+          <DialogTitle>{editing ? "Edit maintenance job" : "Add maintenance job"}</DialogTitle>
+          <DialogDescription>{editing ? "Update this job so the team knows what to do next." : "Pick a shortcut or write what needs doing."}</DialogDescription>
         </DialogHeader>
         <DialogBody>
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
@@ -78,15 +99,15 @@ function TaskDialog({ branchId, zones, task, initialZoneId, pending, onClose, on
             if (!form.zoneId || !form.title.trim()) return;
             onSubmit({ id: task?.id, branchId, zoneId: form.zoneId, kind: form.kind, severity: form.severity, status: form.status, title: form.title.trim(), notes: form.notes.trim() || undefined, dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : undefined, assigneeId: task?.assigneeId, trafficContext: task?.trafficContext, suppliesCost: task?.suppliesCost });
           }}>
-            {!editing ? <div className="flex flex-wrap gap-2 sm:col-span-2" aria-label="Task shortcuts">{TASK_PRESETS.map((preset) => <Button key={preset.label} type="button" size="xs" variant="secondary" onClick={() => applyPreset(preset)}>{preset.label}</Button>)}</div> : null}
-            <Field label="Where in the gym?" required><Select value={form.zoneId} onValueChange={(value) => setForm((current) => ({ ...current, zoneId: value }))}><SelectTrigger aria-label="Task location"><SelectValue placeholder="Choose a gym space" /></SelectTrigger><SelectContent>{zones.map((zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Work type" required><Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value as FacilityTaskKind }))}><SelectTrigger aria-label="Maintenance task type"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cleaning">Cleaning</SelectItem><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="incident">Incident</SelectItem></SelectContent></Select></Field>
-            <Field label="Priority" required><Select value={form.severity} onValueChange={(value) => setForm((current) => ({ ...current, severity: value as FacilityTaskSeverity }))}><SelectTrigger aria-label="Maintenance task priority"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></Field>
-            {editing ? <Field label="Status" required><Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as FacilityTaskStatus }))}><SelectTrigger aria-label="Maintenance task status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="in_progress">In progress</SelectItem><SelectItem value="blocked">Blocked</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></Field> : null}
+            {!editing ? <div className="flex flex-wrap gap-2 sm:col-span-2" aria-label="Shortcuts">{TASK_PRESETS.map((preset) => <Button key={preset.label} type="button" size="xs" variant="secondary" onClick={() => applyPreset(preset)}>{preset.label}</Button>)}</div> : null}
+            <Field label="Where in the gym?" required><Select value={form.zoneId} onValueChange={(value) => setForm((current) => ({ ...current, zoneId: value }))}><SelectTrigger aria-label="Where in the gym?"><SelectValue placeholder="Choose an area" /></SelectTrigger><SelectContent>{zones.map((zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Type of job" required><Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value as FacilityTaskKind }))}><SelectTrigger aria-label="Type of job"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cleaning">Cleaning</SelectItem><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="incident">Incident</SelectItem></SelectContent></Select></Field>
+            <Field label="Priority" required><Select value={form.severity} onValueChange={(value) => setForm((current) => ({ ...current, severity: value as FacilityTaskSeverity }))}><SelectTrigger aria-label="Priority"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></Field>
+            {editing ? <Field label="Status" required><Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as FacilityTaskStatus }))}><SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="in_progress">In progress</SelectItem><SelectItem value="blocked">On hold</SelectItem><SelectItem value="completed">Done</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select></Field> : null}
             <Field label="What needs doing?" className="sm:col-span-2" required><Input autoFocus value={form.title} maxLength={160} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Wipe benches and refill sanitizer" required /></Field>
             <Field label="Due by"><Input type="datetime-local" value={form.dueAt} onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))} /></Field>
-            <Field label="Details" className={editing ? "sm:col-span-2" : ""}><Textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional context for the next employee" /></Field>
-            <DialogFooter className="px-0 pb-0 sm:col-span-2"><Button type="button" variant="secondary" onClick={onClose} disabled={pending}>Cancel</Button><Button type="submit" loading={pending} disabled={!form.zoneId || !form.title.trim()}><ClipboardCheck /> {editing ? "Save task" : "Add to work list"}</Button></DialogFooter>
+            <Field label="Details" className={editing ? "sm:col-span-2" : ""}><Textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Anything the next person should know" /></Field>
+            <DialogFooter className="px-0 pb-0 sm:col-span-2"><Button type="button" variant="secondary" onClick={onClose} disabled={pending}>Cancel</Button><Button type="submit" loading={pending} disabled={!form.zoneId || !form.title.trim()}><ClipboardCheck /> {editing ? "Save job" : "Add job"}</Button></DialogFooter>
           </form>
         </DialogBody>
       </DialogContent>
@@ -111,13 +132,13 @@ function ZoneQrDialog({ branchId, zones, selectedZoneId, onClose }: { branchId: 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Location task QR</DialogTitle><DialogDescription>Place this at the selected gym space. Signed-in staff can scan it to report cleaning, inspections, or incidents without choosing the location again.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Area QR code</DialogTitle><DialogDescription>Put this code up in the area. Staff scan it to add a job there without choosing the area.</DialogDescription></DialogHeader>
         <DialogBody className="space-y-4">
-          <Field label="Gym space"><Select value={zoneId} onValueChange={(value) => { setZoneId(value); setCopied(false); }}><SelectTrigger aria-label="QR location"><SelectValue /></SelectTrigger><SelectContent>{zones.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
-          {zone ? <div className="mx-auto w-fit rounded-lg border border-line bg-white p-4 text-[#171611]"><QRCodeSVG id="facility-zone-qr" value={url} size={208} level="M" marginSize={1} title={`RIVET task QR for ${zone.name}`} /></div> : null}
-          <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] leading-5 text-ink-2"><strong>{zone?.name ?? "Gym space"}</strong><br />Staff still sign in before creating a task. The QR only saves them from finding and selecting this location.</div>
+          <Field label="Area of the gym"><Select value={zoneId} onValueChange={(value) => { setZoneId(value); setCopied(false); }}><SelectTrigger aria-label="Area of the gym"><SelectValue /></SelectTrigger><SelectContent>{zones.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
+          {zone ? <div className="mx-auto w-fit rounded-lg border border-line bg-white p-4 text-[#171611]"><QRCodeSVG id="facility-zone-qr" value={url} size={208} level="M" marginSize={1} title={`QR code to add a job in ${zone.name}`} /></div> : null}
+          <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] leading-5 text-ink-2"><strong>{zone?.name ?? "Area"}</strong><br />Staff must still sign in to add a job. The code only picks the area for them.</div>
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(url).then(() => setCopied(true)); }}><Copy /> {copied ? "Link copied" : "Copy link"}</Button><Button onClick={download} disabled={!zone}><Download /> Download QR</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(url).then(() => setCopied(true)); }}><Copy /> {copied ? "Link copied" : "Copy link"}</Button><Button onClick={download} disabled={!zone}><Download /> Download QR code</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -155,27 +176,27 @@ export function FacilityTaskWorkspace({ branchId, zones, writeEnabled }: { branc
   const criticalCount = activeTasks.filter((task) => task.severity === "critical").length;
   const inProgressCount = activeTasks.filter((task) => task.status === "in_progress").length;
 
-  if (!branchId) return <StatePanel icon={ClipboardCheck} title="Choose a branch first" description="Maintenance is tracked separately for each branch. Choose a branch above to see cleaning, inspection, and incident tasks by gym space." className="mt-2" />;
+  if (!branchId) return <StatePanel icon={ClipboardCheck} title="Choose a branch first" description="Each branch has its own maintenance list. Choose a branch above." className="mt-2" />;
   if (tasksQuery.isLoading) return <div className="grid gap-3 sm:grid-cols-3"><div className="panel h-24 animate-pulse" /><div className="panel h-24 animate-pulse" /><div className="panel h-24 animate-pulse" /></div>;
-  if (tasksQuery.isError && (!tasksQuery.data || (isApiError(tasksQuery.error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(tasksQuery.error.code)))) return <QueryErrorState error={tasksQuery.error} onRetry={() => tasksQuery.refetch()} forbiddenDescription="Your role can’t read maintenance work for this branch." />;
+  if (tasksQuery.isError && (!tasksQuery.data || (isApiError(tasksQuery.error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(tasksQuery.error.code)))) return <QueryErrorState error={tasksQuery.error} onRetry={() => tasksQuery.refetch()} forbiddenDescription="You don’t have access to maintenance for this branch." />;
 
   return (
     <div className="space-y-4" data-testid="operations-facilities">
-      {tasksQuery.isError ? <div role="status" className="text-[12px] text-warning-deep">Maintenance could not refresh. Showing the last loaded tasks. <Button size="sm" variant="ghost" onClick={() => void tasksQuery.refetch()}>Retry</Button></div> : null}
+      {tasksQuery.isError ? <div role="status" className="text-[12px] text-warning-deep">The list could not update. It may be out of date. <Button size="sm" variant="ghost" onClick={() => void tasksQuery.refetch()}>Try again</Button></div> : null}
       <div className="flex flex-wrap gap-x-6 gap-y-2 border-b border-line pb-3 text-[13.5px]" aria-label="Maintenance summary">
-        <span><strong className="tabular-nums">{activeTasks.length}</strong> open {activeTasks.length === 1 ? "task" : "tasks"}</span>
+        <span><strong className="tabular-nums">{activeTasks.length}</strong> open {activeTasks.length === 1 ? "job" : "jobs"}</span>
         <span className={criticalCount > 0 ? "text-danger" : "text-ink-2"}><strong className="tabular-nums">{criticalCount}</strong> critical</span>
         <span className="text-ink-2"><strong className="tabular-nums">{inProgressCount}</strong> in progress</span>
       </div>
-      {requestedZoneId ? <div className="flex flex-wrap items-center gap-2 text-[13px]">Gym space: {zones.find((zone) => zone.id === requestedZoneId)?.name ?? "Unavailable space"}<Button size="sm" variant="ghost" onClick={() => { const next = new URLSearchParams(searchParams.toString()); next.delete("zone"); next.delete("action"); router.replace(`/maintenance?${next}`, { scroll: false }); }}>Show all spaces</Button></div> : null}
+      {requestedZoneId ? <div className="flex flex-wrap items-center gap-2 text-[13px]">Area: {zones.find((zone) => zone.id === requestedZoneId)?.name ?? "Unknown area"}<Button size="sm" variant="ghost" onClick={() => { const next = new URLSearchParams(searchParams.toString()); next.delete("zone"); next.delete("action"); router.replace(`/maintenance?${next}`, { scroll: false }); }}>Show all areas</Button></div> : null}
 
       <section className="panel overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5">
-          <div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><ClipboardCheck className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="text-[15px] font-semibold text-ink">Maintenance list</h2><p className="mt-0.5 text-[12px] text-ink-3">Cleaning, inspections, and incidents for places such as reception, the main floor, and locker rooms.</p></div></div>
-          <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" aria-pressed={showHistory} onClick={() => { const next = new URLSearchParams(searchParams.toString()); if (showHistory) next.delete("history"); else next.set("history", "1"); router.replace(`/maintenance?${next}`, { scroll: false }); }}>{showHistory ? "Hide history" : "Show history"}</Button>{writeEnabled ? <><Button size="sm" variant="secondary" onClick={() => setQrDialog(true)} disabled={zones.length === 0}><QrCode /> Location QR</Button><Button size="sm" onClick={() => setTaskDialog("new")} disabled={zones.length === 0}><Plus /> New task</Button></> : null}</div>
+          <div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><ClipboardCheck className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="text-[15px] font-semibold text-ink">Maintenance list</h2></div></div>
+          <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" aria-pressed={showHistory} onClick={() => { const next = new URLSearchParams(searchParams.toString()); if (showHistory) next.delete("history"); else next.set("history", "1"); router.replace(`/maintenance?${next}`, { scroll: false }); }}>{showHistory ? "Hide history" : "Show history"}</Button>{writeEnabled ? <><Button size="sm" variant="secondary" onClick={() => setQrDialog(true)} disabled={zones.length === 0}><QrCode /> Area QR code</Button><Button size="sm" onClick={() => setTaskDialog("new")} disabled={zones.length === 0}><Plus /> New job</Button></> : null}</div>
         </div>
-        {!writeEnabled ? <div className="border-b border-line bg-sunken/50 px-4 py-2 text-[12px] text-ink-2">You have read-only access. Managers can create and update maintenance work.</div> : null}
-        {zones.length === 0 ? <EmptyState title="No gym spaces yet" description="An owner can add spaces such as Reception, Main floor, Studio, or Locker room from Settings → Gym spaces." className="m-4" /> : visibleTasks.length === 0 ? <EmptyState title={showHistory ? "No maintenance history" : "No open maintenance work"} description={showHistory ? "Tasks created for this branch will appear here." : "Everything is clear. Scan a location QR or add a task when work comes up."} className="m-4" /> : <div className="divide-y divide-line">{visibleTasks.map((task) => <article key={task.id} ref={task.id === requestedTaskId ? selectedTaskRef : undefined} aria-label={task.title} className={cn(task.id === requestedTaskId && "bg-sunken/60","grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", task.severity === "critical" && ACTIVE_STATUSES.has(task.status) && "bg-danger-bg/20")}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(task.status)} dot>{task.status.replaceAll("_", " ")}</Badge><Badge variant={task.severity === "critical" ? "danger" : task.severity === "high" ? "warning" : "neutral"}>{task.severity}</Badge><span className="text-[12px] text-ink-3">{task.kind} · {task.zoneName}</span></div><h3 className="mt-2 text-[14px] font-medium text-ink">{task.title}</h3><p className="mt-1 text-[12px] text-ink-2">{task.assigneeId ? "Assigned to a staff member" : "Unassigned"}</p>{task.notes ? <p className="mt-1 text-[12px] leading-5 text-ink-2">{task.notes}</p> : null}<p className="mt-1 text-[12px] text-ink-3">{task.dueAt ? <>Due <DateTimeText iso={task.dueAt} /></> : <>Updated <DateTimeText iso={task.updatedAt} /></>}</p></div>{writeEnabled ? <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">{task.status === "open" ? <Button size="xs" variant="secondary" onClick={() => mutation.mutate(taskUpdate(task, "in_progress"))} loading={mutation.isPending}><Play /> Start</Button> : null}{["open", "in_progress", "blocked"].includes(task.status) ? <Button size="xs" onClick={() => mutation.mutate(taskUpdate(task, "completed"))} loading={mutation.isPending}><CheckCircle2 /> Complete</Button> : null}{["open", "in_progress"].includes(task.status) ? <Button size="xs" variant="ghost" onClick={() => mutation.mutate(taskUpdate(task, "blocked"))} loading={mutation.isPending}><Flag /> Block</Button> : null}<Button size="xs" variant="ghost" onClick={() => setTaskDialog(task)}>Edit</Button></div> : null}</article>)}</div>}
+        {!writeEnabled ? <div className="border-b border-line bg-sunken/50 px-4 py-2 text-[12px] text-ink-2">You can only view this list. Ask a manager to add or change jobs.</div> : null}
+        {zones.length === 0 ? <EmptyState title="No areas yet" description="An owner can add areas like Reception, Main floor or Studio in Settings." className="m-4" /> : visibleTasks.length === 0 ? <EmptyState title={showHistory ? "No maintenance history" : "No open maintenance jobs"} description={showHistory ? "Jobs for this branch will show here." : "Nothing to do now. Add a job or scan an area QR code when something needs work."} className="m-4" /> : <div className="divide-y divide-line">{visibleTasks.map((task) => <article key={task.id} ref={task.id === requestedTaskId ? selectedTaskRef : undefined} aria-label={task.title} className={cn(task.id === requestedTaskId && "bg-sunken/60","grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", task.severity === "critical" && ACTIVE_STATUSES.has(task.status) && "bg-danger-bg/20")}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(task.status)} dot>{STATUS_LABELS[task.status]}</Badge><Badge variant={task.severity === "critical" ? "danger" : task.severity === "high" ? "warning" : "neutral"}>{PRIORITY_LABELS[task.severity]} priority</Badge><span className="text-[12px] text-ink-3">{KIND_LABELS[task.kind]} · {task.zoneName}</span></div><h3 className="mt-2 text-[14px] font-medium text-ink">{task.title}</h3><p className="mt-1 text-[12px] text-ink-2">{task.assigneeId ? "Assigned to a staff member" : "Not assigned"}</p>{task.notes ? <p className="mt-1 text-[12px] leading-5 text-ink-2">{task.notes}</p> : null}<p className="mt-1 text-[12px] text-ink-3">{task.dueAt ? <>Due <DateTimeText iso={task.dueAt} /></> : <>Updated <DateTimeText iso={task.updatedAt} /></>}</p></div>{writeEnabled ? <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">{task.status === "open" ? <Button size="xs" variant="secondary" onClick={() => mutation.mutate(taskUpdate(task, "in_progress"))} loading={mutation.isPending}><Play /> Start</Button> : null}{["open", "in_progress", "blocked"].includes(task.status) ? <Button size="xs" onClick={() => mutation.mutate(taskUpdate(task, "completed"))} loading={mutation.isPending}><CheckCircle2 /> Mark done</Button> : null}{["open", "in_progress"].includes(task.status) ? <Button size="xs" variant="ghost" onClick={() => mutation.mutate(taskUpdate(task, "blocked"))} loading={mutation.isPending}><Flag /> Put on hold</Button> : null}<Button size="xs" variant="ghost" onClick={() => setTaskDialog(task)}>Edit</Button></div> : null}</article>)}</div>}
       </section>
 
       {taskDialog ? <TaskDialog key={taskDialog === "new" ? `new-${requestedZoneId ?? "default"}` : taskDialog.id} branchId={branchId} zones={zones} task={taskDialog === "new" ? undefined : taskDialog} initialZoneId={requestedZoneId} pending={mutation.isPending} onClose={() => setTaskDialog(null)} onSubmit={(input) => mutation.mutate(input, { onSuccess: () => setTaskDialog(null) })} /> : null}

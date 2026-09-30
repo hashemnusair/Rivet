@@ -12,14 +12,14 @@ export function parseAutomationNumbers(raw: string, allowZero = false): number[]
 export function automationTriggerParameterLabel(trigger: AutomationTriggerKey): string {
   switch (trigger) {
     case "membership_expiring":
-      return "Days before expiry";
+      return "Days before it ends";
     case "membership_expired":
-      return "Days after expiry";
+      return "Days after it ended";
     case "member_inactive":
     case "payment_outstanding":
       return "Days";
     case "lead_untouched":
-      return "Hours without first contact";
+      return "Hours with no contact";
     case "follow_up_overdue":
       return "Hours overdue";
   }

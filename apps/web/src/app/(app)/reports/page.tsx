@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
 import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -27,7 +27,7 @@ import { ReportScopeBar, parseReportScope, reportScopeFrom, reportScopeHref, typ
 
 type ReportsView = "overview" | OperationalReportKind;
 const VIEWS: readonly ReportsView[] = ["overview", "peak-hours", "classes", "retention", "renewals", "collections", "crm", "controls"];
-const OVERVIEW_QUESTION = "What came in, by which method and branch, and what is still unresolved?";
+const OVERVIEW_QUESTION = "What came in, how was it paid, and what do members still owe?";
 const TABLE_PAGE_SIZE = 25;
 
 function parseView(value: string | null): ReportsView {
@@ -109,7 +109,7 @@ function ReportsPageInner() {
   };
 
   const exportReport = useApiMutation(async (api) => (await loadTransactionsInRange(api, { branchId: branchInput, from, to }, Number.POSITIVE_INFINITY)).items, {
-    successMessage: (items) => `Exported all ${items.length} transactions in this report.`,
+    successMessage: (items) => `Report downloaded: ${countLabel(items.length, "row")}.`,
     onSuccess: (items) => {
       if (!dashboard) return;
       const timeZone = session?.organization.timezone ?? "Asia/Amman";
@@ -118,27 +118,27 @@ function ReportsPageInner() {
         fileName: `rivet-finance-report-${from}-${to}.csv`,
         mimeType: "text/csv;charset=utf-8",
         content: buildSectionedCsvDocument({
-          title: "Finance overview and transaction ledger",
+          title: "Finance overview, payments and refunds",
           metadata: [
             { label: "Date range", value: `${from} to ${to}` },
             { label: "Timezone", value: timeZone },
-            { label: "Branch scope", value: scopedBranch?.name ?? "All accessible branches" },
+            { label: "Branches", value: scopedBranch?.name ?? "All your branches" },
           ],
           sections: [
             {
               title: "Overview",
-              headers: ["Metric", "Value"],
+              headers: ["Item", "Value"],
               rows: [
                 ["Revenue today", formatMoney(dashboard.kpis.revenueToday)],
                 ["Revenue this month", formatMoney(dashboard.kpis.revenueThisMonth)],
-                ["Outstanding balance", formatMoney(dashboard.kpis.outstandingTotal)],
+                ["Unpaid now", formatMoney(dashboard.kpis.outstandingTotal)],
                 ["New members this month", dashboard.kpis.newMembersThisMonth],
                 ["Check-ins today", dashboard.kpis.checkInsToday],
               ],
             },
             {
-              title: "Transactions",
-              headers: ["When", "Member", "Member number", "Branch", "Payment method", "Transaction type", "Amount", "Currency", "Status", "Receipt number", "Recorded by", "External reference", "RIVET transaction ID"],
+              title: "Payments and refunds",
+              headers: ["When", "Member", "Member number", "Branch", "Payment method", "Type", "Amount", "Currency", "Status", "Receipt number", "Recorded by", "Bank or card reference", "RIVET payment ID"],
               rows: items.map((item) => [
                 formatExportDateTime(item.occurredAt, timeZone),
                 item.memberName,
@@ -154,7 +154,7 @@ function ReportsPageInner() {
                 item.externalReference,
                 item.id,
               ]),
-              emptyMessage: "No transactions in this date range.",
+              emptyMessage: "No payments or refunds in this date range.",
             },
           ],
         }),
@@ -167,10 +167,10 @@ function ReportsPageInner() {
       <PageHeader
         title="Reports"
         description={view === "overview" ? OVERVIEW_QUESTION : OPERATIONAL_REPORT_QUESTIONS[view]}
-        actions={view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || transactions.length === 0}><Download /> Export all transactions</Button> : undefined}
+        actions={view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || transactions.length === 0}><Download /> Download report</Button> : undefined}
       />
 
-      <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="Reports are restricted" description="Owner or manager access is required for financial reporting." />}>
+      <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="You don't have access to reports" description="Only owners and managers can see reports." />}>
         <nav aria-label="Report views" className={tabListClassName}>
           {VIEWS.map((kind) => (
             <Link key={kind} href={hrefFor(kind)} replace scroll={false} onClick={(event) => selectView(event, kind)} aria-current={view === kind ? "page" : undefined} className={tabTriggerClassName} data-tab-value={kind}>
@@ -180,35 +180,35 @@ function ReportsPageInner() {
         </nav>
 
         {view !== "overview" ? <OperationalReports view={view} scope={scope} branches={branches} onScopeChange={changeScope} /> : <>
-        <ReportScopeBar branches={branches} scope={scope} onChange={changeScope} ranged onRefresh={refresh} refreshing={dashboardQuery.isFetching || rangeQuery.isFetching} note={rangeQuery.data?.truncated ? `first ${transactions.length} records` : undefined} />
+        <ReportScopeBar branches={branches} scope={scope} onChange={changeScope} ranged onRefresh={refresh} refreshing={dashboardQuery.isFetching || rangeQuery.isFetching} note={rangeQuery.data?.truncated ? `only the newest ${transactions.length} counted` : undefined} />
 
-        {stale ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Stale report data">Showing the last loaded figures; the latest refresh failed. <button type="button" className="font-medium underline" onClick={refresh}>Try again</button></div> : null}
+        {stale ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Report may be out of date">These numbers may be out of date. The last refresh failed. <button type="button" className="font-medium underline" onClick={refresh}>Try again</button></div> : null}
         {error ? <ErrorState onRetry={refresh} /> : null}
         {loading ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-24" />)}</div> : null}
 
         {dashboard && rangeQuery.data ? <>
           {/* Unresolved money and reversals first; healthy totals after. */}
           <section className="panel grid grid-cols-2 divide-line sm:grid-cols-3 xl:grid-cols-6" aria-label="Report totals">
-            <ReportStat label="Outstanding now" value={<MoneyText money={dashboard.kpis.outstandingTotal} compact />} tone={dashboard.kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context="unpaid member balances, all time" href={ledgerHref({ type: "payment" })} />
+            <ReportStat label="Unpaid now" value={<MoneyText money={dashboard.kpis.outstandingTotal} compact />} tone={dashboard.kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context="owed by members, from any date" href={ledgerHref({ type: "payment" })} />
             <ReportStat label="Refunded" value={<MoneyText money={money(totals.refunded)} compact />} tone={totals.refunded > 0 ? "warning" : undefined} context={countLabel(totals.refundCount, "refund")} href={ledgerHref({ type: "refund" })} />
-            <ReportStat label="Voided" value={<MoneyText money={money(totals.voided)} compact />} tone={totals.voided > 0 ? "warning" : undefined} context={countLabel(totals.voidCount, "void")} />
+            <ReportStat label="Cancelled payments" value={<MoneyText money={money(totals.voided)} compact />} tone={totals.voided > 0 ? "warning" : undefined} context={countLabel(totals.voidCount, "payment")} />
             <ReportStat label="Collected" value={<MoneyText money={money(totals.collected)} compact />} context={countLabel(totals.paymentCount, "payment")} />
-            <ReportStat label="Net in range" value={<MoneyText money={money(totals.collected - totals.refunded)} compact signed={totals.collected - totals.refunded < 0} />} context="collected less refunds" />
+            <ReportStat label="After refunds" value={<MoneyText money={money(totals.collected - totals.refunded)} compact signed={totals.collected - totals.refunded < 0} />} context="collected minus refunds" />
             <ReportStat label="This month" value={<MoneyText money={dashboard.kpis.revenueThisMonth} compact />} context={`${dashboard.kpis.newMembersThisMonth} new member${dashboard.kpis.newMembersThisMonth === 1 ? "" : "s"}`} />
           </section>
 
           <div className="grid gap-5 xl:grid-cols-2">
-            <BreakdownPanel sectionLabel="Collections" title="By payment method" empty="No payments in this range." rows={totals.byMethod.map((row) => ({ key: row.key, label: PAYMENT_METHOD_LABELS[row.key] ?? row.key, count: row.count, amount: row.amount, refunds: row.refunds, href: ledgerHref({ method: row.key }) }))} />
-            <BreakdownPanel sectionLabel="Branches" title="By branch" empty="No payments in this range." rows={totals.byBranch.map((row) => ({ key: row.key, label: row.key, count: row.count, amount: row.amount, refunds: row.refunds }))} />
+            <BreakdownPanel sectionLabel="Payments collected" title="By payment method" empty="No payments in these dates." rows={totals.byMethod.map((row) => ({ key: row.key, label: PAYMENT_METHOD_LABELS[row.key] ?? row.key, count: row.count, amount: row.amount, refunds: row.refunds, href: ledgerHref({ method: row.key }) }))} />
+            <BreakdownPanel sectionLabel="Payments collected" title="By branch" empty="No payments in these dates." rows={totals.byBranch.map((row) => ({ key: row.key, label: row.key, count: row.count, amount: row.amount, refunds: row.refunds }))} />
           </div>
 
-          <section className="panel overflow-hidden" aria-label="Transactions in range">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Source records</p><h2 className="mt-1 text-[16px] font-semibold">Transactions in range</h2></div><Badge variant="outline">{transactions.length}{rangeQuery.data.truncated ? "+" : ""} records</Badge></header>
-            {transactions.length === 0 ? <p className="p-5 text-[13px] text-ink-3">No transactions in this range.</p> : <>
+          <section className="panel overflow-hidden" aria-label="Payments and refunds">
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Everything behind these totals</p><h2 className="mt-1 text-[16px] font-semibold">Payments and refunds</h2></div><Badge variant="outline">{transactions.length}{rangeQuery.data.truncated ? "+" : ""} rows</Badge></header>
+            {transactions.length === 0 ? <p className="p-5 text-[13px] text-ink-3">No payments or refunds in these dates.</p> : <>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Member</TableHead><TableHead>Branch</TableHead><TableHead>Method</TableHead><TableHead>Type</TableHead><TableHead className="text-end">Amount</TableHead><TableHead>Status</TableHead><TableHead>Receipt</TableHead></TableRow></TableHeader>
-                  <TableBody>{tablePage.items.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-[12px]">{formatDate(item.occurredAt)}</TableCell><TableCell><p className="font-medium">{item.memberName}</p><p className="font-mono text-[11px] text-ink-3">{item.memberNumber}</p></TableCell><TableCell className="text-[12px]">{item.branchName}</TableCell><TableCell className="text-[12px]">{PAYMENT_METHOD_LABELS[item.method] ?? item.method}</TableCell><TableCell className="text-[12px] capitalize">{item.type.replaceAll("_", " ")}</TableCell><TableCell className="text-end"><MoneyText money={item.amount} className={item.type === "refund" ? "text-danger" : undefined} /></TableCell><TableCell><TransactionStatusChip status={item.status} /></TableCell><TableCell>{ledgerHref({ q: item.receiptNumber }) ? <Link href={ledgerHref({ q: item.receiptNumber })!} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink">{item.receiptNumber}</Link> : <span className="font-mono text-[12px]">{item.receiptNumber}</span>}</TableCell></TableRow>)}</TableBody>
+                  <TableBody>{tablePage.items.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-[12px]">{formatDate(item.occurredAt)}</TableCell><TableCell><p className="font-medium">{item.memberName}</p><p className="font-mono text-[11px] text-ink-3">{item.memberNumber}</p></TableCell><TableCell className="text-[12px]">{item.branchName}</TableCell><TableCell className="text-[12px]">{PAYMENT_METHOD_LABELS[item.method] ?? item.method}</TableCell><TableCell className="text-[12px]">{TRANSACTION_TYPE_LABELS[item.type]}</TableCell><TableCell className="text-end"><MoneyText money={item.amount} className={item.type === "refund" ? "text-danger" : undefined} /></TableCell><TableCell><TransactionStatusChip status={item.status} /></TableCell><TableCell>{ledgerHref({ q: item.receiptNumber }) ? <Link href={ledgerHref({ q: item.receiptNumber })!} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink">{item.receiptNumber}</Link> : <span className="font-mono text-[12px]">{item.receiptNumber}</span>}</TableCell></TableRow>)}</TableBody>
                 </Table>
               </div>
               <div className="px-4 pb-3"><DataPagination page={tablePage} onPage={setTransactionPage} /></div>

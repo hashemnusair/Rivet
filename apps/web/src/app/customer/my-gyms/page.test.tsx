@@ -37,14 +37,14 @@ describe("member home", () => {
     render(<MemberDashboardPage />);
 
     expect(screen.getByRole("heading", { name: "Hi, Lina" })).toBeInTheDocument();
-    const region = screen.getByRole("region", { name: "Subscribed gyms" });
+    const region = screen.getByRole("region", { name: "Your gyms" });
     expect(region).toHaveTextContent("1 gym");
     expect(screen.getByText("Ended")).toBeInTheDocument();
     expect(screen.getByText("Ended 31 Jan 2020")).toBeInTheDocument();
     expect(screen.queryByText(/Subscribed until/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Forge Fitness Club" })).toHaveAttribute("href", `/customer/my-gyms/${base.id}`);
     expect(screen.getByRole("link", { name: /Membership/ })).toHaveAttribute("href", `/customer/my-gyms/${base.id}`);
-    expect(screen.getByRole("button", { name: "Entry QR" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Entry code" })).toBeInTheDocument();
     expect(screen.getByText("ABD-2214")).toBeInTheDocument();
   });
 
@@ -58,7 +58,7 @@ describe("member home", () => {
   it("opens the entry pass from the card and closes it cleanly", async () => {
     const user = userEvent.setup();
     render(<MemberDashboardPage />);
-    await user.click(screen.getByRole("button", { name: "Entry QR" }));
+    await user.click(screen.getByRole("button", { name: "Entry code" }));
     expect(await screen.findByLabelText("Membership entry QR code")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close dialog" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -83,7 +83,7 @@ describe("member home", () => {
   it("shows a plain empty state with one way forward", () => {
     state.memberships = [];
     render(<MemberDashboardPage />);
-    expect(screen.getByRole("region", { name: "Subscribed gyms" })).toHaveTextContent("0 gyms");
+    expect(screen.getByRole("region", { name: "Your gyms" })).toHaveTextContent("0 gyms");
     expect(screen.getByRole("heading", { name: "No gym membership yet" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Find a gym/ })).toHaveAttribute("href", "/customer/discover");
   });

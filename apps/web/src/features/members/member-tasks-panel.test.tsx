@@ -31,9 +31,9 @@ describe("member record open tasks", () => {
     renderPanel();
     await user.click(await screen.findByRole("button", { name: "Complete task Follow up — Yara Sweidan" }));
     const dialog = await screen.findByRole("dialog", { name: "What happened?" });
-    expect(within(dialog).getByTestId("log-contact-form")).toHaveTextContent("Log contact and finish");
+    expect(within(dialog).getByTestId("log-contact-form")).toHaveTextContent("Save and finish");
     expect(state.completeTask).not.toHaveBeenCalled();
-    await user.click(within(dialog).getByRole("button", { name: "Mark done without a contact" }));
+    await user.click(within(dialog).getByRole("button", { name: "Done, nothing to record" }));
     await waitFor(() => expect(state.completeTask).toHaveBeenCalledWith("task-1", { outcome: "Completed from member page" }));
   });
 

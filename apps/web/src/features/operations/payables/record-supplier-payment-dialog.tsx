@@ -20,9 +20,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const METHOD_ICONS: Record<SupplierPaymentMethod, typeof Banknote> = { cash: Banknote, bank_transfer: Landmark, cliq: Smartphone };
 const METHOD_HINTS: Record<SupplierPaymentMethod, string> = {
-  cash: "Comes out of this branch's open cash drawer.",
-  bank_transfer: "Record the bank reference so the transfer can be found later.",
-  cliq: "Record the CliQ reference so the transfer can be found later.",
+  cash: "Taken from this branch's cash drawer.",
+  bank_transfer: "Enter the bank reference so you can find the transfer later.",
+  cliq: "Enter the CliQ reference so you can find the payment later.",
 };
 
 function newIdempotencyKey(): string {
@@ -129,7 +129,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Record supplier payment</DialogTitle>
-          <DialogDescription>Choose the supplier, enter what was paid, and confirm how it settles their open balances. Saving records the payment; the ledger posts it separately.</DialogDescription>
+          <DialogDescription>Choose the supplier and enter what you paid. Then choose which bills it pays.</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); submit(); }} data-testid="record-supplier-payment-form">
@@ -140,7 +140,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
                   <SelectContent>{activeSuppliers.length === 0 ? <SelectItem value="none" disabled>No active suppliers</SelectItem> : activeSuppliers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="Paying from branch" hint={method === "cash" ? "Cash leaves this branch's drawer." : "The branch that made the payment."} required>
+              <Field label="Paying from branch" hint={method === "cash" ? "The cash comes from this branch's drawer." : "The branch that made the payment."} required>
                 <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)}>
                   <SelectTrigger aria-label="Paying branch"><SelectValue placeholder="Choose branch" /></SelectTrigger>
                   <SelectContent>{branches.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
@@ -163,13 +163,13 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
                   );
                 })}
               </div>
-              <p className="text-[11.5px] text-ink-3">{METHOD_HINTS[method]}</p>
+              <p className="text-[12px] text-ink-3">{METHOD_HINTS[method]}</p>
             </fieldset>
 
             {method === "cash" && branchId ? (
-              shiftQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">Checking the open cash shift…</p>
+              shiftQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">Checking for an open cash shift…</p>
                 : shiftQuery.isError ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">The cash shift could not be checked. <button type="button" className="font-medium underline" onClick={() => void shiftQuery.refetch()}>Try again</button></p>
-                  : shift ? <p role="status" className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12.5px] text-ink-2">Open cash shift at {branch?.name ?? "this branch"} · opened by {shift.openedByName} <DateText iso={shift.openedAt} />. The payment will be counted against this drawer.</p>
+                  : shift ? <p role="status" className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12.5px] text-ink-2">Open cash shift at {branch?.name ?? "this branch"}, opened by {shift.openedByName} <DateText iso={shift.openedAt} />. The cash is taken from this drawer.</p>
                     : <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">No cash shift is open at {branch?.name ?? "this branch"}. <Link href="/payments/shifts" className="font-medium underline">Open a shift</Link> first, or pay by bank transfer or CliQ.</p>
             ) : null}
 
@@ -178,23 +178,23 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
                 <Input inputMode="decimal" dir="ltr" value={amountText} onChange={(event) => { setAmountText(event.target.value); setManualAllocation(false); }} placeholder="0.000" aria-label="Amount paid" />
               </Field>
               {method !== "cash" ? (
-                <Field label={`${SUPPLIER_PAYMENT_METHOD_LABELS[method]} reference`} hint="Typed as given by the bank or app; RIVET does not verify it." required>
+                <Field label={`${SUPPLIER_PAYMENT_METHOD_LABELS[method]} reference`} hint="Copy it exactly from the bank or app." required>
                   <Input dir="ltr" value={reference} onChange={(event) => setReference(event.target.value)} maxLength={MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH} placeholder={method === "cliq" ? "CLIQ-…" : "TRF-…"} aria-label={`${SUPPLIER_PAYMENT_METHOD_LABELS[method]} reference`} />
                 </Field>
               ) : null}
             </div>
 
-            <section aria-label="Allocation" className="rounded-md border border-line">
+            <section aria-label="Bills this pays" className="rounded-md border border-line">
               <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
                 <div>
-                  <p className="text-[13px] font-medium">Apply to open balances</p>
-                  <p className="text-[11.5px] text-ink-3">{manualAllocation ? "Edited by you. " : "Oldest first. "}{supplier ? <>Owed to {supplier.name}: <MoneyText money={money(supplierOutstandingMinor, currency)} /></> : "Choose a supplier to see what is owed."}</p>
+                  <p className="text-[13px] font-medium">Bills this pays</p>
+                  <p className="text-[12px] text-ink-3">{manualAllocation ? "You changed the amounts. " : "Oldest bills first. "}{supplier ? <>You owe {supplier.name}: <MoneyText money={money(supplierOutstandingMinor, currency)} /></> : "Choose a supplier to see what you owe."}</p>
                 </div>
-                {manualAllocation && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setManualAllocation(false)}>Suggest again</Button> : null}
+                {manualAllocation && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setManualAllocation(false)}>Reset to oldest first</Button> : null}
               </header>
               {!supplierId ? null : payablesQuery.isLoading ? <div className="space-y-2 p-3"><Skeleton className="h-8" /><Skeleton className="h-8" /></div>
-                : payablesQuery.isError ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">Open balances could not be loaded. <button type="button" className="font-medium underline" onClick={() => void payablesQuery.refetch()}>Try again</button></p>
-                  : openPayables.length === 0 ? <p className="px-3 py-3 text-[12.5px] text-ink-3">{supplier?.name ?? "This supplier"} has no open balance. There is nothing to pay.</p>
+                : payablesQuery.isError ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">The bills could not load. <button type="button" className="font-medium underline" onClick={() => void payablesQuery.refetch()}>Try again</button></p>
+                  : openPayables.length === 0 ? <p className="px-3 py-3 text-[12.5px] text-ink-3">You owe {supplier?.name ?? "this supplier"} nothing right now.</p>
                     : (
                       <div className="divide-y divide-line">
                         {allocations.map(({ payable, amountMinor: allocated }) => {
@@ -203,23 +203,23 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
                             <div key={payable.id} className="grid items-center gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_150px]">
                               <div className="min-w-0">
                                 <p className="truncate text-[13px] font-medium">{payable.sourceLabel}</p>
-                                <p className="text-[11.5px] text-ink-3">Received <DateText iso={payable.receivedAt} /> · {payable.ageDays} days · remaining <MoneyText money={payable.remaining} />{payable.externalReference ? ` · ${payable.externalReference}` : ""}</p>
-                                {over ? <p role="alert" className="text-[11.5px] text-danger">More than this payable&apos;s remaining balance.</p> : null}
+                                <p className="text-[12px] text-ink-3">Received <DateText iso={payable.receivedAt} /> · {payable.ageDays} {payable.ageDays === 1 ? "day" : "days"} ago · still owed <MoneyText money={payable.remaining} />{payable.externalReference ? ` · ${payable.externalReference}` : ""}</p>
+                                {over ? <p role="alert" className="text-[12px] text-danger">More than you owe on this bill.</p> : null}
                               </div>
-                              <Input inputMode="decimal" dir="ltr" aria-label={`Allocate to ${payable.sourceLabel}`} value={allocationText[payable.id] ?? ""} onChange={(event) => { setManualAllocation(true); setAllocationText((current) => ({ ...current, [payable.id]: event.target.value })); }} placeholder="0.000" className={cn(over && "border-danger")} />
+                              <Input inputMode="decimal" dir="ltr" aria-label={`Amount for ${payable.sourceLabel}`} value={allocationText[payable.id] ?? ""} onChange={(event) => { setManualAllocation(true); setAllocationText((current) => ({ ...current, [payable.id]: event.target.value })); }} placeholder="0.000" className={cn(over && "border-danger")} />
                             </div>
                           );
                         })}
                         <div className="flex flex-wrap items-center justify-between gap-2 bg-sunken/40 px-3 py-2 text-[12.5px]">
-                          <span className="text-ink-2">Allocated <MoneyText money={money(allocatedMinor, currency)} /> of <MoneyText money={money(amountMinor ?? 0, currency)} /></span>
-                          {amountMinor && unallocatedMinor !== 0 ? <span role="alert" className={cn("font-medium", unallocatedMinor > 0 ? "text-warning-deep" : "text-danger")}>{unallocatedMinor > 0 ? <>Not yet applied: <MoneyText money={money(unallocatedMinor, currency)} />. RIVET never keeps a supplier credit; apply it or lower the amount.</> : <>Allocations exceed the amount by <MoneyText money={money(-unallocatedMinor, currency)} />.</>}</span> : null}
+                          <span className="text-ink-2">On bills: <MoneyText money={money(allocatedMinor, currency)} /> of <MoneyText money={money(amountMinor ?? 0, currency)} /></span>
+                          {amountMinor && unallocatedMinor !== 0 ? <span role="alert" className={cn("font-medium", unallocatedMinor > 0 ? "text-warning-deep" : "text-danger")}>{unallocatedMinor > 0 ? <>Not on a bill yet: <MoneyText money={money(unallocatedMinor, currency)} />. Put it on a bill or lower the amount.</> : <>The bills add up to <MoneyText money={money(-unallocatedMinor, currency)} /> more than the amount paid.</>}</span> : null}
                         </div>
                       </div>
                     )}
             </section>
 
-            <Field label="Notes" hint="Optional; shown on the confirmation.">
-              <Textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} placeholder="Invoice numbers, who handed over the cash, anything worth remembering" />
+            <Field label="Notes" hint="Shown on the payment confirmation.">
+              <Textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} placeholder="Invoice numbers, who took the cash, anything to remember" />
             </Field>
             {error ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">{error}</p> : null}
           </form>

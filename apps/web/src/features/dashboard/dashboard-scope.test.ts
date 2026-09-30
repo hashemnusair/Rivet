@@ -17,10 +17,10 @@ describe("dashboard branch scope copy", () => {
   });
 
   it("counts all accessible branches", () => {
-    expect(dashboardScopeDescription(branches)).toBe("All 3 branches, consolidated.");
+    expect(dashboardScopeDescription(branches)).toBe("All 3 branches together.");
   });
 
   it("does not claim a branch while access is loading", () => {
-    expect(dashboardScopeDescription([])).toBe("Loading your branch access.");
+    expect(dashboardScopeDescription([])).toBe("Loading your branches.");
   });
 });

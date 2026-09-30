@@ -27,7 +27,7 @@ beforeEach(() => {
 
 async function selectBranch(user: ReturnType<typeof userEvent.setup>, branchName?: string) {
   await screen.findByTestId("operations-command-center");
-  const picker = screen.getByRole("combobox", { name: "Operations branch" });
+  const picker = screen.getByRole("combobox", { name: "Branch" });
   await user.click(picker);
   const options = await screen.findAllByRole("option");
   const option = branchName ? options.find((candidate) => candidate.textContent === branchName) : options.find((candidate) => candidate.textContent !== "All branches");
@@ -46,23 +46,23 @@ describe("OperationsCommandCenter", () => {
     expect(screen.getByRole("tab", { name: "Purchase orders" })).toHaveAttribute("aria-selected", "true");
   });
 
-  it("starts with a clear branch comparison view and compact inventory actions", async () => {
+  it("starts with a clear all-branches view and compact stock actions", async () => {
     await renderWithApp(<OperationsCommandCenter />);
 
     expect(await screen.findByTestId("operations-command-center")).toBeInTheDocument();
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual(["Inventory", "Purchase orders", "Suppliers", "Payables", "Equipment"]);
-    expect(screen.getByRole("tab", { name: /Inventory/ })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: /Equipment/ })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual(["Stock", "Purchase orders", "Suppliers", "Supplier bills", "Machines"]);
+    expect(screen.getByRole("tab", { name: /Stock/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Machines/ })).toHaveAttribute("aria-selected", "false");
     expect(screen.queryByRole("tab", { name: /Checkout|Maintenance/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Checkout/ })).toHaveAttribute("href", "/checkout");
     expect(screen.getByRole("link", { name: /Maintenance/ })).toHaveAttribute("href", "/maintenance");
-    expect(screen.getByRole("combobox", { name: "Operations branch" })).toHaveTextContent("All branches");
-    expect(screen.getByText(/Compare stock across branches/)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent("All branches");
+    expect(screen.getByText(/Showing all branches/)).toBeInTheDocument();
     expect(await screen.findByRole("columnheader", { name: "Available" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Selling price" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Running low" })).not.toBeInTheDocument();
     expect(screen.queryByText(/How Operations works|Refill to|Delivery time|Supplier unit cost|projected at delivery/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Select a branch above to add items/)).toBeInTheDocument();
+    expect(screen.getByText(/Choose a branch above to add items/)).toBeInTheDocument();
   });
 
   it("uses the selected branch for independent inventory and links checkout to that branch", async () => {
@@ -77,7 +77,7 @@ describe("OperationsCommandCenter", () => {
     await waitFor(() => expect(listInventory).toHaveBeenCalledWith(expect.objectContaining({ branchId: selectedBranch })));
     expect(screen.getByRole("link", { name: /Checkout/ })).toHaveAttribute("href", `/checkout?branchId=${encodeURIComponent(selectedBranch!)}`);
     expect(screen.getByRole("button", { name: "Add item" })).toBeEnabled();
-    expect(screen.getByRole("combobox", { name: "Operations branch" })).toHaveTextContent(session.branches.find((branch) => branch.id === selectedBranch)?.name ?? "branch");
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(session.branches.find((branch) => branch.id === selectedBranch)?.name ?? "branch");
     expect(router.push).not.toHaveBeenCalled();
   });
 
@@ -90,39 +90,39 @@ describe("OperationsCommandCenter", () => {
     await user.click(screen.getByRole("button", { name: "Move stock" }));
     const dialog = await screen.findByRole("dialog", { name: "Move stock to another branch" });
     expect(dialog).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("combobox", { name: "Transfer destination" }));
+    await user.click(within(dialog).getByRole("combobox", { name: "Move to" }));
     await user.click(await screen.findByRole("option", { name: "Forge — Sweifieh" }));
-    await user.clear(within(dialog).getByRole("spinbutton", { name: "Transfer quantity" }));
-    await user.type(within(dialog).getByRole("spinbutton", { name: "Transfer quantity" }), "2");
-    await user.type(within(dialog).getByRole("textbox", { name: "Transfer reason" }), "Balance the Abdoun branch");
+    await user.clear(within(dialog).getByRole("spinbutton", { name: "Quantity to move" }));
+    await user.type(within(dialog).getByRole("spinbutton", { name: "Quantity to move" }), "2");
+    await user.type(within(dialog).getByRole("textbox", { name: "Reason for moving" }), "Balance the Abdoun branch");
     await user.click(within(dialog).getByRole("button", { name: "Move stock" }));
 
     await waitFor(() => expect(transferMutation).toHaveBeenCalledWith(expect.objectContaining({ sourceBranchId: expect.any(String), destinationBranchId: expect.any(String), quantity: 2, reason: "Balance the Abdoun branch", idempotencyKey: expect.stringMatching(/^inventory-transfer-/) })));
     expect(transferMutation.mock.calls[0]?.[0].sourceBranchId).toBe((await api.getSession()).activeBranchId);
   });
 
-  it("switches between inventory and equipment without leaving the page", async () => {
+  it("switches between stock and machines without leaving the page", async () => {
     const user = userEvent.setup();
     await renderWithApp(<OperationsCommandCenter />);
     await selectBranch(user);
 
-    await user.click(screen.getByRole("tab", { name: /Equipment/ }));
+    await user.click(screen.getByRole("tab", { name: /Machines/ }));
     expect(await screen.findByTestId("operations-equipment")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Machine register" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Issue history" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Work orders" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Machines" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Machine problems" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Repair jobs" })).toBeInTheDocument();
     expect(screen.getByText("Commercial treadmill")).toBeInTheDocument();
     expect(router.push).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("tab", { name: /Inventory/ }));
+    await user.click(screen.getByRole("tab", { name: /Stock/ }));
     expect(await screen.findByTestId("operations-inventory")).toBeInTheDocument();
   });
 
-  it("keeps equipment writes in centered dialogs and records issue and work-order changes", async () => {
+  it("keeps machine writes in centered dialogs and records problem and repair-job changes", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
     await selectBranch(user);
-    await user.click(screen.getByRole("tab", { name: /Equipment/ }));
+    await user.click(screen.getByRole("tab", { name: /Machines/ }));
 
     await user.click(await screen.findByRole("button", { name: "Edit Commercial treadmill" }));
     expect(screen.getByRole("dialog", { name: "Edit machine" })).toBeInTheDocument();
@@ -130,38 +130,38 @@ describe("OperationsCommandCenter", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     const issueMutation = vi.spyOn(api, "reportEquipmentIssue");
-    await user.click(screen.getByRole("button", { name: "Report issue" }));
-    expect(screen.getByRole("dialog", { name: "Report machine issue" })).toBeInTheDocument();
-    await user.type(screen.getByRole("textbox", { name: "Issue title" }), "Display flickers");
-    await user.click(screen.getByRole("button", { name: "Report issue" }));
+    await user.click(screen.getByRole("button", { name: "Report problem" }));
+    expect(screen.getByRole("dialog", { name: "Report a machine problem" })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "What is wrong?" }), "Display flickers");
+    await user.click(screen.getByRole("button", { name: "Report problem" }));
     await waitFor(() => expect(issueMutation).toHaveBeenCalledWith(expect.objectContaining({ title: "Display flickers", branchId: expect.any(String), assetId: expect.any(String) })));
-    // The report now appears in the issue history and as the machine's current report in its repair history.
+    // The report now appears in the machine problems list and as the machine's current problem in its repair history.
     await waitFor(() => expect(screen.getAllByText("Display flickers").length).toBeGreaterThanOrEqual(1));
 
     const orderMutation = vi.spyOn(api, "upsertEquipmentWorkOrder");
-    await user.click(screen.getByRole("button", { name: "Open work order" }));
-    expect(screen.getByRole("dialog", { name: "Open work order" })).toBeInTheDocument();
-    await user.type(screen.getByRole("textbox", { name: "Description" }), "Inspect display wiring");
-    await user.click(screen.getByRole("button", { name: "Open work order" }));
+    await user.click(screen.getByRole("button", { name: "Add repair job" }));
+    expect(screen.getByRole("dialog", { name: "Add repair job" })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "What needs doing?" }), "Inspect display wiring");
+    await user.click(screen.getByRole("button", { name: "Add repair job" }));
     await waitFor(() => expect(orderMutation).toHaveBeenCalledWith(expect.objectContaining({ description: "Inspect display wiring", status: "draft" })));
     await waitFor(() => expect(screen.getByText("Inspect display wiring")).toBeInTheDocument());
     const draftOrder = screen.getByText("Inspect display wiring").parentElement?.parentElement?.parentElement;
     expect(draftOrder).toBeTruthy();
     expect(within(draftOrder as HTMLElement).getByRole("button", { name: "Approve" })).toBeInTheDocument();
     expect(within(draftOrder as HTMLElement).queryByRole("button", { name: "Start work" })).not.toBeInTheDocument();
-    expect(within(draftOrder as HTMLElement).getByRole("button", { name: "Cancel order" })).toBeInTheDocument();
+    expect(within(draftOrder as HTMLElement).getByRole("button", { name: "Cancel job" })).toBeInTheDocument();
   });
 
-  it("allows managers to move a machine issue through investigation and resolution", async () => {
+  it("allows managers to move a machine problem through checking and fixing", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
     await selectBranch(user);
-    await user.click(screen.getByRole("tab", { name: /Equipment/ }));
+    await user.click(screen.getByRole("tab", { name: /Machines/ }));
     const issueMutation = vi.spyOn(api, "updateEquipmentIssue");
 
     expect(screen.getByRole("button", { name: "Mark active" })).toBeDisabled();
-    expect(screen.getByText(/Resolve the out-of-service issue below before marking active/i)).toBeInTheDocument();
-    const resolve = await screen.findByRole("button", { name: "Resolve issue" });
+    expect(screen.getByText(/Fix the “Do not use” problem below first/i)).toBeInTheDocument();
+    const resolve = await screen.findByRole("button", { name: "Mark fixed" });
     await user.click(resolve);
     await waitFor(() => expect(issueMutation).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ status: "resolved", safetyStatus: "safe_to_operate" })));
   });
@@ -176,12 +176,12 @@ describe("OperationsCommandCenter", () => {
     await user.click(screen.getByRole("tab", { name: /Suppliers/ }));
     expect(await screen.findByTestId("operations-suppliers")).toBeInTheDocument();
     expect(screen.getByText("Jordan Sports Supply")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Payables/ })).toHaveAttribute("href", expect.stringMatching(/^\/operations\/payables\?supplier=/));
+    expect(screen.getByRole("link", { name: /Bills/ })).toHaveAttribute("href", expect.stringMatching(/^\/operations\/payables\?supplier=/));
     await user.click(screen.getByRole("button", { name: "Add supplier" }));
     expect(screen.getByRole("dialog", { name: "Add supplier" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
-    await user.click(screen.getByRole("tab", { name: /Inventory/ }));
+    await user.click(screen.getByRole("tab", { name: /Stock/ }));
     await user.click(await screen.findByRole("button", { name: "Add item" }));
     expect(screen.getByRole("dialog", { name: "Add stock item" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Available quantity" })).toHaveValue(0);
@@ -193,9 +193,9 @@ describe("OperationsCommandCenter", () => {
     expect(await screen.findByTestId("operations-orders")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "New purchase order" }));
     expect(screen.getByRole("dialog", { name: "Create purchase order" })).toBeInTheDocument();
-    await user.click(screen.getByRole("combobox", { name: "Purchase order source" }));
-    await user.click(await screen.findByRole("option", { name: /Private \/ bought elsewhere/ }));
-    expect(screen.getByText(/source name will not be recorded/i)).toBeVisible();
+    await user.click(screen.getByRole("combobox", { name: "Bought from" }));
+    await user.click(await screen.findByRole("option", { name: /Somewhere else/ }));
+    expect(screen.getByText(/No supplier name is saved/i)).toBeVisible();
   });
 
   it("filters stock by search and keeps row actions to sell, reorder, and edit", async () => {
@@ -229,7 +229,7 @@ describe("OperationsCommandCenter", () => {
 
     await user.click(await screen.findByRole("button", { name: "Reorder Protein bar" }));
     const dialog = await screen.findByRole("dialog", { name: "Create purchase order" });
-    expect(within(dialog).getByRole("combobox", { name: "Purchase order product" })).toHaveTextContent(/Protein bar/);
+    expect(within(dialog).getByRole("combobox", { name: "Item" })).toHaveTextContent(/Protein bar/);
   });
 
   it("edits selected-branch availability without sending removed product fields", async () => {
@@ -253,15 +253,15 @@ describe("OperationsCommandCenter", () => {
     const user = userEvent.setup();
     await renderWithApp(<OperationsCommandCenter />, { role: "receptionist" });
     await selectBranch(user);
-    expect(await screen.findByText(/read-only access to operations/i)).toBeInTheDocument();
+    expect(await screen.findByText(/You can only view this page/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add item" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: /Suppliers/ }));
     expect(await screen.findByTestId("operations-suppliers")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add supplier" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: /Equipment/ }));
-    expect(await screen.findByText(/read-only access to operations/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Report issue" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open work order" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Machines/ }));
+    expect(await screen.findByText(/You can only view this page/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Report problem" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add repair job" })).not.toBeInTheDocument();
   });
 
   it("forwards old checkout and maintenance deep links to their own pages", async () => {
@@ -275,11 +275,11 @@ describe("OperationsCommandCenter", () => {
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/maintenance?branch=10000000-0000-4a00-8a00-000000000002&zone=zone-1&action=new-task"));
   });
 
-  it("opens the Payables tab inside Stock & purchasing and highlights a deep-linked order", async () => {
+  it("opens the Supplier bills tab inside Stock & purchasing and highlights a deep-linked order", async () => {
     const user = userEvent.setup();
     navigation.search = "tab=payables";
     await renderWithApp(<OperationsCommandCenter />);
-    expect(await screen.findByRole("tab", { name: /Payables/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("tab", { name: /Supplier bills/ })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByTestId("payables-workspace")).toBeInTheDocument();
     expect((await screen.findAllByTestId("payable-row")).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("tab", { name: /Purchase orders/ }));

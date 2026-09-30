@@ -13,11 +13,11 @@ vi.mock("next/navigation", () => ({
 afterEach(() => resetApiForTests());
 
 describe("NotificationsSection", () => {
-  it("keeps renewal recovery off until an authorized user enables it and saves", async () => {
+  it("keeps renewal reminders off until an authorized user turns them on and saves", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<NotificationsSection />);
     const update = vi.spyOn(api, "updateNotificationSettings");
-    const renewalRecovery = await screen.findByRole("switch", { name: "Renewal recovery" });
+    const renewalRecovery = await screen.findByRole("switch", { name: "Renewal reminders" });
 
     expect(renewalRecovery).toHaveAttribute("data-state", "unchecked");
     expect(screen.queryByRole("button", { name: "Save notifications" })).not.toBeInTheDocument();
@@ -40,7 +40,7 @@ describe("NotificationsSection", () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<NotificationsSection />);
     const update = vi.spyOn(api, "updateNotificationSettings");
-    const cashVariance = await screen.findByRole("switch", { name: "Cash variance" });
+    const cashVariance = await screen.findByRole("switch", { name: "Cash difference" });
     const before = cashVariance.getAttribute("data-state");
     await user.click(cashVariance);
     expect(cashVariance).not.toHaveAttribute("data-state", before ?? "");

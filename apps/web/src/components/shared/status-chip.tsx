@@ -40,12 +40,12 @@ export function StatusChip({ tone, children, className, dot }: { tone: Tone; chi
 
 const MEMBERSHIP_CHIP: Record<MembershipEffectiveStatus, { tone: Tone; label: string }> = {
   active: { tone: "green", label: "Active" },
-  expiring: { tone: "amber", label: "Expiring" },
+  expiring: { tone: "amber", label: "Ending soon" },
   frozen: { tone: "neutral", label: "Frozen" },
   expired: { tone: "red", label: "Expired" },
   cancelled: { tone: "outline", label: "Cancelled" },
   depleted: { tone: "amber", label: "Visits used up" },
-  scheduled: { tone: "neutral", label: "Scheduled" },
+  scheduled: { tone: "neutral", label: "Not started" },
 };
 
 export function MembershipStatusChip({ status, className }: { status?: MembershipEffectiveStatus; className?: string }) {
@@ -56,10 +56,10 @@ export function MembershipStatusChip({ status, className }: { status?: Membershi
 
 const PAYMENT_CHIP: Record<PaymentStatus, { tone: Tone; label: string }> = {
   paid: { tone: "green", label: "Paid" },
-  partial: { tone: "amber", label: "Partial" },
+  partial: { tone: "amber", label: "Part paid" },
   unpaid: { tone: "red", label: "Unpaid" },
   refunded: { tone: "neutral", label: "Refunded" },
-  void: { tone: "outline", label: "Void" },
+  void: { tone: "outline", label: "Cancelled" },
 };
 
 export function PaymentStatusChip({ status, className }: { status: PaymentStatus; className?: string }) {
@@ -69,9 +69,9 @@ export function PaymentStatusChip({ status, className }: { status: PaymentStatus
 
 const TRANSACTION_CHIP: Record<TransactionStatus, { tone: Tone; label: string }> = {
   completed: { tone: "green", label: "Completed" },
-  voided: { tone: "outline", label: "Voided" },
+  voided: { tone: "outline", label: "Cancelled" },
   refunded: { tone: "neutral", label: "Refunded" },
-  partially_refunded: { tone: "amber", label: "Part-refunded" },
+  partially_refunded: { tone: "amber", label: "Partly refunded" },
 };
 
 export function TransactionStatusChip({ status, className }: { status: TransactionStatus; className?: string }) {
@@ -81,14 +81,19 @@ export function TransactionStatusChip({ status, className }: { status: Transacti
 
 const LEAD_CHIP: Record<LeadStage, { tone: Tone; label: string }> = {
   new: { tone: "ink", label: "New" },
-  attempted: { tone: "neutral", label: "Attempted" },
+  attempted: { tone: "neutral", label: "Did not answer" },
   contacted: { tone: "neutral", label: "Contacted" },
   trial_booked: { tone: "amber", label: "Trial booked" },
   trial_completed: { tone: "amber", label: "Trial done" },
   offer_sent: { tone: "amber", label: "Offer sent" },
-  won: { tone: "green", label: "Won" },
-  lost: { tone: "outline", label: "Lost" },
+  won: { tone: "green", label: "Sold" },
+  lost: { tone: "outline", label: "Not sold" },
 };
+
+/** The plain name of a lead stage, for places that need text rather than a chip. */
+export function leadStageLabel(stage: string): string {
+  return LEAD_CHIP[stage as LeadStage]?.label ?? stage;
+}
 
 export function LeadStageChip({ stage, className }: { stage: LeadStage; className?: string }) {
   const chip = LEAD_CHIP[stage];
@@ -98,8 +103,8 @@ export function LeadStageChip({ stage, className }: { stage: LeadStage; classNam
 const DECISION_CHIP: Record<CheckInDecision, { tone: Tone; label: string }> = {
   allowed: { tone: "green", label: "Allowed" },
   warning: { tone: "amber", label: "Warning" },
-  blocked: { tone: "red", label: "Blocked" },
-  overridden: { tone: "ink", label: "Override" },
+  blocked: { tone: "red", label: "Refused" },
+  overridden: { tone: "ink", label: "Let in anyway" },
 };
 
 export function CheckInDecisionChip({ decision, className }: { decision: CheckInDecision; className?: string }) {
@@ -121,7 +126,7 @@ export const LEAD_SOURCE_LABELS: Record<string, string> = {
 export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   payment: "Payment",
   refund: "Refund",
-  void: "Void",
+  void: "Cancelled payment",
   retail_sale: "Retail sale",
 };
 

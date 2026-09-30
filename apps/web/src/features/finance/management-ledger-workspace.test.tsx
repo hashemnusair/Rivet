@@ -25,9 +25,9 @@ describe("ManagementLedgerWorkspace", () => {
     expect(await screen.findByTestId("management-ledger-workspace")).toBeInTheDocument();
     expect(screen.getByText("Management ledger")).toBeInTheDocument();
     expect(await screen.findByText("Chart of accounts")).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole("tab", { name: /source queue/i }));
-    expect(await screen.findByText("Source queue is empty")).toBeInTheDocument();
-    expect(screen.getByText(/not a statutory filing system/i)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("tab", { name: /items to add/i }));
+    expect(await screen.findByText("No items to add yet")).toBeInTheDocument();
+    expect(screen.getByText(/not for tax or official accounts/i)).toBeInTheDocument();
   });
 
   it("requires a concrete branch before an owner can open a manual journal", async () => {
@@ -35,13 +35,13 @@ describe("ManagementLedgerWorkspace", () => {
     const { api } = await renderWithApp(<ManagementLedgerWorkspace />);
     const session = await api.getSession();
     const branchName = session.branches[0]!.name;
-    expect(screen.queryByRole("button", { name: /manual journal/i })).not.toBeInTheDocument();
-    await user.click(await screen.findByRole("combobox", { name: "Ledger branch scope" }));
+    expect(screen.queryByRole("button", { name: /add journal entry/i })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("combobox", { name: "Branch" }));
     await user.click(await screen.findByRole("option", { name: branchName }));
 
-    await user.click(await screen.findByRole("button", { name: /manual journal/i }));
-    expect(await screen.findByRole("dialog", { name: /post manual journal/i })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Manual journal branch" })).toHaveTextContent(branchName);
+    await user.click(await screen.findByRole("button", { name: /add journal entry/i }));
+    expect(await screen.findByRole("dialog", { name: /add a journal entry/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Branch for this entry" })).toHaveTextContent(branchName);
   });
 
   it("allows an owner to refresh the source queue in the consolidated view without exposing posting", async () => {
@@ -49,12 +49,12 @@ describe("ManagementLedgerWorkspace", () => {
     const { api } = await renderWithApp(<ManagementLedgerWorkspace />);
     const refreshSpy = vi.spyOn(api, "refreshAccountingSourceQueue");
 
-    await user.click(await screen.findByRole("tab", { name: /source queue/i }));
-    expect(await screen.findByText(/queue refresh covers all accessible branches/i)).toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: /refresh queue/i }));
+    await user.click(await screen.findByRole("tab", { name: /items to add/i }));
+    expect(await screen.findByText(/Refresh list checks every branch/i)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /refresh list/i }));
 
     expect(refreshSpy).toHaveBeenCalledWith({ branchId: undefined });
-    expect(screen.queryByRole("button", { name: /post source/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add to books/i })).not.toBeInTheDocument();
   });
 
   it("keeps source posting actions out of a read-only manager view while preserving the queue", async () => {
@@ -64,11 +64,11 @@ describe("ManagementLedgerWorkspace", () => {
       await api.updateRolePermissions("manager", { permissions: managerPermissions });
     } });
 
-    expect(await screen.findByText(/read-only for this role/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /manual journal/i })).not.toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole("tab", { name: /source queue/i }));
-    expect(await screen.findByText(/read-only access/i)).toBeInTheDocument();
-    expect(await screen.findByText("Source queue is empty")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /refresh queue/i })).not.toBeInTheDocument();
+    expect(await screen.findByText("View only")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add journal entry/i })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("tab", { name: /items to add/i }));
+    expect(await screen.findByText(/You can only view this list/i)).toBeInTheDocument();
+    expect(await screen.findByText("No items to add yet")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /refresh list/i })).not.toBeInTheDocument();
   });
 });

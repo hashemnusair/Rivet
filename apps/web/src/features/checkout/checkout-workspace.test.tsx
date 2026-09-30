@@ -111,9 +111,9 @@ describe("checkout model", () => {
     expect(input).not.toHaveProperty("memberId");
     expect(input).not.toHaveProperty("guest");
     expect(validateSaleDraft(draft, inventory, "JOD")).toBeUndefined();
-    expect(validateSaleDraft({ ...draft, method: "card" }, inventory, "JOD")).toMatch(/reference number is required/i);
-    expect(validateSaleDraft({ ...draft, lines: [{ ...line, quantity: 2 }] }, inventory, "JOD")).toMatch(/only 1 available/i);
-    expect(validateSaleDraft({ ...draft, customer: { kind: "guest", fullName: "", phone: "" } }, inventory, "JOD")).toMatch(/receipt name and phone/i);
+    expect(validateSaleDraft({ ...draft, method: "card" }, inventory, "JOD")).toMatch(/type the visa \/ card reference number/i);
+    expect(validateSaleDraft({ ...draft, lines: [{ ...line, quantity: 2 }] }, inventory, "JOD")).toMatch(/only 1 protein bar left in stock/i);
+    expect(validateSaleDraft({ ...draft, customer: { kind: "guest", fullName: "", phone: "" } }, inventory, "JOD")).toMatch(/name and phone number for the receipt/i);
     expect(validateSaleDraft(draft, inventory, "JOD", { cashShiftOpen: false })).toMatch(/open a cash shift/i);
     expect(validateSaleDraft({ ...draft, lines: [{ product: product({ retailPrice: undefined }), quantity: 1 }] }, inventory, "JOD")).toMatch(/no selling price/i);
   });
@@ -171,7 +171,7 @@ describe("checkout workspace", () => {
     expect(await screen.findByText("Protein bar")).toBeInTheDocument();
     expect(screen.getByTestId("customer-attach")).toHaveTextContent(/Walk-in customer/i);
     expect(screen.queryByRole("textbox", { name: "Guest name" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Search member for retail sale" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Search for a member" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^Add Protein bar/i }));
     expect(screen.getAllByTestId("cart-line")).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent(/Cash goes into the open shift/i);
@@ -183,7 +183,7 @@ describe("checkout workspace", () => {
     const result = await screen.findByTestId("sale-result");
     expect(result).toHaveTextContent("Sale completed");
     expect(result).toHaveTextContent(/Receipt R-/);
-    expect(result).toHaveTextContent("No customer profile was created");
+    expect(result).toHaveTextContent("This sale is not linked to any member");
     expect(within(result).getByRole("link", { name: /Open receipt/i })).toHaveAttribute("href", expect.stringMatching(/^\/payments\/receipts\//));
     expect(routerMock.push).not.toHaveBeenCalled();
     await user.click(within(result).getByTestId("next-sale"));
@@ -197,7 +197,7 @@ describe("checkout workspace", () => {
     const checkoutSpy = vi.spyOn(api, "checkoutRetail");
     await screen.findByText("Protein bar");
     await user.click(screen.getByRole("button", { name: /^Add Protein bar/i }));
-    await user.click(screen.getByRole("button", { name: "Attach member" }));
+    await user.click(screen.getByRole("button", { name: "Choose member" }));
     const memberResults = await screen.findByRole("list", { name: "Member results" });
     await user.click(within(memberResults).getAllByRole("button")[0]!);
     expect(await screen.findByTestId("selected-member")).toBeInTheDocument();
@@ -218,10 +218,10 @@ describe("checkout workspace", () => {
     const checkoutSpy = vi.spyOn(api, "checkoutRetail");
     await screen.findByText("Protein bar");
     await user.click(screen.getByRole("button", { name: /^Add Protein bar/i }));
-    await user.click(screen.getByRole("button", { name: "Add receipt details" }));
+    await user.click(screen.getByRole("button", { name: "Add name and phone to receipt" }));
     await user.type(screen.getByRole("textbox", { name: "Guest name" }), "Guest buyer");
     await user.click(screen.getByTestId("complete-retail-sale"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/receipt name and phone/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/name and phone number for the receipt/i);
     expect(checkoutSpy).not.toHaveBeenCalled();
     await user.type(screen.getByRole("textbox", { name: "Phone number" }), "0790000000");
     await user.click(screen.getByLabelText("CliQ"));
@@ -240,7 +240,7 @@ describe("checkout workspace", () => {
     await user.click(screen.getByLabelText("CliQ"));
     expect(screen.getByRole("textbox", { name: /cliq reference/i })).toBeRequired();
     await user.click(screen.getByTestId("complete-retail-sale"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/reference number is required/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/type the cliq reference number/i);
     await user.type(screen.getByRole("textbox", { name: /cliq reference/i }), "CLIQ-WAS-HERE");
     await user.click(screen.getByLabelText("Cash"));
     expect(screen.queryByRole("textbox", { name: /cliq reference/i })).not.toBeInTheDocument();

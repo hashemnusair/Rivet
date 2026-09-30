@@ -167,7 +167,7 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
             placeholder={signatoryName || "Your full name"}
             className={cn("h-14 font-display text-[22px] italic", invalid && "border-danger")}
           />
-          <p className="mt-1.5 text-[11.5px] text-ink-3">Typing your full name adopts it as your signature. It must match the signatory name exactly.</p>
+          <p className="mt-1.5 text-[11.5px] text-ink-3">Your typed name becomes your signature. It must match the name you entered exactly.</p>
         </div>
       )}
     </div>

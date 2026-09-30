@@ -24,6 +24,7 @@ import { isApiError } from "@/lib/api/errors";
 import { cn } from "@/lib/utils/cn";
 import { ACTION_LABELS, TRIGGER_LABELS } from "@/features/automations/labels";
 import { automationTriggerFieldValue, automationTriggerParameterLabel, automationTriggerParams, hasValidAutomationTriggerParams } from "@/features/automations/form";
+import { automationExecutionLabel } from "@/features/automations/monitoring-ui";
 
 export default function RuleEditorPageClient() {
   const { ruleId } = useParams<{ ruleId: string }>();
@@ -62,7 +63,7 @@ export default function RuleEditorPageClient() {
     (api) => {
       if (!rule) throw new Error("no rule");
       const rawTriggerValue = rule.trigger === "membership_expiring" ? daysBefore : paramValue;
-      if (!hasValidAutomationTriggerParams(rule.trigger, rawTriggerValue)) throw new Error("Enter a valid automation threshold before saving.");
+      if (!hasValidAutomationTriggerParams(rule.trigger, rawTriggerValue)) throw new Error("Enter a valid number before saving.");
       const triggerParams = automationTriggerParams(rule.trigger, rawTriggerValue);
       return api.updateAutomationRule(rule.id, {
         name,
@@ -73,7 +74,7 @@ export default function RuleEditorPageClient() {
     },
     {
       onSuccess: async () => {
-        toast.success("Rule saved — changes are audited.");
+        toast.success("Automation saved.");
         setDirty(false);
         await invalidate();
       },
@@ -84,7 +85,7 @@ export default function RuleEditorPageClient() {
     (api, enabled: boolean) => api.updateAutomationRule(ruleId, { enabled }),
     {
       onSuccess: async (_d, enabled) => {
-        toast.success(enabled ? "Rule enabled." : "Rule paused.");
+        toast.success(enabled ? "Automation turned on." : "Automation turned off.");
         await invalidate();
       },
     },
@@ -94,7 +95,7 @@ export default function RuleEditorPageClient() {
     (api) => api.runAutomationRuleNow(ruleId, runReason.trim()),
     {
       onSuccess: async (result) => {
-        toast.success(`Created ${result.created} execution${result.created === 1 ? "" : "s"}; ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? "" : "s"} skipped.`);
+        toast.success(`Started ${result.created} run${result.created === 1 ? "" : "s"}. Skipped ${result.skippedDuplicates} already done.`);
         setRunOpen(false);
         setRunReason("");
         await invalidate([qk.automationRules, ["automationExecutions"]]);
@@ -111,11 +112,11 @@ export default function RuleEditorPageClient() {
     );
   }
   if (ruleQuery.isError) {
-    return isApiError(ruleQuery.error) && ruleQuery.error.code === "NOT_FOUND" ? <NotFoundState title="Rule not found" /> : <ErrorState onRetry={() => ruleQuery.refetch()} />;
+    return isApiError(ruleQuery.error) && ruleQuery.error.code === "NOT_FOUND" ? <NotFoundState title="Automation not found" /> : <ErrorState onRetry={() => ruleQuery.refetch()} />;
   }
   if (!rule) return null;
 
-  const paramLabel = rule.trigger === "membership_expiring" ? `${automationTriggerParameterLabel(rule.trigger)} (comma separated)` : rule.trigger === "member_inactive" ? "Days without a check-in" : rule.trigger === "payment_outstanding" ? "Days outstanding" : automationTriggerParameterLabel(rule.trigger);
+  const paramLabel = rule.trigger === "membership_expiring" ? `${automationTriggerParameterLabel(rule.trigger)} (separate with commas)` : rule.trigger === "member_inactive" ? "Days without a check-in" : rule.trigger === "payment_outstanding" ? "Days unpaid" : automationTriggerParameterLabel(rule.trigger);
 
   const selectedTemplate = templatesQuery.data?.find((t) => t.id === actions.find((a) => a.key === "queue_message")?.templateId);
   const queueMessageAction = actions.find((action) => action.key === "queue_message");
@@ -126,16 +127,16 @@ export default function RuleEditorPageClient() {
     <div className="space-y-4">
       <Breadcrumbs items={[{ label: "Automation history", href: "/audit?category=automations" }, { label: rule.name }]} />
       <PageHeader
-        sectionLabel="Automation rule"
+        sectionLabel="Automation"
         title={rule.name}
-        description={`Trigger: ${TRIGGER_LABELS[rule.trigger]}. Last run ${rule.lastRunAt ? formatDateTime(rule.lastRunAt) : "never"} · ${rule.executionsLast30Days} executions in 30 days.`}
+        description={`Runs when: ${TRIGGER_LABELS[rule.trigger]}. Last run ${rule.lastRunAt ? formatDateTime(rule.lastRunAt) : "never"} · ${rule.executionsLast30Days} runs in the last 30 days.`}
         actions={
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 text-[13px]">
-              <span className={rule.enabled ? "text-success-deep font-medium" : "text-ink-3"}>{rule.enabled ? "Enabled" : "Paused"}</span>
-              <Switch checked={rule.enabled} onCheckedChange={(v) => toggle.mutate(v)} aria-label="Enable rule" />
+              <span className={rule.enabled ? "text-success-deep font-medium" : "text-ink-3"}>{rule.enabled ? "On" : "Off"}</span>
+              <Switch checked={rule.enabled} onCheckedChange={(v) => toggle.mutate(v)} aria-label="Turn on automation" />
             </label>
-            <Button variant="secondary" onClick={() => setRunOpen(true)} disabled={dirty} title={dirty ? "Save configuration changes before running" : undefined}>
+            <Button variant="secondary" onClick={() => setRunOpen(true)} disabled={dirty} title={dirty ? "Save your changes first" : undefined}>
               <Play /> Run now
             </Button>
             <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!canSave}>
@@ -148,13 +149,13 @@ export default function RuleEditorPageClient() {
       <div className="grid gap-5 xl:grid-cols-2">
         {/* Editor */}
         <section className="panel self-start p-5">
-          <h2 className="mb-4 font-display text-[15px] font-semibold">Configuration</h2>
+          <h2 className="mb-4 font-display text-[15px] font-semibold">Settings</h2>
           <div className="space-y-4">
-            <Field label="Rule name">
+            <Field label="Name">
               <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
             </Field>
 
-            <Field label={paramLabel} hint={rule.trigger === "membership_expired" ? "Use 0 for memberships that expired today." : undefined}>
+            <Field label={paramLabel} hint={rule.trigger === "membership_expired" ? "Use 0 for memberships that ended today." : undefined}>
               {rule.trigger === "membership_expiring" ? (
                 <Input value={daysBefore} onChange={(e) => { setDaysBefore(e.target.value); setDirty(true); }} className="tabular" />
               ) : (
@@ -162,7 +163,7 @@ export default function RuleEditorPageClient() {
               )}
             </Field>
 
-            <Field label="Actions" hint="What happens when the trigger fires.">
+            <Field label="What it does" hint="Choose at least one.">
               <div className="space-y-2">
                 {(["create_task", "queue_message", "notify_manager"] as AutomationActionKey[]).map((key) => {
                   const active = actions.some((a) => a.key === key);
@@ -179,7 +180,7 @@ export default function RuleEditorPageClient() {
                             }}
                           >
                             <SelectTrigger sizeVariant="sm" className="w-44" aria-label="Message template">
-                              <SelectValue placeholder="Template…" />
+                              <SelectValue placeholder="Choose message…" />
                             </SelectTrigger>
                             <SelectContent>
                               {(templatesQuery.data ?? []).map((t) => (
@@ -209,7 +210,7 @@ export default function RuleEditorPageClient() {
               </div>
             </Field>
 
-            <Field label="Deduplication window (hours)" hint="The same member won't be hit twice within this window.">
+            <Field label="Wait before repeating (hours)" hint="The same person is not contacted again within this time.">
               <Input type="number" min={1} value={dedupe} onChange={(e) => { setDedupe(Number(e.target.value)); setDirty(true); }} className="font-mono w-32" />
             </Field>
           </div>
@@ -221,7 +222,7 @@ export default function RuleEditorPageClient() {
             <header className="flex items-center gap-2 border-b border-line px-4 py-2.5">
               <MessageSquareText className="size-4 text-ink-3" aria-hidden />
               <h2 className="text-[13px] font-semibold">Message preview{selectedTemplate ? ` — ${selectedTemplate.name}` : ""}</h2>
-              <Badge variant="outline" className="ms-auto">sandbox</Badge>
+              <Badge variant="outline" className="ms-auto">sample</Badge>
             </header>
             {selectedTemplate ? (
               <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
@@ -229,21 +230,21 @@ export default function RuleEditorPageClient() {
                 <TemplateBubble label="العربية" body={renderTemplate(selectedTemplate, "ar")} rtl />
               </div>
             ) : (
-              <p className="px-4 py-6 text-[13px] text-ink-3">Enable “Queue message” and pick a template to preview it.</p>
+              <p className="px-4 py-6 text-[13px] text-ink-3">Turn on “{ACTION_LABELS.queue_message}” and choose a message to see it here.</p>
             )}
           </section>
 
           {/* Recent executions */}
           <section className="panel overflow-hidden">
             <header className="border-b border-line px-4 py-2.5">
-              <h2 className="text-[13px] font-semibold">Recent executions</h2>
+              <h2 className="text-[13px] font-semibold">Recent runs</h2>
             </header>
             {executionsQuery.isLoading ? (
               <div className="p-4">
                 <Skeleton className="h-32 w-full" />
               </div>
             ) : (executionsQuery.data?.items.length ?? 0) === 0 ? (
-              <p className="px-4 py-6 text-[13px] text-ink-3">No executions for this rule yet.</p>
+              <p className="px-4 py-6 text-[13px] text-ink-3">This automation has not run yet.</p>
             ) : (
               <ul className="divide-y divide-line">
                 {executionsQuery.data!.items.map((e) => (
@@ -254,7 +255,7 @@ export default function RuleEditorPageClient() {
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <Badge variant={e.status === "success" ? "success" : e.status === "failed" ? "signal" : "neutral"}>
-                        {e.status === "skipped_duplicate" ? "skipped" : e.status}
+                        {automationExecutionLabel(e.status)}
                       </Badge>
                       <span className="text-[11px] text-ink-3 whitespace-nowrap">
                         <DateTimeText iso={e.executedAt} />
@@ -272,25 +273,25 @@ export default function RuleEditorPageClient() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Run automation now</DialogTitle>
-            <DialogDescription>This uses the same trigger and dedupe rules as the scheduler. Messages remain sandboxed unless that message type is explicitly enabled.</DialogDescription>
+            <DialogDescription>It follows the same settings as the automatic run. Messages are not really sent unless that message type is turned on.</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
             {runPreviewQuery.isLoading ? <Skeleton className="h-24 w-full" /> : runPreviewQuery.isError ? <ErrorState onRetry={() => runPreviewQuery.refetch()} /> : (
               <div className="rounded-md border border-line bg-sunken/40 p-3">
                 <div className="grid grid-cols-2 gap-3 text-[12px]">
-                  <div><p className="context-label">Eligible records</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.eligibleCount ?? 0}</p></div>
-                  <div><p className="context-label">Dedupe suppressed</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.duplicateCount ?? 0}</p></div>
+                  <div><p className="context-label">Will run for</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.eligibleCount ?? 0}</p></div>
+                  <div><p className="context-label">Skipped, already done</p><p className="mt-1 text-[18px] tabular">{runPreviewQuery.data?.duplicateCount ?? 0}</p></div>
                 </div>
-                {(runPreviewQuery.data?.candidates.length ?? 0) > 0 ? <ul className="mt-3 max-h-36 divide-y divide-line overflow-y-auto border-t border-line text-[12px]">{runPreviewQuery.data!.candidates.map((candidate) => <li key={`${candidate.subjectType}:${candidate.subjectId}`} className="flex items-center justify-between gap-3 py-2"><span className="truncate">{candidate.subjectName}</span><Badge variant={candidate.duplicate ? "neutral" : "success"}>{candidate.duplicate ? "duplicate" : "eligible"}</Badge></li>)}</ul> : <p className="mt-3 border-t border-line pt-3 text-[12px] text-ink-3">No persisted records match this trigger right now.</p>}
+                {(runPreviewQuery.data?.candidates.length ?? 0) > 0 ? <ul className="mt-3 max-h-36 divide-y divide-line overflow-y-auto border-t border-line text-[12px]">{runPreviewQuery.data!.candidates.map((candidate) => <li key={`${candidate.subjectType}:${candidate.subjectId}`} className="flex items-center justify-between gap-3 py-2"><span className="truncate">{candidate.subjectName}</span><Badge variant={candidate.duplicate ? "neutral" : "success"}>{candidate.duplicate ? "already done" : "will run"}</Badge></li>)}</ul> : <p className="mt-3 border-t border-line pt-3 text-[12px] text-ink-3">Nobody matches right now.</p>}
               </div>
             )}
-            <Field label="Reason" required hint="Stored in the immutable audit trail.">
-              <Textarea value={runReason} onChange={(event) => setRunReason(event.target.value)} placeholder="Why is a manual run required?" />
+            <Field label="Reason" required>
+              <Textarea value={runReason} onChange={(event) => setRunReason(event.target.value)} placeholder="Why run it now?" />
             </Field>
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setRunOpen(false)}>Cancel</Button>
-            <Button onClick={() => runNow.mutate()} loading={runNow.isPending} disabled={!runReason.trim() || runPreviewQuery.isLoading || runPreviewQuery.isError}><Play /> Run eligible records</Button>
+            <Button onClick={() => runNow.mutate()} loading={runNow.isPending} disabled={!runReason.trim() || runPreviewQuery.isLoading || runPreviewQuery.isError}><Play /> Run now</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -324,7 +325,7 @@ function TemplateBubble({ label, body, rtl }: { label: string; body: string; rtl
         {body}
       </div>
       <p className="mt-1.5 font-mono text-[10.5px] text-ink-4" dir="ltr">
-        WhatsApp · sandbox provider · sample variables
+        WhatsApp · sample message
       </p>
     </div>
   );

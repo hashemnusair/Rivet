@@ -134,7 +134,7 @@ export function LogContactForm({
     },
     {
       onSuccess: async () => {
-        toast.success("Contact logged — timeline updated.");
+        toast.success("Contact saved.");
         form.reset({ outcome: undefined, notes: "", nextFollowUp: "", stage: undefined });
         setFollowUpTouched(false);
         setSuggestedDays(undefined);
@@ -142,7 +142,7 @@ export function LogContactForm({
         onLogged?.();
       },
       // The form keeps every value so nothing has to be retyped after a retry.
-      onError: () => setError("Could not log the contact. Your notes are kept here — try again."),
+      onError: () => setError("Not saved. Your notes are still here. Try again."),
     },
   );
 
@@ -181,7 +181,7 @@ export function LogContactForm({
       </Field>
 
       {showsStage ? (
-        <Field label="Move stage to" hint="Suggested from the outcome. Change it if the lead is somewhere else.">
+        <Field label="Move lead to" hint="Picked from what happened. Change it if it is wrong.">
           <Controller
             control={form.control}
             name="stage"
@@ -210,8 +210,8 @@ export function LogContactForm({
           followUpInPast
             ? undefined
             : suggestedDays && !followUpTouched
-              ? `Suggested: ${suggestedDays === 1 ? "tomorrow" : `in ${suggestedDays} days`}. Change it if they asked for a specific day.`
-              : "Optional. Leave empty when no further follow-up is needed; any open follow-up task then closes with this outcome."
+              ? `Suggested: ${suggestedDays === 1 ? "tomorrow" : `in ${suggestedDays} days`}. Change it if they asked for another day.`
+              : "Optional. Leave empty if no more follow-up is needed. Any open follow-up task will then close."
         }
         error={followUpInPast ? "Choose today or a later date." : undefined}
       >
@@ -282,7 +282,7 @@ export function LogContactDialog({
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Log contact</DialogTitle>
-            <DialogDescription>Record this {label} interaction and decide what should happen next.</DialogDescription>
+            <DialogDescription>Write down what happened with this {label} and when to follow up.</DialogDescription>
           </DialogHeader>
           <DialogBody>
             <LogContactForm

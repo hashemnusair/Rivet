@@ -22,8 +22,8 @@ import { downloadTextFile } from "@/lib/exports/download";
 import { cn } from "@/lib/utils/cn";
 import { formatDate } from "@/lib/utils/dates";
 
-const TYPE_LABELS: Record<string, string> = { payment: "Payment", refund: "Refund", void: "Void", retail_sale: "Shop purchase" };
-const STATUS_LABELS: Record<string, string> = { completed: "Completed", partially_refunded: "Part-refunded", refunded: "Refunded", voided: "Voided" };
+const TYPE_LABELS: Record<string, string> = { payment: "Payment", refund: "Refund", void: "Cancelled payment", retail_sale: "Shop purchase" };
+const STATUS_LABELS: Record<string, string> = { completed: "Completed", partially_refunded: "Partly refunded", refunded: "Refunded", voided: "Cancelled" };
 
 export function CustomerFinanceClient() {
   const { ready, identitySignedIn, profileSelected } = useMemberGate();
@@ -48,7 +48,7 @@ export function CustomerFinanceClient() {
   const summary = useApiQuery(qk.customerFinance("summary"), (api) => api.getCustomerFinancialSummary(), { enabled });
   const transactions = useApiQuery(qk.customerFinance(query), (api) => api.listCustomerTransactions(query), { enabled });
   const personalExport = useApiMutation((api) => api.requestMemberPersonalDataExport(crypto.randomUUID()), {
-    successMessage: "Your CSV data export is ready.",
+    successMessage: "Your data file is ready.",
     onSuccess: (job) => {
       if (!job.content || !job.fileName) return;
       downloadTextFile({ content: job.content, fileName: job.fileName, mimeType: job.mimeType ?? "text/csv;charset=utf-8" });
@@ -82,7 +82,7 @@ export function CustomerFinanceClient() {
     return (
       <main className="mx-auto max-w-lg px-4 py-20 text-center">
         <h1 className="font-display text-[24px] font-semibold tracking-tight">Finish your member profile</h1>
-        <p className="mt-2 text-[13.5px] text-ink-2">Your receipts appear after your member account is ready.</p>
+        <p className="mt-2 text-[13.5px] text-ink-2">Finish setting up your account to see your receipts.</p>
         <Button asChild className="mt-5"><Link href="/login/member/create">Finish setup</Link></Button>
       </main>
     );
@@ -102,8 +102,8 @@ export function CustomerFinanceClient() {
     <main className="mx-auto max-w-[1080px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <PageHeader
         title="Payments and receipts"
-        description="Everything each gym recorded for you, with the matching receipt."
-        actions={<Button variant="secondary" size="sm" loading={personalExport.isPending} onClick={() => personalExport.mutate()} title="Download a spreadsheet-friendly CSV"><Download /> Download my data (CSV)</Button>}
+        description="All payments your gyms recorded for you, with receipts."
+        actions={<Button variant="secondary" size="sm" loading={personalExport.isPending} onClick={() => personalExport.mutate()} title="Download a spreadsheet file of your data"><Download /> Download my data (CSV)</Button>}
       />
 
       <FinanceSummary loading={summary.isLoading} error={summary.isError} data={summary.data} onRetry={() => summary.refetch()} />
@@ -114,7 +114,7 @@ export function CustomerFinanceClient() {
           <div className="flex gap-2">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 ps-9 sm:h-9" type="search" inputMode="search" placeholder="Receipt number, gym or method" aria-label="Search payments and receipts" />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 ps-9 sm:h-9" type="search" inputMode="search" placeholder="Search by receipt number, gym or payment method" aria-label="Search payments and receipts" />
             </div>
             <Button type="button" variant="secondary" className="h-11 shrink-0 sm:h-9 md:hidden" aria-expanded={filtersOpen} aria-controls="finance-filters" onClick={() => setFiltersOpen((value) => !value)}>
               <SlidersHorizontal /> Filters{secondaryCount ? <span className="tabular">· {secondaryCount}</span> : null}
@@ -127,11 +127,11 @@ export function CustomerFinanceClient() {
               <SelectContent><SelectItem value="all">All gyms</SelectItem>{gyms.map((gym) => <SelectItem key={gym.id} value={gym.id}>{gym.name}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={type ?? "all"} onValueChange={(value) => setParams({ type: value === "all" ? undefined : value })}>
-              <SelectTrigger className="h-11 sm:h-9" aria-label="Transaction type"><SelectValue placeholder="All types" /></SelectTrigger>
+              <SelectTrigger className="h-11 sm:h-9" aria-label="Type"><SelectValue placeholder="All types" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All types</SelectItem>{Object.entries(TYPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={status ?? "all"} onValueChange={(value) => setParams({ status: value === "all" ? undefined : value })}>
-              <SelectTrigger className="h-11 sm:h-9" aria-label="Transaction status"><SelectValue placeholder="All statuses" /></SelectTrigger>
+              <SelectTrigger className="h-11 sm:h-9" aria-label="Status"><SelectValue placeholder="All statuses" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.entries(STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
             </Select>
             <div className="grid grid-cols-2 gap-3 sm:col-span-2 md:col-span-3 md:flex md:items-end">
@@ -150,38 +150,38 @@ export function CustomerFinanceClient() {
         </div>
 
         {transactions.isLoading ? (
-          <div className="space-y-2 p-4" role="status" aria-label="Loading transactions">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-20" />)}</div>
+          <div className="space-y-2 p-4" role="status" aria-label="Loading payments">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-20" />)}</div>
         ) : transactions.isError ? (
           <div className="p-5"><ErrorState layout="section" title="Your payments could not be loaded" description="Nothing about your account changed. Try again in a moment." onRetry={() => transactions.refetch()} /></div>
         ) : (
           <>
-            {transactions.isBackgroundError ? <div className="p-3"><ErrorState layout="inline" title="The list could not be refreshed" description="Showing your last loaded payments." onRetry={() => transactions.refetch()} /></div> : null}
+            {transactions.isBackgroundError ? <div className="p-3"><ErrorState layout="inline" title="The list could not be updated" description="Showing the payments we loaded before." onRetry={() => transactions.refetch()} /></div> : null}
             {transactions.data?.items.length ? (
               <div className="divide-y divide-line">{transactions.data.items.map((item) => <TransactionRow key={`${item.gymId}-${item.id}`} item={item} />)}</div>
             ) : (
-              <EmptyState layout="section" className="m-4" title={hasFilters ? "No matching payments" : "No payments yet"} description={hasFilters ? "Clear a filter or try a different receipt number." : "Payments and receipts from your gyms appear here as soon as a gym records one."} icon={ReceiptText} action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}><FilterX /> Clear filters</Button> : undefined} />
+              <EmptyState layout="section" className="m-4" title={hasFilters ? "No matching payments" : "No payments yet"} description={hasFilters ? "Clear a filter or try a different receipt number." : "When a gym records a payment, it shows here with its receipt."} icon={ReceiptText} action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}><FilterX /> Clear filters</Button> : undefined} />
             )}
             {transactions.data ? <DataPagination page={transactions.data} onPage={(next) => setParams({ page: String(next) })} className="border-t border-line px-4 py-3" /> : null}
           </>
         )}
       </section>
 
-      <p className="mt-4 text-[12.5px] text-ink-3">Open any receipt to print it or save a plain-text copy. The gym&apos;s recorded payment status remains the source of truth.</p>
+      <p className="mt-4 text-[12.5px] text-ink-3">Open a receipt to print it or download a copy. If a payment looks wrong, ask your gym.</p>
     </main>
   );
 }
 
 function FinanceSummary({ loading, error, data, onRetry }: { loading: boolean; error: boolean; data?: CustomerFinancialSummary; onRetry: () => void }) {
-  if (loading) return <Skeleton className="mt-5 h-24 w-full" role="status" aria-label="Loading summary" />;
+  if (loading) return <Skeleton className="mt-5 h-24 w-full" role="status" aria-label="Loading totals" />;
   if (error) return <div className="mt-5"><ErrorState layout="section" title="Your totals could not be loaded" description="The list below still works. Try again to load the totals." onRetry={onRetry} /></div>;
   if (!data) return null;
   const outstanding = data.outstanding.amount > 0;
   const gymCount = data.gyms.length;
   return (
     <section className="panel mt-5 grid divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0" aria-label="Financial summary">
-      <SummaryFact label="Outstanding" value={<MoneyText money={data.outstanding} className={outstanding ? "text-warning-deep" : undefined} />} detail={outstanding ? "Ask the gym about payment options." : "Nothing to pay right now."} />
+      <SummaryFact label="Unpaid" value={<MoneyText money={data.outstanding} className={outstanding ? "text-warning-deep" : undefined} />} detail={outstanding ? "Ask your gym how to pay." : "Nothing to pay right now."} />
       <SummaryFact label="Paid to gyms" value={<MoneyText money={data.paidLifetime} />} detail={data.lastPaymentAt ? <>Last payment <DateTimeText iso={data.lastPaymentAt} /></> : "No payments yet."} />
-      <SummaryFact label="Receipts" value={<span className="tabular">{data.receiptCount.toLocaleString()}</span>} detail={`${gymCount} connected ${gymCount === 1 ? "gym" : "gyms"}`} />
+      <SummaryFact label="Receipts" value={<span className="tabular">{data.receiptCount.toLocaleString()}</span>} detail={`From ${gymCount} ${gymCount === 1 ? "gym" : "gyms"}`} />
     </section>
   );
 }

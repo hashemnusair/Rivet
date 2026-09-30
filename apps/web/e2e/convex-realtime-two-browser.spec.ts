@@ -45,16 +45,16 @@ test.describe("staged Convex two-browser realtime", () => {
 
       const navigationCount = await pageB.evaluate(() => performance.getEntriesByType("navigation").length);
       await contextB.setOffline(true);
-      await expect(pageB.getByRole("status", { name: "Loading workspace" })).toHaveCount(0);
+      await expect(pageB.getByRole("status", { name: "Loading your gym" })).toHaveCount(0);
       await expectNewMemberCount(pageB, initialCount + 1);
 
       memberUrls.push(await createDisposableMember(pageA, "Realtime while offline"));
       await expectNewMemberCount(pageB, initialCount + 1);
-      await expect(pageB.getByRole("status", { name: "Loading workspace" })).toHaveCount(0);
+      await expect(pageB.getByRole("status", { name: "Loading your gym" })).toHaveCount(0);
 
       await contextB.setOffline(false);
       await expectNewMemberCount(pageB, initialCount + 2);
-      await expect(pageB.getByRole("status", { name: "Loading workspace" })).toHaveCount(0);
+      await expect(pageB.getByRole("status", { name: "Loading your gym" })).toHaveCount(0);
       await expect.poll(() => pageB.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigationCount);
 
       // A third change after reconnect must arrive once in the same document.

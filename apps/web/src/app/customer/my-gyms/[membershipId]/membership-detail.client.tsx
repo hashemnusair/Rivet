@@ -18,8 +18,8 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
-import type { CustomerClassOccurrence, PtBooking } from "@/lib/domain/types";
-import { classCancellationPreview } from "@/lib/domain/class-booking";
+import type { CustomerClassOccurrence, PtBooking, PtBookingStatus, PtPackageOrder } from "@/lib/domain/types";
+import { classCancellationPreview, type ClassBookingStatus } from "@/lib/domain/class-booking";
 import { PT_DEFAULT_CANCELLATION_CUTOFF_HOURS, ptBookingAwaitsOutcome, ptBookingBeforeCutoff, ptNextBooking } from "@/lib/domain/personal-training";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
@@ -38,6 +38,33 @@ function sectionFromParam(value: string | null): Section {
 }
 
 const SELECT_CLASS = "h-11 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px] text-ink transition-colors hover:border-line-3 focus:border-[var(--tenant-brand-primary)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9";
+
+const CLASS_BOOKING_LABELS: Record<ClassBookingStatus, string> = {
+  booked: "Booked",
+  waitlisted: "On the waitlist",
+  cancelled: "Cancelled",
+  late_cancelled: "Cancelled late",
+  attended: "Attended",
+  no_show: "Missed",
+};
+
+const PT_BOOKING_LABELS: Record<PtBookingStatus, string> = {
+  reserved: "Booked",
+  confirmed: "Confirmed",
+  completed: "Done",
+  cancelled: "Cancelled",
+  late_cancelled: "Cancelled late",
+  no_show: "Missed",
+  gym_cancelled: "Cancelled by the gym",
+};
+
+const PT_ORDER_LABELS: Record<PtPackageOrder["status"], string> = {
+  pending_payment: "Waiting for payment",
+  active: "Active",
+  partially_refunded: "Partly refunded",
+  refunded: "Refunded",
+  cancelled: "Cancelled",
+};
 
 export default function MembershipDetailClient({ membershipId }: { membershipId: string }) {
   return (
@@ -80,7 +107,7 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
     return (
       <main className="mx-auto max-w-md px-4 py-24 text-center">
         <h1 className="font-display text-[22px] font-semibold tracking-tight">Membership not found</h1>
-        <p className="mt-2 text-[13.5px] text-ink-2">This membership is not linked to your account, or the link is out of date.</p>
+        <p className="mt-2 text-[13.5px] text-ink-2">This membership is not on your account, or the link is old.</p>
         <Button asChild className="mt-5">
           <Link href="/customer/my-gyms">Back to home</Link>
         </Button>
@@ -113,12 +140,12 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
             <span>{branch ? `${branch.name} · ${branch.address}` : "Branch unavailable"}</span>
           </p>
         </div>
-        <Button className="w-full sm:w-auto" onClick={() => setQrOpen(true)}><QrCode /> Show entry QR</Button>
+        <Button className="w-full sm:w-auto" onClick={() => setQrOpen(true)}><QrCode /> Show entry code</Button>
       </header>
 
       <SegmentedTabs
         className="mt-5"
-        label={`${gym.name} account sections`}
+        label={`${gym.name} sections`}
         value={section}
         onChange={setSection}
         items={[
@@ -162,7 +189,7 @@ function MembershipSummary({ membership, gym, branchName, status }: { membership
       </div>
 
       {status.ended ? (
-        <p className="mt-3 text-[13px] text-ink-2">Renewals are handled at the desk. Ask {gym.name} about your next membership; your visit history stays here.</p>
+        <p className="mt-3 text-[13px] text-ink-2">To renew, ask at the front desk of {gym.name}. Your visit history stays here.</p>
       ) : (
         <div className="mt-3" aria-hidden>
           <div className="h-1.5 overflow-hidden rounded-full bg-sunken-2">
@@ -178,8 +205,8 @@ function MembershipSummary({ membership, gym, branchName, status }: { membership
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4 text-[13px] sm:grid-cols-4">
         <Fact label="Member number"><span className="font-mono text-[12.5px]">{membership.memberNumber}</span></Fact>
         <Fact label="Branch">{branchName ?? "Branch unavailable"}</Fact>
-        <Fact label="Visits · all time"><span className="tabular">{membership.totalCheckIns ?? membership.visitHistory.length}</span></Fact>
-        <Fact label="Balance"><MoneyText money={money(membership.balanceMinor)} className={membership.balanceMinor > 0 ? "font-medium text-warning-deep" : undefined} /></Fact>
+        <Fact label="Total visits"><span className="tabular">{membership.totalCheckIns ?? membership.visitHistory.length}</span></Fact>
+        <Fact label="Unpaid"><MoneyText money={money(membership.balanceMinor)} className={membership.balanceMinor > 0 ? "font-medium text-warning-deep" : undefined} /></Fact>
       </dl>
 
       {phone ? (
@@ -238,21 +265,21 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   const [cancelTarget, setCancelTarget] = useState<CustomerClassOccurrence>();
   const cancel = useApiMutation((api, input: { occurrenceId: string; wasWaitlisted: boolean }) => api.cancelCustomerClass({ membershipId, occurrenceId: input.occurrenceId }), {
     onSuccess: async (result, input) => {
-      toast.success(result.outcome === "late_cancelled" ? "Late cancellation recorded. No fee or membership penalty was added." : input.wasWaitlisted ? "You left the waitlist." : "Class booking cancelled.");
+      toast.success(result.outcome === "late_cancelled" ? "Cancelled late. No fee or penalty was added." : input.wasWaitlisted ? "You left the waitlist." : "Class booking cancelled.");
       setCancelTarget(undefined);
       await invalidate([qk.customerClasses(membershipId)]);
     },
   });
 
   if (experience.isLoading) return <div className="mt-4 grid gap-3 sm:grid-cols-2" role="tabpanel" aria-label="Classes" aria-busy="true"><Skeleton className="h-56 w-full" /><Skeleton className="h-56 w-full" /></div>;
-  if (experience.isError) return <div className="mt-4" role="tabpanel" aria-label="Classes"><ErrorState layout="section" title="Classes could not be loaded" description="Your membership was not changed. Try again to load the live timetable." onRetry={() => experience.refetch()} /></div>;
+  if (experience.isError) return <div className="mt-4" role="tabpanel" aria-label="Classes"><ErrorState layout="section" title="Classes could not be loaded" description="Your membership is not affected. Try again." onRetry={() => experience.refetch()} /></div>;
   const value = experience.data!;
   if (!value.policy.enabled) {
     return (
       <section className="panel mt-4 p-6 text-center" role="tabpanel" aria-label="Classes">
         <CalendarDays className="mx-auto size-6 text-ink-3" aria-hidden />
-        <h2 className="mt-3 text-[16px] font-semibold">Class booking is handled at reception</h2>
-        <p className="mt-1 text-[13px] text-ink-2">{value.gymName} has not switched on member self-booking yet. Ask the desk to reserve a spot.</p>
+        <h2 className="mt-3 text-[16px] font-semibold">Book classes at reception</h2>
+        <p className="mt-1 text-[13px] text-ink-2">{value.gymName} does not take class bookings in the app yet. Ask the front desk to book a spot for you.</p>
       </section>
     );
   }
@@ -267,10 +294,10 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
 
   return (
     <div className="mt-4 space-y-4" role="tabpanel" aria-label="Classes">
-      {experience.isBackgroundError ? <ErrorState layout="inline" title="The timetable could not be refreshed" description="Showing the last loaded classes. Try again to check for changes." onRetry={() => experience.refetch()} /> : null}
+      {experience.isBackgroundError ? <ErrorState layout="inline" title="The class times could not be updated" description="You are seeing an older copy. Try again to check for changes." onRetry={() => experience.refetch()} /> : null}
       {value.profileCorrectionRequired ? (
         <div className="rounded-md border border-warning/30 bg-warning-bg px-4 py-3 text-[13px] text-warning-deep" role="status">
-          Choose female or male in <Link href="/customer/profile" className="font-semibold underline underline-offset-4">your profile</Link> before booking. RIVET never guesses for audience-restricted classes.
+          Choose female or male in <Link href="/customer/profile" className="font-semibold underline underline-offset-4">your profile</Link> before booking. Some classes are for women or men only.
         </div>
       ) : null}
 
@@ -290,7 +317,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
             <Button variant="secondary" size="icon" aria-label="Previous day" disabled={date <= today} onClick={() => setSelectedDate(addDays(date, -1))}><ChevronLeft /></Button>
             <div className="min-w-0 text-center">
               <h3 className="text-[15px] font-semibold">{date === today ? "Today" : date === addDays(today, 1) ? "Tomorrow" : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3>
-              <p className="text-[12px] text-ink-3">Next 7 days. A new day opens as each one passes.</p>
+              <p className="text-[12px] text-ink-3">Showing the next 7 days.</p>
             </div>
             <Button variant="secondary" size="icon" aria-label="Next day" disabled={date >= weekEnd} onClick={() => setSelectedDate(addDays(date, 1))}><ChevronRight /></Button>
           </div>
@@ -330,7 +357,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
                       <p className="mt-0.5 text-[12px] text-ink-3">{formatDateTime(occurrence.startsAt)}{occurrence.coachName ? ` · ${occurrence.coachName}` : ""}</p>
                     </div>
                     <Badge variant={bookingStatus === "attended" ? "success" : bookingStatus === "no_show" ? "warning" : "outline"}>
-                      {bookingStatus === "attended" ? "Attended" : bookingStatus === "no_show" ? "No-show" : bookingStatus ? bookingStatus.replaceAll("_", " ") : "Not booked"}
+                      {bookingStatus ? CLASS_BOOKING_LABELS[bookingStatus] : "Not booked"}
                     </Badge>
                   </div>
                 );
@@ -380,8 +407,8 @@ function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: 
   const preview = active ? classCancellationPreview({ startsAt: occurrence.startsAt, endsAt: occurrence.endsAt, bookingStatus: occurrence.booking?.status ?? "booked", cutoffHours }) : undefined;
   const cancelHint = !preview ? "" : preview.outcome === "leave_waitlist" ? "Leave the waitlist any time."
     : preview.outcome === "closed" ? "This class has ended."
-      : preview.outcome === "late_cancelled" ? `Inside the ${cutoffHours}-hour cutoff: cancelling now counts as late (no fee).`
-        : `Free cancellation until ${formatDateTime(new Date(preview.freeUntil!).toISOString())}.`;
+      : preview.outcome === "late_cancelled" ? `Less than ${cutoffHours} hours to go. Cancelling now counts as late (no fee).`
+        : `Cancel for free until ${formatDateTime(new Date(preview.freeUntil!).toISOString())}.`;
   return (
     <article className="panel overflow-hidden">
       {occurrence.imageUrl ? <div className="h-24 bg-cover bg-center" role="img" aria-label={occurrence.imageAltText ?? occurrence.name} style={{ backgroundImage: `url(${occurrence.imageUrl})` }} /> : null}
@@ -400,7 +427,7 @@ function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: 
         {active ? (
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? `Waitlist · #${occurrence.booking.position ?? "—"}` : occurrence.booking?.fromWaitlist ? "Booked from waitlist" : "Booked"}</p>
+              <p className="text-[13px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? (occurrence.booking.position ? `On the waitlist · number ${occurrence.booking.position}` : "On the waitlist") : occurrence.booking?.fromWaitlist ? "Booked from the waitlist" : "Booked"}</p>
               <p className="mt-0.5 text-[12px] text-ink-3" dir="ltr">{cancelHint}</p>
             </div>
             <Button size="sm" variant="secondary" loading={busy} disabled={preview?.outcome === "closed"} onClick={onCancel}>{occurrence.booking?.status === "waitlisted" ? "Leave" : "Cancel"}</Button>
@@ -417,9 +444,9 @@ function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: 
 }
 
 const REFERRAL_STATUS_META: Record<CustomerReferralRewardEvent["status"], { label: string; explanation: string; tone: "success" | "warning" | "neutral" }> = {
-  applied: { label: "Applied", explanation: "Your friend bought their first membership, so the free days were added.", tone: "success" },
-  capped: { label: "Capped", explanation: "This landed after the reward cap for the current window was reached.", tone: "warning" },
-  ineligible: { label: "Not applied", explanation: "There was no active membership to extend when the reward landed.", tone: "neutral" },
+  applied: { label: "Added", explanation: "Your friend bought their first membership, so the free days were added.", tone: "success" },
+  capped: { label: "Limit reached", explanation: "You had already earned the most free days allowed for this period.", tone: "warning" },
+  ineligible: { label: "Not added", explanation: "You had no active membership to add the free days to.", tone: "neutral" },
   pending: { label: "Waiting", explanation: "Counts once your friend buys their first membership.", tone: "neutral" },
 };
 
@@ -432,15 +459,15 @@ function ReferralCard({ initialProgram, gymName }: { initialProgram: CustomerRef
   const dayWord = (days: number) => `${days} free day${days === 1 ? "" : "s"}`;
   const copy = async () => {
     if (!sharePath) return;
-    try { await navigator.clipboard.writeText(new URL(sharePath, window.location.origin).toString()); toast.success("Referral link copied."); }
-    catch { toast.error("The link could not be copied. Try Share instead."); }
+    try { await navigator.clipboard.writeText(new URL(sharePath, window.location.origin).toString()); toast.success("Link copied."); }
+    catch { toast.error("Could not copy the link. Use the Share link button instead."); }
   };
   const share = async () => {
     if (!sharePath) return;
     const shareUrl = new URL(sharePath, window.location.origin).toString();
     if (!navigator.share) { await copy(); return; }
-    try { await navigator.share({ title: `Join me at ${gymName}`, text: `Book a trial at ${gymName} through my member referral.`, url: shareUrl }); }
-    catch (error) { if (error instanceof DOMException && error.name === "AbortError") return; toast.error("The share sheet could not be opened."); }
+    try { await navigator.share({ title: `Join me at ${gymName}`, text: `Book a trial at ${gymName} with my link.`, url: shareUrl }); }
+    catch (error) { if (error instanceof DOMException && error.name === "AbortError") return; toast.error("Could not open sharing. Use the Copy button instead."); }
   };
   return (
     <section className="panel p-4 sm:p-5" aria-labelledby="referral-title">
@@ -459,15 +486,15 @@ function ReferralCard({ initialProgram, gymName }: { initialProgram: CustomerRef
 
       <div className="mt-4 border-t border-line pt-4">
         <div className="flex items-center justify-between gap-3 text-[13px]">
-          <span className="font-medium text-ink">Reward progress</span>
-          <span className="tabular text-ink-3">{program.earnedDays}/{program.maxRewardDaysPerWindow} days</span>
+          <span className="font-medium text-ink">Free days earned</span>
+          <span className="tabular text-ink-3">{program.earnedDays} of {program.maxRewardDaysPerWindow} days</span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken-2" aria-hidden><div className="h-full rounded-full bg-success" style={{ width: `${progress}%` }} /></div>
         <dl className="mt-3 grid grid-cols-2 gap-3 text-[12px]">
-          <div><dt className="text-ink-3">Successful referrals</dt><dd className="mt-0.5 text-[16px] font-semibold tabular text-ink">{program.successfulReferrals}</dd></div>
-          <div><dt className="text-ink-3">Days still available</dt><dd className="mt-0.5 text-[16px] font-semibold tabular text-ink">{program.remainingDays}</dd></div>
+          <div><dt className="text-ink-3">Friends who joined</dt><dd className="mt-0.5 text-[16px] font-semibold tabular text-ink">{program.successfulReferrals}</dd></div>
+          <div><dt className="text-ink-3">Free days left to earn</dt><dd className="mt-0.5 text-[16px] font-semibold tabular text-ink">{program.remainingDays}</dd></div>
         </dl>
-        <p className="mt-2 text-[12px] leading-4 text-ink-3">The {program.maxRewardDaysPerWindow}-day cap looks back {program.windowDays} days. A referral counts once, after the first membership sale.</p>
+        <p className="mt-2 text-[12px] leading-4 text-ink-3">You can earn up to {program.maxRewardDaysPerWindow} free days in any {program.windowDays} days. Each friend counts once, after they buy their first membership.</p>
       </div>
 
       <div className="mt-4 border-t border-line pt-4">
@@ -542,7 +569,7 @@ function VisitHistory({ visits }: { visits: CustomerVisit[] }) {
                 <p className="mt-0.5 text-[12px] text-ink-3">{formatTime(visit.occurredAt)} · {visit.branchName}</p>
                 <p className="mt-0.5 text-[12px] text-ink-3">Checked in as {visit.memberName}</p>
               </div>
-              <Badge variant="outline">{visit.decision === "overridden" ? "Override accepted" : "Checked in"}</Badge>
+              <Badge variant="outline">{visit.decision === "overridden" ? "Let in by staff" : "Checked in"}</Badge>
             </li>
           ))}
         </ol>
@@ -605,18 +632,18 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
   );
   const book = useApiMutation(
     (api, startsAt: string) => rescheduleBookingId ? api.rescheduleCustomerPtBooking({ bookingId: rescheduleBookingId, trainerProfileId: trainerId, branchId: selectedBranchId, startsAt, reason: "Rescheduled by member", idempotencyKey: crypto.randomUUID() }) : api.createCustomerPtBooking({ membershipId, trainerProfileId: trainerId, branchId: selectedBranchId, startsAt, idempotencyKey: crypto.randomUUID() }),
-    { onSuccess: async () => { toast.success(rescheduleBookingId ? "Your PT session was rescheduled." : "Your PT session is reserved."); setRescheduleBookingId(undefined); await invalidate([["customer"]]); } },
+    { onSuccess: async () => { toast.success(rescheduleBookingId ? "Your PT session time was changed." : "Your PT session is booked."); setRescheduleBookingId(undefined); await invalidate([["customer"]]); } },
   );
   // Cancelling is confirmed first, and the toast repeats what the server
   // actually did to the credit instead of assuming.
   const [cancelBooking, setCancelBooking] = useState<PtBooking>();
   const cancel = useApiMutation(
     (api, bookingId: string) => api.cancelCustomerPtBooking(bookingId, "Cancelled by member"),
-    { onSuccess: async (result) => { toast.success(result.status === "late_cancelled" ? "Cancelled after the cutoff. One PT credit was used." : "Booking cancelled. Your credit was returned."); setCancelBooking(undefined); await invalidate([["customer"]]); } },
+    { onSuccess: async (result) => { toast.success(result.status === "late_cancelled" ? "Cancelled late. The session was used." : "Session cancelled. It goes back to your available sessions."); setCancelBooking(undefined); await invalidate([["customer"]]); } },
   );
   const requestPackage = useApiMutation(
     (api, packageId: string) => api.requestCustomerPtPackage({ membershipId, packageId, idempotencyKey: crypto.randomUUID() }),
-    { onSuccess: async () => { toast.success("Package request created. Credits activate only after full payment is recorded by the gym."); await invalidate([["customer"]]); } },
+    { onSuccess: async () => { toast.success("Package requested. You can book the sessions after you pay the gym in full."); await invalidate([["customer"]]); } },
   );
 
   // The panel exists as soon as the tab is chosen; loading and failure are
@@ -629,11 +656,11 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
   const canPickSlot = (value.availableSessions > 0 || Boolean(rescheduleBookingId)) && Boolean(trainerId && selectedBranchId);
   return (
     <div className="mt-4 space-y-4" role="tabpanel" aria-label="Personal training">
-      {experience.isBackgroundError ? <ErrorState layout="inline" title="Personal training could not be refreshed" description="Showing your last loaded sessions and credits." onRetry={() => experience.refetch()} /> : null}
+      {experience.isBackgroundError ? <ErrorState layout="inline" title="Personal training could not be updated" description="You are seeing an older copy. Try again." onRetry={() => experience.refetch()} /> : null}
       <dl className="grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-surface">
         <PtStat label="Available" value={String(value.availableSessions)} />
-        <PtStat label="Reserved" value={String(value.reservedSessions)} />
-        <PtStat label="Next booking" value={nextBooking ? formatDateTime(nextBooking.startsAt) : "None"} />
+        <PtStat label="Booked" value={String(value.reservedSessions)} />
+        <PtStat label="Next session" value={nextBooking ? formatDateTime(nextBooking.startsAt) : "None"} />
       </dl>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]">
@@ -641,12 +668,12 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 id="pt-booking-title" className="text-[16px] font-semibold">{rescheduleBookingId ? "Choose a new time" : "Book with a trainer"}</h2>
-              <p className="mt-1 text-[13px] text-ink-2">Choose a published {gymName} trainer and an open 60-minute slot.</p>
+              <p className="mt-1 text-[13px] text-ink-2">Choose a {gymName} trainer, a branch and a free 60-minute time.</p>
             </div>
-            {rescheduleBookingId ? <Button size="sm" variant="ghost" onClick={() => setRescheduleBookingId(undefined)}>Keep booking</Button> : null}
+            {rescheduleBookingId ? <Button size="sm" variant="ghost" onClick={() => setRescheduleBookingId(undefined)}>Keep current time</Button> : null}
           </div>
           {value.availableSessions <= 0 && !rescheduleBookingId ? (
-            <div className="mt-4 rounded-md border border-warning/30 bg-warning-bg p-4 text-[13px] text-warning-deep" role="status">You have no usable PT sessions. Request a package below; its credits become available after the gym records full payment.</div>
+            <div className="mt-4 rounded-md border border-warning/30 bg-warning-bg p-4 text-[13px] text-warning-deep" role="status">You have no PT sessions left. Request a package below. You can book after you pay the gym in full.</div>
           ) : (
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <Field label="Trainer" htmlFor="pt-trainer">
@@ -669,7 +696,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
           {canPickSlot ? (
             <div className="mt-5">
               <p className="text-[12px] font-medium text-ink-3">Available times</p>
-              {slots.isLoading ? <p className="mt-2 text-[13px] text-ink-3" role="status">Loading current availability…</p> : slots.data?.length ? (
+              {slots.isLoading ? <p className="mt-2 text-[13px] text-ink-3" role="status">Loading free times…</p> : slots.data?.length ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {slots.data.map((slot) => (
                     <Button key={slot.startsAt} size="sm" variant="secondary" loading={book.isPending} onClick={() => book.mutate(slot.startsAt)}>
@@ -677,7 +704,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
                     </Button>
                   ))}
                 </div>
-              ) : <p className="mt-2 text-[13px] text-ink-2">No open slots on this date. Try another day.</p>}
+              ) : <p className="mt-2 text-[13px] text-ink-2">No free times on this date. Try another day.</p>}
             </div>
           ) : null}
         </section>
@@ -689,21 +716,21 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
               <article key={item.id} className="flex items-start justify-between gap-3 p-4">
                 <div className="min-w-0">
                   <p className="text-[13.5px] font-semibold">{item.name}</p>
-                  <p className="mt-0.5 text-[12px] text-ink-3">{item.sessionCount} sessions · valid {item.validityDays} days</p>
+                  <p className="mt-0.5 text-[12px] text-ink-3">{item.sessionCount} sessions · use within {item.validityDays} days</p>
                   <p className="mt-1 text-[13px]"><MoneyText money={item.totalPrice} /></p>
                 </div>
                 <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>Request</Button>
               </article>
-            )) : <p className="p-5 text-[13px] text-ink-2">This gym has no active PT packages.</p>}
+            )) : <p className="p-5 text-[13px] text-ink-2">This gym has no PT packages right now.</p>}
           </div>
           {value.orders.length ? (
             <div className="border-t border-line p-4">
-              <p className="text-[12px] font-medium text-ink-3">Package orders</p>
+              <p className="text-[12px] font-medium text-ink-3">Package requests</p>
               <ul className="mt-2 space-y-2">
                 {value.orders.map((order) => (
                   <li key={order.id} className="flex items-center justify-between gap-3 text-[12.5px]">
-                    <span className="font-mono text-[12px]">{order.id.slice(0, 8)}</span>
-                    <Badge variant="outline">{order.status.replaceAll("_", " ")}</Badge>
+                    <span className="min-w-0 truncate">{order.packageNameSnapshot ?? order.packageName ?? "PT package"}</span>
+                    <Badge variant="outline">{PT_ORDER_LABELS[order.status]}</Badge>
                   </li>
                 ))}
               </ul>
@@ -713,7 +740,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
       </div>
 
       <section className="panel overflow-hidden" aria-labelledby="pt-upcoming-title">
-        <header className="border-b border-line px-4 py-3"><h2 id="pt-upcoming-title" className="text-[14px] font-semibold">Upcoming bookings</h2><p className="mt-0.5 text-[12px] text-ink-3">Each booking holds one reserved credit. Free changes until {cutoffHours} hours before the start.</p></header>
+        <header className="border-b border-line px-4 py-3"><h2 id="pt-upcoming-title" className="text-[14px] font-semibold">Upcoming bookings</h2><p className="mt-0.5 text-[12px] text-ink-3">Each booking uses one session. You can change or cancel for free until {cutoffHours} hours before it starts.</p></header>
         {value.upcomingBookings.length ? (
           <div className="divide-y divide-line">
             {value.upcomingBookings.map((booking) => {
@@ -727,22 +754,22 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
                   </div>
                   {awaiting ? (
                     <>
-                      <Badge variant="warning">Awaiting outcome</Badge>
-                      <p className="w-full text-[12px] text-ink-3">Your trainer records the result of this session. The credit stays reserved until then.</p>
+                      <Badge variant="warning">Waiting for trainer</Badge>
+                      <p className="w-full text-[12px] text-ink-3">Your trainer will mark how this session went. It stays booked until then.</p>
                     </>
                   ) : (
                     <>
-                      <Badge variant="outline">{booking.status}</Badge>
-                      {beforeCutoff ? <Button size="sm" variant="secondary" onClick={() => { setRescheduleBookingId(booking.id); setTrainerId(booking.trainerProfileId); setBranchId(booking.branchId); setDate(booking.startsAt.slice(0, 10)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Reschedule</Button> : null}
+                      <Badge variant="outline">{PT_BOOKING_LABELS[booking.status]}</Badge>
+                      {beforeCutoff ? <Button size="sm" variant="secondary" onClick={() => { setRescheduleBookingId(booking.id); setTrainerId(booking.trainerProfileId); setBranchId(booking.branchId); setDate(booking.startsAt.slice(0, 10)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Change time</Button> : null}
                       <Button size="sm" variant="ghost" loading={cancel.isPending && cancel.variables === booking.id} onClick={() => setCancelBooking(booking)}>Cancel</Button>
-                      {!beforeCutoff ? <p className="w-full text-[12px] text-warning-deep">Inside the {cutoffHours}-hour cutoff: cancelling now uses the credit, and only the gym can move the time.</p> : null}
+                      {!beforeCutoff ? <p className="w-full text-[12px] text-warning-deep">Less than {cutoffHours} hours to go. If you cancel now, you lose this session. Only the gym can change the time.</p> : null}
                     </>
                   )}
                 </article>
               );
             })}
           </div>
-        ) : <p className="p-5 text-[13px] text-ink-2">No upcoming PT bookings.</p>}
+        ) : <p className="p-5 text-[13px] text-ink-2">No PT sessions booked.</p>}
       </section>
 
       <Dialog open={Boolean(cancelBooking)} onOpenChange={(open) => { if (!open && !cancel.isPending) setCancelBooking(undefined); }}>
@@ -756,7 +783,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
                   <DialogDescription><span dir="ltr">{formatDateTime(cancelBooking.startsAt)}</span> with {cancelBooking.trainerName}</DialogDescription>
                 </DialogHeader>
                 <DialogBody>
-                  <p role="status" className={cn("rounded-md border p-3 text-[13px]", returnsCredit ? "border-line bg-sunken text-ink-2" : "border-warning/30 bg-warning-bg text-warning-deep")}>{returnsCredit ? "Your reserved credit will be returned." : `This is inside the gym's ${cutoffHours}-hour cutoff, so the reserved credit will be used.`}</p>
+                  <p role="status" className={cn("rounded-md border p-3 text-[13px]", returnsCredit ? "border-line bg-sunken text-ink-2" : "border-warning/30 bg-warning-bg text-warning-deep")}>{returnsCredit ? "You will get this session back." : `It is less than ${cutoffHours} hours before the session, so you will lose this session.`}</p>
                 </DialogBody>
                 <DialogFooter>
                   <Button variant="secondary" disabled={cancel.isPending} onClick={() => setCancelBooking(undefined)}>Keep session</Button>
@@ -803,7 +830,7 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
 
   if (requestsQuery.isLoading || policyQuery.isLoading) return <Skeleton className="h-20 w-full" />;
   if (requestsQuery.isError || policyQuery.isError) {
-    return <ErrorState layout="section" title="Freeze details could not be loaded" description="RIVET could not safely check your existing requests or the gym's current policy." onRetry={() => { void requestsQuery.refetch(); void policyQuery.refetch(); }} />;
+    return <ErrorState layout="section" title="Freeze details could not be loaded" description="We could not check your freeze requests. Try again." onRetry={() => { void requestsQuery.refetch(); void policyQuery.refetch(); }} />;
   }
   const policy = policyQuery.data!;
   if (!policy.requestsEnabled && !pending && !latestDecided) return null;
@@ -814,7 +841,7 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
   ) : latestDecided ? (
     latestDecided.status === "approved"
       ? <>Your last request was approved{(latestDecided.feeMinor ?? 0) > 0 ? <> with a {fee(latestDecided.feeMinor ?? 0)} fee</> : null}.{latestDecided.decisionNote ? ` ${latestDecided.decisionNote}` : ""}</>
-      : <>Your last request was {latestDecided.status}.{latestDecided.decisionNote ? ` ${latestDecided.decisionNote}` : ""}</>
+      : <>Your last request was not approved.{latestDecided.decisionNote ? ` ${latestDecided.decisionNote}` : ""}</>
   ) : policy.requestsEnabled ? "Need a break? Ask the gym to pause your membership." : "This gym is not accepting new freeze requests right now.";
   const invalidDays = !Number.isSafeInteger(days) || days < policy.minimumDays || days > policy.maximumDays;
 
@@ -844,8 +871,8 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
               <Textarea id="freeze-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travel, injury, exams…" />
             </Field>
             <div className="rounded-md border border-line bg-sunken px-3 py-2.5 text-[13px] text-ink-2">
-              {policy.expectedFeeMinor > 0 ? <p>This request currently carries a {fee(policy.expectedFeeMinor)} fee, collected at the desk if approved.</p> : <p>This request is free under the gym&apos;s current policy.</p>}
-              <p className="mt-1 text-[12px] text-ink-3">The gym recalculates the fee when it approves the request.</p>
+              {policy.expectedFeeMinor > 0 ? <p>The fee is {fee(policy.expectedFeeMinor)}. You pay it at the front desk if the gym approves.</p> : <p>This freeze is free.</p>}
+              <p className="mt-1 text-[12px] text-ink-3">The gym confirms the final fee when it approves.</p>
             </div>
           </DialogBody>
           <DialogFooter>

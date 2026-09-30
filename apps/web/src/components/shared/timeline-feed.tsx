@@ -114,7 +114,7 @@ export function TimelineFeed({
                   {event.title}
                   {receiptId ? (
                     <Link href={receiptHref(receiptId)} className="ms-1.5 font-mono text-[11px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">
-                      receipt
+                      View receipt
                     </Link>
                   ) : null}
                 </p>

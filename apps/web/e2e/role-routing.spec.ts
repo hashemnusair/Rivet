@@ -61,7 +61,7 @@ async function enterMember(page: Page) {
   await page.getByRole("radio", { name: /Lina Haddad/i }).click();
   await page.getByRole("button", { name: /Continue as Lina/i }).click();
   await expect(page).toHaveURL(/\/customer\/my-gyms$/);
-  await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your gyms" })).toBeVisible();
 }
 
 async function enterPlatformAdmin(page: Page) {
@@ -74,7 +74,7 @@ async function enterPlatformAdmin(page: Page) {
 test.describe("credential-free role routing", () => {
   test("routes member, owner, manager, sales, reception, and trainer to their workspaces", async ({ page }) => {
     await enterMember(page);
-    await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your gyms" })).toBeVisible();
 
     await enterVisibleStaff(page, "owner");
     await expectGymWorkspace(page, "/dashboard");
@@ -120,7 +120,7 @@ test.describe("credential-free role routing", () => {
 
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/customer\/my-gyms$/);
-    await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your gyms" })).toBeVisible();
 
     await page.goto("/platform");
     await expect(page).toHaveURL(/\/customer\/my-gyms$/);
@@ -130,8 +130,8 @@ test.describe("credential-free role routing", () => {
   test("denies reception finance access by direct URL", async ({ page }) => {
     await enterVisibleStaff(page, "receptionist");
     await page.goto("/finance");
-    await expect(page.getByRole("heading", { name: "Not allowed for this role" })).toBeVisible();
-    await expect(page.getByText(/financial reporting access/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "You don't have access" })).toBeVisible();
+    await expect(page.getByText(/access to the financial statements/i)).toBeVisible();
   });
 
   test("shows the recovery state for unavailable gym access", async ({ page }) => {
@@ -139,21 +139,21 @@ test.describe("credential-free role routing", () => {
     // adapter. This explicit preview fixture renders the same recovery
     // component while remaining unavailable to Production builds.
     await page.goto("/login/gym?preview=unavailable-gym");
-    await expect(page.getByText("Your gym workspace is unavailable")).toBeVisible();
-    await expect(page.getByText(/platform administrator to restore the gym's subscription/i)).toBeVisible();
+    await expect(page.getByText("Your gym is not active on RIVET")).toBeVisible();
+    await expect(page.getByText(/Contact RIVET to turn it back on/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /Sign out and use another account/i })).toBeVisible();
   });
 
   test("keeps valid transitions free of wrong-role flashes and restores the destination on cold refresh", async ({ page }) => {
     const wrongRoleErrors: string[] = [];
     page.on("console", (message) => {
-      if (message.type() === "error" && /role could not be loaded|not allowed for this role/i.test(message.text())) wrongRoleErrors.push(message.text());
+      if (message.type() === "error" && /role could not be loaded|not allowed for this role|you don't have access/i.test(message.text())) wrongRoleErrors.push(message.text());
     });
 
     await enterVisibleStaff(page, "owner");
     await expectGymWorkspace(page, "/dashboard");
-    await expect(page.getByText("Your role could not be loaded")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Not allowed for this role" })).toHaveCount(0);
+    await expect(page.getByText("We could not load your account")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "You don't have access" })).toHaveCount(0);
     await page.reload();
     await expectGymWorkspace(page, "/dashboard");
 
@@ -163,7 +163,7 @@ test.describe("credential-free role routing", () => {
     await enterMember(page);
     await page.reload();
     await expect(page).toHaveURL(/\/customer\/my-gyms$/);
-    await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your gyms" })).toBeVisible();
     expect(wrongRoleErrors).toEqual([]);
   });
 });

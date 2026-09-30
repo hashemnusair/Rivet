@@ -102,10 +102,10 @@ describe("follow-up workspace layout", () => {
 
     expect(screen.getByRole("complementary", { name: "Follow-up filters" })).toBeInTheDocument();
     expect(screen.getByTestId("follow-up-results")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Found matches" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Memberships found" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Follow-up membership status" })).toHaveClass("grid");
-    expect(screen.getByRole("button", { name: "Expiring" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Expired" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Ending soon" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Ended" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("Renewal Member")).toBeInTheDocument();
   });
 
@@ -127,9 +127,9 @@ describe("follow-up workspace layout", () => {
 
     expect(screen.getAllByText(/WhatsApp opened · not confirmed/).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: /At Risk Member/ }));
-    expect(screen.getByTestId("at-risk-lapsed-snooze")).toHaveTextContent(/Snoozed until .*back in the queue/);
+    expect(screen.getByTestId("at-risk-lapsed-snooze")).toHaveTextContent(/Hidden until .*back on this list/);
     expect(screen.getByRole("link", { name: "Renew" })).toHaveAttribute("href", "/members/member-risk?action=renew");
-    expect(screen.queryByRole("link", { name: "Collect" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Collect payment" })).not.toBeInTheDocument();
   });
 
   it("explains a Today link to a member who is not on this page instead of opening nothing", () => {
@@ -147,7 +147,7 @@ describe("follow-up workspace layout", () => {
     render(<QueuesPage />);
     await user.click(screen.getByRole("button", { name: "Renewals" }));
 
-    await user.click(screen.getByRole("button", { name: "Expired" }));
+    await user.click(screen.getByRole("button", { name: "Ended" }));
 
     expect(state.queryKey).toEqual(qk.renewalQueue({
       bucket: "expired",
@@ -157,7 +157,7 @@ describe("follow-up workspace layout", () => {
       toDate: undefined,
       page: 1, pageSize: 25,
     }));
-    expect(screen.getByRole("button", { name: "Expired" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Ended" })).toHaveAttribute("aria-pressed", "true");
     expect(window.location.search).toContain("bucket=expired");
   });
 

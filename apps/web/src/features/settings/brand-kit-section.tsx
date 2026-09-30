@@ -20,7 +20,7 @@ import { SettingsPanel, SettingsSaveBar, SettingsSection } from "@/features/sett
 
 type PendingLogo = { file: File; altText: string; previewUrl: string };
 
-const DESCRIPTION = "The colour and mark of this gym's own workspace. The public page keeps its separate accent.";
+const DESCRIPTION = "The color and logo your staff see in RIVET. Your public page has its own accent color.";
 
 function previewUrl(file: File): string {
   return typeof URL !== "undefined" && typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "";
@@ -89,13 +89,13 @@ export function BrandKitSection() {
       queryClient.setQueryData<OrganizationSettings | undefined>(qk.settings, (current) => current
         ? { ...current, brand: next, organization: { ...current.organization, brand: next } }
         : current);
-      toast.success("Brand Kit saved and audited.");
+      toast.success("Brand kit saved.");
       await invalidate([qk.settings]);
       // A successful brand mutation must not be reported as failed only
       // because the follow-up shell refresh briefly lost connectivity.
       await refreshSession().catch(() => undefined);
     },
-    onError: (error) => toast.error(isApiError(error) ? error.message : "The Brand Kit could not be saved."),
+    onError: (error) => toast.error(isApiError(error) ? error.message : "The brand kit was not saved."),
   });
 
   const selectLogo = (event: ChangeEvent<HTMLInputElement>) => {
@@ -118,10 +118,10 @@ export function BrandKitSection() {
   };
 
   if (settingsQuery.isLoading) {
-    return <SettingsSection title="Brand Kit" description={DESCRIPTION}><Skeleton className="h-80 w-full" /></SettingsSection>;
+    return <SettingsSection title="Brand kit" description={DESCRIPTION}><Skeleton className="h-80 w-full" /></SettingsSection>;
   }
   if (settingsQuery.isError || !brand) {
-    return <SettingsSection title="Brand Kit" description={DESCRIPTION}><ErrorState layout="section" title="Brand Kit could not be loaded" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+    return <SettingsSection title="Brand kit" description={DESCRIPTION}><ErrorState layout="section" title="Brand kit could not load" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
   }
 
   const color = normalizeBrandHex(form.primaryColor) ?? BRAND_PALETTE_PRESETS[form.paletteKey];
@@ -130,13 +130,13 @@ export function BrandKitSection() {
   const logoAlt = pendingLogo?.altText || brand.logoAltText || `${session?.organization.name ?? "Gym"} logo`;
   const hexInvalid = Boolean(form.primaryColor) && !normalizeBrandHex(form.primaryColor);
   const saveDisabledReason = !isOwner
-    ? "Only the organization owner can save Brand Kit changes."
+    ? "Only the owner can change the brand kit."
     : !dirty
-      ? "Change a palette, color, or logo to enable saving."
+      ? "Change the palette, color or logo to save."
       : hexInvalid
-        ? "Use a six-digit hex color before saving."
+        ? "Enter a color code like #b88a2b before saving."
         : pendingLogo && pendingLogo.altText.trim().length < 3
-          ? "Add at least three characters of alt text for the logo."
+          ? "Describe the logo in at least 3 letters."
           : undefined;
   const discard = () => {
     revokePreview(pendingLogo?.previewUrl);
@@ -145,13 +145,13 @@ export function BrandKitSection() {
     if (logoInputRef.current) logoInputRef.current.value = "";
   };
   return (
-    <SettingsSection title="Brand Kit" description={DESCRIPTION} testId="brand-kit-section">
-      {!isOwner ? <StatePanel icon={Lock} layout="inline" title="Owner only" description="Only the organization owner can save Brand Kit changes. You can review the current palette and logo here." /> : null}
+    <SettingsSection title="Brand kit" description={DESCRIPTION} testId="brand-kit-section">
+      {!isOwner ? <StatePanel icon={Lock} layout="inline" title="Owner only" description="Only the owner can change the brand kit. You can look at the current palette and logo here." /> : null}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start">
         <SettingsPanel title="Palette and logo">
           <div className="space-y-5">
-            <Field label="Workspace palette" hint="Choose a constrained palette; RIVET derives readable text and hover tones from it.">
-              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Workspace palette">
+            <Field label="Palette" hint="Pick a palette. RIVET chooses readable text colors to match.">
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Palette">
                 {(Object.keys(BRAND_PALETTE_PRESETS) as BrandPaletteKey[]).map((key) => (
                   <button
                     key={key}
@@ -173,13 +173,13 @@ export function BrandKitSection() {
                 ))}
               </div>
             </Field>
-            <Field label="Primary color" hint="Six-digit hex, for example #b88a2b." error={hexInvalid ? "Use a six-digit hex color such as #b88a2b." : undefined}>
+            <Field label="Primary color" hint="A color code like #b88a2b." error={hexInvalid ? "Enter a color code like #b88a2b." : undefined}>
               <div className="flex gap-2">
                 <Input aria-label="Primary color picker" type="color" className="w-14 shrink-0 p-1" value={color} disabled={!isOwner} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value.toLowerCase() }))} />
-                <Input aria-label="Primary color hex" dir="ltr" className="font-mono" value={form.primaryColor ?? ""} disabled={!isOwner} aria-invalid={hexInvalid || undefined} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value }))} placeholder="#b88a2b" />
+                <Input aria-label="Primary color code" dir="ltr" className="font-mono" value={form.primaryColor ?? ""} disabled={!isOwner} aria-invalid={hexInvalid || undefined} onChange={(event) => setForm((current) => ({ ...current, primaryColor: event.target.value }))} placeholder="#b88a2b" />
               </div>
             </Field>
-            <Field label="Workspace logo" hint="JPEG, PNG or WebP up to 5 MB. The same sanitized asset is reused for the public page.">
+            <Field label="Logo" hint="JPEG, PNG or WebP, up to 5 MB. Your public page uses the same logo.">
               {logo ? (
                 <div className="mb-2 flex items-center gap-3 rounded-md bg-sunken p-2">
                   <span role="img" aria-label={logoAlt} className="size-12 shrink-0 rounded-sm bg-surface bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logo})` }} />
@@ -187,26 +187,26 @@ export function BrandKitSection() {
                   {isOwner ? <Button type="button" size="sm" variant="secondary" onClick={removeLogo}>Remove</Button> : null}
                 </div>
               ) : null}
-              <div className="flex items-center gap-2"><ImagePlus className="size-4 shrink-0 text-ink-3" aria-hidden /><Input ref={logoInputRef} aria-label="Upload workspace logo" type="file" accept="image/jpeg,image/png,image/webp" disabled={!isOwner || save.isPending} onChange={selectLogo} className="py-1.5 file:me-2 file:rounded-sm file:border file:border-line file:bg-surface file:px-2 file:py-0.5 file:text-[12px]" /></div>
+              <div className="flex items-center gap-2"><ImagePlus className="size-4 shrink-0 text-ink-3" aria-hidden /><Input ref={logoInputRef} aria-label="Upload logo" type="file" accept="image/jpeg,image/png,image/webp" disabled={!isOwner || save.isPending} onChange={selectLogo} className="py-1.5 file:me-2 file:rounded-sm file:border file:border-line file:bg-surface file:px-2 file:py-0.5 file:text-[12px]" /></div>
             </Field>
             {pendingLogo ? (
-              <Field label="Logo description" hint="Read aloud by screen readers wherever the logo appears." required>
-                <Input aria-label="Workspace logo alt text" value={pendingLogo.altText} onChange={(event) => setPendingLogo((current) => current ? { ...current, altText: event.target.value } : current)} placeholder="Forge Fitness Club logo" />
+              <Field label="Logo description" hint="Screen readers read this out for people who cannot see the logo." required>
+                <Input aria-label="Logo description" value={pendingLogo.altText} onChange={(event) => setPendingLogo((current) => current ? { ...current, altText: event.target.value } : current)} placeholder="Forge Fitness Club logo" />
               </Field>
             ) : null}
           </div>
         </SettingsPanel>
-        <SettingsPanel title="Preview" description="How the sidebar and the primary action read with these choices.">
+        <SettingsPanel title="Preview" description="How the menu and main button look with these choices.">
           <div className="rounded-md border border-line p-4" style={{ borderColor: color }}>
             <div className="flex items-center gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: color, color: previewTokens.primaryForeground }}>
                 {logo ? <span role="img" aria-label={logoAlt} className="size-8 rounded-sm bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logo})` }} /> : <span className="font-display text-sm font-semibold">{initials(session?.organization.name)}</span>}
               </span>
-              <span className="min-w-0"><span className="block truncate text-[13px] font-medium">{session?.organization.name ?? "Your gym"}</span><span className="block text-[12px] text-ink-3">Staff workspace</span></span>
+              <span className="min-w-0"><span className="block truncate text-[13px] font-medium">{session?.organization.name ?? "Your gym"}</span><span className="block text-[12px] text-ink-3">Staff app</span></span>
             </div>
-            <button type="button" className="mt-5 inline-flex h-9 w-full items-center justify-center rounded-md px-3 text-[13.5px] font-medium" style={{ backgroundColor: color, color: previewTokens.primaryForeground }}>Primary action</button>
+            <button type="button" className="mt-5 inline-flex h-9 w-full items-center justify-center rounded-md px-3 text-[13.5px] font-medium" style={{ backgroundColor: color, color: previewTokens.primaryForeground }}>Main button</button>
           </div>
-          <p className="mt-3 text-[12px] leading-5 text-ink-3">Palette version {brand.version}. Changes affect the gym workspace only.</p>
+          <p className="mt-3 text-[12px] leading-5 text-ink-3">These colors apply to your staff screens only.</p>
         </SettingsPanel>
       </div>
       <SettingsSaveBar
@@ -214,11 +214,11 @@ export function BrandKitSection() {
         saving={save.isPending}
         saveDisabled={Boolean(saveDisabledReason)}
         saveDisabledReason={dirty ? saveDisabledReason : undefined}
-        error={save.isError ? (isApiError(save.error) ? save.error.message : "The Brand Kit could not be saved. Try again.") : undefined}
+        error={save.isError ? (isApiError(save.error) ? save.error.message : "The brand kit was not saved. Try again.") : undefined}
         onSave={async () => { await save.mutateAsync(); }}
         onDiscard={discard}
-        saveLabel="Save Brand Kit"
-        guardTitle="Unsaved Brand Kit changes"
+        saveLabel="Save brand kit"
+        guardTitle="Unsaved brand kit changes"
       />
     </SettingsSection>
   );

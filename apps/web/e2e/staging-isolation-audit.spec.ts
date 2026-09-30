@@ -33,7 +33,7 @@ test.describe("staged isolation and audit", () => {
       await expect(foreign.getByText(/Member not found|Forbidden|not available|access denied/i).first()).toBeVisible();
 
       await owner.goto("/audit", { waitUntil: "domcontentloaded" });
-      await owner.getByLabel("Search audit log").fill(fullName);
+      await owner.getByLabel("Search activity log").fill(fullName);
       await expect(owner.getByRole("button").filter({ hasText: fullName }).first()).toBeVisible();
 
       await platform.goto("/platform/gyms", { waitUntil: "domcontentloaded" });

@@ -27,7 +27,7 @@ test.describe("downloaded export files", () => {
     await page.goto("/exports");
     const card = page.locator("article").filter({ has: page.getByRole("heading", { name: "Members", exact: true }) });
     const pending = page.waitForEvent("download");
-    await card.getByRole("button", { name: "Generate CSV" }).click();
+    await card.getByRole("button", { name: "Download CSV" }).click();
     const download = await pending;
     const content = await downloadedText(download);
 
@@ -44,12 +44,12 @@ test.describe("downloaded export files", () => {
     await signInOwner(page);
     await page.goto("/reports");
     const pending = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export all transactions" }).click();
+    await page.getByRole("button", { name: "Download report" }).click();
     const content = await downloadedText(await pending);
 
-    expect(content).toContain("Finance overview and transaction ledger");
-    expect(content).toContain("Overview\r\nMetric,Value");
-    expect(content).toContain("Transactions\r\nWhen,Member,Member number,Branch");
+    expect(content).toContain("Finance overview, payments and refunds");
+    expect(content).toContain("Overview\r\nItem,Value");
+    expect(content).toContain("Payments and refunds\r\nWhen,Member,Member number,Branch");
     expect(content).not.toContain("data_json");
   });
 

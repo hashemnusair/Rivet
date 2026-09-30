@@ -36,10 +36,10 @@ import { PORTALS, type Audience } from "./portals";
 import { ProfileCompletionGate } from "./profile-completion.client";
 
 const STAFF_ROLES: Array<{ role: RoleKey; icon: LucideIcon; name: string; scope: string }> = [
-  { role: "owner", icon: Gauge, name: "Omar Al-Khatib", scope: "Revenue, branches, staff, audit" },
-  { role: "manager", icon: ClipboardCheck, name: "Layla Haddad", scope: "Approvals, reconciliation, queues" },
-  { role: "salesperson", icon: TrendingUp, name: "Sara Abuhamdan", scope: "Pipeline, follow-ups, conversions" },
-  { role: "receptionist", icon: ScanLine, name: "Hala Qasem", scope: "Lookup, check-in, collect, renew" },
+  { role: "owner", icon: Gauge, name: "Omar Al-Khatib", scope: "Income, branches, staff, history" },
+  { role: "manager", icon: ClipboardCheck, name: "Layla Haddad", scope: "Approvals, cash counts, daily lists" },
+  { role: "salesperson", icon: TrendingUp, name: "Sara Abuhamdan", scope: "Leads, follow-ups, new members" },
+  { role: "receptionist", icon: ScanLine, name: "Hala Qasem", scope: "Find members, check-in, payments, renewals" },
 ];
 
 
@@ -87,7 +87,7 @@ function PortalSignInFallback({ audience, mode = "sign-in" }: { audience: Audien
       mode={mode}
       footer={
         <p className="text-center text-[12px] text-ink-3">
-          {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · application data by Convex"}
+          {portal.id === "admin" ? "For RIVET staff only" : "Secure sign-in"}
         </p>
       }
     >
@@ -128,7 +128,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
       await signIn(role);
       router.push(role === "receptionist" ? "/reception" : "/dashboard");
     } catch {
-      toast.error("Could not open that workspace.");
+      toast.error("Could not sign in. Try again.");
     } finally {
       setLoading(false);
     }
@@ -161,7 +161,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
       mode={mode}
       footer={
         <p className="text-center text-[12px] text-ink-3">
-          {portal.id === "admin" ? "RIVET internal · restricted access" : "Secure identity by Clerk · application data by Convex"}
+          {portal.id === "admin" ? "For RIVET staff only" : "Secure sign-in"}
         </p>
       }
     >
@@ -292,7 +292,7 @@ function StaffRoles({ loading, onEnter }: { loading: boolean; onEnter: (role: Ro
         void onEnter(role);
       }}
     >
-      <p className="context-label">Open the workspace as</p>
+      <p className="context-label">Sign in as</p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Staff role">
         {STAFF_ROLES.map((item) => {
           const active = role === item.role;
@@ -378,7 +378,7 @@ function MemberAccounts({
       </Button>
 
       <p className="mt-4 text-center text-[12px] text-ink-3">
-        No membership yet?{" "}
+        New to RIVET?{" "}
         <Link href="/login/member/create" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">
           Create a member account
         </Link>
@@ -398,11 +398,11 @@ function AdminEntry({ onEnter }: { onEnter: () => void }) {
     >
       <div className="rounded-lg border border-line-2 bg-surface p-4">
         <p className="flex items-center gap-2 text-[13px] font-medium">
-          <ShieldCheck className="size-4 text-ink-3" aria-hidden /> Restricted console
+          <ShieldCheck className="size-4 text-ink-3" aria-hidden /> For RIVET staff only
         </p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-ink-2">
-          Tenant management, subscriptions, billing and support across every gym on RIVET. Opening the preview does not
-          grant your account a real platform role.
+          Manage gyms, plans, billing and support for every gym on RIVET. This demo does not give your account real
+          admin access.
         </p>
       </div>
       <Button type="submit" variant="signal" className="mt-5 w-full" size="lg" data-testid="admin-continue">
@@ -422,8 +422,7 @@ function NoRoleSource({ children }: { children: ReactNode }) {
     <div>
       <div className="mt-6 rounded-lg border border-warning/30 bg-warning-bg p-3">
         <p className="text-[12px] leading-relaxed text-warning-deep">
-          No Convex deployment is configured for this build, so RIVET cannot read your role. These are seeded preview
-          accounts, not yours.
+          This test version cannot find your account. These are demo accounts, not yours.
         </p>
       </div>
       {children}

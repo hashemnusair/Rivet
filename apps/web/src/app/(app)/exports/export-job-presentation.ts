@@ -17,11 +17,11 @@ export function exportJobPresentation(job: ExportJob, now = Date.now()): ExportJ
   const downloadable = Boolean(job.content) && !expired;
   switch (job.status) {
     case "queued":
-      return { label: "Queued", variant: "neutral", download: "pending" };
+      return { label: "Waiting", variant: "neutral", download: "pending" };
     case "running":
-      return { label: "Running", variant: "neutral", download: "pending" };
+      return { label: "Preparing", variant: "neutral", download: "pending" };
     case "partially_completed":
-      return downloadable ? { label: "Partial", variant: "warning", download: "ready" } : { label: "Partial · expired", variant: "outline", download: "expired" };
+      return downloadable ? { label: "Partly done", variant: "warning", download: "ready" } : { label: "Partly done, expired", variant: "outline", download: "expired" };
     case "completed":
       return downloadable ? { label: "Completed", variant: "success", download: "ready" } : { label: "Expired", variant: "outline", download: "expired" };
     case "failed":

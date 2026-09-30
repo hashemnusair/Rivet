@@ -77,8 +77,8 @@ function DiscoverGyms() {
             status={experienceStatus}
             error={experienceError}
             onRetry={retryExperience}
-            emptyTitle="No RIVET gyms are live yet"
-            emptyDescription="Gyms appear here after RIVET approves and publishes their workspace. Run a gym? Send an application and our team will follow up."
+            emptyTitle="No gyms here yet"
+            emptyDescription="Gyms show here after RIVET approves them. Do you run a gym? Send an application and we will contact you."
             emptyAction={<Button asChild variant="secondary" size="sm"><Link href="/signup">Send a gym application <ArrowRight /></Link></Button>}
           />
         </div>
@@ -140,7 +140,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
           <div>
             <p className="text-[12px] text-ink-3">From</p>
             <p className={cn("mt-0.5 font-semibold tabular text-ink", gym.fromPriceMinor > 0 ? "text-[16px]" : "text-[13.5px]")}>
-              {gym.fromPriceMinor > 0 ? <>{formatMoney(money(gym.fromPriceMinor))}<span className="text-[12px] font-normal text-ink-3"> / month</span></> : "Ask the gym"}
+              {gym.fromPriceMinor > 0 ? <>{formatMoney(money(gym.fromPriceMinor))}<span className="text-[12px] font-normal text-ink-3"> a month</span></> : "Ask the gym"}
             </p>
           </div>
           <Button asChild size="sm" variant="secondary"><Link href={href}>View gym <ArrowRight /></Link></Button>

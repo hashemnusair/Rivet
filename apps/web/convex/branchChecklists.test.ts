@@ -191,7 +191,7 @@ describe("branch checklists", () => {
     const due = dashboard.todayQueue.items.find((item) => item.id === `checklist-due:${template.id}:${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman" }).format(Date.now())}`);
     expect(due).toBeDefined();
     expect(due!.kind).toBe("branch_checklist");
-    expect(due!.title).toMatch(/Overdue: Opening walkthrough/);
+    expect(due!.title).toMatch(/Late: Opening walkthrough/);
 
     await owner.mutation(api.domain.mutate, operation("checklists.item.set", { templateId: template.id, itemId: template.items[1]!.id, status: "failed", reason: "Broken tap." }));
     const withFailure = await owner.query(api.domain.query, operation("dashboard", {})) as { todayQueue: { items: Array<{ id: string; priority: string }> } };

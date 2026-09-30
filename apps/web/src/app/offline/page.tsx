@@ -13,7 +13,7 @@ export default function OfflinePage() {
         <Image src="/brand/rivet-glyph.png" alt="" width={41} height={64} className="mx-auto" priority />
         <p className="mt-6 text-[12px] font-medium text-ink-3">You&apos;re offline</p>
         <h1 className="mt-1 font-display text-[26px] font-semibold leading-tight tracking-tight">Reconnect to open RIVET</h1>
-        <p className="mt-3 text-[13.5px] leading-relaxed text-ink-2">Membership details, payments and entry passes need a live, secure connection. Your entry QR is never stored for offline use, so reception always scans a fresh pass.</p>
+        <p className="mt-3 text-[13.5px] leading-relaxed text-ink-2">Your membership, payments and entry code need an internet connection. Your entry code does not work offline.</p>
         <Button asChild className="mt-6 w-full sm:w-auto">
           <Link href="/customer/my-gyms">Try again</Link>
         </Button>

@@ -63,7 +63,7 @@ describe("Today queue", () => {
     await renderWithApp(<TodayQueue data={queue} initialVisible={2} />);
 
     expect(screen.getByRole("heading", { name: "Today" })).toBeInTheDocument();
-    expect(screen.getByText("Next priority")).toBeInTheDocument();
+    expect(screen.getByText("Do this first")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Collect: Collect from Ahmad Khalil" })).toHaveAttribute(
       "href",
       "/members/member-1?action=collect",
@@ -93,7 +93,7 @@ describe("Today queue", () => {
     expect(screen.getByRole("radiogroup", { name: "Contact outcome" })).toBeInTheDocument();
     expect(completeTask).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: "Mark done without a contact" }));
+    await user.click(screen.getByRole("button", { name: "Done, nothing to record" }));
     await waitFor(() => expect(completeTask).toHaveBeenCalledWith("task-1", { outcome: "Completed from Today" }));
   });
 
@@ -115,7 +115,7 @@ describe("Today queue", () => {
       />,
     );
 
-    expect(screen.getByText("You're clear for now")).toBeInTheDocument();
-    expect(screen.getByText(/appear here automatically/)).toBeInTheDocument();
+    expect(screen.getByText("Nothing to do right now")).toBeInTheDocument();
+    expect(screen.getByText(/shows up here by itself/)).toBeInTheDocument();
   });
 });

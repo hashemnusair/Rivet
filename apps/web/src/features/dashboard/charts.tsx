@@ -32,7 +32,7 @@ export function RevenueChart({ data, currency = "JOD" }: { data: DashboardData["
     <div>
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <div>
-          <p className="context-label">Collected — last 30 days</p>
+          <p className="context-label">Collected in the last 30 days</p>
           <p className="mt-1 text-[22px] font-medium tabular">
             <MoneyText money={money(total, currency)} compact />
             <span className="ms-2 text-[12px] text-ink-3">

@@ -20,20 +20,71 @@ import { isApiError } from "@/lib/api/errors";
 import { auditApprovalStatusForDisplay } from "@/lib/domain/audit";
 
 const CATEGORY_LABELS: Record<AuditCategory, string> = {
-  auth: "Auth",
+  auth: "Sign-ins",
   members: "Members",
   memberships: "Memberships",
   payments: "Payments",
   checkins: "Check-ins",
-  crm: "CRM & trials",
-  reconciliation: "Reconciliation",
+  crm: "Leads and trials",
+  reconciliation: "Cash counts",
   automations: "Automations",
-  operations: "Operations",
-  accounting: "Accounting",
-  users: "Users & roles",
+  operations: "Stock and equipment",
+  accounting: "Bookkeeping",
+  users: "Staff and access",
   settings: "Settings",
   legal: "Legal",
 };
+
+/** Plain names for the most common actions; anything else is spelled out from its code. */
+const ACTION_LABELS: Record<string, string> = {
+  "payment.collect": "Payment collected",
+  "payment.refund": "Refund",
+  "payment.void": "Payment cancelled",
+  "membership.sale": "Membership sold",
+  "membership.cancel": "Membership cancelled",
+  "membership.freeze": "Membership frozen",
+  "membership.unfreeze": "Membership unfrozen",
+  "membership.discount": "Discount given",
+  "membership.price_override": "Price changed",
+  "membership.date_override": "Dates changed",
+  "membership.plan_change": "Plan changed",
+  "membership.branch_transfer": "Moved to another branch",
+  "checkin.override": "Let in anyway",
+  "shift.open": "Shift opened",
+  "shift.close": "Shift closed",
+  "shift.close_variance": "Shift closed with a cash difference",
+  "role.permissions_change": "Access changed",
+  "user.invite": "Staff invited",
+  "user.deactivate": "Staff turned off",
+  "member.archive": "Member archived",
+  "member.delete": "Member deleted",
+  "member.merge": "Members merged",
+  "member.update": "Member details changed",
+  "lead.lost": "Lead marked not sold",
+  "lead.membership_sale_completed": "Membership sold to lead",
+  "accounting.manual_post": "Journal entry added",
+  "accounting.entry.reverse": "Entry reversed",
+  "accounting.period.close": "Month closed",
+  "accounting.period.reopen": "Month reopened",
+  "accounting.source.post": "Added to the books",
+  "accounting.source.exclude": "Left out of the books",
+  "classes.occurrence.cancel": "Class cancelled",
+  "pt.booking.cancel": "PT session cancelled",
+  "pt.package.refund": "PT package refunded",
+};
+
+function actionLabel(action: string): string {
+  const known = ACTION_LABELS[action];
+  if (known) return known;
+  const words = action.replaceAll(".", " ").replaceAll("_", " ").trim();
+  return words ? words[0]!.toUpperCase() + words.slice(1) : action;
+}
+
+/** Turns a stored field name such as "receiptFooter" into "Receipt footer". */
+function fieldLabel(field: string): string {
+  const words = field.replaceAll(".", " ").replaceAll("_", " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").trim().toLowerCase();
+  return words ? words[0]!.toUpperCase() + words.slice(1) : field;
+}
 
 const CATEGORY_FILTERS: ReadonlyArray<"all" | AuditCategory> = ["all", ...(Object.keys(CATEGORY_LABELS) as AuditCategory[])];
 const APPROVAL_FILTERS = ["all", "pending", "approved", "rejected"] as const;
@@ -41,9 +92,9 @@ const APPROVAL_FILTERS = ["all", "pending", "approved", "rejected"] as const;
 function AuditPageInner() {
   const searchParams = useSearchParams();
   const replaceParams = useReplaceSearchParams();
-  // Every filter is read from the URL so an audit question can be shared or
-  // reopened exactly as it was asked, and Back/Forward retrace the questions
-  // instead of being rewritten by stale component state.
+  // Every filter is read from the URL so a search can be shared or reopened
+  // exactly as it was, and Back/Forward retrace the steps instead of being
+  // rewritten by stale component state.
   const { text: search, setText: setSearch, settled: debouncedSearch } = useUrlSearchText();
   const category = choiceFromParams(searchParams, "category", CATEGORY_FILTERS, "all");
   const approval = choiceFromParams(searchParams, "approval", APPROVAL_FILTERS, "all");
@@ -70,20 +121,20 @@ function AuditPageInner() {
   const items = data?.items ?? [];
 
   if (isError && isApiError(error) && error.code === "FORBIDDEN") {
-    return <ForbiddenState description="The audit log requires the “View audit log” permission — owners and managers have it." />;
+    return <ForbiddenState description="Only owners and managers can see the activity log." />;
   }
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Audit log"
-        description="Every sensitive action: who, what, when, why — with before and after. Append-only by design."
+        title="Activity log"
+        description="Who did what, when and why, for refunds, discounts and other important actions."
       />
 
-      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center" role="search" aria-label="Audit filters">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center" role="search" aria-label="Activity log filters">
         <div className="relative col-span-2 w-full sm:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search summary, actor, entity…" className="ps-8" aria-label="Search audit log" data-touch-target />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by staff name or what happened…" className="ps-8" aria-label="Search activity log" data-touch-target />
         </div>
         <Select value={category} onValueChange={(v) => replaceParams({ category: v === "all" ? undefined : v })}>
           <SelectTrigger className="w-full sm:w-44" aria-label="Category filter" data-touch-target>
@@ -97,7 +148,7 @@ function AuditPageInner() {
           </SelectContent>
         </Select>
         <Select value={actorId} onValueChange={(v) => replaceParams({ actor: v === "all" ? undefined : v })}>
-          <SelectTrigger className="w-full sm:w-44" aria-label="Actor filter" data-touch-target>
+          <SelectTrigger className="w-full sm:w-44" aria-label="Who did it" data-touch-target>
             <SelectValue placeholder="Anyone" />
           </SelectTrigger>
           <SelectContent>
@@ -112,8 +163,8 @@ function AuditPageInner() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Any approval state</SelectItem>
-            <SelectItem value="pending">Pending approval</SelectItem>
+            <SelectItem value="all">Any approval status</SelectItem>
+            <SelectItem value="pending">Waiting for approval</SelectItem>
             <SelectItem value="approved">Approved</SelectItem>
             <SelectItem value="rejected">Rejected</SelectItem>
           </SelectContent>
@@ -130,7 +181,7 @@ function AuditPageInner() {
             <ErrorState onRetry={() => refetch()} />
           </div>
         ) : items.length === 0 ? (
-          <EmptyState title="No audit events match" description="Sensitive actions will appear here the moment they happen." className="border-0" />
+          <EmptyState title="No activity found" description="Important actions show here as soon as they happen." className="border-0" />
         ) : (
           <ol className="divide-y divide-line">
             {items.map((event) => (
@@ -166,13 +217,13 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-[13px] font-medium">{event.summary}</span>
-            <Badge variant="outline">{event.action}</Badge>
-            {approvalStatus === "pending" ? <Badge variant="warning">Pending approval</Badge> : null}
+            <Badge variant="outline">{actionLabel(event.action)}</Badge>
+            {approvalStatus === "pending" ? <Badge variant="warning">Waiting for approval</Badge> : null}
             {approvalStatus === "approved" ? <Badge variant="success">Approved</Badge> : null}
             {approvalStatus === "rejected" ? <Badge variant="signal">Rejected</Badge> : null}
           </span>
           <span className="mt-0.5 block text-[12px] text-ink-3">
-            {event.actorName} · {event.actorRole} · {event.entityLabel}
+            {event.actorName} · {event.actorRole.replaceAll("_", " ")} · {event.entityLabel}
           </span>
         </span>
         {hasDetail ? (
@@ -195,7 +246,7 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
               <DiffPanel label="After" values={event.after} highlight />
             ) : null}
           </div>
-          <p className="mt-3 text-[12px] text-ink-3">Correlation <span className="font-mono text-[11px]">{event.correlationId}</span></p>
+          <p className="mt-3 text-[12px] text-ink-3">Reference <span className="font-mono text-[11px]">{event.correlationId}</span></p>
         </div>
       ) : null}
     </li>
@@ -209,7 +260,7 @@ function DiffPanel({ label, values, highlight }: { label: string; values: Record
       <dl className="space-y-1">
         {Object.entries(values).map(([k, v]) => (
           <div key={k} className="flex items-baseline justify-between gap-2 text-[12px]">
-            <dt className="text-ink-3">{k}</dt>
+            <dt className="text-ink-3">{fieldLabel(k)}</dt>
             <dd className="tabular">{v == null ? "—" : String(v)}</dd>
           </div>
         ))}

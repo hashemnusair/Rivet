@@ -9,7 +9,6 @@ export const qk = {
   member: (id: string) => ["members", "detail", id] as const,
   memberTimeline: (id: string, params?: unknown) => ["members", "timeline", id, params] as const,
   memberFollowUpContext: (id: string) => ["members", "followup", id] as const,
-  memberResolution: (id: string) => ["members", "resolution", id] as const,
   plans: (params?: unknown) => ["plans", params] as const,
   gymProfile: ["gymProfile"] as const,
   gymProfileVersions: ["gymProfile", "versions"] as const,

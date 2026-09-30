@@ -78,11 +78,11 @@ describe("related repair history", () => {
       },
     });
     const panel = await screen.findByTestId("repair-history");
-    expect(within(panel).getByTestId("repair-history-disclosure")).toHaveTextContent("Other machines and other branches are not included");
+    expect(within(panel).getByTestId("repair-history-disclosure")).toHaveTextContent("3 problems reported on this machine since");
     const entries = within(panel).getAllByTestId("repair-history-entry");
     expect(entries.length).toBe(2);
     expect(within(panel).getAllByTestId("repair-history-similar").length).toBeGreaterThanOrEqual(1);
-    expect(within(panel).getByTestId("repair-history-recurring")).toHaveTextContent("share wording");
+    expect(within(panel).getByTestId("repair-history-recurring")).toHaveTextContent("similar words");
     const issues = await api.listEquipmentIssues();
     const current = issues.find((issue) => issue.title === "Belt slipping under load");
     expect(current).toMatchObject({ severity: "high", safetyStatus: "out_of_service", status: "in_progress" });
@@ -115,7 +115,7 @@ describe("checklist handover", () => {
       },
     });
     const handover = await screen.findByTestId("checklist-handover");
-    expect(within(handover).getByTestId("handover-summary")).toHaveTextContent("previous 7 days");
+    expect(within(handover).getByTestId("handover-summary")).toHaveTextContent("the last 7 days");
     const groups = within(handover).getAllByTestId("handover-group");
     expect(groups.some((group) => group.getAttribute("data-group-kind") === "recurring" && group.textContent?.includes("Check changing rooms are clean"))).toBe(true);
     const groupedKeys = within(handover).getAllByTestId("handover-item").map((row) => row.getAttribute("data-item-key"));
@@ -127,7 +127,7 @@ describe("checklist handover", () => {
     expect(within(handover).getAllByTestId("handover-item")[0]).toHaveTextContent(/receptionist|Reception/);
     await user.click(within(handover).getByRole("button", { name: "Grouped" }));
     const comparison = await within(handover).findByTestId("handover-comparison");
-    expect(comparison).toHaveTextContent("Shared words:");
+    expect(comparison).toHaveTextContent("words in common");
     // Similar wording is a disclosure only: items keep their own rows, owners and dates.
     expect(within(handover).getAllByTestId("handover-item").length).toBe(groupedKeys.length);
   });
