@@ -2,7 +2,7 @@
 
 ## Plain-language follow-up — 30 September 2026
 
-Elias’s frontend commit `0970df0` is live on Vercel Production deployment
+Before this follow-up, Elias’s frontend commit `0970df0` was live on deployment
 `dpl_8PHZ2LzSaANiShidYzt3QLuTsWBa`. It changes the Needs attention response
 contract and therefore requires the matching Convex update.
 
@@ -16,9 +16,13 @@ contract and therefore requires the matching Convex update.
   run and release. No indexes were deleted; health returned `ok` at
   `1790784838755`. All 1,667 unit/component tests, both typechecks, lint,
   production build, dependency audit and 14 CLI/environment guards pass.
-- Remaining closure: inspect the regenerated Linux references, run normal
-  screenshot comparison CI and verify the final frontend deployment.
-  `CURRENT_STATE.md` records the 174 passing local browser journeys.
+- Mac and Linux references were recaptured and inspected without changing
+  screenshot thresholds. The complete standard browser suite passed on
+  `b7cb6e3`; that run failed only its newly indexed dependency audit.
+- Patched Vercel Production `dpl_CxJtxLfQ5k2kSPMnT881YDTsppr1` is READY at
+  `8027f36a6bf1f94dd82b7f84dee82c79d4f45f93` on all canonical domains.
+  Signup and all three sign-in doors return HTTP 200. Final CI passed all
+  13 jobs at that exact source SHA (linked below). No backend deploy is owed.
 - The repaired staging automation journey reads the paused monitor and
   history as owner and manager. It creates no rules and sends no messages.
   Staging credentials are still needed to exercise that live journey.
@@ -34,7 +38,9 @@ gate; it does not change the product scope. The application has no `next/og`
 `ImageResponse` usage. The patched local production audit reports no known
 vulnerabilities. The patched production build, lint and all 1,667 unit/component
 tests pass. All eight browser shards passed in the standard `b7cb6e3` run;
-its only failure was the dependency audit. Patched hosted verification is pending.
+its only failure was the dependency audit. Patched hosted verification passed
+all 13 jobs in [run 36744034609](https://github.com/hashemnusair/Rivet/actions/runs/36744034609)
+at exact `8027f36a6bf1f94dd82b7f84dee82c79d4f45f93`.
 
 ## Walkthrough follow-up release, 28 September 2026
 

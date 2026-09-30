@@ -28,14 +28,18 @@ The historical frontend handoff and existing untracked audits/outputs stay intac
 - Production Convex deployed through the guarded wrapper from `2636398` after
   the dry run selected `descriptive-meerkat-589`, with schema validation and
   no index deletions. This includes Elias’s Needs attention response change.
-  Frontend publication and final comparison CI evidence are pending.
+  Health returned `ok` at `1790784838755`.
+- Frontend Production `dpl_CxJtxLfQ5k2kSPMnT881YDTsppr1` is READY at exact
+  `8027f36a6bf1f94dd82b7f84dee82c79d4f45f93` on all canonical RIVET domains.
+  Signup and gym/member/platform sign-in doors each returned HTTP 200.
+  The backend runtime source is unchanged between `2636398` and `8027f36`.
 - Screenshot references were recaptured on macOS and Linux without changing
   comparison thresholds. The temporary capture workflow was removed. The
   complete Linux preview run `36741949907` passed 174 tests; the all-reference
   capture run `36742081904` passed 173 and exposed an ambiguous Settings text
   selector. That selector now targets the exact heading; its local rerun
   passes. All 23 local screenshot journeys pass in ordinary comparison mode.
-  Final standard CI remains pending below.
+  Final standard CI passed all 13 jobs; see the closure record below.
 - Read first: this section, docs/22, docs/12, `convex/operations.ts`,
   `convex/payables.ts`, `convex/security.ts`, and `e2e/staging-automation.spec.ts`.
   Recheck with `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`,
@@ -51,7 +55,19 @@ gate; it does not change the product scope. The application has no `next/og`
 `ImageResponse` usage. The patched local production audit reports no known
 vulnerabilities. The patched production build, lint and all 1,667 unit/component
 tests pass. All eight browser shards passed in the standard `b7cb6e3` run;
-its only failure was the dependency audit. Patched hosted verification is pending.
+its only failure was the dependency audit. Patched hosted verification passed
+all 13 jobs in [run 36744034609](https://github.com/hashemnusair/Rivet/actions/runs/36744034609)
+at exact `8027f36a6bf1f94dd82b7f84dee82c79d4f45f93`.
+
+**Closed:** every requested English follow-up is implemented and released.
+All 13 standard CI jobs pass at `8027f36`; Vercel is READY at that exact SHA,
+and Production Convex is healthy on the matching backend source. No server
+command remains to run. The repaired staging automation test has not been run
+against a live isolated staging gym; it remains credential-gated, along with
+the other 13 live browser journeys. Hashem’s deferred manual walkthrough and
+separate email-provider investigation are unchanged. Arabic is excluded.
+No production account, money or messaging mutation was used as a test.
+The frozen frontend handoff and original untracked audits/outputs are preserved.
 
 ## 30 Sep 2026 — plain-language pass
 
