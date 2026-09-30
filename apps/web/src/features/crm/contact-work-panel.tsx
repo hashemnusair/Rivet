@@ -1,13 +1,14 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { CONTACT_OUTCOME_LABELS, suggestedFollowUpDays } from "@/lib/crm/contact-outcomes";
+import { suggestedFollowUpDays } from "@/lib/crm/contact-outcomes";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
+import { useLocale, type TFunction, type TKey } from "@/lib/i18n/provider";
 import { addDays, localDateTimeToISO, todayISODate } from "@/lib/utils/dates";
 import type { ContactOutcome, LeadStage } from "@/lib/domain/types";
 import { Button } from "@/components/ui/button";
@@ -36,11 +37,11 @@ const MANUAL_OUTCOMES: ContactOutcome[] = [
 /** Trial outcomes only make sense for a lead; a member already has a membership. */
 const LEAD_ONLY_OUTCOMES = new Set<ContactOutcome>(["trial_booked", "trial_completed"]);
 const STAGE_OUTCOMES = new Set<ContactOutcome>(["answered_interested", "trial_booked", "trial_completed"]);
-const STAGE_OPTIONS: Array<{ value: LeadStage; label: string }> = [
-  { value: "contacted", label: "Contacted" },
-  { value: "trial_booked", label: "Trial booked" },
-  { value: "trial_completed", label: "Trial completed" },
-  { value: "offer_sent", label: "Offer sent" },
+const STAGE_OPTIONS: Array<{ value: LeadStage; labelKey: TKey }> = [
+  { value: "contacted", labelKey: "memberProfile.contact.stage.contacted" },
+  { value: "trial_booked", labelKey: "memberProfile.contact.stage.trial_booked" },
+  { value: "trial_completed", labelKey: "memberProfile.contact.stage.trial_completed" },
+  { value: "offer_sent", labelKey: "memberProfile.contact.stage.offer_sent" },
 ];
 
 /** The stage a reached lead most plausibly moves to; the person can still change it. */
@@ -51,14 +52,17 @@ export function recommendedLeadStage(outcome: ContactOutcome, currentStage?: Lea
   return "contacted";
 }
 
-const schema = z.object({
-  outcome: z.enum(["no_answer", "answered_interested", "answered_not_interested", "answered_call_back", "wrong_number", "whatsapp_sent", "whatsapp_opened", "trial_booked", "trial_completed"], { message: "Choose what happened." }),
-  notes: z.string().optional(),
-  nextFollowUp: z.string().optional(),
-  stage: z.string().optional(),
-});
+/** Built per render so the "choose what happened" message follows the reader's language. */
+function makeSchema(t: TFunction) {
+  return z.object({
+    outcome: z.enum(["no_answer", "answered_interested", "answered_not_interested", "answered_call_back", "wrong_number", "whatsapp_sent", "whatsapp_opened", "trial_booked", "trial_completed"], { message: t("memberProfile.contact.outcomeRequired") }),
+    notes: z.string().optional(),
+    nextFollowUp: z.string().optional(),
+    stage: z.string().optional(),
+  });
+}
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof makeSchema>>;
 
 /**
  * The core sales action: log what just happened, decide what happens next.
@@ -72,7 +76,7 @@ export function LogContactForm({
   memberId,
   currentStage,
   defaultOutcome,
-  submitLabel = "Log contact",
+  submitLabel,
   onLogged,
   compact,
 }: {
@@ -88,9 +92,11 @@ export function LogContactForm({
 }) {
   const invalidate = useInvalidate();
   const { session } = useApp();
+  const { t } = useLocale();
+  const schema = useMemo(() => makeSchema(t), [t]);
   const timezone = session?.organization.timezone;
   const today = todayISODate(timezone);
-  const [error, setError] = useState<string | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
   const [followUpTouched, setFollowUpTouched] = useState(false);
   const [suggestedDays, setSuggestedDays] = useState<number | undefined>(() => defaultOutcome ? suggestedFollowUpDays(defaultOutcome) : undefined);
 
@@ -107,8 +113,8 @@ export function LogContactForm({
   const outcome = form.watch("outcome");
   const showsStage = subject === "lead" && outcome !== undefined && STAGE_OUTCOMES.has(outcome);
   const stageOptions = currentStage && !STAGE_OPTIONS.some((option) => option.value === currentStage) && !["new", "attempted", "won", "lost"].includes(currentStage)
-    ? [{ value: currentStage, label: currentStage.replaceAll("_", " ") }, ...STAGE_OPTIONS]
-    : STAGE_OPTIONS;
+    ? [{ value: currentStage, label: currentStage.replaceAll("_", " ") }, ...STAGE_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }))]
+    : STAGE_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }));
 
   const chooseOutcome = (next: ContactOutcome) => {
     form.setValue("outcome", next, { shouldValidate: true });
@@ -134,7 +140,7 @@ export function LogContactForm({
     },
     {
       onSuccess: async () => {
-        toast.success("Contact saved.");
+        toast.success(t("memberProfile.contact.saved"));
         form.reset({ outcome: undefined, notes: "", nextFollowUp: "", stage: undefined });
         setFollowUpTouched(false);
         setSuggestedDays(undefined);
@@ -142,7 +148,7 @@ export function LogContactForm({
         onLogged?.();
       },
       // The form keeps every value so nothing has to be retyped after a retry.
-      onError: () => setError("Not saved. Your notes are still here. Try again."),
+      onError: () => setSaveFailed(true),
     },
   );
 
@@ -153,14 +159,14 @@ export function LogContactForm({
     <form
       onSubmit={form.handleSubmit((v) => {
         if (followUpInPast) return;
-        setError(null);
+        setSaveFailed(false);
         mutation.mutate(v);
       })}
       className={cn("space-y-3", compact && "space-y-2.5")}
       data-testid="log-contact-form"
     >
-      <Field label="What happened?" required error={form.formState.errors.outcome?.message}>
-        <div role="radiogroup" aria-label="Contact outcome" data-testid="contact-outcome" className="flex flex-wrap gap-1.5">
+      <Field label={t("memberProfile.contact.whatHappened")} required error={form.formState.errors.outcome?.message}>
+        <div role="radiogroup" aria-label={t("memberProfile.contact.outcomeGroup")} data-testid="contact-outcome" className="flex flex-wrap gap-1.5">
           {MANUAL_OUTCOMES.filter((option) => subject === "lead" || !LEAD_ONLY_OUTCOMES.has(option)).map((option) => (
             <button
               key={option}
@@ -174,20 +180,20 @@ export function LogContactForm({
                 outcome === option ? "border-ink bg-ink text-paper" : "border-line-2 bg-surface text-ink-2 hover:border-line-3",
               )}
             >
-              {CONTACT_OUTCOME_LABELS[option]}
+              {t(`memberProfile.contact.outcome.${option}`)}
             </button>
           ))}
         </div>
       </Field>
 
       {showsStage ? (
-        <Field label="Move lead to" hint="Picked from what happened. Change it if it is wrong.">
+        <Field label={t("memberProfile.contact.moveLeadTo")} hint={t("memberProfile.contact.moveLeadHint")}>
           <Controller
             control={form.control}
             name="stage"
             render={({ field }) => (
               <Select value={field.value ?? recommendedLeadStage(outcome!, currentStage)} onValueChange={field.onChange}>
-                <SelectTrigger aria-label="Lead stage">
+                <SelectTrigger aria-label={t("memberProfile.contact.leadStageAria")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -201,32 +207,35 @@ export function LogContactForm({
         </Field>
       ) : null}
 
-      <Field label="Notes">
-        <Textarea rows={compact ? 2 : 3} placeholder="What did they say?" {...form.register("notes")} data-testid="contact-notes" />
+      <Field label={t("common.label.notes")}>
+        <Textarea rows={compact ? 2 : 3} dir="auto" placeholder={t("memberProfile.contact.notesPlaceholder")} {...form.register("notes")} data-testid="contact-notes" />
       </Field>
       <Field
-        label="Next follow-up"
+        label={t("memberProfile.contact.nextFollowUp")}
         hint={
           followUpInPast
             ? undefined
             : suggestedDays && !followUpTouched
-              ? `Suggested: ${suggestedDays === 1 ? "tomorrow" : `in ${suggestedDays} days`}. Change it if they asked for another day.`
-              : "Optional. Leave empty if no more follow-up is needed. Any open follow-up task will then close."
+              ? suggestedDays === 1
+                ? t("memberProfile.contact.suggestedTomorrow")
+                : t("memberProfile.contact.suggestedInDays", { count: suggestedDays })
+              : t("memberProfile.contact.followUpOptional")
         }
-        error={followUpInPast ? "Choose today or a later date." : undefined}
+        error={followUpInPast ? t("memberProfile.contact.pastDate") : undefined}
       >
         <Input
           type="date"
+          dir="ltr"
           min={today}
           {...form.register("nextFollowUp", { onChange: () => setFollowUpTouched(true) })}
           data-testid="contact-next-followup"
         />
       </Field>
 
-      {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
+      {saveFailed ? <p role="alert" className="text-[12.5px] text-danger">{t("memberProfile.contact.failed")}</p> : null}
 
       <Button type="submit" loading={mutation.isPending} disabled={followUpInPast} className="w-full" data-testid="log-contact-submit">
-        {submitLabel}
+        {submitLabel ?? t("memberProfile.contact.log")}
       </Button>
     </form>
   );
@@ -248,7 +257,7 @@ export function LogContactDialog({
   open,
   onOpenChange,
   hideTrigger = false,
-  triggerLabel = "Log contact",
+  triggerLabel,
   triggerVariant = "secondary",
 }: {
   subject: "lead" | "member";
@@ -269,20 +278,20 @@ export function LogContactDialog({
     setInternalOpen(next);
     onOpenChange?.(next);
   };
-  const label = subject === "lead" ? "lead" : "member";
+  const { t } = useLocale();
 
   return (
     <>
       {hideTrigger ? null : (
         <Button type="button" variant={triggerVariant} size="sm" onClick={() => setOpen(true)}>
-          {triggerLabel}
+          {triggerLabel ?? t("memberProfile.contact.log")}
         </Button>
       )}
       <Dialog open={isOpen} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Log contact</DialogTitle>
-            <DialogDescription>Write down what happened with this {label} and when to follow up.</DialogDescription>
+            <DialogTitle>{t("memberProfile.contact.log")}</DialogTitle>
+            <DialogDescription>{subject === "lead" ? t("memberProfile.contact.dialogDescriptionLead") : t("memberProfile.contact.dialogDescriptionMember")}</DialogDescription>
           </DialogHeader>
           <DialogBody>
             <LogContactForm
