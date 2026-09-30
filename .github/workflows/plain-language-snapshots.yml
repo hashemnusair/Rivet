@@ -29,7 +29,7 @@ jobs:
           PLAYWRIGHT_SERVER_MODE: start
           PLAYWRIGHT_DIST_DIR: .next-playwright
           PLAYWRIGHT_WORKERS: "2"
-        run: pnpm test:e2e --update-snapshots --retries=0
+        run: pnpm test:e2e --update-snapshots=all --retries=0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
