@@ -3,6 +3,8 @@
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/shared/chrome";
+import { LanguageButton } from "@/components/shared/language-switch";
+import { useLocale } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -136,10 +138,27 @@ export default function MemberProfilePage() {
             <p className="mt-2 text-[13px] leading-relaxed text-ink-2">You own your email, phone, personal details and emergency contact. Each gym you join can see them. A gym cannot see your memberships at other gyms.</p>
             <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">Gym staff manage their notes and tags, your branch and your membership details. We do not ask for medical information here.</p>
           </div>
+          <ScreenLanguage />
           <CustomerCommunicationPreferences />
         </aside>
       </form>
     </main>
+  );
+}
+
+/**
+ * The language of the screens themselves (the cookie-backed switch). It is not
+ * the "Preferred language" field above, which decides the language of messages
+ * sent to the member. Hidden unless Arabic is enabled for this deployment.
+ */
+function ScreenLanguage() {
+  const { switchEnabled, t } = useLocale();
+  if (!switchEnabled) return null;
+  return (
+    <div className="panel flex items-center justify-between gap-3 p-4 sm:p-5">
+      <h2 className="text-[13px] font-semibold">{t("common.label.language")}</h2>
+      <LanguageButton />
+    </div>
   );
 }
 

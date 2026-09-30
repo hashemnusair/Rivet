@@ -133,3 +133,32 @@ Open founder questions that affect many rows (from the review room, none answere
 | just now | الآن | | Old branch | common |
 | status | الحالة | | Old branch | common |
 | date | التاريخ | | Old branch | common |
+| salesperson (person, not the role) | مسؤول المبيعات | | New draft | dashboard, memberProfile |
+| at risk (member may not come back) | معرّض للانقطاع | | New draft | dashboard |
+| approval (request waiting) | موافقة | بانتظار موافقتكم | New draft | dashboard |
+| machine: do not use | يُمنع استخدامه | | New draft | dashboard |
+| reorder (stock) | إعادة طلب | | New draft | dashboard |
+| win back (ended membership) | استعادة | | New draft | dashboard |
+| callback (asked to be called again) | معاودة الاتصال | | New draft | memberProfile |
+| assigned to (task owner) | مسندة إلى | | New draft | memberProfile |
+| inactive (member record) | غير فعّال | pairs with الأعضاء الفعّالون | New draft | memberProfile |
+| saved view | العرض المحفوظ | العروض المحفوظة | New draft | members |
+| possible duplicates | سجلات مكررة محتملة | | New draft | members |
+| filter (selection) | التصفية | عناصر التصفية | Old branch | members |
+| pinned | المثبّتة | | New draft | palette |
+| quick actions | إجراءات سريعة | | New draft | palette |
+| recent | الأخيرة | | New draft | palette |
+| places (search group) | الأقسام | | New draft | palette |
+| maintenance | الصيانة | | New draft | palette |
+| automations | الأتمتة | | New draft | palette |
+| unread | غير مقروء | تحديد كمقروء (mark as read) | New draft | palette |
+| gym team (sign-in door) | فريق النادي | | New draft | auth |
+| platform console | لوحة إدارة المنصة | | New draft | auth |
+| entry code (sign-in code) | رمز الدخول | رمز الاحتياط (backup code) | New draft | auth |
+| invitation | دعوة | | New draft | auth |
+| invoice (charge for a membership) | فاتورة | الفاتورة | New draft | renewFlow |
+| reference number (card slip or bank) | رقم المرجع | المرجع | New draft | renewFlow |
+| card machine slip (kept apart from receipt) | قسيمة | | New draft | renewFlow |
+| special price (price override) | السعر الخاص | | New draft | renewFlow |
+| paying now | المدفوع الآن | | New draft | renewFlow |
+| confirm refund button ("Give refund") | تنفيذ الاسترداد | | New draft | renewFlow |

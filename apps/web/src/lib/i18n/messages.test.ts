@@ -99,7 +99,8 @@ describe("docs/arabic/GLOSSARY.md", () => {
   it("uses each in-use term in the Arabic catalogue (glossary and messages have not drifted)", () => {
     const missing = rows
       .filter(([, term, , , where]) => where !== "—" && /[؀-ۿ]/.test(term as string))
-      .filter(([, term]) => !arabicCorpus.includes(term as string))
+      // A row is in use when its term or any of its listed forms appears (e.g. حصة / الحصص).
+      .filter(([, term, forms]) => ![term, ...(forms ?? "").split(/[,،]/).map((form) => form.replace(/\(.*\)/, "").trim())].some((candidate) => candidate && /[\u0600-\u06FF]/.test(candidate) && arabicCorpus.includes(candidate)))
       .map(([concept, term]) => `${concept} -> ${term}`);
     expect(missing).toEqual([]);
   });
