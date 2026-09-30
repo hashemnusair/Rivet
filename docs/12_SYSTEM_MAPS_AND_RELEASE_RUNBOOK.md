@@ -25,6 +25,17 @@ contract and therefore requires the matching Convex update.
 - Arabic localization is excluded. No account, payment, messaging setting or
   production data mutation is needed to verify this copy release.
 
+**Release-gate follow-up:** standard CI `36743388036` built successfully but
+its dependency audit detected newly indexed Next.js advisory
+[GHSA-vcvr-r3jv-pc5j](https://github.com/advisories/GHSA-vcvr-r3jv-pc5j).
+Next.js and its ESLint packages are patched from 16.3.3 to 16.3.6 with the
+lockfile updated. This small security update is required to close the release
+gate; it does not change the product scope. The application has no `next/og`
+`ImageResponse` usage. The patched local production audit reports no known
+vulnerabilities. The patched production build, lint and all 1,667 unit/component
+tests pass. All eight browser shards passed in the standard `b7cb6e3` run;
+its only failure was the dependency audit. Patched hosted verification is pending.
+
 ## Walkthrough follow-up release, 28 September 2026
 
 **Verified release:** all 13 jobs passed in

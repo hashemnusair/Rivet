@@ -42,6 +42,17 @@ The historical frontend handoff and existing untracked audits/outputs stay intac
   `pnpm --filter web exec vitest run --maxWorkers=3`, `pnpm build`, and
   `pnpm test:e2e`. Use the approved preview environment for browser tests.
 
+**Release-gate follow-up:** standard CI `36743388036` built successfully but
+its dependency audit detected newly indexed Next.js advisory
+[GHSA-vcvr-r3jv-pc5j](https://github.com/advisories/GHSA-vcvr-r3jv-pc5j).
+Next.js and its ESLint packages are patched from 16.3.3 to 16.3.6 with the
+lockfile updated. This small security update is required to close the release
+gate; it does not change the product scope. The application has no `next/og`
+`ImageResponse` usage. The patched local production audit reports no known
+vulnerabilities. The patched production build, lint and all 1,667 unit/component
+tests pass. All eight browser shards passed in the standard `b7cb6e3` run;
+its only failure was the dependency audit. Patched hosted verification is pending.
+
 ## 30 Sep 2026 — plain-language pass
 
 What changed (committed as `0970df0`; the wording rules are in `docs/22_PLAIN_LANGUAGE_GUIDE.md`):
