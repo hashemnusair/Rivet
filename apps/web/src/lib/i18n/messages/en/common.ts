@@ -73,6 +73,11 @@ export const common = {
     next: "Next page",
   },
 
+  a11y: {
+    closeDialog: "Close dialog",
+    loading: "Loading",
+  },
+
   label: {
     name: "Name",
     fullName: "Full name",

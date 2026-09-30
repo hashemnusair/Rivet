@@ -4,6 +4,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { forwardRef, useRef, type ComponentPropsWithoutRef, type ComponentRef } from "react";
 import { cn } from "@/lib/utils/cn";
+import { useT } from "@/lib/i18n/provider";
 
 /**
  * Radix returns focus only to a DialogTrigger. Every dialog in this product
@@ -51,6 +52,7 @@ const DialogContent = forwardRef<
   ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
 >(({ className, children, hideClose, onOpenAutoFocus, onCloseAutoFocus, ...props }, ref) => {
   const openerRef = useRef<HTMLElement | null>(null);
+  const t = useT();
   return (
   <DialogPrimitive.Portal>
     <DialogOverlay />
@@ -80,7 +82,7 @@ const DialogContent = forwardRef<
       {!hideClose ? (
         <DialogPrimitive.Close
           className="absolute end-3 top-3 rounded-sm p-1.5 text-ink-3 transition-colors hover:bg-sunken hover:text-ink"
-          aria-label="Close dialog"
+          aria-label={t("common.a11y.closeDialog")}
         >
           <X className="size-4" />
         </DialogPrimitive.Close>

@@ -5,6 +5,7 @@ import { domain } from "./domain";
 import { memberProfile } from "./memberProfile";
 import { members } from "./members";
 import { nav } from "./nav";
+import { palette } from "./palette";
 import { renewFlow } from "./renewFlow";
 import { shell } from "./shell";
 
@@ -23,6 +24,7 @@ export const en = {
   memberProfile,
   members,
   nav,
+  palette,
   renewFlow,
   shell,
 };

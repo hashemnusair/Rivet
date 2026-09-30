@@ -71,6 +71,11 @@ export const common: typeof EnCommon = {
     next: "الصفحة التالية",
   },
 
+  a11y: {
+    closeDialog: "إغلاق النافذة",
+    loading: "جارٍ التحميل",
+  },
+
   label: {
     name: "الاسم",
     fullName: "الاسم الكامل",
