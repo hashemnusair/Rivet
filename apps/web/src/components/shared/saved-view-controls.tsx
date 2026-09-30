@@ -66,7 +66,7 @@ export function SavedViewControls({ surface, state, onApply, hasExplicitState = 
         const view = views.data?.find((item) => item.id === value);
         if (view) { setSelectedId(value); onApply(view.state); }
       }}>
-        <SelectTrigger sizeVariant="sm" className={compact ? "h-11 min-w-0 flex-1 min-[1180px]:h-8 min-[1180px]:w-28 min-[1180px]:flex-none" : "w-44"} aria-label={t("members.savedViews.ariaLabel")}><Bookmark className="size-3.5" /><SelectValue placeholder={t("members.savedViews.placeholder")} /></SelectTrigger>
+        <SelectTrigger sizeVariant="sm" className={compact ? "h-11 min-w-0 flex-1 min-[1180px]:h-8 min-[1180px]:w-28 rtl:min-[1180px]:w-40 min-[1180px]:flex-none" : "w-44"} aria-label={t("members.savedViews.ariaLabel")}><Bookmark className="size-3.5" /><SelectValue placeholder={t("members.savedViews.placeholder")} /></SelectTrigger>
         <SelectContent><SelectItem value="none">{t("members.savedViews.placeholder")}</SelectItem>{(views.data ?? []).map((view) => <SelectItem key={view.id} value={view.id}><bdi>{view.name}</bdi>{view.isDefault ? t("members.savedViews.defaultSuffix") : ""}</SelectItem>)}</SelectContent>
       </Select>
       <Button type="button" size={compact ? "icon-sm" : "sm"} className={compact ? "size-11 min-[1180px]:size-7" : undefined} variant="secondary" aria-label={compact ? t("members.savedViews.saveCurrent") : undefined} title={compact ? t("members.savedViews.saveCurrent") : undefined} onClick={() => openDialog("create")}><BookmarkPlus />{compact ? null : t("common.action.save")}</Button>

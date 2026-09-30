@@ -42,3 +42,7 @@ The 247 editorial questions sample recurring and exceptional language decisions 
 Read `IMPLEMENTATION_PROMPT.md`, the current approved JSON export, `CURRENT_STATE.md`, `DESIGN.md`, and `docs/22_PLAIN_LANGUAGE_GUIDE.md`. The public download at `apps/web/public/arabic-implementation-prompt.txt` matches the Markdown prompt. The prompt requires full Arabic implementation based on actual approved choices and keeps unresolved or stale exports from silently becoming a language specification.
 
 This release only adds the review tool and future implementation prompt. It does not enable Arabic in the product or merge `origin/arabic-localisation`. No runtime translation service or new paid dependency is used.
+
+## Foundation and first flow (1 Oct 2026, branch `arabic-foundation`)
+
+Arabic is now built into the app behind a flag: see the 1 Oct 2026 section of `CURRENT_STATE.md`, the drafts in `GLOSSARY.md`, and the typed catalogues in `apps/web/src/lib/i18n/`. No founder answers were agreed when it was written, so all wording is draft MSA and is meant to be replaced with the founders' terminology list by search-and-replace.
