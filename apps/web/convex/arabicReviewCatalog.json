@@ -1,0 +1,7246 @@
+[
+  {
+    "id": "voice",
+    "category": "Voice & formatting",
+    "english": "General voice",
+    "context": "Choose the everyday voice for staff screens; later cards can override it for particular situations.",
+    "options": [
+      {
+        "id": "a",
+        "text": "فصحى بسيطة: لا توجد دفعات مسجّلة بعد."
+      },
+      {
+        "id": "b",
+        "text": "فصحى رسمية: لم تُسجَّل أي دفعات حتى الآن."
+      },
+      {
+        "id": "c",
+        "text": "لهجة أردنية: لسه ما في دفعات مسجّلة."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "buttons",
+    "category": "Voice & formatting",
+    "english": "Button style",
+    "context": "Use Save changes as the example. Decide how action buttons should speak.",
+    "options": [
+      {
+        "id": "a",
+        "text": "حفظ التغييرات"
+      },
+      {
+        "id": "b",
+        "text": "احفظ التغييرات"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "address",
+    "category": "Voice & formatting",
+    "english": "Addressing the reader",
+    "context": "A payment reminder to a member. Choose direct or impersonal wording without assuming gender.",
+    "options": [
+      {
+        "id": "a",
+        "text": "يرجى دفع المبلغ المتبقي قبل تجديد الاشتراك."
+      },
+      {
+        "id": "b",
+        "text": "ادفع المبلغ المتبقي قبل تجديد الاشتراك."
+      },
+      {
+        "id": "c",
+        "text": "يجب دفع المبلغ المتبقي قبل تجديد الاشتراك."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "digits",
+    "category": "Voice & formatting",
+    "english": "Numbers",
+    "context": "Default display digits. Both digit sets should still be accepted when typing.",
+    "options": [
+      {
+        "id": "a",
+        "text": "1234567890"
+      },
+      {
+        "id": "b",
+        "text": "١٢٣٤٥٦٧٨٩٠"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 230
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 687
+      },
+      {
+        "file": "src/app/(app)/reports/page.tsx",
+        "line": 185
+      },
+      {
+        "file": "src/app/dev/design-system/design-system-gallery.tsx",
+        "line": 147
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "calendar",
+    "category": "Voice & formatting",
+    "english": "Calendar",
+    "context": "Default calendar for memberships, reports and receipts; Arabic alone does not imply a calendar.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ميلادي: 30 سبتمبر 2026"
+      },
+      {
+        "id": "b",
+        "text": "هجري: تُعرض التواريخ حسب التقويم الهجري"
+      },
+      {
+        "id": "c",
+        "text": "ميلادي افتراضيًا، مع خيار عرض التاريخ الهجري"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/marketing/landing-story.tsx",
+        "line": 78
+      },
+      {
+        "file": "src/features/dashboard/trainer-dashboard.tsx",
+        "line": 63
+      },
+      {
+        "file": "src/features/dashboard/trainer-dashboard.tsx",
+        "line": 66
+      },
+      {
+        "file": "src/features/legal/terms-of-service.tsx",
+        "line": 129
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "months",
+    "category": "Voice & formatting",
+    "english": "Month names",
+    "context": "Jordanian month names or names more familiar across other Arabic markets.",
+    "options": [
+      {
+        "id": "a",
+        "text": "كانون الثاني، شباط، آذار، نيسان"
+      },
+      {
+        "id": "b",
+        "text": "يناير، فبراير، مارس، أبريل"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "money-format",
+    "category": "Voice & formatting",
+    "english": "Jordanian dinar display",
+    "context": "Keep the actual currency precision; choose placement and notation, not rounding.",
+    "options": [
+      {
+        "id": "a",
+        "text": "25.000 د.أ"
+      },
+      {
+        "id": "b",
+        "text": "25.000 دينار أردني"
+      },
+      {
+        "id": "c",
+        "text": "JOD 25.000"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "time-format",
+    "category": "Voice & formatting",
+    "english": "Time format",
+    "context": "For class times, shifts and appointments.",
+    "options": [
+      {
+        "id": "a",
+        "text": "2:30 م"
+      },
+      {
+        "id": "b",
+        "text": "14:30"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "brand",
+    "category": "Voice & formatting",
+    "english": "RIVET in Arabic",
+    "context": "Product name in Arabic sentences; gym names remain as entered by their owners.",
+    "options": [
+      {
+        "id": "a",
+        "text": "RIVET"
+      },
+      {
+        "id": "b",
+        "text": "ريڤت"
+      },
+      {
+        "id": "c",
+        "text": "ريفت"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "english-terms",
+    "category": "Voice & formatting",
+    "english": "Borrowed gym terms",
+    "context": "Default treatment of PT in staff screens; individual terminology cards refine this.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تدريب شخصي"
+      },
+      {
+        "id": "b",
+        "text": "تدريب شخصي (PT)"
+      },
+      {
+        "id": "c",
+        "text": "PT"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "plural",
+    "category": "Voice & formatting",
+    "english": "Count labels",
+    "context": "How to present changing counts while keeping grammar natural, including zero, one and two.",
+    "options": [
+      {
+        "id": "a",
+        "text": "عدد الزيارات المتبقية: 3"
+      },
+      {
+        "id": "b",
+        "text": "باقي 3 زيارات"
+      },
+      {
+        "id": "c",
+        "text": "3 زيارات متبقية"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "politeness",
+    "category": "Voice & formatting",
+    "english": "Routine instructions",
+    "context": "Choose how often routine instructions use please; warnings retain clear consequences.",
+    "options": [
+      {
+        "id": "a",
+        "text": "اختر الفرع للمتابعة."
+      },
+      {
+        "id": "b",
+        "text": "يرجى اختيار الفرع للمتابعة."
+      },
+      {
+        "id": "c",
+        "text": "من فضلك، اختر الفرع للمتابعة."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "dashboard",
+    "category": "Navigation & common actions",
+    "english": "Dashboard",
+    "context": "Staff home: daily numbers, tasks and alerts.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الرئيسية"
+      },
+      {
+        "id": "b",
+        "text": "لوحة المتابعة"
+      },
+      {
+        "id": "c",
+        "text": "لوحة التحكم"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/reports/page.tsx",
+        "line": 197
+      },
+      {
+        "file": "src/app/dev/design-system/design-system-gallery.tsx",
+        "line": 219
+      },
+      {
+        "file": "src/components/marketing/hero-devices.tsx",
+        "line": 30
+      },
+      {
+        "file": "src/components/marketing/hero-devices.tsx",
+        "line": 76
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "reception",
+    "category": "Navigation & common actions",
+    "english": "Reception",
+    "context": "The front desk workspace for entry and payments.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الاستقبال"
+      },
+      {
+        "id": "b",
+        "text": "مكتب الاستقبال"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 38
+      },
+      {
+        "file": "src/app/(app)/memberships/page.tsx",
+        "line": 131
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 537
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 537
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "needs-attention",
+    "category": "Navigation & common actions",
+    "english": "Needs attention",
+    "context": "A section containing overdue or unresolved work.",
+    "options": [
+      {
+        "id": "a",
+        "text": "بحاجة إلى متابعة"
+      },
+      {
+        "id": "b",
+        "text": "يتطلب انتباهك"
+      },
+      {
+        "id": "c",
+        "text": "أمور تحتاج إلى إجراء"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/dev/design-system/design-system-gallery.tsx",
+        "line": 169
+      },
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 260
+      },
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 371
+      },
+      {
+        "file": "src/app/platform/page.tsx",
+        "line": 144
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "members",
+    "category": "Navigation & common actions",
+    "english": "Members",
+    "context": "People with gym records; must work even when the subscription has ended.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الأعضاء"
+      },
+      {
+        "id": "b",
+        "text": "المشتركون"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 24
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 25
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 43
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 44
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "membership",
+    "category": "Navigation & common actions",
+    "english": "Membership",
+    "context": "A time-limited or visit-limited gym subscription, distinct from a person's record.",
+    "options": [
+      {
+        "id": "a",
+        "text": "اشتراك"
+      },
+      {
+        "id": "b",
+        "text": "عضوية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 25
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 43
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 44
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 45
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "plans",
+    "category": "Navigation & common actions",
+    "english": "Membership plans",
+    "context": "Products with duration, visits and price, not a member's purchased subscription.",
+    "options": [
+      {
+        "id": "a",
+        "text": "باقات الاشتراك"
+      },
+      {
+        "id": "b",
+        "text": "خطط الاشتراك"
+      },
+      {
+        "id": "c",
+        "text": "أنواع الاشتراكات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 190
+      },
+      {
+        "file": "src/app/(app)/plans/page.tsx",
+        "line": 57
+      },
+      {
+        "file": "src/app/(app)/plans/page.tsx",
+        "line": 109
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 227
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "branch",
+    "category": "Navigation & common actions",
+    "english": "Branch",
+    "context": "A physical branch belonging to the same gym business.",
+    "options": [
+      {
+        "id": "a",
+        "text": "فرع"
+      },
+      {
+        "id": "b",
+        "text": "موقع النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 51
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 74
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 80
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 80
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "workspace",
+    "category": "Navigation & common actions",
+    "english": "Your gym",
+    "context": "The business staff manage; distinguish it from physical workout areas.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ناديك"
+      },
+      {
+        "id": "b",
+        "text": "النادي الرياضي"
+      },
+      {
+        "id": "c",
+        "text": "الجيم"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 563
+      },
+      {
+        "file": "src/app/(app)/getting-started/page.tsx",
+        "line": 18
+      },
+      {
+        "file": "src/app/(app)/layout.tsx",
+        "line": 98
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 247
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "staff",
+    "category": "Navigation & common actions",
+    "english": "Staff",
+    "context": "Employees and trainers with access to the system.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الموظفون"
+      },
+      {
+        "id": "b",
+        "text": "فريق العمل"
+      },
+      {
+        "id": "c",
+        "text": "طاقم النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 33
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 57
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 58
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 137
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "settings",
+    "category": "Navigation & common actions",
+    "english": "Settings",
+    "context": "Configuration page.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الإعدادات"
+      },
+      {
+        "id": "b",
+        "text": "إعدادات النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 34
+      },
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+        "line": 152
+      },
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+        "line": 276
+      },
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-monitoring.client.tsx",
+        "line": 37
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "activity-log",
+    "category": "Navigation & common actions",
+    "english": "Activity log",
+    "context": "Who changed what and when, including sensitive actions.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سجل النشاط"
+      },
+      {
+        "id": "b",
+        "text": "سجل الإجراءات"
+      },
+      {
+        "id": "c",
+        "text": "سجل التغييرات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 124
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 130
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 134
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 137
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "downloads",
+    "category": "Navigation & common actions",
+    "english": "Downloads",
+    "context": "Reports and data files staff can download.",
+    "options": [
+      {
+        "id": "a",
+        "text": "التنزيلات"
+      },
+      {
+        "id": "b",
+        "text": "تنزيل البيانات"
+      },
+      {
+        "id": "c",
+        "text": "ملفات للتنزيل"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 63
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 86
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 87
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 107
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "getting-started",
+    "category": "Navigation & common actions",
+    "english": "Getting started",
+    "context": "Setup checklist and first-use guidance.",
+    "options": [
+      {
+        "id": "a",
+        "text": "البدء"
+      },
+      {
+        "id": "b",
+        "text": "خطوات البداية"
+      },
+      {
+        "id": "c",
+        "text": "إعداد النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/onboarding/onboarding-checklist.tsx",
+        "line": 73
+      },
+      {
+        "file": "src/components/public/public-shell.tsx",
+        "line": 63
+      },
+      {
+        "file": "src/components/shell/topbar.tsx",
+        "line": 305
+      },
+      {
+        "file": "convex/navigationCatalogue.ts",
+        "line": 63
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "search",
+    "category": "Navigation & common actions",
+    "english": "Search members",
+    "context": "Search field label, not a command to create a member.",
+    "options": [
+      {
+        "id": "a",
+        "text": "البحث عن عضو"
+      },
+      {
+        "id": "b",
+        "text": "ابحث عن مشترك"
+      },
+      {
+        "id": "c",
+        "text": "بحث الأعضاء"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 556
+      },
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 558
+      },
+      {
+        "file": "src/app/(app)/members/page.tsx",
+        "line": 98
+      },
+      {
+        "file": "src/app/(app)/memberships/page.tsx",
+        "line": 83
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "save",
+    "category": "Navigation & common actions",
+    "english": "Save changes",
+    "context": "Action button. Apply the button-style preference consistently later.",
+    "options": [
+      {
+        "id": "a",
+        "text": "حفظ التغييرات"
+      },
+      {
+        "id": "b",
+        "text": "احفظ التغييرات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+        "line": 143
+      },
+      {
+        "file": "src/features/operations/inventory-tab.tsx",
+        "line": 35
+      },
+      {
+        "file": "src/features/operations/purchasing-tabs.tsx",
+        "line": 33
+      },
+      {
+        "file": "src/features/plans/plan-form-dialog.tsx",
+        "line": 240
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "cancel",
+    "category": "Navigation & common actions",
+    "english": "Cancel",
+    "context": "Dismiss an unsaved form; distinguish from cancelling a subscription.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إلغاء"
+      },
+      {
+        "id": "b",
+        "text": "تراجع"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 42
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 44
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 71
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 72
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "remove",
+    "category": "Navigation & common actions",
+    "english": "Remove",
+    "context": "Remove an item from a sale before saving; no stored record is deleted.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إزالة"
+      },
+      {
+        "id": "b",
+        "text": "حذف من القائمة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 202
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 230
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 249
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 487
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "retry",
+    "category": "Navigation & common actions",
+    "english": "Try again",
+    "context": "Recovery action after a failed request.",
+    "options": [
+      {
+        "id": "a",
+        "text": "حاول مرة أخرى"
+      },
+      {
+        "id": "b",
+        "text": "إعادة المحاولة"
+      },
+      {
+        "id": "c",
+        "text": "جرّب مرة ثانية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 87
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 536
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 650
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 425
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "continue",
+    "category": "Navigation & common actions",
+    "english": "Continue",
+    "context": "Move to the next step in a form.",
+    "options": [
+      {
+        "id": "a",
+        "text": "متابعة"
+      },
+      {
+        "id": "b",
+        "text": "التالي"
+      },
+      {
+        "id": "c",
+        "text": "استمرار"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 181
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 261
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 311
+      },
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 114
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "back",
+    "category": "Navigation & common actions",
+    "english": "Back",
+    "context": "Return to the previous step without cancelling the entire task.",
+    "options": [
+      {
+        "id": "a",
+        "text": "رجوع"
+      },
+      {
+        "id": "b",
+        "text": "السابق"
+      },
+      {
+        "id": "c",
+        "text": "عودة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 308
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 331
+      },
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 74
+      },
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 169
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "all-branches",
+    "category": "Navigation & common actions",
+    "english": "All your branches",
+    "context": "Report scope restricted to branches the user may access.",
+    "options": [
+      {
+        "id": "a",
+        "text": "كل فروعك"
+      },
+      {
+        "id": "b",
+        "text": "جميع الفروع المتاحة لك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/reports/page.tsx",
+        "line": 125
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 607
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 205
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 371
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "empty-search",
+    "category": "Navigation & common actions",
+    "english": "No results",
+    "context": "Search returned no matching records, not a loading error.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لا توجد نتائج مطابقة."
+      },
+      {
+        "id": "b",
+        "text": "لم نعثر على نتائج لبحثك."
+      },
+      {
+        "id": "c",
+        "text": "ما في نتائج مطابقة."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "loading",
+    "category": "Navigation & common actions",
+    "english": "Loading…",
+    "context": "Short loading state; never implies the data is empty.",
+    "options": [
+      {
+        "id": "a",
+        "text": "جارٍ التحميل…"
+      },
+      {
+        "id": "b",
+        "text": "نحمّل البيانات…"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/finance/shift-dialogs.tsx",
+        "line": 244
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "renew",
+    "category": "Members & subscriptions",
+    "english": "Renew membership",
+    "context": "Extend a member's purchased subscription by buying another term.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تجديد الاشتراك"
+      },
+      {
+        "id": "b",
+        "text": "جدّد الاشتراك"
+      },
+      {
+        "id": "c",
+        "text": "تجديد العضوية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/membership-actions/sale-dialog.tsx",
+        "line": 290
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "freeze",
+    "category": "Members & subscriptions",
+    "english": "Freeze membership",
+    "context": "Temporarily pause membership under the gym's freeze rules.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تجميد الاشتراك"
+      },
+      {
+        "id": "b",
+        "text": "إيقاف الاشتراك مؤقتًا"
+      },
+      {
+        "id": "c",
+        "text": "تعليق الاشتراك مؤقتًا"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/members/member-header.tsx",
+        "line": 253
+      },
+      {
+        "file": "src/features/membership-actions/adjustment-dialogs.tsx",
+        "line": 182
+      },
+      {
+        "file": "src/lib/domain/permissions.ts",
+        "line": 56
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "unfreeze",
+    "category": "Members & subscriptions",
+    "english": "End freeze",
+    "context": "Resume access early; do not imply cancelling the membership.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إنهاء التجميد"
+      },
+      {
+        "id": "b",
+        "text": "استئناف الاشتراك"
+      },
+      {
+        "id": "c",
+        "text": "إعادة تفعيل الاشتراك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/members/member-header.tsx",
+        "line": 258
+      },
+      {
+        "file": "src/features/membership-actions/adjustment-dialogs.tsx",
+        "line": 402
+      },
+      {
+        "file": "src/features/membership-actions/adjustment-dialogs.tsx",
+        "line": 418
+      },
+      {
+        "file": "convex/followupAssist.ts",
+        "line": 563
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "extend",
+    "category": "Members & subscriptions",
+    "english": "Extend membership",
+    "context": "Add days to an existing subscription, distinct from selling a renewal.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تمديد الاشتراك"
+      },
+      {
+        "id": "b",
+        "text": "إضافة أيام للاشتراك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/members/member-header.tsx",
+        "line": 263
+      },
+      {
+        "file": "src/features/membership-actions/adjustment-dialogs.tsx",
+        "line": 270
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "change-plan",
+    "category": "Members & subscriptions",
+    "english": "Change plan",
+    "context": "Move to another membership product; may affect price and dates.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تغيير الباقة"
+      },
+      {
+        "id": "b",
+        "text": "تغيير خطة الاشتراك"
+      },
+      {
+        "id": "c",
+        "text": "تغيير نوع الاشتراك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/billing/gym-subscriptions.tsx",
+        "line": 66
+      },
+      {
+        "file": "src/features/members/member-header.tsx",
+        "line": 273
+      },
+      {
+        "file": "src/features/membership-actions/adjustment-dialogs.tsx",
+        "line": 507
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 10427
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "home-branch",
+    "category": "Members & subscriptions",
+    "english": "Home branch",
+    "context": "Member's primary branch, not every branch they can visit.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الفرع الأساسي"
+      },
+      {
+        "id": "b",
+        "text": "الفرع الرئيسي للعضو"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 444
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 445
+      },
+      {
+        "file": "src/app/(app)/members/duplicates/page.tsx",
+        "line": 21
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 230
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "transfer-member",
+    "category": "Members & subscriptions",
+    "english": "Transfer member",
+    "context": "Change a member's home branch.",
+    "options": [
+      {
+        "id": "a",
+        "text": "نقل العضو إلى فرع آخر"
+      },
+      {
+        "id": "b",
+        "text": "تغيير الفرع الأساسي"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "active",
+    "category": "Members & subscriptions",
+    "english": "Active",
+    "context": "Subscription status: currently valid.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ساري"
+      },
+      {
+        "id": "b",
+        "text": "فعّال"
+      },
+      {
+        "id": "c",
+        "text": "نشط"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 213
+      },
+      {
+        "file": "src/app/(app)/crm/pipeline/page.tsx",
+        "line": 316
+      },
+      {
+        "file": "src/app/(app)/members/page.tsx",
+        "line": 99
+      },
+      {
+        "file": "src/app/(app)/members/page.tsx",
+        "line": 99
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "expired",
+    "category": "Members & subscriptions",
+    "english": "Ended",
+    "context": "Subscription term has ended; do not conflate with cancellation.",
+    "options": [
+      {
+        "id": "a",
+        "text": "منتهي"
+      },
+      {
+        "id": "b",
+        "text": "انتهى الاشتراك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+        "line": 158
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 371
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 528
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 638
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "cancelled",
+    "category": "Members & subscriptions",
+    "english": "Cancelled",
+    "context": "Subscription deliberately cancelled before or at its end.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ملغي"
+      },
+      {
+        "id": "b",
+        "text": "تم إلغاؤه"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 42
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 44
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 71
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 72
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "frozen",
+    "category": "Members & subscriptions",
+    "english": "Frozen",
+    "context": "Subscription currently paused.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مجمّد"
+      },
+      {
+        "id": "b",
+        "text": "موقوف مؤقتًا"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 45
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 46
+      },
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 114
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 247
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "scheduled",
+    "category": "Members & subscriptions",
+    "english": "Starts later",
+    "context": "A purchased membership whose start date is still in the future.",
+    "options": [
+      {
+        "id": "a",
+        "text": "يبدأ لاحقًا"
+      },
+      {
+        "id": "b",
+        "text": "لم يبدأ بعد"
+      },
+      {
+        "id": "c",
+        "text": "اشتراك قادم"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "ends-tomorrow",
+    "category": "Members & subscriptions",
+    "english": "Your membership ends tomorrow",
+    "context": "Member-facing reminder.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ينتهي اشتراكك غدًا."
+      },
+      {
+        "id": "b",
+        "text": "اشتراكك بينتهي بكرا."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "remaining-visits",
+    "category": "Members & subscriptions",
+    "english": "Visits remaining",
+    "context": "Count of entries still available on a visit-based plan.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الزيارات المتبقية"
+      },
+      {
+        "id": "b",
+        "text": "الدخولات المتبقية"
+      },
+      {
+        "id": "c",
+        "text": "الرصيد المتبقي من الزيارات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 247
+      },
+      {
+        "file": "src/lib/domain/status.ts",
+        "line": 139
+      },
+      {
+        "file": "src/lib/imports/member-import.ts",
+        "line": 27
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 6486
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "unlimited",
+    "category": "Members & subscriptions",
+    "english": "Unlimited visits",
+    "context": "Plan has no visit-count limit; time/branch rules may still apply.",
+    "options": [
+      {
+        "id": "a",
+        "text": "زيارات غير محدودة"
+      },
+      {
+        "id": "b",
+        "text": "دخول غير محدود"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "freeze-allowance",
+    "category": "Members & subscriptions",
+    "english": "Freeze allowance",
+    "context": "Number of days allowed for temporary pauses.",
+    "options": [
+      {
+        "id": "a",
+        "text": "أيام التجميد المسموحة"
+      },
+      {
+        "id": "b",
+        "text": "رصيد أيام التجميد"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "freeze-request",
+    "category": "Members & subscriptions",
+    "english": "Request a freeze",
+    "context": "Member submits a request; it is not automatically approved.",
+    "options": [
+      {
+        "id": "a",
+        "text": "طلب تجميد الاشتراك"
+      },
+      {
+        "id": "b",
+        "text": "إرسال طلب إيقاف مؤقت"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+        "line": 855
+      },
+      {
+        "file": "src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+        "line": 860
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "freeze-pending",
+    "category": "Members & subscriptions",
+    "english": "Waiting for approval",
+    "context": "A submitted freeze request awaits a staff decision.",
+    "options": [
+      {
+        "id": "a",
+        "text": "بانتظار الموافقة"
+      },
+      {
+        "id": "b",
+        "text": "الطلب قيد المراجعة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 167
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 221
+      },
+      {
+        "file": "src/features/dashboard/manager-dashboard.tsx",
+        "line": 34
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 11296
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "reason",
+    "category": "Members & subscriptions",
+    "english": "Reason for this change",
+    "context": "Required explanation for an accountable staff action.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سبب التغيير"
+      },
+      {
+        "id": "b",
+        "text": "لماذا تريد إجراء هذا التغيير؟"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/billing/bill-gym-wizard.tsx",
+        "line": 202
+      },
+      {
+        "file": "src/app/platform/billing/gym-subscriptions.tsx",
+        "line": 85
+      },
+      {
+        "file": "src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+        "line": 226
+      },
+      {
+        "file": "src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+        "line": 245
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "member-timeline",
+    "category": "Members & subscriptions",
+    "english": "Member timeline",
+    "context": "Chronological record of payments, visits, calls and staff actions.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سجل العضو"
+      },
+      {
+        "id": "b",
+        "text": "التسلسل الزمني للعضو"
+      },
+      {
+        "id": "c",
+        "text": "تاريخ التعامل مع العضو"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "duplicate",
+    "category": "Members & subscriptions",
+    "english": "Possible duplicate",
+    "context": "Two records may belong to the same person; not a confirmed duplicate.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سجل قد يكون مكررًا"
+      },
+      {
+        "id": "b",
+        "text": "احتمال وجود سجل مكرر"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/duplicates/page.tsx",
+        "line": 24
+      },
+      {
+        "file": "src/app/(app)/members/duplicates/page.tsx",
+        "line": 44
+      },
+      {
+        "file": "src/app/(app)/members/duplicates/page.tsx",
+        "line": 48
+      },
+      {
+        "file": "src/app/(app)/members/duplicates/page.tsx",
+        "line": 56
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "merge",
+    "category": "Members & subscriptions",
+    "english": "Merge members",
+    "context": "Combine duplicate records while preserving their history.",
+    "options": [
+      {
+        "id": "a",
+        "text": "دمج سجلات الأعضاء"
+      },
+      {
+        "id": "b",
+        "text": "دمج السجلين"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "import",
+    "category": "Members & subscriptions",
+    "english": "Import members",
+    "context": "Bring member records in from a spreadsheet.",
+    "options": [
+      {
+        "id": "a",
+        "text": "استيراد الأعضاء"
+      },
+      {
+        "id": "b",
+        "text": "رفع قائمة الأعضاء"
+      },
+      {
+        "id": "c",
+        "text": "إضافة الأعضاء من ملف"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 221
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 225
+      },
+      {
+        "file": "src/app/(app)/members/page.tsx",
+        "line": 96
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 4455
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "map-columns",
+    "category": "Members & subscriptions",
+    "english": "Match columns",
+    "context": "Tell the importer which spreadsheet column means name, phone, etc.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مطابقة الأعمدة"
+      },
+      {
+        "id": "b",
+        "text": "تحديد محتوى كل عمود"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "import-skipped",
+    "category": "Members & subscriptions",
+    "english": "Rows skipped",
+    "context": "Rows were not imported, not deleted from the original file.",
+    "options": [
+      {
+        "id": "a",
+        "text": "صفوف لم تُستورد"
+      },
+      {
+        "id": "b",
+        "text": "صفوف تم تخطّيها"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "emergency-contact",
+    "category": "Members & subscriptions",
+    "english": "Emergency contact",
+    "context": "Person to contact in an emergency, not the member's own number.",
+    "options": [
+      {
+        "id": "a",
+        "text": "جهة الاتصال في حالات الطوارئ"
+      },
+      {
+        "id": "b",
+        "text": "شخص للتواصل عند الطوارئ"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 322
+      },
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 409
+      },
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 411
+      },
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 414
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "consent",
+    "category": "Members & subscriptions",
+    "english": "Consent to messages",
+    "context": "Permission to receive gym messages; avoid implying required consent.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الموافقة على تلقي الرسائل"
+      },
+      {
+        "id": "b",
+        "text": "السماح للنادي بإرسال رسائل"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "check-in",
+    "category": "Reception & access",
+    "english": "Check in",
+    "context": "Record a member entering the gym, not signing in to an account.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تسجيل الدخول للنادي"
+      },
+      {
+        "id": "b",
+        "text": "تسجيل الحضور"
+      },
+      {
+        "id": "c",
+        "text": "تسجيل الزيارة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 275
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 369
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 960
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 977
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "check-out",
+    "category": "Reception & access",
+    "english": "Check out",
+    "context": "Record a member leaving the gym, not paying for a sale.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تسجيل المغادرة"
+      },
+      {
+        "id": "b",
+        "text": "تسجيل الخروج من النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/checkout/checkout-workspace.tsx",
+        "line": 146
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "inside",
+    "category": "Reception & access",
+    "english": "Currently inside",
+    "context": "Members whose visit is still open.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الموجودون الآن"
+      },
+      {
+        "id": "b",
+        "text": "الأعضاء داخل النادي"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "allow-entry",
+    "category": "Reception & access",
+    "english": "Let in anyway",
+    "context": "Exceptional override of an entry block with a required reason.",
+    "options": [
+      {
+        "id": "a",
+        "text": "السماح بالدخول استثنائيًا"
+      },
+      {
+        "id": "b",
+        "text": "السماح بالدخول رغم المنع"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 52
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 419
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 801
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 970
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "entry-blocked",
+    "category": "Reception & access",
+    "english": "Entry blocked",
+    "context": "The member may not enter under current membership rules.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الدخول غير مسموح"
+      },
+      {
+        "id": "b",
+        "text": "الدخول موقوف"
+      },
+      {
+        "id": "c",
+        "text": "لا يمكن تسجيل الدخول"
+      }
+    ],
+    "sources": [
+      {
+        "file": "convex/domain.ts",
+        "line": 6500
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "already-inside",
+    "category": "Reception & access",
+    "english": "Already checked in",
+    "context": "A current entry exists; prevent duplicate check-in.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تم تسجيل دخول هذا العضو بالفعل."
+      },
+      {
+        "id": "b",
+        "text": "العضو موجود في النادي حاليًا."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 803
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 856
+      },
+      {
+        "file": "src/lib/domain/status.ts",
+        "line": 83
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 6471
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "no-valid-membership",
+    "category": "Reception & access",
+    "english": "No active membership",
+    "context": "A reason entry cannot be granted.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لا يوجد اشتراك ساري."
+      },
+      {
+        "id": "b",
+        "text": "لا يوجد اشتراك فعّال حاليًا."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 213
+      },
+      {
+        "file": "src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+        "line": 449
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 7457
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "wrong-branch",
+    "category": "Reception & access",
+    "english": "Membership does not include this branch",
+    "context": "Access limitation, not a missing account.",
+    "options": [
+      {
+        "id": "a",
+        "text": "هذا الفرع غير مشمول في الاشتراك."
+      },
+      {
+        "id": "b",
+        "text": "اشتراك العضو لا يتيح الدخول إلى هذا الفرع."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "no-visits",
+    "category": "Reception & access",
+    "english": "No visits remaining",
+    "context": "Visit-based subscription has been used up.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لا توجد زيارات متبقية."
+      },
+      {
+        "id": "b",
+        "text": "انتهى رصيد الزيارات."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/lib/domain/status.ts",
+        "line": 139
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 6486
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "qr-code",
+    "category": "Reception & access",
+    "english": "Show your QR code",
+    "context": "Member displays their code at reception.",
+    "options": [
+      {
+        "id": "a",
+        "text": "اعرض رمز QR عند الاستقبال."
+      },
+      {
+        "id": "b",
+        "text": "اعرض رمز الدخول عند الاستقبال."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "entry-history",
+    "category": "Reception & access",
+    "english": "Entry history",
+    "context": "Past gym visits, not authentication history.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سجل الزيارات"
+      },
+      {
+        "id": "b",
+        "text": "سجل الدخول للنادي"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "collect-payment",
+    "category": "Payments & cash",
+    "english": "Collect payment",
+    "context": "Staff records money received from a member.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تحصيل دفعة"
+      },
+      {
+        "id": "b",
+        "text": "تسجيل دفعة"
+      },
+      {
+        "id": "c",
+        "text": "استلام دفعة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 183
+      },
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 314
+      },
+      {
+        "file": "src/app/(app)/members/new/quick-membership-step.tsx",
+        "line": 152
+      },
+      {
+        "file": "src/app/(app)/members/new/quick-membership-step.tsx",
+        "line": 155
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "payment",
+    "category": "Payments & cash",
+    "english": "Payment",
+    "context": "An individual amount received, not an invoice.",
+    "options": [
+      {
+        "id": "a",
+        "text": "دفعة"
+      },
+      {
+        "id": "b",
+        "text": "عملية دفع"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 26
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 40
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 42
+      },
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 183
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "unpaid",
+    "category": "Payments & cash",
+    "english": "Unpaid amount",
+    "context": "Money still owed by the member.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المبلغ غير المدفوع"
+      },
+      {
+        "id": "b",
+        "text": "المبلغ المتبقي"
+      },
+      {
+        "id": "c",
+        "text": "المبلغ المستحق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 244
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 253
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 286
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 294
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "paid",
+    "category": "Payments & cash",
+    "english": "Paid",
+    "context": "An invoice or charge has been paid in full.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مدفوع"
+      },
+      {
+        "id": "b",
+        "text": "مسدّد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+        "line": 119
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 24
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 23
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 244
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "part-paid",
+    "category": "Payments & cash",
+    "english": "Partly paid",
+    "context": "Some money received, with a remaining balance.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مدفوع جزئيًا"
+      },
+      {
+        "id": "b",
+        "text": "مسدّد جزئيًا"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "cash",
+    "category": "Payments & cash",
+    "english": "Cash",
+    "context": "Payment method: physical cash.",
+    "options": [
+      {
+        "id": "a",
+        "text": "نقدًا"
+      },
+      {
+        "id": "b",
+        "text": "كاش"
+      },
+      {
+        "id": "c",
+        "text": "نقدي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 29
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 55
+      },
+      {
+        "file": "src/app/(app)/getting-started/page.tsx",
+        "line": 95
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 244
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "card",
+    "category": "Payments & cash",
+    "english": "Card",
+    "context": "Payment by bank card.",
+    "options": [
+      {
+        "id": "a",
+        "text": "بطاقة بنكية"
+      },
+      {
+        "id": "b",
+        "text": "بطاقة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/new/quick-membership-step.tsx",
+        "line": 94
+      },
+      {
+        "file": "src/app/(app)/members/new/quick-membership-step.tsx",
+        "line": 179
+      },
+      {
+        "file": "src/app/(app)/payments/receipts/[receiptId]/receipt.client.tsx",
+        "line": 63
+      },
+      {
+        "file": "src/app/(app)/payments/shifts/page.tsx",
+        "line": 195
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "bank-transfer",
+    "category": "Payments & cash",
+    "english": "Bank transfer",
+    "context": "Transfer between bank accounts.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تحويل بنكي"
+      },
+      {
+        "id": "b",
+        "text": "حوالة بنكية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/new/quick-membership-step.tsx",
+        "line": 179
+      },
+      {
+        "file": "src/app/(app)/reception/page.tsx",
+        "line": 943
+      },
+      {
+        "file": "src/app/platform/billing/page.tsx",
+        "line": 303
+      },
+      {
+        "file": "src/app/platform/billing/page.tsx",
+        "line": 303
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "reference",
+    "category": "Payments & cash",
+    "english": "Reference number",
+    "context": "Bank/payment reference; preserve the actual value unchanged.",
+    "options": [
+      {
+        "id": "a",
+        "text": "رقم المرجع"
+      },
+      {
+        "id": "b",
+        "text": "رقم العملية"
+      },
+      {
+        "id": "c",
+        "text": "رقم التحويل"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/new/quick-membership-step.tsx",
+        "line": 94
+      },
+      {
+        "file": "src/app/(app)/members/new/quick-membership-step.tsx",
+        "line": 179
+      },
+      {
+        "file": "src/app/(app)/members/new/quick-membership-step.tsx",
+        "line": 179
+      },
+      {
+        "file": "src/features/checkout/checkout-model.ts",
+        "line": 88
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "receipt",
+    "category": "Payments & cash",
+    "english": "Receipt",
+    "context": "Proof of money received; distinguish from invoice.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إيصال"
+      },
+      {
+        "id": "b",
+        "text": "سند قبض"
+      },
+      {
+        "id": "c",
+        "text": "وصل دفع"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 23
+      },
+      {
+        "file": "src/app/(app)/getting-started/page.tsx",
+        "line": 79
+      },
+      {
+        "file": "src/app/(app)/getting-started/page.tsx",
+        "line": 80
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 244
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "invoice",
+    "category": "Payments & cash",
+    "english": "Invoice",
+    "context": "Document showing an amount charged, possibly not paid.",
+    "options": [
+      {
+        "id": "a",
+        "text": "فاتورة"
+      },
+      {
+        "id": "b",
+        "text": "فاتورة مستحقة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/login/login-chrome.tsx",
+        "line": 36
+      },
+      {
+        "file": "src/app/platform/billing/bill-gym-wizard.tsx",
+        "line": 109
+      },
+      {
+        "file": "src/app/platform/billing/bill-gym-wizard.tsx",
+        "line": 117
+      },
+      {
+        "file": "src/app/platform/billing/gym-subscriptions.tsx",
+        "line": 82
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "refund",
+    "category": "Payments & cash",
+    "english": "Refund",
+    "context": "Return money to the member.",
+    "options": [
+      {
+        "id": "a",
+        "text": "رد المبلغ"
+      },
+      {
+        "id": "b",
+        "text": "استرداد المبلغ"
+      },
+      {
+        "id": "c",
+        "text": "إرجاع المبلغ"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 41
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 73
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 131
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 23
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "void-payment",
+    "category": "Payments & cash",
+    "english": "Void payment",
+    "context": "Invalidate an incorrect payment record; does not itself send money back.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إلغاء تسجيل الدفعة"
+      },
+      {
+        "id": "b",
+        "text": "إبطال الدفعة المسجّلة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/lib/domain/permissions.ts",
+        "line": 61
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "refund-warning",
+    "category": "Payments & cash",
+    "english": "This records a refund; return the money separately",
+    "context": "Meaning example: recording does not execute a bank/card refund.",
+    "options": [
+      {
+        "id": "a",
+        "text": "هذا الإجراء يسجّل رد المبلغ فقط. أعد المال للعضو بشكل منفصل."
+      },
+      {
+        "id": "b",
+        "text": "سيُسجَّل المبلغ كمردود. يجب إعادة المال للعضو خارج النظام."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "discount",
+    "category": "Payments & cash",
+    "english": "Discount",
+    "context": "A reduction in the amount charged.",
+    "options": [
+      {
+        "id": "a",
+        "text": "خصم"
+      },
+      {
+        "id": "b",
+        "text": "تخفيض"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 47
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 131
+      },
+      {
+        "file": "src/app/(app)/getting-started/page.tsx",
+        "line": 95
+      },
+      {
+        "file": "src/app/(app)/payments/receipts/[receiptId]/receipt.client.tsx",
+        "line": 170
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "price-override",
+    "category": "Payments & cash",
+    "english": "Change the price",
+    "context": "Staff changes the standard price and must state why.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تعديل السعر"
+      },
+      {
+        "id": "b",
+        "text": "تغيير السعر المحدد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/membership-actions/sale-dialog.tsx",
+        "line": 336
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "payment-saved",
+    "category": "Payments & cash",
+    "english": "Payment saved",
+    "context": "Success after the server confirms the payment record.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تم تسجيل الدفعة."
+      },
+      {
+        "id": "b",
+        "text": "تم حفظ الدفعة."
+      },
+      {
+        "id": "c",
+        "text": "سجّلنا الدفعة."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/membership-actions/payment-dialog.tsx",
+        "line": 176
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "open-shift",
+    "category": "Payments & cash",
+    "english": "Open cash shift",
+    "context": "Start a cash drawer accounting period, not necessarily a staff work shift.",
+    "options": [
+      {
+        "id": "a",
+        "text": "فتح وردية الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "بدء فترة الصندوق"
+      },
+      {
+        "id": "c",
+        "text": "فتح الصندوق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/finance/shift-dialogs.tsx",
+        "line": 84
+      },
+      {
+        "file": "src/features/operations/payables/record-supplier-payment-dialog.tsx",
+        "line": 170
+      },
+      {
+        "file": "src/features/operations/payables/record-supplier-payment-dialog.tsx",
+        "line": 172
+      },
+      {
+        "file": "src/lib/domain/permissions.ts",
+        "line": 62
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "close-shift",
+    "category": "Payments & cash",
+    "english": "Close cash shift",
+    "context": "Count and close the cash drawer accounting period.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إغلاق وردية الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "إنهاء فترة الصندوق"
+      },
+      {
+        "id": "c",
+        "text": "إغلاق الصندوق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/lib/domain/permissions.ts",
+        "line": 63
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "opening-cash",
+    "category": "Payments & cash",
+    "english": "Opening cash",
+    "context": "Physical money in the drawer at the start.",
+    "options": [
+      {
+        "id": "a",
+        "text": "النقد عند فتح الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "رصيد بداية الصندوق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/reports/ledger-tutorial.tsx",
+        "line": 245
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 284
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 288
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "expected-cash",
+    "category": "Payments & cash",
+    "english": "Expected cash",
+    "context": "Calculated physical cash based on recorded movements.",
+    "options": [
+      {
+        "id": "a",
+        "text": "النقد المتوقع في الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "رصيد الصندوق المتوقع"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "counted-cash",
+    "category": "Payments & cash",
+    "english": "Counted cash",
+    "context": "Physical amount counted by staff.",
+    "options": [
+      {
+        "id": "a",
+        "text": "النقد الذي تم عدّه"
+      },
+      {
+        "id": "b",
+        "text": "المبلغ الموجود فعليًا في الصندوق"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "cash-difference",
+    "category": "Payments & cash",
+    "english": "Cash difference",
+    "context": "Difference between expected and physically counted cash.",
+    "options": [
+      {
+        "id": "a",
+        "text": "فرق الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "فرق النقد"
+      },
+      {
+        "id": "c",
+        "text": "الفرق في المبلغ النقدي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 55
+      },
+      {
+        "file": "src/app/(app)/getting-started/page.tsx",
+        "line": 95
+      },
+      {
+        "file": "src/app/(app)/payments/shifts/page.tsx",
+        "line": 78
+      },
+      {
+        "file": "src/app/(app)/payments/shifts/page.tsx",
+        "line": 78
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "cash-short",
+    "category": "Payments & cash",
+    "english": "Cash short",
+    "context": "Drawer contains less cash than expected.",
+    "options": [
+      {
+        "id": "a",
+        "text": "نقص في الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "عجز نقدي"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "cash-over",
+    "category": "Payments & cash",
+    "english": "Cash over",
+    "context": "Drawer contains more cash than expected.",
+    "options": [
+      {
+        "id": "a",
+        "text": "زيادة في الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "فائض نقدي"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "approve-difference",
+    "category": "Payments & cash",
+    "english": "Approve cash differences",
+    "context": "Staff permission; approval documents a variance, not erasing it.",
+    "options": [
+      {
+        "id": "a",
+        "text": "اعتماد فروقات الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "الموافقة على فروقات النقد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/lib/domain/permissions.ts",
+        "line": 64
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "cash-in",
+    "category": "Payments & cash",
+    "english": "Cash in",
+    "context": "Add physical money to a drawer outside a member payment.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إضافة نقد للصندوق"
+      },
+      {
+        "id": "b",
+        "text": "إيداع في الصندوق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/login/login-chrome.tsx",
+        "line": 16
+      },
+      {
+        "file": "src/app/login/login-chrome.tsx",
+        "line": 26
+      },
+      {
+        "file": "src/components/marketing/landing-story.tsx",
+        "line": 64
+      },
+      {
+        "file": "src/features/dashboard/reception-dashboard.tsx",
+        "line": 43
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "cash-out",
+    "category": "Payments & cash",
+    "english": "Cash out",
+    "context": "Remove physical money with a documented reason.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سحب نقد من الصندوق"
+      },
+      {
+        "id": "b",
+        "text": "صرف من الصندوق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 285
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "end-of-day",
+    "category": "Payments & cash",
+    "english": "End-of-day cash count",
+    "context": "Physical closing count and comparison.",
+    "options": [
+      {
+        "id": "a",
+        "text": "جرد الصندوق في نهاية اليوم"
+      },
+      {
+        "id": "b",
+        "text": "عدّ النقد في نهاية اليوم"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/payments/shifts/page.tsx",
+        "line": 205
+      },
+      {
+        "file": "src/app/(app)/payments/shifts/page.tsx",
+        "line": 211
+      },
+      {
+        "file": "src/lib/domain/permissions.ts",
+        "line": 65
+      },
+      {
+        "file": "convex/workspaceModules.ts",
+        "line": 62
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "lead",
+    "category": "Sales & follow-ups",
+    "english": "Lead",
+    "context": "A person interested in joining who has not yet become a member.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مهتم بالاشتراك"
+      },
+      {
+        "id": "b",
+        "text": "عميل محتمل"
+      },
+      {
+        "id": "c",
+        "text": "استفسار جديد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 28
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 63
+      },
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 64
+      },
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+        "line": 321
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "pipeline",
+    "category": "Sales & follow-ups",
+    "english": "Sales pipeline",
+    "context": "Stages from initial interest to joining.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مراحل البيع"
+      },
+      {
+        "id": "b",
+        "text": "متابعة المهتمين"
+      },
+      {
+        "id": "c",
+        "text": "مسار المبيعات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/layout.tsx",
+        "line": 62
+      },
+      {
+        "file": "convex/navigationCatalogue.ts",
+        "line": 49
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "follow-up",
+    "category": "Sales & follow-ups",
+    "english": "Follow-up",
+    "context": "A call, message or task to continue a conversation.",
+    "options": [
+      {
+        "id": "a",
+        "text": "متابعة"
+      },
+      {
+        "id": "b",
+        "text": "تواصل لاحق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 215
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 267
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 285
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 304
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "assigned-to",
+    "category": "Sales & follow-ups",
+    "english": "Assigned to",
+    "context": "Staff member responsible for a lead or task.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المسؤول"
+      },
+      {
+        "id": "b",
+        "text": "مسند إلى"
+      },
+      {
+        "id": "c",
+        "text": "الموظف المسؤول"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 249
+      },
+      {
+        "file": "src/app/platform/support/page.tsx",
+        "line": 126
+      },
+      {
+        "file": "src/components/marketing/product-screens.tsx",
+        "line": 120
+      },
+      {
+        "file": "src/features/crm/new-lead-dialog.tsx",
+        "line": 143
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "walk-in",
+    "category": "Sales & follow-ups",
+    "english": "Walk-in",
+    "context": "Someone enquires in person without a booked visit.",
+    "options": [
+      {
+        "id": "a",
+        "text": "زيارة مباشرة"
+      },
+      {
+        "id": "b",
+        "text": "زيارة دون موعد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/payments/receipts/[receiptId]/receipt.client.tsx",
+        "line": 60
+      },
+      {
+        "file": "src/app/(app)/payments/receipts/[receiptId]/receipt.client.tsx",
+        "line": 145
+      },
+      {
+        "file": "src/components/marketing/landing-story.tsx",
+        "line": 11
+      },
+      {
+        "file": "src/components/marketing/landing-story.tsx",
+        "line": 51
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "trial",
+    "category": "Sales & follow-ups",
+    "english": "Trial visit",
+    "context": "Prospect tries the gym before buying.",
+    "options": [
+      {
+        "id": "a",
+        "text": "زيارة تجريبية"
+      },
+      {
+        "id": "b",
+        "text": "تجربة النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/legal/privacy-policy.tsx",
+        "line": 25
+      },
+      {
+        "file": "src/features/legal/terms-of-service.tsx",
+        "line": 23
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "no-answer",
+    "category": "Sales & follow-ups",
+    "english": "No answer",
+    "context": "Outcome of a phone call.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لم يرد"
+      },
+      {
+        "id": "b",
+        "text": "لا يوجد رد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/pipeline/page.tsx",
+        "line": 37
+      },
+      {
+        "file": "src/app/(app)/crm/pipeline/page.tsx",
+        "line": 398
+      },
+      {
+        "file": "src/app/(app)/crm/pipeline/page.tsx",
+        "line": 399
+      },
+      {
+        "file": "src/app/(app)/crm/pipeline/page.tsx",
+        "line": 460
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "not-interested",
+    "category": "Sales & follow-ups",
+    "english": "Not interested",
+    "context": "Prospect explicitly declines, not merely unreachable.",
+    "options": [
+      {
+        "id": "a",
+        "text": "غير مهتم"
+      },
+      {
+        "id": "b",
+        "text": "لا يرغب بالاشتراك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 322
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 322
+      },
+      {
+        "file": "src/lib/crm/contact-outcomes.ts",
+        "line": 29
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "lost-lead",
+    "category": "Sales & follow-ups",
+    "english": "Lost lead",
+    "context": "Opportunity closed without a sale.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لم يشترك"
+      },
+      {
+        "id": "b",
+        "text": "فرصة لم تكتمل"
+      },
+      {
+        "id": "c",
+        "text": "فرصة بيع مفقودة"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "converted",
+    "category": "Sales & follow-ups",
+    "english": "Became a member",
+    "context": "A lead completed the membership purchase.",
+    "options": [
+      {
+        "id": "a",
+        "text": "أصبح عضوًا"
+      },
+      {
+        "id": "b",
+        "text": "تم الاشتراك"
+      },
+      {
+        "id": "c",
+        "text": "تحوّل إلى مشترك"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "retention",
+    "category": "Sales & follow-ups",
+    "english": "Retention",
+    "context": "Work to keep existing members renewing and attending.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الحفاظ على الأعضاء"
+      },
+      {
+        "id": "b",
+        "text": "متابعة التجديد"
+      },
+      {
+        "id": "c",
+        "text": "استمرارية الاشتراكات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/legal/privacy-policy.tsx",
+        "line": 88
+      },
+      {
+        "file": "src/features/settings/settings-page-inner.tsx",
+        "line": 93
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 9807
+      },
+      {
+        "file": "convex/navigationCatalogue.ts",
+        "line": 76
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "at-risk",
+    "category": "Sales & follow-ups",
+    "english": "At risk of leaving",
+    "context": "A prediction or signal, not a confirmed cancellation.",
+    "options": [
+      {
+        "id": "a",
+        "text": "قد لا يجدّد اشتراكه"
+      },
+      {
+        "id": "b",
+        "text": "معرّض للتوقف عن الاشتراك"
+      },
+      {
+        "id": "c",
+        "text": "يحتاج إلى متابعة"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "inactive-member",
+    "category": "Sales & follow-ups",
+    "english": "Has not visited recently",
+    "context": "Absence signal; account may still be active.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لم يزر النادي مؤخرًا"
+      },
+      {
+        "id": "b",
+        "text": "منقطع عن الحضور مؤخرًا"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "followup-due",
+    "category": "Sales & follow-ups",
+    "english": "Follow-up due today",
+    "context": "Task should be done today.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المتابعة اليوم"
+      },
+      {
+        "id": "b",
+        "text": "موعد المتابعة اليوم"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "whatsapp",
+    "category": "Sales & follow-ups",
+    "english": "Open WhatsApp",
+    "context": "Launches WhatsApp for a person to send; the system has not sent it.",
+    "options": [
+      {
+        "id": "a",
+        "text": "فتح واتساب"
+      },
+      {
+        "id": "b",
+        "text": "التواصل عبر واتساب"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/crm/offer-work-panel.tsx",
+        "line": 137
+      },
+      {
+        "file": "src/features/crm/whatsapp-handoff.tsx",
+        "line": 164
+      },
+      {
+        "file": "src/features/crm/whatsapp-handoff.tsx",
+        "line": 174
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "message-draft",
+    "category": "Sales & follow-ups",
+    "english": "Message draft",
+    "context": "Prepared text not yet sent.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مسودة رسالة"
+      },
+      {
+        "id": "b",
+        "text": "رسالة جاهزة للمراجعة"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "sent",
+    "category": "Sales & follow-ups",
+    "english": "Sent",
+    "context": "Delivery provider accepted the outgoing message; not proof of reading.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تم الإرسال"
+      },
+      {
+        "id": "b",
+        "text": "أُرسلت الرسالة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+        "line": 276
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 533
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 637
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 473
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "message-failed",
+    "category": "Sales & follow-ups",
+    "english": "Message could not be sent",
+    "context": "Failure message with a clear recovery action.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تعذّر إرسال الرسالة. حاول مرة أخرى."
+      },
+      {
+        "id": "b",
+        "text": "لم تُرسل الرسالة. أعد المحاولة."
+      }
+    ],
+    "sources": [
+      {
+        "file": "convex/messagingWorker.ts",
+        "line": 266
+      },
+      {
+        "file": "convex/messagingWorker.ts",
+        "line": 266
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "offer",
+    "category": "Sales & follow-ups",
+    "english": "Offer",
+    "context": "Specific proposed membership price and terms sent to a prospect.",
+    "options": [
+      {
+        "id": "a",
+        "text": "عرض"
+      },
+      {
+        "id": "b",
+        "text": "عرض اشتراك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 424
+      },
+      {
+        "file": "src/app/offers/[token]/page.tsx",
+        "line": 7
+      },
+      {
+        "file": "src/app/offers/[token]/public-offer.client.tsx",
+        "line": 43
+      },
+      {
+        "file": "src/app/offers/[token]/public-offer.client.tsx",
+        "line": 44
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "class",
+    "category": "Classes & personal training",
+    "english": "Class",
+    "context": "A group exercise session, not an academic class.",
+    "options": [
+      {
+        "id": "a",
+        "text": "حصة جماعية"
+      },
+      {
+        "id": "b",
+        "text": "حصة تدريبية"
+      },
+      {
+        "id": "c",
+        "text": "كلاس"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 71
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 174
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 197
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 202
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "book-class",
+    "category": "Classes & personal training",
+    "english": "Book a class",
+    "context": "Member reserves a place in a group session.",
+    "options": [
+      {
+        "id": "a",
+        "text": "حجز حصة"
+      },
+      {
+        "id": "b",
+        "text": "احجز حصة"
+      },
+      {
+        "id": "c",
+        "text": "حجز كلاس"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "session",
+    "category": "Classes & personal training",
+    "english": "PT session",
+    "context": "One personal-training appointment; distinct from group class.",
+    "options": [
+      {
+        "id": "a",
+        "text": "جلسة تدريب شخصي"
+      },
+      {
+        "id": "b",
+        "text": "حصة تدريب شخصي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 72
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 440
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 502
+      },
+      {
+        "file": "src/app/(app)/plans/page.tsx",
+        "line": 128
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "trainer",
+    "category": "Classes & personal training",
+    "english": "Trainer",
+    "context": "Gym professional assigned to personal training.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مدرّب"
+      },
+      {
+        "id": "b",
+        "text": "مدرّب شخصي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 38
+      },
+      {
+        "file": "src/app/(app)/members/[memberId]/member-detail.client.tsx",
+        "line": 133
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 88
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 88
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "package",
+    "category": "Classes & personal training",
+    "english": "PT package",
+    "context": "Bundle of prepaid personal-training sessions.",
+    "options": [
+      {
+        "id": "a",
+        "text": "باقة تدريب شخصي"
+      },
+      {
+        "id": "b",
+        "text": "حزمة جلسات تدريب"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 73
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 25
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 93
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 112
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "credits",
+    "category": "Classes & personal training",
+    "english": "Session credits",
+    "context": "Prepaid session allowance, not money or credit score.",
+    "options": [
+      {
+        "id": "a",
+        "text": "رصيد الجلسات"
+      },
+      {
+        "id": "b",
+        "text": "الجلسات المتاحة"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "no-show",
+    "category": "Classes & personal training",
+    "english": "No-show",
+    "context": "Person did not attend a booking without cancelling.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لم يحضر"
+      },
+      {
+        "id": "b",
+        "text": "غياب عن الموعد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 533
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 563
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 105
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 209
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "waitlist",
+    "category": "Classes & personal training",
+    "english": "Waitlist",
+    "context": "Member queue for a place when a class is full.",
+    "options": [
+      {
+        "id": "a",
+        "text": "قائمة الانتظار"
+      },
+      {
+        "id": "b",
+        "text": "انتظار مكان شاغر"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 220
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 230
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 528
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 533
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "class-full",
+    "category": "Classes & personal training",
+    "english": "Class is full",
+    "context": "No remaining places in this class occurrence.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الحصة مكتملة العدد."
+      },
+      {
+        "id": "b",
+        "text": "لا توجد أماكن متاحة في هذه الحصة."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 220
+      },
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 536
+      },
+      {
+        "file": "convex/classes.ts",
+        "line": 482
+      },
+      {
+        "file": "convex/classes.ts",
+        "line": 751
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "spots",
+    "category": "Classes & personal training",
+    "english": "Spots remaining",
+    "context": "Capacity in a class.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الأماكن المتبقية"
+      },
+      {
+        "id": "b",
+        "text": "المقاعد المتاحة"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "cancel-booking",
+    "category": "Classes & personal training",
+    "english": "Cancel booking",
+    "context": "Cancel one reservation, not the entire scheduled class.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إلغاء الحجز"
+      },
+      {
+        "id": "b",
+        "text": "إلغاء حجزك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+        "line": 392
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "cancel-class",
+    "category": "Classes & personal training",
+    "english": "Cancel this class",
+    "context": "Staff cancels this occurrence for everyone.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إلغاء هذه الحصة"
+      },
+      {
+        "id": "b",
+        "text": "إلغاء موعد الحصة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/classes/cancel-occurrence-dialog.tsx",
+        "line": 19
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "return-credit",
+    "category": "Classes & personal training",
+    "english": "Return session credit",
+    "context": "Restore a session allowance after eligible cancellation.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إعادة الجلسة إلى الرصيد"
+      },
+      {
+        "id": "b",
+        "text": "استعادة رصيد الجلسة"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "mark-complete",
+    "category": "Classes & personal training",
+    "english": "Mark as completed",
+    "context": "Staff confirms a session actually happened.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تسجيل الجلسة كمكتملة"
+      },
+      {
+        "id": "b",
+        "text": "تأكيد إتمام الجلسة"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "availability",
+    "category": "Classes & personal training",
+    "english": "Availability",
+    "context": "Hours during which a trainer can accept bookings.",
+    "options": [
+      {
+        "id": "a",
+        "text": "أوقات التفرغ"
+      },
+      {
+        "id": "b",
+        "text": "المواعيد المتاحة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 117
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 230
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 231
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 231
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "trainer-timeoff",
+    "category": "Classes & personal training",
+    "english": "Time off",
+    "context": "Trainer unavailable for a period; not a member freeze.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إجازة"
+      },
+      {
+        "id": "b",
+        "text": "فترة عدم تفرغ"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 230
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 231
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 231
+      },
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 231
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "recurring",
+    "category": "Classes & personal training",
+    "english": "Repeats weekly",
+    "context": "Schedule recurrence; cancellation rules differ for one/all occurrences.",
+    "options": [
+      {
+        "id": "a",
+        "text": "يتكرر أسبوعيًا"
+      },
+      {
+        "id": "b",
+        "text": "موعد أسبوعي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/classes/page.tsx",
+        "line": 364
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "stock",
+    "category": "Stock & purchasing",
+    "english": "Stock",
+    "context": "Goods held for sale/use; distinct from cash and equipment assets.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المخزون"
+      },
+      {
+        "id": "b",
+        "text": "البضاعة المتوفرة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 31
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 26
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 26
+      },
+      {
+        "file": "src/app/(app)/payments/receipts/[receiptId]/receipt.client.tsx",
+        "line": 274
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "checkout",
+    "category": "Stock & purchasing",
+    "english": "Checkout",
+    "context": "Staff sells products at the desk; distinguish from member exit.",
+    "options": [
+      {
+        "id": "a",
+        "text": "نقطة البيع"
+      },
+      {
+        "id": "b",
+        "text": "إتمام البيع"
+      },
+      {
+        "id": "c",
+        "text": "المبيعات المباشرة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/marketing/product-screens.tsx",
+        "line": 68
+      },
+      {
+        "file": "src/components/shell/nav-config.ts",
+        "line": 48
+      },
+      {
+        "file": "src/components/shell/workspace-recent-tracker.tsx",
+        "line": 18
+      },
+      {
+        "file": "src/features/checkout/checkout-model.ts",
+        "line": 88
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "supplier",
+    "category": "Stock & purchasing",
+    "english": "Supplier",
+    "context": "Business or person supplying goods or paid repairs.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مورّد"
+      },
+      {
+        "id": "b",
+        "text": "جهة التوريد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 26
+      },
+      {
+        "file": "src/app/(app)/exports/export-center.client.tsx",
+        "line": 26
+      },
+      {
+        "file": "src/components/shell/workspace-recent-tracker.tsx",
+        "line": 19
+      },
+      {
+        "file": "src/features/checkout/checkout-workspace.tsx",
+        "line": 117
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "supplier-bills",
+    "category": "Stock & purchasing",
+    "english": "Supplier bills",
+    "context": "Amounts invoiced by suppliers to the gym.",
+    "options": [
+      {
+        "id": "a",
+        "text": "فواتير المورّدين"
+      },
+      {
+        "id": "b",
+        "text": "مستحقات المورّدين"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/shell/workspace-recent-tracker.tsx",
+        "line": 19
+      },
+      {
+        "file": "src/features/operations/payables/payables-export.ts",
+        "line": 18
+      },
+      {
+        "file": "src/features/operations/payables/payables-workspace.tsx",
+        "line": 123
+      },
+      {
+        "file": "src/features/operations/payables/payables-workspace.tsx",
+        "line": 156
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "purchase-order",
+    "category": "Stock & purchasing",
+    "english": "Purchase order",
+    "context": "Order sent to supplier before goods are received.",
+    "options": [
+      {
+        "id": "a",
+        "text": "طلب شراء"
+      },
+      {
+        "id": "b",
+        "text": "أمر شراء"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/checkout/checkout-workspace.tsx",
+        "line": 117
+      },
+      {
+        "file": "src/features/operations/operations-shared.tsx",
+        "line": 182
+      },
+      {
+        "file": "src/features/operations/operations-shared.tsx",
+        "line": 183
+      },
+      {
+        "file": "src/features/operations/purchasing-tabs.tsx",
+        "line": 43
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "receive-stock",
+    "category": "Stock & purchasing",
+    "english": "Receive stock",
+    "context": "Confirm goods actually arrived.",
+    "options": [
+      {
+        "id": "a",
+        "text": "استلام البضاعة"
+      },
+      {
+        "id": "b",
+        "text": "تسجيل استلام المخزون"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/operations/purchasing-tabs.tsx",
+        "line": 61
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "partial-delivery",
+    "category": "Stock & purchasing",
+    "english": "Partly received",
+    "context": "Only some ordered goods arrived.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تم الاستلام جزئيًا"
+      },
+      {
+        "id": "b",
+        "text": "استُلم جزء من الطلب"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "low-stock",
+    "category": "Stock & purchasing",
+    "english": "Low stock",
+    "context": "Stock below configured threshold.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المخزون منخفض"
+      },
+      {
+        "id": "b",
+        "text": "الكمية قاربت على النفاد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/operations/inventory-tab.tsx",
+        "line": 33
+      },
+      {
+        "file": "src/features/operations/inventory-tab.tsx",
+        "line": 112
+      },
+      {
+        "file": "src/features/operations/inventory-tab.tsx",
+        "line": 115
+      },
+      {
+        "file": "src/features/operations/inventory-tab.tsx",
+        "line": 115
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "out-of-stock",
+    "category": "Stock & purchasing",
+    "english": "Out of stock",
+    "context": "No sellable units remain.",
+    "options": [
+      {
+        "id": "a",
+        "text": "نفد المخزون"
+      },
+      {
+        "id": "b",
+        "text": "غير متوفر حاليًا"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/checkout/checkout-model.ts",
+        "line": 53
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "stock-adjustment",
+    "category": "Stock & purchasing",
+    "english": "Adjust stock",
+    "context": "Correct a counted quantity with a reason.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تعديل كمية المخزون"
+      },
+      {
+        "id": "b",
+        "text": "تصحيح رصيد المخزون"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "stock-transfer",
+    "category": "Stock & purchasing",
+    "english": "Transfer stock",
+    "context": "Move goods from one branch to another.",
+    "options": [
+      {
+        "id": "a",
+        "text": "نقل المخزون"
+      },
+      {
+        "id": "b",
+        "text": "تحويل بضاعة بين الفروع"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "in-transit",
+    "category": "Stock & purchasing",
+    "english": "In transit",
+    "context": "Goods left one branch and have not been received by the other.",
+    "options": [
+      {
+        "id": "a",
+        "text": "قيد النقل"
+      },
+      {
+        "id": "b",
+        "text": "في الطريق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/legal/privacy-policy.tsx",
+        "line": 152
+      },
+      {
+        "file": "src/features/legal/terms-of-service.tsx",
+        "line": 113
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "unit-cost",
+    "category": "Stock & purchasing",
+    "english": "Unit cost",
+    "context": "Cost to the gym, distinct from the selling price.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تكلفة الوحدة"
+      },
+      {
+        "id": "b",
+        "text": "تكلفة القطعة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/operations/purchasing-tabs.tsx",
+        "line": 49
+      },
+      {
+        "file": "src/features/reports/ledger-tutorial.tsx",
+        "line": 84
+      },
+      {
+        "file": "convex/accounting.ts",
+        "line": 1104
+      },
+      {
+        "file": "convex/operations.ts",
+        "line": 751
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "selling-price",
+    "category": "Stock & purchasing",
+    "english": "Selling price",
+    "context": "Amount charged to the buyer.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سعر البيع"
+      },
+      {
+        "id": "b",
+        "text": "سعر القطعة للعميل"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/checkout/checkout-model.ts",
+        "line": 52
+      },
+      {
+        "file": "src/features/checkout/checkout-model.ts",
+        "line": 84
+      },
+      {
+        "file": "src/features/checkout/product-picker.tsx",
+        "line": 79
+      },
+      {
+        "file": "src/features/operations/inventory-tab.tsx",
+        "line": 27
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "supplier-payment",
+    "category": "Stock & purchasing",
+    "english": "Record supplier payment",
+    "context": "Record money the gym paid out to a supplier.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تسجيل دفعة للمورّد"
+      },
+      {
+        "id": "b",
+        "text": "تسجيل سداد للمورّد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/operations/payables/record-supplier-payment-dialog.tsx",
+        "line": 131
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "reverse-supplier",
+    "category": "Stock & purchasing",
+    "english": "Reverse supplier payment",
+    "context": "Undo the accounting effect of an incorrect payment with a recorded reason.",
+    "options": [
+      {
+        "id": "a",
+        "text": "عكس دفعة المورّد"
+      },
+      {
+        "id": "b",
+        "text": "إلغاء تسجيل دفعة المورّد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/operations/payables/supplier-payment-history-dialog.tsx",
+        "line": 41
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "supplier-missing",
+    "category": "Stock & purchasing",
+    "english": "No supplier recorded",
+    "context": "A bill/repair cannot be linked to a known supplier yet.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لم يُسجَّل مورّد."
+      },
+      {
+        "id": "b",
+        "text": "لا يوجد مورّد محدد لهذا السجل."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "machine",
+    "category": "Repairs & daily work",
+    "english": "Machine",
+    "context": "Gym equipment being maintained.",
+    "options": [
+      {
+        "id": "a",
+        "text": "جهاز"
+      },
+      {
+        "id": "b",
+        "text": "جهاز رياضي"
+      },
+      {
+        "id": "c",
+        "text": "معدّة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/marketing/rivet-loop-machine.tsx",
+        "line": 148
+      },
+      {
+        "file": "src/components/marketing/rivet-loop-machine.tsx",
+        "line": 151
+      },
+      {
+        "file": "src/features/branch-ops/repair-history.tsx",
+        "line": 22
+      },
+      {
+        "file": "src/features/branch-ops/repair-history.tsx",
+        "line": 35
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "repair",
+    "category": "Repairs & daily work",
+    "english": "Repair job",
+    "context": "Work to fix a broken machine.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مهمة إصلاح"
+      },
+      {
+        "id": "b",
+        "text": "طلب إصلاح"
+      },
+      {
+        "id": "c",
+        "text": "عملية صيانة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/branch-ops/repair-history.tsx",
+        "line": 49
+      },
+      {
+        "file": "src/features/operations/equipment-tab.tsx",
+        "line": 123
+      },
+      {
+        "file": "src/features/operations/equipment-tab.tsx",
+        "line": 123
+      },
+      {
+        "file": "src/features/operations/equipment-tab.tsx",
+        "line": 133
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "maintenance",
+    "category": "Repairs & daily work",
+    "english": "Maintenance",
+    "context": "Preventive work as well as repairs.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الصيانة"
+      },
+      {
+        "id": "b",
+        "text": "أعمال الصيانة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 164
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 166
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 239
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 246
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "problem",
+    "category": "Repairs & daily work",
+    "english": "Problem",
+    "context": "Reported equipment or facility fault.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مشكلة"
+      },
+      {
+        "id": "b",
+        "text": "عطل"
+      },
+      {
+        "id": "c",
+        "text": "بلاغ"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 162
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 188
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 253
+      },
+      {
+        "file": "src/app/(app)/support/page.tsx",
+        "line": 79
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "out-of-service",
+    "category": "Repairs & daily work",
+    "english": "Out of service",
+    "context": "Machine must not be used.",
+    "options": [
+      {
+        "id": "a",
+        "text": "خارج الخدمة"
+      },
+      {
+        "id": "b",
+        "text": "غير صالح للاستخدام"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "working",
+    "category": "Repairs & daily work",
+    "english": "Working",
+    "context": "Machine available and safe to use as recorded by staff.",
+    "options": [
+      {
+        "id": "a",
+        "text": "يعمل"
+      },
+      {
+        "id": "b",
+        "text": "جاهز للاستخدام"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 231
+      },
+      {
+        "file": "src/components/shell/command-palette.tsx",
+        "line": 93
+      },
+      {
+        "file": "src/features/legal/terms-of-service.tsx",
+        "line": 130
+      },
+      {
+        "file": "src/features/settings/operational-email-section.tsx",
+        "line": 90
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "repairer",
+    "category": "Repairs & daily work",
+    "english": "Repairer",
+    "context": "Person/company carrying out a repair; not always a registered supplier.",
+    "options": [
+      {
+        "id": "a",
+        "text": "فني الصيانة"
+      },
+      {
+        "id": "b",
+        "text": "جهة الإصلاح"
+      }
+    ],
+    "sources": [
+      {
+        "file": "convex/payables.ts",
+        "line": 355
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "area",
+    "category": "Repairs & daily work",
+    "english": "Area of gym",
+    "context": "Physical area inside a branch, not another branch.",
+    "options": [
+      {
+        "id": "a",
+        "text": "منطقة في النادي"
+      },
+      {
+        "id": "b",
+        "text": "قسم من النادي"
+      },
+      {
+        "id": "c",
+        "text": "مساحة داخل النادي"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "same-area",
+    "category": "Repairs & daily work",
+    "english": "Same gym space",
+    "context": "Related maintenance reports concern the same physical area.",
+    "options": [
+      {
+        "id": "a",
+        "text": "في المنطقة نفسها من النادي"
+      },
+      {
+        "id": "b",
+        "text": "في القسم نفسه من النادي"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "checklist",
+    "category": "Repairs & daily work",
+    "english": "Daily checklist",
+    "context": "Opening/closing tasks and checks.",
+    "options": [
+      {
+        "id": "a",
+        "text": "قائمة الفحص اليومية"
+      },
+      {
+        "id": "b",
+        "text": "قائمة المهام اليومية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 70
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 84
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 84
+      },
+      {
+        "file": "src/components/marketing/product-screens.tsx",
+        "line": 69
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "pass-check",
+    "category": "Repairs & daily work",
+    "english": "Pass",
+    "context": "A checklist inspection succeeded; not a membership pass.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سليم"
+      },
+      {
+        "id": "b",
+        "text": "اجتاز الفحص"
+      },
+      {
+        "id": "c",
+        "text": "لا توجد مشكلة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/customer/signup/customer-signup.client.tsx",
+        "line": 33
+      },
+      {
+        "file": "src/app/customer/signup/customer-signup.client.tsx",
+        "line": 483
+      },
+      {
+        "file": "src/app/customer/signup/customer-signup.client.tsx",
+        "line": 486
+      },
+      {
+        "file": "src/app/customer/signup/preview-signup-notice.tsx",
+        "line": 20
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "fail-check",
+    "category": "Repairs & daily work",
+    "english": "Fail",
+    "context": "Inspection found something needing work.",
+    "options": [
+      {
+        "id": "a",
+        "text": "توجد مشكلة"
+      },
+      {
+        "id": "b",
+        "text": "لم يجتز الفحص"
+      },
+      {
+        "id": "c",
+        "text": "غير سليم"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/automations/[ruleId]/rule-monitoring.client.tsx",
+        "line": 39
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 131
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 158
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 199
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "not-applicable",
+    "category": "Repairs & daily work",
+    "english": "Not applicable",
+    "context": "This check is irrelevant to this area/time.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لا ينطبق"
+      },
+      {
+        "id": "b",
+        "text": "غير مطلوب هنا"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "handover",
+    "category": "Repairs & daily work",
+    "english": "Handover",
+    "context": "Information the next shift/team needs.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تسليم الوردية"
+      },
+      {
+        "id": "b",
+        "text": "ملاحظات التسليم"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/marketing/landing-story.tsx",
+        "line": 26
+      },
+      {
+        "file": "src/components/marketing/landing-story.tsx",
+        "line": 63
+      },
+      {
+        "file": "convex/branchOpsAssist.ts",
+        "line": 251
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "priority",
+    "category": "Repairs & daily work",
+    "english": "Urgent",
+    "context": "Work requiring prompt attention.",
+    "options": [
+      {
+        "id": "a",
+        "text": "عاجل"
+      },
+      {
+        "id": "b",
+        "text": "أولوية عالية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 71
+      },
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 121
+      },
+      {
+        "file": "src/app/(app)/support/page.tsx",
+        "line": 78
+      },
+      {
+        "file": "src/app/(app)/support/page.tsx",
+        "line": 79
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "blocked-task",
+    "category": "Repairs & daily work",
+    "english": "Blocked",
+    "context": "Task cannot progress until another issue is resolved.",
+    "options": [
+      {
+        "id": "a",
+        "text": "متعذّر حاليًا"
+      },
+      {
+        "id": "b",
+        "text": "بانتظار حل عائق"
+      },
+      {
+        "id": "c",
+        "text": "متوقف"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/dev/design-system/design-system-gallery.tsx",
+        "line": 170
+      },
+      {
+        "file": "src/components/marketing/rivet-loop-machine.tsx",
+        "line": 52
+      },
+      {
+        "file": "src/features/crm/whatsapp-handoff.tsx",
+        "line": 128
+      },
+      {
+        "file": "src/lib/domain/permissions.ts",
+        "line": 75
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "resolved",
+    "category": "Repairs & daily work",
+    "english": "Resolved",
+    "context": "Reported problem has been dealt with.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تم الحل"
+      },
+      {
+        "id": "b",
+        "text": "تمت المعالجة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/support/page.tsx",
+        "line": 100
+      },
+      {
+        "file": "src/app/platform/support/page.tsx",
+        "line": 139
+      },
+      {
+        "file": "src/app/platform/support/page.tsx",
+        "line": 146
+      },
+      {
+        "file": "src/app/platform/support/page.tsx",
+        "line": 155
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "reports",
+    "category": "Reports & bookkeeping",
+    "english": "Reports",
+    "context": "Operational and financial summaries.",
+    "options": [
+      {
+        "id": "a",
+        "text": "التقارير"
+      },
+      {
+        "id": "b",
+        "text": "تقارير النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/reports/page.tsx",
+        "line": 168
+      },
+      {
+        "file": "src/app/(app)/reports/page.tsx",
+        "line": 173
+      },
+      {
+        "file": "src/app/(app)/reports/page.tsx",
+        "line": 173
+      },
+      {
+        "file": "src/components/marketing/product-screens.tsx",
+        "line": 77
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "bookkeeping",
+    "category": "Reports & bookkeeping",
+    "english": "Bookkeeping",
+    "context": "Recording and checking financial entries.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مسك الدفاتر"
+      },
+      {
+        "id": "b",
+        "text": "السجلات المحاسبية"
+      },
+      {
+        "id": "c",
+        "text": "القيود المالية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 32
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 469
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 591
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 592
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "ledger",
+    "category": "Reports & bookkeeping",
+    "english": "Management ledger",
+    "context": "Internal management financial records; not statutory audited accounts.",
+    "options": [
+      {
+        "id": "a",
+        "text": "دفتر الحسابات الإداري"
+      },
+      {
+        "id": "b",
+        "text": "السجل المالي للإدارة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/marketing/product-screens.tsx",
+        "line": 78
+      },
+      {
+        "file": "src/components/shell/command-palette.tsx",
+        "line": 62
+      },
+      {
+        "file": "src/components/shell/nav-config.ts",
+        "line": 71
+      },
+      {
+        "file": "src/components/shell/workspace-recent-tracker.tsx",
+        "line": 17
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "charged-paid",
+    "category": "Reports & bookkeeping",
+    "english": "Charged and paid",
+    "context": "Compare amounts billed with amounts actually collected.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المبالغ المطلوبة والمدفوعة"
+      },
+      {
+        "id": "b",
+        "text": "المبالغ المفوترة والمحصّلة"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/reports/operational-reports.tsx",
+        "line": 29
+      },
+      {
+        "file": "src/features/reports/operational-reports.tsx",
+        "line": 340
+      },
+      {
+        "file": "src/features/reports/operational-reports.tsx",
+        "line": 351
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "revenue",
+    "category": "Reports & bookkeeping",
+    "english": "Revenue",
+    "context": "Revenue under the report's accounting rules; not always cash collected.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الإيرادات"
+      },
+      {
+        "id": "b",
+        "text": "إيراد النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 93
+      },
+      {
+        "file": "src/app/(app)/reports/page.tsx",
+        "line": 132
+      },
+      {
+        "file": "src/app/(app)/reports/page.tsx",
+        "line": 133
+      },
+      {
+        "file": "src/app/dev/design-system/design-system-gallery.tsx",
+        "line": 104
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "collections",
+    "category": "Reports & bookkeeping",
+    "english": "Collections",
+    "context": "Money actually received from customers.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المبالغ المحصّلة"
+      },
+      {
+        "id": "b",
+        "text": "التحصيلات"
+      },
+      {
+        "id": "c",
+        "text": "المقبوضات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/billing/page.tsx",
+        "line": 141
+      },
+      {
+        "file": "src/lib/domain/permissions.ts",
+        "line": 145
+      },
+      {
+        "file": "convex/managementReports.ts",
+        "line": 489
+      },
+      {
+        "file": "convex/navigationCatalogue.ts",
+        "line": 78
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "expenses",
+    "category": "Reports & bookkeeping",
+    "english": "Expenses",
+    "context": "Costs incurred under the report's rules.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المصروفات"
+      },
+      {
+        "id": "b",
+        "text": "النفقات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 107
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 109
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 234
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 236
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "profit-loss",
+    "category": "Reports & bookkeeping",
+    "english": "Income statement",
+    "context": "Revenue less expenses for a period.",
+    "options": [
+      {
+        "id": "a",
+        "text": "قائمة الدخل"
+      },
+      {
+        "id": "b",
+        "text": "الأرباح والخسائر"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/reports/ledger-tutorial.tsx",
+        "line": 229
+      },
+      {
+        "file": "src/features/reports/management-ledger-home.tsx",
+        "line": 18
+      },
+      {
+        "file": "src/features/reports/management-ledger-home.tsx",
+        "line": 44
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 296
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "balance-sheet",
+    "category": "Reports & bookkeeping",
+    "english": "Balance sheet",
+    "context": "Assets, liabilities and equity at a date.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الميزانية العمومية"
+      },
+      {
+        "id": "b",
+        "text": "قائمة المركز المالي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/reports/ledger-tutorial.tsx",
+        "line": 236
+      },
+      {
+        "file": "src/features/reports/management-ledger-home.tsx",
+        "line": 19
+      },
+      {
+        "file": "src/features/reports/management-ledger-home.tsx",
+        "line": 44
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 253
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "cash-flow",
+    "category": "Reports & bookkeeping",
+    "english": "Cash flow",
+    "context": "Money moving in and out over time.",
+    "options": [
+      {
+        "id": "a",
+        "text": "التدفقات النقدية"
+      },
+      {
+        "id": "b",
+        "text": "حركة النقد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 385
+      },
+      {
+        "file": "src/features/reports/ledger-tutorial.tsx",
+        "line": 243
+      },
+      {
+        "file": "src/features/reports/management-ledger-home.tsx",
+        "line": 20
+      },
+      {
+        "file": "src/features/reports/management-ledger-home.tsx",
+        "line": 44
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "assets-finance",
+    "category": "Reports & bookkeeping",
+    "english": "Assets",
+    "context": "Financial resources; distinct from equipment-only usage.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الأصول"
+      },
+      {
+        "id": "b",
+        "text": "موجودات النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 100
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 101
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 155
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 248
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "liabilities",
+    "category": "Reports & bookkeeping",
+    "english": "Liabilities",
+    "context": "Amounts and obligations owed by the business.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الالتزامات"
+      },
+      {
+        "id": "b",
+        "text": "المطلوبات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 102
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 103
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 249
+      },
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 250
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "receivables",
+    "category": "Reports & bookkeeping",
+    "english": "Accounts receivable",
+    "context": "Money customers owe the gym.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ذمم العملاء المدينة"
+      },
+      {
+        "id": "b",
+        "text": "المبالغ المستحقة على العملاء"
+      }
+    ],
+    "sources": [
+      {
+        "file": "convex/accounting.ts",
+        "line": 80
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "payables",
+    "category": "Reports & bookkeeping",
+    "english": "Accounts payable",
+    "context": "Money the gym owes its suppliers.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ذمم المورّدين الدائنة"
+      },
+      {
+        "id": "b",
+        "text": "المبالغ المستحقة للمورّدين"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "debit-credit",
+    "category": "Reports & bookkeeping",
+    "english": "Debit / Credit",
+    "context": "Accounting entry directions; do not replace blindly with in/out.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مدين / دائن"
+      },
+      {
+        "id": "b",
+        "text": "الجانب المدين / الجانب الدائن"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "journal-entry",
+    "category": "Reports & bookkeeping",
+    "english": "Journal entry",
+    "context": "An accounting record, not a member activity note.",
+    "options": [
+      {
+        "id": "a",
+        "text": "قيد محاسبي"
+      },
+      {
+        "id": "b",
+        "text": "قيد يومية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 65
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 313
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 356
+      },
+      {
+        "file": "src/features/finance/management-ledger-workspace.tsx",
+        "line": 427
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "post-entry",
+    "category": "Reports & bookkeeping",
+    "english": "Post to books",
+    "context": "Commit an item to the accounting ledger.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ترحيل إلى الدفاتر"
+      },
+      {
+        "id": "b",
+        "text": "تسجيل في الدفاتر"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "reconcile",
+    "category": "Reports & bookkeeping",
+    "english": "Reconcile",
+    "context": "Match recorded movements with actual balances and identify differences.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مطابقة الأرصدة"
+      },
+      {
+        "id": "b",
+        "text": "تسوية الحسابات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/marketing/landing-story.tsx",
+        "line": 22
+      },
+      {
+        "file": "src/components/marketing/rivet-loop-machine.tsx",
+        "line": 47
+      },
+      {
+        "file": "convex/crons.ts",
+        "line": 12
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "balanced",
+    "category": "Reports & bookkeeping",
+    "english": "The cash numbers match",
+    "context": "Verification result, not a promise of a full audit.",
+    "options": [
+      {
+        "id": "a",
+        "text": "أرقام النقد متطابقة."
+      },
+      {
+        "id": "b",
+        "text": "تتطابق الأرصدة النقدية."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 288
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "incomplete-report",
+    "category": "Reports & bookkeeping",
+    "english": "Some figures may be incomplete",
+    "context": "Missing postings can make totals incomplete.",
+    "options": [
+      {
+        "id": "a",
+        "text": "قد تكون بعض الأرقام غير مكتملة."
+      },
+      {
+        "id": "b",
+        "text": "قد لا تشمل الأرقام جميع العمليات."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/reports/management-statements-workspace.tsx",
+        "line": 211
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "period-closed",
+    "category": "Reports & bookkeeping",
+    "english": "This period is closed",
+    "context": "Posting is locked for this accounting period.",
+    "options": [
+      {
+        "id": "a",
+        "text": "هذه الفترة المحاسبية مغلقة."
+      },
+      {
+        "id": "b",
+        "text": "لا يمكن تسجيل قيود في هذه الفترة المغلقة."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "roles",
+    "category": "Access, errors & edge cases",
+    "english": "Roles & access",
+    "context": "Staff role definitions and permission assignment.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الأدوار والصلاحيات"
+      },
+      {
+        "id": "b",
+        "text": "المهام وصلاحيات الوصول"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/settings/settings-page-inner.tsx",
+        "line": 73
+      },
+      {
+        "file": "src/features/settings/settings-sections.tsx",
+        "line": 724
+      },
+      {
+        "file": "src/features/settings/settings-sections.tsx",
+        "line": 725
+      },
+      {
+        "file": "src/features/settings/settings-sections.tsx",
+        "line": 732
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "owner",
+    "category": "Access, errors & edge cases",
+    "english": "Owner",
+    "context": "Owner of the gym business.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مالك النادي"
+      },
+      {
+        "id": "b",
+        "text": "صاحب النادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 124
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 38
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 253
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 233
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "manager",
+    "category": "Access, errors & edge cases",
+    "english": "Manager",
+    "context": "Staff role responsible for gym operations.",
+    "options": [
+      {
+        "id": "a",
+        "text": "مدير النادي"
+      },
+      {
+        "id": "b",
+        "text": "المدير"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/audit/page.tsx",
+        "line": 124
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 38
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 80
+      },
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 84
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "sales-role",
+    "category": "Access, errors & edge cases",
+    "english": "Sales",
+    "context": "Staff role following prospects and selling memberships.",
+    "options": [
+      {
+        "id": "a",
+        "text": "المبيعات"
+      },
+      {
+        "id": "b",
+        "text": "موظف المبيعات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 38
+      },
+      {
+        "file": "src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+        "line": 181
+      },
+      {
+        "file": "src/app/(app)/crm/pipeline/page.tsx",
+        "line": 209
+      },
+      {
+        "file": "src/app/(app)/crm/pipeline/page.tsx",
+        "line": 253
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "permission-denied",
+    "category": "Access, errors & edge cases",
+    "english": "You do not have access to this action. Ask your gym owner.",
+    "context": "Server authorization failure; avoid exposing internal permission codes.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ليس لديك صلاحية لتنفيذ هذا الإجراء. تواصل مع مالك النادي."
+      },
+      {
+        "id": "b",
+        "text": "لا يمكنك تنفيذ هذا الإجراء. اطلب الصلاحية من صاحب النادي."
+      }
+    ],
+    "sources": [
+      {
+        "file": "convex/security.ts",
+        "line": 324
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "inactive-account",
+    "category": "Access, errors & edge cases",
+    "english": "This account is not active in RIVET.",
+    "context": "Server rejects an inactive or not-yet-accepted account.",
+    "options": [
+      {
+        "id": "a",
+        "text": "هذا الحساب غير مفعّل في RIVET."
+      },
+      {
+        "id": "b",
+        "text": "هذا الحساب غير نشط في RIVET."
+      }
+    ],
+    "sources": [
+      {
+        "file": "convex/security.ts",
+        "line": 210
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "required-reason",
+    "category": "Access, errors & edge cases",
+    "english": "A reason is required for this action.",
+    "context": "Validation for an accountable change.",
+    "options": [
+      {
+        "id": "a",
+        "text": "يجب كتابة سبب لهذا الإجراء."
+      },
+      {
+        "id": "b",
+        "text": "اكتب سبب تنفيذ هذا الإجراء."
+      }
+    ],
+    "sources": [
+      {
+        "file": "convex/security.ts",
+        "line": 143
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "required-field",
+    "category": "Access, errors & edge cases",
+    "english": "Required",
+    "context": "Validation message beside an empty required field.",
+    "options": [
+      {
+        "id": "a",
+        "text": "هذا الحقل مطلوب."
+      },
+      {
+        "id": "b",
+        "text": "يرجى تعبئة هذا الحقل."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/checklists/page.tsx",
+        "line": 214
+      },
+      {
+        "file": "src/app/(app)/getting-started/page.tsx",
+        "line": 19
+      },
+      {
+        "file": "src/app/(app)/members/import/page.tsx",
+        "line": 241
+      },
+      {
+        "file": "src/app/dev/design-system/design-system-gallery.tsx",
+        "line": 210
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "invalid-phone",
+    "category": "Access, errors & edge cases",
+    "english": "Enter a valid phone number",
+    "context": "Phone validation must accept supported Arabic digits and normalize safely.",
+    "options": [
+      {
+        "id": "a",
+        "text": "أدخل رقم هاتف صحيحًا."
+      },
+      {
+        "id": "b",
+        "text": "تحقّق من رقم الهاتف."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/members/new/page.tsx",
+        "line": 36
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 25
+      },
+      {
+        "file": "src/features/crm/edit-lead-contact-dialog.tsx",
+        "line": 18
+      },
+      {
+        "file": "src/features/crm/new-lead-dialog.tsx",
+        "line": 26
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "save-failed",
+    "category": "Access, errors & edge cases",
+    "english": "Could not save changes",
+    "context": "Do not claim the change succeeded; keep the user's input.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تعذّر حفظ التغييرات. حاول مرة أخرى."
+      },
+      {
+        "id": "b",
+        "text": "لم تُحفظ التغييرات. أعد المحاولة."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "offline",
+    "category": "Access, errors & edge cases",
+    "english": "Could not connect. Showing your last saved information.",
+    "context": "Member app shows cached data; freshness must be clear.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تعذّر الاتصال. نعرض آخر معلومات محفوظة لديك."
+      },
+      {
+        "id": "b",
+        "text": "لا يوجد اتصال. هذه آخر معلومات تم حفظها."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/lib/providers/experience-provider.tsx",
+        "line": 565
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "session-ended",
+    "category": "Access, errors & edge cases",
+    "english": "Your session has ended. Sign in again.",
+    "context": "Account authentication expired, not a PT session or cash shift.",
+    "options": [
+      {
+        "id": "a",
+        "text": "انتهت جلسة الدخول. سجّل الدخول مرة أخرى."
+      },
+      {
+        "id": "b",
+        "text": "يرجى تسجيل الدخول من جديد."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "not-found",
+    "category": "Access, errors & edge cases",
+    "english": "This record could not be found",
+    "context": "A deleted, unavailable or invalid record without leaking another tenant's data.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لم نعثر على هذا السجل."
+      },
+      {
+        "id": "b",
+        "text": "هذا السجل غير متاح."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "conflict",
+    "category": "Access, errors & edge cases",
+    "english": "This record changed. Refresh and try again.",
+    "context": "Another user updated the record; avoid overwriting their work.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تم تعديل هذا السجل. حدّث الصفحة وحاول مرة أخرى."
+      },
+      {
+        "id": "b",
+        "text": "تغيّرت البيانات. حدّث الصفحة قبل إعادة المحاولة."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "unsaved",
+    "category": "Access, errors & edge cases",
+    "english": "You have unsaved changes",
+    "context": "Navigation warning; changes have not reached the server.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لديك تغييرات لم تُحفظ."
+      },
+      {
+        "id": "b",
+        "text": "لم يتم حفظ تغييراتك بعد."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "irreversible",
+    "category": "Access, errors & edge cases",
+    "english": "This cannot be undone",
+    "context": "Confirmation for genuinely irreversible actions.",
+    "options": [
+      {
+        "id": "a",
+        "text": "لا يمكن التراجع عن هذا الإجراء."
+      },
+      {
+        "id": "b",
+        "text": "هذا الإجراء نهائي ولا يمكن إلغاؤه."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/payments/receipts/[receiptId]/receipt.client.tsx",
+        "line": 340
+      },
+      {
+        "file": "src/features/membership-actions/adjustment-dialogs.tsx",
+        "line": 344
+      },
+      {
+        "file": "src/features/operations/operations-shared.tsx",
+        "line": 134
+      },
+      {
+        "file": "src/features/operations/payables/supplier-payment-history-dialog.tsx",
+        "line": 45
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "rate-limit",
+    "category": "Access, errors & edge cases",
+    "english": "Too many attempts. Try again later.",
+    "context": "Abuse protection; no invented precise waiting period.",
+    "options": [
+      {
+        "id": "a",
+        "text": "محاولات كثيرة. حاول مرة أخرى لاحقًا."
+      },
+      {
+        "id": "b",
+        "text": "تجاوزت عدد المحاولات المسموح. أعد المحاولة لاحقًا."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "unknown-outcome",
+    "category": "Access, errors & edge cases",
+    "english": "Could not confirm the payment was saved. Check before trying again.",
+    "context": "Timeout around money; prevent accidental duplicate recording.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تعذّر التأكد من تسجيل الدفعة. تحقّق من السجل قبل المحاولة مجددًا."
+      },
+      {
+        "id": "b",
+        "text": "لم نتمكن من تأكيد حفظ الدفعة. راجع الدفعات قبل تسجيلها مرة أخرى."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "my-gyms",
+    "category": "Member app & public pages",
+    "english": "My gyms",
+    "context": "Member's memberships across gyms.",
+    "options": [
+      {
+        "id": "a",
+        "text": "أنديتي"
+      },
+      {
+        "id": "b",
+        "text": "اشتراكاتي في الأندية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/public/public-footer.tsx",
+        "line": 44
+      },
+      {
+        "file": "src/lib/auth/public-viewer.ts",
+        "line": 33
+      },
+      {
+        "file": "convex/domain.ts",
+        "line": 4426
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "browse-gyms",
+    "category": "Member app & public pages",
+    "english": "Discover gyms",
+    "context": "Public gym discovery area.",
+    "options": [
+      {
+        "id": "a",
+        "text": "اكتشف الأندية"
+      },
+      {
+        "id": "b",
+        "text": "تصفّح الأندية الرياضية"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "join",
+    "category": "Member app & public pages",
+    "english": "Join this gym",
+    "context": "Start joining this particular gym.",
+    "options": [
+      {
+        "id": "a",
+        "text": "اشترك في هذا النادي"
+      },
+      {
+        "id": "b",
+        "text": "انضم إلى النادي"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "profile",
+    "category": "Member app & public pages",
+    "english": "My profile",
+    "context": "Member's personal account details.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ملفي الشخصي"
+      },
+      {
+        "id": "b",
+        "text": "بياناتي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/getting-started/page.tsx",
+        "line": 51
+      },
+      {
+        "file": "src/features/settings/my-profile-section.tsx",
+        "line": 59
+      },
+      {
+        "file": "src/features/settings/my-profile-section.tsx",
+        "line": 60
+      },
+      {
+        "file": "src/features/settings/my-profile-section.tsx",
+        "line": 71
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "finance-member",
+    "category": "Member app & public pages",
+    "english": "Your payments",
+    "context": "Member-facing view of what they paid and still owe.",
+    "options": [
+      {
+        "id": "a",
+        "text": "دفعاتك"
+      },
+      {
+        "id": "b",
+        "text": "مدفوعاتك"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/customer/finance/customer-finance.client.tsx",
+        "line": 155
+      },
+      {
+        "file": "src/app/customer/receipts/[receiptId]/receipt.client.tsx",
+        "line": 73
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "contact-gym",
+    "category": "Member app & public pages",
+    "english": "Contact the gym",
+    "context": "Gym-specific support, distinct from RIVET platform support.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تواصل مع النادي"
+      },
+      {
+        "id": "b",
+        "text": "الاتصال بالنادي"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 212
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 350
+      },
+      {
+        "file": "src/app/offers/[token]/public-offer.client.tsx",
+        "line": 70
+      },
+      {
+        "file": "src/app/platform/billing/page.tsx",
+        "line": 254
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "sign-in",
+    "category": "Member app & public pages",
+    "english": "Sign in",
+    "context": "Authenticate an account; distinguish from gym check-in.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تسجيل الدخول"
+      },
+      {
+        "id": "b",
+        "text": "الدخول إلى الحساب"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/pt/page.tsx",
+        "line": 216
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 307
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 309
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 318
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "create-account",
+    "category": "Member app & public pages",
+    "english": "Create account",
+    "context": "Create a personal login, not a gym business application.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إنشاء حساب"
+      },
+      {
+        "id": "b",
+        "text": "فتح حساب"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/customer/signup/customer-signup.client.tsx",
+        "line": 492
+      },
+      {
+        "file": "src/app/customer/signup/preview-signup-notice.tsx",
+        "line": 20
+      },
+      {
+        "file": "src/app/login/accept-invitation/accept-invitation.client.tsx",
+        "line": 213
+      },
+      {
+        "file": "src/components/marketing/cinematic-header.tsx",
+        "line": 309
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "email-code",
+    "category": "Member app & public pages",
+    "english": "Enter the code sent to your email",
+    "context": "Authentication challenge.",
+    "options": [
+      {
+        "id": "a",
+        "text": "أدخل الرمز المرسل إلى بريدك الإلكتروني."
+      },
+      {
+        "id": "b",
+        "text": "اكتب رمز التحقق الذي وصلك عبر البريد الإلكتروني."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "resend-code",
+    "category": "Member app & public pages",
+    "english": "Resend code",
+    "context": "Request another authentication code.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إعادة إرسال الرمز"
+      },
+      {
+        "id": "b",
+        "text": "أرسل الرمز مرة أخرى"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "sign-out",
+    "category": "Member app & public pages",
+    "english": "Sign out",
+    "context": "End account session, not leave the gym.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تسجيل الخروج"
+      },
+      {
+        "id": "b",
+        "text": "الخروج من الحساب"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/login/accept-invitation/accept-invitation.client.tsx",
+        "line": 246
+      },
+      {
+        "file": "src/app/login/accept-invitation/accept-invitation.client.tsx",
+        "line": 246
+      },
+      {
+        "file": "src/app/login/identity-panels.client.tsx",
+        "line": 43
+      },
+      {
+        "file": "src/app/login/identity-panels.client.tsx",
+        "line": 215
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "register-gym",
+    "category": "Member app & public pages",
+    "english": "Register your gym",
+    "context": "Business owner applies to use RIVET.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سجّل ناديك"
+      },
+      {
+        "id": "b",
+        "text": "إضافة ناديك إلى RIVET"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "marketing-promise",
+    "category": "Member app & public pages",
+    "english": "Every member. Every dinar. Every shift.",
+    "context": "Marketing tagline; preserve concrete scope without awkward literal rhythm.",
+    "options": [
+      {
+        "id": "a",
+        "text": "كل عضو. كل دينار. كل وردية."
+      },
+      {
+        "id": "b",
+        "text": "أعضاء ناديك وأمواله ووردياته، في مكان واحد."
+      },
+      {
+        "id": "c",
+        "text": "تابع كل عضو وكل دينار وكل وردية."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/layout.tsx",
+        "line": 70
+      },
+      {
+        "file": "src/components/public/public-footer.tsx",
+        "line": 97
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "marketing-ops",
+    "category": "Member app & public pages",
+    "english": "Gym revenue & operations",
+    "context": "Short description of the product.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إيرادات النادي وإدارته اليومية"
+      },
+      {
+        "id": "b",
+        "text": "إدارة إيرادات النادي وعملياته"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/layout.tsx",
+        "line": 58
+      },
+      {
+        "file": "src/app/layout.tsx",
+        "line": 77
+      },
+      {
+        "file": "src/app/login/login-chrome.tsx",
+        "line": 14
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "trial-plan",
+    "category": "Member app & public pages",
+    "english": "Free trial",
+    "context": "Software trial for gym owners, distinct from trial gym visit.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تجربة مجانية"
+      },
+      {
+        "id": "b",
+        "text": "فترة تجريبية مجانية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/customer/discover/page.tsx",
+        "line": 71
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 185
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 212
+      },
+      {
+        "file": "src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+        "line": 303
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "privacy",
+    "category": "Member app & public pages",
+    "english": "Privacy policy",
+    "context": "Public policy heading.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سياسة الخصوصية"
+      },
+      {
+        "id": "b",
+        "text": "سياسة حماية الخصوصية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/privacy/page.tsx",
+        "line": 6
+      },
+      {
+        "file": "src/app/signup/page.tsx",
+        "line": 194
+      },
+      {
+        "file": "src/features/legal/agreement-record.tsx",
+        "line": 86
+      },
+      {
+        "file": "src/features/legal/privacy-policy.tsx",
+        "line": 211
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "terms",
+    "category": "Member app & public pages",
+    "english": "Terms of service",
+    "context": "Public contract heading; preserve legal meaning in full text.",
+    "options": [
+      {
+        "id": "a",
+        "text": "شروط الخدمة"
+      },
+      {
+        "id": "b",
+        "text": "شروط الاستخدام"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/signup/page.tsx",
+        "line": 194
+      },
+      {
+        "file": "src/app/terms/page.tsx",
+        "line": 6
+      },
+      {
+        "file": "src/features/legal/agreement-record.tsx",
+        "line": 86
+      },
+      {
+        "file": "src/features/legal/privacy-policy.tsx",
+        "line": 216
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "signature",
+    "category": "Member app & public pages",
+    "english": "Electronic signature",
+    "context": "Signing a subscription agreement.",
+    "options": [
+      {
+        "id": "a",
+        "text": "التوقيع الإلكتروني"
+      },
+      {
+        "id": "b",
+        "text": "توقيع الاتفاقية إلكترونيًا"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/legal/agreement-record.tsx",
+        "line": 160
+      },
+      {
+        "file": "src/features/legal/agreement-record.tsx",
+        "line": 169
+      },
+      {
+        "file": "src/features/legal/terms-of-service.tsx",
+        "line": 180
+      },
+      {
+        "file": "convex/legalAgreementEmail.ts",
+        "line": 54
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "legal-consent",
+    "category": "Member app & public pages",
+    "english": "I agree to sign electronically and understand this signature is legally binding.",
+    "context": "Preserve legal effect and first-person consent, even if everyday UI is informal.",
+    "options": [
+      {
+        "id": "a",
+        "text": "أوافق على التوقيع إلكترونيًا وأقرّ بأن هذا التوقيع ملزم قانونًا."
+      },
+      {
+        "id": "b",
+        "text": "أوافق على التوقيع الإلكتروني وأفهم أن توقيعي ملزم قانونًا."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/legal/subscription-agreement-modal.tsx",
+        "line": 326
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "gym-applications",
+    "category": "Platform, support & notifications",
+    "english": "Gym applications",
+    "context": "Businesses applying to join RIVET.",
+    "options": [
+      {
+        "id": "a",
+        "text": "طلبات تسجيل الأندية"
+      },
+      {
+        "id": "b",
+        "text": "طلبات انضمام الأندية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 254
+      },
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 273
+      },
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 278
+      },
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 280
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "under-review",
+    "category": "Platform, support & notifications",
+    "english": "Under review",
+    "context": "An application is being checked, not yet accepted.",
+    "options": [
+      {
+        "id": "a",
+        "text": "قيد المراجعة"
+      },
+      {
+        "id": "b",
+        "text": "جارٍ مراجعة الطلب"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 23
+      },
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 261
+      },
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 351
+      },
+      {
+        "file": "src/components/platform/platform-status.tsx",
+        "line": 33
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "approve",
+    "category": "Platform, support & notifications",
+    "english": "Approve application",
+    "context": "Accept a gym application; provisioning may follow.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الموافقة على الطلب"
+      },
+      {
+        "id": "b",
+        "text": "قبول الطلب"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 351
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "reject",
+    "category": "Platform, support & notifications",
+    "english": "Reject application",
+    "context": "Decline an application with a recorded reason.",
+    "options": [
+      {
+        "id": "a",
+        "text": "رفض الطلب"
+      },
+      {
+        "id": "b",
+        "text": "عدم قبول الطلب"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/applications/page.tsx",
+        "line": 352
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "entitlements",
+    "category": "Platform, support & notifications",
+    "english": "Pricing & entitlements",
+    "context": "Which software features and limits each pricing plan includes.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الأسعار ومزايا الباقات"
+      },
+      {
+        "id": "b",
+        "text": "التسعير والصلاحيات المتاحة للباقات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/subscriptions/page.tsx",
+        "line": 73
+      },
+      {
+        "file": "src/components/platform/platform-shell.tsx",
+        "line": 26
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "billing",
+    "category": "Platform, support & notifications",
+    "english": "Billing",
+    "context": "Software subscription invoices and payments from gyms to RIVET.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الفوترة"
+      },
+      {
+        "id": "b",
+        "text": "الفواتير والدفعات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/login/portal-sign-in.client.tsx",
+        "line": 404
+      },
+      {
+        "file": "src/app/login/portals.ts",
+        "line": 63
+      },
+      {
+        "file": "src/app/page.tsx",
+        "line": 346
+      },
+      {
+        "file": "src/app/page.tsx",
+        "line": 349
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "past-due",
+    "category": "Platform, support & notifications",
+    "english": "Past due",
+    "context": "Invoice due date passed without full payment.",
+    "options": [
+      {
+        "id": "a",
+        "text": "متأخر السداد"
+      },
+      {
+        "id": "b",
+        "text": "تجاوز موعد الدفع"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/billing/bill-gym-wizard.tsx",
+        "line": 158
+      },
+      {
+        "file": "src/app/platform/billing/page.tsx",
+        "line": 129
+      },
+      {
+        "file": "src/app/platform/billing/page.tsx",
+        "line": 184
+      },
+      {
+        "file": "src/app/platform/billing/page.tsx",
+        "line": 185
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "suspended",
+    "category": "Platform, support & notifications",
+    "english": "Suspended",
+    "context": "Gym workspace temporarily restricted; records retained.",
+    "options": [
+      {
+        "id": "a",
+        "text": "موقوف مؤقتًا"
+      },
+      {
+        "id": "b",
+        "text": "معلّق"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/gyms/page.tsx",
+        "line": 30
+      },
+      {
+        "file": "src/app/platform/page.tsx",
+        "line": 127
+      },
+      {
+        "file": "src/components/platform/platform-status.tsx",
+        "line": 18
+      },
+      {
+        "file": "src/features/settings/operational-email-section.tsx",
+        "line": 42
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "support-case",
+    "category": "Platform, support & notifications",
+    "english": "Support case",
+    "context": "A customer support request with conversation and status.",
+    "options": [
+      {
+        "id": "a",
+        "text": "طلب دعم"
+      },
+      {
+        "id": "b",
+        "text": "تذكرة دعم"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/billing/page.tsx",
+        "line": 153
+      },
+      {
+        "file": "src/app/platform/page.tsx",
+        "line": 49
+      },
+      {
+        "file": "src/app/platform/page.tsx",
+        "line": 139
+      },
+      {
+        "file": "src/app/platform/page.tsx",
+        "line": 139
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "support-reply",
+    "category": "Platform, support & notifications",
+    "english": "Reply",
+    "context": "Send a response inside a support conversation.",
+    "options": [
+      {
+        "id": "a",
+        "text": "رد"
+      },
+      {
+        "id": "b",
+        "text": "إرسال رد"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 161
+      },
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 163
+      },
+      {
+        "file": "src/app/(app)/crm/queues/page.tsx",
+        "line": 164
+      },
+      {
+        "file": "src/app/(app)/support/page.tsx",
+        "line": 79
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "reopen",
+    "category": "Platform, support & notifications",
+    "english": "Reopen case",
+    "context": "Continue work on a previously resolved support request.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إعادة فتح الطلب"
+      },
+      {
+        "id": "b",
+        "text": "فتح طلب الدعم مجددًا"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "notifications",
+    "category": "Platform, support & notifications",
+    "english": "Notifications",
+    "context": "Alerts relevant to the signed-in person.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الإشعارات"
+      },
+      {
+        "id": "b",
+        "text": "التنبيهات"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/pwa/member-pwa.tsx",
+        "line": 77
+      },
+      {
+        "file": "src/components/pwa/member-pwa.tsx",
+        "line": 84
+      },
+      {
+        "file": "src/components/shell/notification-center.tsx",
+        "line": 75
+      },
+      {
+        "file": "src/components/shell/notification-center.tsx",
+        "line": 90
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "mark-read",
+    "category": "Platform, support & notifications",
+    "english": "Mark all as read",
+    "context": "Changes notification read status only.",
+    "options": [
+      {
+        "id": "a",
+        "text": "تحديد الكل كمقروء"
+      },
+      {
+        "id": "b",
+        "text": "وضع علامة مقروء على الجميع"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/components/shell/notification-center.tsx",
+        "line": 103
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "automations-paused",
+    "category": "Platform, support & notifications",
+    "english": "Automations are paused",
+    "context": "Feature intentionally paused; translation must not imply it is operational.",
+    "options": [
+      {
+        "id": "a",
+        "text": "الإجراءات التلقائية متوقفة مؤقتًا."
+      },
+      {
+        "id": "b",
+        "text": "الأتمتة متوقفة مؤقتًا."
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/features/automations/automation-monitoring.client.tsx",
+        "line": 42
+      },
+      {
+        "file": "src/features/automations/automation-monitoring.client.tsx",
+        "line": 67
+      },
+      {
+        "file": "src/features/automations/coming-soon.tsx",
+        "line": 19
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "email-log",
+    "category": "Platform, support & notifications",
+    "english": "Email log",
+    "context": "Delivery history of emails from RIVET.",
+    "options": [
+      {
+        "id": "a",
+        "text": "سجل البريد الإلكتروني"
+      },
+      {
+        "id": "b",
+        "text": "سجل الرسائل البريدية"
+      }
+    ],
+    "sources": [
+      {
+        "file": "src/app/platform/email-log/platform-email-log.client.tsx",
+        "line": 42
+      },
+      {
+        "file": "src/app/platform/email-log/platform-email-log.client.tsx",
+        "line": 49
+      },
+      {
+        "file": "src/components/platform/platform-shell.tsx",
+        "line": 29
+      }
+    ],
+    "sourceKind": "source-match"
+  },
+  {
+    "id": "receipt-email",
+    "category": "Platform, support & notifications",
+    "english": "Your payment receipt",
+    "context": "Subject line for a transactional email to a member.",
+    "options": [
+      {
+        "id": "a",
+        "text": "إيصال دفعتك"
+      },
+      {
+        "id": "b",
+        "text": "إيصال الدفع الخاص بك"
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  },
+  {
+    "id": "renewal-message",
+    "category": "Platform, support & notifications",
+    "english": "Your membership ends soon. Contact the gym to renew.",
+    "context": "Notification tone; dates and gym names would be supplied separately.",
+    "options": [
+      {
+        "id": "a",
+        "text": "ينتهي اشتراكك قريبًا. تواصل مع النادي للتجديد."
+      },
+      {
+        "id": "b",
+        "text": "اشتراكك قرب ينتهي. تواصل مع النادي عشان تجدّده."
+      }
+    ],
+    "sources": [],
+    "sourceKind": "editorial-scenario"
+  }
+]

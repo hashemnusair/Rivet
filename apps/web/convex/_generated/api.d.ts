@@ -12,6 +12,8 @@ import type * as accessMaintenance from "../accessMaintenance.js";
 import type * as accounting from "../accounting.js";
 import type * as accountingLedger from "../accountingLedger.js";
 import type * as analyticsReports from "../analyticsReports.js";
+import type * as arabicReview from "../arabicReview.js";
+import type * as arabicReviewModel from "../arabicReviewModel.js";
 import type * as automations from "../automations.js";
 import type * as branchChecklists from "../branchChecklists.js";
 import type * as branchOpsAssist from "../branchOpsAssist.js";
@@ -88,6 +90,8 @@ declare const fullApi: ApiFromModules<{
   accounting: typeof accounting;
   accountingLedger: typeof accountingLedger;
   analyticsReports: typeof analyticsReports;
+  arabicReview: typeof arabicReview;
+  arabicReviewModel: typeof arabicReviewModel;
   automations: typeof automations;
   branchChecklists: typeof branchChecklists;
   branchOpsAssist: typeof branchOpsAssist;

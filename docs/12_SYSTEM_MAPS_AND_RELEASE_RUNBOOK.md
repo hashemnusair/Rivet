@@ -1,5 +1,14 @@
 # 12 — System Maps and Release Runbook
 
+## Arabic review room — 30 September 2026
+
+- Canonical route: `https://platform.rivetjo.com/platform/arabic-room`, protected by existing Clerk/platform identity and server-side `requirePlatformAdmin` checks on all review endpoints. Intended reviewers are the existing two founder admins; additional active platform admins would join the required approval roster.
+- Adds four platform-only tables: `arabicReviewVotes`, `arabicReviewHistory`, `arabicReviewRooms`, `arabicReviewPresence`. No tenant schema contract, money operation, authorization role or messaging setting changes. Additive schema must be deployed with `pnpm convex:deploy` before exposing the frontend route.
+- Answers/comments persist per user, card and catalog version. Matching answers from all reviewers plus each person's approval produce `readyForImplementation`. Any edit or reviewer-roster change invalidates approval. Questionnaire changes require a version bump; old answers must not approve new options.
+- Export the reviewed preferences in the room or through the read-only internal query: `CONVEX_DEPLOY_KEY='' pnpm --filter web exec convex run arabicReview:exportForImplementation --prod`. Output contains review comments, not credentials; keep it within the implementation task. Do not create votes or approvals on behalf of the founders.
+- Source inventory, usage/architecture notes and the whole-product implementation prompt live in `docs/arabic/`. The prompt is also downloaded from the room. Actual Arabic implementation remains future work, based on the approved choices.
+- Local tests: 1,686 tests, 14 CLI/environment guards, both typechecks, lint, build and review-page browser journey pass. Deployment/CI evidence follows after release.
+
 ## Plain-language follow-up — 30 September 2026
 
 Before this follow-up, Elias’s frontend commit `0970df0` was live on deployment

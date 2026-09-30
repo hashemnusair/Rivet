@@ -1,5 +1,14 @@
 # GymOS / RIVET current implementation state
 
+## 30 September 2026 — Arabic review room
+
+- Added the internal `/platform/arabic-room` with 247 multiple-choice questions across 13 sections, contextual Arabic drafts, optional custom wording/comments, searchable categories and saved progress. The repository-wide inventory covers 414 source files and 13,179 candidate strings; the questions guide voice/terminology rather than pretending to translate every string.
+- Choices are persisted per authenticated platform administrator in Convex and shared live. Added disagreement/agreement views, append-only answer history, approximate presence, optional following, stale-tab protection, explicit server-save status and approvals bound to the complete current answer revision. Any answer/comment edit invalidates approvals. Every browser endpoint requires active platform-admin access; no account privileges were changed.
+- Added a JSON preference export, internal read-only export query, downloadable whole-product implementation prompt, and `docs/arabic/README.md`. The later agent must load the founders' current approved preferences and cover frontend, backend, messages, documents, formatting, input and RTL. The old Arabic branch remains unmerged; this release does not translate the product itself.
+- Local validation: 1,686 unit/component tests in 266 files and 14 CLI/environment guards passed. The 14 focused review tests pass after final UI edits. Both typechecks, zero-warning lint/secret-output audit, production build and diff check pass. The new browser journey passes at 360/390/768/1440 widths, keyboard selection, save/advance, search and downloads. Arabic desktop/mobile captures were visually inspected; agent-browser reported no page errors, error overlay or overflow. Real founder choices were not fabricated for testing.
+- Read first: `docs/arabic/README.md`, `docs/arabic/IMPLEMENTATION_PROMPT.md`, `convex/arabicReview.ts`, `convex/arabicReviewModel.ts`, and `src/features/arabic-review/review-room.tsx` (app paths under `apps/web`). Recheck with `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, and `pnpm --filter web exec playwright test e2e/arabic-review.spec.ts`.
+- Release verification will be recorded below after the guarded backend deployment and GitHub/Vercel release. Existing untracked `docs/audits/` and `outputs/` are preserved; `FRONTEND_HANDOFF.md` is unchanged.
+
 ## 30 September 2026 — plain-language follow-up
 
 Synced Elias’s committed pass `0970df0`. Follow-up scope covers his remaining
