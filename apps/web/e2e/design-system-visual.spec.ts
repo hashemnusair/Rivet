@@ -85,7 +85,7 @@ test("commits the representative product UI set", async ({ page }) => {
 
   await page.goto("/settings?section=roles");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await expect(page.getByText("What each role can do")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What each role can do", exact: true })).toBeVisible();
   await capture(page, "settings-desktop.png");
 
   await page.setViewportSize({ width: 820, height: 1180 });

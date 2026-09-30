@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## 30 September 2026 — plain-language follow-up (in progress)
+## 30 September 2026 — plain-language follow-up
 
 Synced Elias’s committed pass `0970df0`. Follow-up scope covers his remaining
 English wording, helper sizes, screenshot references, paused-automation staging
@@ -19,8 +19,28 @@ The historical frontend handoff and existing untracked audits/outputs stay intac
 - Updated browser selectors for Elias’s new greeting, report labels, access
   wording and attention-panel order. Screenshot thresholds remain unchanged.
 - Assumptions: preserve API identifiers, permissions, data and money behavior.
-  CSV column contracts remain stable. Production deployment and final browser
-  evidence are pending; do not infer release from this working section.
+  CSV column contracts remain stable.
+- Validation: all 1,667 tests in 264 unit/component suites and all 14 CLI/env
+  guards passed. Web and Convex typechecks, lint/secret-output audit, normal
+  production build, approved preview build, dependency audit and diff check
+  passed. All 174 credential-free browser journeys passed; 14 live staging
+  journeys were skipped because they require explicitly isolated credentials.
+- Production Convex deployed through the guarded wrapper from `2636398` after
+  the dry run selected `descriptive-meerkat-589`, with schema validation and
+  no index deletions. This includes Elias’s Needs attention response change.
+  Frontend publication and final comparison CI evidence are pending.
+- Screenshot references were recaptured on macOS and Linux without changing
+  comparison thresholds. The temporary capture workflow was removed. The
+  complete Linux preview run `36741949907` passed 174 tests; the all-reference
+  capture run `36742081904` passed 173 and exposed an ambiguous Settings text
+  selector. That selector now targets the exact heading; its local rerun
+  passes. All 23 local screenshot journeys pass in ordinary comparison mode.
+  Final standard CI remains pending below.
+- Read first: this section, docs/22, docs/12, `convex/operations.ts`,
+  `convex/payables.ts`, `convex/security.ts`, and `e2e/staging-automation.spec.ts`.
+  Recheck with `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`,
+  `pnpm --filter web exec vitest run --maxWorkers=3`, `pnpm build`, and
+  `pnpm test:e2e`. Use the approved preview environment for browser tests.
 
 ## 30 Sep 2026 — plain-language pass
 
@@ -52,7 +72,7 @@ Release notes:
   fail in CI until they are regenerated, and the `-linux.png` references need
   the throwaway CI workflow.
 
-Still to do:
+Original handoff list (English items are addressed by the follow-up above):
 
 - Server-generated error and notification text was not reworded.
 - Permission labels in `src/lib/domain/permissions.ts`, such as "Approve cash

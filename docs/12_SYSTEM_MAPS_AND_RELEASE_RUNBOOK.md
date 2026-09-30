@@ -1,5 +1,30 @@
 # 12 — System Maps and Release Runbook
 
+## Plain-language follow-up — 30 September 2026
+
+Elias’s frontend commit `0970df0` is live on Vercel Production deployment
+`dpl_8PHZ2LzSaANiShidYzt3QLuTsWBa`. It changes the Needs attention response
+contract and therefore requires the matching Convex update.
+
+- Guarded dry run and deployment from `de6960d` selected Production
+  `descriptive-meerkat-589`; schema validation passed and no indexes were
+  deleted. `health:check` returned `ok` at `1790784535383`.
+- This releases Elias’s attention/renewal fixes and removes the obsolete
+  Resolve function. It also changes new server error/notification wording.
+  Existing stored audit events and notifications are preserved.
+- Final server wording deployed from `2636398` through a second guarded dry
+  run and release. No indexes were deleted; health returned `ok` at
+  `1790784838755`. All 1,667 unit/component tests, both typechecks, lint,
+  production build, dependency audit and 14 CLI/environment guards pass.
+- Remaining closure: inspect the regenerated Linux references, run normal
+  screenshot comparison CI and verify the final frontend deployment.
+  `CURRENT_STATE.md` records the 174 passing local browser journeys.
+- The repaired staging automation journey reads the paused monitor and
+  history as owner and manager. It creates no rules and sends no messages.
+  Staging credentials are still needed to exercise that live journey.
+- Arabic localization is excluded. No account, payment, messaging setting or
+  production data mutation is needed to verify this copy release.
+
 ## Walkthrough follow-up release, 28 September 2026
 
 **Verified release:** all 13 jobs passed in
