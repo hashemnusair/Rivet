@@ -19,7 +19,7 @@ const enLeaves = collect(en as unknown as MessageTree);
 const arLeaves = collect(ar as unknown as MessageTree);
 
 function strings(leaf: MessageLeaf): string[] {
-  return typeof leaf === "string" ? [leaf] : Object.values(leaf as Record<string, string>);
+  return typeof leaf === "string" ? [leaf] : Object.values(leaf as unknown as Record<string, string>);
 }
 
 function placeholderSet(leaf: MessageLeaf): string[] {
