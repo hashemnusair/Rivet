@@ -3,6 +3,7 @@
 import { Eye, EyeOff } from "lucide-react";
 import { forwardRef, useState, type InputHTMLAttributes } from "react";
 import { Input } from "@/components/ui/input";
+import { useT } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
 
 export type PasswordInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
@@ -16,11 +17,14 @@ export type PasswordInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "ty
  * semantics while making the reveal action keyboard and screen-reader usable.
  */
 export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
-  ({ className, id, showLabel = "Show password", hideLabel = "Hide password", ...props }, ref) => {
+  ({ className, id, showLabel, hideLabel, ...props }, ref) => {
+    const t = useT();
     const [visible, setVisible] = useState(false);
 
     return (
-      <div className="relative">
+      // A password is typed left to right in either language, so the field and its
+      // reveal button keep one fixed layout (button on the right) and never overlap.
+      <div className="relative" dir="ltr">
         <Input
           {...props}
           ref={ref}
@@ -32,7 +36,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
           type="button"
           onClick={() => setVisible((current) => !current)}
           className="absolute inset-y-0 end-0 flex w-10 items-center justify-center text-ink-3 transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/30"
-          aria-label={visible ? hideLabel : showLabel}
+          aria-label={visible ? (hideLabel ?? t("auth.password.hide")) : (showLabel ?? t("auth.password.show"))}
           aria-controls={id}
           aria-pressed={visible}
         >

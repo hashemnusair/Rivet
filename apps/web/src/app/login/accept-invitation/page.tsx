@@ -1,8 +1,10 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
+import { pageTitle } from "../page-title";
 import { LoginLoading, LoginLayout } from "../login-chrome";
 import { AcceptInvitation } from "./accept-invitation.client";
 
-export const metadata = { title: "Accept gym invitation" };
+export const generateMetadata = (): Promise<Metadata> => pageTitle("auth.pageTitle.invitation");
 
 function InvitationFallback() {
   return <LoginLayout><LoginLoading /></LoginLayout>;
