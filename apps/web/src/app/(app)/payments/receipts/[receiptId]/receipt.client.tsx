@@ -10,11 +10,15 @@ import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { usePermissions } from "@/lib/providers/app-providers";
-import { formatDateTime, todayISODate } from "@/lib/utils/dates";
+import { todayISODate } from "@/lib/utils/dates";
 import { currencyDisplayName, money, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
+import { useFormat } from "@/lib/i18n/format";
+import { paymentMethodLabel as paymentMethodName, transactionTypeLabel } from "@/lib/i18n/labels";
+import { useLocale } from "@/lib/i18n/provider";
+import { useAmountText, useMoneyProblemText } from "@/features/membership-actions/renew-flow-format";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { TransactionStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -28,6 +32,8 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const { receiptId: paramReceiptId } = useParams<{ receiptId: string }>();
   const receiptId = receiptIdProp ?? paramReceiptId;
   const { can } = usePermissions();
+  const { t, locale, isolate, isolateLtr } = useLocale();
+  const format = useFormat();
   const invalidate = useInvalidate();
   const [refundOpen, setRefundOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
@@ -44,7 +50,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   }
   if (query.isError) {
     return isApiError(query.error) && query.error.code === "NOT_FOUND" ? (
-      <NotFoundState title="Receipt not found" />
+      <NotFoundState title={t("renewFlow.receipt.notFound")} />
     ) : (
       <ErrorState onRetry={() => query.refetch()} />
     );
@@ -57,10 +63,11 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const isRetailSale = Boolean(retailSale?.lines?.length);
   const retailCustomer = detail.customer ?? retailSale?.customer;
   const memberSnapshot = detail.member;
-  const customerName = retailCustomer?.fullName ?? memberSnapshot?.fullName ?? "Walk-in customer";
-  const customerReference = retailCustomer?.memberNumber ?? retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? "Retail sale";
+  const customerName = retailCustomer?.fullName ?? memberSnapshot?.fullName ?? t("renewFlow.receipt.walkInCustomer");
+  const customerIdentifier = retailCustomer?.memberNumber ?? retailCustomer?.phone ?? memberSnapshot?.memberNumber;
+  const customerReference = customerIdentifier ?? t("renewFlow.receipt.retailSaleReference");
   const retailTotal = retailSale?.total ?? retailSale?.subtotal;
-  const paymentMethodLabel = isRetailSale && payment.method === "card" ? "Visa / card" : PAYMENT_METHOD_LABELS[payment.method];
+  const paymentMethodLabel = isRetailSale && payment.method === "card" ? t("renewFlow.receipt.visaCard") : paymentMethodName(t, payment.method);
   const isRefund = payment.type === "refund";
   const displayedPaymentAmount = isRefund ? { ...payment.amount, amount: Math.abs(payment.amount.amount) } : retailTotal ?? payment.amount;
   const isVoided = payment.status === "voided";
@@ -82,37 +89,37 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
       <div className="no-print flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link href="/payments">
-            <ArrowLeft /> Payments
+            <ArrowLeft /> {t("renewFlow.receipt.back")}
           </Link>
         </Button>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           {isRetailSale ? (
             <Button asChild variant="secondary" size="sm">
-              <Link href="/checkout">New sale</Link>
+              <Link href="/checkout">{t("renewFlow.receipt.newSale")}</Link>
             </Button>
           ) : null}
           {canRefund ? (
             <Button variant="secondary" size="sm" onClick={() => setRefundOpen(true)} data-testid="refund-button">
-              <Undo2 /> Refund…
+              <Undo2 /> {t("renewFlow.receipt.refundButton")}
             </Button>
           ) : null}
           {canRetailRefund ? (
             <Button variant="secondary" size="sm" onClick={() => setRefundOpen(true)} data-testid="retail-refund-button">
-              <Undo2 /> Return and refund…
+              <Undo2 /> {t("renewFlow.receipt.retailRefundButton")}
             </Button>
           ) : null}
           {canVoid ? (
             <Button variant="danger" size="sm" onClick={() => setVoidOpen(true)}>
-              <XOctagon /> Cancel payment…
+              <XOctagon /> {t("renewFlow.receipt.cancelPaymentButton")}
             </Button>
           ) : null}
           {canRetailVoid ? (
             <Button variant="danger" size="sm" onClick={() => setVoidOpen(true)} data-testid="retail-void-button">
-              <XOctagon /> Cancel sale…
+              <XOctagon /> {t("renewFlow.receipt.cancelSaleButton")}
             </Button>
           ) : null}
           <Button size="sm" onClick={() => window.print()}>
-            <Printer /> Print
+            <Printer /> {t("common.action.print")}
           </Button>
         </div>
       </div>
@@ -122,27 +129,27 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         <div id="receipt-print" className="panel mx-auto w-full max-w-md px-5 py-6 font-mono text-[12.5px] sm:px-8 sm:py-8">
           <div className="flex flex-col items-center border-b border-dashed border-line-3 pb-4 text-center">
             <Image src="/brand/rivet-glyph.png" alt="" width={19} height={30} className="mb-2" />
-            <h1 className="font-display text-[17px] font-semibold tracking-tight">{detail.organization.name}</h1>
+            <h1 className="font-display text-[17px] font-semibold tracking-tight"><bdi>{detail.organization.name}</bdi></h1>
             <p className="mt-0.5 text-[12px] text-ink-2">
-              {detail.branch.name} · {detail.branch.address}
+              <bdi>{detail.branch.name}</bdi> · <bdi>{detail.branch.address}</bdi>
             </p>
             <p className="text-[12px] text-ink-2" dir="ltr">{detail.branch.phone}</p>
           </div>
 
           <div className="flex justify-between border-b border-dashed border-line-3 py-3 text-[12px]">
             <div>
-              <p className="text-ink-3">RECEIPT</p>
-              <p className="text-[14px] font-semibold">{detail.receipt.receiptNumber}</p>
+              <p className="text-ink-3">{t("renewFlow.receipt.heading")}</p>
+              <p className="text-[14px] font-semibold" dir="ltr">{detail.receipt.receiptNumber}</p>
             </div>
             <div className="text-end">
-              <p className="text-ink-3">{formatDateTime(detail.receipt.issuedAt)}</p>
-            <p className="mt-0.5 uppercase">{isRefund ? "REFUND" : isRetailSale ? "RETAIL SALE" : "PAYMENT"}</p>
+              <p className="text-ink-3"><bdi>{format.dateTime(detail.receipt.issuedAt)}</bdi></p>
+            <p className="mt-0.5 uppercase">{isRefund ? t("renewFlow.receipt.kindRefund") : isRetailSale ? t("renewFlow.receipt.kindRetail") : t("renewFlow.receipt.kindPayment")}</p>
             </div>
           </div>
 
           <div className="border-b border-dashed border-line-3 py-3">
-            <p className="text-[13px] font-semibold">{customerName}</p>
-            <p className="text-[12px] text-ink-2">{retailCustomer?.memberNumber ? `Member ${retailCustomer.memberNumber}` : retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? (retailCustomer?.kind === "guest" ? "Guest sale" : "Walk-in sale")}</p>
+            <p className="text-[13px] font-semibold"><bdi>{customerName}</bdi></p>
+            <p className="text-[12px] text-ink-2"><bdi>{retailCustomer?.memberNumber ? t("renewFlow.receipt.memberNumber", { number: isolateLtr(retailCustomer.memberNumber) }) : retailCustomer?.phone ?? memberSnapshot?.memberNumber ?? (retailCustomer?.kind === "guest" ? t("renewFlow.receipt.guestSale") : t("renewFlow.receipt.walkInSale"))}</bdi></p>
           </div>
 
           <table className="w-full border-b border-dashed border-line-3 py-3 text-[12px]">
@@ -151,35 +158,35 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
                 const lineTotal = line.lineTotal;
                 return (
                   <tr key={`${line.sku}-${index}`}>
-                    <td className="py-2 pe-2 align-top">{line.productName} × {line.quantity}</td>
-                    <td className="py-2 text-end align-top tabular">
+                    <td className="py-2 pe-2 align-top"><bdi>{line.productName}</bdi> × {line.quantity}</td>
+                    <td className="py-2 text-end align-top tabular"><span dir="ltr">
                       {toMajorString(lineTotal)}
-                    </td>
+                    </span></td>
                   </tr>
                 );
               }) : (
                 <tr>
-                  <td className="py-2 pe-2 align-top">{charge?.description ?? (isRefund ? "Refund" : "Payment")}</td>
-                  <td className="py-2 text-end align-top tabular">
+                  <td className="py-2 pe-2 align-top">{charge?.description ? <bdi>{charge.description}</bdi> : isRefund ? t("domain.transactionType.refund") : t("domain.transactionType.payment")}</td>
+                  <td className="py-2 text-end align-top tabular"><span dir="ltr">
                     {charge ? toMajorString(charge.subtotal) : toMajorString({ ...payment.amount, amount: Math.abs(payment.amount.amount) })}
-                  </td>
+                  </span></td>
                 </tr>
               )}
               {charge && charge.discount.amount > 0 ? (
                 <tr>
-                  <td className="pb-2 text-ink-2">Discount{charge.status ? "" : ""}</td>
-                  <td className="pb-2 text-end tabular">−{toMajorString(charge.discount)}</td>
+                  <td className="pb-2 text-ink-2">{t("renewFlow.receipt.discount")}</td>
+                  <td className="pb-2 text-end tabular"><span dir="ltr">−{toMajorString(charge.discount)}</span></td>
                 </tr>
               ) : null}
               {isRetailSale && !isRefund ? (
                 <tr className="border-t border-line-2">
-                  <td className="py-2 font-semibold">Sale total</td>
-                  <td className="py-2 text-end font-semibold tabular">{retailTotal ? toMajorString(retailTotal) : toMajorString({ ...payment.amount, amount: Math.abs(payment.amount.amount) })}</td>
+                  <td className="py-2 font-semibold">{t("renewFlow.receipt.saleTotal")}</td>
+                  <td className="py-2 text-end font-semibold tabular"><span dir="ltr">{retailTotal ? toMajorString(retailTotal) : toMajorString({ ...payment.amount, amount: Math.abs(payment.amount.amount) })}</span></td>
                 </tr>
               ) : charge ? (
                 <tr className="border-t border-line-2">
-                  <td className="py-2 font-semibold">Total</td>
-                  <td className="py-2 text-end font-semibold tabular">{toMajorString(charge.total)}</td>
+                  <td className="py-2 font-semibold">{t("common.label.total")}</td>
+                  <td className="py-2 text-end font-semibold tabular"><span dir="ltr">{toMajorString(charge.total)}</span></td>
                 </tr>
               ) : null}
             </tbody>
@@ -187,65 +194,65 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
           <div className="space-y-1 border-b border-dashed border-line-3 py-3 text-[12px]">
             <div className="flex justify-between">
-              <span>{isRefund ? "Refunded" : "Paid"} ({paymentMethodLabel})</span>
-              <span className="tabular">{toMajorString(displayedPaymentAmount)}</span>
+              <span>{isRefund ? t("renewFlow.receipt.refundedVia", { method: paymentMethodLabel }) : t("renewFlow.receipt.paidVia", { method: paymentMethodLabel })}</span>
+              <span className="tabular" dir="ltr">{toMajorString(displayedPaymentAmount)}</span>
             </div>
             {charge && charge.outstandingAmount.amount > 0 ? (
               <div className="flex justify-between font-semibold">
-                <span>Still owed</span>
-                <span className="tabular">{toMajorString(charge.outstandingAmount)}</span>
+                <span>{t("renewFlow.receipt.stillOwed")}</span>
+                <span className="tabular" dir="ltr">{toMajorString(charge.outstandingAmount)}</span>
               </div>
             ) : null}
           </div>
 
           <div className="space-y-0.5 py-3 text-[12px] text-ink-2">
-            <p>Served by: {payment.collectedByName}</p>
-            {payment.externalReference ? <p>Reference: {payment.externalReference}</p> : null}
-            {isRefund && paymentRecord?.refundReason ? <p>Reason: {paymentRecord.refundReason}</p> : null}
-            {isVoided ? <p className="font-semibold text-danger">CANCELLED{payment.voidReason ? ` — ${payment.voidReason}` : ""}</p> : null}
-            {payment.status === "refunded" && !isRefund ? <p className="font-semibold">This {isRetailSale ? "sale" : "payment"} was fully refunded{refundedSoFar ? ` (${toMajorString(refundedSoFar)})` : ""}.</p> : null}
-            {payment.status === "partially_refunded" && !isRefund && refundedSoFar ? <p className="font-semibold">Part refunded: {toMajorString(refundedSoFar)} given back so far.</p> : null}
+            <p>{t("renewFlow.receipt.servedBy", { name: isolate(payment.collectedByName) })}</p>
+            {payment.externalReference ? <p>{t("renewFlow.receipt.reference", { reference: isolateLtr(payment.externalReference) })}</p> : null}
+            {isRefund && paymentRecord?.refundReason ? <p>{t("renewFlow.receipt.reason", { reason: isolate(paymentRecord.refundReason) })}</p> : null}
+            {isVoided ? <p className="font-semibold text-danger">{payment.voidReason ? t("renewFlow.receipt.cancelledWithReason", { reason: isolate(payment.voidReason) }) : t("renewFlow.receipt.cancelled")}</p> : null}
+            {payment.status === "refunded" && !isRefund ? <p className="font-semibold">{t(isRetailSale ? (refundedSoFar ? "renewFlow.receipt.fullyRefundedSaleAmount" : "renewFlow.receipt.fullyRefundedSale") : (refundedSoFar ? "renewFlow.receipt.fullyRefundedPaymentAmount" : "renewFlow.receipt.fullyRefundedPayment"), { amount: refundedSoFar ? isolateLtr(toMajorString(refundedSoFar)) : "" })}</p> : null}
+            {payment.status === "partially_refunded" && !isRefund && refundedSoFar ? <p className="font-semibold">{t("renewFlow.receipt.partRefunded", { amount: isolateLtr(toMajorString(refundedSoFar)) })}</p> : null}
           </div>
 
           <div className="border-t border-dashed border-line-3 pt-3 text-center">
             <p className="text-[12px] leading-relaxed text-ink-2">{detail.organization.receiptFooter}</p>
-            <p className="mt-3 font-mono text-[13px] tracking-[0.3em]">{customerReference}</p>
-            <p className="mt-1 text-[12px] text-ink-3">{currency} · amounts in {currencyDisplayName(currency)}</p>
+            <p className={cn("mt-3 font-mono text-[13px] tracking-[0.3em]", !customerIdentifier && "rtl:tracking-normal")} dir={customerIdentifier ? "ltr" : "auto"}>{customerReference}</p>
+            <p className="mt-1 text-[12px] text-ink-3">{t("renewFlow.receipt.currencyFooter", { currency: isolateLtr(currency), name: currencyDisplayName(currency, locale) })}</p>
           </div>
         </div>
 
         {/* Side panel */}
         <aside className="no-print space-y-4 self-start">
           <section className="panel p-4">
-            <h3 className="mb-2.5 text-[13px] font-semibold">Status</h3>
+            <h3 className="mb-2.5 text-[13px] font-semibold">{t("renewFlow.receipt.statusTitle")}</h3>
             <TransactionStatusChip status={payment.status} />
             {paymentRecord?.refundedAmount && paymentRecord.refundedAmount.amount > 0 ? (
               <p className="mt-2 text-[12.5px] text-ink-2">
-                Refunded so far: <MoneyText money={paymentRecord.refundedAmount} />
+                {t("renewFlow.receipt.refundedSoFar")} <MoneyText money={paymentRecord.refundedAmount} />
               </p>
             ) : null}
             {retailSale?.refundedAmount && retailSale.refundedAmount.amount > 0 ? (
               <p className="mt-2 text-[12.5px] text-ink-2">
-                Refunded so far: <MoneyText money={retailSale.refundedAmount} />
+                {t("renewFlow.receipt.refundedSoFar")} <MoneyText money={retailSale.refundedAmount} />
               </p>
             ) : null}
-            {retailSale?.voidReason ? <p className="mt-2 text-[12px] text-danger">Reason for cancelling: {retailSale.voidReason}</p> : null}
+            {retailSale?.voidReason ? <p className="mt-2 text-[12px] text-danger">{t("renewFlow.receipt.cancelReason", { reason: isolate(retailSale.voidReason) })}</p> : null}
             {paymentRecord?.originalPaymentId ? (
-              <p className="mt-2 text-[12px] text-ink-3">This is a refund of an earlier payment.</p>
+              <p className="mt-2 text-[12px] text-ink-3">{t("renewFlow.receipt.refundOfEarlier")}</p>
             ) : null}
           </section>
 
           {detail.relatedPayments?.length > 0 ? (
             <section className="panel p-4">
-              <h3 className="mb-2.5 text-[13px] font-semibold">Related receipts</h3>
+              <h3 className="mb-2.5 text-[13px] font-semibold">{t("renewFlow.receipt.relatedTitle")}</h3>
               <ul className="space-y-2">
                 {detail.relatedPayments.map((p) => (
                   <li key={p.id} className="flex items-center justify-between text-[12.5px]">
-                    <Link href={receiptHref(p.receiptId)} className="font-mono underline decoration-line-3 underline-offset-2 hover:text-ink">
+                    <Link href={receiptHref(p.receiptId)} dir="ltr" className="font-mono underline decoration-line-3 underline-offset-2 hover:text-ink">
                       {p.receiptNumber}
                     </Link>
                     <span className="flex items-center gap-2">
-                      <span className="text-ink-3">{TRANSACTION_TYPE_LABELS[p.type]}</span>
+                      <span className="text-ink-3">{transactionTypeLabel(t, p.type)}</span>
                       <MoneyText money={p.amount} />
                     </span>
                   </li>
@@ -255,11 +262,11 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
           ) : null}
 
           <section className="panel p-4 text-[12.5px] text-ink-2">
-            <h3 className="mb-2.5 text-[13px] font-semibold">Refund or cancel?</h3>
+            <h3 className="mb-2.5 text-[13px] font-semibold">{t("renewFlow.receipt.guideTitle")}</h3>
             <ul className="list-disc space-y-1.5 ps-4">
-              <li>Cancel a payment only if it was entered by mistake today. The whole payment is cancelled.</li>
-              <li>A refund gives money back. It makes a new refund receipt.</li>
-              <li>A manager checks refunds over JOD 25.000.</li>
+              <li>{t("renewFlow.receipt.guideCancel")}</li>
+              <li>{t("renewFlow.receipt.guideRefund")}</li>
+              <li>{t("renewFlow.receipt.guideReview", { amount: isolateLtr("JOD 25.000") })}</li>
             </ul>
           </section>
         </aside>
@@ -271,7 +278,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         onOpenChange={setRefundOpen}
         onDone={async () => {
           setRefundOpen(false);
-          toast.success("Refund saved. The items are back in stock.");
+          toast.success(t("renewFlow.receipt.toastRetailRefunded"));
           await invalidate();
         }}
       /> : <RefundDialog
@@ -283,7 +290,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         onOpenChange={setRefundOpen}
         onDone={async () => {
           setRefundOpen(false);
-          toast.success("Refund saved.");
+          toast.success(t("renewFlow.receipt.toastRefunded"));
           await invalidate();
         }}
       />}
@@ -294,7 +301,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
         onOpenChange={setVoidOpen}
         onDone={async () => {
           setVoidOpen(false);
-          toast.success(retailSale ? "Sale cancelled. The items are back in stock." : "Payment cancelled.");
+          toast.success(retailSale ? t("renewFlow.receipt.toastSaleCancelled") : t("renewFlow.receipt.toastPaymentCancelled"));
           await invalidate();
         }}
       />
@@ -313,6 +320,7 @@ function RetailRefundDialog({
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
 }) {
+  const { t, isolate, isolateLtr } = useLocale();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [reason, setReason] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -329,27 +337,28 @@ function RetailRefundDialog({
       setIdempotencyKey(crypto.randomUUID());
       onDone();
     },
-    onError: (e) => setError(isApiError(e) ? e.message : "The refund was not saved. Try again."),
+    onError: (e) => setError(isApiError(e) ? e.message : t("renewFlow.receipt.retailRefund.saveFailed")),
   });
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && mutation.isPending) return; onOpenChange(next); }}>
       <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
-          <DialogTitle>Return and refund items</DialogTitle>
-          <DialogDescription>Choose how many of each item the customer gave back. The items go back into stock and the money is refunded. This cannot be undone.</DialogDescription>
+          <DialogTitle>{t("renewFlow.receipt.retailRefund.title")}</DialogTitle>
+          <DialogDescription>{t("renewFlow.receipt.retailRefund.description")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          <div className="space-y-2" aria-label="Refund quantities">
+          <div className="space-y-2" aria-label={t("renewFlow.receipt.retailRefund.quantitiesAria")}>
             {lines.map((line) => (
               <div key={line.productId} className="grid grid-cols-[1fr_88px] items-center gap-3 rounded-md border border-line px-3 py-2.5">
                 <div>
-                  <p className="text-[13px] font-medium">{line.productName}</p>
-                  <p className="text-[12px] text-ink-3">Up to {line.remaining} · {toMajorString(line.unitPrice)} each</p>
+                  <p className="text-[13px] font-medium"><bdi>{line.productName}</bdi></p>
+                  <p className="text-[12px] text-ink-3">{t("renewFlow.receipt.retailRefund.upTo", { remaining: line.remaining, price: isolateLtr(toMajorString(line.unitPrice)) })}</p>
                 </div>
                 <Input
-                  aria-label={`Return quantity for ${line.productName}`}
+                  aria-label={t("renewFlow.receipt.retailRefund.quantityAria", { name: isolate(line.productName) })}
                   type="number"
+                  dir="ltr"
                   min={0}
                   max={line.remaining}
                   step={1}
@@ -360,17 +369,17 @@ function RetailRefundDialog({
             ))}
           </div>
           <div className="flex justify-between rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[13px]">
-            <span className="text-ink-2">Refund total</span>
+            <span className="text-ink-2">{t("renewFlow.receipt.retailRefund.refundTotal")}</span>
             <MoneyText money={money(refundMinor)} className="font-semibold" />
           </div>
-          <Field label="Reason" required>
-            <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="For example: Unopened item returned by customer" data-testid="retail-refund-reason" />
+          <Field label={t("common.label.reason")} required>
+            <Textarea dir="auto" rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("renewFlow.receipt.retailRefund.reasonPlaceholder")} data-testid="retail-refund-reason" />
           </Field>
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
-          <Button variant="signal" disabled={selected.length === 0 || reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="confirm-retail-refund">Give refund</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{t("common.action.cancel")}</Button>
+          <Button variant="signal" disabled={selected.length === 0 || reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="confirm-retail-refund">{t("renewFlow.receipt.retailRefund.submit")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -394,6 +403,9 @@ function RefundDialog({
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
 }) {
+  const { t, isolateLtr } = useLocale();
+  const amountText = useAmountText();
+  const moneyProblemText = useMoneyProblemText();
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -429,22 +441,22 @@ function RefundDialog({
       }),
     {
       onSuccess: () => onDone(),
-      onError: (e) => setError(isApiError(e) ? e.message : "The refund was not saved. Try again."),
+      onError: (e) => setError(isApiError(e) ? e.message : t("renewFlow.receipt.refund.saveFailed")),
     },
   );
 
   const submit = () => {
     setError(null);
     if (amountRead && !amountRead.ok) {
-      setAmountError(amountRead.message);
+      setAmountError(moneyProblemText(amountRead, currency));
       return;
     }
     if (amountRead?.ok && amountRead.money.amount <= 0) {
-      setAmountError("Enter an amount greater than zero, or leave it empty for a full refund.");
+      setAmountError(t("renewFlow.receipt.refund.amountPositive"));
       return;
     }
     if (amountRead?.ok && amountRead.money.amount > maxMinor) {
-      setAmountError(`You can refund at most ${toMajorString(refundable)} ${currency}.`);
+      setAmountError(t("renewFlow.receipt.refund.atMost", { amount: amountText(refundable) }));
       return;
     }
     setAmountError(null);
@@ -455,33 +467,33 @@ function RefundDialog({
     <Dialog open={open} onOpenChange={(next) => { if (!next && mutation.isPending) return; onOpenChange(next); }}>
       <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
-          <DialogTitle>Refund payment</DialogTitle>
+          <DialogTitle>{t("renewFlow.receipt.refund.title")}</DialogTitle>
           <DialogDescription>
-            This gives money back to the member. It cannot be undone.
+            {t("renewFlow.receipt.refund.description")}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className="flex justify-between rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[13px]">
-            <span className="text-ink-2">Can still be refunded</span>
+            <span className="text-ink-2">{t("renewFlow.receipt.refund.canStillRefund")}</span>
             <MoneyText money={refundable} className="font-semibold" />
           </div>
-          <Field label={`Amount (${currency})`} error={amountError ?? undefined} hint={`Leave empty to refund the full ${toMajorString(refundable)}.`}>
+          <Field label={t("renewFlow.shared.amountWithCurrency", { currency: isolateLtr(currency) })} error={amountError ?? undefined} hint={t("renewFlow.receipt.refund.hint", { amount: isolateLtr(toMajorString(refundable)) })}>
             <Input inputMode="decimal" dir="ltr" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountError(null); }} placeholder={toMajorString(refundable)} aria-invalid={amountError ? true : undefined} data-testid="refund-amount" />
           </Field>
-          <Field label="Reason" required>
-            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="For example: Duplicate charge confirmed with the bank" data-testid="refund-reason" />
+          <Field label={t("common.label.reason")} required>
+            <Textarea dir="auto" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("renewFlow.receipt.refund.reasonPlaceholder")} data-testid="refund-reason" />
           </Field>
           {reviewFlagged ? (
             <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
-              A manager will check refunds over {currency} 25.000.
+              {t("renewFlow.receipt.refund.managerReview", { amount: isolateLtr(`${currency} 25.000`) })}
             </p>
           ) : null}
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{t("common.action.cancel")}</Button>
           <Button variant="signal" disabled={reason.trim().length < 5} loading={mutation.isPending} onClick={submit} data-testid="confirm-refund">
-            Give refund
+            {t("renewFlow.receipt.refund.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -502,6 +514,7 @@ function VoidDialog({
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
 }) {
+  const { t } = useLocale();
   const [reason, setReason] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -516,31 +529,31 @@ function VoidDialog({
 
   const mutation = useApiMutation((api) => retailSaleId ? api.voidRetailSale(retailSaleId, { reason, idempotencyKey }) : api.voidPayment(paymentId, { reason, idempotencyKey }), {
     onSuccess: () => onDone(),
-    onError: (e) => setError(isApiError(e) ? e.message : retailSaleId ? "The sale was not cancelled. Try again." : "The payment was not cancelled. Try again."),
+    onError: (e) => setError(isApiError(e) ? e.message : retailSaleId ? t("renewFlow.receipt.void.saleFailed") : t("renewFlow.receipt.void.paymentFailed")),
   });
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && mutation.isPending) return; onOpenChange(next); }}>
       <DialogContent aria-busy={mutation.isPending || undefined}>
         <DialogHeader>
-          <DialogTitle>{retailSaleId ? "Cancel a sale entered by mistake" : "Cancel a payment entered by mistake"}</DialogTitle>
+          <DialogTitle>{retailSaleId ? t("renewFlow.receipt.void.titleSale") : t("renewFlow.receipt.void.titlePayment")}</DialogTitle>
           <DialogDescription>
-            Only for mistakes made today. {retailSaleId ? "The whole sale is cancelled and every item goes back into stock." : "The whole payment is cancelled."} For anything older, give a refund instead.
+            {retailSaleId ? t("renewFlow.receipt.void.descriptionSale") : t("renewFlow.receipt.void.descriptionPayment")}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className={cn("rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger")}>
-            Your name is saved with this. It cannot be undone.
+            {t("renewFlow.receipt.void.warning")}
           </div>
-          <Field label="Reason" required>
-            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="For example: Wrong amount keyed at the terminal" />
+          <Field label={t("common.label.reason")} required>
+            <Textarea dir="auto" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("renewFlow.receipt.void.reasonPlaceholder")} />
           </Field>
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{retailSaleId ? "Keep sale" : "Keep payment"}</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{retailSaleId ? t("renewFlow.receipt.void.keepSale") : t("renewFlow.receipt.void.keepPayment")}</Button>
           <Button variant="signal" disabled={reason.trim().length < 5} loading={mutation.isPending} onClick={() => mutation.mutate()}>
-            {retailSaleId ? "Cancel sale" : "Cancel payment"}
+            {retailSaleId ? t("renewFlow.receipt.void.cancelSale") : t("renewFlow.receipt.void.cancelPayment")}
           </Button>
         </DialogFooter>
       </DialogContent>
