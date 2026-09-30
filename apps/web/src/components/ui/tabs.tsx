@@ -3,8 +3,13 @@
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { forwardRef, useEffect, useImperativeHandle, useRef, type ComponentPropsWithoutRef, type ComponentRef } from "react";
 import { cn } from "@/lib/utils/cn";
+import { useLocale } from "@/lib/i18n/provider";
 
-const Tabs = TabsPrimitive.Root;
+/** Radix arrow-key order follows `dir`, which it does not read from the document. */
+function Tabs(props: ComponentPropsWithoutRef<typeof TabsPrimitive.Root>) {
+  const { dir } = useLocale();
+  return <TabsPrimitive.Root dir={dir} {...props} />;
+}
 
 export const tabListClassName = "flex min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto border-b border-line-3";
 export const tabTriggerClassName = "relative inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-2 py-3 text-[13.5px] font-semibold text-ink-2 transition-colors hover:text-ink data-[state=active]:border-ink data-[state=active]:text-ink aria-selected:border-ink aria-selected:text-ink aria-[current=page]:border-ink aria-[current=page]:text-ink aria-pressed:border-ink aria-pressed:text-ink cursor-pointer sm:px-4";

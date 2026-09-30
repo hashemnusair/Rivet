@@ -8,7 +8,9 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils/cn";
 import { useApp } from "@/lib/providers/app-providers";
 import type { RoleKey } from "@/lib/domain/types";
-import { ROLE_LABELS } from "@/lib/domain/permissions";
+import { roleLabel } from "@/lib/i18n/labels";
+import { useLocale } from "@/lib/i18n/provider";
+import { LanguageMenuItem } from "@/components/shared/language-switch";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -45,6 +47,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const [resetting, setResetting] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const router = useRouter();
+  const { t, isolate } = useLocale();
 
   const role = session?.roles[0];
   const canPickBranch = role === "owner" || role === "manager";
@@ -64,11 +67,11 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
       router.replace("/login");
     } catch {
       setSigningOut(false);
-      toast.error("Could not sign out. Please try again.");
+      toast.error(t("shell.topbar.signOutFailed"));
     }
   };
 
-  if (signingOut) return <AuthTransition title="Signing you out" detail="Going back to the sign-in page…" />;
+  if (signingOut) return <AuthTransition title={t("shell.topbar.signingOut")} detail={t("shell.topbar.signingOutDetail")} />;
 
   return (
     <header
@@ -81,7 +84,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
         size="icon"
         onClick={onOpenMobileNav}
         className="-ms-1.5 lg:hidden"
-        aria-label="Open menu"
+        aria-label={t("shell.topbar.openMenu")}
       >
         <Menu />
       </Button>
@@ -91,10 +94,10 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
         type="button"
         onClick={() => setPaletteOpen(true)}
         className="flex h-8 w-full max-w-72 min-w-0 items-center gap-2 rounded-md border border-line-2 bg-surface px-2.5 text-[13px] text-ink-3 transition-colors hover:border-line-3 hover:text-ink-2 cursor-pointer"
-        aria-label="Search members, leads and pages"
+        aria-label={t("shell.topbar.searchLabel")}
       >
         <Search className="size-3.5" aria-hidden />
-        <span className="flex-1 text-start truncate">Search…</span>
+        <span className="flex-1 text-start truncate">{t("shell.topbar.searchPlaceholder")}</span>
         <kbd className="hidden sm:inline-flex h-5 items-center rounded-sm border border-line bg-paper px-1 font-mono text-[10.5px] text-ink-3">
           ⌘K
         </kbd>
@@ -105,9 +108,9 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
       {session && organizations.length > 1 ? (
         <Select
           value={session.organization.id}
-          onValueChange={(organizationId) => void selectOrganization(organizationId).catch(() => toast.error("That gym could not be opened."))}
+          onValueChange={(organizationId) => void selectOrganization(organizationId).catch(() => toast.error(t("shell.topbar.gymCouldNotOpen")))}
         >
-          <SelectTrigger sizeVariant="sm" className="hidden w-48 md:flex" aria-label="Gym">
+          <SelectTrigger sizeVariant="sm" className="hidden w-48 md:flex" aria-label={t("shell.topbar.gym")}>
             <div className="flex items-center gap-2 truncate">
               <Building2 className="size-3.5 shrink-0 text-ink-3" aria-hidden />
               <SelectValue />
@@ -116,7 +119,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
           <SelectContent>
             {organizations.map((organization) => (
               <SelectItem key={organization.organizationId} value={organization.organizationId}>
-                {organization.organizationName} · {ROLE_LABELS[organization.role]}
+                {organization.organizationName} · {roleLabel(t, organization.role)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -130,14 +133,14 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             value={session.activeBranchId ?? "all"}
             onValueChange={(v) => setBranch(v === "all" ? undefined : v)}
           >
-            <SelectTrigger sizeVariant="sm" className="w-44 hidden md:flex" aria-label="Active branch">
+            <SelectTrigger sizeVariant="sm" className="w-44 hidden md:flex" aria-label={t("shell.topbar.activeBranch")}>
               <div className="flex items-center gap-2 truncate">
                 <Building2 className="size-3.5 text-ink-3 shrink-0" aria-hidden />
                 <SelectValue />
               </div>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All branches</SelectItem>
+              <SelectItem value="all">{t("common.label.allBranches")}</SelectItem>
               {session.branches.map((b) => (
                 <SelectItem key={b.id} value={b.id}>
                   {b.name}
@@ -149,7 +152,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
           <span className="hidden md:inline-flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 h-8 text-[12.5px] text-ink-2">
             <Building2 className="size-3.5 text-ink-3" aria-hidden />
             {session.branches.find((b) => b.id === session.activeBranchId)?.name ??
-              "Branch unavailable"}
+              t("shell.topbar.branchUnavailable")}
           </span>
         )
       ) : null}
@@ -265,20 +268,20 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <button
               type="button"
               className="flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken cursor-pointer"
-              aria-label="Account menu"
+              aria-label={t("shell.account.menu")}
             >
               <Monogram name={session.user.name} size="sm" />
               <span className="hidden lg:block text-start leading-tight">
                 <span className="block text-[13px] font-medium text-ink">{session.user.name}</span>
                 <span className="block text-[12px] font-medium text-ink-3">
-                  {role ? ROLE_LABELS[role] : ""}
+                  {role ? roleLabel(t, role) : ""}
                 </span>
               </span>
               <ChevronDown className="size-3.5 text-ink-3 hidden lg:block" aria-hidden />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuLabel>Signed in as {session.user.email}</DropdownMenuLabel>
+            <DropdownMenuLabel>{t("shell.account.signedInAs", { email: isolate(session.user.email) })}</DropdownMenuLabel>
             {demoControlsEnabled ? (
               <>
                 <DropdownMenuSeparator />
@@ -291,7 +294,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
                       {role === d.role ? <Check className="size-3.5 text-success" /> : <UserRound className="size-3.5" />}
                     </span>
                     <span>
-                      <span className="block font-medium">{ROLE_LABELS[d.role]}</span>
+                      <span className="block font-medium">{roleLabel(t, d.role)}</span>
                       <span className="block text-[12px] text-ink-3">{d.blurb}</span>
                     </span>
                   </DropdownMenuItem>
@@ -300,11 +303,12 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/settings")}>
-              <Building2 /> Settings
+              <Building2 /> {t("shell.account.settings")}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push("/getting-started")}><GraduationCap /> Getting started</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/getting-started")}><GraduationCap /> {t("shell.account.gettingStarted")}</DropdownMenuItem>
+            <LanguageMenuItem />
             <DropdownMenuItem onClick={() => void handleSignOut()}>
-              <LogOut /> {demoControlsEnabled ? "Sign out of demo" : "Sign out"}
+              <LogOut /> {demoControlsEnabled ? t("shell.account.signOutDemo") : t("shell.account.signOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
