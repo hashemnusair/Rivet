@@ -12,6 +12,7 @@ import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
+import { useT } from "@/lib/i18n/provider";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { useDampedRootOverscroll } from "@/lib/hooks/use-damped-root-overscroll";
 import { cn } from "@/lib/utils/cn";
@@ -19,6 +20,7 @@ import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { SubscriptionAgreementGate } from "@/features/legal/subscription-agreement-modal";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const { session, signedIn, sessionLoading, signIn, sidebarCollapsed } = useApp();
   const { customerSignedIn, platformAdminSignedIn } = useExperience();
   const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
@@ -95,7 +97,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (!workspaceReady) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Loading your gym">
+      <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label={t("palette.layout.loadingGym")}>
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
           <div className="h-full w-1/2 animate-[loading-bar_1s_ease-in-out_infinite] rounded-full bg-ink" />
         </div>
