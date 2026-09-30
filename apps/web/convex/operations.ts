@@ -139,7 +139,7 @@ export async function requireOperations(ctx: ReadContext, actor: ActorContext): 
 
 export function requireOperationsWrite(actor: ActorContext): void {
   requirePermission(actor, "operations.manage");
-  if (actor.role !== "owner" && actor.role !== "manager") domainError("FORBIDDEN", "Only an organization owner or manager can change daily operations records.", { correlationId: actor.correlationId });
+  if (actor.role !== "owner" && actor.role !== "manager") domainError("FORBIDDEN", "Only a gym owner or manager can change daily operations records.", { correlationId: actor.correlationId });
 }
 
 /**
@@ -301,7 +301,7 @@ export async function idempotentResult(ctx: MutationCtx, actor: ActorContext, op
   if (expired.length > 0) await Promise.all(expired.map((row) => ctx.db.delete(row._id)));
   const existing = rows.find((row) => !expired.some((stale) => stale._id === row._id));
   if (!existing) return undefined;
-  if (existing.requestHash !== requestHash) domainError("CONFLICT", "This idempotency key was already used for a different request.", { correlationId: actor.correlationId });
+  if (existing.requestHash !== requestHash) domainError("CONFLICT", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
   return value(existing.result);
 }
 
@@ -752,7 +752,7 @@ async function recordStockMovement(ctx: MutationCtx, actor: ActorContext, input:
   const reason = optionalText(input.reason);
   if (type === "adjustment") requireReason(reason, actor.correlationId);
   const idempotencyKey = optionalText(input.idempotencyKey);
-  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
   return await recordMovementInternal(ctx, actor, { branch, product, type, quantity, unitCost, reason, referenceType: optionalText(input.referenceType), referenceId: optionalText(input.referenceId), idempotencyKey, financialPostingStatus: "not_posted" });
 }
 
@@ -769,7 +769,7 @@ async function transferInventory(ctx: MutationCtx, actor: ActorContext, input: D
   const reason = text(input.reason).trim();
   requireReason(reason, actor.correlationId);
   const idempotencyKey = optionalText(input.idempotencyKey);
-  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
   // Resolve scope before lifecycle validation so an authenticated retry can
   // replay after a branch/product is archived without exposing foreign rows.
   const sourceScope = await transferBranchScope(ctx, actor, optionalText(input.sourceBranchId));
@@ -930,7 +930,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   const branch = await branchByPublicId(ctx, actor, optionalText(input.branchId));
   const method = assertOneOf(input.method, ["cash", "cliq", "card"] as const, "Retail payment method", actor.correlationId);
   const idempotencyKey = optionalText(input.idempotencyKey);
-  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
   const rawGuest = value(input.guest);
   const guest = input.guest === undefined ? undefined : { fullName: text(rawGuest.fullName).trim(), phone: text(rawGuest.phone).trim() };
   const memberId = optionalText(input.memberId);
@@ -1179,7 +1179,7 @@ async function refundRetailSale(ctx: MutationCtx, actor: ActorContext, input: Da
   const reason = optionalText(input.reason);
   requireReason(reason, actor.correlationId);
   const idempotencyKey = optionalText(input.idempotencyKey);
-  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
   const rawLines = Array.isArray(input.lines) ? input.lines : [];
   const lines = rawLines.map((raw) => ({ productId: optionalText(value(raw).productId) ?? "", quantity: integer(value(raw).quantity, Number.NaN) })).sort((a, b) => a.productId.localeCompare(b.productId));
   const saleId = optionalText(input.saleId) ?? "";
@@ -1243,7 +1243,7 @@ async function voidRetailSale(ctx: MutationCtx, actor: ActorContext, input: Data
   const reason = optionalText(input.reason);
   requireReason(reason, actor.correlationId);
   const idempotencyKey = optionalText(input.idempotencyKey);
-  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
   const saleId = optionalText(input.saleId) ?? "";
   const requestHash = JSON.stringify({ saleId, reason });
   const { sale, branch } = await retailSaleForMutation(ctx, actor, saleId);
@@ -1421,7 +1421,7 @@ async function createPurchaseOrder(ctx: MutationCtx, actor: ActorContext, input:
   if (requestedSource !== "supplier" && requestedSource !== "private") domainError("VALIDATION_ERROR", "Purchase source is invalid.", { correlationId: actor.correlationId });
   const supplier = requestedSource === "supplier" ? await supplierByPublicId(ctx, actor, optionalText(input.supplierId)) : null;
   if (supplier && supplier.status !== "active") domainError("CONFLICT", "Archived suppliers cannot receive purchase orders.", { correlationId: actor.correlationId });
-  if (supplier && supplier.branchIds.length > 0 && !supplier.branchIds.includes(branch._id)) domainError("VALIDATION_ERROR", "Supplier is not configured for this branch.", { correlationId: actor.correlationId });
+  if (supplier && supplier.branchIds.length > 0 && !supplier.branchIds.includes(branch._id)) domainError("VALIDATION_ERROR", "This supplier is not set up for this branch.", { correlationId: actor.correlationId });
   const rawLines = Array.isArray(input.lines) ? input.lines : [];
   if (rawLines.length === 0 || rawLines.length > 100) domainError("VALIDATION_ERROR", "A purchase order must contain 1 to 100 product lines.", { correlationId: actor.correlationId });
   const seen = new Set<string>();
@@ -1499,7 +1499,7 @@ async function receivePurchaseOrder(ctx: MutationCtx, actor: ActorContext, input
   requireOperationsWrite(actor);
   const orderId = optionalText(input.purchaseOrderId);
   const idempotencyKey = optionalText(input.idempotencyKey);
-  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "A bounded receiving idempotency key is required.", { correlationId: actor.correlationId });
+  if (!idempotencyKey || idempotencyKey.length > 160) domainError("VALIDATION_ERROR", "This delivery could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
   const requestHash = JSON.stringify({ purchaseOrderId: orderId, lines: input.lines });
   const order = orderId ? await ctx.db.query("purchaseOrders").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", orderId)).unique() : null;
   if (!order) domainError("NOT_FOUND", "Purchase order not found.", { correlationId: actor.correlationId });

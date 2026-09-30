@@ -3320,7 +3320,7 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
 async function resolveEntryPass(ctx: ReadContext, actor: ActorContext, token: string, branchId: string): Promise<{ pass: Doc<"entryPasses">; membership: DomainRecord; payload: Data } | null> {
   if (!token.startsWith(`${ENTRY_PASS_PREFIX}.`)) return null;
   const secret = process.env.ENTRY_PASS_SIGNING_SECRET;
-  if (!secret) domainError("CONFIGURATION_ERROR", "Entry-pass validation is not configured.", { correlationId: actor.correlationId });
+  if (!secret) domainError("CONFIGURATION_ERROR", "Entry passes are not set up yet. Ask your gym owner.", { correlationId: actor.correlationId });
   const parts = token.split(".");
   if (parts.length !== 3 || parts[0] !== ENTRY_PASS_PREFIX) return null;
   const encodedPayload = parts[1] ?? "";
@@ -3345,7 +3345,7 @@ async function resolveEntryPass(ctx: ReadContext, actor: ActorContext, token: st
 
 async function createEntryPass(ctx: MutationCtx, input: Data): Promise<Data> {
   const secret = process.env.ENTRY_PASS_SIGNING_SECRET;
-  if (!secret) domainError("CONFIGURATION_ERROR", "Entry-pass signing is not configured.");
+  if (!secret) domainError("CONFIGURATION_ERROR", "Entry passes are not set up yet. Ask your gym owner.");
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
@@ -3514,7 +3514,7 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   if (!weekday || !TIME_PATTERN.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.");
   const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
   const schedule = arrayValue(data(data(settings?.data).operationalPolicies).trialSchedules).map(data).find((candidate) => candidate.branchId === publicBranchId(branch));
-  if (!schedule) domainError("VALIDATION_ERROR", "Trial scheduling is not configured for this branch yet.");
+  if (!schedule) domainError("VALIDATION_ERROR", "Trial bookings are not set up for this branch yet.");
   const trialWindow = normalizedTrialWindow(data(data(schedule.days)[weekday]));
   if (!booleanValue(trialWindow.enabled) || preferredTime < stringValue(trialWindow.opensAt) || preferredTime > stringValue(trialWindow.closesAt)) {
     domainError("CONFLICT", "That trial time is outside this branch's trial-request hours.");
@@ -4432,7 +4432,7 @@ export async function onboardingExperience(ctx: ReadContext, input: Data, reques
   }
 
   const actor = await requireActor(ctx, request);
-  if (audience === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Owner onboarding is available only to organization owners.", { correlationId: actor.correlationId });
+  if (audience === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can complete these setup steps.", { correlationId: actor.correlationId });
   const progressRecord = await onboardingProgressRecord(ctx, actor.user, audience, actor.organization._id);
   const progress = onboardingProgressView(progressRecord, audience);
   const completed = new Set(arrayValue(progress.completedStepKeys).map(String));
@@ -4475,7 +4475,7 @@ async function updateOnboardingProgressMutation(ctx: MutationCtx, input: Data, r
   const audience = stringValue(input.audience) as "owner" | "staff" | "member";
   const { user } = audience === "member" ? await requireMember(ctx) : await requireAuthenticated(ctx);
   const actor = audience === "member" ? null : await requireActor(ctx, request);
-  if (audience === "owner" && actor?.role !== "owner") domainError("FORBIDDEN", "Owner onboarding is available only to organization owners.", { correlationId: request.correlationId });
+  if (audience === "owner" && actor?.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can complete these setup steps.", { correlationId: request.correlationId });
   if (!(["owner", "staff", "member"] as string[]).includes(audience)) domainError("VALIDATION_ERROR", "Choose a valid onboarding audience.", { correlationId: request.correlationId });
   const organizationId = actor?.organization._id;
   const existing = await onboardingProgressRecord(ctx, user, audience, organizationId);
@@ -5764,7 +5764,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       return MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] }));
     case "workspace.module": {
       const key = stringValue(input.moduleKey);
-      if (!WORKSPACE_MODULE_CATALOG.some((module) => module.key === key)) domainError("VALIDATION_ERROR", "Unknown workspace module.", { correlationId: actor.correlationId, details: { module: key } });
+      if (!WORKSPACE_MODULE_CATALOG.some((module) => module.key === key)) domainError("VALIDATION_ERROR", "This feature could not be found.", { correlationId: actor.correlationId, details: { module: key } });
       const access = await workspaceAccessData(ctx, actor);
       requireWorkspaceModule(actor, access, key as WorkspaceModuleKey);
       return arrayValue(access.modules).map(data).find((item) => item.key === key);
@@ -6583,7 +6583,7 @@ async function paymentRecord(
     .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "payment.create").eq("key", idempotencyKey))
     .unique();
   if (existing) {
-    if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different payment.", { correlationId: actor.correlationId });
+    if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
     const result = data(existing.result);
     const payment = await recordOf(ctx, actor, "payment", stringValue(result.paymentId));
     const receipt = await recordOf(ctx, actor, "receipt", stringValue(result.receiptId));
@@ -6596,7 +6596,7 @@ async function paymentRecord(
   assertBranchAccess(actor, branch);
   const amount = amountOf(input.amount);
   if (!Number.isSafeInteger(amount) || amount <= 0) domainError("VALIDATION_ERROR", "Payment amount must be greater than zero.", { correlationId: actor.correlationId });
-  if (currencyOf(input.amount, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Payment currency does not match the organization.", { correlationId: actor.correlationId });
+  if (currencyOf(input.amount, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Use your gym’s currency for this payment.", { correlationId: actor.correlationId });
   const chargeRecordsList = await chargeRecords(ctx, actor);
   const requestedChargeId = optionalString(input.chargeId);
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
@@ -7037,7 +7037,7 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
   const requestHash = JSON.stringify({ importId, cursor: numberValue(input.cursor), chunkSize: numberValue(input.chunkSize), idempotencyKey });
   const existingIdempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "member-import.commit").eq("key", idempotencyKey)).unique();
   if (existingIdempotency) {
-    if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This import idempotency key was already used for a different chunk.", { correlationId: actor.correlationId });
+    if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
     return data(existingIdempotency.result);
   }
   const record = await recordOf(ctx, actor, "memberImport", importId);
@@ -7293,7 +7293,7 @@ async function createMembershipMutation(
       .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", `membership.${operation}`).eq("key", idempotencyKey))
       .unique();
     if (existing) {
-      if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different membership sale.", { correlationId: actor.correlationId });
+      if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
       const stored = data(existing.result);
       const replayMembership = await recordOf(ctx, actor, "membership", stringValue(stored.membershipId));
       const replayCharge = await recordOf(ctx, actor, "charge", stringValue(stored.chargeId));
@@ -8068,7 +8068,7 @@ async function reverseUnusedPtOrderAfterVoid(ctx: MutationCtx, actor: ActorConte
   const order = await ctx.db.query("ptPackageOrders").withIndex("by_charge", (q) => q.eq("organizationId", actor.organization._id).eq("chargePublicId", chargeId)).unique();
   if (!order || order.status === "pending_payment" || !order.entitlementId) return;
   const entitlement = await ctx.db.get(order.entitlementId);
-  if (!entitlement) domainError("NOT_FOUND", "PT package entitlement not found.", { correlationId: actor.correlationId });
+  if (!entitlement) domainError("NOT_FOUND", "The member’s PT package could not be found.", { correlationId: actor.correlationId });
   if (entitlement.reserved > 0 || entitlement.consumed > 0 || entitlement.revoked > 0) {
     domainError("VALIDATION_ERROR", "This payment cannot be voided after PT credits were reserved, used, or refunded. Use the audited PT package refund workflow.", { correlationId: actor.correlationId });
   }
@@ -8356,11 +8356,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.pt.package.request") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
     const idempotencyKey = stringValue(input.idempotencyKey).trim();
-    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: request.correlationId });
     const requestHash = JSON.stringify({ membershipId: input.membershipId, packageId: input.packageId });
     const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", context.organization._id).eq("operation", "customer.pt.package.request").eq("key", idempotencyKey)).unique();
     if (existingKey) {
-      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different package request.", { correlationId: request.correlationId });
+      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: request.correlationId });
       const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", stringValue(data(existingKey.result).orderId))).unique();
       if (!order) domainError("NOT_FOUND", "PT package order not found.");
       return await ptPackageOrderView(ctx, context.organization, order);
@@ -8404,10 +8404,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.pt.booking.create") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
     const idempotencyKey = stringValue(input.idempotencyKey).trim();
-    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: request.correlationId });
     const existing = await ctx.db.query("ptBookings").withIndex("by_organization_idempotency", (q) => q.eq("organizationId", context.organization._id).eq("idempotencyKey", idempotencyKey)).unique();
     if (existing) {
-      if (existing.membershipPublicId !== context.membership.publicId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT booking.", { correlationId: request.correlationId });
+      if (existing.membershipPublicId !== context.membership.publicId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: request.correlationId });
       return await ptBookingView(ctx, context.organization, existing);
     }
     const membership = data(context.membership.data);
@@ -8478,7 +8478,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const { user } = await requireMember(ctx);
     requireReason(input.reason, request.correlationId);
     const idempotencyKey = stringValue(input.idempotencyKey).trim();
-    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: request.correlationId });
     const booking = await ctx.db.query("ptBookings").withIndex("by_public_id", (q) => q.eq("publicId", recordId(input.bookingId))).unique();
     if (!booking) domainError("NOT_FOUND", "PT booking not found.", { correlationId: request.correlationId });
     const organization = await ctx.db.get(booking.organizationId);
@@ -8489,7 +8489,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const requestHash = JSON.stringify({ bookingId: booking.publicId, trainerProfileId: input.trainerProfileId, branchId: input.branchId, startsAt: input.startsAt });
     const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", organization._id).eq("operation", "customer.pt.booking.reschedule").eq("key", idempotencyKey)).unique();
     if (existingKey) {
-      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another reschedule.", { correlationId: request.correlationId });
+      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: request.correlationId });
       return await ptBookingView(ctx, organization, booking);
     }
     const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
@@ -9981,7 +9981,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const validityDays = numberValue(input.validityDays);
       if (!name || !Number.isSafeInteger(sessionCount) || sessionCount < 1 || sessionCount > 1_000) domainError("VALIDATION_ERROR", "PT packages must contain between 1 and 1,000 whole sessions.", { correlationId: actor.correlationId });
       if (!Number.isSafeInteger(totalPriceMinor) || totalPriceMinor <= 0 || !Number.isInteger(validityDays) || validityDays < 1 || validityDays > 730) domainError("VALIDATION_ERROR", "Package price and validity must be positive.", { correlationId: actor.correlationId });
-      if (currencyOf(input.totalPrice, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Package currency does not match the organization.", { correlationId: actor.correlationId });
+      if (currencyOf(input.totalPrice, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Use your gym’s currency for this package.", { correlationId: actor.correlationId });
       const branchAccess = stringValue(input.branchAccess, "all");
       const requestedBranches = branchAccess === "selected" ? arrayValue(input.branchIds).map(String) : [];
       if (branchAccess === "selected" && requestedBranches.length === 0) domainError("VALIDATION_ERROR", "Select at least one package branch.", { correlationId: actor.correlationId });
@@ -10073,7 +10073,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "pt.package.request": {
       requirePermission(actor, "pt.book_for_member");
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ membershipId: input.membershipId, packageId: input.packageId });
       // Prove the requested member and membership branch before consulting a
       // known idempotency key. A key from another branch must never turn into
@@ -10086,7 +10086,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (actor.branchScope === "selected" && !actor.branchIds.includes(membershipBranch._id)) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
       const idempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.request").eq("key", idempotencyKey)).unique();
       if (idempotency) {
-        if (idempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different package request.", { correlationId: actor.correlationId });
+        if (idempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(idempotency.result).orderId))).unique();
         if (!order) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
         await ptPackageOrderScope(ctx, actor, order);
@@ -10131,7 +10131,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requireReason(input.reason, actor.correlationId);
       const orderId = recordId(input.orderId);
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ orderId, reason: stringValue(input.reason).trim() });
       // Resolve and authorize the target order before looking up the key. A
       // known cancellation key must not bypass organization/member/branch
@@ -10141,7 +10141,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const orderScope = await ptPackageOrderScope(ctx, actor, order);
       const existingIdempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.cancel").eq("key", idempotencyKey)).unique();
       if (existingIdempotency) {
-        if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT cancellation.", { correlationId: actor.correlationId });
+        if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         const replay = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(existingIdempotency.result).orderId))).unique();
         if (!replay) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
         if (replay.publicId !== order.publicId) domainError("CONFLICT", "The cancellation idempotency record does not match the requested order.", { correlationId: actor.correlationId });
@@ -10170,11 +10170,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const sessionCount = numberValue(input.sessionCount, 2);
       if (!Number.isInteger(sessionCount) || sessionCount < 1 || sessionCount > 100) domainError("VALIDATION_ERROR", "Introductory PT credits must be between 1 and 100 sessions.", { correlationId: actor.correlationId });
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ sessionCount, reason: stringValue(input.reason).trim() });
       const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.introductory.apply").eq("key", idempotencyKey)).unique();
       if (existingKey) {
-        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another credit grant.", { correlationId: actor.correlationId });
+        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return data(existingKey.result);
       }
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
@@ -10207,7 +10207,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!order || !order.entitlementId || !["active", "partially_refunded"].includes(order.status)) domainError("NOT_FOUND", "Active PT package order not found.", { correlationId: actor.correlationId });
       const [entitlement, ptPackage, charge] = await Promise.all([ctx.db.get(order.entitlementId), ctx.db.get(order.packageId), recordOf(ctx, actor, "charge", order.chargePublicId)]);
       const terms = ptPackageTerms(order, ptPackage ?? undefined);
-      if (!entitlement || terms.sessionCount < 1 || terms.validityDays < 1) domainError("NOT_FOUND", "PT package entitlement not found.", { correlationId: actor.correlationId });
+      if (!entitlement || terms.sessionCount < 1 || terms.validityDays < 1) domainError("NOT_FOUND", "The member’s PT package could not be found.", { correlationId: actor.correlationId });
       const available = ptAvailable(entitlement);
       if (sessions > available) domainError("VALIDATION_ERROR", "Only unused, unreserved PT sessions can be refunded.", { correlationId: actor.correlationId, details: { availableSessions: available } });
       const previousSessions = order.refundedSessions ?? 0;
@@ -10254,10 +10254,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "pt.booking.create": {
       requirePermission(actor, "pt.book_for_member");
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const existing = await ctx.db.query("ptBookings").withIndex("by_organization_idempotency", (q) => q.eq("organizationId", actor.organization._id).eq("idempotencyKey", idempotencyKey)).unique();
       if (existing) {
-        if (existing.membershipPublicId !== input.membershipId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT booking.", { correlationId: actor.correlationId });
+        if (existing.membershipPublicId !== input.membershipId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return await ptBookingView(ctx, actor.organization, existing);
       }
       const membershipRecord = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
@@ -10310,7 +10310,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const policy = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
       const timely = cancelledByGym || booking.startsAt - Date.now() >= numberValue(policy.cancellationCutoffHours, 12) * 3_600_000;
       const entitlement = await ctx.db.get(booking.entitlementId);
-      if (!entitlement) domainError("NOT_FOUND", "PT entitlement not found.", { correlationId: actor.correlationId });
+      if (!entitlement) domainError("NOT_FOUND", "The member’s PT package could not be found.", { correlationId: actor.correlationId });
       await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + (timely ? 0 : 1), updatedAt: Date.now() });
       const status = cancelledByGym ? "gym_cancelled" : timely ? "cancelled" : "late_cancelled";
       await ctx.db.patch(booking._id, { status, cancellationReason: stringValue(input.reason).trim(), updatedAt: Date.now() });
@@ -10326,14 +10326,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "pt.book_for_member");
       requireReason(input.reason, actor.correlationId);
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const booking = await ctx.db.query("ptBookings").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.bookingId))).unique();
       if (!booking || (actor.branchScope === "selected" && !actor.branchIds.includes(booking.branchId))) domainError("NOT_FOUND", "PT booking not found.", { correlationId: actor.correlationId });
       if (!["reserved", "confirmed"].includes(booking.status)) domainError("VALIDATION_ERROR", "Only an upcoming PT booking can be rescheduled.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ bookingId: booking.publicId, trainerProfileId: input.trainerProfileId, branchId: input.branchId, startsAt: input.startsAt });
       const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.booking.reschedule").eq("key", idempotencyKey)).unique();
       if (existingKey) {
-        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another reschedule.", { correlationId: actor.correlationId });
+        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return await ptBookingView(ctx, actor.organization, booking);
       }
       const membershipRecord = await recordOf(ctx, actor, "membership", booking.membershipPublicId);
@@ -10382,7 +10382,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const trainer = await ctx.db.get(booking.trainerProfileId);
       if (trainer?.userId === actor.user._id) requirePermission(actor, "pt.outcome.self"); else requirePermission(actor, "pt.manage");
       const entitlement = await ctx.db.get(booking.entitlementId);
-      if (!entitlement) domainError("NOT_FOUND", "PT entitlement not found.", { correlationId: actor.correlationId });
+      if (!entitlement) domainError("NOT_FOUND", "The member’s PT package could not be found.", { correlationId: actor.correlationId });
       const status = operation === "pt.booking.complete" ? "completed" : "no_show";
       if (status === "no_show") requireReason(input.reason, actor.correlationId);
       await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1, updatedAt: Date.now() });
@@ -10600,7 +10600,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "membership.transfer").eq("key", idempotencyKey))
           .unique();
         if (existing) {
-          if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different membership transfer.", { correlationId: actor.correlationId });
+          if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
           return await toMembershipDetail(ctx, actor, data(record.data));
         }
       }
@@ -10771,7 +10771,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!weekday || !TIME_PATTERN.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.", { correlationId: actor.correlationId });
       const settings = await settingsData(ctx, actor);
       const schedule = arrayValue(data(data(settings).operationalPolicies).trialSchedules).map(data).find((candidate) => candidate.branchId === branchId);
-      if (!schedule) domainError("VALIDATION_ERROR", "Trial scheduling is not configured for this branch yet.", { correlationId: actor.correlationId });
+      if (!schedule) domainError("VALIDATION_ERROR", "Trial bookings are not set up for this branch yet.", { correlationId: actor.correlationId });
       const trialWindow = normalizedTrialWindow(data(data(schedule.days)[weekday]));
       if (!booleanValue(trialWindow.enabled) || preferredTime < stringValue(trialWindow.opensAt) || preferredTime > stringValue(trialWindow.closesAt)) {
         domainError("CONFLICT", "That trial time is outside this branch's trial hours.", { correlationId: actor.correlationId });
@@ -11168,7 +11168,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const requestHash = JSON.stringify({ paymentId, amount: input.amount, reason: input.reason, idempotencyKey });
       const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "payment.refund").eq("key", idempotencyKey)).unique();
       if (existing) {
-        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different refund.", { correlationId: actor.correlationId });
+        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return await receiptDetail(ctx, actor, stringValue(data(existing.result).receiptId));
       }
       const originalRecord = await recordOf(ctx, actor, "payment", paymentId);
@@ -11185,7 +11185,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const alreadyRefunded = related.reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
       const remaining = amountOf(original.amount) - alreadyRefunded;
       if (input.amount != null && currencyOf(input.amount, "") !== actor.organization.currency) {
-        domainError("VALIDATION_ERROR", "Refund currency does not match the organization.", { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", "Use your gym’s currency for this refund.", { correlationId: actor.correlationId });
       }
       const allocation = refundAllocation(input.amount == null ? undefined : amountOf(input.amount), remaining);
       if (!allocation.ok && allocation.code === "PAYMENT_ALREADY_REFUNDED") domainError(allocation.code, "This payment was already fully refunded.", { correlationId: actor.correlationId });
@@ -11226,7 +11226,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const requestHash = JSON.stringify({ paymentId, reason: input.reason, idempotencyKey });
       const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "payment.void").eq("key", idempotencyKey)).unique();
       if (existing) {
-        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different void.", { correlationId: actor.correlationId });
+        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return await receiptDetail(ctx, actor, stringValue(data(existing.result).receiptId));
       }
       const originalRecord = await recordOf(ctx, actor, "payment", paymentId);
@@ -11293,7 +11293,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requireReason(input.note, actor.correlationId, "note");
       const record = await recordOf(ctx, actor, "shift", recordId(input.shiftId));
       const shift = data(record.data);
-      if (shift.varianceApprovalStatus !== "pending") domainError("VALIDATION_ERROR", "This shift has no pending variance approval.", { correlationId: actor.correlationId });
+      if (shift.varianceApprovalStatus !== "pending") domainError("VALIDATION_ERROR", "This shift has no cash difference waiting for approval.", { correlationId: actor.correlationId });
       const decision = stringValue(input.decision);
       if (decision !== "approved" && decision !== "rejected") domainError("VALIDATION_ERROR", "Approval decision is invalid.", { correlationId: actor.correlationId });
       const updated = await patchRecord(ctx, actor, record, { varianceApprovalStatus: decision });
@@ -11402,7 +11402,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return await automationExecutionView(ctx, actor, { ...executionRecord, data: updated, updatedAt: Date.now() });
     }
     case "workspace.preferences.update": {
-      if (actor.role !== "owner") domainError("FORBIDDEN", "Only an organization owner can change workspace module preferences.", { correlationId: actor.correlationId });
+      if (actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can change which features are on.", { correlationId: actor.correlationId });
       const access = await workspaceAccessData(ctx, actor);
       const inputModules = arrayValue(input.enabledModules);
       let enabledModules: WorkspaceModuleKey[];
@@ -11435,7 +11435,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return await workspaceAccessData(ctx, actor);
     }
     case "settings.brand.update": {
-      if (actor.role !== "owner") domainError("FORBIDDEN", "Only the organization owner can change the Brand Kit.", { correlationId: actor.correlationId });
+      if (actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can change the gym’s branding.", { correlationId: actor.correlationId });
       const paletteKeyInput = input.paletteKey;
       if (!isBrandPaletteKey(paletteKeyInput)) domainError("VALIDATION_ERROR", "Choose a supported Brand Kit palette.", { correlationId: actor.correlationId, fieldErrors: { paletteKey: ["Choose a supported palette."] } });
       const requestedColor = input.primaryColor === undefined || input.primaryColor === null || input.primaryColor === ""

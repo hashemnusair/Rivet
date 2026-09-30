@@ -592,7 +592,7 @@ function requirePositiveMoney(input: unknown, currency: string, field: string, a
   const raw = value(input);
   const amount = integer(raw.amount, Number.NaN);
   const requestedCurrency = text(raw.currency, currency).trim().toUpperCase();
-  if (!Number.isSafeInteger(amount) || amount <= 0) domainError("VALIDATION_ERROR", `${field} must be a positive whole amount in ${currency} minor units.`, { correlationId: actor.correlationId, fieldErrors: { [field]: ["Enter an amount greater than zero"] } });
+  if (!Number.isSafeInteger(amount) || amount <= 0) domainError("VALIDATION_ERROR", `Enter a valid amount greater than zero in ${currency}.`, { correlationId: actor.correlationId, fieldErrors: { [field]: ["Enter an amount greater than zero"] } });
   if (requestedCurrency !== currency) domainError("VALIDATION_ERROR", `${field} must be in ${currency}.`, { correlationId: actor.correlationId, fieldErrors: { [field]: [`Only ${currency} is accepted`] } });
   return amount;
 }
@@ -602,7 +602,7 @@ async function recordSupplierPayment(ctx: MutationCtx, actor: ActorContext, inpu
   requireOperationsWrite(actor);
   const currency = actor.organization.currency.toUpperCase();
   const idempotencyKey = optionalText(input.idempotencyKey);
-  if (!idempotencyKey || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  if (!idempotencyKey || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
   const supplierPublicId = optionalText(input.supplierId);
   const supplier = supplierPublicId ? await ctx.db.query("suppliers").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", supplierPublicId)).unique() : null;
   if (!supplier) domainError("NOT_FOUND", "Supplier not found.", { correlationId: actor.correlationId });
@@ -701,7 +701,7 @@ async function reverseSupplierPayment(ctx: MutationCtx, actor: ActorContext, inp
   const reason = optionalText(input.reason);
   requireReason(reason, actor.correlationId, "reason");
   const idempotencyKey = optionalText(input.idempotencyKey);
-  if (!idempotencyKey || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) domainError("VALIDATION_ERROR", "A bounded idempotency key is required.", { correlationId: actor.correlationId });
+  if (!idempotencyKey || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
   const row = paymentId ? await ctx.db.query("supplierPayments").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", paymentId)).unique() : null;
   if (!row) domainError("NOT_FOUND", "Supplier payment not found.", { correlationId: actor.correlationId });
   const branch = await ctx.db.get(row.branchId);
