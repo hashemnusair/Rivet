@@ -3,6 +3,11 @@ import catalog from "./arabicReviewCatalog.json";
 // Bump when meanings/options change: an old answer must never approve new wording.
 export const ARABIC_REVIEW_VERSION = "2026-09-30-v1";
 export const ARABIC_REVIEW_CARDS = catalog;
+export const ARABIC_REVIEWERS = [
+  { id: "elias", name: "Elias" },
+  { id: "hashem", name: "Hashem" },
+] as const;
+export type ReviewerName = (typeof ARABIC_REVIEWERS)[number]["id"];
 export type ReviewCard = (typeof catalog)[number];
 export type ReviewVote = {
   cardId: string;
@@ -58,6 +63,8 @@ export type ReviewSnapshot = {
 export function exportReview(snapshot: ReviewSnapshot) {
   return {
     format: "rivet-arabic-review-v1",
+    identityMode:
+      "Self-selected names; anyone with the link can edit either reviewer’s choices.",
     exportedAt: new Date().toISOString(),
     catalogVersion: snapshot.version,
     revision: snapshot.revision,

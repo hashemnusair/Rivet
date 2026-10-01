@@ -4,7 +4,7 @@ Implement complete, production-quality Arabic support alongside English in this 
 
 ## First: retrieve the actual approved preferences
 
-The founders review Arabic at https://platform.rivetjo.com/platform/arabic-room. Their votes are stored in production Convex, not committed to Git.
+The founders review Arabic at https://www.rivetjo.com/arabic-room. They select Elias or Hashem without signing in. These are self-declared identities: anyone with the link can edit either person’s choices. Their votes are stored in production Convex, not committed to Git.
 
 Use the JSON export attached to this prompt, or retrieve the current snapshot with this read-only command from the repository root:
 

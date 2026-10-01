@@ -140,21 +140,21 @@ const auditActorRole = v.union(
 );
 
 export default defineSchema({
-  // Internal language review. No tenant data and no changes to gym permissions.
+  // Public, self-selected language review identities. Legacy user IDs are strings too.
   arabicReviewVotes: defineTable({
-    version: v.string(), cardId: v.string(), userId: v.id("users"),
+    version: v.string(), cardId: v.string(), userId: v.string(),
     choice: v.string(), customText: v.string(), note: v.string(), updatedAt: v.number(),
   }).index("by_version", ["version"]).index("by_vote", ["version", "cardId", "userId"]),
   arabicReviewHistory: defineTable({
-    version: v.string(), cardId: v.string(), userId: v.id("users"),
+    version: v.string(), cardId: v.string(), userId: v.string(),
     choice: v.string(), customText: v.string(), note: v.string(), updatedAt: v.number(),
   }).index("by_card", ["version", "cardId"]),
   arabicReviewRooms: defineTable({
-    version: v.string(), revision: v.number(), approvals: v.array(v.id("users")),
-    approvedRoster: v.array(v.id("users")), updatedAt: v.number(),
+    version: v.string(), revision: v.number(), approvals: v.array(v.string()),
+    approvedRoster: v.array(v.string()), updatedAt: v.number(),
   }).index("by_version", ["version"]),
   arabicReviewPresence: defineTable({
-    userId: v.id("users"), cardId: v.string(), seenAt: v.number(),
+    userId: v.string(), cardId: v.string(), seenAt: v.number(),
   }).index("by_user", ["userId"]),
   organizations: defineTable({
     publicId: v.optional(v.string()),

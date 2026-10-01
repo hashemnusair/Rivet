@@ -58,3 +58,9 @@ describe("production host proxy", () => {
     expect(response?.headers.get("location")).toBeNull();
   });
 });
+
+it("redirects the Arabic review alias before any auth or platform layout on previews", async () => {
+  const response = await request("/platform/arabic-room?card=membership", "preview.vercel.app");
+  expect(response?.status).toBe(308);
+  expect(response?.headers.get("location")).toBe("https://preview.vercel.app/arabic-room?card=membership");
+});

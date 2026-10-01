@@ -511,19 +511,20 @@ describe("platform subscription controls", () => {
   });
 
   it("persists an admin-selected period boundary with an admin billing cadence change in the mock", async () => {
-    const requestedAnnualEnd = "2027-12-31T23:59:59.999Z";
+    const requestedAnnualEnd = new Date(Date.now() + 730 * 86_400_000).toISOString();
+    const requestedMonthlyEnd = new Date(Date.now() + 90 * 86_400_000).toISOString();
     const annual = await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", billingInterval: "annual", currentPeriodEndsAt: requestedAnnualEnd, reason: "Approve annual billing for the tenant." });
     const annualStart = Date.parse(annual.subscriptionStartedAt!);
     const annualEnd = Date.parse(annual.currentPeriodEndsAt!);
     expect(annual).toMatchObject({ billingInterval: "annual", subscriptionStatus: "active" });
-    expect(annualEnd).toBe(Date.parse("2027-12-31T23:59:59.999Z"));
+    expect(annualEnd).toBe(Date.parse(requestedAnnualEnd));
 
-    const monthly = await api.updatePlatformGym({ gymId: "forge-fitness", billingInterval: "monthly", currentPeriodEndsAt: "2026-09-30T23:59:59.999Z", reason: "Move the tenant to monthly billing." });
+    const monthly = await api.updatePlatformGym({ gymId: "forge-fitness", billingInterval: "monthly", currentPeriodEndsAt: requestedMonthlyEnd, reason: "Move the tenant to monthly billing." });
     const monthlyStart = Date.parse(monthly.subscriptionStartedAt!);
     const monthlyEnd = Date.parse(monthly.currentPeriodEndsAt!);
     expect(monthly).toMatchObject({ billingInterval: "monthly", subscriptionStatus: "active" });
     expect(monthlyStart).toBe(annualStart);
-    expect(monthlyEnd).toBe(Date.parse("2026-09-30T23:59:59.999Z"));
+    expect(monthlyEnd).toBe(Date.parse(requestedMonthlyEnd));
 
     const detail = await api.getPlatformGymDetail("forge-fitness");
     const latestActivity = detail.activity.state === "available" ? detail.activity.value[0] as PlatformSnapshot["auditEvents"][number] & Record<string, unknown> : undefined;

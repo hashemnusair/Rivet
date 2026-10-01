@@ -1,17 +1,25 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery } from "./_generated/server";
-import type { QueryCtx, MutationCtx } from "./_generated/server";
-import { requirePlatformAdmin, domainError } from "./security";
 import {
+  query,
+  mutation,
+  internalQuery,
+  internalMutation,
+} from "./_generated/server";
+import type { QueryCtx, MutationCtx } from "./_generated/server";
+import { domainError } from "./security";
+import { enforcePublicRateLimit } from "./publicAbuse";
+import {
+  ARABIC_REVIEWERS,
   ARABIC_REVIEW_CARDS,
   ARABIC_REVIEW_VERSION,
   reviewComplete,
   exportReview,
 } from "./arabicReviewModel";
 
+const reviewer = v.union(v.literal("elias"), v.literal("hashem"));
+
 async function state(ctx: QueryCtx | MutationCtx, me: string) {
-  const [users, votes, room, presence] = await Promise.all([
-    ctx.db.query("users").withIndex("by_platform_admin", (q) => q.eq("platformAdmin", true)).collect(),
+  const [votes, room, presence] = await Promise.all([
     ctx.db
       .query("arabicReviewVotes")
       .withIndex("by_version", (q) => q.eq("version", ARABIC_REVIEW_VERSION))
@@ -22,15 +30,7 @@ async function state(ctx: QueryCtx | MutationCtx, me: string) {
       .unique(),
     ctx.db.query("arabicReviewPresence").collect(),
   ]);
-  const reviewers = users
-    .filter(
-      (user) =>
-        user.platformAdmin &&
-        user.status !== "deactivated" &&
-        user.status !== "invited",
-    )
-    .map((user) => ({ id: user._id, name: user.fullName }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const reviewers = ARABIC_REVIEWERS.map((person) => ({ ...person }));
   const rosterMatches =
     room?.approvedRoster.length === reviewers.length &&
     reviewers.every((reviewer) => room.approvedRoster.includes(reviewer.id));
@@ -61,14 +61,14 @@ async function state(ctx: QueryCtx | MutationCtx, me: string) {
   };
 }
 export const snapshot = query({
-  args: {},
-  handler: async (ctx) => {
-    const { user } = await requirePlatformAdmin(ctx);
-    return state(ctx, user._id);
+  args: { reviewer },
+  handler: async (ctx, args) => {
+    return state(ctx, args.reviewer);
   },
 });
 export const saveVote = mutation({
   args: {
+    reviewer,
     version: v.string(),
     cardId: v.string(),
     choice: v.string(),
@@ -77,7 +77,12 @@ export const saveVote = mutation({
     expectedUpdatedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    const { user } = await requirePlatformAdmin(ctx);
+    await enforcePublicRateLimit(ctx, {
+      scope: "arabic-review-write",
+      fingerprint: args.reviewer,
+      maxRequests: 120,
+      windowMs: 60_000,
+    });
     if (args.version !== ARABIC_REVIEW_VERSION)
       domainError("CONFLICT", "The questions changed. Refresh before saving.");
     const card = ARABIC_REVIEW_CARDS.find((item) => item.id === args.cardId);
@@ -107,7 +112,7 @@ export const saveVote = mutation({
         q
           .eq("version", args.version)
           .eq("cardId", args.cardId)
-          .eq("userId", user._id),
+          .eq("userId", args.reviewer),
       )
       .unique();
     if ((prior?.updatedAt ?? 0) !== args.expectedUpdatedAt)
@@ -125,7 +130,7 @@ export const saveVote = mutation({
     const data = {
       version: args.version,
       cardId: args.cardId,
-      userId: user._id,
+      userId: args.reviewer,
       choice: args.choice,
       customText,
       note,
@@ -151,10 +156,15 @@ export const saveVote = mutation({
   },
 });
 export const approve = mutation({
-  args: { version: v.string(), revision: v.number() },
+  args: { reviewer, version: v.string(), revision: v.number() },
   handler: async (ctx, args) => {
-    const { user } = await requirePlatformAdmin(ctx);
-    const current = await state(ctx, user._id);
+    await enforcePublicRateLimit(ctx, {
+      scope: "arabic-review-write",
+      fingerprint: args.reviewer,
+      maxRequests: 120,
+      windowMs: 60_000,
+    });
+    const current = await state(ctx, args.reviewer);
     if (args.version !== current.version || args.revision !== current.revision)
       domainError(
         "CONFLICT",
@@ -171,7 +181,7 @@ export const approve = mutation({
       .unique();
     if (!room) domainError("VALIDATION_ERROR", "Save your answers first.");
     await ctx.db.patch(room._id, {
-      approvals: [...new Set([...current.approvals, user._id])],
+      approvals: [...new Set([...current.approvals, args.reviewer])],
       approvedRoster: current.reviewers.map((reviewer) => reviewer.id),
       updatedAt: Date.now(),
     });
@@ -180,7 +190,6 @@ export const approve = mutation({
 export const history = query({
   args: { cardId: v.string() },
   handler: async (ctx, args) => {
-    await requirePlatformAdmin(ctx);
     return ctx.db
       .query("arabicReviewHistory")
       .withIndex("by_card", (q) =>
@@ -191,16 +200,25 @@ export const history = query({
   },
 });
 export const present = mutation({
-  args: { cardId: v.string() },
+  args: { reviewer, cardId: v.string() },
   handler: async (ctx, args) => {
-    const { user } = await requirePlatformAdmin(ctx);
+    await enforcePublicRateLimit(ctx, {
+      scope: "arabic-review-presence",
+      fingerprint: args.reviewer,
+      maxRequests: 60,
+      windowMs: 60_000,
+    });
     if (!ARABIC_REVIEW_CARDS.some((card) => card.id === args.cardId))
       domainError("VALIDATION_ERROR", "Unknown question.");
     const old = await ctx.db
       .query("arabicReviewPresence")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", args.reviewer))
       .unique();
-    const data = { userId: user._id, cardId: args.cardId, seenAt: Date.now() };
+    const data = {
+      userId: args.reviewer,
+      cardId: args.cardId,
+      seenAt: Date.now(),
+    };
     if (old) await ctx.db.patch(old._id, data);
     else await ctx.db.insert("arabicReviewPresence", data);
   },
@@ -210,4 +228,70 @@ export const present = mutation({
 export const exportForImplementation = internalQuery({
   args: {},
   handler: async (ctx) => exportReview(await state(ctx, "agent-export")),
+});
+
+// One-time, idempotent ownership migration. Only a deployment operator can call
+// this; public callers cannot read or modify RIVET account records.
+export const migrateNamedReviewers = internalMutation({
+  args: { hashemUserId: v.id("users"), eliasUserId: v.id("users") },
+  handler: async (ctx, args) => {
+    const hashem = await ctx.db.get(args.hashemUserId);
+    const elias = await ctx.db.get(args.eliasUserId);
+    if (
+      !hashem?.platformAdmin ||
+      !elias?.platformAdmin ||
+      !/^hashem\b/i.test(hashem.fullName) ||
+      !/^elias\b/i.test(elias.fullName)
+    )
+      domainError(
+        "VALIDATION_ERROR",
+        "The legacy reviewer accounts do not match.",
+      );
+    const rename = (id: string) =>
+      id === args.hashemUserId
+        ? "hashem"
+        : id === args.eliasUserId
+          ? "elias"
+          : id;
+    const votes = await ctx.db.query("arabicReviewVotes").take(5001);
+    const history = await ctx.db.query("arabicReviewHistory").take(5001);
+    const rooms = await ctx.db.query("arabicReviewRooms").take(5001);
+    const presence = await ctx.db.query("arabicReviewPresence").take(5001);
+    if ([votes, history, rooms, presence].some((rows) => rows.length > 5000))
+      domainError("VALIDATION_ERROR", "Migration needs a paginated run.");
+    const keys = new Set<string>();
+    for (const vote of votes) {
+      const key = JSON.stringify([
+        vote.version,
+        vote.cardId,
+        rename(vote.userId),
+      ]);
+      if (keys.has(key))
+        domainError(
+          "CONFLICT",
+          "Both legacy and named answers exist. Reconcile them before migrating.",
+        );
+      keys.add(key);
+    }
+    let moved = 0;
+    for (const row of [...votes, ...history])
+      if (rename(row.userId) !== row.userId) {
+        await ctx.db.patch(row._id, { userId: rename(row.userId) });
+        moved++;
+      }
+    for (const room of rooms)
+      await ctx.db.patch(room._id, {
+        approvals: room.approvals.map(rename),
+        approvedRoster: room.approvedRoster.map(rename),
+      });
+    for (const row of presence)
+      if (rename(row.userId) !== row.userId) {
+        const existing = presence.find(
+          (other) => other.userId === rename(row.userId),
+        );
+        if (existing) await ctx.db.delete(row._id);
+        else await ctx.db.patch(row._id, { userId: rename(row.userId) });
+      }
+    return { migratedAnswersAndHistory: moved, rooms: rooms.length };
+  },
 });

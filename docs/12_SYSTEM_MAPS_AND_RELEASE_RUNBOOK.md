@@ -1,5 +1,13 @@
 # 12 — System Maps and Release Runbook
 
+## Public Arabic review — 1 October 2026
+
+- Hashem explicitly requested a standalone, unauthenticated room with an Elias/Hashem picker. Canonical route is now `https://www.rivetjo.com/arabic-room`; old `/platform/arabic-room` links redirect before the platform shell mounts and preserve the question parameter. The name picker appears on opening/reload; a Switch name action is available after saving drafts.
+- Review endpoints deliberately accept only the self-selected keys `elias` and `hashem`. Anyone with the link can read and edit either review identity. This is not account authentication and grants no access to gym/platform data. Shared server persistence, live queries, history, presence/following, conflicts, exports and dual approvals remain. Public mutations are rate-limited.
+- Review-table identity validators now accept strings, retaining compatibility with legacy user IDs. The internal idempotent `arabicReview:migrateNamedReviewers` function remaps only review data and preserves answers, comments, history and approvals; it refuses duplicate answer conflicts and validates the old founder accounts. The pre-change production export showed zero answers, but migration is still run at release to catch intervening edits. No account permissions are changed.
+- Updated the implementation prompt and review-room guide for the public route and self-declared identities. The questionnaire/version and all 247 questions are unchanged. An unrelated mock subscription test had a fixed September 30 expiry that failed on October 1; its asserted future boundaries now use relative dates.
+- Validation/release evidence is recorded after deployment below. Read `docs/arabic/README.md`, `docs/arabic/IMPLEMENTATION_PROMPT.md`, and `apps/web/convex/arabicReview.ts` first.
+
 ## Arabic review room — 30 September 2026
 
 - Canonical route: `https://platform.rivetjo.com/platform/arabic-room`, protected by existing Clerk/platform identity and server-side `requirePlatformAdmin` checks on all review endpoints. Intended reviewers are the existing two founder admins; additional active platform admins would join the required approval roster.

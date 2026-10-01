@@ -4,10 +4,12 @@ test("Arabic review supports keyboard choices, filtering, saved states and mobil
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/login/admin");
-  await page.getByRole("button", { name: /Open platform console/i }).click();
-  await expect(page).toHaveURL(/\/platform$/);
   await page.goto("/platform/arabic-room?card=membership");
+  await expect(page).toHaveURL(/\/arabic-room\?card=membership$/);
+  await expect(
+    page.getByRole("heading", { name: "Who are you?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Hashem", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Make it sound like us." }),
   ).toBeVisible();
@@ -58,5 +60,12 @@ test("Arabic review supports keyboard choices, filtering, saved states and mobil
   const prompt = await page.request.get("/arabic-implementation-prompt.txt");
   expect(prompt.status()).toBe(200);
   expect(await prompt.text()).toContain("readyForImplementation");
+  await page.getByRole("button", { name: "Switch name" }).click();
+  await page.getByRole("button", { name: "Elias", exact: true }).click();
+  await expect(page.getByText("Reviewing as Elias")).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Who are you?" }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });

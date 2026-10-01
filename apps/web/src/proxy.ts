@@ -71,6 +71,13 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
   // Canonical redirects precede Clerk so an old host never starts a handshake.
   const decision = decideHostRouting(hostOf(request), request.nextUrl.pathname);
   if (decision.kind === "redirect") return applyHostDecision(request, decision);
+  // Local and preview aliases must redirect before the old platform layout
+  // mounts, otherwise its sign-in effect races the server-page redirect.
+  if (request.nextUrl.pathname === "/platform/arabic-room") {
+    const destination = request.nextUrl.clone();
+    destination.pathname = "/arabic-room";
+    return NextResponse.redirect(destination, 308);
+  }
   return DEMO_AUTH_BYPASS ? routeByHost(request) : clerkProxy(request, event);
 }
 

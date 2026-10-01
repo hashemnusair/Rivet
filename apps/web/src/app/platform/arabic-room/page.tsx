@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { ArabicReviewRoom } from "@/features/arabic-review/review-room";
-export const metadata: Metadata = {
-  title: "Arabic review",
-  robots: { index: false, follow: false },
-};
-export default function ArabicRoomPage() {
-  return <ArabicReviewRoom />;
+import { redirect } from "next/navigation";
+export default async function LegacyArabicRoomPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ card?: string }>;
+}) {
+  const { card } = await searchParams;
+  redirect(`/arabic-room${card ? `?card=${encodeURIComponent(card)}` : ""}`);
 }

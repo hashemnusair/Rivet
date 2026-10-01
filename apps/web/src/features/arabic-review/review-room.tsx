@@ -8,12 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  useConvexAuth,
-  useMutation,
-  useQuery,
-  useConvexConnectionState,
-} from "convex/react";
+import { useMutation, useQuery, useConvexConnectionState } from "convex/react";
 import {
   Check,
   ChevronRight,
@@ -25,6 +20,8 @@ import { api } from "../../../convex/_generated/api";
 import {
   ARABIC_REVIEW_CARDS as cards,
   ARABIC_REVIEW_VERSION,
+  ARABIC_REVIEWERS,
+  type ReviewerName,
   cardStatus,
   exportReview,
   reviewComplete,
@@ -51,6 +48,7 @@ type RoomProps = {
   approve: () => Promise<unknown>;
   present: (cardId: string) => Promise<unknown>;
   preview?: boolean;
+  onSwitchReviewer?: () => void;
 };
 const categories = [...new Set(cards.map((card) => card.category))];
 const statusLabels = {
@@ -78,8 +76,7 @@ class RoomErrorBoundary extends Component<
           The review room could not load
         </h1>
         <p className="my-4">
-          Use your RIVET platform administrator account. If you are already
-          signed in, reload to reconnect. Saved choices remain on the server.
+          Reload to reconnect. Your saved choices remain on the server.
         </p>
         <Button onClick={() => window.location.reload()}>Reload</Button>
       </div>
@@ -89,25 +86,60 @@ class RoomErrorBoundary extends Component<
   }
 }
 export function ArabicReviewRoom() {
+  const [reviewer, setReviewer] = useState<ReviewerName | null>(null);
+  if (!reviewer)
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-paper p-6">
+        <section className="w-full max-w-md">
+          <p className="mb-3 flex items-center gap-2 text-sm text-ink-2">
+            <Languages className="size-4" /> RIVET · Arabic review
+          </p>
+          <h1 className="text-[32px] font-semibold">Who are you?</h1>
+          <p className="mt-3 text-sm leading-relaxed text-ink-2">
+            Choose your name to continue your review. Your saved answers and
+            progress will be waiting here.
+          </p>
+          <div className="mt-7 grid grid-cols-2 gap-3">
+            {ARABIC_REVIEWERS.map((person) => (
+              <Button
+                key={person.id}
+                className="h-16 text-lg"
+                variant="secondary"
+                onClick={() => setReviewer(person.id)}
+              >
+                {person.name}
+              </Button>
+            ))}
+          </div>
+        </section>
+      </main>
+    );
+  const switchReviewer = () => setReviewer(null);
   return (
-    <RoomErrorBoundary>
-      {DEMO_AUTH_BYPASS ? <PreviewRoom /> : <ConnectedRoom />}
+    <RoomErrorBoundary key={reviewer}>
+      {DEMO_AUTH_BYPASS ? (
+        <PreviewRoom reviewer={reviewer} onSwitchReviewer={switchReviewer} />
+      ) : (
+        <ConnectedRoom reviewer={reviewer} onSwitchReviewer={switchReviewer} />
+      )}
     </RoomErrorBoundary>
   );
 }
-function ConnectedRoom() {
-  const auth = useConvexAuth();
+function ConnectedRoom({
+  reviewer,
+  onSwitchReviewer,
+}: {
+  reviewer: ReviewerName;
+  onSwitchReviewer: () => void;
+}) {
   const connection = useConvexConnectionState();
-  const snapshot = useQuery(
-    api.arabicReview.snapshot,
-    auth.isAuthenticated ? {} : "skip",
-  );
+  const snapshot = useQuery(api.arabicReview.snapshot, { reviewer });
   const save = useMutation(api.arabicReview.saveVote);
   const approve = useMutation(api.arabicReview.approve);
   const present = useMutation(api.arabicReview.present);
   const showPresence = useCallback(
-    (cardId: string) => present({ cardId }),
-    [present],
+    (cardId: string) => present({ cardId, reviewer }),
+    [present, reviewer],
   );
   if (!snapshot)
     return (
@@ -119,24 +151,32 @@ function ConnectedRoom() {
     <ReviewRoomView
       snapshot={snapshot}
       connected={connection.isWebSocketConnected}
-      save={save}
+      save={(input) => save({ ...input, reviewer })}
+      onSwitchReviewer={onSwitchReviewer}
       approve={() =>
-        approve({ version: snapshot.version, revision: snapshot.revision })
+        approve({
+          reviewer,
+          version: snapshot.version,
+          revision: snapshot.revision,
+        })
       }
       present={showPresence}
     />
   );
 }
 const previewPresent = async () => {};
-function PreviewRoom() {
+function PreviewRoom({
+  reviewer,
+  onSwitchReviewer,
+}: {
+  reviewer: ReviewerName;
+  onSwitchReviewer: () => void;
+}) {
   const [snapshot, setSnapshot] = useState<ReviewSnapshot>({
     version: ARABIC_REVIEW_VERSION,
     revision: 0,
-    me: "preview",
-    reviewers: [
-      { id: "preview", name: "Preview reviewer" },
-      { id: "partner", name: "Partner" },
-    ],
+    me: reviewer,
+    reviewers: ARABIC_REVIEWERS.map((person) => ({ ...person })),
     votes: [],
     approvals: [],
     ready: false,
@@ -145,6 +185,7 @@ function PreviewRoom() {
   return (
     <ReviewRoomView
       preview
+      onSwitchReviewer={onSwitchReviewer}
       snapshot={snapshot}
       connected
       save={async (input) =>
@@ -153,7 +194,7 @@ function PreviewRoom() {
           revision: current.revision + 1,
           votes: [
             ...current.votes.filter((vote) => vote.cardId !== input.cardId),
-            { ...input, userId: "preview", updatedAt: Date.now() },
+            { ...input, userId: reviewer, updatedAt: Date.now() },
           ],
         }))
       }
@@ -182,6 +223,7 @@ export function ReviewRoomView({
   approve,
   present,
   preview,
+  onSwitchReviewer,
 }: RoomProps) {
   const [activeId, setActiveId] = useState(() => {
     const requested =
@@ -308,6 +350,22 @@ export function ReviewRoomView({
   }
   return (
     <div className="mx-auto max-w-[1480px] p-4 sm:p-6 lg:p-8">
+      {onSwitchReviewer && (
+        <div className="mb-5 flex items-center justify-between gap-3 border-b border-line pb-3">
+          <span className="text-sm">
+            Reviewing as{" "}
+            <strong>
+              {
+                snapshot.reviewers.find((person) => person.id === snapshot.me)
+                  ?.name
+              }
+            </strong>
+          </span>
+          <Button variant="ghost" disabled={dirty} onClick={onSwitchReviewer}>
+            Switch name
+          </Button>
+        </div>
+      )}
       {preview && (
         <p
           role="status"
@@ -328,7 +386,11 @@ export function ReviewRoomView({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" disabled={dirty || !connected} onClick={download}>
+          <Button
+            variant="secondary"
+            disabled={dirty || !connected}
+            onClick={download}
+          >
             <Download className="size-4" /> Export{" "}
             {snapshot.ready ? "approved choices" : "draft choices"}
           </Button>
