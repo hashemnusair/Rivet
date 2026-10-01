@@ -59,9 +59,11 @@ test("the platform gym record exposes staff and member directories", async ({ pa
   await signInPlatform(page);
   await page.goto("/platform/gyms/forge-fitness", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Forge Fitness Club" })).toBeVisible();
+  await page.getByRole("tab", { name: /Team/ }).click();
   await expect(page.getByRole("heading", { name: "Team directory" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Member directory" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search team" })).toBeVisible();
+  await page.getByRole("tab", { name: /Members/ }).click();
+  await expect(page.getByRole("heading", { name: "Member directory" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search members" })).toBeVisible();
 });
 
@@ -102,8 +104,10 @@ test("changed feedback surfaces fit a 390px viewport", async ({ page }) => {
   await fits(page);
 
   await signInPlatform(page);
-  await page.goto("/platform/gyms/forge-fitness", { waitUntil: "domcontentloaded" });
+  await page.goto("/platform/gyms/forge-fitness?tab=team", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Team directory" })).toBeVisible();
+  await fits(page);
+  await page.goto("/platform/gyms/forge-fitness?tab=members", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Member directory" })).toBeVisible();
   await fits(page);
 });

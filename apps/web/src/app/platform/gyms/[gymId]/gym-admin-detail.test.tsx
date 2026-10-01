@@ -17,8 +17,14 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
+
+/** Radix tabs activate on mouse down, not click. */
+function openTab(name: RegExp | string) {
+  fireEvent.mouseDown(screen.getByRole("tab", { name }));
+}
 
 vi.mock("@/lib/hooks/use-realtime-api", () => ({
   useRealtimeApiQuery: () => state.query,
@@ -126,18 +132,36 @@ describe("Gym admin detail (informational record)", () => {
     expect(screen.getByRole("link", { name: "Manage in Billing" })).toHaveAttribute("href", "/platform/billing?bill=gym-1");
   });
 
+  it("splits the record into Gym info, Members, Team, and Settings tabs", () => {
+    render(<GymAdminDetail gymId="gym-1" />);
+
+    expect(screen.getByRole("tab", { name: "Gym info" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Members/ })).toHaveTextContent("22");
+    expect(screen.getByRole("tab", { name: /Team/ })).toHaveTextContent("3");
+    expect(screen.getByText("Subscription facts")).toBeInTheDocument();
+    expect(screen.queryByText("Member directory")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Public directory listing" })).not.toBeInTheDocument();
+
+    openTab("Settings");
+    expect(screen.getByRole("switch", { name: "Public directory listing" })).toBeInTheDocument();
+    expect(screen.queryByText("Subscription facts")).not.toBeInTheDocument();
+  });
+
   it("shows complete member and team directories with search and pagination", () => {
     render(<GymAdminDetail gymId="gym-1" />);
 
+    openTab(/Team/);
     expect(screen.getByText("Team directory")).toBeInTheDocument();
-    expect(screen.getByText("Member directory")).toBeInTheDocument();
     expect(screen.getByText("Invited teammate")).toBeInTheDocument();
     expect(screen.getByText("invitee@example.com")).toBeInTheDocument();
     expect(screen.getByText("Former teammate")).toBeInTheDocument();
+
+    openTab(/Members/);
+    expect(screen.getByText("Member directory")).toBeInTheDocument();
     expect(screen.getByText("Showing 1–20 of 22")).toBeInTheDocument();
     expect(screen.queryByText("Member 22")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Next page" })[1]!);
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     expect(screen.getByText("Showing 21–22 of 22")).toBeInTheDocument();
     expect(screen.getByText("Member 22")).toBeInTheDocument();
 
@@ -166,6 +190,7 @@ describe("Gym admin detail (informational record)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Cleanup-only record");
     expect(screen.getByRole("button", { name: /Manage subscription/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Public page" })).toBeDisabled();
+    openTab("Settings");
     expect(screen.getByText("Suppressed: this row is not provisioned.")).toBeInTheDocument();
     expect(screen.getByLabelText("Public directory listing")).toBeDisabled();
     expect(screen.getByLabelText("Public directory listing")).not.toBeChecked();
@@ -173,6 +198,7 @@ describe("Gym admin detail (informational record)", () => {
 
   it("saves an audited public-listing change without touching the subscription", async () => {
     render(<GymAdminDetail gymId="gym-1" />);
+    openTab("Settings");
 
     const listingSwitch = screen.getByRole("switch", { name: "Public directory listing" });
     expect(listingSwitch).toBeChecked();
@@ -190,6 +216,7 @@ describe("Gym admin detail (informational record)", () => {
   it("shows a suppressed, locked listing for a suspended gym and points at billing to reactivate", () => {
     state.query = { data: detail({ status: "suspended", isPublic: false }), isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
     render(<GymAdminDetail gymId="gym-1" />);
+    openTab("Settings");
 
     const listingSwitch = screen.getByRole("switch", { name: "Public directory listing" });
     expect(listingSwitch).not.toBeChecked();
@@ -203,6 +230,7 @@ describe("Gym admin detail (informational record)", () => {
     withDraft.publicPage = available({ publishedVersion: 1, draftVersion: 2, draftStatus: "draft", draftUpdatedAt: "2026-08-27T10:00:00.000Z" });
     state.query = { data: withDraft, isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
     render(<GymAdminDetail gymId="gym-1" />);
+    openTab("Settings");
 
     expect(screen.getByText(/awaiting your review/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Publish draft v2/ }));
@@ -217,6 +245,7 @@ describe("Gym admin detail (informational record)", () => {
 
   it("archives only through a confirmation dialog with an exact gym name and reason", () => {
     render(<GymAdminDetail gymId="gym-1" />);
+    openTab("Settings");
 
     expect(screen.queryByRole("button", { name: "Delete gym" })).not.toBeInTheDocument();
     // The confirmation form must live inside the modal, never inline.
