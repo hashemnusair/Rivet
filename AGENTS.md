@@ -10,6 +10,10 @@ Implement GymOS according to the documentation in `/docs`. Optimize for an opera
 - `CURRENT_STATE.md` is the living implementation and release-status handoff. Current implementation agents update this file instead of rewriting the historical frontend handoff.
 - `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` is the living topology, environment-ownership, and release-verification guide.
 
+## Arabic implementation standard
+
+For Arabic translation or RTL work, first read `docs/arabic/README.md`, `STANDARD.md`, the full `DECISIONS.md`, and `IMPLEMENTATION_PLAN.md`. Hashem and Elias approved all 247 decisions at revision 607; the versioned export and checksum are binding language evidence. Run `python3 docs/arabic/verify-lock.py`. Preserve Elias’s `arabic-localisation` work and integrate current main deliberately. This documentation checkpoint does not certify the old branch for release. Keep `FRONTEND_HANDOFF.md` frozen.
+
 ## Non-negotiable product principles
 
 1. **Revenue and accountability first.** Every major workflow should help a gym sell, collect, retain, reconcile, or supervise.

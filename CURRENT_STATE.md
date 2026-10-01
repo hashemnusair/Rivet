@@ -1,5 +1,18 @@
 # GymOS / RIVET current implementation state
 
+## Arabic standard and implementation handoff — 1 October 2026
+
+- Documentation checkpoint on `arabic-localisation`, directly following Elias’s `f98e324`. Application code and his 11 Arabic commits are preserved. This checkpoint does not integrate main, implement remaining translations, or deploy a runtime.
+- Hashem and Elias approved all **247** decisions in catalog `2026-09-30-v1`, revision **607**, with both named approvals and `readyForImplementation: true`. The complete export, original options, eight custom decisions and one note are saved with a SHA-256 checksum.
+- Read [the Arabic handoff](docs/arabic/README.md), [standard](docs/arabic/STANDARD.md), [all decisions](docs/arabic/DECISIONS.md), [implementation plan](docs/arabic/IMPLEMENTATION_PLAN.md), and [agent prompt](docs/arabic/IMPLEMENTATION_PROMPT.md).
+- At inspection, main `45c504b` contained 483 commits absent from this branch; 40 files changed on both sides. The plan preserves Elias’s catalogs/provider/formatters/RTL fixes while bringing current main’s business behavior forward. It covers 76 current-main page entries plus server text, recipient-language messages, documents, inputs, formatting, RTL and verification. Main’s WinAnsi PDF limitation is an explicit implementation gate.
+- Verification for this documentation pass: snapshot/registry validation and documentation consistency checks; no application tests or deployment are claimed. Use `python3 docs/arabic/verify-lock.py` and `git diff --check`.
+- Remaining work is A–H in the plan. The review room remains open; approved v1 is versioned in Git rather than frozen by a database mutation. Future jointly approved changes must explicitly supersede the saved standard.
+
+### Historical branch handoff below
+
+The following August state is retained for history. For current production truth, consult `origin/main`’s latest `CURRENT_STATE.md` and release runbook before integration; do not use the old release record below as a current deployment claim.
+
 Updated 2026-08-17 after the simplified Core CRM Pilot release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Simplified Core CRM Pilot — released 17 August 2026
