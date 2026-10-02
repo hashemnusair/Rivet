@@ -1,4 +1,7 @@
 "use client";
+import type { TKey } from "@/lib/i18n/core";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
+import { latinDigits } from "@/lib/utils/text";
 import { useT } from "@/lib/i18n/provider";
 
 import { Check } from "lucide-react";
@@ -31,13 +34,14 @@ const SELECT_CLASS = "h-11 w-full rounded-md border border-line-2 bg-surface px-
 
 export default function MemberProfilePage() {
   const t = useT();
+  const { locale } = useLocale();
   const customer = useCustomerPersona();
   const { updateCustomerProfile } = useExperience();
   const { ready, identitySignedIn, profileSelected } = useMemberGate();
   const [form, setForm] = useState<CustomerProfileInput>(EMPTY_PROFILE);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ key: TKey } | { cause: unknown }>();
 
   useEffect(() => {
     if (!customer) return;
@@ -69,15 +73,15 @@ export default function MemberProfilePage() {
     setSaved(false);
     setError(undefined);
     if (form.gender !== "female" && form.gender !== "male") {
-      setError("Choose female or male before saving your profile.");
+      setError({ key: "customerPortal.profileGender" });
       setSaving(false);
       return;
     }
     try {
-      await updateCustomerProfile({ ...form, fullName: form.fullName?.trim(), phone: form.phone?.trim() });
+      await updateCustomerProfile({ ...form, fullName: form.fullName?.trim(), phone: form.phone && latinDigits(form.phone.trim()), emergencyContactPhone: form.emergencyContactPhone && latinDigits(form.emergencyContactPhone.trim()) });
       setSaved(true);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Your profile was not saved. Try again.");
+      setError({ cause: caught });
     } finally {
       setSaving(false);
     }
@@ -85,23 +89,23 @@ export default function MemberProfilePage() {
 
   return (
     <main className="mx-auto max-w-[900px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-      <PageHeader sectionLabel="Your account" title={t("marketing.memberShell.profile")} description="Keep your contact and emergency details up to date. Every gym you join sees these details." />
+      <PageHeader sectionLabel={t("customerPortal.yourAccount")} title={t("marketing.memberShell.profile")} description={t("customerPortal.profileDescription")} />
 
       <form onSubmit={submit} className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-5">
         <div className="space-y-4">
           <section className="panel p-4 sm:p-5" aria-labelledby="profile-personal-title">
-            <h2 id="profile-personal-title" className="text-[15px] font-semibold">Personal information</h2>
+            <h2 id="profile-personal-title" className="text-[15px] font-semibold">{t("customerPortal.personalInformation")}</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label={t("common.label.fullName")} htmlFor="profile-name" required className="sm:col-span-2"><Input id="profile-name" className={FIELD} value={form.fullName ?? ""} onChange={(event) => update("fullName", event.target.value)} autoComplete="name" required /></Field>
-              <Field label={t("common.label.email")} htmlFor="profile-email" hint="Your sign-in email cannot be changed here."><Input id="profile-email" className={FIELD} value={customer.email} disabled readOnly autoComplete="email" /></Field>
-              <Field label={t("common.label.phone")} htmlFor="profile-phone"><Input id="profile-phone" className={FIELD} type="tel" inputMode="tel" value={form.phone ?? ""} onChange={(event) => update("phone", event.target.value)} autoComplete="tel" /></Field>
-              <Field label="Birth date" htmlFor="profile-birth-date"><Input id="profile-birth-date" className={FIELD} type="date" value={form.dateOfBirth ?? ""} onChange={(event) => update("dateOfBirth", event.target.value)} autoComplete="bday" /></Field>
+              <Field label={t("common.label.fullName")} htmlFor="profile-name" required className="sm:col-span-2"><Input dir="auto" id="profile-name" className={FIELD} value={form.fullName ?? ""} onChange={(event) => update("fullName", event.target.value)} autoComplete="name" required /></Field>
+              <Field label={t("common.label.email")} htmlFor="profile-email" hint={t("customerPortal.emailReadOnly")}><Input dir="ltr" id="profile-email" className={FIELD} value={customer.email} disabled readOnly autoComplete="email" /></Field>
+              <Field label={t("common.label.phone")} htmlFor="profile-phone"><Input dir="ltr" id="profile-phone" className={FIELD} type="tel" inputMode="tel" value={form.phone ?? ""} onChange={(event) => update("phone", event.target.value)} autoComplete="tel" /></Field>
+              <Field label={t("customerPortal.birthDate")} htmlFor="profile-birth-date"><Input id="profile-birth-date" className={FIELD} type="date" value={form.dateOfBirth ?? ""} onChange={(event) => update("dateOfBirth", event.target.value)} autoComplete="bday" /></Field>
               <Field label={t("memberProfile.details.gender")} htmlFor="profile-gender" required>
                 <select id="profile-gender" value={form.gender ?? ""} onChange={(event) => update("gender", event.target.value)} className={SELECT_CLASS} required>
                   <option value="" disabled>{t("auth.validation.genderRequired")}</option><option value="female">{t("memberProfile.details.female")}</option><option value="male">{t("memberProfile.details.male")}</option>
                 </select>
               </Field>
-              <Field label={t("members.header.preferredLanguage")} htmlFor="profile-language" hint="Used for messages about your bookings and payments." className="sm:col-span-2">
+              <Field label={t("members.header.preferredLanguage")} htmlFor="profile-language" hint={t("customerPortal.recipientLanguageHint")} className="sm:col-span-2">
                 <select id="profile-language" value={form.preferredLanguage ?? "en"} onChange={(event) => update("preferredLanguage", event.target.value)} className={SELECT_CLASS}>
                   <option value="en">{t("common.language.english")}</option><option value="ar">{t("common.language.arabic")}</option>
                 </select>
@@ -112,33 +116,33 @@ export default function MemberProfilePage() {
           <section className="panel p-4 sm:p-5" aria-labelledby="profile-address-title">
             <h2 id="profile-address-title" className="text-[15px] font-semibold">{t("memberProfile.details.address")}</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label={t("memberProfile.details.address")} htmlFor="profile-address" className="sm:col-span-2"><Input id="profile-address" className={FIELD} value={form.addressLine1 ?? ""} onChange={(event) => update("addressLine1", event.target.value)} autoComplete="street-address" /></Field>
-              <Field label="City" htmlFor="profile-city"><Input id="profile-city" className={FIELD} value={form.city ?? ""} onChange={(event) => update("city", event.target.value)} autoComplete="address-level2" /></Field>
+              <Field label={t("memberProfile.details.address")} htmlFor="profile-address" className="sm:col-span-2"><Input dir="auto" id="profile-address" className={FIELD} value={form.addressLine1 ?? ""} onChange={(event) => update("addressLine1", event.target.value)} autoComplete="street-address" /></Field>
+              <Field label={t("customerPortal.city")} htmlFor="profile-city"><Input dir="auto" id="profile-city" className={FIELD} value={form.city ?? ""} onChange={(event) => update("city", event.target.value)} autoComplete="address-level2" /></Field>
             </div>
           </section>
 
           <section className="panel p-4 sm:p-5" aria-labelledby="profile-emergency-title">
             <h2 id="profile-emergency-title" className="text-[15px] font-semibold">{t("members.header.emergencyContact")}</h2>
-            <p className="mt-1 text-[13px] text-ink-2">Add someone your gym can call in an emergency.</p>
+            <p className="mt-1 text-[13px] text-ink-2">{t("customerPortal.emergencyHint")}</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label={t("common.label.name")} htmlFor="emergency-name"><Input id="emergency-name" className={FIELD} value={form.emergencyContactName ?? ""} onChange={(event) => update("emergencyContactName", event.target.value)} autoComplete="off" /></Field>
-              <Field label="Relationship" htmlFor="emergency-relationship"><Input id="emergency-relationship" className={FIELD} value={form.emergencyContactRelationship ?? ""} onChange={(event) => update("emergencyContactRelationship", event.target.value)} autoComplete="off" placeholder="Parent, spouse…" /></Field>
-              <Field label={t("common.label.phone")} htmlFor="emergency-phone"><Input id="emergency-phone" className={FIELD} type="tel" inputMode="tel" value={form.emergencyContactPhone ?? ""} onChange={(event) => update("emergencyContactPhone", event.target.value)} autoComplete="off" /></Field>
+              <Field label={t("common.label.name")} htmlFor="emergency-name"><Input dir="auto" id="emergency-name" className={FIELD} value={form.emergencyContactName ?? ""} onChange={(event) => update("emergencyContactName", event.target.value)} autoComplete="off" /></Field>
+              <Field label={t("customerPortal.relationship")} htmlFor="emergency-relationship"><Input dir="auto" id="emergency-relationship" className={FIELD} value={form.emergencyContactRelationship ?? ""} onChange={(event) => update("emergencyContactRelationship", event.target.value)} autoComplete="off" placeholder={t("customerPortal.relationshipPlaceholder")} /></Field>
+              <Field label={t("common.label.phone")} htmlFor="emergency-phone"><Input dir="ltr" id="emergency-phone" className={FIELD} type="tel" inputMode="tel" value={form.emergencyContactPhone ?? ""} onChange={(event) => update("emergencyContactPhone", event.target.value)} autoComplete="off" /></Field>
             </div>
           </section>
 
-          {error ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[13px] text-danger">{error}</p> : null}
+          {error ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[13px] text-danger">{"key" in error ? t(error.key) : isApiError(error.cause) ? localizeApiError(error.cause, locale).message : t("customerPortal.profileNotSaved")}</p> : null}
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" loading={saving} className="w-full sm:w-auto">{t("members.header.saveProfile")}</Button>
-            {saved ? <span role="status" className="inline-flex items-center gap-1.5 text-[13px] text-success-deep"><Check className="size-4" aria-hidden /> Saved. Your gyms can see the changes.</span> : null}
+            {saved ? <span role="status" className="inline-flex items-center gap-1.5 text-[13px] text-success-deep"><Check className="size-4" aria-hidden /> {" "}{t("customerPortal.profileSaved")}</span> : null}
           </div>
         </div>
 
         <aside className="space-y-4">
           <div className="panel p-4 sm:p-5">
-            <h2 className="text-[13px] font-semibold">Who can see your details</h2>
-            <p className="mt-2 text-[13px] leading-relaxed text-ink-2">You own your email, phone, personal details and emergency contact. Each gym you join can see them. A gym cannot see your memberships at other gyms.</p>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">Gym staff manage their notes and tags, your branch and your membership details. We do not ask for medical information here.</p>
+            <h2 className="text-[13px] font-semibold">{t("customerPortal.profilePrivacyTitle")}</h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-ink-2">{t("customerPortal.profilePrivacy")}</p>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">{t("customerPortal.profileStaffDetails")}</p>
           </div>
           <ScreenLanguage />
           <CustomerCommunicationPreferences />
@@ -165,5 +169,6 @@ function ScreenLanguage() {
 }
 
 function ProfileLoading() {
-  return <main className="flex min-h-[60vh] items-center justify-center px-4" role="status" aria-label="Loading profile"><div className="h-1 w-40 animate-pulse rounded-full bg-sunken-2" /></main>;
+  const t = useT();
+  return <main className="flex min-h-[60vh] items-center justify-center px-4" role="status" aria-label={t("customerPortal.loadingProfile")}><div className="h-1 w-40 animate-pulse rounded-full bg-sunken-2" /></main>;
 }

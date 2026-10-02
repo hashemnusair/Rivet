@@ -1,3 +1,4 @@
+import { customerPortal } from "./customerPortal";
 import { authErrors } from "./authErrors";
 import { memberExperience } from "./memberExperience";
 import { errorValues } from "./errorValues";
@@ -27,6 +28,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  customerPortal,
   authErrors,
   memberExperience,
   errorValues,

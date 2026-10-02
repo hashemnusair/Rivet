@@ -1,3 +1,4 @@
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CustomerCommunicationPreferences } from "./customer-communication-preferences";
@@ -47,4 +48,19 @@ describe("CustomerCommunicationPreferences", () => {
     expect(await screen.findByRole("heading", { name: "Your choices for offers and news" })).toBeInTheDocument();
     expect(screen.getByText(/Messages about your bookings, payments and entry are always sent when needed/)).toBeInTheDocument();
   });
+});
+
+function ConsentLocaleSwitch() {
+  const { setLocale } = useLocale();
+  return <button onClick={() => setLocale("en")}>English</button>;
+}
+it("changes consent only on explicit selection and retranslates the saved state", async () => {
+  state.updateMarketingPreference.mockReset().mockResolvedValue(state.customer);
+  render(<LocaleProvider initialLocale="ar"><ConsentLocaleSwitch /><CustomerCommunicationPreferences /></LocaleProvider>);
+  expect(state.updateMarketingPreference).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("switch", { name: "إرسال العروض والأخبار إليّ" }));
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("ستصلك العروض والأخبار."));
+  fireEvent.click(screen.getByRole("button", { name: "English" }));
+  expect(screen.getByRole("status")).toHaveTextContent("You will get offers and news.");
+  expect(state.updateMarketingPreference).toHaveBeenCalledExactlyOnceWith(true);
 });

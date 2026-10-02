@@ -2598,7 +2598,7 @@ export interface ReceiptDetail {
   receipt: Receipt;
   /** Convenience projection used by retail checkout responses; legacy callers use receipt.id. */
   receiptId?: UUID;
-  organization: { name: string; receiptFooter: string; taxRatePercent: number };
+  organization: { name: string; receiptFooter: string; taxRatePercent: number; timezone?: string };
   branch: { name: string; code: string; address: string; phone: string };
   /** Legacy member projection. Retail guest receipts expose customer instead. */
   member?: { fullName: string; memberNumber: string };

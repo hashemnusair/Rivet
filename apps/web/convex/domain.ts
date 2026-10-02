@@ -2343,7 +2343,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
     return {
       receipt: receiptData,
       receiptId: sale.receiptId,
-      organization: { name: actor.organization.name, receiptFooter: stringValue(actor.organization.receiptFooter), taxRatePercent: numberValue(actor.organization.taxRatePercent) },
+      organization: { name: actor.organization.name, timezone: actor.organization.timezone, receiptFooter: stringValue(actor.organization.receiptFooter), taxRatePercent: numberValue(actor.organization.taxRatePercent) },
       branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },
       member: customer.kind === "member" ? { fullName: stringValue(customer.fullName), memberNumber: stringValue(customer.memberNumber, "Member") } : undefined,
       customer,
@@ -2363,7 +2363,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
   const organization = organizationView(actor.organization);
   return {
     receipt: receiptData,
-    organization: { name: actor.organization.name, receiptFooter: stringValue(organization.receiptFooter), taxRatePercent: numberValue(organization.taxRatePercent) },
+    organization: { name: actor.organization.name, timezone: actor.organization.timezone, receiptFooter: stringValue(organization.receiptFooter), taxRatePercent: numberValue(organization.taxRatePercent) },
     branch: {
       name: branch?.name ?? "—",
       code: branch?.code ?? "—",
@@ -3264,7 +3264,7 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
       return {
         gymId: publicOrganizationId(context.organization),
         receipt: receiptValue,
-        organization: { name: context.organization.name, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
+        organization: { name: context.organization.name, timezone: context.organization.timezone, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
         branch: { name: branch.name, code: branch.code, address: branch.address ?? "", phone: branch.phone ?? "" },
         member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
         customer: retailSale.customer,
@@ -3309,7 +3309,7 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
     return {
       gymId: publicOrganizationId(context.organization),
       receipt: receiptValue,
-      organization: { name: context.organization.name, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
+      organization: { name: context.organization.name, timezone: context.organization.timezone, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
       branch: { name: branch?.name ?? "Gym branch", code: branch?.code ?? "", address: branch?.address ?? "", phone: branch?.phone ?? "" },
       member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
       customer: { kind: "member", fullName: stringValue(context.member.fullName), phone: optionalString(context.member.phone), memberId: context.memberId, memberNumber: stringValue(context.member.memberNumber) },

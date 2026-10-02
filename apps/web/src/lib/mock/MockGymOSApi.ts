@@ -7942,7 +7942,7 @@ export class MockGymOSApi implements GymOSApi {
       }
       if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.amountText(totalMinor)}`, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
       this.audit({ category: "operations", action: "operations.retail_sale.create", entityType: "retail_sale", entityId: sale.id, entityLabel: receiptNumber, summary: `Retail sale ${receiptNumber} · ${this.amountText(totalMinor)}`, after: { receiptId: receipt.id, total: totalMinor, method, customer: customer.kind }, branchId: branch.id });
-      const detail: T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale } = { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: member ? { fullName: member.fullName, memberNumber: member.memberNumber } : undefined, customer, payment, retailSale: sale, relatedPayments: [] };
+      const detail: T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale } = { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, timezone: this.db.organization.timezone, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: member ? { fullName: member.fullName, memberNumber: member.memberNumber } : undefined, customer, payment, retailSale: sale, relatedPayments: [] };
       this.operationsIdempotency.set(`retail_checkout:${idempotencyKey}`, { signature, result: detail });
       return detail;
     });
@@ -8328,11 +8328,11 @@ export class MockGymOSApi implements GymOSApi {
         // retain the item lines, while its payment is the negative adjustment
         // fact. The original retail payment remains linked for audit history.
         const originalPayment = this.retailPaymentProjection(sale) as unknown as T.Payment;
-        return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment: retailAdjustment, retailSale: sale, relatedPayments: [originalPayment] };
+        return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, timezone: this.db.organization.timezone, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment: retailAdjustment, retailSale: sale, relatedPayments: [originalPayment] };
       }
       const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer: sale.customer, amount: { ...sale.total }, method: sale.method, status: sale.status, refundedAmount: sale.refundedAmount ? { ...sale.refundedAmount } : undefined, refundReason: sale.refundReason, voidReason: sale.voidReason, receiptId: receipt.id, receiptNumber: receipt.receiptNumber, collectedById: sale.createdById, collectedByName: sale.createdByName, shiftId: sale.shiftId, externalReference: sale.externalReference, idempotencyKey: sale.idempotencyKey, occurredAt: sale.createdAt };
       const relatedRefunds = this.db.payments.filter((candidate) => candidate.type === "refund" && candidate.originalPaymentId === payment.id);
-      return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment, retailSale: sale, relatedPayments: relatedRefunds };
+      return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, timezone: this.db.organization.timezone, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment, retailSale: sale, relatedPayments: relatedRefunds };
     }
     const payment = this.db.payments.find((p) => p.id === receipt.paymentId)!;
     const branch = this.db.branches.find((b) => b.id === payment.branchId)!;
@@ -8344,6 +8344,7 @@ export class MockGymOSApi implements GymOSApi {
       organization: {
         name: this.db.organization.name,
         receiptFooter: this.db.organization.receiptFooter,
+        timezone: this.db.organization.timezone,
         taxRatePercent: this.db.organization.taxRatePercent,
       },
       branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },

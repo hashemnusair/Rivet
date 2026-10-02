@@ -11,6 +11,7 @@ export interface Formatters {
   date: (iso: string | undefined | null) => string;
   dateShort: (iso: string | undefined | null) => string;
   dateTime: (iso: string | undefined | null) => string;
+  clock: (value: string | undefined | null) => string;
   time: (iso: string | undefined | null) => string;
   weekday: (iso: string) => string;
   monthYear: (iso: string) => string;
@@ -54,6 +55,12 @@ export function makeFormatters(locale: Locale, justNow: string, timeZone = TENAN
     dateShort: (iso) => date(iso, false),
     dateTime: (iso) => !valid(iso) ? EM_DASH : locale === "ar" ? `${date(iso, false)}، ${time(iso)}` : dtf(iso, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(dateValue(iso)),
     time,
+    clock: (value) => {
+      if (!value || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return EM_DASH;
+      if (locale === "en") return value;
+      const [hour, minute] = value.split(":");
+      return `${Number(hour) % 12 || 12}:${minute} ${Number(hour) < 12 ? "ص" : "م"}`;
+    },
     weekday: (iso) => valid(iso) ? dtf(iso, { weekday: "short" }).format(dateValue(iso)) : EM_DASH,
     monthYear: (iso) => {
       if (!valid(iso)) return EM_DASH;

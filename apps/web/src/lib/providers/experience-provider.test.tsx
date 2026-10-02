@@ -259,7 +259,7 @@ describe("ExperienceProvider public live recovery", () => {
     act(() => {
       catalog.entries[0]!.onError(new Error("later network failure"));
     });
-    await waitFor(() => expect(screen.getByTestId("error")).toHaveTextContent("later network failure"));
+    await waitFor(() => expect(screen.getByTestId("error")).toHaveTextContent("RIVET could not refresh its live pricing catalog."));
     expect(screen.getByTestId("status")).toHaveTextContent("ready");
     expect(screen.getByTestId("plan-count")).toHaveTextContent("1");
     expect(screen.getByTestId("gym-count")).toHaveTextContent("1");

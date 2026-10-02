@@ -39,6 +39,10 @@ describe("formatters", () => {
   });
 
   it("handles noon, midnight, negative amounts, zero and other currency precision", () => {
+    expect(ar.clock("00:00")).toBe("12:00 ص");
+    expect(ar.clock("12:00")).toBe("12:00 م");
+    expect(ar.clock("23:05")).toBe("11:05 م");
+    expect(ar.clock("24:00")).toBe("—");
     expect(ar.time("2026-10-01T21:00:00Z")).toBe("12:00 ص");
     expect(ar.time("2026-10-01T09:00:00Z")).toBe("12:00 م");
     expect(ar.money({ amount: -25_001, currency: "JOD" })).toBe("-25.001 د.أ");

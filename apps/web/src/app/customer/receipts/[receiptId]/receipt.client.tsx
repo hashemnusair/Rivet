@@ -1,10 +1,16 @@
 "use client";
+import { useLocale } from "@/lib/i18n/provider";
+import { createTranslator, type TKey } from "@/lib/i18n/core";
+import type { Locale } from "@/lib/i18n/locale";
+import { makeFormatters, FormattingProvider } from "@/lib/i18n/format";
+import { isolate, isolateLtr } from "@/lib/i18n/bidi";
+import { paymentMethodLabel, transactionStatusLabel } from "@/lib/i18n/labels";
 import { useT } from "@/lib/i18n/provider";
 
 import { AlertTriangle, ArrowLeft, Download, Printer, SearchX } from "lucide-react";
 import Link from "next/link";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { TransactionStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { StatePanel } from "@/components/ui/states";
@@ -12,40 +18,43 @@ import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import type { CustomerReceipt } from "@/lib/domain/qol";
 import { useApiQuery } from "@/lib/hooks/use-api";
-import { exportStatusLabel } from "@/lib/exports/csv";
 import { downloadTextFile } from "@/lib/exports/download";
-import { formatMoney } from "@/lib/utils/money";
 
 /** Plain-text copy of the receipt: readable on any phone, no app required. */
-export function receiptTextLines(detail: CustomerReceipt): string[] {
+export function receiptTextLines(detail: CustomerReceipt, locale: Locale = "en"): string[] {
+  const t = createTranslator(locale);
+  const f = makeFormatters(locale, t("common.time.now"), detail.organization.timezone);
+  const text = (value: string) => locale === "ar" ? isolate(value) : value;
+  const reference = (value: string) => locale === "ar" ? isolateLtr(value) : value;
+  const fact = (key: TKey, value: string) => `${t(key)}: ${value}`;
   const payment = detail.payment;
   const retail = detail.retailSale;
   const amount = retail?.total ?? payment.amount;
-  const customerName = detail.member?.fullName ?? detail.customer?.fullName ?? "Member";
+  const customerName = detail.member?.fullName ?? detail.customer?.fullName ?? t("palette.kind.member");
   const customerNumber = detail.member?.memberNumber ?? detail.customer?.memberNumber;
   return [
-    detail.organization.name,
-    `${detail.branch.name} (${detail.branch.code})`,
-    detail.branch.address,
-    detail.branch.phone,
+    text(detail.organization.name),
+    `${text(detail.branch.name)} (${reference(detail.branch.code)})`,
+    text(detail.branch.address),
+    reference(detail.branch.phone),
     "",
-    `Receipt number: ${detail.receipt.receiptNumber}`,
-    `Issued: ${new Date(detail.receipt.issuedAt).toLocaleString("en-JO")}`,
-    `Member: ${customerName}`,
-    ...(customerNumber ? [`Member number: ${customerNumber}`] : []),
+    fact("customerPortal.receiptNumber", reference(detail.receipt.receiptNumber)),
+    fact("customerPortal.issued", `${f.date(detail.receipt.issuedAt)} · ${f.time(detail.receipt.issuedAt)}`),
+    fact("palette.kind.member", text(customerName)),
+    ...(customerNumber ? [fact("customerPortal.memberNumber", reference(customerNumber))] : []),
     "",
     ...(retail?.lines.length
-      ? ["Items", ...retail.lines.map((line) => `- ${line.productName} × ${line.quantity}: ${formatMoney(line.lineTotal)}`)]
-      : [`Description: ${detail.charge?.description ?? (payment.type === "refund" ? "Refund" : "Payment")}`]),
+      ? [t("customerPortal.items"), ...retail.lines.map((line) => `- ${text(line.productName)} × ${line.quantity}: ${reference(f.money(line.lineTotal))}`)]
+      : [fact("customerPortal.description", text(detail.charge?.description ?? t(payment.type === "refund" ? "customerPortal.refund" : "customerPortal.payment")))]),
     "",
-    `${payment.type === "refund" ? "Refunded" : "Total"}: ${formatMoney(amount)}`,
-    ...(detail.charge?.outstandingAmount.amount ? [`Unpaid: ${formatMoney(detail.charge.outstandingAmount)}`] : []),
-    `Payment method: ${PAYMENT_METHOD_LABELS[payment.method] ?? exportStatusLabel(payment.method)}`,
-    `Status: ${exportStatusLabel(payment.status)}`,
-    `Recorded by: ${payment.collectedByName}`,
-    ...(payment.externalReference ? [`Payment reference: ${payment.externalReference}`] : []),
-    ...(payment.refundReason ? [`Refund reason: ${payment.refundReason}`] : []),
-    ...(payment.voidReason ? [`Cancellation reason: ${payment.voidReason}`] : []),
+    fact(payment.type === "refund" ? "customerPortal.refunded" : "common.label.total", reference(f.money(amount))),
+    ...(detail.charge?.outstandingAmount.amount ? [fact("domain.paymentStatus.unpaid", reference(f.money(detail.charge.outstandingAmount)))] : []),
+    fact("renewFlow.shared.paymentMethodAria", paymentMethodLabel(t, payment.method)),
+    fact("common.label.status", transactionStatusLabel(t, payment.status)),
+    fact("customerPortal.recordedBy", text(payment.collectedByName)),
+    ...(payment.externalReference ? [fact("customerPortal.paymentReference", reference(payment.externalReference))] : []),
+    ...(payment.refundReason ? [fact("customerPortal.refundReason", text(payment.refundReason))] : []),
+    ...(payment.voidReason ? [fact("customerPortal.cancelReason", text(payment.voidReason))] : []),
     "",
     detail.organization.receiptFooter,
   ].filter((line) => line !== undefined);
@@ -53,11 +62,12 @@ export function receiptTextLines(detail: CustomerReceipt): string[] {
 
 export default function CustomerReceiptClient({ receiptId }: { receiptId: string }) {
   const t = useT();
+  const { locale } = useLocale();
   const query = useApiQuery(qk.customerReceipt(receiptId), (api) => api.getCustomerReceipt(receiptId));
 
   if (query.isLoading) {
     return (
-      <main className="mx-auto max-w-[720px] space-y-4 px-4 py-6 sm:px-6 lg:px-8" role="status" aria-label="Loading receipt">
+      <main className="mx-auto max-w-[720px] space-y-4 px-4 py-6 sm:px-6 lg:px-8" role="status" aria-label={t("customerPortal.loadingReceipt")}>
         <Skeleton className="h-8 w-32" />
         <Skeleton className="h-[480px] w-full" />
       </main>
@@ -71,12 +81,12 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
         <StatePanel
           icon={notFound ? SearchX : AlertTriangle}
           role={notFound ? "status" : "alert"}
-          title={notFound ? t("renewFlow.receipt.notFound") : "The receipt could not be loaded"}
-          description={notFound ? "This receipt is not on your account, or the link is old." : "Nothing about your payments changed. Try again in a moment."}
+          title={notFound ? t("renewFlow.receipt.notFound") : t("customerPortal.receiptLoadFailed")}
+          description={notFound ? t("customerPortal.receiptNotOnAccount") : t("customerPortal.paymentsUnchanged")}
           action={
             <div className="flex flex-wrap justify-center gap-2">
               {notFound ? null : <Button size="sm" onClick={() => query.refetch()}>{t("common.action.retry")}</Button>}
-              <Button asChild size="sm" variant="secondary"><Link href="/customer/finance">Back to payments</Link></Button>
+              <Button asChild size="sm" variant="secondary"><Link href="/customer/finance">{t("customerPortal.backPayments")}</Link></Button>
             </div>
           }
         />
@@ -89,15 +99,15 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
   const retail = detail.retailSale;
   const isRefund = payment.type === "refund";
   const amount = retail?.total ?? payment.amount;
-  const customerName = detail.member?.fullName ?? detail.customer?.fullName ?? "Member";
+  const customerName = detail.member?.fullName ?? detail.customer?.fullName ?? t("palette.kind.member");
   const customerNumber = detail.member?.memberNumber ?? detail.customer?.memberNumber;
   const outstanding = detail.charge?.outstandingAmount.amount ? detail.charge.outstandingAmount : undefined;
-  const download = () => downloadTextFile({ content: `\uFEFF${receiptTextLines(detail).join("\r\n")}\r\n`, fileName: `${detail.receipt.receiptNumber}.txt` });
+  const download = () => downloadTextFile({ content: `\uFEFF${receiptTextLines(detail, locale).join("\r\n")}\r\n`, fileName: `${detail.receipt.receiptNumber}.txt` });
 
   return (
-    <main className="mx-auto max-w-[720px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+    <FormattingProvider timeZone={detail.organization.timezone}><main className="mx-auto max-w-[720px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
-        <Button asChild variant="ghost" size="sm"><Link href="/customer/finance"><ArrowLeft />{" "}{t("renewFlow.receipt.back")}</Link></Button>
+        <Button asChild variant="ghost" size="sm"><Link href="/customer/finance"><ArrowLeft className="rtl:rotate-180" />{" "}{t("renewFlow.receipt.back")}</Link></Button>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={download}><Download />{" "}{t("common.action.download")}</Button>
           <Button size="sm" onClick={() => window.print()}><Printer />{" "}{t("common.action.print")}</Button>
@@ -109,8 +119,8 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
       <article id="receipt-print" className="panel mt-4 px-5 py-6 sm:px-8 sm:py-8" aria-labelledby="receipt-title">
         <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
           <div className="min-w-0">
-            <p className="text-[12px] font-medium text-ink-3">{isRefund ? "Refund receipt" : retail ? "Shop receipt" : t("renewFlow.payment.receipt")}</p>
-            <h1 id="receipt-title" className="mt-0.5 font-mono text-[18px] font-semibold tracking-wide text-ink">{detail.receipt.receiptNumber}</h1>
+            <p className="text-[12px] font-medium text-ink-3">{isRefund ? t("customerPortal.refundReceipt") : retail ? t("customerPortal.shopReceipt") : t("renewFlow.payment.receipt")}</p>
+            <h1 id="receipt-title" dir="ltr" className="mt-0.5 font-mono text-[18px] font-semibold tracking-wide text-ink">{detail.receipt.receiptNumber}</h1>
             <p className="mt-1 text-[13px] text-ink-2"><DateTimeText iso={detail.receipt.issuedAt} /></p>
           </div>
           <TransactionStatusChip status={payment.status} />
@@ -130,8 +140,8 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
           </div>
         </section>
 
-        <section className="border-b border-line py-4" aria-label="Amounts">
-          <p className="text-[12px] font-medium text-ink-3">{retail?.lines.length ? "Items" : "Description"}</p>
+        <section className="border-b border-line py-4" aria-label={t("customerPortal.amounts")}>
+          <p className="text-[12px] font-medium text-ink-3">{retail?.lines.length ? t("customerPortal.items") : t("customerPortal.description")}</p>
           <table className="mt-2 w-full text-[13.5px]">
             <tbody>
               {retail?.lines.length ? retail.lines.map((line) => (
@@ -160,19 +170,19 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
         </section>
 
         <dl className="grid gap-x-6 gap-y-2 py-4 text-[13px] sm:grid-cols-2">
-          <ReceiptFact label={t("renewFlow.shared.paymentMethodAria")}>{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</ReceiptFact>
-          <ReceiptFact label="Recorded by">{payment.collectedByName}</ReceiptFact>
-          {payment.externalReference ? <ReceiptFact label="Payment reference"><span className="font-mono text-[12px]">{payment.externalReference}</span></ReceiptFact> : null}
-          {payment.refundReason ? <ReceiptFact label="Refund reason">{payment.refundReason}</ReceiptFact> : null}
-          {payment.voidReason ? <ReceiptFact label="Cancellation reason">{payment.voidReason}</ReceiptFact> : null}
+          <ReceiptFact label={t("renewFlow.shared.paymentMethodAria")}>{paymentMethodLabel(t, payment.method)}</ReceiptFact>
+          <ReceiptFact label={t("customerPortal.recordedBy")}>{payment.collectedByName}</ReceiptFact>
+          {payment.externalReference ? <ReceiptFact label={t("customerPortal.paymentReference")}><span dir="ltr" className="font-mono text-[12px]">{payment.externalReference}</span></ReceiptFact> : null}
+          {payment.refundReason ? <ReceiptFact label={t("customerPortal.refundReason")}>{payment.refundReason}</ReceiptFact> : null}
+          {payment.voidReason ? <ReceiptFact label={t("customerPortal.cancelReason")}>{payment.voidReason}</ReceiptFact> : null}
         </dl>
 
         <footer className="border-t border-line pt-4 text-[12px] leading-relaxed text-ink-3">
           <p>{detail.organization.receiptFooter}</p>
-          <p className="mt-2">If something looks wrong, ask your gym.</p>
+          <p className="mt-2">{t("customerPortal.receiptQuery")}</p>
         </footer>
       </article>
-    </main>
+    </main></FormattingProvider>
   );
 }
 
