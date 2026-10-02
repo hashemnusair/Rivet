@@ -973,6 +973,7 @@ export interface CustomerClassOccurrence extends Omit<ClassOccurrence, "roster">
   };
   canBook: boolean;
   bookingBlockReason?: string;
+  bookingBlockMessage?: import("../i18n/error-messages").ErrorMessageDescriptor;
 }
 
 export interface ClassBookingPolicy {

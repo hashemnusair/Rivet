@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
 
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock3, Copy, Dumbbell, MapPin, MessageCircle, Phone, QrCode, ScanLine, Share2, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
@@ -20,7 +20,8 @@ import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
 import type { CustomerClassOccurrence, PtBooking, PtBookingStatus, PtPackageOrder } from "@/lib/domain/types";
-import { classCancellationPreview, type ClassBookingStatus } from "@/lib/domain/class-booking";
+import { renderDomainMessage } from "@/lib/i18n/domain-message";
+import { classBookingBlockMessage, classCancellationPreview, type ClassBookingStatus } from "@/lib/domain/class-booking";
 import { PT_DEFAULT_CANCELLATION_CUTOFF_HOURS, ptBookingAwaitsOutcome, ptBookingBeforeCutoff, ptNextBooking } from "@/lib/domain/personal-training";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
@@ -235,7 +236,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
-  const t = useT();
+  const { t, locale } = useLocale();
   const invalidate = useInvalidate();
   const experience = useApiQuery(qk.customerClasses(membershipId), (api) => api.getCustomerClassExperience(membershipId));
   // One day at a time, bounded to the rolling week. The view resets to the new
@@ -388,7 +389,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
                   <DialogDescription dir="ltr">{formatDateTime(cancelTarget.startsAt)}{cancelTarget.coachName ? ` · ${cancelTarget.coachName}` : ""}</DialogDescription>
                 </DialogHeader>
                 <DialogBody>
-                  <p role="status" className={cn("rounded-md border p-3 text-[13px]", preview.outcome === "late_cancelled" ? "border-warning/30 bg-warning-bg text-warning-deep" : "border-line bg-sunken text-ink-2")}>{preview.text}</p>
+                  <p role="status" className={cn("rounded-md border p-3 text-[13px]", preview.outcome === "late_cancelled" ? "border-warning/30 bg-warning-bg text-warning-deep" : "border-line bg-sunken text-ink-2")}>{renderDomainMessage(preview.text, locale, preview.message)}</p>
                 </DialogBody>
                 <DialogFooter>
                   <Button variant="secondary" disabled={cancel.isPending} onClick={() => setCancelTarget(undefined)}>Keep booking</Button>
@@ -404,7 +405,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
 }
 
 function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: { occurrence: CustomerClassOccurrence; cutoffHours: number; busy: boolean; onBook: () => void; onCancel: () => void }) {
-  const t = useT();
+  const { t, locale } = useLocale();
   const active = occurrence.booking && ["booked", "waitlisted"].includes(occurrence.booking.status);
   const full = occurrence.spotsRemaining === 0;
   const minutes = Math.round((Date.parse(occurrence.endsAt) - Date.parse(occurrence.startsAt)) / 60_000);
@@ -439,7 +440,7 @@ function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: 
         ) : (
           <div className="mt-3">
             <Button className="w-full" loading={busy} disabled={!occurrence.canBook} onClick={onBook}>{full ? "Join waitlist" : "Book class"}</Button>
-            {occurrence.status === "cancelled" && occurrence.cancelReason ? <p className="mt-2 text-[12px] leading-4 text-ink-2">Cancelled by the gym: {occurrence.cancelReason}</p> : occurrence.bookingBlockReason ? <p className="mt-2 text-[12px] leading-4 text-ink-2">{occurrence.bookingBlockReason}</p> : null}
+            {occurrence.status === "cancelled" && occurrence.cancelReason ? <p className="mt-2 text-[12px] leading-4 text-ink-2">Cancelled by the gym: {occurrence.cancelReason}</p> : occurrence.bookingBlockReason ? <p className="mt-2 text-[12px] leading-4 text-ink-2">{renderDomainMessage(occurrence.bookingBlockReason, locale, occurrence.bookingBlockMessage ?? classBookingBlockMessage(occurrence.bookingBlockReason))}</p> : null}
           </div>
         )}
       </div>

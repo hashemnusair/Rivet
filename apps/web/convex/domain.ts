@@ -1,3 +1,4 @@
+import { workspaceModuleErrorMessage } from "../src/lib/domain/workspace-module-error";
 import { searchKey } from "../src/lib/utils/text";
 import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -142,6 +143,7 @@ function automationsGloballyPaused(): boolean {
 function requireAutomationsLive(correlationId: string): void {
   if (automationsGloballyPaused()) {
     domainError("FEATURE_NOT_AVAILABLE", AUTOMATIONS_PAUSE_REASON, {
+      message: { key: "apiErrors.automationsPaused" },
       correlationId,
       details: { feature: "automations", globallyPaused: true },
     });
@@ -1467,7 +1469,7 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
       const opensAt = stringValue(day.opensAt, "06:00");
       const closesAt = stringValue(day.closesAt, "23:00");
       if (!TIME_PATTERN.test(opensAt) || !TIME_PATTERN.test(closesAt) || (enabled && opensAt >= closesAt)) {
-        domainError("VALIDATION_ERROR", `Operating hours for ${weekday} are invalid.`, { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", `Operating hours for ${weekday} are invalid.`, { message: { key: "apiErrors.operatingHoursDay", params: { weekday: String(weekday) } }, correlationId: actor.correlationId });
       }
       validatedDays[weekday] = { enabled, opensAt, closesAt, slots: enabled ? [opensAt, closesAt] : [] };
     }
@@ -1490,11 +1492,11 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
       const opensAt = stringValue(window.opensAt);
       const closesAt = stringValue(window.closesAt);
       if (!TIME_PATTERN.test(opensAt) || !TIME_PATTERN.test(closesAt) || (enabled && opensAt >= closesAt)) {
-        domainError("VALIDATION_ERROR", `Trial window for ${weekday} is invalid.`, { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", `Trial window for ${weekday} is invalid.`, { message: { key: "apiErrors.trialHoursDay", params: { weekday: String(weekday) } }, correlationId: actor.correlationId });
       }
       const hours = data(operatingByBranch.get(branchId)?.[weekday]);
       if (enabled && (!booleanValue(hours.enabled) || opensAt < stringValue(hours.opensAt) || closesAt > stringValue(hours.closesAt))) {
-        domainError("VALIDATION_ERROR", `Trial window for ${weekday} must fall inside the branch's operating hours.`, { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", `Trial window for ${weekday} must fall inside the branch's operating hours.`, { message: { key: "apiErrors.trialWithinHours", params: { weekday: String(weekday) } }, correlationId: actor.correlationId });
       }
       validatedDays[weekday] = { enabled, opensAt, closesAt };
     }
@@ -3631,7 +3633,7 @@ const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "recepti
 
 function automationInteger(value: unknown, label: string, correlationId: string, minimum: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
-    domainError("VALIDATION_ERROR", `${label} must be a whole number of at least ${minimum}.`, { correlationId });
+    domainError("VALIDATION_ERROR", `${label} must be a whole number of at least ${minimum}.`, { message: { key: "apiErrors.minimumWholeNumber", params: { field: String(label), minimum: String(minimum) } }, correlationId });
   }
   return value;
 }
@@ -5015,7 +5017,7 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
     rows,
     emptyMessage: "No personal data was available for export.",
   });
-  if (new TextEncoder().encode(content).byteLength > 750_000) domainError("CONFLICT", `Your personal-data export contains ${totalRows} records and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { correlationId: request.correlationId });
+  if (new TextEncoder().encode(content).byteLength > 750_000) domainError("CONFLICT", `Your personal-data export contains ${totalRows} records and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { message: { key: "apiErrors.personalExportLimit", params: { count: String(totalRows) } }, correlationId: request.correlationId });
   for (const organization of organizations.values()) await ctx.db.insert("auditEvents", { organizationId: organization._id, publicId: newPublicId(), actorUserId: user._id, actorPublicId: userId, actorName: user.fullName, actorRole: "member", category: "settings", action: "member.personal_data_export", entityType: "member_data_export", entityPublicId: idempotencyKey, entityLabel: user.fullName, summary: "Member downloaded a personal-data export", correlationId: request.correlationId ?? idempotencyKey, occurredAt: Date.now() });
   return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
 }
@@ -6434,7 +6436,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "reports.gm_analysis":
       return await managementReportQuery(ctx, actor, operation, input);
     default:
-      domainError("NOT_FOUND", `Unknown query operation ${operation}.`, { correlationId: actor.correlationId });
+      domainError("NOT_FOUND", `Unknown query operation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -6606,7 +6608,7 @@ async function paymentRecord(
   if (!charge) domainError("NO_OUTSTANDING_BALANCE", "No unpaid amount is available for this member.", { correlationId: actor.correlationId });
   const chargeData = data(charge.data);
   if (chargeData.memberId !== memberId) domainError("NOT_FOUND", "Charge not found.", { correlationId: actor.correlationId });
-  if (!chargeIsCollectibleValue(chargeData, today)) domainError("VALIDATION_ERROR", `This invoice becomes collectible on ${chargeDueDateValue(chargeData)}.`, { correlationId: actor.correlationId, fieldErrors: { chargeId: ["Upcoming invoices cannot be paid before their due date"] } });
+  if (!chargeIsCollectibleValue(chargeData, today)) domainError("VALIDATION_ERROR", `This invoice becomes collectible on ${chargeDueDateValue(chargeData)}.`, { message: { key: "apiErrors.collectibleDate", params: { date: String(chargeDueDateValue(chargeData)) } }, correlationId: actor.correlationId, fieldErrors: { chargeId: ["Upcoming invoices cannot be paid before their due date"] } });
   const outstanding = amountOf(chargeData.outstandingAmount);
   const allocation = paymentAllocation(amount, outstanding);
   if (!allocation.ok) domainError("VALIDATION_ERROR", allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Payment cannot exceed the unpaid amount." : "Payment amount must be greater than zero.", { correlationId: actor.correlationId, fieldErrors: { amount: [allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Cannot exceed unpaid amount" : "Must be a positive integer"] } });
@@ -6941,8 +6943,8 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
   if (!planId) return {};
   const planRecord = await recordOf(ctx, actor, "plan", planId);
   const plan = data(planRecord.data);
-  if (stringValue(plan.status) === "archived") domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” was archived after preview. Run the preview again.`, { correlationId: actor.correlationId });
-  if (plan.branchAccess === "selected" && !arrayValue(plan.branchIds).map(String).includes(stringValue(importData.branchId))) domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” is no longer available at this branch. Run the preview again.`, { correlationId: actor.correlationId });
+  if (stringValue(plan.status) === "archived") domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” was archived after preview. Run the preview again.`, { message: { key: "apiErrors.importPlanArchived", params: { plan: String(stringValue(plan.name)) } }, correlationId: actor.correlationId });
+  if (plan.branchAccess === "selected" && !arrayValue(plan.branchIds).map(String).includes(stringValue(importData.branchId))) domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” is no longer available at this branch. Run the preview again.`, { message: { key: "apiErrors.importPlanBranch", params: { plan: String(stringValue(plan.name)) } }, correlationId: actor.correlationId });
   const membershipId = newPublicId();
   const freezeStartDate = optionalString(row.freezeStartDate);
   const freezeEndDate = optionalString(row.freezeEndDate);
@@ -7900,7 +7902,7 @@ async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, i
     const patch: Data = {};
     for (const field of MEMBER_MERGE_FIELDS) {
       const sourceId = optionalString(sources[field]);
-      if (sourceId && !pair.has(sourceId)) domainError("VALIDATION_ERROR", `Invalid field source for ${field}.`, { correlationId: actor.correlationId });
+      if (sourceId && !pair.has(sourceId)) domainError("VALIDATION_ERROR", `Invalid field source for ${field}.`, { message: { key: "apiErrors.fieldSource", params: { field: String(field) } }, correlationId: actor.correlationId });
       const source = sourceId === mergedMemberId ? mergedValue : survivorValue;
       if (Object.prototype.hasOwnProperty.call(source, field)) patch[field] = source[field];
     }
@@ -8321,7 +8323,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (stringValue(membershipData.endDate) < startDate) domainError("VALIDATION_ERROR", "The freeze must start before the membership ends.", { correlationId: request.correlationId });
     const minimumFreezeDays = numberValue(data(data(data(settings?.data).operationalPolicies).membership).minimumFreezeDays, 1);
     if (!Number.isSafeInteger(days) || days < minimumFreezeDays || days > numberValue(policy.maxDaysPerFreeze, 30)) {
-      domainError("VALIDATION_ERROR", `A freeze must be between ${minimumFreezeDays} and ${numberValue(policy.maxDaysPerFreeze, 30)} days.`, { correlationId: request.correlationId });
+      domainError("VALIDATION_ERROR", `A freeze must be between ${minimumFreezeDays} and ${numberValue(policy.maxDaysPerFreeze, 30)} days.`, { message: { key: "apiErrors.freezeRange", params: { minimum: String(minimumFreezeDays), maximum: String(numberValue(policy.maxDaysPerFreeze, 30)) } }, correlationId: request.correlationId });
     }
     if (!reason) domainError("VALIDATION_ERROR", "Tell the gym why you need the freeze.", { correlationId: request.correlationId });
     const membershipId = context.membership.publicId;
@@ -8419,7 +8421,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const today = todayIn(context.organization.timezone || TZ_FALLBACK);
     const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
     const policies = { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(data(data(settings?.data).operationalPolicies).personalTraining) };
-    if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`);
+    if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`, { message: { key: "apiErrors.ptHorizon", params: { days: String(numberValue(policies.bookingHorizonDays, 30)) } } });
     if (membership.cancelledAt || sessionDate < stringValue(membership.startDate) || sessionDate > stringValue(membership.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover this PT session date.");
     const freeze = data(membership.activeFreeze);
     if (freeze.status === "active" && sessionDate >= stringValue(freeze.startDate) && sessionDate <= stringValue(freeze.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "Frozen memberships cannot book PT sessions during the freeze.");
@@ -9037,11 +9039,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         domainError("VALIDATION_ERROR", "Workspace capabilities must use canonical module keys.", { correlationId: admin.correlationId });
       }
       const unsupported = input.entitledModules.filter((module): module is string => typeof module === "string" && !allWorkspaceModuleKeys().includes(module as WorkspaceModuleKey));
-      if (unsupported.length > 0) domainError("VALIDATION_ERROR", `Unknown workspace capabilities: ${unsupported.join(", ")}.`, { correlationId: admin.correlationId });
+      if (unsupported.length > 0) domainError("VALIDATION_ERROR", `Unknown workspace capabilities: ${unsupported.join(", ")}.`, { message: { key: "apiErrors.workspaceCapabilities" }, correlationId: admin.correlationId });
       try {
         entitledModules = validateWorkspaceModuleSelection(input.entitledModules, allWorkspaceModuleKeys());
       } catch (error) {
-        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace capabilities are invalid.", { correlationId: admin.correlationId });
+        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace capabilities are invalid.", { message: workspaceModuleErrorMessage(error), correlationId: admin.correlationId });
       }
     }
     const updated = { ...current, name, priceMinor, branches, staff, members, entitledModules };
@@ -9845,7 +9847,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!/^#[0-9a-f]{6}$/i.test(accentColor)) domainError("VALIDATION_ERROR", "Accent color must be a six-digit hex color.", { correlationId: actor.correlationId });
       for (const field of ["websiteUrl", "instagramUrl"] as const) {
         const candidate = optionalString(input[field])?.trim();
-        if (candidate) { try { const parsed = new URL(candidate); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { domainError("VALIDATION_ERROR", `${field === "websiteUrl" ? "Website" : "Instagram"} URL must be a valid HTTP or HTTPS address.`, { correlationId: actor.correlationId }); } }
+        if (candidate) { try { const parsed = new URL(candidate); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { domainError("VALIDATION_ERROR", `${field === "websiteUrl" ? "Website" : "Instagram"} URL must be a valid HTTP or HTTPS address.`, { message: { key: "apiErrors.httpAddress", params: { field: String(field === "websiteUrl" ? "Website" : "Instagram") } }, correlationId: actor.correlationId }); } }
       }
       const assetIds = [optionalString(input.logoAssetId), optionalString(input.coverAssetId), ...arrayValue(input.galleryAssetIds).map((item) => optionalString(item))].filter((item): item is string => Boolean(item));
       const referencedAssets: Doc<"mediaAssets">[] = [];
@@ -10269,7 +10271,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const sessionDate = businessDate(stringValue(input.startsAt), actor.organization.timezone || TZ_FALLBACK);
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
       const policies = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
-      if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`, { correlationId: actor.correlationId });
+      if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`, { message: { key: "apiErrors.ptHorizon", params: { days: String(numberValue(policies.bookingHorizonDays, 30)) } }, correlationId: actor.correlationId });
       if (membership.cancelledAt || sessionDate < stringValue(membership.startDate) || sessionDate > stringValue(membership.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover this PT session date.", { correlationId: actor.correlationId });
       const freeze = data(membership.activeFreeze);
       if (freeze.status === "active" && sessionDate >= stringValue(freeze.startDate) && sessionDate <= stringValue(freeze.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "Frozen memberships cannot book PT sessions during the freeze.", { correlationId: actor.correlationId });
@@ -10504,7 +10506,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         value = await patchRecord(ctx, actor, record, { activeFreeze: undefined, frozenDaysUsed: numberValue(value.frozenDaysUsed) + Math.max(0, used), freezes: arrayValue(value.freezes).map((item) => data(item).id === previousFreeze.id ? { ...data(item), status: "completed" } : item) });
       }
       const status = statusOfMembership(value, today);
-      if (!(status === "active" || status === "expiring")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot freeze a membership in “${status}” state.`, { correlationId: actor.correlationId });
+      if (!(status === "active" || status === "expiring")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot freeze a membership in “${status}” state.`, { message: { key: "apiErrors.freezeStatus", params: { status: String(status) } }, correlationId: actor.correlationId });
       const plan = await recordOf(ctx, actor, "plan", stringValue(value.planId));
       const planData = data(plan.data);
       const freezeStartDate = stringValue(input.startDate);
@@ -10515,9 +10517,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const days = diffDays(freezeStartDate, freezeEndDate) + 1;
       if (days <= 0) domainError("VALIDATION_ERROR", "Freeze end must be on or after the start date.", { correlationId: actor.correlationId });
       const minimumFreezeDays = numberValue(data(data((await settingsData(ctx, actor)).operationalPolicies).membership).minimumFreezeDays, 1);
-      if (days < minimumFreezeDays) domainError("VALIDATION_ERROR", `A freeze must be at least ${minimumFreezeDays} day${minimumFreezeDays === 1 ? "" : "s"}.`, { correlationId: actor.correlationId });
+      if (days < minimumFreezeDays) domainError("VALIDATION_ERROR", `A freeze must be at least ${minimumFreezeDays} day${minimumFreezeDays === 1 ? "" : "s"}.`, { message: { key: "apiErrors.minimumFreeze", params: { minimum: String(minimumFreezeDays) } }, correlationId: actor.correlationId });
       const allowance = numberValue(planData.freezeAllowanceDays) - numberValue(value.frozenDaysUsed);
-      if (days > allowance) domainError("FREEZE_ALLOWANCE_EXCEEDED", `This plan allows ${numberValue(planData.freezeAllowanceDays)} freeze days total; ${Math.max(0, allowance)} remain.`, { correlationId: actor.correlationId });
+      if (days > allowance) domainError("FREEZE_ALLOWANCE_EXCEEDED", `This plan allows ${numberValue(planData.freezeAllowanceDays)} freeze days total; ${Math.max(0, allowance)} remain.`, { message: { key: "apiErrors.freezeDaysRemaining", params: { total: String(numberValue(planData.freezeAllowanceDays)), remaining: String(Math.max(0, allowance)) } }, correlationId: actor.correlationId });
       const freeze = { id: newPublicId(), membershipId: record.publicId, startDate: freezeStartDate, endDate: freezeEndDate, status: "active", reason: stringValue(input.reason), createdById: publicUserId(actor.user), createdAt: isoNow() };
       const newEndDate = addDays(stringValue(value.endDate), days);
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "freeze", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { endDate: value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() };
@@ -10551,7 +10553,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requireReason(input.reason, actor.correlationId);
       const days = numberValue(input.days);
       const maximumExtensionDays = numberValue(data(data((await settingsData(ctx, actor)).operationalPolicies).membership).maximumExtensionDays, 365);
-      if (days <= 0 || days > maximumExtensionDays) domainError("VALIDATION_ERROR", `Extension must be between 1 and ${maximumExtensionDays} days.`, { correlationId: actor.correlationId });
+      if (days <= 0 || days > maximumExtensionDays) domainError("VALIDATION_ERROR", `Extension must be between 1 and ${maximumExtensionDays} days.`, { message: { key: "apiErrors.maximumExtension", params: { maximum: String(maximumExtensionDays) } }, correlationId: actor.correlationId });
       const record = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
       const value = data(record.data);
       const newEndDate = addDays(stringValue(value.endDate), days);
@@ -10585,7 +10587,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
       const value = data(record.data);
       const status = statusOfMembership(value, todayIn(actor.organization.timezone || TZ_FALLBACK));
-      if (["cancelled", "expired", "depleted"].includes(status) || (value.status !== undefined && stringValue(value.status) !== "active")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot transfer a membership in “${status}” state.`, { correlationId: actor.correlationId });
+      if (["cancelled", "expired", "depleted"].includes(status) || (value.status !== undefined && stringValue(value.status) !== "active")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot transfer a membership in “${status}” state.`, { message: { key: "apiErrors.transferStatus", params: { status: String(status) } }, correlationId: actor.correlationId });
       const member = await recordOf(ctx, actor, "member", stringValue(value.memberId));
       const memberValue = data(member.data);
       if (["inactive", "archived"].includes(stringValue(memberValue.status))) domainError("MEMBERSHIP_NOT_ACTIVE", "Cannot transfer a membership for an inactive member.", { correlationId: actor.correlationId });
@@ -10810,7 +10812,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const current = data(booking.data);
       const currentStatus = stringValue(current.status, "requested");
       const nextStatus = stringValue(input.status);
-      if (!trialTransitionAllowed(currentStatus, nextStatus)) domainError("VALIDATION_ERROR", `Trial cannot move from ${currentStatus.replaceAll("_", " ")} to ${nextStatus.replaceAll("_", " ")}.`, { correlationId: actor.correlationId });
+      if (!trialTransitionAllowed(currentStatus, nextStatus)) domainError("VALIDATION_ERROR", `Trial cannot move from ${currentStatus.replaceAll("_", " ")} to ${nextStatus.replaceAll("_", " ")}.`, { message: { key: "apiErrors.trialTransition", params: { fromStatus: String(currentStatus.replaceAll("_", " ")), toStatus: String(nextStatus.replaceAll("_", " ")) } }, correlationId: actor.correlationId });
       const note = optionalString(input.note);
       if ((nextStatus === "no_show" || nextStatus === "cancelled") && !note) domainError("VALIDATION_ERROR", "Record a reason for this trial outcome.", { correlationId: actor.correlationId });
       const leadId = optionalString(current.leadId);
@@ -10895,7 +10897,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const email = optionalString(leadData.email);
       const phone = optionalString(leadData.phone);
       if ((channel === "email" && !email) || ((channel === "whatsapp" || channel === "sms") && !phone)) {
-        domainError("VALIDATION_ERROR", `This lead has no ${channel === "email" ? "email address" : "phone number"} to record delivery against.`, { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", `This lead has no ${channel === "email" ? "email address" : "phone number"} to record delivery against.`, { message: { key: "apiErrors.leadContactMissing", params: { field: String(channel === "email" ? "email address" : "phone number") } }, correlationId: actor.correlationId });
       }
       const deliveredAt = isoNow();
       const reference = typeof input.reference === "string" ? input.reference.trim() : undefined;
@@ -11410,7 +11412,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       try {
         enabledModules = validateWorkspaceModuleSelection(inputModules, access.entitlements.entitledModules as WorkspaceModuleKey[]);
       } catch (error) {
-        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace module preferences are invalid.", { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace module preferences are invalid.", { message: workspaceModuleErrorMessage(error), correlationId: actor.correlationId });
       }
       const existing = await workspacePreferencesRecord(ctx, actor);
       const before = access.preferences.enabledModules as WorkspaceModuleKey[];
@@ -11800,7 +11802,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "settings.manage");
       return undefined;
     default:
-      domainError("NOT_FOUND", `Unknown mutation operation ${operation}.`, { correlationId: actor.correlationId });
+      domainError("NOT_FOUND", `Unknown mutation operation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 

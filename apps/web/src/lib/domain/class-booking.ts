@@ -1,3 +1,4 @@
+import { legacyErrorDescriptor, type ErrorMessageDescriptor } from "../i18n/error-messages";
 /**
  * Defined here rather than in types.ts so the Convex bundle can share this
  * rule without pulling the whole client type graph (and its path aliases).
@@ -37,6 +38,7 @@ export interface ClassCancellationPreview {
   /** Last instant at which a confirmed place can be given up without a late record. */
   freeUntil?: number;
   text: string;
+  message: ErrorMessageDescriptor;
 }
 
 /**
@@ -53,14 +55,14 @@ export function classCancellationPreview(input: {
   now?: number;
 }): ClassCancellationPreview {
   const now = input.now ?? Date.now();
-  if (Date.parse(input.endsAt) <= now) return { outcome: "closed", text: "This class has ended, so the booking can no longer be cancelled." };
+  if (Date.parse(input.endsAt) <= now) return { outcome: "closed", message: { key: "apiErrors.classCancelClosed" }, text: "This class has ended, so the booking can no longer be cancelled." };
   const result = classCancellationOutcome({ startsAt: Date.parse(input.startsAt), bookingStatus: input.bookingStatus, cutoffHours: input.cutoffHours, now });
-  if (!result.freesSeat) return { outcome: "leave_waitlist", text: "You will leave the waitlist. Nothing else changes." };
+  if (!result.freesSeat) return { outcome: "leave_waitlist", message: { key: "apiErrors.classLeaveWaitlist" }, text: "You will leave the waitlist. Nothing else changes." };
   const freeUntil = Date.parse(input.startsAt) - input.cutoffHours * 3_600_000;
   if (result.late) {
-    return { outcome: "late_cancelled", freeUntil, text: `This is inside the gym's ${input.cutoffHours}-hour cutoff, so it is recorded as a late cancellation. No fee or membership penalty applies, and your place is offered to the waitlist.` };
+    return { outcome: "late_cancelled", freeUntil, message: { key: "apiErrors.classLateCancellation", params: { hours: input.cutoffHours } }, text: `This is inside the gym's ${input.cutoffHours}-hour cutoff, so it is recorded as a late cancellation. No fee or membership penalty applies, and your place is offered to the waitlist.` };
   }
-  return { outcome: "cancelled", freeUntil, text: "Your place is released and offered to the waitlist." };
+  return { outcome: "cancelled", freeUntil, message: { key: "apiErrors.classPlaceReleased" }, text: "Your place is released and offered to the waitlist." };
 }
 
 /** Gym cancellation is distinct from a member leaving a booking. */
@@ -69,4 +71,15 @@ export function occurrenceCancellationBlock(input: { status: string; startsAt: n
   if (input.finalized || input.hasAttendance || input.status !== "scheduled") return "A class with recorded attendance cannot be cancelled.";
   if (input.startsAt <= (input.now ?? Date.now())) return "Only a class that has not started can be cancelled.";
   return undefined;
+}
+
+/** Compatibility for already-issued class responses; callers send this descriptor
+ * on new responses. Only these two known templates carry dynamic system values. */
+export function classBookingBlockMessage(reason: string | undefined): ErrorMessageDescriptor | undefined {
+  if (!reason) return undefined;
+  const audience = /^This class is for (mixed|women|men)\.$/.exec(reason);
+  if (audience) return { key: "apiErrors.classAudience", params: { audience: audience[1]! } };
+  const limit = /^You already have (\d+) active class bookings\.$/.exec(reason);
+  if (limit) return { key: "apiErrors.classBookingLimit", params: { count: Number(limit[1]) } };
+  return legacyErrorDescriptor(reason);
 }

@@ -12,7 +12,7 @@ import {
 } from "./security";
 import { deriveServerMembershipStatus } from "./invariants";
 import { addDays, diffDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
-import { classCancellationOutcome, occurrenceCancellationBlock } from "../src/lib/domain/class-booking";
+import { classBookingBlockMessage, classCancellationOutcome, occurrenceCancellationBlock } from "../src/lib/domain/class-booking";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -56,14 +56,14 @@ function optionalText(input: unknown): string | undefined {
 
 function requiredText(input: unknown, field: string, actor: ActorContext): string {
   const value = optionalText(input);
-  if (!value) domainError("VALIDATION_ERROR", `${field} is required.`, { correlationId: actor.correlationId });
+  if (!value) domainError("VALIDATION_ERROR", `${field} is required.`, { message: { key: "apiErrors.fieldRequired", params: { field: String(field) } }, correlationId: actor.correlationId });
   return value;
 }
 
 function boundedInteger(input: unknown, field: string, min: number, max: number, actor: ActorContext): number {
   const value = typeof input === "number" ? input : Number.NaN;
   if (!Number.isSafeInteger(value) || value < min || value > max) {
-    domainError("VALIDATION_ERROR", `${field} must be a whole number between ${min} and ${max}.`, { correlationId: actor.correlationId });
+    domainError("VALIDATION_ERROR", `${field} must be a whole number between ${min} and ${max}.`, { message: { key: "apiErrors.wholeNumberRange", params: { field: String(field), minimum: String(min), maximum: String(max) } }, correlationId: actor.correlationId });
   }
   return value;
 }
@@ -395,7 +395,7 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
   if (clash) {
     const slot = weeklySlot(clash, actor.organization.timezone || "Asia/Amman");
     const label = `${String(Math.floor(slot.startMinute / 60)).padStart(2, "0")}:${String(slot.startMinute % 60).padStart(2, "0")}`;
-    domainError("VALIDATION_ERROR", `This time overlaps “${clash.name}” at ${label}. Pick another slot.`, { correlationId: actor.correlationId, fieldErrors: { startMinute: ["Overlaps another class"] } });
+    domainError("VALIDATION_ERROR", `This time overlaps “${clash.name}” at ${label}. Pick another slot.`, { message: { key: "apiErrors.classOverlap", params: { className: String(clash.name), time: String(label) } }, correlationId: actor.correlationId, fieldErrors: { startMinute: ["Overlaps another class"] } });
   }
   const existing = requestedId
     ? await ctx.db.query("classSessions").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", requestedId)).unique()
@@ -406,17 +406,17 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
       domainError("FORBIDDEN", "Your role cannot manage classes for this branch.", { correlationId: actor.correlationId });
     }
     if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A class cannot move between branches.", { correlationId: actor.correlationId });
-    if (capacity < existing.roster.length) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${existing.roster.length} people already in the class.`, { correlationId: actor.correlationId });
+    if (capacity < existing.roster.length) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${existing.roster.length} people already in the class.`, { message: { key: "apiErrors.classCapacity", params: { count: String(existing.roster.length) } }, correlationId: actor.correlationId });
     // Upcoming dated classes already carry bookings against the old numbers;
     // nobody loses a confirmed place because the timetable shrank.
     const scheduled = await scheduledOccurrencesFor(ctx, actor, existing);
     const overbooked = scheduled.find((row) => capacity < row.rostered);
-    if (overbooked) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${overbooked.rostered} people already booked for ${overbooked.occurrence.date}.`, { correlationId: actor.correlationId, fieldErrors: { capacity: [`${overbooked.rostered} booked on ${overbooked.occurrence.date}`] } });
+    if (overbooked) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${overbooked.rostered} people already booked for ${overbooked.occurrence.date}.`, { message: { key: "apiErrors.classCapacityDate", params: { count: String(overbooked.rostered), date: String(overbooked.occurrence.date) } }, correlationId: actor.correlationId, fieldErrors: { capacity: [`${overbooked.rostered} booked on ${overbooked.occurrence.date}`] } });
     // Moving the class to another weekday would strand the dates members
     // already hold; those bookings are commitments, not something to sync.
     if (weeklySlot(existing, actor.organization.timezone || "Asia/Amman").dayOfWeek !== dayOfWeek) {
       const held = scheduled.filter((row) => row.bookings.some((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status)));
-      if (held.length) domainError("VALIDATION_ERROR", `Members are booked on ${held.map((row) => row.occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${DAY_NAMES[dayOfWeek]}.`, { correlationId: actor.correlationId, fieldErrors: { dayOfWeek: ["Members are booked on the current day"] } });
+      if (held.length) domainError("VALIDATION_ERROR", `Members are booked on ${held.map((row) => row.occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${DAY_NAMES[dayOfWeek]}.`, { message: { key: "apiErrors.classDatesHeld", params: { dates: String(held.map((row) => row.occurrence.date).join(", ")), weekday: String(DAY_NAMES[dayOfWeek]) } }, correlationId: actor.correlationId, fieldErrors: { dayOfWeek: ["Members are booked on the current day"] } });
     }
     const before = { name: existing.name, dayOfWeek: existing.dayOfWeek, startMinute: existing.startMinute, durationMinutes: existing.durationMinutes, capacity: existing.capacity, audience: existing.audience, coachName: existing.coachName, imageAssetId: existing.imageAssetId };
     await activateClassImage(ctx, actor, imageAssetId, existing.imageAssetId);
@@ -666,6 +666,7 @@ async function occurrenceView(
     booking: own ? { id: own.publicId, status: own.status, position: own.status === "waitlisted" ? waitlist.findIndex((booking) => booking._id === own._id) + 1 : undefined, fromWaitlist: own.fromWaitlist } : undefined,
     canBook,
     bookingBlockReason,
+    bookingBlockMessage: classBookingBlockMessage(bookingBlockReason),
   };
 }
 
@@ -859,16 +860,16 @@ async function createBooking(ctx: MutationCtx, input: { organization: Organizati
     const today = todayISODate(input.organization.timezone || "Asia/Amman");
     const daysAhead = diffDays(today, input.occurrence.date);
     if (input.occurrence.startsAt <= Date.now()) domainError("CONFLICT", "Booking closes when the class starts.", { correlationId: input.correlationId });
-    if (daysAhead < 0 || daysAhead > Number(policy.bookingHorizonDays)) domainError("VALIDATION_ERROR", `Member booking is available up to ${policy.bookingHorizonDays} days ahead.`, { correlationId: input.correlationId });
+    if (daysAhead < 0 || daysAhead > Number(policy.bookingHorizonDays)) domainError("VALIDATION_ERROR", `Member booking is available up to ${policy.bookingHorizonDays} days ahead.`, { message: { key: "apiErrors.classHorizon", params: { days: String(policy.bookingHorizonDays) } }, correlationId: input.correlationId });
   }
   const branch = await ctx.db.get(input.occurrence.branchId);
   if (!branch) domainError("NOT_FOUND", "Class branch not found.", { correlationId: input.correlationId });
   const eligibility = await membershipEligibility(ctx, input.organization, input.member.publicId, input.membership?.publicId, branch, input.occurrence.date, policy);
-  if (!eligibility.membership) domainError("MEMBERSHIP_NOT_ACTIVE", eligibility.reason ?? "An active membership is required.", { correlationId: input.correlationId });
+  if (!eligibility.membership) domainError("MEMBERSHIP_NOT_ACTIVE", eligibility.reason ?? "An active membership is required.", { message: classBookingBlockMessage(eligibility.reason ?? "An active membership is required."), correlationId: input.correlationId });
   const mismatch = !["male", "female"].includes(String(member.gender ?? ""))
     || (input.occurrence.audience === "women" && member.gender !== "female")
     || (input.occurrence.audience === "men" && member.gender !== "male");
-  if (mismatch && input.bookedBy === "member") domainError("VALIDATION_ERROR", !member.gender ? "Add your gender in Profile before booking classes." : `This class is for ${input.occurrence.audience}.`, { correlationId: input.correlationId });
+  if (mismatch && input.bookedBy === "member") domainError("VALIDATION_ERROR", !member.gender ? "Add your gender in Profile before booking classes." : `This class is for ${input.occurrence.audience}.`, { message: !member.gender ? undefined : { key: "apiErrors.classAudience", params: { audience: input.occurrence.audience } }, correlationId: input.correlationId });
   if (mismatch && !optionalText(input.overrideReason)) domainError("VALIDATION_ERROR", "A reason is required to override the class audience rule.", { correlationId: input.correlationId, fieldErrors: { overrideReason: ["Required"] } });
   const existing = (await ctx.db.query("classBookings").withIndex("by_occurrence_member", (q) => q.eq("organizationId", input.organization._id).eq("occurrenceId", input.occurrence._id).eq("memberPublicId", input.member.publicId)).collect())
     .filter((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status))
@@ -876,7 +877,7 @@ async function createBooking(ctx: MutationCtx, input: { organization: Organizati
   if (existing) return { booking: existing, outcome: existing.status as "booked" | "waitlisted" };
   const memberFuture = await ctx.db.query("classBookings").withIndex("by_member_start", (q) => q.eq("organizationId", input.organization._id).eq("memberPublicId", input.member.publicId).gte("startsAt", Date.now())).collect();
   if (memberFuture.filter((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status)).length >= Number(policy.maxActiveBookingsPerMember) && !optionalText(input.overrideReason)) {
-    domainError("VALIDATION_ERROR", `This member already has ${policy.maxActiveBookingsPerMember} active class bookings. A staff override requires a reason.`, { correlationId: input.correlationId });
+    domainError("VALIDATION_ERROR", `This member already has ${policy.maxActiveBookingsPerMember} active class bookings. A staff override requires a reason.`, { message: { key: "apiErrors.activeBookingLimit", params: { count: String(policy.maxActiveBookingsPerMember) } }, correlationId: input.correlationId });
   }
   const occurrenceBookings = await ctx.db.query("classBookings").withIndex("by_occurrence", (q) => q.eq("organizationId", input.organization._id).eq("occurrenceId", input.occurrence._id)).collect();
   const rostered = occurrenceBookings.filter((booking) => bookingIsRostered(booking.status)).length;
@@ -1010,7 +1011,7 @@ async function cancelClassOccurrence(ctx: MutationCtx, actor: ActorContext, inpu
   if (actor.branchScope !== "all" && !actor.branchIds.includes(occurrence.branchId)) domainError("FORBIDDEN", "Your role cannot manage this class.", { correlationId: actor.correlationId });
   const bookings = await ctx.db.query("classBookings").withIndex("by_occurrence", q => q.eq("organizationId", actor.organization._id).eq("occurrenceId", occurrence._id)).collect();
   const block = occurrenceCancellationBlock({ status: occurrence.status, startsAt: occurrence.startsAt, finalized: Boolean(occurrence.attendanceFinalizedAt), hasAttendance: bookings.some(booking => booking.status === "attended" || booking.status === "no_show") });
-  if (block) domainError("CONFLICT", block, { correlationId: actor.correlationId });
+  if (block) domainError("CONFLICT", block, { message: classBookingBlockMessage(block), correlationId: actor.correlationId });
   if (occurrence.status !== "cancelled") {
     const now = Date.now();
     await ctx.db.patch(occurrence._id, { status: "cancelled", cancelReason: reason, updatedAt: now });
@@ -1139,7 +1140,7 @@ export async function classesQuery(ctx: QueryCtx, actor: ActorContext, operation
     }
     case "classes.occurrences.list": return await staffOccurrences(ctx, actor, input);
     case "classes.coaches.list": return await listCoaches(ctx, actor);
-    default: domainError("NOT_FOUND", `Unknown classes query ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown classes query ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -1158,7 +1159,7 @@ export async function classesMutation(ctx: MutationCtx, actor: ActorContext, ope
     case "classes.occurrence.coach.substitute": return await substituteOccurrenceCoach(ctx, actor, input);
     case "classes.coach.upsert": return await upsertCoach(ctx, actor, input);
     case "classes.coach.remove": return await removeCoach(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown classes mutation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown classes mutation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -1167,6 +1168,6 @@ export async function customerClassesQuery(ctx: QueryCtx, context: CustomerClass
 }
 
 export async function customerClassesMutation(ctx: MutationCtx, context: CustomerClassContext, operation: string, input: Data, correlationId: string): Promise<unknown> {
-  if (operation !== "customer.classes.book" && operation !== "customer.classes.cancel") domainError("NOT_FOUND", `Unknown customer classes mutation ${operation}.`, { correlationId });
+  if (operation !== "customer.classes.book" && operation !== "customer.classes.cancel") domainError("NOT_FOUND", `Unknown customer classes mutation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId });
   return await customerBookingMutation(ctx, context, operation, input, correlationId);
 }

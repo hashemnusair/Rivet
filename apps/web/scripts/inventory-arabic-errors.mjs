@@ -40,7 +40,7 @@ for (const file of files) {
             entries.get(argument.text).push(occurrence);
           } else {
             const expression = argument.getText(source);
-            dynamic.push({ ...occurrence, text: expression, key: key ?? null, status: key ? "mapped" : expression === "message" ? "forwarded-by-validation-helper" : "pending" });
+            dynamic.push({ ...occurrence, text: expression, key: key ?? null, descriptor: message?.initializer.getText(source) ?? null, status: key ? "mapped" : message ? "forwarded-descriptor" : expression === "message" ? "forwarded-by-validation-helper" : "pending" });
           }
         }
         record(node.arguments[index]);

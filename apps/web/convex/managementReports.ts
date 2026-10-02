@@ -549,6 +549,6 @@ export async function managementReportQuery(ctx: QueryCtx, actor: ActorContext, 
     case "reports.balance_sheet": return await balanceSheet(ctx, actor, input);
     case "reports.cashflow_statement": return await cashflowStatement(ctx, actor, input);
     case "reports.gm_analysis": return await generalManagerAnalysis(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown management report operation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown management report operation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }

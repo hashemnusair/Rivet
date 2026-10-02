@@ -32,6 +32,6 @@ const CODE_KEYS: Readonly<Record<string, keyof typeof apiErrors>> = {
   PAYMENT_OUTCOME_UNKNOWN: "unknownPayment", UNKNOWN_PAYMENT_OUTCOME: "unknownPayment",
 };
 export function defaultErrorDescriptor(code: string): ErrorMessageDescriptor { return { key: `apiErrors.${CODE_KEYS[code] ?? "unexpected"}` }; }
-export function fieldErrorDescriptors(errors?: Record<string, string[]>): Record<string, ErrorMessageDescriptor[]> | undefined {
-  return errors ? Object.fromEntries(Object.entries(errors).map(([field, messages]) => [field, messages.map(message => legacyErrorDescriptor(message) ?? defaultErrorDescriptor("VALIDATION_ERROR"))])) : undefined;
+export function fieldErrorDescriptors(errors?: Record<string, string[]>, primary?: { message: string; descriptor: ErrorMessageDescriptor }): Record<string, ErrorMessageDescriptor[]> | undefined {
+  return errors ? Object.fromEntries(Object.entries(errors).map(([field, messages]) => [field, messages.map(message => (message === primary?.message ? primary.descriptor : undefined) ?? legacyErrorDescriptor(message) ?? defaultErrorDescriptor("VALIDATION_ERROR"))])) : undefined;
 }

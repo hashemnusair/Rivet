@@ -1,3 +1,4 @@
+import { errorValues } from "./errorValues";
 import { apiErrors } from "./apiErrors";
 import { agreementFlow } from "./agreementFlow";
 import { agreementDocument } from "./agreementDocument";
@@ -19,6 +20,7 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  errorValues,
   apiErrors,
   agreementFlow,
   agreementDocument,

@@ -2,7 +2,7 @@ import type { MessageVars } from "../i18n/dictionary";
 import { defaultErrorDescriptor, fieldErrorDescriptors, legacyErrorDescriptor, parseErrorDescriptor, type ErrorMessageDescriptor } from "../i18n/error-messages";
 import { createTranslator } from "../i18n/core";
 import type { Locale } from "../i18n/locale";
-import { isolate } from "../i18n/bidi";
+import { localizeErrorParameters } from "../i18n/error-parameters";
 
 /**
  * Single API error envelope (docs/06). Frontend code keys off stable `code`
@@ -42,7 +42,7 @@ export class ApiError extends Error {
     this.sourceMessage = source?.sourceMessage ?? body.message;
     this.sourceFieldErrors = source?.sourceFieldErrors ?? body.fieldErrors;
     this.messageDescriptor = parseErrorDescriptor({ key: body.messageKey, params: body.messageParams }) ?? source?.messageDescriptor ?? legacyErrorDescriptor(this.sourceMessage);
-    this.fieldMessages = body.fieldMessages ?? source?.fieldMessages ?? fieldErrorDescriptors(body.fieldErrors);
+    this.fieldMessages = body.fieldMessages ?? source?.fieldMessages ?? fieldErrorDescriptors(body.fieldErrors, this.messageDescriptor ? { message: this.sourceMessage, descriptor: this.messageDescriptor } : undefined);
   }
 
   static of(code: string, message: string, extra?: { fieldErrors?: Record<string, string[]>; details?: Record<string, unknown>; message?: ErrorMessageDescriptor }): ApiError {
@@ -97,7 +97,7 @@ export function localizeApiError(error: unknown, locale: Locale): Error {
   if (!isApiError(error)) return new Error(t("apiErrors.unexpected"));
   const render = (descriptor: ErrorMessageDescriptor) => {
     const valid = parseErrorDescriptor(descriptor) ?? defaultErrorDescriptor("INTERNAL_ERROR");
-    const params = valid.params && Object.fromEntries(Object.entries(valid.params).map(([key, value]) => [key, locale === "ar" && typeof value === "string" ? isolate(value) : value]));
+    const params = localizeErrorParameters(valid.params, locale);
     return t(valid.key, params);
   };
   const descriptor = error.messageDescriptor ?? defaultErrorDescriptor(error.code);

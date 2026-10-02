@@ -617,7 +617,7 @@ function page<T>(items: T[], input: JsonRecord): JsonRecord {
 async function accountByPublicId(ctx: ReadContext, actor: ActorContext, publicId: string): Promise<Account> {
   const byPublicId = await ctx.db.query("accountingAccounts").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", publicId)).unique();
   const account = byPublicId ?? await ctx.db.query("accountingAccounts").withIndex("by_organization_code", (q) => q.eq("organizationId", actor.organization._id).eq("code", publicId.startsWith("acct-") ? publicId.slice(5) : publicId)).unique();
-  if (!account || !account.active) domainError("NOT_FOUND", `Accounting account ${publicId} is not configured.`, { correlationId: actor.correlationId });
+  if (!account || !account.active) domainError("NOT_FOUND", `Accounting account ${publicId} is not configured.`, { message: { key: "apiErrors.accountConfiguration", params: { account: String(publicId) } }, correlationId: actor.correlationId });
   return account;
 }
 
@@ -2017,7 +2017,7 @@ export async function accountingQuery(ctx: QueryCtx, actor: ActorContext, operat
     case "finance.trial_balance": return await trialBalance(ctx, actor, input);
     case "accounting.source_postings.list":
     case "finance.source_postings.list": return await listSourcePostings(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown accounting query operation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown accounting query operation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -2039,6 +2039,6 @@ export async function accountingMutation(ctx: MutationCtx, actor: ActorContext, 
     case "finance.period.close": return await closePeriod(ctx, actor, input, false);
     case "accounting.period.reopen":
     case "finance.period.reopen": return await closePeriod(ctx, actor, input, true);
-    default: domainError("NOT_FOUND", `Unknown accounting mutation operation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown accounting mutation operation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }

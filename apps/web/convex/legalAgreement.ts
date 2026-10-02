@@ -397,7 +397,7 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "legal.agreement.sign").eq("key", idempotencyKey)).unique();
   if (existingKey) return value(existingKey.result);
   const current = await activeAgreement(ctx, actor.organization._id);
-  if (current) domainError("CONFLICT", `This gym already signed agreement ${current.reference}. Contact RIVET if it must be replaced.`, { correlationId, details: { reference: current.reference } });
+  if (current) domainError("CONFLICT", `This gym already signed agreement ${current.reference}. Contact RIVET if it must be replaced.`, { message: { key: "apiErrors.agreementExists", params: { reference: String(current.reference) } }, correlationId, details: { reference: current.reference } });
 
   const version = optionalTrimmed(input.agreementVersion) ?? SUBSCRIPTION_AGREEMENT_VERSION;
   requireField([SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR].includes(version), "agreementVersion", "Reload the agreement before signing.", correlationId);
@@ -582,7 +582,7 @@ export async function legalAgreementQuery(ctx: QueryCtx, operation: string, inpu
       return agreementView(row, organization?.name ?? row.customer.legalName);
     }
     default:
-      domainError("NOT_FOUND", `Unknown legal query ${operation}.`, { correlationId: request.correlationId });
+      domainError("NOT_FOUND", `Unknown legal query ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: request.correlationId });
   }
 }
 
@@ -703,6 +703,6 @@ export async function legalAgreementMutation(ctx: MutationCtx, operation: string
       return agreementView(updated, organizationName);
     }
     default:
-      domainError("NOT_FOUND", `Unknown legal mutation ${operation}.`, { correlationId: request.correlationId });
+      domainError("NOT_FOUND", `Unknown legal mutation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: request.correlationId });
   }
 }

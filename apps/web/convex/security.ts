@@ -126,7 +126,7 @@ export function domainError(
   const descriptor = extra?.message ?? legacyErrorDescriptor(message);
   const payload = {
     ...(descriptor ? { messageKey: descriptor.key, ...(descriptor.params ? { messageParams: descriptor.params } : {}) } : {}),
-    ...(extra?.fieldErrors ? { fieldMessages: fieldErrorDescriptors(extra.fieldErrors) } : {}),
+    ...(extra?.fieldErrors ? { fieldMessages: fieldErrorDescriptors(extra.fieldErrors, descriptor ? { message, descriptor } : undefined) } : {}),
     code,
     message,
     requestId: extra?.correlationId ?? newCorrelationId(),
@@ -357,7 +357,7 @@ export function publicUserId(user: MaybeUser): string {
 
 export function assertNonEmptyString(value: unknown, field: string, correlationId?: string): asserts value is string {
   if (typeof value !== "string" || !value.trim()) {
-    domainError("VALIDATION_ERROR", `${field} is required.`, { fieldErrors: { [field]: ["Required"] }, correlationId });
+    domainError("VALIDATION_ERROR", `${field} is required.`, { message: { key: "apiErrors.fieldRequired", params: { field: String(field) } }, fieldErrors: { [field]: ["Required"] }, correlationId });
   }
 }
 

@@ -42,3 +42,25 @@ describe("localized API error boundary", () => {
     expect(localizeApiError(error, "ar").message).toContain("تم الحفظ، لكن تعذّر تحديث هذه الشاشة");
   });
 });
+
+it("localizes dynamic field errors without changing canonical amounts or field names", () => {
+  const message = "amount must be a positive whole amount in JOD minor units.";
+  const source = ApiError.of(ERR.VALIDATION, message, { message: { key: "apiErrors.positiveMinorAmount", params: { field: "amount", currency: "JOD" } }, fieldErrors: { amountMinor: [message] }, details: { amountMinor: -7125, currency: "JOD" } });
+  const presented = localizeApiError(source, "ar") as ApiError;
+  expect(presented.message).toContain("المبلغ");
+  expect(presented.message).toContain("د.أ");
+  expect(presented.fieldErrors?.amountMinor).toEqual([presented.message]);
+  expect(presented.details).toEqual({ amountMinor: -7125, currency: "JOD" });
+  expect(localizeApiError(presented, "en").message).toBe(message);
+});
+
+it("keeps mixed names and Latin references intact and formats dynamic dates and clocks", () => {
+  const message = "This time overlaps a class.";
+  const source = ApiError.of(ERR.VALIDATION, message, { message: { key: "apiErrors.classOverlap", params: { className: "لياقة RIVET 2", time: "13:05" } } });
+  const presented = localizeApiError(source, "ar");
+  expect(presented.message).toContain("لياقة RIVET 2");
+  expect(presented.message).toContain("1:05 م");
+  expect(presented.message).not.toContain("13:05");
+  expect(source.messageDescriptor?.params).toEqual({ className: "لياقة RIVET 2", time: "13:05" });
+  expect(parseErrorDescriptor({ key: "apiErrors.classOverlap", params: { className: "missing time" } })).toBeUndefined();
+});

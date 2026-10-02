@@ -69,3 +69,11 @@ The API envelope still carries English `message`, stable `code`, `requestId`, `d
 The reproducible audit (`node apps/web/scripts/inventory-arabic-errors.mjs`) maps all 933 static error messages found at `domainError`, `ApiError.of` and `requireField` calls, including conditional branches. The source ledger is `server-error-coverage.json`. Dynamic/forwarded messages, other exception boundaries, notification data and outgoing templates still need work; static coverage is not package-E completion.
 
 Validation: 55 focused error/adapter/hook/catalog tests passed. Full regression: 1,776 passed, one outdated mock agreement-prefill expectation failed; its fixture now includes the frozen billing interval and its targeted suite passes. Web and Convex typechecks pass. Final full rerun remains required after the remaining packages.
+
+## Dynamic error and class-reason checkpoint
+
+All 116 dynamic calls in the shared error-source audit now carry a key or forward a typed/legacy descriptor (105 direct keys, 9 descriptor forwards, 2 validation helpers). Workspace selection errors retain their original English messages and restrictions while carrying stable keys. Class booking eligibility/cancellation reasons carry optional descriptors through both adapters; old responses remain readable. The member view translates these explanations without changing class names or cancellation notes. Mutation error state and asynchronous rejection presentation follow the current UI locale.
+
+Named error parameters format dates, clocks, weekdays and known system enums in Arabic; names/references remain isolated and unchanged. Original field paths, values, source messages, codes and diagnostic details are preserved. This audit covers the domain error envelope, not every direct exception/provider or notification boundary.
+
+Validation: 231 focused tests pass (class ownership/waitlists/cancellation, workspace entitlements, mock money/workflow regression, fields/parameters/catalog/hooks). Web/Convex typechecks and lint pass. No outbound messages or production writes were performed.

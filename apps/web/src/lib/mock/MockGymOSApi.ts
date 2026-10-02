@@ -1,3 +1,4 @@
+import { workspaceModuleErrorMessage } from "@/lib/domain/workspace-module-error";
 import { makeFormatters } from "@/lib/i18n/formatters";
 import { createTranslator } from "@/lib/i18n/core";
 import { latinDigits, searchKey } from "@/lib/utils/text";
@@ -67,7 +68,7 @@ import {
 } from "@/lib/domain/workspace-modules";
 import { DEFAULT_PUBLIC_PRICING_PLANS } from "@/lib/public/pricing";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
-import { classCancellationOutcome, occurrenceCancellationBlock } from "@/lib/domain/class-booking";
+import { classBookingBlockMessage, classCancellationOutcome, occurrenceCancellationBlock } from "@/lib/domain/class-booking";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "@/lib/members/lookup";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
@@ -1224,7 +1225,7 @@ export class MockGymOSApi implements GymOSApi {
       if (input.items.length > 50) throw ApiError.of(ERR.VALIDATION, "A checklist holds at most 50 items.");
       const items: T.ChecklistTemplateItem[] = input.items.map((raw, index) => {
         const label = raw.label?.trim();
-        if (!label) throw ApiError.of(ERR.VALIDATION, `Item ${index + 1} label is required.`);
+        if (!label) throw ApiError.of(ERR.VALIDATION, `Item ${index + 1} label is required.`, { message: { key: "apiErrors.checklistItemLabel", params: { index: String(index + 1) } } });
         if (raw.zoneId && !this.db.zones.some((zone) => zone.id === raw.zoneId && zone.branchId === input.branchId && zone.status === "active")) {
           throw ApiError.of(ERR.VALIDATION, "A linked gym space must belong to this branch.");
         }
@@ -1975,7 +1976,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate) || input.startDate < today) throw ApiError.of(ERR.VALIDATION, "Choose a start date from today onward.");
       if (membership.endDate < input.startDate) throw ApiError.of(ERR.VALIDATION, "The freeze must start before the membership ends.");
       const minimum = this.db.operationalPolicies.membership.minimumFreezeDays;
-      if (!Number.isSafeInteger(input.days) || input.days < minimum || input.days > policy.maxDaysPerFreeze) throw ApiError.of(ERR.VALIDATION, `A freeze must be between ${minimum} and ${policy.maxDaysPerFreeze} days.`);
+      if (!Number.isSafeInteger(input.days) || input.days < minimum || input.days > policy.maxDaysPerFreeze) throw ApiError.of(ERR.VALIDATION, `A freeze must be between ${minimum} and ${policy.maxDaysPerFreeze} days.`, { message: { key: "apiErrors.freezeRange", params: { minimum: String(minimum), maximum: String(policy.maxDaysPerFreeze) } } });
       if (!reason) throw ApiError.of(ERR.VALIDATION, "Tell the gym why you need the freeze.");
       if (this.freezeRequests.some((candidate) => candidate.membershipId === membership.id && candidate.status === "pending")) throw ApiError.of(ERR.CONFLICT, "You already have a freeze request waiting for the gym.");
       if (membership.activeFreeze && membership.activeFreeze.status === "active" && membership.activeFreeze.endDate >= today) throw ApiError.of(ERR.CONFLICT, "This membership already has an active or scheduled freeze.");
@@ -2750,7 +2751,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!application) throw ApiError.of(ERR.NOT_FOUND, "Gym application not found.");
       if (application.status !== "approved") throw ApiError.of(ERR.VALIDATION, "Only approved applications can be provisioned.");
       if (application.provisioningStatus === "failed" && application.provisioningOutcome === "permanent") {
-        throw ApiError.of(ERR.CONFLICT, application.provisioningError ?? "Provisioning requires manual correction before it can be retried.");
+        throw ApiError.of(ERR.CONFLICT, application.provisioningError ?? "Provisioning requires manual correction before it can be retried.", { message: { key: "apiErrors.provisioningRequiresManualCorrectionBeforeItCanBeRetried" } });
       }
       if (application.provisioningStatus === "completed" && application.provisionedOrganizationId && application.provisionedBranchId) {
         return {
@@ -3189,7 +3190,7 @@ export class MockGymOSApi implements GymOSApi {
         try {
           entitledModules = validateWorkspaceModuleSelection(input.entitledModules, allWorkspaceModuleKeys());
         } catch (error) {
-          throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace capabilities are invalid.");
+          throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace capabilities are invalid.", { message: workspaceModuleErrorMessage(error) });
         }
       }
       if (input.priceMinor !== undefined) plan.priceMinor = Math.max(0, Math.round(input.priceMinor));
@@ -3701,7 +3702,7 @@ export class MockGymOSApi implements GymOSApi {
     const role = currentRole(this.db);
     const perms = permissionsFor(this.db, role);
     if (!perms.includes(permission)) {
-      throw ApiError.of(ERR.FORBIDDEN, `Your role (${role}) is missing the “${permission}” permission.`);
+      throw ApiError.of(ERR.FORBIDDEN, `Your role (${role}) is missing the “${permission}” permission.`, { message: { key: "apiErrors.forbidden" } });
     }
   }
 
@@ -3793,7 +3794,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   private rejectImmutableAccountingMutation(entityLabel: string, status: Extract<T.AccountingSourceStatus, "posted" | "reversed">): never {
-    throw ApiError.of(ERR.CONFLICT, `${entityLabel} is ${status} in accounting and its source facts are immutable. Reverse the posting and create a new version before changing source fields.`);
+    throw ApiError.of(ERR.CONFLICT, `${entityLabel} is ${status} in accounting and its source facts are immutable. Reverse the posting and create a new version before changing source fields.`, { message: { key: "apiErrors.immutableAccounting", params: { entity: String(entityLabel), status: String(status) } } });
   }
 
   private accountingAccount(accountId: T.UUID): T.AccountingAccount {
@@ -4413,7 +4414,7 @@ export class MockGymOSApi implements GymOSApi {
   ): Promise<T.Session> {
     return this.respond(() => {
       const user = this.db.users.find((u) => u.role === role && u.status === "active");
-      if (!user) throw ApiError.of(ERR.NOT_FOUND, `No active demo user for role ${role}.`);
+      if (!user) throw ApiError.of(ERR.NOT_FOUND, `No active demo user for role ${role}.`, { message: { key: "apiErrors.demoUserRole", params: { role: String(role) } } });
       const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
       let nextActiveBranchId: T.UUID | undefined;
       if (branchId) {
@@ -6358,7 +6359,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!record) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
       const status = this.membershipStatusOf(record);
       if (status !== "active" && status !== "expiring") {
-        throw ApiError.of(ERR.MEMBERSHIP_NOT_ACTIVE, `Cannot freeze a membership in “${status}” state.`);
+        throw ApiError.of(ERR.MEMBERSHIP_NOT_ACTIVE, `Cannot freeze a membership in “${status}” state.`, { message: { key: "apiErrors.freezeStatus", params: { status: String(status) } } });
       }
       const plan = this.db.plans.find((p) => p.id === record.planId)!;
       const today = this.today();
@@ -6373,13 +6374,13 @@ export class MockGymOSApi implements GymOSApi {
       if (input.startDate > record.endDate) throw ApiError.of(ERR.VALIDATION, "A freeze must begin during the current membership term.");
       const days = diffDays(input.startDate, input.endDate) + 1;
       if (days <= 0) throw ApiError.of(ERR.VALIDATION, "Freeze end must be on or after the start date.");
-      if (days < this.db.operationalPolicies.membership.minimumFreezeDays) throw ApiError.of(ERR.VALIDATION, `A freeze must be at least ${this.db.operationalPolicies.membership.minimumFreezeDays} days.`);
+      if (days < this.db.operationalPolicies.membership.minimumFreezeDays) throw ApiError.of(ERR.VALIDATION, `A freeze must be at least ${this.db.operationalPolicies.membership.minimumFreezeDays} days.`, { message: { key: "apiErrors.minimumFreeze", params: { minimum: String(this.db.operationalPolicies.membership.minimumFreezeDays) } } });
       const remainingAllowance = plan.freezeAllowanceDays - record.frozenDaysUsed;
       if (days > remainingAllowance) {
         throw ApiError.of(
           ERR.FREEZE_ALLOWANCE_EXCEEDED,
           `This plan allows ${plan.freezeAllowanceDays} freeze days total; ${Math.max(0, remainingAllowance)} remain.`,
-        );
+          { message: { key: "apiErrors.freezeDaysRemaining", params: { total: String(plan.freezeAllowanceDays), remaining: String(Math.max(0, remainingAllowance)) } } });
       }
       const freeze: T.FreezePeriod = {
         id: mockUuid(),
@@ -6492,7 +6493,7 @@ export class MockGymOSApi implements GymOSApi {
       this.require("memberships.override_dates");
       this.requireReason(input.reason);
       const maximumExtensionDays = this.db.operationalPolicies.membership.maximumExtensionDays;
-      if (input.days <= 0 || input.days > maximumExtensionDays) throw ApiError.of(ERR.VALIDATION, `Extension must be between 1 and ${maximumExtensionDays} days.`);
+      if (input.days <= 0 || input.days > maximumExtensionDays) throw ApiError.of(ERR.VALIDATION, `Extension must be between 1 and ${maximumExtensionDays} days.`, { message: { key: "apiErrors.maximumExtension", params: { maximum: String(maximumExtensionDays) } } });
       const record = this.db.memberships.find((m) => m.id === membershipId);
       if (!record) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
       const oldEnd = record.endDate;
@@ -6954,7 +6955,7 @@ export class MockGymOSApi implements GymOSApi {
         cancelled: [],
         converted: [],
       };
-      if (!transitions[booking.status].includes(input.status)) throw ApiError.of(ERR.VALIDATION, `Trial cannot move from ${booking.status.replaceAll("_", " ")} to ${input.status.replaceAll("_", " ")}.`);
+      if (!transitions[booking.status].includes(input.status)) throw ApiError.of(ERR.VALIDATION, `Trial cannot move from ${booking.status.replaceAll("_", " ")} to ${input.status.replaceAll("_", " ")}.`, { message: { key: "apiErrors.trialTransition", params: { fromStatus: String(booking.status.replaceAll("_", " ")), toStatus: String(input.status.replaceAll("_", " ")) } } });
       if ((input.status === "no_show" || input.status === "cancelled") && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "Record a reason for this trial outcome.");
       const previous = booking.status;
       booking.status = input.status;
@@ -7016,7 +7017,7 @@ export class MockGymOSApi implements GymOSApi {
       if (offer.status !== "draft") throw ApiError.of(ERR.CONFLICT, "This offer has already been delivered or closed.");
       if (!["email", "whatsapp", "sms", "manual"].includes(input.channel)) throw ApiError.of(ERR.VALIDATION, "Choose a valid delivery channel.");
       if ((input.channel === "email" && !lead.email) || ((input.channel === "whatsapp" || input.channel === "sms") && !lead.phone)) {
-        throw ApiError.of(ERR.VALIDATION, `This lead has no ${input.channel === "email" ? "email address" : "phone number"} to record delivery against.`);
+        throw ApiError.of(ERR.VALIDATION, `This lead has no ${input.channel === "email" ? "email address" : "phone number"} to record delivery against.`, { message: { key: "apiErrors.leadContactMissing", params: { field: String(input.channel === "email" ? "email address" : "phone number") } } });
       }
       const deliveredAt = nowISO();
       Object.assign(offer, {
@@ -7780,7 +7781,7 @@ export class MockGymOSApi implements GymOSApi {
     if (!this.db.branches.some((b) => b.id === branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
     if (!this.branchIsVisible(branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
     const method = this.db.paymentMethods.find((m) => m.key === args.method);
-    if (!method?.enabled) throw ApiError.of(ERR.VALIDATION, `Payment method “${args.method}” is disabled.`);
+    if (!method?.enabled) throw ApiError.of(ERR.VALIDATION, `Payment method “${args.method}” is disabled.`, { message: { key: "apiErrors.paymentMethodDisabled", params: { method: String(args.method) } } });
     if (args.amount.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Payment currency does not match the organization.");
     if (["card", "bank_transfer", "cliq"].includes(args.method) && !args.externalReference?.trim()) {
       throw ApiError.of(ERR.VALIDATION, "An external reference is required for card, bank transfer, and CliQ payments.");
@@ -7805,7 +7806,7 @@ export class MockGymOSApi implements GymOSApi {
         .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0];
     }
     if (!charge) throw ApiError.of(ERR.NO_OUTSTANDING_BALANCE, "This member has no outstanding balance to collect.");
-    if (!chargeIsCollectible(charge, this.today())) throw ApiError.of(ERR.VALIDATION, `This invoice becomes collectible on ${charge.dueDate ?? charge.createdAt.slice(0, 10)}.`);
+    if (!chargeIsCollectible(charge, this.today())) throw ApiError.of(ERR.VALIDATION, `This invoice becomes collectible on ${charge.dueDate ?? charge.createdAt.slice(0, 10)}.`, { message: { key: "apiErrors.collectibleDate", params: { date: String(charge.dueDate ?? charge.createdAt.slice(0, 10)) } } });
     if (charge.outstandingAmount.amount <= 0) {
       throw ApiError.of(ERR.NO_OUTSTANDING_BALANCE, "This charge is already fully paid.");
     }
@@ -7895,10 +7896,10 @@ export class MockGymOSApi implements GymOSApi {
         const product = this.db.products.find((candidate) => candidate.id === lineInput.productId);
         if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
         if (product.status !== "active") throw ApiError.of(ERR.CONFLICT, "Archived products cannot be sold.");
-        if (!product.retailPrice || product.retailPrice.amount <= 0 || product.retailPrice.currency !== this.db.organization.currency || !Number.isSafeInteger(product.retailPrice.amount)) throw ApiError.of(ERR.CONFLICT, `Set a retail price for ${product.name} before selling it.`);
+        if (!product.retailPrice || product.retailPrice.amount <= 0 || product.retailPrice.currency !== this.db.organization.currency || !Number.isSafeInteger(product.retailPrice.amount)) throw ApiError.of(ERR.CONFLICT, `Set a retail price for ${product.name} before selling it.`, { message: { key: "apiErrors.retailPrice", params: { product: String(product.name) } } });
         const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branch.id && candidate.productId === product.id);
         const available = (balance?.quantityOnHand ?? 0) - (balance?.committedQuantity ?? 0);
-        if (!balance || available < lineInput.quantity) throw ApiError.of(ERR.CONFLICT, `${product.name} has only ${available} available.`);
+        if (!balance || available < lineInput.quantity) throw ApiError.of(ERR.CONFLICT, `${product.name} has only ${available} available.`, { message: { key: "apiErrors.stockAvailable", params: { product: String(product.name), available: String(available) } } });
         const lineTotalMinor = product.retailPrice.amount * lineInput.quantity;
         if (!Number.isSafeInteger(lineTotalMinor) || !Number.isSafeInteger(totalMinor + lineTotalMinor)) throw ApiError.of(ERR.VALIDATION, "Checkout total is too large.");
         totalMinor += lineTotalMinor;
@@ -7973,7 +7974,7 @@ export class MockGymOSApi implements GymOSApi {
         const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
         if (!sold || seen.has(line.productId) || !Number.isSafeInteger(line.quantity) || line.quantity <= 0) throw ApiError.of(ERR.VALIDATION, "Refund lines must be unique sold products with positive whole quantities.");
         seen.add(line.productId);
-        if ((returned.get(line.productId) ?? 0) + line.quantity > sold.quantity) throw ApiError.of(ERR.CONFLICT, `${sold.productName} exceeds the remaining refundable quantity.`);
+        if ((returned.get(line.productId) ?? 0) + line.quantity > sold.quantity) throw ApiError.of(ERR.CONFLICT, `${sold.productName} exceeds the remaining refundable quantity.`, { message: { key: "apiErrors.refundableQuantity", params: { product: String(sold.productName) } } });
         refundMinor += sold.unitPrice.amount * line.quantity;
       }
       const refundShift = sale.method === "cash" ? this.db.shifts.find((candidate) => candidate.branchId === sale.branchId && candidate.status === "open") : undefined;
@@ -8363,7 +8364,7 @@ export class MockGymOSApi implements GymOSApi {
       this.require("reconciliation.open_shift");
       const existing = this.db.shifts.find((s) => s.branchId === input.branchId && s.status === "open");
       if (existing) {
-        throw ApiError.of(ERR.SHIFT_ALREADY_OPEN, `A shift is already open at this branch (opened by ${existing.openedByName}).`);
+        throw ApiError.of(ERR.SHIFT_ALREADY_OPEN, `A shift is already open at this branch (opened by ${existing.openedByName}).`, { message: { key: "apiErrors.shiftOpenedBy", params: { name: String(existing.openedByName) } } });
       }
       const shift: T.CashShift = {
         id: mockUuid(),
@@ -9947,8 +9948,8 @@ export class MockGymOSApi implements GymOSApi {
   getWorkspaceModuleStatus(moduleKey: T.WorkspaceModuleKey): Promise<T.WorkspaceModuleStatus> {
     return this.respond(() => {
       const status = this.workspaceAccess().modules.find((module) => module.key === moduleKey);
-      if (!status) throw ApiError.of(ERR.VALIDATION, `Unknown workspace module: ${moduleKey}`);
-      if (!status.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, `The ${moduleKey} workspace module is not enabled for this organization.`);
+      if (!status) throw ApiError.of(ERR.VALIDATION, `Unknown workspace module: ${moduleKey}`, { message: { key: "apiErrors.workspaceCapabilities" } });
+      if (!status.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, `The ${moduleKey} workspace module is not enabled for this organization.`, { message: { key: "apiErrors.moduleDisabled", params: { module: String(moduleKey) } } });
       return status;
     });
   }
@@ -9961,7 +9962,7 @@ export class MockGymOSApi implements GymOSApi {
       try {
         enabledModules = validateWorkspaceModuleSelection(Array.isArray(input.enabledModules) ? input.enabledModules : [], entitled);
       } catch (error) {
-        throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace module preferences are invalid.");
+        throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace module preferences are invalid.", { message: workspaceModuleErrorMessage(error) });
       }
       const before = [...this.workspaceAccess().preferences.enabledModules];
       this.db.workspaceModulePreferences = {
@@ -10884,8 +10885,8 @@ export class MockGymOSApi implements GymOSApi {
       const method = input.method;
       if (!SUPPLIER_PAYMENT_METHODS.includes(method)) throw ApiError.of(ERR.VALIDATION, "Supplier payment method must be cash, bank transfer, or CliQ.", { fieldErrors: { method: ["Choose cash, bank transfer, or CliQ"] } });
       const positiveMinor = (value: T.Money | undefined, field: string) => {
-        if (!value || !Number.isSafeInteger(value.amount) || value.amount <= 0) throw ApiError.of(ERR.VALIDATION, `${field} must be a positive whole amount in ${currency} minor units.`, { fieldErrors: { [field]: ["Enter an amount greater than zero"] } });
-        if (value.currency !== currency) throw ApiError.of(ERR.VALIDATION, `${field} must be in ${currency}.`, { fieldErrors: { [field]: [`Only ${currency} is accepted`] } });
+        if (!value || !Number.isSafeInteger(value.amount) || value.amount <= 0) throw ApiError.of(ERR.VALIDATION, `${field} must be a positive whole amount in ${currency} minor units.`, { message: { key: "apiErrors.positiveMinorAmount", params: { field: String(field), currency: String(currency) } }, fieldErrors: { [field]: ["Enter an amount greater than zero"] } });
+        if (value.currency !== currency) throw ApiError.of(ERR.VALIDATION, `${field} must be in ${currency}.`, { message: { key: "apiErrors.fieldCurrency", params: { field: String(field), currency: String(currency) } }, fieldErrors: { [field]: [`Only ${currency} is accepted`] } });
         return value.amount;
       };
       const amountMinor = positiveMinor(input.amount, "amount");
@@ -10895,7 +10896,7 @@ export class MockGymOSApi implements GymOSApi {
       const notes = input.notes?.trim() || undefined;
       if (notes && notes.length > 500) throw ApiError.of(ERR.VALIDATION, "Payment notes are too long.", { fieldErrors: { notes: ["Keep it under 500 characters"] } });
       const rawAllocations = Array.isArray(input.allocations) ? input.allocations : [];
-      if (rawAllocations.length === 0 || rawAllocations.length > MAX_SUPPLIER_PAYMENT_ALLOCATIONS) throw ApiError.of(ERR.VALIDATION, `Allocate the payment to between 1 and ${MAX_SUPPLIER_PAYMENT_ALLOCATIONS} payables.`, { fieldErrors: { allocations: ["Choose at least one payable"] } });
+      if (rawAllocations.length === 0 || rawAllocations.length > MAX_SUPPLIER_PAYMENT_ALLOCATIONS) throw ApiError.of(ERR.VALIDATION, `Allocate the payment to between 1 and ${MAX_SUPPLIER_PAYMENT_ALLOCATIONS} payables.`, { message: { key: "apiErrors.supplierBillLimit", params: { maximum: String(MAX_SUPPLIER_PAYMENT_ALLOCATIONS) } }, fieldErrors: { allocations: ["Choose at least one payable"] } });
       const allocations = rawAllocations.map((raw) => ({ payableId: raw.payableId?.trim() ?? "", amountMinor: positiveMinor(raw.amount, "allocation") })).sort((left, right) => left.payableId.localeCompare(right.payableId));
       if (allocations.some((allocation) => !allocation.payableId)) throw ApiError.of(ERR.VALIDATION, "Every allocation needs a payable.");
       if (new Set(allocations.map((allocation) => allocation.payableId)).size !== allocations.length) throw ApiError.of(ERR.VALIDATION, "A payable can appear only once in an allocation.");
@@ -10910,15 +10911,15 @@ export class MockGymOSApi implements GymOSApi {
       const byId = new Map(payables.map((payable) => [payable.id, payable]));
       for (const allocation of allocations) {
         const payable = byId.get(allocation.payableId);
-        if (!payable) throw ApiError.of(ERR.NOT_FOUND, `Payable ${allocation.payableId} is not an open supplier balance you can see.`);
-        if (payable.supplierId !== supplier.id) throw ApiError.of(ERR.VALIDATION, `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. One payment settles one supplier.`);
-        if (payable.status === "paid" || payable.status === "reversed") throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { details: { payableId: payable.id, status: payable.status } });
-        if (allocation.amountMinor > payable.remaining.amount) throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remaining.amount, currency)} outstanding; the allocation would overpay it.`, { details: { payableId: payable.id, remainingMinor: payable.remaining.amount, requestedMinor: allocation.amountMinor } });
+        if (!payable) throw ApiError.of(ERR.NOT_FOUND, `Payable ${allocation.payableId} is not an open supplier balance you can see.`, { message: { key: "apiErrors.payableNotOpen", params: { reference: String(allocation.payableId) } } });
+        if (payable.supplierId !== supplier.id) throw ApiError.of(ERR.VALIDATION, `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. One payment settles one supplier.`, { message: { key: "apiErrors.supplierMismatch", params: { source: String(payable.sourceLabel), supplier: String(payable.supplierName), chosenSupplier: String(supplier.name) } } });
+        if (payable.status === "paid" || payable.status === "reversed") throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { message: { key: "apiErrors.payableSettled", params: { source: String(payable.sourceLabel), status: String(payable.status === "paid" ? "paid in full" : "reversed") } }, details: { payableId: payable.id, status: payable.status } });
+        if (allocation.amountMinor > payable.remaining.amount) throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remaining.amount, currency)} outstanding; the allocation would overpay it.`, { message: { key: "apiErrors.payableRemaining", params: { source: String(payable.sourceLabel), currency: String(currency), amount: String(formatMinorUnits(payable.remaining.amount, currency)) } }, details: { payableId: payable.id, remainingMinor: payable.remaining.amount, requestedMinor: allocation.amountMinor } });
       }
       let shiftId: T.UUID | undefined;
       if (method === "cash") {
         const shift = this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open");
-        if (!shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, `Open a cash shift at ${branch.name} before paying a supplier in cash.`);
+        if (!shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, `Open a cash shift at ${branch.name} before paying a supplier in cash.`, { message: { key: "apiErrors.supplierCashBranch", params: { branch: String(branch.name) } } });
         shiftId = shift.id;
         if (input.expectedShiftId && input.expectedShiftId !== shift.id) throw ApiError.of(ERR.CONFLICT, "The open cash shift changed since this screen loaded. Refresh and record the payment again.", { details: { reason: "SHIFT_STALE", openShiftId: shift.id } });
       }
@@ -10970,7 +10971,7 @@ export class MockGymOSApi implements GymOSApi {
       if (payment.method === "cash") {
         const branch = this.operationsBranch(payment.branchId);
         const shift = this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open");
-        if (!shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, `Open a cash shift at ${branch.name} so the returned cash has a drawer to go back into.`);
+        if (!shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, `Open a cash shift at ${branch.name} so the returned cash has a drawer to go back into.`, { message: { key: "apiErrors.supplierReturnCash", params: { branch: String(branch.name) } } });
         reversalShiftId = shift.id;
       }
       const now = nowISO();
@@ -11074,7 +11075,7 @@ export class MockGymOSApi implements GymOSApi {
       const replay = this.operationsIdempotent("legal.agreement.sign", idempotencyKey, "agreement") as T.SubscriptionAgreement | undefined;
       if (replay) return replay;
       const current = this.activeSubscriptionAgreement();
-      if (current) throw ApiError.of(ERR.CONFLICT, `This gym already signed agreement ${current.reference}. Contact RIVET if it must be replaced.`, { details: { reference: current.reference } });
+      if (current) throw ApiError.of(ERR.CONFLICT, `This gym already signed agreement ${current.reference}. Contact RIVET if it must be replaced.`, { message: { key: "apiErrors.agreementExists", params: { reference: String(current.reference) } }, details: { reference: current.reference } });
       const field = (condition: boolean, name: string, message: string) => { if (!condition) throw ApiError.of(ERR.VALIDATION, message, { fieldErrors: { [name]: [message] } }); };
       const customer = input.customer;
       const legalName = customer.legalName?.trim() ?? "";
@@ -11358,7 +11359,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!Number.isSafeInteger(input.durationMinutes) || input.durationMinutes < 15 || input.durationMinutes > 480) throw ApiError.of(ERR.VALIDATION, "Duration must be a whole number between 15 and 480.");
       if (input.startMinute + input.durationMinutes > 1440) throw ApiError.of(ERR.VALIDATION, "A class must end by midnight. Start it earlier or shorten the duration.");
       const clashing = this.classSessions.find((candidate) => candidate.id !== input.sessionId && candidate.branchId === input.branchId && candidate.dayOfWeek === input.dayOfWeek && input.startMinute < candidate.startMinute + candidate.durationMinutes && candidate.startMinute < input.startMinute + input.durationMinutes);
-      if (clashing) throw ApiError.of(ERR.VALIDATION, `This time overlaps “${clashing.name}” at ${String(Math.floor(clashing.startMinute / 60)).padStart(2, "0")}:${String(clashing.startMinute % 60).padStart(2, "0")}. Pick another slot.`);
+      if (clashing) throw ApiError.of(ERR.VALIDATION, `This time overlaps “${clashing.name}” at ${String(Math.floor(clashing.startMinute / 60)).padStart(2, "0")}:${String(clashing.startMinute % 60).padStart(2, "0")}. Pick another slot.`, { message: { key: "apiErrors.classOverlap", params: { className: clashing.name, time: `${String(Math.floor(clashing.startMinute / 60)).padStart(2, "0")}:${String(clashing.startMinute % 60).padStart(2, "0")}` } } });
       if (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 200) throw ApiError.of(ERR.VALIDATION, "Capacity must be a whole number between 1 and 200.");
       if (!["mixed", "women", "men"].includes(input.audience)) throw ApiError.of(ERR.VALIDATION, "Audience must be mixed, women, or men.");
       let coachName: string | undefined;
@@ -11374,17 +11375,17 @@ export class MockGymOSApi implements GymOSApi {
       if (input.sessionId && existing) {
         if (!this.branchIsVisible(existing.branchId)) throw ApiError.of(ERR.FORBIDDEN, "Your role cannot manage classes for this branch.");
         if (existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A class cannot move between branches.");
-        if (input.capacity < existing.roster.length) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${existing.roster.length} people already in the class.`);
+        if (input.capacity < existing.roster.length) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${existing.roster.length} people already in the class.`, { message: { key: "apiErrors.classCapacity", params: { count: String(existing.roster.length) } } });
         // Upcoming dated classes carry bookings against the old numbers; the
         // timetable edit flows into them, and nobody loses a confirmed place.
         const scheduled = this.classOccurrences.filter((occurrence) => occurrence.templateId === existing.id && occurrence.status === "scheduled" && Date.parse(occurrence.startsAt) > Date.now());
         const overbooked = scheduled.find((occurrence) => input.capacity < this.classSeatedCount(occurrence));
-        if (overbooked) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${this.classSeatedCount(overbooked)} people already booked for ${overbooked.date}.`);
+        if (overbooked) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${this.classSeatedCount(overbooked)} people already booked for ${overbooked.date}.`, { message: { key: "apiErrors.classCapacityDate", params: { count: String(this.classSeatedCount(overbooked)), date: String(overbooked.date) } } });
         const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         if (existing.dayOfWeek !== input.dayOfWeek) {
           // Moving the class to another weekday would strand the dates members already hold.
           const held = scheduled.filter((occurrence) => occurrence.roster.some((entry) => ["booked", "waitlisted"].includes(entry.status)));
-          if (held.length) throw ApiError.of(ERR.VALIDATION, `Members are booked on ${held.map((occurrence) => occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${dayNames[input.dayOfWeek]}.`);
+          if (held.length) throw ApiError.of(ERR.VALIDATION, `Members are booked on ${held.map((occurrence) => occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${dayNames[input.dayOfWeek]}.`, { message: { key: "apiErrors.classDatesHeld", params: { dates: String(held.map((occurrence) => occurrence.date).join(", ")), weekday: String(dayNames[input.dayOfWeek]) } } });
         }
         Object.assign(existing, { name, coachId: input.coachId, coachName, dayOfWeek: input.dayOfWeek, startMinute: input.startMinute, durationMinutes: input.durationMinutes, capacity: input.capacity, audience: input.audience, imageAssetId: input.imageAssetId, imageUrl: image?.url, imageAltText: image?.altText, notes: input.notes?.trim() || undefined, updatedAt: now });
         for (const occurrence of scheduled) {
@@ -11655,6 +11656,7 @@ export class MockGymOSApi implements GymOSApi {
         booking: booking ? { id: booking.bookingId, status: booking.status, position: booking.status === "waitlisted" ? waitlist.findIndex((entry) => entry.bookingId === booking.bookingId) + 1 : undefined, fromWaitlist: booking.fromWaitlist } : undefined,
         canBook,
         bookingBlockReason,
+    bookingBlockMessage: classBookingBlockMessage(bookingBlockReason),
       };
     };
     const all = this.classOccurrences.filter((candidate) => candidate.branchId === membership.homeBranchId && (candidate.date >= fromDate || candidate.roster.some((entry) => entry.memberId === member.id))).sort((left, right) => left.startsAt.localeCompare(right.startsAt));
@@ -11679,7 +11681,7 @@ export class MockGymOSApi implements GymOSApi {
       const experience = this.getCustomerClassExperienceSync(input.membershipId);
       const candidate = experience.upcoming.find((occurrence) => occurrence.id === input.occurrenceId);
       if (!candidate) throw ApiError.of(ERR.NOT_FOUND, "Class not found.");
-      if (!candidate.canBook) throw ApiError.of(ERR.VALIDATION, candidate.bookingBlockReason ?? "This class cannot be booked.");
+      if (!candidate.canBook) throw ApiError.of(ERR.VALIDATION, candidate.bookingBlockReason ?? "This class cannot be booked.", { message: candidate.bookingBlockMessage });
       const { member, membership } = this.customerOperationalMembership(input.membershipId);
       const occurrence = this.classOccurrenceById(input.occurrenceId);
       const full = occurrence.bookedCount >= occurrence.capacity;
@@ -11761,7 +11763,7 @@ export class MockGymOSApi implements GymOSApi {
       const audienceGender = occurrence.audience === "women" ? "female" : occurrence.audience === "men" ? "male" : undefined;
       if (audienceGender !== undefined && member.gender !== audienceGender && !override) throw ApiError.of(ERR.VALIDATION, "A reason is required to override the class audience rule.");
       const activeCount = this.classOccurrences.reduce((count, row) => count + row.roster.filter((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status) && row.startsAt >= nowISO()).length, 0);
-      if (activeCount >= policy.maxActiveBookingsPerMember && !override) throw ApiError.of(ERR.VALIDATION, `This member already has ${policy.maxActiveBookingsPerMember} active class bookings. A staff override requires a reason.`);
+      if (activeCount >= policy.maxActiveBookingsPerMember && !override) throw ApiError.of(ERR.VALIDATION, `This member already has ${policy.maxActiveBookingsPerMember} active class bookings. A staff override requires a reason.`, { message: { key: "apiErrors.activeBookingLimit", params: { count: String(policy.maxActiveBookingsPerMember) } } });
       // Capacity is not overridable: a full class takes the member onto the
       // bounded waitlist, exactly as the server does.
       const waiting = occurrence.roster.filter((entry) => entry.status === "waitlisted").length;
@@ -11809,7 +11811,7 @@ export class MockGymOSApi implements GymOSApi {
       this.requireReason(input.reason);
       const occurrence = this.classOccurrenceById(input.occurrenceId);
       const block = occurrenceCancellationBlock({ status: occurrence.status, startsAt: Date.parse(occurrence.startsAt), finalized: Boolean(occurrence.attendanceFinalizedAt), hasAttendance: occurrence.roster.some(entry => entry.status === "attended" || entry.status === "no_show") });
-      if (block) throw ApiError.of(ERR.CONFLICT, block);
+      if (block) throw ApiError.of(ERR.CONFLICT, block, { message: classBookingBlockMessage(block) });
       if (occurrence.status === "cancelled") return this.refreshClassOccurrence(occurrence);
       occurrence.status = "cancelled";
       occurrence.cancelReason = input.reason.trim();
@@ -11925,7 +11927,7 @@ export class MockGymOSApi implements GymOSApi {
       if (existing && existing.branchId !== branch.id) throw ApiError.of(ERR.CONFLICT, "Equipment assets cannot be reassigned between branches; use a future transfer workflow.");
       if (existing && input.status !== undefined && input.status !== existing.status) {
         const allowed = existing.status === "active" ? ["maintenance", "retired", "replaced"] : existing.status === "maintenance" ? ["active", "retired", "replaced"] : [];
-        if (!allowed.includes(status)) throw ApiError.of(ERR.CONFLICT, `An equipment asset cannot move from ${existing.status} to ${status}.`);
+        if (!allowed.includes(status)) throw ApiError.of(ERR.CONFLICT, `An equipment asset cannot move from ${existing.status} to ${status}.`, { message: { key: "apiErrors.equipmentTransition", params: { fromStatus: String(existing.status), toStatus: String(status) } } });
       }
       if (input.status === "active" && existing && this.db.equipmentIssues.some((issue) => issue.assetId === existing.id && !["resolved", "cancelled"].includes(issue.status) && issue.safetyStatus === "out_of_service")) throw ApiError.of(ERR.CONFLICT, "This equipment has an unresolved out-of-service issue. Resolve the issue before marking the asset active.");
       const immutableStatus = existing ? this.immutableAccountingStatus("equipment_acquisition", existing.id) : undefined;
@@ -11981,7 +11983,7 @@ export class MockGymOSApi implements GymOSApi {
       if (status === "resolved" && safetyStatus !== "safe_to_operate") throw ApiError.of(ERR.VALIDATION, "An issue can only be resolved when the equipment is safe to operate.");
       if (status !== issue.status) {
         const allowed = issue.status === "open" ? ["in_progress", "resolved", "cancelled"] : issue.status === "in_progress" ? ["resolved", "cancelled"] : [];
-        if (!allowed.includes(status)) throw ApiError.of(ERR.CONFLICT, `An equipment issue cannot move from ${issue.status} to ${status}.`);
+        if (!allowed.includes(status)) throw ApiError.of(ERR.CONFLICT, `An equipment issue cannot move from ${issue.status} to ${status}.`, { message: { key: "apiErrors.equipmentIssueTransition", params: { fromStatus: String(issue.status), toStatus: String(status) } } });
       }
       if (input.downtimeDays !== undefined && (!Number.isFinite(input.downtimeDays) || input.downtimeDays < 0)) throw ApiError.of(ERR.VALIDATION, "Downtime days must be non-negative.");
       const before = { ...issue };
@@ -12041,7 +12043,7 @@ export class MockGymOSApi implements GymOSApi {
         (existing.status === "draft" && ["approved", "cancelled"].includes(input.status)) ||
         (existing.status === "approved" && ["in_progress", "cancelled"].includes(input.status)) ||
         (existing.status === "in_progress" && ["completed", "cancelled"].includes(input.status))
-      )) throw ApiError.of(ERR.CONFLICT, `A work order cannot move from ${existing.status} to ${input.status}.`);
+      )) throw ApiError.of(ERR.CONFLICT, `A work order cannot move from ${existing.status} to ${input.status}.`, { message: { key: "apiErrors.workOrderTransition", params: { fromStatus: String(existing.status), toStatus: String(input.status) } } });
       const immutableStatus = existing ? this.immutableAccountingStatus("equipment_repair", existing.id) : undefined;
       const issueId = immutableStatus && input.issueId === undefined ? existing?.issueId : issue?.id;
       const partsCost = immutableStatus && input.partsCost === undefined ? existing?.partsCost : input.partsCost;

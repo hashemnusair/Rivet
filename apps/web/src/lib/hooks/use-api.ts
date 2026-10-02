@@ -94,7 +94,7 @@ export function useApiMutation<TData, TVariables = void>(
   // caller passes both a successMessage and its own callback.
   const { locale, t } = useLocale();
   const { successMessage, onSuccess, onError, ...rest } = options ?? {};
-  return useMutation<TData, Error, TVariables>({
+  const mutation = useMutation<TData, Error, TVariables>({
     mutationFn: (variables) => fn(getApi(), variables),
     // TanStack awaits this callback before the mutation leaves its pending
     // state, so the caller's follow-up work (cache invalidation, navigation,
@@ -122,4 +122,11 @@ export function useApiMutation<TData, TVariables = void>(
     },
     ...rest,
   });
+  const presentedError = useMemo(() => mutation.error ? localizeApiError(mutation.error, locale) : null, [mutation.error, locale]);
+  const execute = mutation.mutateAsync;
+  const mutateAsync = useCallback<typeof execute>(async (variables, callOptions) => {
+    try { return await execute(variables, callOptions); }
+    catch (error) { throw localizeApiError(error, locale); }
+  }, [execute, locale]);
+  return { ...mutation, error: presentedError, mutateAsync };
 }
