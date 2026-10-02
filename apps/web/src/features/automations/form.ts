@@ -1,27 +1,45 @@
 import type { AutomationTriggerKey } from "@/lib/domain/types";
+import { createTranslator } from "@/lib/i18n/core";
+import type { TFunction } from "@/lib/i18n/provider";
+import { latinDigits } from "@/lib/utils/text";
 
 export type AutomationTriggerParams = Record<string, number | number[] | string>;
 
-export function parseAutomationNumbers(raw: string, allowZero = false): number[] {
-  return [...new Set(raw
-    .split(",")
-    .map((value) => Number(value.trim()))
-    .filter((value) => Number.isInteger(value) && (allowZero ? value >= 0 : value > 0)))];
+export function normalizeAutomationNumbers(raw: string): string {
+  return latinDigits(raw).replace(/[،٬]/g, ",");
 }
 
-export function automationTriggerParameterLabel(trigger: AutomationTriggerKey): string {
+export function parseAutomationNumbers(raw: string, allowZero = false): number[] {
+  const tokens = normalizeAutomationNumbers(raw).split(",").map((value) => value.trim());
+  if (tokens.length === 0 || tokens.some((value) => !/^\d+$/.test(value))) return [];
+  const values = tokens.map((value) => Number(value));
+  if (values.some((value) => !Number.isSafeInteger(value) || (allowZero ? value < 0 : value <= 0))) return [];
+  return [...new Set(values)];
+}
+
+export function parseAutomationInteger(raw: string, allowZero = false): number | undefined {
+  const value = normalizeAutomationNumbers(raw).trim();
+  if (!/^\d+$/.test(value)) return undefined;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && (allowZero ? number >= 0 : number > 0) ? number : undefined;
+}
+
+const ENGLISH = createTranslator("en");
+
+export function automationTriggerParameterLabel(trigger: AutomationTriggerKey, t: TFunction = ENGLISH): string {
   switch (trigger) {
     case "membership_expiring":
-      return "Days before it ends";
+      return t("staffTools.automations.editor.daysBeforeEnds");
     case "membership_expired":
-      return "Days after it ended";
+      return t("staffTools.automations.editor.daysAfterEnded");
     case "member_inactive":
+      return t("staffTools.automations.editor.daysWithoutCheckIn");
     case "payment_outstanding":
-      return "Days";
+      return t("staffTools.automations.editor.daysUnpaid");
     case "lead_untouched":
-      return "Hours with no contact";
+      return t("staffTools.automations.editor.hoursWithoutContact");
     case "follow_up_overdue":
-      return "Hours overdue";
+      return t("staffTools.automations.editor.hoursOverdue");
   }
 }
 

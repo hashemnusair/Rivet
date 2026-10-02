@@ -1,5 +1,7 @@
 "use client";
 import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 
 import { MessageSquareText, Plus, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -18,22 +20,26 @@ import type { CreateSupportCaseInput, PlatformSaasPlan, PlatformSupportCase } fr
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { localizeApiError } from "@/lib/api/errors";
 
 const PLAN_ORDER: PlatformSaasPlan["name"][] = ["Starter", "Growth", "Pro", "Enterprise"];
-const STATUS_PRESENTATION: Record<PlatformSupportCase["status"], { label: string; variant: "neutral" | "warning" | "success" }> = {
-  open: { label: "Open", variant: "neutral" },
-  waiting: { label: "Waiting", variant: "warning" },
-  resolved: { label: "Solved", variant: "success" },
+const STATUS_PRESENTATION: Record<PlatformSupportCase["status"], { key: "staffTools.support.status.open" | "staffTools.support.status.waiting" | "staffTools.support.status.resolved"; variant: "neutral" | "warning" | "success" }> = {
+  open: { key: "staffTools.support.status.open", variant: "neutral" },
+  waiting: { key: "staffTools.support.status.waiting", variant: "warning" },
+  resolved: { key: "staffTools.support.status.resolved", variant: "success" },
 };
 const NATIVE_SELECT = "h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13px]";
 
 function CaseStatusBadge({ status }: { status: PlatformSupportCase["status"] }) {
-  const presentation = STATUS_PRESENTATION[status] ?? { label: status.replaceAll("_", " "), variant: "neutral" as const };
-  return <Badge variant={presentation.variant}>{presentation.label}</Badge>;
+  const t = useT();
+  const presentation = STATUS_PRESENTATION[status];
+  return <Badge variant={presentation?.variant ?? "neutral"}>{presentation ? t(presentation.key) : String(status)}</Badge>;
 }
 
 export default function GymSupportPage() {
   const t = useT();
+  const { locale } = useLocale();
+  const format = useFormat();
   const { session } = useApp();
   const { saasPlans } = useExperience();
   const [cases, setCases] = useState<PlatformSupportCase[]>([]);
@@ -59,7 +65,7 @@ export default function GymSupportPage() {
     let unsubscribe: (() => void) | undefined;
     const onError = (reason: unknown) => {
       if (cancelled) return;
-      setError(reason instanceof Error ? reason.message : "Your support requests could not load.");
+      setError(reason instanceof Error ? localizeApiError(reason, locale).message : t("staffTools.support.loadError"));
       setLoading(false);
     };
     void getApi().subscribeSupportCases((next) => {
@@ -69,23 +75,57 @@ export default function GymSupportPage() {
       setLoading(false);
     }, onError).then((disposer) => { if (cancelled) disposer(); else unsubscribe = disposer; }).catch(onError);
     return () => { cancelled = true; unsubscribe?.(); };
-  }, [retryToken]);
+  }, [retryToken, locale, t]);
 
   const messages = selected?.messages ?? [];
   const creator = selected?.creatorName ?? selected?.creatorEmail;
 
-  return <div className="space-y-5"><PageHeader title={t("dashboard.today.kind.support_case")} description="Ask the RIVET team for help and read their replies here." actions={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => { setCreateMode("plan_upgrade"); setCreateOpen(true); }}>Request plan upgrade</Button><Button onClick={() => { setCreateMode("general"); setCreateOpen(true); }}><Plus /> Ask for help</Button></div>} />
-    {error ? <ErrorState title="Your support requests could not load" description={error} onRetry={() => { setError(undefined); setLoading(true); setRetryToken((value) => value + 1); }} /> : null}
-    <section className="panel grid min-h-[540px] overflow-hidden lg:grid-cols-[320px_1fr]">
-      <aside className="border-b border-line lg:border-b-0 lg:border-e" aria-label="Your requests"><div className="border-b border-line px-4 py-3"><p className="context-label">Your requests</p></div>{loading ? <div className="space-y-3 p-4" role="status" aria-label="Loading support requests"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : cases.length === 0 ? <EmptyState title="No requests yet" description="Anyone on your staff can ask RIVET for help." compact className="m-3 border-0" /> : <div className="divide-y divide-line">{cases.map((item) => <button key={item.id} type="button" aria-pressed={selected?.id === item.id} onClick={() => setSelectedId(item.id)} className={cn("w-full px-4 py-3 text-start transition-colors hover:bg-sunken/60 cursor-pointer", selected?.id === item.id && "bg-sunken")}><div className="flex items-center justify-between gap-2"><span className="font-mono text-[11px] text-ink-3">{item.id}</span><CaseStatusBadge status={item.status} /></div><p className="mt-1.5 text-[13px] font-semibold">{item.subject}</p><p className="mt-0.5 text-[12px] text-ink-3">{item.priority === "urgent" ? "Urgent · " : ""}{formatDateTime(item.updatedAt ?? item.createdAt)}</p></button>)}</div>}</aside>
-      {!selected ? <div className="flex items-center justify-center p-8 text-center"><div><MessageSquareText className="mx-auto size-6 text-ink-3" aria-hidden /><p className="mt-3 text-[13px] font-medium">Choose a request, or ask for help</p></div></div> : <article className="flex min-w-0 flex-col" aria-label={selected.subject}><header className="border-b border-line px-5 py-4"><div className="flex flex-wrap items-center gap-2">{selected.priority === "urgent" ? <Badge variant="signal">{t("dashboard.needsAttention.urgent")}</Badge> : <Badge variant="outline">Normal</Badge>}<CaseStatusBadge status={selected.status} /><span className="font-mono text-[11px] text-ink-3">{selected.id}</span></div><h2 className="mt-2 text-[17px] font-semibold">{selected.subject}</h2><p className="mt-1 text-[12px] text-ink-3">{selected.createdAt ? `Created ${formatDateTime(selected.createdAt)}` : "Creation time not recorded"}{creator ? ` · by ${creator}` : ""}{selected.branchName ? ` · ${selected.branchName}` : ""}</p></header><div className="flex flex-1 flex-col gap-3 bg-paper/40 p-4 sm:p-5">{messages.length === 0 && !selected.body ? <StatePanel icon={MessageSquareText} title="No replies yet" description="The RIVET team can already see your request. Replies will appear here." compact className="border-0 bg-transparent" /> : null}{messages.length === 0 && selected.body ? <div className="me-auto max-w-[82%] rounded-md border border-line bg-surface p-3.5"><div className="flex justify-between gap-5"><p className="text-[12px] font-semibold">{creator ?? "Your gym"}</p><span className="text-[12px] text-ink-3">{formatDateTime(selected.createdAt)}</span></div><p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{selected.body}</p></div> : null}{messages.map((message) => <div key={message.id} className={cn("max-w-[82%] rounded-md border p-3.5", message.authorType === "gym" ? "me-auto border-line bg-surface" : "ms-auto border-line-2 bg-sunken")}><div className="flex justify-between gap-5"><p className="text-[12px] font-semibold">{message.authorName}</p><time className="text-[12px] text-ink-3">{formatDateTime(message.createdAt)}</time></div><p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{message.body}</p></div>)}{selected.resolutionSummary ? <div className="rounded-md border border-success/25 bg-success-bg p-3.5"><p className="context-label text-success-deep">Solution</p><p className="mt-1.5 text-[13px] text-ink-2">{selected.resolutionSummary}</p></div> : null}</div>{selected.status === "resolved" ? <div className="border-t border-line bg-surface px-5 py-4 text-[12.5px] text-ink-3">This request is solved. Ask for help again if you have a new problem.</div> : <form className="border-t border-line bg-surface p-4" onSubmit={(event) => { event.preventDefault(); if (!replyBody.trim() || replying) return; setReplying(true); void getApi().replyToSupportCase(selected.id, replyBody.trim()).then((updated) => { setCases((current) => current.map((item) => item.id === updated.id ? updated : item)); setReplyBody(""); toast.success("Reply sent to RIVET support."); }).catch((reason) => toast.error(reason instanceof Error ? reason.message : "The reply could not be sent.")).finally(() => setReplying(false)); }}><Field label="Reply to support"><Textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} placeholder="Add details or answer the RIVET team's question…" className="min-h-20" /></Field><div className="mt-3 flex justify-end"><Button type="submit" loading={replying} disabled={!replyBody.trim()}><Send /> Send reply</Button></div></form>}</article>}
-    </section>
-    <CreateSupportDialog open={createOpen} mode={createMode} currentPlan={session?.workspace?.entitlements.subscriptionPlan} plans={saasPlans} onOpenChange={setCreateOpen} email={session?.user.email ?? ""} branches={session?.branches ?? []} onCreated={(supportCase) => { setSelectedId(supportCase.id); setCreateOpen(false); }} />
-  </div>;
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title={t("dashboard.today.kind.support_case")}
+        description={t("staffTools.support.description")}
+        actions={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => { setCreateMode("plan_upgrade"); setCreateOpen(true); }}>{t("staffTools.support.requestUpgrade")}</Button><Button onClick={() => { setCreateMode("general"); setCreateOpen(true); }}><Plus />{t("staffTools.support.askForHelp")}</Button></div>}
+      />
+      {error ? <ErrorState title={t("staffTools.support.loadErrorTitle")} description={error} onRetry={() => { setError(undefined); setLoading(true); setRetryToken((value) => value + 1); }} /> : null}
+      <section className="panel grid min-h-[540px] overflow-hidden lg:grid-cols-[320px_1fr]">
+        <aside className="border-b border-line lg:border-b-0 lg:border-e" aria-label={t("staffTools.support.yourRequests")}>
+          <div className="border-b border-line px-4 py-3"><p className="context-label">{t("staffTools.support.yourRequests")}</p></div>
+          {loading ? <div className="space-y-3 p-4" role="status" aria-label={t("staffTools.support.loading")}><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : cases.length === 0 ? <EmptyState title={t("staffTools.support.noRequests")} description={t("staffTools.support.noRequestsDescription")} compact className="m-3 border-0" /> : (
+            <div className="divide-y divide-line">{cases.map((item) => <button key={item.id} type="button" aria-pressed={selected?.id === item.id} onClick={() => setSelectedId(item.id)} className={cn("w-full px-4 py-3 text-start transition-colors hover:bg-sunken/60 cursor-pointer", selected?.id === item.id && "bg-sunken")}><div className="flex items-center justify-between gap-2"><span className="font-mono text-[11px] text-ink-3" dir="ltr">{item.id}</span><CaseStatusBadge status={item.status} /></div><p className="mt-1.5 text-[13px] font-semibold">{item.subject}</p><p className="mt-0.5 text-[12px] text-ink-3">{item.priority === "urgent" ? `${t("staffTools.support.urgent")} · ` : ""}{item.updatedAt || item.createdAt ? format.dateTime(item.updatedAt ?? item.createdAt) : t("staffTools.support.creationNotRecorded")}</p></button>)}</div>
+          )}
+        </aside>
+        {!selected ? <div className="flex items-center justify-center p-8 text-center"><div><MessageSquareText className="mx-auto size-6 text-ink-3" aria-hidden /><p className="mt-3 text-[13px] font-medium">{t("staffTools.support.chooseOrAsk")}</p></div></div> : (
+          <article className="flex min-w-0 flex-col" aria-label={selected.subject}>
+            <header className="border-b border-line px-5 py-4">
+              <div className="flex flex-wrap items-center gap-2">{selected.priority === "urgent" ? <Badge variant="signal">{t("staffTools.support.urgent")}</Badge> : <Badge variant="outline">{t("staffTools.support.normalPriority")}</Badge>}<CaseStatusBadge status={selected.status} /><span className="font-mono text-[11px] text-ink-3" dir="ltr">{selected.id}</span></div>
+              <h2 className="mt-2 text-[17px] font-semibold">{selected.subject}</h2>
+              <p className="mt-1 text-[12px] text-ink-3">{selected.createdAt ? t("staffTools.support.created", { date: format.dateTime(selected.createdAt) }) : t("staffTools.support.creationNotRecorded")}{creator ? ` · ${t("staffTools.support.by")} ${creator}` : ""}{selected.branchName ? ` · ${selected.branchName}` : ""}</p>
+            </header>
+            <div className="flex flex-1 flex-col gap-3 bg-paper/40 p-4 sm:p-5">
+              {messages.length === 0 && !selected.body ? <StatePanel icon={MessageSquareText} title={t("staffTools.support.noReplies")} description={t("staffTools.support.repliesAppear")} compact className="border-0 bg-transparent" /> : null}
+              {messages.length === 0 && selected.body ? <div className="me-auto max-w-[82%] rounded-md border border-line bg-surface p-3.5"><div className="flex justify-between gap-5"><p className="text-[12px] font-semibold">{creator ?? t("staffTools.support.gymLabel")}</p><span className="text-[12px] text-ink-3">{selected.createdAt ? format.dateTime(selected.createdAt) : t("staffTools.support.creationNotRecorded")}</span></div><p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{selected.body}</p></div> : null}
+              {messages.map((message) => <div key={message.id} className={cn("max-w-[82%] rounded-md border p-3.5", message.authorType === "gym" ? "me-auto border-line bg-surface" : "ms-auto border-line-2 bg-sunken")}><div className="flex justify-between gap-5"><p className="text-[12px] font-semibold">{message.authorName}</p><time className="text-[12px] text-ink-3">{format.dateTime(message.createdAt)}</time></div><p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{message.body}</p></div>)}
+              {selected.resolutionSummary ? <div className="rounded-md border border-success/25 bg-success-bg p-3.5"><p className="context-label text-success-deep">{t("staffTools.support.solution")}</p><p className="mt-1.5 text-[13px] text-ink-2">{selected.resolutionSummary}</p></div> : null}
+            </div>
+            {selected.status === "resolved" ? <div className="border-t border-line bg-surface px-5 py-4 text-[12.5px] text-ink-3">{t("staffTools.support.solved")}</div> : (
+              <form className="border-t border-line bg-surface p-4" onSubmit={(event) => { event.preventDefault(); if (!replyBody.trim() || replying) return; setReplying(true); void getApi().replyToSupportCase(selected.id, replyBody.trim()).then((updated) => { setCases((current) => current.map((item) => item.id === updated.id ? updated : item)); setReplyBody(""); toast.success(t("staffTools.support.replySent")); }).catch((reason) => toast.error(reason instanceof Error ? localizeApiError(reason, locale).message : t("staffTools.support.replyFailed"))).finally(() => setReplying(false)); }}>
+                <Field label={t("staffTools.support.replyLabel")}><Textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} placeholder={t("staffTools.support.replyPlaceholder")} className="min-h-20" /></Field>
+                <div className="mt-3 flex justify-end"><Button type="submit" loading={replying} disabled={!replyBody.trim()}><Send />{t("staffTools.support.sendReply")}</Button></div>
+              </form>
+            )}
+          </article>
+        )}
+      </section>
+      <CreateSupportDialog open={createOpen} mode={createMode} currentPlan={session?.workspace?.entitlements.subscriptionPlan} plans={saasPlans} onOpenChange={setCreateOpen} email={session?.user.email ?? ""} branches={session?.branches ?? []} onCreated={(supportCase) => { setSelectedId(supportCase.id); setCreateOpen(false); }} />
+    </div>
+  );
 }
 
 function CreateSupportDialog({ open, mode, currentPlan, plans, onOpenChange, email, branches, onCreated }: { open: boolean; mode: "general" | "plan_upgrade"; currentPlan?: PlatformSaasPlan["name"]; plans: PlatformSaasPlan[]; onOpenChange: (open: boolean) => void; email: string; branches: Array<{ id: string; name: string }>; onCreated: (supportCase: PlatformSupportCase) => void }) {
   const t = useT();
+  const { locale } = useLocale();
+  const format = useFormat();
   const [contactEmail, setContactEmail] = useState(email);
   const [branchId, setBranchId] = useState("");
   const [subject, setSubject] = useState("");
@@ -109,10 +149,31 @@ function CreateSupportDialog({ open, mode, currentPlan, plans, onOpenChange, ema
       const created = await getApi().createSupportCase({ email: contactEmail.trim(), branchId: branchId || undefined, subject: subject.trim(), body: body.trim(), priority, requestType: mode, requestedPlan: mode === "plan_upgrade" ? requestedPlan : undefined, billingInterval: mode === "plan_upgrade" ? billingInterval : undefined });
       setSubject(""); setBody(""); setBranchId(""); setPriority("normal"); setRequestedPlan("Growth"); setBillingInterval("monthly");
       onCreated(created);
-      toast.success("Request sent to RIVET.");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Your request was not sent. Try again."); } finally { setSaving(false); }
+      toast.success(t("staffTools.support.requestSent"));
+    } catch (error) { toast.error(error instanceof Error ? localizeApiError(error, locale).message : t("staffTools.support.requestFailed")); } finally { setSaving(false); }
   };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{mode === "plan_upgrade" ? "Request a plan upgrade" : "Ask RIVET for help"}</DialogTitle><DialogDescription>{mode === "plan_upgrade" ? "The RIVET team will review your request. Your plan changes only after they approve it." : "The RIVET team and your gym’s managers can read this conversation."}</DialogDescription></DialogHeader><DialogBody className="grid gap-4"><Field label="Contact email"><Input type="email" inputMode="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></Field><Field label="Branch (optional)"><select className={NATIVE_SELECT} value={branchId} onChange={(event) => setBranchId(event.target.value)}><option value="">Whole gym</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></Field>{mode === "plan_upgrade" ? <><Field label={t("renewFlow.adjust.planChange.newPlan")}><select className={NATIVE_SELECT} value={requestedPlan} onChange={(event) => setRequestedPlan(event.target.value as PlatformSaasPlan["name"])}>{availablePlans.map((plan) => <option key={plan.name} value={plan.name}>{plan.name} · JOD {(plan.priceMinor / 1000).toFixed(3)} a month</option>)}</select></Field><Field label="How often you pay"><select className={NATIVE_SELECT} value={billingInterval} onChange={(event) => setBillingInterval(event.target.value as NonNullable<CreateSupportCaseInput["billingInterval"]>)}><option value="monthly">Monthly</option><option value="annual">Yearly · save 20%</option></select></Field></> : <Field label="Priority"><select className={NATIVE_SELECT} value={priority} onChange={(event) => setPriority(event.target.value as CreateSupportCaseInput["priority"])}><option value="normal">Normal</option><option value="urgent">Urgent — we cannot work</option></select></Field>}<Field label="Subject"><Input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder={mode === "plan_upgrade" ? `Request ${requestedPlan} plan upgrade` : undefined} /></Field><Field label={mode === "plan_upgrade" ? "Why do you need this plan?" : t("memberProfile.contact.whatHappened")}><Textarea value={body} onChange={(event) => setBody(event.target.value)} className="min-h-32" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button><Button loading={saving} disabled={!canSubmit} onClick={() => void submit()}><Send /> {mode === "plan_upgrade" ? "Send request" : "Send to RIVET"}</Button></DialogFooter></DialogContent></Dialog>;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{mode === "plan_upgrade" ? t("staffTools.support.upgradeTitle") : t("staffTools.support.createTitle")}</DialogTitle>
+          <DialogDescription>{mode === "plan_upgrade" ? t("staffTools.support.upgradeDescription") : t("staffTools.support.createDescription")}</DialogDescription>
+        </DialogHeader>
+        <DialogBody className="grid gap-4">
+          <Field label={t("staffTools.support.contactEmail")}><Input type="email" inputMode="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></Field>
+          <Field label={t("staffTools.support.branchOptional")}><select className={NATIVE_SELECT} value={branchId} onChange={(event) => setBranchId(event.target.value)}><option value="">{t("staffTools.support.wholeGym")}</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></Field>
+          {mode === "plan_upgrade" ? <>
+            <Field label={t("renewFlow.adjust.planChange.newPlan")}><select className={NATIVE_SELECT} value={requestedPlan} onChange={(event) => setRequestedPlan(event.target.value as PlatformSaasPlan["name"])}>{availablePlans.map((plan) => <option key={plan.name} value={plan.name}>{t("staffTools.support.planOption", { plan: plan.name, price: format.money({ amount: plan.priceMinor, currency: "JOD" }) })}</option>)}</select></Field>
+            <Field label={t("staffTools.support.billingFrequency")}><select className={NATIVE_SELECT} value={billingInterval} onChange={(event) => setBillingInterval(event.target.value as NonNullable<CreateSupportCaseInput["billingInterval"]>)}><option value="monthly">{t("staffTools.support.monthly")}</option><option value="annual">{t("staffTools.support.yearlySave", { percent: format.number(20) })}</option></select></Field>
+          </> : <Field label={t("staffTools.support.priority")}><select className={NATIVE_SELECT} value={priority} onChange={(event) => setPriority(event.target.value as CreateSupportCaseInput["priority"])}><option value="normal">{t("staffTools.support.normalPriority")}</option><option value="urgent">{t("staffTools.support.urgent")}</option></select></Field>}
+          <Field label={t("staffTools.support.subject")}><Input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder={mode === "plan_upgrade" ? t("staffTools.support.requestUpgradeSubject", { plan: requestedPlan }) : undefined} /></Field>
+          <Field label={mode === "plan_upgrade" ? t("staffTools.support.whyPlan") : t("memberProfile.contact.whatHappened")}><Textarea value={body} onChange={(event) => setBody(event.target.value)} className="min-h-32" /></Field>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
+          <Button loading={saving} disabled={!canSubmit} onClick={() => void submit()}><Send />{mode === "plan_upgrade" ? t("staffTools.support.sendRequest") : t("staffTools.support.sendToRivet")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
-
-function formatDateTime(value?: string) { if (!value) return "Not recorded"; const timestamp = Date.parse(value); return Number.isFinite(timestamp) ? new Intl.DateTimeFormat("en-JO", { dateStyle: "medium", timeStyle: "short" }).format(timestamp) : value; }
