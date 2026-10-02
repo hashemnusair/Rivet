@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { AlertTriangle, ArrowRight, CheckCircle2, CircleOff, PlugZap, RotateCcw, ShieldAlert } from "lucide-react";
 import Link from "next/link";
@@ -15,6 +16,7 @@ import { useApiQuery } from "@/lib/hooks/use-api";
 import { AutomationExecutionBadge, AutomationRuleStateBadge, automationActionDescription, automationNextRun, automationSubjectLabel, automationTriggerDescription } from "./monitoring-ui";
 
 export default function AutomationMonitoringClient() {
+  const t = useT();
   const [page, setPage] = useState(1);
   const executionInput = { page, pageSize: 15 };
   const summary = useApiQuery(qk.automationMonitoring, (api) => api.getAutomationMonitoringSummary());
@@ -33,7 +35,7 @@ export default function AutomationMonitoringClient() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Automations" description="What each automation does and what it did. View only." actions={<Button asChild variant="secondary"><Link href="/audit?category=automations">View history</Link></Button>} />
+      <PageHeader title={t("palette.pages.automations")} description="What each automation does and what it did. View only." actions={<Button asChild variant="secondary"><Link href="/audit?category=automations">View history</Link></Button>} />
 
       {globallyPaused ? (
         <section className="rounded-lg border border-warning/40 bg-warning-bg px-4 py-3" role="status">
@@ -46,11 +48,11 @@ export default function AutomationMonitoringClient() {
 
       {/* Failures and retries first; the healthy counts follow. */}
       <section className="panel grid grid-cols-2 divide-line sm:grid-cols-3 sm:divide-x xl:grid-cols-5" aria-label="Summary of runs">
-        <Stat className="p-4" label="Failed" value={value?.failureCount ?? "—"} tone={needsAttention ? "danger" : "default"} context={value && value.retryCount > 0 ? `${value.retryCount} trying again` : needsAttention ? "Needs attention" : "Nothing needs attention"} />
+        <Stat className="p-4" label="Failed" value={value?.failureCount ?? "—"} tone={needsAttention ? "danger" : "default"} context={value && value.retryCount > 0 ? `${value.retryCount} trying again` : needsAttention ? t("marketing.device.needsAttention") : "Nothing needs attention"} />
         <Stat className="p-4" label="Skipped" value={value?.suppressedCount ?? "—"} tone={value && value.suppressedCount > 0 ? "warning" : "default"} context="Not sent, or already done" />
-        <Stat className="p-4" label="Done" value={value?.successCount ?? "—"} tone="success" context="Finished without problems" />
+        <Stat className="p-4" label={t("common.action.done")} value={value?.successCount ?? "—"} tone="success" context="Finished without problems" />
         <Stat className="p-4" label="Runs in the last 30 days" value={value?.executionsLast30Days ?? "—"} context="All results" />
-        <Stat className="p-4" label="Automations" value={value?.ruleCount ?? "—"} context={`${value?.persistedEnabledCount ?? 0} switched on`} />
+        <Stat className="p-4" label={t("palette.pages.automations")} value={value?.ruleCount ?? "—"} context={`${value?.persistedEnabledCount ?? 0} switched on`} />
       </section>
       {needsAttention ? <p className="flex items-start gap-2 text-[12px] text-danger" role="status"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />Some runs failed. Check the recent runs below.</p> : null}
 
@@ -62,11 +64,11 @@ export default function AutomationMonitoringClient() {
         </div>
       </section>
 
-      <section className="panel overflow-hidden" aria-label="Automations">
-        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Saved settings</p><h2 className="mt-1 text-[15px] font-semibold">Automations</h2></div><Badge variant="outline">view only</Badge></header>
+      <section className="panel overflow-hidden" aria-label={t("palette.pages.automations")}>
+        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Saved settings</p><h2 className="mt-1 text-[15px] font-semibold">{t("palette.pages.automations")}</h2></div><Badge variant="outline">view only</Badge></header>
         {rules.isLoading ? <div className="p-4"><TableSkeleton rows={5} cols={5} /></div> : ruleItems.length === 0 ? <EmptyState compact title="No automations yet" description="New automations can't be added while automations are paused." className="m-4" /> : (
           <>
-            <ul className="divide-y divide-line md:hidden" aria-label="Automations">
+            <ul className="divide-y divide-line md:hidden" aria-label={t("palette.pages.automations")}>
               {ruleItems.map((rule) => <li key={rule.id}><Link href={`/automations/${rule.id}`} className="block px-4 py-3 transition-colors hover:bg-sunken/40"><div className="flex items-start justify-between gap-3"><p className="min-w-0 text-[13px] font-medium">{rule.name}</p><AutomationRuleStateBadge rule={rule} globallyPaused={globallyPaused} /></div><p className="mt-1 text-[12px] text-ink-2">{automationTriggerDescription(rule)}</p><p className="mt-0.5 text-[12px] text-ink-3">{automationActionDescription(rule)} · {rule.executionsLast30Days} runs in the last 30 days · {automationNextRun(rule, globallyPaused)}</p></Link></li>)}
             </ul>
             <Table className="hidden md:table"><TableHeader><TableRow><TableHead>Automation</TableHead><TableHead>When it runs</TableHead><TableHead>What it does</TableHead><TableHead>On or off</TableHead><TableHead>Next run</TableHead><TableHead><span className="sr-only">View</span></TableHead></TableRow></TableHeader><TableBody>{ruleItems.map((rule) => <TableRow key={rule.id}><TableCell><p className="font-medium">{rule.name}</p><p className="mt-0.5 text-[12px] text-ink-3">{rule.executionsLast30Days} runs in the last 30 days · last run <DateTimeText iso={rule.lastRunAt} /></p></TableCell><TableCell className="max-w-72 text-[12px] text-ink-2">{automationTriggerDescription(rule)}</TableCell><TableCell className="text-[12px] text-ink-2">{automationActionDescription(rule)}</TableCell><TableCell><AutomationRuleStateBadge rule={rule} globallyPaused={globallyPaused} /></TableCell><TableCell className="text-[12px] text-ink-3">{automationNextRun(rule, globallyPaused)}</TableCell><TableCell className="text-end"><Button asChild size="icon-sm" variant="ghost" aria-label={`Open ${rule.name}`}><Link href={`/automations/${rule.id}`}><ArrowRight /></Link></Button></TableCell></TableRow>)}</TableBody></Table>
@@ -75,13 +77,13 @@ export default function AutomationMonitoringClient() {
       </section>
 
       <section className="panel overflow-hidden" aria-label="Recent runs">
-        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">History</p><h2 className="mt-1 text-[15px] font-semibold">Recent runs</h2></div><Button variant="ghost" size="sm" onClick={() => { void executions.refetch(); }}><RotateCcw /> Refresh</Button></header>
+        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">{t("marketing.device.phone.visitsValue")}</p><h2 className="mt-1 text-[15px] font-semibold">Recent runs</h2></div><Button variant="ghost" size="sm" onClick={() => { void executions.refetch(); }}><RotateCcw />{" "}{t("common.action.refresh")}</Button></header>
         {executions.isLoading ? <div className="p-4"><TableSkeleton rows={8} cols={5} /></div> : executions.data?.items.length === 0 ? <EmptyState compact title="No runs yet" description="Each time an automation runs, it shows here." className="m-4" /> : (
           <>
             <ul className="divide-y divide-line md:hidden" aria-label="Recent runs">
               {executions.data?.items.map((execution) => <li key={execution.id} className="px-4 py-3"><div className="flex items-start justify-between gap-3"><p className="min-w-0 text-[13px] font-medium">{execution.ruleName}</p><AutomationExecutionBadge status={execution.status} /></div><p className="mt-0.5 text-[12px] text-ink-2">{execution.subjectName} <span className="text-ink-3">· {automationSubjectLabel(execution.subjectType)}</span></p><p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={execution.executedAt} /> · {execution.suppressionReason ?? execution.detail ?? "No details"}{execution.nextAttemptAt ? <> · tries again <DateTimeText iso={execution.nextAttemptAt} /></> : null}</p></li>)}
             </ul>
-            <Table className="hidden md:table"><TableHeader><TableRow><TableHead>When</TableHead><TableHead>Automation</TableHead><TableHead>Who</TableHead><TableHead>Result</TableHead><TableHead>Details</TableHead></TableRow></TableHeader><TableBody>{executions.data?.items.map((execution) => <TableRow key={execution.id}><TableCell className="whitespace-nowrap text-[12px]"><DateTimeText iso={execution.executedAt} /></TableCell><TableCell className="font-medium">{execution.ruleName}</TableCell><TableCell><p>{execution.subjectName}</p><p className="text-[12px] text-ink-3">{automationSubjectLabel(execution.subjectType)}</p></TableCell><TableCell><AutomationExecutionBadge status={execution.status} /></TableCell><TableCell className="max-w-sm text-[12px] text-ink-3">{execution.suppressionReason ?? execution.detail ?? "No details"}{execution.nextAttemptAt ? <> · tries again <DateTimeText iso={execution.nextAttemptAt} /></> : null}</TableCell></TableRow>)}</TableBody></Table>
+            <Table className="hidden md:table"><TableHeader><TableRow><TableHead>{t("members.tabs.checkIns.when")}</TableHead><TableHead>Automation</TableHead><TableHead>Who</TableHead><TableHead>{t("memberProfile.checkIns.result")}</TableHead><TableHead>{t("common.label.details")}</TableHead></TableRow></TableHeader><TableBody>{executions.data?.items.map((execution) => <TableRow key={execution.id}><TableCell className="whitespace-nowrap text-[12px]"><DateTimeText iso={execution.executedAt} /></TableCell><TableCell className="font-medium">{execution.ruleName}</TableCell><TableCell><p>{execution.subjectName}</p><p className="text-[12px] text-ink-3">{automationSubjectLabel(execution.subjectType)}</p></TableCell><TableCell><AutomationExecutionBadge status={execution.status} /></TableCell><TableCell className="max-w-sm text-[12px] text-ink-3">{execution.suppressionReason ?? execution.detail ?? "No details"}{execution.nextAttemptAt ? <> · tries again <DateTimeText iso={execution.nextAttemptAt} /></> : null}</TableCell></TableRow>)}</TableBody></Table>
           </>
         )}
         {executions.data ? <div className="border-t border-line px-4 pb-3"><DataPagination page={executions.data} onPage={setPage} /></div> : null}

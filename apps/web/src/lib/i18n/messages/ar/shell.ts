@@ -1,6 +1,6 @@
 import type { shell as EnShell } from "../en/shell";
 
-/** The top bar and the account menu (new drafts; staff voice, neutral). */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const shell: typeof EnShell = {
   topbar: {
     openMenu: "فتح القائمة",
@@ -19,7 +19,7 @@ export const shell: typeof EnShell = {
     menu: "قائمة الحساب",
     signedInAs: "تم تسجيل الدخول باسم {email}",
     settings: "الإعدادات",
-    gettingStarted: "البدء",
+    gettingStarted: "خطوات البداية",
     signOut: "تسجيل الخروج",
     signOutDemo: "تسجيل الخروج من العرض التجريبي",
   },

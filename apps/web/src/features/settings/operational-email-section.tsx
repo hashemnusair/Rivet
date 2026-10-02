@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { LockKeyhole, MailCheck, ShieldAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -60,6 +61,7 @@ function kindLabel(kind: string): string {
 }
 
 export function OperationalEmailSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const query = useApiQuery(["settings", "operational-email"], (api) => api.getOperationalEmailSettings());
   const [enabledKinds, setEnabledKinds] = useState<string[]>([]);
@@ -137,12 +139,12 @@ export function OperationalEmailSection() {
             </div>
           </div>
         </div>
-        <SettingsPanel title="Reason for the change" description="Saved in the history with this change.">
+        <SettingsPanel title={t("renewFlow.sale.changeReason")} description="Saved in the history with this change.">
           <Field label={requiresReason ? "Why are you turning off these emails?" : "Note (optional)"} htmlFor="operational-email-reason" required={requiresReason} hint={requiresReason ? `Needed because you are turning off ${disabledKinds.length} ${disabledKinds.length === 1 ? "email" : "emails"}.` : "You only need a reason when you turn an email off."}>
             <Textarea id="operational-email-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder={requiresReason ? "For example: we send this by WhatsApp instead" : "Add a note"} />
           </Field>
-          {settings.ownerConfirmedAt ? <p className="mt-3 text-[12px] leading-5 text-ink-3">Confirmed by {settings.ownerConfirmedBy ?? "an owner or manager"}.</p> : null}
-          {settings.updatedAt ? <p className="mt-1 text-[12px] leading-5 text-ink-3">Last changed by {settings.updatedBy ?? "someone with access"}.{settings.reason ? ` ${settings.reason}` : ""}</p> : null}
+          {settings.ownerConfirmedAt ? <p className="mt-3 text-[12px] leading-5 text-ink-3">Confirmed by {settings.ownerConfirmedBy ?? "an owner or manager"}{t("members.bulk.toast.end")}</p> : null}
+          {settings.updatedAt ? <p className="mt-1 text-[12px] leading-5 text-ink-3">Last changed by {settings.updatedBy ?? "someone with access"}{t("members.bulk.toast.end")}{settings.reason ? ` ${settings.reason}` : ""}</p> : null}
         </SettingsPanel>
       </div>
       <SettingsSaveBar

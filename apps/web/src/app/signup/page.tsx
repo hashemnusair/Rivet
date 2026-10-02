@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { AlertTriangle, ArrowRight, Check, CheckCircle2, Mail, Phone, RefreshCcw } from "lucide-react";
 import Link from "next/link";
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils/cn";
 type FormErrors = Partial<Record<"ownerName" | "gymName" | "gymAddress" | "email" | "contactNumber", string>>;
 
 export default function GymApplicationPage() {
+  const t = useT();
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
   // Resolve the same four-tier public catalog used by the landing page. A
   // missing live catalog still leaves the application usable with launch
@@ -124,7 +126,7 @@ export default function GymApplicationPage() {
                     <Field label="Owner name" htmlFor="application-owner" error={errors.ownerName} required>
                       <Input id="application-owner" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="Omar Khalil" autoComplete="name" disabled={!hydrated} />
                     </Field>
-                    <Field label="Email address" htmlFor="application-email" error={errors.email} hint="We’ll send your application confirmation here." required>
+                    <Field label={t("auth.signIn.emailLabel")} htmlFor="application-email" error={errors.email} hint="We’ll send your application confirmation here." required>
                       <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                     <Field label="Contact number" htmlFor="application-phone" error={errors.contactNumber} hint="Use a number where our team can reach you." required>
@@ -190,9 +192,9 @@ export default function GymApplicationPage() {
                   </div>
                   <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">You do not pay anything now. We will talk about the plan with you.</p>
                   {formError ? <p className="mt-4 rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
-                  <Button type="submit" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-6 w-full">Send gym application <ArrowRight /></Button>
-                  <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4 hover:text-ink">Terms of service</Link> and <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">Privacy policy</Link>. The gym owner signs the subscription agreement later, in RIVET.</p>
-                  <p className="mt-3 text-center text-[12.5px] text-ink-3">Already have RIVET access? <Link href="/login/gym" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">Sign in</Link>.</p>
+                  <Button type="submit" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-6 w-full">{t("marketing.actions.applyShort")}{" "}<ArrowRight /></Button>
+                  <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4 hover:text-ink">{t("auth.chrome.terms")}</Link> and <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">{t("auth.chrome.privacy")}</Link>. The gym owner signs the subscription agreement later, in RIVET.</p>
+                  <p className="mt-3 text-center text-[12.5px] text-ink-3">Already have RIVET access? <Link href="/login/gym" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">{t("common.action.signIn")}</Link>{t("members.bulk.toast.end")}</p>
                 </section>
               </form>
             </>
@@ -204,6 +206,7 @@ export default function GymApplicationPage() {
 }
 
 function ApplicationReceived({ result, gymName, email }: { result: SubmitGymApplicationResult; gymName: string; email: string }) {
+  const t = useT();
   const confirmation = result.notificationStatus === "sent"
     ? `We sent a confirmation to ${email}.`
     : result.notificationStatus === "pending"
@@ -214,11 +217,11 @@ function ApplicationReceived({ result, gymName, email }: { result: SubmitGymAppl
       <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-bg text-success-deep" aria-hidden><CheckCircle2 className="size-6" /></span>
       <p className="mt-5 text-[12px] font-medium text-ink-3">Application received</p>
       <h1 className="mt-2 font-display text-[26px] font-semibold leading-tight tracking-tight">We’ll be in touch soon.</h1>
-      <p className="relative mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>. {result.notificationStatus === "sent" || result.notificationStatus === "pending" ? <>{confirmation} </> : null}Our team will contact you after we review it.</p>
+      <p className="relative mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>{t("members.bulk.toast.end")}{" "}{result.notificationStatus === "sent" || result.notificationStatus === "pending" ? <>{confirmation} </> : null}Our team will contact you after we review it.</p>
       {result.notificationStatus !== "sent" && result.notificationStatus !== "pending" ? <p className="mt-3 text-[12.5px] text-ink-3">{confirmation}</p> : null}
       {result.duplicate ? <p className="mt-3 text-[12.5px] text-ink-3">We already have this application.</p> : null}
       <div className="mt-6 grid gap-2 sm:grid-cols-2">
-        <Button asChild size="lg"><Link href="/login/gym">Sign in <ArrowRight /></Link></Button>
+        <Button asChild size="lg"><Link href="/login/gym">{t("common.action.signIn")}{" "}<ArrowRight /></Link></Button>
         <Button asChild variant="secondary" size="lg"><Link href="/">Return home</Link></Button>
       </div>
       <p className="mt-4 text-[12.5px] text-ink-3">You can sign in after we approve your gym and email you an invitation.</p>

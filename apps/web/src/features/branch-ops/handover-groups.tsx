@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ const GROUP_REASONS: Record<HandoverGroupKind, string> = {
 };
 
 function ItemRow({ item }: { item: HandoverItem }) {
+  const t = useT();
   return (
     <li className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-1.5" data-testid="handover-item" data-item-key={item.key}>
       <span className="min-w-0 flex-1">
@@ -30,7 +32,7 @@ function ItemRow({ item }: { item: HandoverItem }) {
       </span>
       <span className="flex shrink-0 flex-wrap gap-1">
         <Badge variant={item.status === "failed" ? "danger" : "warning"}>{item.status === "failed" ? "Failed" : "Not done"}</Badge>
-        {item.overdue ? <Badge variant="outline">Overdue</Badge> : null}
+        {item.overdue ? <Badge variant="outline">{t("dashboard.owner.overdueCol")}</Badge> : null}
         {item.facilityTaskId ? <Badge variant="outline">Maintenance job added</Badge> : null}
       </span>
     </li>
@@ -45,6 +47,7 @@ function ItemRow({ item }: { item: HandoverItem }) {
  * existing manual action.
  */
 export function HandoverGroupsView({ branchId, day }: { branchId: string; day: ChecklistDay }) {
+  const t = useT();
   const zones = useApiQuery(qk.operations({ kind: "equipment-zones", branchId }), (api) => api.listZones({ branchId, includeArchived: false }), { retry: false, staleTime: 5 * 60_000 });
   const spaces = useMemo(() => new Map((zones.data ?? []).map((zone) => [zone.id, zone.name] as const)), [zones.data]);
   const items = useMemo(() => handoverItems([...(day.carryover ?? []), ...day.runs]), [day]);
@@ -60,7 +63,7 @@ export function HandoverGroupsView({ branchId, day }: { branchId: string; day: C
           <p className="mt-0.5 text-xs text-ink-3" data-testid="handover-summary">{items.length} {items.length === 1 ? "item needs" : "items need"} attention ({failed} failed). From today and the last {HANDOVER_WINDOW_DAYS} days.</p>
         </div>
         <div className="flex gap-1" role="group" aria-label="How to show items">
-          <Button type="button" size="xs" variant={mode === "grouped" ? "primary" : "secondary"} aria-pressed={mode === "grouped"} onClick={() => setMode("grouped")}>Grouped</Button>
+          <Button type="button" size="xs" variant={mode === "grouped" ? "primary" : "secondary"} aria-pressed={mode === "grouped"} onClick={() => setMode("grouped")}>{t("palette.notifications.viewGrouped")}</Button>
           <Button type="button" size="xs" variant={mode === "all" ? "primary" : "secondary"} aria-pressed={mode === "all"} onClick={() => setMode("all")}>All items</Button>
         </div>
       </div>

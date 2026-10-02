@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useState } from "react";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -8,6 +9,7 @@ import { useCustomerPersona, useExperience } from "@/lib/providers/experience-pr
 import { formatDate } from "@/lib/utils/dates";
 
 export function CustomerCommunicationPreferences() {
+  const t = useT();
   const customer = useCustomerPersona();
   const { updateMarketingPreference } = useExperience();
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -65,7 +67,7 @@ export function CustomerCommunicationPreferences() {
                     <span className="block text-[13px] font-medium">{entry.status === "unknown" ? "No choice yet" : entry.optedIn ? "Offers and news on" : "Offers and news off"}</span>
                     <span className="mt-0.5 block text-[12px] text-ink-3">{entry.source === "system_default" ? "Default setting" : "Chosen by you"}{entry.changedAt ? ` · ${formatDate(entry.changedAt)}` : ""}</span>
                   </span>
-                  {index === 0 ? <span className="rounded-sm bg-sunken px-1.5 py-0.5 text-[12px] font-medium text-ink-3">Current</span> : null}
+                  {index === 0 ? <span className="rounded-sm bg-sunken px-1.5 py-0.5 text-[12px] font-medium text-ink-3">{t("marketing.device.phone.statusValue")}</span> : null}
                 </li>
               ))}
             </ol>

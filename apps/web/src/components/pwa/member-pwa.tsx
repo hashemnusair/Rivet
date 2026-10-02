@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Bell, Check, Download, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -23,6 +24,7 @@ export function MemberPwaManager() {
 }
 
 export function MemberInstallAndNotifications() {
+  const t = useT();
   const invalidate = useInvalidate();
   const [canInstall, setCanInstall] = useState(Boolean(installPrompt));
   const [installed, setInstalled] = useState(false);
@@ -94,7 +96,7 @@ export function MemberInstallAndNotifications() {
           ) : null}
         </div>
         <div className="rounded-md border border-line p-4">
-          <h3 className="text-[13.5px] font-semibold">Reminders</h3>
+          <h3 className="text-[13.5px] font-semibold">{t("memberProfile.followUp.rowReminders")}</h3>
           <p className="mt-1 text-[12.5px] text-ink-2">{notificationsCopy}</p>
           {vapidKey && permission !== "denied" ? (
             <Button className="mt-3" size="sm" variant="secondary" loading={save.isPending} onClick={() => void enablePush()}><Bell /> Turn on for this device</Button>

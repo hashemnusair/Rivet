@@ -56,7 +56,7 @@ export function SalesDashboard() {
 
       <section aria-label={t("dashboard.sales.yourNumbers")} className="panel grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
         {[
-          { label: "Late follow-ups", value: overdueFollowUps, danger: overdueFollowUps > 0 },
+          { label: t("dashboard.owner.lateFollowUps"), value: overdueFollowUps, danger: overdueFollowUps > 0 },
           { label: t("dashboard.sales.dueToday"), value: Math.max(0, dueFollowUps - overdueFollowUps), danger: false },
           { label: t("dashboard.sales.collectedThisMonth"), value: <MoneyText money={me?.revenueCollected ?? money(0)} compact />, danger: false },
           { label: "Leads who joined", value: me?.leadsConverted ?? 0, danger: false },

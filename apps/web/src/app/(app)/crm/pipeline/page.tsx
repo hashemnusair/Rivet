@@ -227,8 +227,7 @@ function PipelinePageInner() {
                 aria-pressed={view === "list"}
                 className={cn("min-h-9 rounded-sm px-3 py-1 text-[13px] cursor-pointer", view === "list" ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}
               >
-                <LayoutList className="inline size-3.5 align-[-2px]" /> List
-              </button>
+                <LayoutList className="inline size-3.5 align-[-2px]" />{" "}{t("palette.notifications.viewList")}</button>
             </div>
             <Button onClick={() => setNewOpen(true)} data-testid="new-lead">
               <Plus />{" "}{t("crm.newLead.title")}</Button>
@@ -240,7 +239,7 @@ function PipelinePageInner() {
         <div className="w-full max-w-xs"><Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name or phone…" aria-label="Search leads" /></div>
       </div>
 
-      {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> Change selected</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>Clear selection</button></div> : null}
+      {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{selected.size} selected</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> Change selected</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>{t("members.list.clearSelection")}</button></div> : null}
 
       {isBackgroundError ? <ErrorState layout="inline" title="Leads could not refresh" onRetry={() => refetch()} /> : null}
       {isLoading && !data ? (
@@ -344,7 +343,7 @@ function PipelinePageInner() {
         </DialogContent>
       </Dialog>
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-        <DialogContent><DialogHeader><DialogTitle>Update {selected.size} leads</DialogTitle><DialogDescription>Choose what to change for the selected leads.</DialogDescription></DialogHeader><DialogBody className="space-y-4"><label className="grid gap-1.5 text-[12.5px] font-medium">What to do<Select value={bulkKind} onValueChange={(value) => { setBulkKind(value as BulkOperationKind); setBulkValue(""); setBulkReason(""); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="leads_create_follow_up">Add a follow-up</SelectItem><SelectItem value="leads_assign_owner">Change owner</SelectItem><SelectItem value="leads_close_lost">Mark as not sold</SelectItem></SelectContent></Select></label>{bulkKind === "leads_create_follow_up" ? <label className="grid gap-1.5 text-[12.5px] font-medium">Due date and time<Input type="datetime-local" value={bulkValue} onChange={(event) => setBulkValue(event.target.value)} /></label> : bulkKind === "leads_assign_owner" ? <label className="grid gap-1.5 text-[12.5px] font-medium">{t("crm.lead.ownerLabel")}<Select value={bulkValue || "none"} onValueChange={setBulkValue}><SelectTrigger><SelectValue placeholder="Choose owner" /></SelectTrigger><SelectContent><SelectItem value="none" disabled>Choose owner</SelectItem>{(users.data?.items ?? []).map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent></Select></label> : <label className="grid gap-1.5 text-[12.5px] font-medium">{t("common.label.reason")}<Textarea value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="Why were these leads not sold?" /></label>}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setBulkOpen(false)}>{t("common.action.cancel")}</Button><Button variant={bulkKind === "leads_close_lost" ? "danger" : "primary"} disabled={!selected.size || (bulkKind === "leads_close_lost" ? bulkReason.trim().length < 3 : !bulkValue)} loading={runBulk.isPending} onClick={() => runBulk.mutate()}>Update {selected.size} leads</Button></DialogFooter></DialogContent>
+        <DialogContent><DialogHeader><DialogTitle>Update {selected.size} leads</DialogTitle><DialogDescription>Choose what to change for the selected leads.</DialogDescription></DialogHeader><DialogBody className="space-y-4"><label className="grid gap-1.5 text-[12.5px] font-medium">What to do<Select value={bulkKind} onValueChange={(value) => { setBulkKind(value as BulkOperationKind); setBulkValue(""); setBulkReason(""); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="leads_create_follow_up">{t("members.bulk.createFollowUp")}</SelectItem><SelectItem value="leads_assign_owner">Change owner</SelectItem><SelectItem value="leads_close_lost">Mark as not sold</SelectItem></SelectContent></Select></label>{bulkKind === "leads_create_follow_up" ? <label className="grid gap-1.5 text-[12.5px] font-medium">{t("members.bulk.dueAt")}<Input type="datetime-local" value={bulkValue} onChange={(event) => setBulkValue(event.target.value)} /></label> : bulkKind === "leads_assign_owner" ? <label className="grid gap-1.5 text-[12.5px] font-medium">{t("crm.lead.ownerLabel")}<Select value={bulkValue || "none"} onValueChange={setBulkValue}><SelectTrigger><SelectValue placeholder="Choose owner" /></SelectTrigger><SelectContent><SelectItem value="none" disabled>Choose owner</SelectItem>{(users.data?.items ?? []).map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent></Select></label> : <label className="grid gap-1.5 text-[12.5px] font-medium">{t("common.label.reason")}<Textarea value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="Why were these leads not sold?" /></label>}</DialogBody><DialogFooter><Button variant="secondary" onClick={() => setBulkOpen(false)}>{t("common.action.cancel")}</Button><Button variant={bulkKind === "leads_close_lost" ? "danger" : "primary"} disabled={!selected.size || (bulkKind === "leads_close_lost" ? bulkReason.trim().length < 3 : !bulkValue)} loading={runBulk.isPending} onClick={() => runBulk.mutate()}>Update {selected.size} leads</Button></DialogFooter></DialogContent>
       </Dialog>
     </div>
   );
@@ -363,6 +362,7 @@ function LeadCard({
   onNotSold: () => void;
   embedded?: boolean;
 }) {
+  const t = useT();
   const actionable = column !== "sold" && column !== "not_sold";
   return (
     <article
@@ -397,9 +397,7 @@ function LeadCard({
           <PhoneCall className="size-3.5" aria-hidden /> Call
         </a>
         {actionable && column !== "no_answer" ? (
-          <button data-touch-target type="button" className="min-h-8 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink" onClick={onNoAnswer} aria-label={`No answer for ${lead.fullName}`}>
-            No answer
-          </button>
+          <button data-touch-target type="button" className="min-h-8 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink" onClick={onNoAnswer} aria-label={`No answer for ${lead.fullName}`}>{t("memberProfile.contact.outcome.no_answer")}</button>
         ) : null}
         {actionable ? (
           <button data-touch-target type="button" className="ms-auto min-h-8 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={onNotSold} aria-label={`Mark ${lead.fullName} not sold`}>
@@ -460,11 +458,11 @@ function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange
                     <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">Call</a>
                     {pipelineColumn(lead) !== "sold" && pipelineColumn(lead) !== "not_sold" ? (
                       <>
-                        {pipelineColumn(lead) !== "no_answer" ? <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>No answer</button> : null}
+                        {pipelineColumn(lead) !== "no_answer" ? <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>{t("memberProfile.contact.outcome.no_answer")}</button> : null}
                         <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNotSold(lead)}>Not sold…</button>
                       </>
                     ) : null}
-                    <Link data-touch-target href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">Open</Link>
+                    <Link data-touch-target href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">{t("dashboard.today.action.open")}</Link>
                   </div>
                 </td>
               </tr>

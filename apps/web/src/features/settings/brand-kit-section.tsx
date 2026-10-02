@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ImagePlus, Lock } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
@@ -41,6 +42,7 @@ function initialForm(brand?: BrandKit): UpdateBrandKitInput {
 }
 
 export function BrandKitSection() {
+  const t = useT();
   const { session, refreshSession } = useApp();
   const queryClient = useQueryClient();
   const invalidate = useInvalidate();
@@ -184,7 +186,7 @@ export function BrandKitSection() {
                 <div className="mb-2 flex items-center gap-3 rounded-md bg-sunken p-2">
                   <span role="img" aria-label={logoAlt} className="size-12 shrink-0 rounded-sm bg-surface bg-contain bg-center bg-no-repeat" style={{ backgroundImage: `url(${logo})` }} />
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-2">{pendingLogo ? pendingLogo.file.name : "Current logo"}</span>
-                  {isOwner ? <Button type="button" size="sm" variant="secondary" onClick={removeLogo}>Remove</Button> : null}
+                  {isOwner ? <Button type="button" size="sm" variant="secondary" onClick={removeLogo}>{t("common.action.remove")}</Button> : null}
                 </div>
               ) : null}
               <div className="flex items-center gap-2"><ImagePlus className="size-4 shrink-0 text-ink-3" aria-hidden /><Input ref={logoInputRef} aria-label="Upload logo" type="file" accept="image/jpeg,image/png,image/webp" disabled={!isOwner || save.isPending} onChange={selectLogo} className="py-1.5 file:me-2 file:rounded-sm file:border file:border-line file:bg-surface file:px-2 file:py-0.5 file:text-[12px]" /></div>

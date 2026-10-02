@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Banknote, Landmark, Smartphone, WalletCards } from "lucide-react";
 import Link from "next/link";
@@ -54,6 +55,7 @@ export interface RecordSupplierPaymentDialogProps {
  * as a credit balance.
  */
 export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, branches, currency, initialBranchId, initialSupplierId, initialPayable, onRecorded }: RecordSupplierPaymentDialogProps) {
+  const t = useT();
   const activeSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.status === "active"), [suppliers]);
   const [supplierId, setSupplierId] = useState("");
   const [branchId, setBranchId] = useState("");
@@ -142,7 +144,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
               </Field>
               <Field label="Paying from branch" hint={method === "cash" ? "The cash comes from this branch's drawer." : "The branch that made the payment."} required>
                 <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)}>
-                  <SelectTrigger aria-label="Paying branch"><SelectValue placeholder="Choose branch" /></SelectTrigger>
+                  <SelectTrigger aria-label="Paying branch"><SelectValue placeholder={t("members.bulk.chooseBranch")} /></SelectTrigger>
                   <SelectContent>{branches.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
@@ -168,9 +170,9 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
 
             {method === "cash" && branchId ? (
               shiftQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">Checking for an open cash shift…</p>
-                : shiftQuery.isError ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">The cash shift could not be checked. <button type="button" className="font-medium underline" onClick={() => void shiftQuery.refetch()}>Try again</button></p>
+                : shiftQuery.isError ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">The cash shift could not be checked. <button type="button" className="font-medium underline" onClick={() => void shiftQuery.refetch()}>{t("common.action.retry")}</button></p>
                   : shift ? <p role="status" className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12.5px] text-ink-2">Open cash shift at {branch?.name ?? "this branch"}, opened by {shift.openedByName} <DateText iso={shift.openedAt} />. The cash is taken from this drawer.</p>
-                    : <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">No cash shift is open at {branch?.name ?? "this branch"}. <Link href="/payments/shifts" className="font-medium underline">Open a shift</Link> first, or pay by bank transfer or CliQ.</p>
+                    : <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">No cash shift is open at {branch?.name ?? "this branch"}{t("members.bulk.toast.end")}{" "}<Link href="/payments/shifts" className="font-medium underline">Open a shift</Link> first, or pay by bank transfer or CliQ.</p>
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -193,7 +195,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
                 {manualAllocation && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setManualAllocation(false)}>Reset to oldest first</Button> : null}
               </header>
               {!supplierId ? null : payablesQuery.isLoading ? <div className="space-y-2 p-3"><Skeleton className="h-8" /><Skeleton className="h-8" /></div>
-                : payablesQuery.isError ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">The bills could not load. <button type="button" className="font-medium underline" onClick={() => void payablesQuery.refetch()}>Try again</button></p>
+                : payablesQuery.isError ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">The bills could not load. <button type="button" className="font-medium underline" onClick={() => void payablesQuery.refetch()}>{t("common.action.retry")}</button></p>
                   : openPayables.length === 0 ? <p className="px-3 py-3 text-[12.5px] text-ink-3">You owe {supplier?.name ?? "this supplier"} nothing right now.</p>
                     : (
                       <div className="divide-y divide-line">
@@ -218,14 +220,14 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
                     )}
             </section>
 
-            <Field label="Notes" hint="Shown on the payment confirmation.">
+            <Field label={t("common.label.notes")} hint="Shown on the payment confirmation.">
               <Textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} placeholder="Invoice numbers, who took the cash, anything to remember" />
             </Field>
             {error ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">{error}</p> : null}
           </form>
         </DialogBody>
         <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{t("common.action.cancel")}</Button>
           <Button type="button" onClick={submit} loading={mutation.isPending} disabled={!canSubmit} data-testid="confirm-supplier-payment"><WalletCards /> Record payment</Button>
         </DialogFooter>
       </DialogContent>

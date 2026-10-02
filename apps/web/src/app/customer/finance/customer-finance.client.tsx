@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ChevronRight, Download, FilterX, ReceiptText, Search, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
@@ -26,6 +27,7 @@ const TYPE_LABELS: Record<string, string> = { payment: "Payment", refund: "Refun
 const STATUS_LABELS: Record<string, string> = { completed: "Completed", partially_refunded: "Partly refunded", refunded: "Refunded", voided: "Cancelled" };
 
 export function CustomerFinanceClient() {
+  const t = useT();
   const { ready, identitySignedIn, profileSelected } = useMemberGate();
   const router = useRouter();
   const pathname = usePathname();
@@ -81,7 +83,7 @@ export function CustomerFinanceClient() {
   if (!profileSelected) {
     return (
       <main className="mx-auto max-w-lg px-4 py-20 text-center">
-        <h1 className="font-display text-[24px] font-semibold tracking-tight">Finish your member profile</h1>
+        <h1 className="font-display text-[24px] font-semibold tracking-tight">{t("auth.memberSetup.title")}</h1>
         <p className="mt-2 text-[13.5px] text-ink-2">Finish setting up your account to see your receipts.</p>
         <Button asChild className="mt-5"><Link href="/login/member/create">Finish setup</Link></Button>
       </main>
@@ -101,7 +103,7 @@ export function CustomerFinanceClient() {
   return (
     <main className="mx-auto max-w-[1080px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <PageHeader
-        title="Payments and receipts"
+        title={t("palette.pages.paymentsSubtitle")}
         description="All payments your gyms recorded for you, with receipts."
         actions={<Button variant="secondary" size="sm" loading={personalExport.isPending} onClick={() => personalExport.mutate()} title="Download a spreadsheet file of your data"><Download /> Download my data (CSV)</Button>}
       />
@@ -123,28 +125,28 @@ export function CustomerFinanceClient() {
 
           <div id="finance-filters" className={cn("mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-[repeat(3,minmax(0,1fr))]", !filtersOpen && "hidden md:grid")}>
             <Select value={gymId ?? "all"} onValueChange={(value) => setParams({ gym: value === "all" ? undefined : value })}>
-              <SelectTrigger className="h-11 sm:h-9" aria-label="Gym"><SelectValue placeholder="All gyms" /></SelectTrigger>
+              <SelectTrigger className="h-11 sm:h-9" aria-label={t("shell.topbar.gym")}><SelectValue placeholder="All gyms" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All gyms</SelectItem>{gyms.map((gym) => <SelectItem key={gym.id} value={gym.id}>{gym.name}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={type ?? "all"} onValueChange={(value) => setParams({ type: value === "all" ? undefined : value })}>
-              <SelectTrigger className="h-11 sm:h-9" aria-label="Type"><SelectValue placeholder="All types" /></SelectTrigger>
+              <SelectTrigger className="h-11 sm:h-9" aria-label={t("common.label.type")}><SelectValue placeholder="All types" /></SelectTrigger>
               <SelectContent><SelectItem value="all">All types</SelectItem>{Object.entries(TYPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={status ?? "all"} onValueChange={(value) => setParams({ status: value === "all" ? undefined : value })}>
-              <SelectTrigger className="h-11 sm:h-9" aria-label="Status"><SelectValue placeholder="All statuses" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">All statuses</SelectItem>{Object.entries(STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+              <SelectTrigger className="h-11 sm:h-9" aria-label={t("common.label.status")}><SelectValue placeholder={t("members.list.filters.allStatuses")} /></SelectTrigger>
+              <SelectContent><SelectItem value="all">{t("members.list.filters.allStatuses")}</SelectItem>{Object.entries(STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
             </Select>
             <div className="grid grid-cols-2 gap-3 sm:col-span-2 md:col-span-3 md:flex md:items-end">
-              <Field label="From" htmlFor="finance-from"><Input id="finance-from" type="date" className="h-11 sm:h-9" value={from ?? ""} onChange={(event) => setParams({ from: event.target.value || undefined })} /></Field>
-              <Field label="To" htmlFor="finance-to"><Input id="finance-to" type="date" className="h-11 sm:h-9" value={to ?? ""} onChange={(event) => setParams({ to: event.target.value || undefined })} /></Field>
-              {hasFilters ? <Button variant="ghost" size="sm" className="col-span-2 justify-self-start md:col-span-1" onClick={clearFilters}><FilterX /> Clear filters</Button> : null}
+              <Field label={t("common.label.from")} htmlFor="finance-from"><Input id="finance-from" type="date" className="h-11 sm:h-9" value={from ?? ""} onChange={(event) => setParams({ from: event.target.value || undefined })} /></Field>
+              <Field label={t("common.label.to")} htmlFor="finance-to"><Input id="finance-to" type="date" className="h-11 sm:h-9" value={to ?? ""} onChange={(event) => setParams({ to: event.target.value || undefined })} /></Field>
+              {hasFilters ? <Button variant="ghost" size="sm" className="col-span-2 justify-self-start md:col-span-1" onClick={clearFilters}><FilterX />{" "}{t("common.action.clearFilters")}</Button> : null}
             </div>
           </div>
 
           {!filtersOpen && activeFilterLabels.length ? (
             <p className="mt-3 text-[12.5px] text-ink-2 md:hidden">
               <span className="font-medium text-ink">Filtered by</span> {activeFilterLabels.join(" · ")}
-              <button type="button" className="ms-2 font-medium text-ink underline underline-offset-4" onClick={clearFilters}>Clear</button>
+              <button type="button" className="ms-2 font-medium text-ink underline underline-offset-4" onClick={clearFilters}>{t("common.action.clear")}</button>
             </p>
           ) : null}
         </div>
@@ -159,7 +161,7 @@ export function CustomerFinanceClient() {
             {transactions.data?.items.length ? (
               <div className="divide-y divide-line">{transactions.data.items.map((item) => <TransactionRow key={`${item.gymId}-${item.id}`} item={item} />)}</div>
             ) : (
-              <EmptyState layout="section" className="m-4" title={hasFilters ? "No matching payments" : "No payments yet"} description={hasFilters ? "Clear a filter or try a different receipt number." : "When a gym records a payment, it shows here with its receipt."} icon={ReceiptText} action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}><FilterX /> Clear filters</Button> : undefined} />
+              <EmptyState layout="section" className="m-4" title={hasFilters ? "No matching payments" : t("members.tabs.payments.noPayments")} description={hasFilters ? "Clear a filter or try a different receipt number." : "When a gym records a payment, it shows here with its receipt."} icon={ReceiptText} action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}><FilterX />{" "}{t("common.action.clearFilters")}</Button> : undefined} />
             )}
             {transactions.data ? <DataPagination page={transactions.data} onPage={(next) => setParams({ page: String(next) })} className="border-t border-line px-4 py-3" /> : null}
           </>
@@ -172,6 +174,7 @@ export function CustomerFinanceClient() {
 }
 
 function FinanceSummary({ loading, error, data, onRetry }: { loading: boolean; error: boolean; data?: CustomerFinancialSummary; onRetry: () => void }) {
+  const t = useT();
   if (loading) return <Skeleton className="mt-5 h-24 w-full" role="status" aria-label="Loading totals" />;
   if (error) return <div className="mt-5"><ErrorState layout="section" title="Your totals could not be loaded" description="The list below still works. Try again to load the totals." onRetry={onRetry} /></div>;
   if (!data) return null;
@@ -179,9 +182,9 @@ function FinanceSummary({ loading, error, data, onRetry }: { loading: boolean; e
   const gymCount = data.gyms.length;
   return (
     <section className="panel mt-5 grid divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0" aria-label="Financial summary">
-      <SummaryFact label="Unpaid" value={<MoneyText money={data.outstanding} className={outstanding ? "text-warning-deep" : undefined} />} detail={outstanding ? "Ask your gym how to pay." : "Nothing to pay right now."} />
+      <SummaryFact label={t("domain.paymentStatus.unpaid")} value={<MoneyText money={data.outstanding} className={outstanding ? "text-warning-deep" : undefined} />} detail={outstanding ? "Ask your gym how to pay." : "Nothing to pay right now."} />
       <SummaryFact label="Paid to gyms" value={<MoneyText money={data.paidLifetime} />} detail={data.lastPaymentAt ? <>Last payment <DateTimeText iso={data.lastPaymentAt} /></> : "No payments yet."} />
-      <SummaryFact label="Receipts" value={<span className="tabular">{data.receiptCount.toLocaleString()}</span>} detail={`From ${gymCount} ${gymCount === 1 ? "gym" : "gyms"}`} />
+      <SummaryFact label={t("palette.groups.receipts")} value={<span className="tabular">{data.receiptCount.toLocaleString()}</span>} detail={`From ${gymCount} ${gymCount === 1 ? "gym" : "gyms"}`} />
     </section>
   );
 }

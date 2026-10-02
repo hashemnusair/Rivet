@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { AlertTriangle, ArrowLeft, Download, Printer, SearchX } from "lucide-react";
 import Link from "next/link";
@@ -51,6 +52,7 @@ export function receiptTextLines(detail: CustomerReceipt): string[] {
 }
 
 export default function CustomerReceiptClient({ receiptId }: { receiptId: string }) {
+  const t = useT();
   const query = useApiQuery(qk.customerReceipt(receiptId), (api) => api.getCustomerReceipt(receiptId));
 
   if (query.isLoading) {
@@ -69,11 +71,11 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
         <StatePanel
           icon={notFound ? SearchX : AlertTriangle}
           role={notFound ? "status" : "alert"}
-          title={notFound ? "Receipt not found" : "The receipt could not be loaded"}
+          title={notFound ? t("renewFlow.receipt.notFound") : "The receipt could not be loaded"}
           description={notFound ? "This receipt is not on your account, or the link is old." : "Nothing about your payments changed. Try again in a moment."}
           action={
             <div className="flex flex-wrap justify-center gap-2">
-              {notFound ? null : <Button size="sm" onClick={() => query.refetch()}>Try again</Button>}
+              {notFound ? null : <Button size="sm" onClick={() => query.refetch()}>{t("common.action.retry")}</Button>}
               <Button asChild size="sm" variant="secondary"><Link href="/customer/finance">Back to payments</Link></Button>
             </div>
           }
@@ -95,10 +97,10 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
   return (
     <main className="mx-auto max-w-[720px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
-        <Button asChild variant="ghost" size="sm"><Link href="/customer/finance"><ArrowLeft /> Payments</Link></Button>
+        <Button asChild variant="ghost" size="sm"><Link href="/customer/finance"><ArrowLeft />{" "}{t("renewFlow.receipt.back")}</Link></Button>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={download}><Download /> Download</Button>
-          <Button size="sm" onClick={() => window.print()}><Printer /> Print</Button>
+          <Button variant="secondary" size="sm" onClick={download}><Download />{" "}{t("common.action.download")}</Button>
+          <Button size="sm" onClick={() => window.print()}><Printer />{" "}{t("common.action.print")}</Button>
         </div>
       </div>
 
@@ -107,7 +109,7 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
       <article id="receipt-print" className="panel mt-4 px-5 py-6 sm:px-8 sm:py-8" aria-labelledby="receipt-title">
         <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
           <div className="min-w-0">
-            <p className="text-[12px] font-medium text-ink-3">{isRefund ? "Refund receipt" : retail ? "Shop receipt" : "Receipt"}</p>
+            <p className="text-[12px] font-medium text-ink-3">{isRefund ? "Refund receipt" : retail ? "Shop receipt" : t("renewFlow.payment.receipt")}</p>
             <h1 id="receipt-title" className="mt-0.5 font-mono text-[18px] font-semibold tracking-wide text-ink">{detail.receipt.receiptNumber}</h1>
             <p className="mt-1 text-[13px] text-ink-2"><DateTimeText iso={detail.receipt.issuedAt} /></p>
           </div>
@@ -116,13 +118,13 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
 
         <section className="grid gap-4 border-b border-line py-4 sm:grid-cols-2">
           <div className="min-w-0">
-            <p className="text-[12px] font-medium text-ink-3">From</p>
+            <p className="text-[12px] font-medium text-ink-3">{t("common.label.from")}</p>
             <p className="mt-0.5 text-[14px] font-semibold text-ink">{detail.organization.name}</p>
             <p className="mt-0.5 text-[12.5px] text-ink-2">{detail.branch.name} · {detail.branch.address}</p>
             <p className="text-[12.5px] text-ink-2" dir="ltr">{detail.branch.phone}</p>
           </div>
           <div className="min-w-0">
-            <p className="text-[12px] font-medium text-ink-3">Member</p>
+            <p className="text-[12px] font-medium text-ink-3">{t("palette.kind.member")}</p>
             <p className="mt-0.5 text-[14px] font-semibold text-ink">{customerName}</p>
             {customerNumber ? <p className="mt-0.5 font-mono text-[12px] text-ink-3">{customerNumber}</p> : null}
           </div>
@@ -139,26 +141,26 @@ export default function CustomerReceiptClient({ receiptId }: { receiptId: string
                 </tr>
               )) : (
                 <tr>
-                  <td className="py-1.5 pe-3 align-top text-ink">{detail.charge?.description ?? (isRefund ? "Refund" : "Payment")}</td>
+                  <td className="py-1.5 pe-3 align-top text-ink">{detail.charge?.description ?? (isRefund ? t("domain.transactionType.refund") : t("members.tabs.membershipColumns.payment"))}</td>
                   <td className="py-1.5 text-end align-top tabular text-ink"><MoneyText money={amount} hideCurrency /></td>
                 </tr>
               )}
             </tbody>
           </table>
           <div className="mt-3 flex items-baseline justify-between gap-4 border-t border-line-2 pt-3">
-            <span className="text-[14px] font-semibold text-ink">{isRefund ? "Refunded" : "Total"}</span>
+            <span className="text-[14px] font-semibold text-ink">{isRefund ? t("memberProfile.pt.orderStatus.refunded") : t("common.label.total")}</span>
             <MoneyText money={amount} className="font-display text-[22px] font-semibold text-ink" />
           </div>
           {outstanding ? (
             <div className="mt-2 flex items-baseline justify-between gap-4 text-[13.5px] font-medium text-warning-deep">
-              <span>Unpaid</span>
+              <span>{t("domain.paymentStatus.unpaid")}</span>
               <MoneyText money={outstanding} />
             </div>
           ) : null}
         </section>
 
         <dl className="grid gap-x-6 gap-y-2 py-4 text-[13px] sm:grid-cols-2">
-          <ReceiptFact label="Payment method">{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</ReceiptFact>
+          <ReceiptFact label={t("renewFlow.shared.paymentMethodAria")}>{PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}</ReceiptFact>
           <ReceiptFact label="Recorded by">{payment.collectedByName}</ReceiptFact>
           {payment.externalReference ? <ReceiptFact label="Payment reference"><span className="font-mono text-[12px]">{payment.externalReference}</span></ReceiptFact> : null}
           {payment.refundReason ? <ReceiptFact label="Refund reason">{payment.refundReason}</ReceiptFact> : null}

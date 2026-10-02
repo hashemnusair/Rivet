@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Archive, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -102,6 +103,7 @@ export const WORK_ORDER_STATUS_LABELS: Record<EquipmentWorkOrder["status"], stri
 };
 
 export function FormPanel({ title, description, onCancel, children, submitAction }: { title: string; description?: string; onCancel: () => void; children: React.ReactNode; submitAction?: React.ReactNode }) {
+  const t = useT();
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <DialogContent className="max-w-2xl">
@@ -111,7 +113,7 @@ export function FormPanel({ title, description, onCancel, children, submitAction
         </DialogHeader>
         <DialogBody>{children}</DialogBody>
         <DialogFooter>
-          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button type="button" variant="secondary" onClick={onCancel}>{t("common.action.cancel")}</Button>
           {submitAction}
         </DialogFooter>
       </DialogContent>
@@ -120,6 +122,7 @@ export function FormPanel({ title, description, onCancel, children, submitAction
 }
 
 export function DeleteDialog({ kind = "supplier", label, open, pending, onOpenChange, onConfirm }: { kind?: "product" | "supplier"; label: string; open: boolean; pending: boolean; onOpenChange: (open: boolean) => void; onConfirm: (reason: string, confirmation?: string) => void }) {
+  const t = useT();
   const [reason, setReason] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const isProduct = kind === "product";
@@ -137,10 +140,10 @@ export function DeleteDialog({ kind = "supplier", label, open, pending, onOpenCh
         </DialogHeader>
         <DialogBody className="space-y-3">
           {isProduct ? <Field label={"Type " + label + " to confirm"} required><Input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={label} /></Field> : null}
-          <Field label="Reason" required><Textarea autoFocus={!isProduct} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={isProduct ? "No longer sold, or added by mistake" : "No longer used, or added by mistake"} /></Field>
+          <Field label={t("common.label.reason")} required><Textarea autoFocus={!isProduct} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={isProduct ? "No longer sold, or added by mistake" : "No longer used, or added by mistake"} /></Field>
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>{t("common.action.cancel")}</Button>
           <Button variant="danger" loading={pending} disabled={!confirmed || reason.trim().length < 3} onClick={() => onConfirm(reason.trim(), confirmation.trim() || undefined)}>
             {isProduct ? <Trash2 /> : <Archive />} {isProduct ? "Delete permanently" : "Archive"}
           </Button>

@@ -1,27 +1,21 @@
 import { plural } from "../../dictionary";
 import type { renewFlow as En } from "../en/renewFlow";
 
-/**
- * Modern Standard Arabic drafts for the renew / collect payment / receipt flow
- * (see docs/arabic/GLOSSARY.md). Payment words stay strictly apart:
- * دفعة (payment), استرداد (refund), دفعة ملغاة (cancelled payment),
- * إيصال (receipt), المتبقي (still to pay). The card-machine paper is a
- * "قسيمة" so it is never confused with RIVET's own إيصال.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const renewFlow: typeof En = {
   shared: {
     amountWithCurrency: "المبلغ ({currency})",
     method: "طريقة الدفع",
     paymentMethodAria: "طريقة الدفع",
     needsOpenShift: " · تتطلب وردية مفتوحة",
-    noCashShiftHint: "لا توجد وردية نقدية مفتوحة في هذا المكتب، لذا لا يمكن قبول الدفع نقدًا هنا.",
-    openShiftFirst: "افتحوا وردية نقدية قبل قبول الدفع نقدًا في هذا المكتب",
+    noCashShiftHint: "لا يوجد صندوق مفتوح في هذا المكتب، لذا لا يمكن استلام دفعة كاش هنا.",
+    openShiftFirst: "يرجى فتح الصندوق قبل استلام دفعة كاش في هذا المكتب",
     referenceNumber: "رقم المرجع",
     referenceHint: "اكتبوا الرقم الموجود في قسيمة جهاز البطاقات أو في تطبيق البنك.",
     referencePlaceholder: "مثال: 88213",
     referenceRequired: "اكتبوا رقم المرجع لهذه الدفعة",
     stillOwed: "المتبقي",
-    invoice: "الفاتورة",
+    invoice: "فاتورة",
     chooseAPlan: "اختيار باقة",
   },
 
@@ -44,9 +38,9 @@ export const renewFlow: typeof En = {
   },
 
   sale: {
-    titleSell: "بيع عضوية",
-    titleRenew: "تجديد العضوية",
-    currentEnds: "تنتهي العضوية الحالية في",
+    titleSell: "بيع اشتراك",
+    titleRenew: "تجديد الاشتراك",
+    currentEnds: "ينتهي الاشتراك الحالي في",
     planLabel: "الباقة",
     planPlaceholder: "اختيار باقة…",
     planOption: "{name} — {price} · {detail}",
@@ -64,7 +58,7 @@ export const renewFlow: typeof En = {
     needsApproval: "هذا الخصم يتجاوز الحد المسموح لكم. يلزم أن يوافق عليه المدير.",
     collectNow: "تحصيل دفعة الآن",
     payAmountHint: "اتركوا الحقل فارغًا لتحصيل الإجمالي كاملًا.",
-    paymentLaterFuture: "يمكنكم تحصيل هذه الدفعة عند بدء العضوية الجديدة.",
+    paymentLaterFuture: "يمكنكم تحصيل هذه الدفعة عند بدء الاشتراك الجديد.",
     paymentLaterOwes: "سيبقى المبلغ كاملًا متبقيًا على العضو.",
     summaryAria: "ملخص البيع",
     summary: "الملخص",
@@ -72,7 +66,7 @@ export const renewFlow: typeof En = {
     rowDates: "التواريخ",
     dateRange: "من {start} إلى {end}",
     rowPrice: "السعر",
-    rowDiscount: "الخصم",
+    rowDiscount: "خصم",
     rowTotal: "الإجمالي",
     rowPayingNow: "المدفوع الآن",
     rowStillOwed: "المتبقي",
@@ -92,15 +86,15 @@ export const renewFlow: typeof En = {
   },
 
   payment: {
-    title: "تحصيل دفعة",
+    title: "استلام دفعة",
     titleCash: "تم تحصيل النقد",
     titleSaved: "تم حفظ الدفعة: {method}",
-    receipt: "إيصال",
+    receipt: "وصل دفع",
     amount: "المبلغ",
     status: "الحالة",
-    invoice: "الفاتورة",
+    invoice: "فاتورة",
     collectedBy: "تم التحصيل بواسطة",
-    openReceipt: "فتح الإيصال",
+    openReceipt: "فتح وصل الدفع",
     notes: {
       card: "لا يخصم RIVET المبلغ من البطاقة. تأكدوا من أن جهاز البطاقات وافق على العملية.",
       cliq: "لا يتحقق RIVET من كليك لدى البنك. تأكدوا من وصول المبلغ.",
@@ -115,7 +109,7 @@ export const renewFlow: typeof En = {
     referenceOptional: "اختياري لطريقة الدفع هذه.",
     stillOwedAfter: "المتبقي بعد هذه الدفعة",
     collectAmount: "تحصيل {amount}",
-    collectPlain: "تحصيل دفعة",
+    collectPlain: "استلام دفعة",
     errors: {
       enterAmount: "أدخلوا المبلغ",
       amountPositive: "يجب أن يكون المبلغ أكبر من صفر",
@@ -126,31 +120,31 @@ export const renewFlow: typeof En = {
 
   adjust: {
     membershipStatus: {
-      active: "سارية",
+      active: "فعّال",
       expiring: "تنتهي قريبًا",
-      frozen: "مجمّدة",
+      frozen: "مجمّد",
       expired: "منتهية",
-      cancelled: "ملغاة",
+      cancelled: "ملغي",
       depleted: "استُنفدت الزيارات",
       scheduled: "لم تبدأ بعد",
     },
     reason: "السبب",
 
     transfer: {
-      title: "نقل العضوية إلى فرع آخر",
-      description: "ينتقل العضو وعضويته إلى الفرع الجديد.",
+      title: "نقل الاشتراك إلى فرع آخر",
+      description: "ينتقل العضو واشتراكه إلى الفرع الجديد.",
       newBranch: "الفرع الجديد",
       chooseBranch: "اختيار فرع",
-      noOtherBranch: "لا يوجد فرع آخر يمكن نقل العضوية إليه.",
+      noOtherBranch: "لا يوجد فرع آخر يمكن نقل الاشتراك إليه.",
       reasonPlaceholder: "مثال: انتقل العضو إلى مدينة أخرى، وأكّد ذلك مدير الفرع",
-      submit: "نقل العضوية",
+      submit: "نقل الاشتراك",
       chooseNewBranch: "يرجى اختيار الفرع الجديد",
       reasonRequired: "يرجى كتابة السبب",
       saveFailed: "لم يُحفظ النقل. حاولوا مرة أخرى.",
     },
 
     freeze: {
-      title: "تجميد العضوية",
+      title: "تجميد الاشتراك",
       descriptionIntro: "يتأخر تاريخ الانتهاء بعدد أيام التجميد.",
       daysLeft: plural({
         zero: "لا تتبقى أيام تجميد في هذه الباقة.",
@@ -184,7 +178,7 @@ export const renewFlow: typeof En = {
       problems: {
         endBeforeStart: "لا يمكن أن يسبق تاريخ النهاية تاريخ البداية.",
         startInPast: "لا يمكن أن يبدأ التجميد قبل اليوم.",
-        startAfterEnd: "يجب أن يبدأ التجميد في {date} أو قبله، وهو تاريخ انتهاء العضوية.",
+        startAfterEnd: "يجب أن يبدأ التجميد في {date} أو قبله، وهو تاريخ انتهاء الاشتراك.",
         tooShort: plural({
           zero: "يجب ألا تقل مدة التجميد عن {count} يوم.",
           one: "يجب ألا تقل مدة التجميد عن يوم واحد.",
@@ -206,7 +200,7 @@ export const renewFlow: typeof En = {
     },
 
     extend: {
-      title: "تمديد العضوية",
+      title: "تمديد الاشتراك",
       extraDays: "أيام إضافية",
       endDate: "تاريخ الانتهاء",
       reasonPlaceholder: "مثال: تعويض عن توقف الأجهزة في الأسبوع الماضي",
@@ -226,12 +220,12 @@ export const renewFlow: typeof En = {
     },
 
     cancel: {
-      title: "إلغاء العضوية",
+      title: "إلغاء الاشتراك",
       warning:
-        "يفقد العضو إمكانية الدخول فورًا. لا يمكن التراجع عن هذا الإجراء. يبقى أي مبلغ غير مدفوع متبقيًا كما هو. إلغاء العضوية لا يعيد أي مبلغ. لإعادة المبلغ، نفّذوا استردادًا.",
+        "يفقد العضو إمكانية الدخول فورًا. لا يمكن التراجع عن هذا الإجراء. يبقى أي مبلغ غير مدفوع متبقيًا كما هو. إلغاء الاشتراك لا يعيد أي مبلغ. لإعادة المبلغ، نفّذوا استردادًا.",
       reasonPlaceholder: "مثال: انتقل العضو إلى مدينة أخرى، وتم التأكد هاتفيًا",
-      keep: "الإبقاء على العضوية",
-      submit: "إلغاء العضوية",
+      keep: "الإبقاء على الاشتراك",
+      submit: "إلغاء الاشتراك",
       reasonRequired: "يرجى كتابة السبب",
       saveFailed: "لم يُحفظ الإلغاء. حاولوا مرة أخرى.",
     },
@@ -239,7 +233,7 @@ export const renewFlow: typeof En = {
     unfreeze: {
       title: "إنهاء التجميد مبكرًا",
       descriptionRunning:
-        "{name} · العضوية مجمّدة منذ {date}. تُعاد أيام التجميد غير المستخدمة، ويتقدم تاريخ الانتهاء بالعدد نفسه من الأيام.",
+        "{name} · الاشتراك مجمّد منذ {date}. تُعاد أيام التجميد غير المستخدمة، ويتقدم تاريخ الانتهاء بالعدد نفسه من الأيام.",
       descriptionScheduled:
         "{name} · يمتد هذا التجميد من {start} إلى {end}. لا يمكن إنهاء التجميد مبكرًا إلا بعد أن يبدأ.",
       reasonPlaceholder: "مثال: عاد العضو مبكرًا وهو الآن في الاستقبال",
@@ -249,11 +243,11 @@ export const renewFlow: typeof En = {
     },
 
     planChange: {
-      title: "تغيير باقة العضوية",
+      title: "تغيير نوع الاشتراك",
       description:
         "نقل {member} من باقة {plan} إلى باقة جديدة. تُحتسب الباقة الجديدة بالسعر الكامل، ولا يُخصم شيء مقابل الأيام غير المستخدمة.",
       newPlan: "الباقة الجديدة",
-      newPlanAria: "باقة العضوية الجديدة",
+      newPlanAria: "باقة الاشتراك الجديد",
       loadingPlans: "جارٍ تحميل الباقات…",
       planOption: "{name} · {price}",
       starts: "تبدأ",
@@ -261,14 +255,14 @@ export const renewFlow: typeof En = {
       atNextRenewal: "عند التجديد القادم · {date}",
       todayFullPrice: "اليوم · بالسعر الكامل",
       immediateWarning:
-        "يُنهي هذا الإجراء العضوية الحالية اليوم ويبدأ الباقة الجديدة اليوم. تبقى الفاتورة القديمة كما هي. تعاملوا مع أي استرداد أو رصيد بشكل منفصل.",
+        "يُنهي هذا الإجراء الاشتراك الحالي اليوم ويبدأ الباقة الجديدة اليوم. تبقى الفاتورة القديمة كما هي. تعاملوا مع أي استرداد أو رصيد بشكل منفصل.",
       reasonPlaceholder: "مثال: سينتقل العضو إلى باقة الدخول المفتوح عند التجديد القادم",
       rowPlan: "الباقة",
       rowStarts: "بدء الباقة الجديدة",
       rowPrice: "السعر",
-      currentMembership: "العضوية الحالية",
+      currentMembership: "الاشتراك الحالي",
       fullPrice: "{price} · بالسعر الكامل",
-      submit: "تغيير الباقة",
+      submit: "تغيير نوع الاشتراك",
       reasonRequired: "يرجى كتابة السبب (3 أحرف على الأقل)",
       saveFailed: "لم يُحفظ تغيير الباقة. حاولوا مرة أخرى.",
     },
@@ -280,10 +274,10 @@ export const renewFlow: typeof En = {
   },
 
   receipt: {
-    notFound: "الإيصال غير موجود",
+    notFound: "وصل الدفع غير موجود",
     back: "المدفوعات",
     newSale: "بيع جديد",
-    refundButton: "استرداد…",
+    refundButton: "استرداد المبلغ",
     retailRefundButton: "إرجاع واسترداد…",
     cancelPaymentButton: "إلغاء الدفعة…",
     cancelSaleButton: "إلغاء البيع…",
@@ -291,14 +285,14 @@ export const renewFlow: typeof En = {
     retailSaleReference: "بيع بالتجزئة",
     visaCard: "Visa / بطاقة",
 
-    heading: "إيصال",
-    kindRefund: "استرداد",
+    heading: "وصل دفع",
+    kindRefund: "استرداد المبلغ",
     kindRetail: "بيع بالتجزئة",
     kindPayment: "دفعة",
     memberNumber: "رقم العضو {number}",
     guestSale: "بيع لضيف",
     walkInSale: "بيع لعميل زائر",
-    discount: "الخصم",
+    discount: "خصم",
     saleTotal: "إجمالي البيع",
     total: "الإجمالي",
     paidVia: "المدفوع ({method})",
@@ -307,7 +301,7 @@ export const renewFlow: typeof En = {
     servedBy: "الموظف: {name}",
     reference: "المرجع: {reference}",
     reason: "السبب: {reason}",
-    cancelled: "ملغاة",
+    cancelled: "ملغي",
     cancelledWithReason: "ملغاة — {reason}",
     fullyRefundedSale: "تم استرداد مبلغ هذا البيع بالكامل.",
     fullyRefundedSaleAmount: "تم استرداد مبلغ هذا البيع بالكامل ({amount}).",
@@ -320,7 +314,7 @@ export const renewFlow: typeof En = {
     refundedSoFar: "المبلغ المُسترد حتى الآن:",
     cancelReason: "سبب الإلغاء: {reason}",
     refundOfEarlier: "هذا استرداد لدفعة سابقة.",
-    relatedTitle: "إيصالات ذات صلة",
+    relatedTitle: "وصول دفع ذات صلة",
     guideTitle: "استرداد أم إلغاء؟",
     guideCancel: "ألغوا الدفعة فقط إذا أُدخلت بالخطأ اليوم. تُلغى الدفعة كاملة.",
     guideRefund: "الاسترداد يعيد المبلغ إلى العضو، وينشئ إيصال استرداد جديدًا.",

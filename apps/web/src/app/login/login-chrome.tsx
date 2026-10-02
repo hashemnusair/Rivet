@@ -37,7 +37,7 @@ export function LoginLayout({
     <div className="grid min-h-screen lg:grid-cols-[42%_58%]">
       <div className="night-surface relative hidden flex-col justify-between bg-night p-10 text-night-ink lg:flex">
         <Link href={publicHref} aria-label={t("auth.chrome.homeLabel")}>
-          <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={149} height={38} priority />
+          <Image src="/brand/rivet-lockup-rev.png" alt={t("common.brand.name")} width={149} height={38} priority />
         </Link>
 
         <div className="max-w-md">
@@ -80,7 +80,7 @@ export function LoginLayout({
 
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-10">
           <div className="mb-8 lg:hidden">
-            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={126} height={32} priority />
+            <Image src="/brand/rivet-lockup.png" alt={t("common.brand.name")} width={126} height={32} priority />
           </div>
           {children}
         </div>

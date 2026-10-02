@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { CancelOccurrenceDialog } from "@/features/classes/cancel-occurrence-dialog";
 
@@ -100,6 +101,7 @@ type EditorState = {
 export default function ClassesPage() { return <Suspense><ClassesWorkspace /></Suspense>; }
 
 function ClassesWorkspace() {
+  const t = useT();
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -323,16 +325,16 @@ function ClassesWorkspace() {
     <div className="space-y-5" data-print-root>
       <div className="print:hidden">
         <PageHeader
-          title="Classes"
+          title={t("nav.item.classes")}
           description="See upcoming classes, manage bookings and mark who came."
           actions={<div className="flex flex-wrap items-center gap-2">
             {branches.length > 1 ? (
-              <select aria-label="Branch" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={branchId ?? ""} onChange={(event) => setBranchChoice(event.target.value)}>
+              <select aria-label={t("common.label.branch")} className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={branchId ?? ""} onChange={(event) => setBranchChoice(event.target.value)}>
                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
             ) : null}
             {canManage ? <Button variant="secondary" onClick={() => setCoachesOpen(true)}><Users /> Coaches</Button> : null}
-            <Button variant="secondary" onClick={printSchedule} disabled={!sessionsQuery.data}><Printer /> Print</Button>
+            <Button variant="secondary" onClick={printSchedule} disabled={!sessionsQuery.data}><Printer />{" "}{t("common.action.print")}</Button>
             {canManage ? <Button variant="primary" onClick={() => openCreate(0, 18 * 60)} disabled={!branchId}><Plus /> New class</Button> : null}
           </div>}
         />
@@ -352,7 +354,7 @@ function ClassesWorkspace() {
             </div>
             <div className="text-end text-[12px] leading-4">
               <p>Printed {formatDate(todayISODate())}</p>
-              <p>Operated by RIVET™</p>
+              <p>{t("nav.sidebar.operatedBy")}</p>
             </div>
           </div>
         </div>
@@ -361,7 +363,7 @@ function ClassesWorkspace() {
         <div className={tabListClassName} role="group" aria-label="Class view">
           {([['agenda', 'Upcoming classes'], ['timetable', 'Weekly timetable']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={view === value} className={tabTriggerClassName} onClick={() => updateView({ view: value })}>{label}</button>)}
         </div>
-      {view === "agenda" ? <div className="flex flex-wrap items-center gap-2"><Button variant="secondary" size="sm" aria-label="Previous seven days" onClick={() => updateView({ from: addDays(weekStart, -7) })}>Previous</Button><span className="text-[12px] tabular-nums">{formatDate(weekStart)} – {formatDate(weekEnd)}</span><Button variant="secondary" size="sm" aria-label="Next seven days" onClick={() => updateView({ from: addDays(weekStart, 7) })}>Next</Button><Button variant="ghost" size="sm" onClick={() => updateView({ from: todayISODate(session?.organization.timezone) })}>Today</Button></div> : <p className="text-[12px] text-ink-2">Repeats weekly · {branchName}</p>}
+      {view === "agenda" ? <div className="flex flex-wrap items-center gap-2"><Button variant="secondary" size="sm" aria-label="Previous seven days" onClick={() => updateView({ from: addDays(weekStart, -7) })}>Previous</Button><span className="text-[12px] tabular-nums">{formatDate(weekStart)} – {formatDate(weekEnd)}</span><Button variant="secondary" size="sm" aria-label="Next seven days" onClick={() => updateView({ from: addDays(weekStart, 7) })}>{t("common.action.next")}</Button><Button variant="ghost" size="sm" onClick={() => updateView({ from: todayISODate(session?.organization.timezone) })}>{t("common.time.today")}</Button></div> : <p className="text-[12px] text-ink-2">Repeats weekly · {branchName}</p>}
       </div>
       {sessionsQuery.isBackgroundError ? <ErrorState layout="inline" title="Timetable could not refresh" onRetry={() => sessionsQuery.refetch()} /> : null}
       {view === "agenda" ? <section className="panel overflow-hidden print:hidden" aria-label="Upcoming classes">
@@ -459,9 +461,9 @@ function ClassesWorkspace() {
                   <label className="grid gap-1.5 text-[12px] font-medium">Class name<Input value={editor.name} maxLength={80} autoFocus onChange={(event) => setEditor({ ...editor, name: event.target.value })} placeholder="Morning HIIT" /></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Coach<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.coachId} disabled={coachesQuery.isError} onChange={(event) => setEditor({ ...editor, coachId: event.target.value })}><option value="">{coachesQuery.isError ? "Coaches not loaded" : "No coach"}</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select>{coachesQuery.isError ? <span className="text-[12px] font-normal text-danger">The coach list did not load. Save without a coach, or reload the page.</span> : null}</label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Day<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.dayOfWeek} onChange={(event) => setEditor({ ...editor, dayOfWeek: Number(event.target.value) })}>{DAYS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></label>
-                  <label className="grid gap-1.5 text-[12px] font-medium">Starts<Input type="time" value={minuteLabel(editor.startMinute)} onChange={(event) => { const [hour, minute] = event.target.value.split(":").map(Number); if (Number.isFinite(hour) && Number.isFinite(minute)) setEditor({ ...editor, startMinute: hour! * 60 + minute! }); }} /></label>
-                  <label className="grid gap-1.5 text-[12px] font-medium">Duration<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.durationMinutes} onChange={(event) => setEditor({ ...editor, durationMinutes: Number(event.target.value) })}>{DURATIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}</select></label>
-                  <label className="grid gap-1.5 text-[12px] font-medium">Places<Input type="number" min={1} max={200} value={editor.capacity} onChange={(event) => setEditor({ ...editor, capacity: Number(event.target.value) })} /></label>
+                  <label className="grid gap-1.5 text-[12px] font-medium">{t("renewFlow.adjust.planChange.starts")}<Input type="time" value={minuteLabel(editor.startMinute)} onChange={(event) => { const [hour, minute] = event.target.value.split(":").map(Number); if (Number.isFinite(hour) && Number.isFinite(minute)) setEditor({ ...editor, startMinute: hour! * 60 + minute! }); }} /></label>
+                  <label className="grid gap-1.5 text-[12px] font-medium">{t("crm.lead.membership.durationColumn")}<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.durationMinutes} onChange={(event) => setEditor({ ...editor, durationMinutes: Number(event.target.value) })}>{DURATIONS.map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}</select></label>
+                  <label className="grid gap-1.5 text-[12px] font-medium">{t("palette.groups.places")}<Input type="number" min={1} max={200} value={editor.capacity} onChange={(event) => setEditor({ ...editor, capacity: Number(event.target.value) })} /></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Who is it for?<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.audience} onChange={(event) => setEditor({ ...editor, audience: event.target.value as ClassAudience })}>{(Object.keys(AUDIENCE_LABEL) as ClassAudience[]).map((audience) => <option key={audience} value={audience}>{AUDIENCE_LABEL[audience]}</option>)}</select></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">Photo (optional)
                     <div className="flex items-center gap-2">
@@ -471,11 +473,11 @@ function ClassesWorkspace() {
                   </label>
                 </div>
                 {editor.startMinute + editor.durationMinutes > 1440 ? <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep">This class would end after midnight. Start it earlier or make it shorter.</p> : null}
-                <label className="grid gap-1.5 text-[12px] font-medium">Notes<Textarea value={editor.notes} maxLength={500} onChange={(event) => setEditor({ ...editor, notes: event.target.value })} placeholder="Bring boxing gloves…" /></label>
+                <label className="grid gap-1.5 text-[12px] font-medium">{t("common.label.notes")}<Textarea value={editor.notes} maxLength={500} onChange={(event) => setEditor({ ...editor, notes: event.target.value })} placeholder="Bring boxing gloves…" /></label>
               </DialogBody>
             ) : null}
             <DialogFooter>
-              <Button variant="secondary" onClick={() => setEditor(undefined)} disabled={save.isPending}>Cancel</Button>
+              <Button variant="secondary" onClick={() => setEditor(undefined)} disabled={save.isPending}>{t("common.action.cancel")}</Button>
               <Button variant="primary" loading={save.isPending} disabled={!editor?.name.trim() || editor?.uploading || !Number.isSafeInteger(editor.capacity) || editor.capacity < 1 || editor.capacity > 200 || editor.startMinute + editor.durationMinutes > 1440} onClick={() => save.mutate()}><Check /> Save class</Button>
             </DialogFooter>
           </DialogContent>
@@ -484,11 +486,11 @@ function ClassesWorkspace() {
         <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !remove.isPending) setDeleteTarget(undefined); }}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Remove {deleteTarget?.name}?</DialogTitle>
+              <DialogTitle>{t("common.action.remove")}{" "}{deleteTarget?.name}?</DialogTitle>
               <DialogDescription>The class leaves the weekly schedule for good. Its history is kept.</DialogDescription>
             </DialogHeader>
             <DialogBody>
-              <label className="grid gap-1.5 text-[12px] font-medium">Reason<Textarea value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} placeholder="Why are you removing it?" /></label>
+              <label className="grid gap-1.5 text-[12px] font-medium">{t("common.label.reason")}<Textarea value={deleteReason} onChange={(event) => setDeleteReason(event.target.value)} placeholder="Why are you removing it?" /></label>
             </DialogBody>
             <DialogFooter>
               <Button variant="secondary" onClick={() => setDeleteTarget(undefined)} disabled={remove.isPending}>Keep it</Button>
@@ -517,7 +519,7 @@ function ClassesWorkspace() {
               {!coachesQuery.isError ? <CoachForm onSubmit={(input) => upsertCoach.mutate(input)} pending={upsertCoach.isPending} /> : null}
             </DialogBody>
             <DialogFooter>
-              <Button variant="secondary" onClick={() => setCoachesOpen(false)}>Done</Button>
+              <Button variant="secondary" onClick={() => setCoachesOpen(false)}>{t("common.action.done")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -533,10 +535,10 @@ function ClassesWorkspace() {
                   <div className="divide-y divide-line rounded-md border border-line">{managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).length ? managedOccurrence.roster.filter((entry) => ["booked", "waitlisted", "attended", "no_show"].includes(entry.status)).map((entry) => <div key={entry.bookingId} className="flex items-center justify-between gap-3 px-4 py-3"><label className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-[14px]"><input type="checkbox" checked={entry.status === "attended"} className="size-5 shrink-0" disabled={setOccurrenceAttendance.isPending || !canRoster || Boolean(managedOccurrence.attendanceFinalizedAt) || entry.status === "waitlisted" || entry.status === "no_show"} onChange={(event) => setOccurrenceAttendance.mutate({ bookingId: entry.bookingId, attended: event.target.checked })} aria-label={`Mark ${entry.name} present`} /><span className="min-w-0"><span className="block break-words font-medium">{entry.name}</span>{entry.noShowCount ? <span className="block text-[12px] text-warning-deep">{entry.noShowCount} past no-show{entry.noShowCount === 1 ? "" : "s"}</span> : null}</span>{entry.fromWaitlist ? <span className="rounded-sm bg-success-bg px-1.5 py-0.5 text-[12px] text-success-deep">from waitlist</span> : null}</label><div className="flex items-center gap-2"><span className="rounded-sm bg-sunken px-2 py-0.5 text-[12px] text-ink-3">{rosterStatusLabel(entry.status)}</span>{canRoster && !managedOccurrence.attendanceFinalizedAt && Date.parse(managedOccurrence.endsAt) > Date.now() && ["booked", "waitlisted"].includes(entry.status) ? <Button variant="ghost" size="sm" aria-label={`Remove ${entry.name}`} disabled={removeOccurrenceAttendee.isPending} onClick={() => { setRemoveTarget(entry); setRemoveReason(""); }}><X /></Button> : null}</div></div>) : <p className="px-4 py-8 text-center text-[12.5px] text-ink-3">No one has booked this class yet.</p>}</div>
                   <p className="mt-1.5 text-[12px] text-ink-3">{managedOccurrence.attendanceFinalizedAt ? `Attendance finished ${formatDateTime(managedOccurrence.attendanceFinalizedAt)}.` : "Tick who came. You can change it until you finish attendance."}</p>
                 </section>
-                {canRoster && !managedOccurrence.attendanceFinalizedAt && Date.parse(managedOccurrence.endsAt) > Date.now() ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Add a member at the desk</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to this class" />{memberLookup.isLoading ? <p className="mt-2 text-[12px] text-ink-3">Searching…</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger"><span>Search did not work</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Try again</Button></div> : memberResults.length ? <div className="mt-2 w-full divide-y divide-line rounded-md border border-line bg-surface">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" disabled={addOccurrenceAttendee.isPending} onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="text-[12px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[12px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Reason to add anyway (only if asked)" aria-label="Reason to add anyway" /></div><p className="mt-2 text-[12px] text-ink-3">If the class is full, the member goes on the waitlist. A reason is needed only if the class is not for them or they reached their booking limit.</p></div></details> : null}
-                {canManage && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Change the coach for this class</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-2"><select aria-label="New coach" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={substituteCoachId} onChange={(event) => setSubstituteCoachId(event.target.value)}><option value="">Choose a coach</option>{coaches.filter((coach) => coach.id !== managedOccurrence.coachId).map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select><Input aria-label="Reason for the change" value={substituteReason} onChange={(event) => setSubstituteReason(event.target.value)} placeholder="Why is the coach changing?" /></div><div className="mt-2 flex justify-end"><Button size="sm" variant="secondary" loading={substituteCoach.isPending} disabled={!substituteCoachId || !substituteReason.trim()} onClick={() => substituteCoach.mutate()}>Change coach</Button></div></div></details> : null}
+                {canRoster && !managedOccurrence.attendanceFinalizedAt && Date.parse(managedOccurrence.endsAt) > Date.now() ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Add a member at the desk</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.65fr)]"><div className="relative"><Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member name or phone…" aria-label="Add member to this class" />{memberLookup.isLoading ? <p className="mt-2 text-[12px] text-ink-3">{t("common.state.searching")}</p> : memberLookup.isError ? <div className="mt-2 flex items-center justify-between rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger"><span>Search did not work</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>{t("common.action.retry")}</Button></div> : memberResults.length ? <div className="mt-2 w-full divide-y divide-line rounded-md border border-line bg-surface">{memberResults.map((member) => <button key={member.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" disabled={addOccurrenceAttendee.isPending} onClick={() => addOccurrenceAttendee.mutate(member.id)}><span className="truncate">{member.fullName}</span><span className="text-[12px] text-ink-3">{member.memberNumber}</span></button>)}</div> : normalizedMemberSearch.length >= 2 ? <p className="mt-2 text-[12px] text-ink-3">No members found.</p> : null}</div><Input value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Reason to add anyway (only if asked)" aria-label="Reason to add anyway" /></div><p className="mt-2 text-[12px] text-ink-3">If the class is full, the member goes on the waitlist. A reason is needed only if the class is not for them or they reached their booking limit.</p></div></details> : null}
+                {canManage && !managedOccurrence.attendanceFinalizedAt ? <details className="rounded-md border border-line"><summary className="px-4 py-2.5 text-[12.5px] font-medium text-ink-2 hover:text-ink">Change the coach for this class</summary><div className="border-t border-line p-4"><div className="grid gap-2 sm:grid-cols-2"><select aria-label="New coach" className="h-9 rounded-md border border-line-2 bg-surface px-3 text-[12.5px]" value={substituteCoachId} onChange={(event) => setSubstituteCoachId(event.target.value)}><option value="">Choose a coach</option>{coaches.filter((coach) => coach.id !== managedOccurrence.coachId).map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select><Input aria-label={t("renewFlow.sale.changeReason")} value={substituteReason} onChange={(event) => setSubstituteReason(event.target.value)} placeholder="Why is the coach changing?" /></div><div className="mt-2 flex justify-end"><Button size="sm" variant="secondary" loading={substituteCoach.isPending} disabled={!substituteCoachId || !substituteReason.trim()} onClick={() => substituteCoach.mutate()}>Change coach</Button></div></div></details> : null}
               </DialogBody>
-              <DialogFooter><Button variant="secondary" onClick={() => setManageOccurrenceId(undefined)}>Close</Button>{canManage && !managedOccurrence.attendanceFinalizedAt ? <Button variant="primary" loading={finalizeOccurrence.isPending} disabled={Date.parse(managedOccurrence.endsAt) > Date.now()} onClick={() => setFinalizeOpen(true)}><Check /> Finish attendance</Button> : null}</DialogFooter>
+              <DialogFooter><Button variant="secondary" onClick={() => setManageOccurrenceId(undefined)}>{t("common.action.close")}</Button>{canManage && !managedOccurrence.attendanceFinalizedAt ? <Button variant="primary" loading={finalizeOccurrence.isPending} disabled={Date.parse(managedOccurrence.endsAt) > Date.now()} onClick={() => setFinalizeOpen(true)}><Check /> Finish attendance</Button> : null}</DialogFooter>
             </> : null}
           </DialogContent>
         </Dialog>
@@ -548,11 +550,11 @@ function ClassesWorkspace() {
               <DialogDescription>{removeTarget?.status === "waitlisted" ? "They leave the waitlist. Nobody else moves." : "Their place goes to the first person on the waitlist. This shows on the member’s record."}</DialogDescription>
             </DialogHeader>
             <DialogBody>
-              <label className="grid gap-1.5 text-[12px] font-medium">Reason<Textarea value={removeReason} onChange={(event) => setRemoveReason(event.target.value)} placeholder="Why are you removing them?" /></label>
+              <label className="grid gap-1.5 text-[12px] font-medium">{t("common.label.reason")}<Textarea value={removeReason} onChange={(event) => setRemoveReason(event.target.value)} placeholder="Why are you removing them?" /></label>
             </DialogBody>
             <DialogFooter>
               <Button variant="secondary" onClick={() => setRemoveTarget(undefined)} disabled={removeOccurrenceAttendee.isPending}>Keep them</Button>
-              <Button variant="danger" loading={removeOccurrenceAttendee.isPending} disabled={!removeReason.trim()} onClick={() => removeOccurrenceAttendee.mutate({ bookingId: removeTarget!.bookingId, reason: removeReason.trim() })}><X /> Remove</Button>
+              <Button variant="danger" loading={removeOccurrenceAttendee.isPending} disabled={!removeReason.trim()} onClick={() => removeOccurrenceAttendee.mutate({ bookingId: removeTarget!.bookingId, reason: removeReason.trim() })}><X />{" "}{t("common.action.remove")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -576,17 +578,17 @@ function ClassesWorkspace() {
                 <>
                   <DialogHeader>
                     <DialogTitle>{target.name}</DialogTitle>
-                    <DialogDescription>Repeats every {DAYS[target.dayOfWeek]}.</DialogDescription>
+                    <DialogDescription>Repeats every {DAYS[target.dayOfWeek]}{t("members.bulk.toast.end")}</DialogDescription>
                   </DialogHeader>
                   <DialogBody className="grid gap-3">
                     {target.imageUrl ? <div className="h-32 rounded-md border border-line bg-cover bg-center" role="img" aria-label={target.imageAltText ?? `${target.name} photo`} style={{ backgroundImage: `url(${target.imageUrl})` }} /> : null}
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[12.5px]">
                       <div><dt className="text-[12px] text-ink-3">Day</dt><dd className="mt-0.5 font-medium">{DAYS[target.dayOfWeek]}</dd></div>
-                      <div><dt className="text-[12px] text-ink-3">Time</dt><dd className="mt-0.5 font-medium" dir="ltr">{rangeLabel(target)}</dd></div>
-                      <div><dt className="text-[12px] text-ink-3">Duration</dt><dd className="mt-0.5 font-medium">{target.durationMinutes} minutes</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">{t("common.label.time")}</dt><dd className="mt-0.5 font-medium" dir="ltr">{rangeLabel(target)}</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">{t("crm.lead.membership.durationColumn")}</dt><dd className="mt-0.5 font-medium">{target.durationMinutes} minutes</dd></div>
                       <div><dt className="text-[12px] text-ink-3">Coach</dt><dd className="mt-0.5 font-medium">{target.coachName ?? "No coach yet"}</dd></div>
                       <div><dt className="text-[12px] text-ink-3">Who is it for?</dt><dd className="mt-0.5 flex items-center gap-1.5 font-medium"><span aria-hidden className="inline-block size-2 rounded-full" style={{ backgroundColor: AUDIENCE_ACCENT[target.audience] }} />{AUDIENCE_LABEL[target.audience]}</dd></div>
-                      <div><dt className="text-[12px] text-ink-3">Booked{nextOccurrence ? ` · ${formatDate(nextOccurrence.date)}` : ""}</dt><dd className="mt-0.5 font-medium" dir="ltr">{bookedLabel(target)}{nextOccurrence?.waitlistCount ? <span className="ms-1 text-[12px] font-normal text-warning-deep">+{nextOccurrence.waitlistCount} waiting</span> : null}</dd></div>
+                      <div><dt className="text-[12px] text-ink-3">{t("memberProfile.pt.bookingStatus.reserved")}{nextOccurrence ? ` · ${formatDate(nextOccurrence.date)}` : ""}</dt><dd className="mt-0.5 font-medium" dir="ltr">{bookedLabel(target)}{nextOccurrence?.waitlistCount ? <span className="ms-1 text-[12px] font-normal text-warning-deep">+{nextOccurrence.waitlistCount} waiting</span> : null}</dd></div>
                     </dl>
                     <div>
                       <p className="text-[12px] text-ink-3">Who booked{nextOccurrence ? ` — ${formatDate(nextOccurrence.date)}` : ""}</p>
@@ -603,11 +605,11 @@ function ClassesWorkspace() {
                         <p className="mt-1.5 text-[12px] text-ink-3">{nextOccurrence ? "No one has booked this class yet." : "No class in these seven days."}</p>
                       )}
                     </div>
-                    {target.notes ? <div><p className="text-[12px] text-ink-3">Notes</p><p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink-2">{target.notes}</p></div> : null}
+                    {target.notes ? <div><p className="text-[12px] text-ink-3">{t("common.label.notes")}</p><p className="mt-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink-2">{target.notes}</p></div> : null}
                   </DialogBody>
                   <DialogFooter>
-                    {canManage ? <Button variant="secondary" onClick={() => { setDetailsId(undefined); openEdit(target); }} aria-label={`Edit ${target.name}`}><Pencil /> Edit</Button> : null}
-                    <Button variant="ghost" onClick={() => setDetailsId(undefined)}>Close</Button>
+                    {canManage ? <Button variant="secondary" onClick={() => { setDetailsId(undefined); openEdit(target); }} aria-label={`Edit ${target.name}`}><Pencil />{" "}{t("common.action.edit")}</Button> : null}
+                    <Button variant="ghost" onClick={() => setDetailsId(undefined)}>{t("common.action.close")}</Button>
                     {canRoster ? <Button disabled={occurrencesQuery.isLoading || occurrencesQuery.isError || !nextOccurrence} onClick={() => { setDetailsId(undefined); openNextOccurrence(target.id); }}>Who booked</Button> : null}{canManage ? <Button variant="danger" onClick={() => { setDetailsId(undefined); setDeleteTarget(target); setDeleteReason(""); }}>Remove from schedule</Button> : null}
                   </DialogFooter>
                 </>
@@ -643,11 +645,10 @@ function ClassesWorkspace() {
                     </div>
                     {canRoster ? (
                       <div className="relative mt-2">
-                        <label className="grid gap-1.5 text-[12px] font-medium">Add member
-                          <Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search by name or phone…" />
+                        <label className="grid gap-1.5 text-[12px] font-medium">{t("palette.actions.newMember.title")}<Input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search by name or phone…" />
                         </label>
                         {memberLookup.isLoading ? <p className="mt-2 text-[12px] text-ink-3" role="status">Searching members…</p> : memberLookup.isError ? (
-                          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger" role="alert"><span>Member search did not work.</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>Try again</Button></div>
+                          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger" role="alert"><span>Member search did not work.</span><Button size="sm" variant="ghost" onClick={() => memberLookup.refetch()}>{t("common.action.retry")}</Button></div>
                         ) : memberResults.length > 0 ? (
                           <div className="mt-2 w-full divide-y divide-line rounded-md border border-line bg-surface">
                             {memberResults.map((member) => (
@@ -663,7 +664,7 @@ function ClassesWorkspace() {
                   </div>
                 </DialogBody>
                 <DialogFooter>
-                  <Button variant="secondary" onClick={() => setManageId(undefined)}>Close</Button>
+                  <Button variant="secondary" onClick={() => setManageId(undefined)}>{t("common.action.close")}</Button>
                   {canManage ? <Button variant="primary" onClick={() => openEdit(managed)}>Edit class</Button> : null}
                 </DialogFooter>
               </>
@@ -675,6 +676,7 @@ function ClassesWorkspace() {
 }
 
 function CoachForm({ onSubmit, pending }: { onSubmit: (input: { name: string; phone?: string; specialty?: string }) => void; pending: boolean }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [specialty, setSpecialty] = useState("");
@@ -682,7 +684,7 @@ function CoachForm({ onSubmit, pending }: { onSubmit: (input: { name: string; ph
     <div className="grid gap-2 rounded-md border border-dashed border-line-2 p-3">
       <p className="text-[12px] font-medium">Add a coach</p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" aria-label="Coach name" />
+        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={t("common.label.name")} aria-label="Coach name" />
         <Input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone (optional)" aria-label="Coach phone" />
         <Input value={specialty} onChange={(event) => setSpecialty(event.target.value)} placeholder="Specialty (optional)" aria-label="Coach specialty" />
       </div>

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { MessageSquareText, Play, Save } from "lucide-react";
 import { useParams } from "next/navigation";
@@ -27,6 +28,7 @@ import { automationTriggerFieldValue, automationTriggerParameterLabel, automatio
 import { automationExecutionLabel } from "@/features/automations/monitoring-ui";
 
 export default function RuleEditorPageClient() {
+  const t = useT();
   const { ruleId } = useParams<{ ruleId: string }>();
   const invalidate = useInvalidate();
 
@@ -140,8 +142,7 @@ export default function RuleEditorPageClient() {
               <Play /> Run now
             </Button>
             <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!canSave}>
-              <Save /> Save changes
-            </Button>
+              <Save />{" "}{t("common.action.saveChanges")}</Button>
           </div>
         }
       />
@@ -149,9 +150,9 @@ export default function RuleEditorPageClient() {
       <div className="grid gap-5 xl:grid-cols-2">
         {/* Editor */}
         <section className="panel self-start p-5">
-          <h2 className="mb-4 font-display text-[15px] font-semibold">Settings</h2>
+          <h2 className="mb-4 font-display text-[15px] font-semibold">{t("shell.account.settings")}</h2>
           <div className="space-y-4">
-            <Field label="Name">
+            <Field label={t("common.label.name")}>
               <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} />
             </Field>
 
@@ -226,8 +227,8 @@ export default function RuleEditorPageClient() {
             </header>
             {selectedTemplate ? (
               <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                <TemplateBubble label="English" body={renderTemplate(selectedTemplate, "en")} />
-                <TemplateBubble label="العربية" body={renderTemplate(selectedTemplate, "ar")} rtl />
+                <TemplateBubble label={t("common.language.english")} body={renderTemplate(selectedTemplate, "en")} />
+                <TemplateBubble label={t("common.language.arabic")} body={renderTemplate(selectedTemplate, "ar")} rtl />
               </div>
             ) : (
               <p className="px-4 py-6 text-[13px] text-ink-3">Turn on “{ACTION_LABELS.queue_message}” and choose a message to see it here.</p>
@@ -285,12 +286,12 @@ export default function RuleEditorPageClient() {
                 {(runPreviewQuery.data?.candidates.length ?? 0) > 0 ? <ul className="mt-3 max-h-36 divide-y divide-line overflow-y-auto border-t border-line text-[12px]">{runPreviewQuery.data!.candidates.map((candidate) => <li key={`${candidate.subjectType}:${candidate.subjectId}`} className="flex items-center justify-between gap-3 py-2"><span className="truncate">{candidate.subjectName}</span><Badge variant={candidate.duplicate ? "neutral" : "success"}>{candidate.duplicate ? "already done" : "will run"}</Badge></li>)}</ul> : <p className="mt-3 border-t border-line pt-3 text-[12px] text-ink-3">Nobody matches right now.</p>}
               </div>
             )}
-            <Field label="Reason" required>
+            <Field label={t("common.label.reason")} required>
               <Textarea value={runReason} onChange={(event) => setRunReason(event.target.value)} placeholder="Why run it now?" />
             </Field>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setRunOpen(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setRunOpen(false)}>{t("common.action.cancel")}</Button>
             <Button onClick={() => runNow.mutate()} loading={runNow.isPending} disabled={!runReason.trim() || runPreviewQuery.isLoading || runPreviewQuery.isError}><Play /> Run now</Button>
           </DialogFooter>
         </DialogContent>

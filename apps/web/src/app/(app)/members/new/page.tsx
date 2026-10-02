@@ -202,11 +202,11 @@ export default function NewMemberPage() {
   return (
     <Dialog open onOpenChange={(open) => { if (!open) router.push("/members"); }}>
       <DialogContent className="max-w-3xl p-0">
-        <DialogTitle className="sr-only">{completed ? "Sale complete" : saleDraft ? "Choose membership and payment" : "Add member"}</DialogTitle>
+        <DialogTitle className="sr-only">{completed ? "Sale complete" : saleDraft ? "Choose membership and payment" : t("palette.actions.newMember.title")}</DialogTitle>
         <DialogDescription className="sr-only">Add a new member. You can also sell their first membership.</DialogDescription>
         <div className="min-w-0 space-y-5 p-5">
       <PageHeader
-        title={completed ? "Member ready" : saleDraft ? "Finish membership sale" : "Add member"}
+        title={completed ? "Member ready" : saleDraft ? "Finish membership sale" : t("palette.actions.newMember.title")}
         description={completed ? "The member and their membership are saved." : saleDraft ? "Choose the plan and how much they pay now." : "Fill in the main details now. You can add more later."}
       />
 
@@ -283,24 +283,24 @@ export default function NewMemberPage() {
                 onBlur={(event) => { void emailField.onBlur(event); void checkDuplicates(); }}
               />
             </Field>
-            <Field label="Gender" required error={form.formState.errors.gender?.message}>
+            <Field label={t("memberProfile.details.gender")} required error={form.formState.errors.gender?.message}>
               <Controller
                 control={form.control}
                 name="gender"
                 render={({ field }) => (
                   <Select value={field.value ?? ""} onValueChange={(v) => field.onChange(v || undefined)}>
-                    <SelectTrigger aria-label="Gender">
+                    <SelectTrigger aria-label={t("memberProfile.details.gender")}>
                       <SelectValue placeholder="Choose male or female" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">{t("memberProfile.details.female")}</SelectItem>
+                      <SelectItem value="male">{t("memberProfile.details.male")}</SelectItem>
                     </SelectContent>
                   </Select>
                 )}
               />
             </Field>
-            <Field label="Date of birth">
+            <Field label={t("memberProfile.details.dateOfBirth")}>
               <Input type="date" {...form.register("dateOfBirth")} />
             </Field>
           </FieldGrid>
@@ -367,13 +367,13 @@ export default function NewMemberPage() {
                 )}
               />
             </Field>
-            <Field label="How they found us">
+            <Field label={t("memberProfile.details.foundUs")}>
               <Controller
                 control={form.control}
                 name="source"
                 render={({ field }) => (
                   <Select value={field.value ?? ""} onValueChange={(v) => field.onChange((v || undefined) as LeadSource | undefined)}>
-                    <SelectTrigger aria-label="How they found us">
+                    <SelectTrigger aria-label={t("memberProfile.details.foundUs")}>
                       <SelectValue placeholder="Choose one" />
                     </SelectTrigger>
                     <SelectContent>
@@ -387,7 +387,7 @@ export default function NewMemberPage() {
                 )}
               />
             </Field>
-            <Field label="Salesperson">
+            <Field label={t("memberProfile.details.salesperson")}>
               <Controller
                 control={form.control}
                 name="assignedSalespersonId"
@@ -517,13 +517,14 @@ function CompletionFact({ icon, label, value, warning }: { icon: React.ReactNode
 }
 
 function SalesSelect({ value, onChange }: { value?: string; onChange: (v: string | undefined) => void }) {
+  const t = useT();
   const usersQuery = useApiQuery(qk.users({ role: "salesperson" }), (api) =>
     api.listUsers({ role: "salesperson", status: "active", pageSize: 20 }),
   );
   return (
     <Select value={value ?? ""} onValueChange={(v) => onChange(v || undefined)}>
-      <SelectTrigger aria-label="Salesperson">
-        <SelectValue placeholder="Not assigned" />
+      <SelectTrigger aria-label={t("memberProfile.details.salesperson")}>
+        <SelectValue placeholder={t("memberProfile.details.notAssigned")} />
       </SelectTrigger>
       <SelectContent>
         {(usersQuery.data?.items ?? []).map((u) => (

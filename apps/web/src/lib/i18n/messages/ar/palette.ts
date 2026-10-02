@@ -1,18 +1,13 @@
 import { plural } from "../../dictionary";
 import type { palette as En } from "../en/palette";
 
-/**
- * Global search, notification bell, keyboard shortcuts, module lock panel and
- * the workspace loading label (new drafts; staff voice, plural-polite). Terms
- * follow docs/arabic/GLOSSARY.md. Search results, navigation catalogue entries
- * and notification text come from the server and are not translated here.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const palette: typeof En = {
   search: {
     dialogLabel: "البحث الشامل",
     closeLabel: "إغلاق البحث",
     inputLabel: "البحث في RIVET",
-    placeholder: "الاسم أو الهاتف أو رقم الإيصال أو الصفحة أو الإجراء…",
+    placeholder: "الاسم أو الهاتف أو رقم وصل الدفع أو الصفحة أو الإجراء…",
     searching: "جارٍ البحث…",
     errorMessage: "البحث لا يعمل حاليًا.",
     errorRetry: "إعادة البحث",
@@ -22,7 +17,7 @@ export const palette: typeof En = {
   groups: {
     members: "الأعضاء",
     leads: "الفرص",
-    receipts: "الإيصالات",
+    receipts: "وصول الدفع",
     pages: "الصفحات",
     actions: "الإجراءات",
     places: "الأقسام",
@@ -35,8 +30,8 @@ export const palette: typeof En = {
 
   kind: {
     member: "عضو",
-    lead: "فرصة",
-    receipt: "إيصال",
+    lead: "مهتم بالاشتراك",
+    receipt: "وصل دفع",
     page: "صفحة",
     action: "إجراء",
     report: "تقرير",
@@ -58,11 +53,11 @@ export const palette: typeof En = {
     membersSubtitle: "كل الأعضاء",
     receptionSubtitle: "تسجيل الحضور",
     personalTrainingSubtitle: "الجدول والباقات",
-    paymentsSubtitle: "المدفوعات والإيصالات",
+    paymentsSubtitle: "المدفوعات ووصول الدفع",
     managementLedgerSubtitle: "القوائم المالية",
     supportSubtitle: "مساعدة من RIVET",
     settingsSubtitle: "الملف الشخصي والنادي والموظفون",
-    supplierBills: "فواتير الموردين",
+    supplierBills: "فواتير المورّدين",
     maintenance: "الصيانة",
     automations: "الأتمتة",
   },
@@ -70,7 +65,7 @@ export const palette: typeof En = {
   actions: {
     newMember: { title: "إضافة عضو", subtitle: "إضافة عضو جديد" },
     newLead: { title: "إضافة فرصة", subtitle: "إضافة شخص قد ينضم" },
-    collectPayment: { title: "تحصيل دفعة", subtitle: "تحصيل دفعة من عضو" },
+    collectPayment: { title: "استلام دفعة", subtitle: "تحصيل دفعة من عضو" },
     startCheckin: { title: "تسجيل حضور عضو", subtitle: "فتح الاستقبال" },
   },
 

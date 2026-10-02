@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check, CheckCircle2, CircleAlert, Clock3, RefreshCcw, Search, ShieldCheck, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +31,7 @@ function parseFilter(value: string | null): Filter {
 }
 
 export default function PlatformApplicationsPage() {
+  const t = useT();
   const [applications, setApplications] = useState<PlatformGymApplication[]>([]);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
@@ -253,11 +255,11 @@ export default function PlatformApplicationsPage() {
       <PageHeader
         title="Gym applications"
         description="Review every gym before provisioning a workspace or sending access. Decisions are recorded for the platform team."
-        actions={<Button variant="secondary" onClick={() => void loadApplications(true)} loading={refreshing} disabled={busy}><RefreshCcw /> Refresh</Button>}
+        actions={<Button variant="secondary" onClick={() => void loadApplications(true)} loading={refreshing} disabled={busy}><RefreshCcw />{" "}{t("common.action.refresh")}</Button>}
       />
 
       <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Application totals">
-        <PlatformPanel className="p-4"><Stat label="Needs attention" value={String(counts.pending)} context="Waiting for a first review" tone={counts.pending > 0 ? "warning" : undefined} /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label={t("marketing.device.needsAttention")} value={String(counts.pending)} context="Waiting for a first review" tone={counts.pending > 0 ? "warning" : undefined} /></PlatformPanel>
         <PlatformPanel className="p-4"><Stat label="Under review" value={String(counts.under_review)} context="Follow-up still required" /></PlatformPanel>
         <PlatformPanel className="p-4"><Stat label="Approved" value={String(counts.approved)} context="Ready for provisioning" tone={counts.approved > 0 ? "success" : undefined} /></PlatformPanel>
         <PlatformPanel className="p-4"><Stat label="Total applications" value={String(counts.all)} context="All time in this deployment" /></PlatformPanel>
@@ -300,6 +302,7 @@ export default function PlatformApplicationsPage() {
 }
 
 function ApplicationDetail({ application, note, setNote, busyDecision, busyNote, busyProvisioning, refreshing, onReview, onSaveNote, onProvision, onRefresh }: { application: PlatformGymApplication; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; refreshing: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void; onRefresh: () => void }) {
+  const t = useT();
   // An approved application whose provisioning failed permanently and
   // created no workspace can still be rejected to clear the queue.
   const provisioningDeadEnd = application.status === "approved" && application.provisioningStatus === "failed" && !application.provisionedOrganizationId;
@@ -318,9 +321,9 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyNote,
           <section aria-labelledby={`applicant-${application.id}`}>
             <h3 id={`applicant-${application.id}`} className="text-[13px] font-semibold">Applicant</h3>
             <dl className="mt-2 grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2">
-              <Detail label="Owner" value={application.ownerName} />
+              <Detail label={t("domain.role.owner")} value={application.ownerName} />
               <Detail label="Gym address" value={application.gymAddress || "Address not provided"} />
-              <Detail label="Email" value={application.email} ltr />
+              <Detail label={t("common.label.email")} value={application.email} ltr />
               <Detail label="Contact number" value={application.contactNumber} ltr />
               <Detail label="Chosen plan" value={application.plan} />
             </dl>
@@ -329,7 +332,7 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyNote,
             <Field label="Review notes" hint="A rejection requires a reason. Notes are visible to the platform team only.">
               <Textarea value={note} onChange={(event) => setNote(event.target.value)} disabled={Boolean(busyDecision) || busyNote} placeholder="Record what you verified, or why the application was rejected." />
             </Field>
-            <div className="mt-2 flex justify-end"><Button type="button" variant="secondary" size="sm" onClick={() => void onSaveNote()} loading={busyNote} disabled={!noteDirty || Boolean(busyDecision)}>{noteDirty ? "Save note" : "Saved"}</Button></div>
+            <div className="mt-2 flex justify-end"><Button type="button" variant="secondary" size="sm" onClick={() => void onSaveNote()} loading={busyNote} disabled={!noteDirty || Boolean(busyDecision)}>{noteDirty ? t("memberProfile.note.save") : "Saved"}</Button></div>
           </section>
           {finalized ? <div className={cn("flex items-start gap-3 rounded-md border p-4 text-[12.5px]", application.status === "approved" ? "border-success/30 bg-success-bg text-success-deep" : "border-danger/30 bg-danger-bg text-danger")}><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden /><div><strong>{application.status === "approved" ? "Application approved" : "Application rejected"}</strong><p className="mt-1 leading-relaxed opacity-90">{application.reviewedBy ? `Decision by ${application.reviewedBy} on ${formatDate(application.reviewedAt ?? application.updatedAt)}.` : "Decision recorded."} {application.reviewNotificationStatus === "sent" ? "The owner was notified by email." : application.reviewNotificationStatus === "failed" ? "The decision was saved, but the email failed." : "The owner notification is not configured."} {application.status === "rejected" ? " This decision is final; the applicant can submit a new application if circumstances change." : ""}</p></div></div> : null}
           {application.status === "approved" ? <ProvisioningCard application={application} busy={busyProvisioning} refreshing={refreshing} onProvision={onProvision} onRefresh={onRefresh} /> : null}
@@ -345,7 +348,7 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyNote,
           </section>
           {!finalized ? (
             <section className="border-t border-line pt-5">
-              <h3 className="text-[13px] font-semibold">Decision</h3>
+              <h3 className="text-[13px] font-semibold">{t("members.tabs.checkIns.decision")}</h3>
               {provisioningDeadEnd ? <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">Provisioning failed permanently, so this application can only be rejected (add the reason above).</p> : null}
               <div className="mt-3 grid gap-2">
                 {!provisioningDeadEnd ? <><Button onClick={() => void onReview("approved")} loading={busyDecision === "approved"} disabled={Boolean(busyDecision)}><Check />Approve application</Button><Button variant="secondary" onClick={() => void onReview("under_review")} loading={busyDecision === "under_review"} disabled={Boolean(busyDecision) || application.status === "under_review"}><Clock3 />Mark under review</Button></> : null}

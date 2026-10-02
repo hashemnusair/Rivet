@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ChevronDown, Search } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -90,6 +91,7 @@ const CATEGORY_FILTERS: ReadonlyArray<"all" | AuditCategory> = ["all", ...(Objec
 const APPROVAL_FILTERS = ["all", "pending", "approved", "rejected"] as const;
 
 function AuditPageInner() {
+  const t = useT();
   const searchParams = useSearchParams();
   const replaceParams = useReplaceSearchParams();
   // Every filter is read from the URL so a search can be shared or reopened
@@ -127,7 +129,7 @@ function AuditPageInner() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Activity log"
+        title={t("nav.item.activityLog")}
         description="Who did what, when and why, for refunds, discounts and other important actions."
       />
 
@@ -201,6 +203,7 @@ function AuditPageInner() {
 }
 
 function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: boolean; onToggle: () => void }) {
+  const t = useT();
   const hasDetail = Boolean(event.before || event.after || event.reason);
   const approvalStatus = auditApprovalStatusForDisplay(event);
   return (
@@ -235,7 +238,7 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
           <div className="grid gap-3 md:grid-cols-2">
             {event.reason ? (
               <div className="rounded-md border border-line bg-surface p-3 md:col-span-2">
-                <p className="context-label mb-1">Reason</p>
+                <p className="context-label mb-1">{t("common.label.reason")}</p>
                 <p className="text-[12.5px]">{event.reason}</p>
               </div>
             ) : null}
@@ -243,7 +246,7 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
               <DiffPanel label="Before" values={event.before} />
             ) : null}
             {event.after ? (
-              <DiffPanel label="After" values={event.after} highlight />
+              <DiffPanel label={t("renewFlow.adjust.beforeAfter.after")} values={event.after} highlight />
             ) : null}
           </div>
           <p className="mt-3 text-[12px] text-ink-3">Reference <span className="font-mono text-[11px]">{event.correlationId}</span></p>

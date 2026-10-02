@@ -84,8 +84,7 @@ function TransactionsPageInner() {
         description="All payments and refunds."
         actions={
           <Button onClick={() => replaceParams({ collect: "1" }, { keepPage: true })}>
-            <Plus /> Collect payment
-          </Button>
+            <Plus />{" "}{t("renewFlow.payment.collectPlain")}</Button>
         }
       />
 
@@ -97,7 +96,7 @@ function TransactionsPageInner() {
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search payments" data-touch-target />
         </div>
         <Select value={method} onValueChange={(value) => replaceParams({ method: value === "all" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Payment method" data-touch-target>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label={t("renewFlow.shared.paymentMethodAria")} data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { isApiError } from "@/lib/api/errors";
 
@@ -71,6 +72,7 @@ export interface PayablesWorkspaceProps {
  * server projection; this screen only chooses filters and pages.
  */
 export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId }: PayablesWorkspaceProps) {
+  const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
   const router = useRouter();
@@ -124,7 +126,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
 
   const page = payablesQuery.data;
   const suppliers = suppliersQuery.data ?? [];
-  const branchLabel = branchId === ALL ? "All branches" : branches.find((branch) => branch.id === branchId)?.name ?? "Branch";
+  const branchLabel = branchId === ALL ? t("common.label.allBranches") : branches.find((branch) => branch.id === branchId)?.name ?? "Branch";
   const supplierLabel = supplierId === ALL ? "All suppliers" : suppliers.find((supplier) => supplier.id === supplierId)?.name ?? "Supplier";
   const statusLabel = STATUS_FILTERS.find((entry) => entry.value === status)?.label ?? status;
   const pageStart = page ? cursors.length * PAGE_SIZE + (page.items.length ? 1 : 0) : 0;
@@ -157,8 +159,8 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
       </div>
       {!embedded ? (
         <Select value={branchId} onValueChange={(value) => { setBranchId(value); updateFilter("branch", value); }}>
-          <SelectTrigger aria-label="Branch" className="h-9 w-40"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value={ALL}>All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+          <SelectTrigger aria-label={t("common.label.branch")} className="h-9 w-40"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value={ALL}>{t("common.label.allBranches")}</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
         </Select>
       ) : null}
       <Select value={supplierId} onValueChange={(value) => { setSupplierId(value); updateFilter("supplier", value); }}>
@@ -176,7 +178,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
   return (
     <div className="space-y-4" data-testid="payables-workspace">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        {embedded ? <div><h2 className="text-[15px] font-semibold">Supplier bills</h2><p className="text-[12px] text-ink-2">What you still owe suppliers, oldest first.</p></div> : <PageHeader title="Supplier bills" description="See what you owe suppliers and record payments." />}
+        {embedded ? <div><h2 className="text-[15px] font-semibold">{t("palette.pages.supplierBills")}</h2><p className="text-[12px] text-ink-2">What you still owe suppliers, oldest first.</p></div> : <PageHeader title={t("palette.pages.supplierBills")} description="See what you owe suppliers and record payments." />}
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={() => void exportCsv()} loading={exporting} disabled={!page}><Download /> Download CSV</Button>
           {writeEnabled ? <Button size="sm" onClick={() => setPayDialog({ supplierId: supplierId === ALL ? undefined : supplierId })} data-testid="open-record-supplier-payment"><WalletCards /> Record payment</Button> : null}
@@ -188,7 +190,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
         : payablesQuery.isError && (!page || (isApiError(payablesQuery.error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(payablesQuery.error.code))) ? <QueryErrorState error={payablesQuery.error} onRetry={() => void payablesQuery.refetch()} forbiddenDescription="You don’t have access to supplier bills." />
           : page ? (
             <>
-              {payablesQuery.isError ? <p role="status" className="text-[12px] text-warning-deep">The bills could not update. The amounts may be out of date. <Button variant="ghost" size="sm" onClick={() => void payablesQuery.refetch()}>Try again</Button></p> : null}
+              {payablesQuery.isError ? <p role="status" className="text-[12px] text-warning-deep">The bills could not update. The amounts may be out of date. <Button variant="ghost" size="sm" onClick={() => void payablesQuery.refetch()}>{t("common.action.retry")}</Button></p> : null}
               <div className="panel grid divide-y divide-line sm:grid-cols-3 sm:divide-y-0">
                 <section className="p-4"><p className="context-label">You owe</p><p className="mt-1 text-xl font-semibold tabular-nums"><MoneyText money={page.totals.outstanding} /></p><p className="mt-1 text-[12px] text-ink-2">{page.totals.openCount} {page.totals.openCount === 1 ? "bill" : "bills"} to pay · {branchLabel}</p></section>
                 <section className="p-4"><p className="context-label">Oldest unpaid bill</p><p className="mt-1 text-[14px] font-medium">{oldestOpen ? <DateText iso={oldestOpen} /> : "Nothing to pay"}</p><p className="mt-1 text-[12px] text-ink-2">Counted from the day the order was received.</p></section>
@@ -212,17 +214,17 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
               <section className="panel overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-start" data-testid="payables-table">
-                    <caption className="sr-only">Supplier bills</caption>
+                    <caption className="sr-only">{t("palette.pages.supplierBills")}</caption>
                     <thead className="border-b border-line bg-sunken/40 text-[12px] text-ink-3">
                       <tr>
                         <th className="px-4 py-2.5 font-medium">Supplier</th>
                         <th className="px-4 py-2.5 font-medium">What was received</th>
                         <th className="px-4 py-2.5 font-medium">Received</th>
-                        <th className="px-4 py-2.5 text-end font-medium">Total</th>
-                        <th className="px-4 py-2.5 text-end font-medium">Paid</th>
-                        <th className="px-4 py-2.5 text-end font-medium">Still owed</th>
-                        <th className="px-4 py-2.5 font-medium">Status</th>
-                        <th className="px-4 py-2.5 text-end font-medium">Actions</th>
+                        <th className="px-4 py-2.5 text-end font-medium">{t("common.label.total")}</th>
+                        <th className="px-4 py-2.5 text-end font-medium">{t("memberProfile.pt.orderStatus.active")}</th>
+                        <th className="px-4 py-2.5 text-end font-medium">{t("renewFlow.receipt.stillOwed")}</th>
+                        <th className="px-4 py-2.5 font-medium">{t("common.label.status")}</th>
+                        <th className="px-4 py-2.5 text-end font-medium">{t("common.label.actions")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line">
@@ -240,7 +242,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
                           <td className="px-4 py-3 text-end">
                             <div className="flex items-center justify-end gap-1">
                               {writeEnabled && (payable.status === "unpaid" || payable.status === "partially_paid") ? <Button size="xs" onClick={() => setPayDialog({ supplierId: payable.supplierId, payable })} aria-label={`Pay ${payable.supplierName} for ${payable.sourceLabel}`}><WalletCards /> Pay</Button> : null}
-                              <Button size="xs" variant="ghost" onClick={() => setHistory({ payableId: payable.id, title: "Payment history", description: `${payable.sourceLabel} · ${payable.supplierName}` })} aria-label={`Payment history for ${payable.sourceLabel}`}><History /> History</Button>
+                              <Button size="xs" variant="ghost" onClick={() => setHistory({ payableId: payable.id, title: t("memberProfile.payments.historyLabel"), description: `${payable.sourceLabel} · ${payable.supplierName}` })} aria-label={`Payment history for ${payable.sourceLabel}`}><History />{" "}{t("marketing.device.phone.visitsValue")}</Button>
                             </div>
                           </td>
                         </tr>
@@ -252,8 +254,8 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
                   <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5 text-[12px] text-ink-3">
                     <span className="tabular" dir="ltr">{pageStart} to {pageEnd} of {page.matchedCount}</span>
                     <div className="flex items-center gap-1">
-                      <Button variant="secondary" size="icon-sm" disabled={cursors.length === 0} onClick={() => setCursors((current) => current.slice(0, -1))} aria-label="Previous page"><ChevronLeft /></Button>
-                      <Button variant="secondary" size="icon-sm" disabled={!page.nextCursor} onClick={() => { if (page.nextCursor) setCursors((current) => [...current, page.nextCursor!]); }} aria-label="Next page"><ChevronRight /></Button>
+                      <Button variant="secondary" size="icon-sm" disabled={cursors.length === 0} onClick={() => setCursors((current) => current.slice(0, -1))} aria-label={t("common.pagination.previous")}><ChevronLeft /></Button>
+                      <Button variant="secondary" size="icon-sm" disabled={!page.nextCursor} onClick={() => { if (page.nextCursor) setCursors((current) => [...current, page.nextCursor!]); }} aria-label={t("common.pagination.next")}><ChevronRight /></Button>
                     </div>
                   </div>
                 ) : null}

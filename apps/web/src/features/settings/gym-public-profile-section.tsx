@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowDown, ArrowUp, Send, X } from "lucide-react";
 import { useEffect, useId, useState, type ChangeEvent } from "react";
@@ -110,6 +111,7 @@ const PROFILE_STATUS: Record<string, { label: string; variant: "success" | "warn
 };
 
 export function GymPublicProfileSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const { session } = useApp();
   const profile = useRealtimeApiQuery({ queryKey: qk.gymProfile, query: (api) => api.getGymPublicProfile(), subscribe: (api, onValue, onError) => api.subscribeGymPublicProfile(onValue, onError) });
@@ -305,7 +307,7 @@ export function GymPublicProfileSection() {
               <Field label="Contact email"><Input type="email" inputMode="email" dir="ltr" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></Field>
               <Field label="Contact phone"><Input dir="ltr" type="tel" inputMode="tel" value={form.contactPhone} onChange={(event) => setForm((current) => ({ ...current, contactPhone: event.target.value }))} /></Field>
               <Field label="Website"><Input type="url" inputMode="url" dir="ltr" value={form.websiteUrl} onChange={(event) => setForm((current) => ({ ...current, websiteUrl: event.target.value }))} placeholder="https://" /></Field>
-              <Field label="Instagram"><Input type="url" inputMode="url" dir="ltr" value={form.instagramUrl} onChange={(event) => setForm((current) => ({ ...current, instagramUrl: event.target.value }))} placeholder="https://instagram.com/" /></Field>
+              <Field label={t("domain.leadSource.instagram")}><Input type="url" inputMode="url" dir="ltr" value={form.instagramUrl} onChange={(event) => setForm((current) => ({ ...current, instagramUrl: event.target.value }))} placeholder="https://instagram.com/" /></Field>
               <Field label="Accent color" hint="Used on the public page only. Your staff screens use the colors in Brand kit."><div className="flex gap-2"><Input type="color" aria-label="Accent color picker" className="w-14 shrink-0 p-1" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /><Input aria-label="Accent color code" dir="ltr" className="font-mono" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /></div></Field>
             </div>
           </SettingsPanel>
@@ -399,12 +401,13 @@ export function GymPublicProfileSection() {
         guardDescription="Save the draft, discard your changes, or stay on this page."
       />
 
-      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}><DialogContent><DialogHeader><DialogTitle>Send version {value.version} to RIVET?</DialogTitle><DialogDescription>The RIVET team checks your saved draft and publishes it for you. You can add a note.</DialogDescription></DialogHeader><DialogBody><Field label="Note for RIVET (optional)"><Textarea value={reviewMessage} onChange={(event) => setReviewMessage(event.target.value)} placeholder="What changed and why?" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => setReviewOpen(false)}>Cancel</Button><Button loading={requestReview.isPending} onClick={() => requestReview.mutate()}><Send /> Send to RIVET</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}><DialogContent><DialogHeader><DialogTitle>Send version {value.version} to RIVET?</DialogTitle><DialogDescription>The RIVET team checks your saved draft and publishes it for you. You can add a note.</DialogDescription></DialogHeader><DialogBody><Field label="Note for RIVET (optional)"><Textarea value={reviewMessage} onChange={(event) => setReviewMessage(event.target.value)} placeholder="What changed and why?" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => setReviewOpen(false)}>{t("common.action.cancel")}</Button><Button loading={requestReview.isPending} onClick={() => requestReview.mutate()}><Send /> Send to RIVET</Button></DialogFooter></DialogContent></Dialog>
     </SettingsSection>
   );
 }
 
 function MediaUploadField({ label, current, draft, loading, onSelect, onAltTextChange, onRemove }: { label: string; current?: MediaAsset; draft?: PendingMedia; loading: boolean; onSelect: (file: File, altText: string) => void; onAltTextChange?: (altText: string) => void; onRemove?: () => void }) {
+  const t = useT();
   const [altText, setAltText] = useState(draft?.altText ?? current?.altText ?? "");
   const fieldId = useId();
   useEffect(() => { setAltText(draft?.altText ?? current?.altText ?? ""); }, [draft?.file, draft?.altText, current?.id, current?.altText]);
@@ -429,9 +432,9 @@ function MediaUploadField({ label, current, draft, loading, onSelect, onAltTextC
     <div className="min-w-0">
       <label htmlFor={`${fieldId}-file`} className="mb-1.5 block text-[13px] font-medium text-ink-2">{label}</label>
       {previewUrl ? (
-        <div className="relative mb-2"><div role="img" aria-label={previewLabel} className="h-24 w-full rounded-md bg-sunken bg-cover bg-center" style={{ backgroundImage: `url(${previewUrl})` }} />{onRemove ? <Button type="button" size="xs" variant="secondary" className="absolute end-2 top-2" onClick={onRemove}>Remove</Button> : null}</div>
+        <div className="relative mb-2"><div role="img" aria-label={previewLabel} className="h-24 w-full rounded-md bg-sunken bg-cover bg-center" style={{ backgroundImage: `url(${previewUrl})` }} />{onRemove ? <Button type="button" size="xs" variant="secondary" className="absolute end-2 top-2" onClick={onRemove}>{t("common.action.remove")}</Button> : null}</div>
       ) : draft ? (
-        <div className="relative mb-2 flex h-24 items-center justify-center rounded-md border border-dashed border-line-2 bg-sunken px-3 text-center text-[12px] text-ink-2"><span className="truncate">Ready to upload: {draft.file.name}</span>{onRemove ? <Button type="button" size="xs" variant="secondary" className="absolute end-2 top-2" onClick={onRemove}>Remove</Button> : null}</div>
+        <div className="relative mb-2 flex h-24 items-center justify-center rounded-md border border-dashed border-line-2 bg-sunken px-3 text-center text-[12px] text-ink-2"><span className="truncate">Ready to upload: {draft.file.name}</span>{onRemove ? <Button type="button" size="xs" variant="secondary" className="absolute end-2 top-2" onClick={onRemove}>{t("common.action.remove")}</Button> : null}</div>
       ) : null}
       <input id={`${fieldId}-file`} className="block h-9 w-full rounded-md border border-line-2 bg-surface px-3 py-1.5 text-[12.5px] text-ink-2 file:me-2 file:rounded-sm file:border file:border-line file:bg-surface file:px-2 file:py-0.5 file:text-[12px] file:text-ink disabled:cursor-not-allowed disabled:opacity-50" type="file" accept="image/jpeg,image/png,image/webp" disabled={loading} onChange={handleFileChange} />
       <label htmlFor={`${fieldId}-alt`} className="mt-3 block text-[13px] font-medium text-ink-2">Image description</label>

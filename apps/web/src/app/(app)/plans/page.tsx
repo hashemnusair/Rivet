@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Archive, Pencil, Plus } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -23,6 +24,7 @@ export default function PlansPage() {
 }
 
 function PlansWorkspace() {
+  const t = useT();
   const { session } = useApp();
   const invalidate = useInvalidate();
   const params = useSearchParams();
@@ -46,7 +48,7 @@ function PlansWorkspace() {
 
   const branchLabel = (plan: MembershipPlan) =>
     plan.branchAccess === "all"
-      ? "All branches"
+      ? t("common.label.allBranches")
       : plan.branchIds
           .map((id) => session?.branches.find((b) => b.id === id)?.code ?? "?")
           .join(", ");
@@ -120,14 +122,14 @@ function PlansWorkspace() {
           <Table className="hidden lg:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Plan</TableHead>
+                <TableHead>{t("renewFlow.adjust.planChange.rowPlan")}</TableHead>
                 <TableHead>Length</TableHead>
-                <TableHead className="text-end">Price</TableHead>
+                <TableHead className="text-end">{t("renewFlow.adjust.planChange.rowPrice")}</TableHead>
                 <TableHead>Branches</TableHead>
                 <TableHead className="text-end">Freeze days</TableHead>
-                <TableHead className="text-end">PT sessions</TableHead>
-                <TableHead className="text-end">Active members</TableHead>
-                <TableHead aria-label="Actions" />
+                <TableHead className="text-end">{t("crm.lead.membership.ptSessions")}</TableHead>
+                <TableHead className="text-end">{t("members.list.activeMembers")}</TableHead>
+                <TableHead aria-label={t("common.label.actions")} />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -200,6 +202,7 @@ function PlansWorkspace() {
 }
 
 function PlanCompactRow({ plan, branchLabel, onEdit, onArchive }: { plan: MembershipPlan; branchLabel: string; onEdit: () => void; onArchive: () => void }) {
+  const t = useT();
   return (
     <li className="space-y-3 px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
@@ -212,12 +215,12 @@ function PlanCompactRow({ plan, branchLabel, onEdit, onArchive }: { plan: Member
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]">
         <div><dt className="text-ink-3">Length</dt><dd className="mt-0.5 tabular">{plan.kind === "time" ? `${plan.durationDays} days` : `${plan.visitAllowance} visits${plan.visitValidityDays ? ` in ${plan.visitValidityDays} days` : ""}`}</dd></div>
         <div><dt className="text-ink-3">Branches</dt><dd className="mt-0.5">{branchLabel}</dd></div>
-        <div><dt className="text-ink-3">Active members</dt><dd className="mt-0.5 tabular">{plan.activeSubscribers}</dd></div>
+        <div><dt className="text-ink-3">{t("members.list.activeMembers")}</dt><dd className="mt-0.5 tabular">{plan.activeSubscribers}</dd></div>
         <div><dt className="text-ink-3">Freeze and PT</dt><dd className="mt-0.5 tabular">{plan.freezeAllowanceDays > 0 ? `${plan.freezeAllowanceDays} freeze days` : "No freeze"}{plan.includedPtSessions > 0 ? ` · ${plan.includedPtSessions} PT sessions` : ""}</dd></div>
       </dl>
       <Gate permission="settings.manage">
         <div className="flex justify-end gap-2 border-t border-line pt-3">
-          <Button variant="secondary" size="sm" onClick={onEdit}><Pencil /> Edit</Button>
+          <Button variant="secondary" size="sm" onClick={onEdit}><Pencil />{" "}{t("common.action.edit")}</Button>
           {plan.status === "active" ? <Button variant="ghost" size="sm" onClick={onArchive}><Archive /> Archive</Button> : null}
         </div>
       </Gate>

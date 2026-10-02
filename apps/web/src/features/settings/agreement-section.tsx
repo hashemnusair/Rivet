@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Download, FileSignature } from "lucide-react";
 import { qk } from "@/lib/api/keys";
@@ -12,6 +13,7 @@ import { QueryErrorState, StatePanel } from "@/components/ui/states";
 
 /** Settings → Agreement: the gym's signed subscription agreement, or why there is none yet. */
 export function AgreementSection() {
+  const t = useT();
   const query = useApiQuery(qk.legalAgreement, (api) => api.getSubscriptionAgreementContext());
   if (query.isLoading) {
     return (
@@ -41,7 +43,7 @@ export function AgreementSection() {
   const status = agreement.status === "countersigned"
     ? "Signed by you and RIVET"
     : agreement.status === "void"
-      ? "Cancelled"
+      ? t("renewFlow.adjust.membershipStatus.cancelled")
       : "Signed by you, waiting for RIVET";
   return (
     <SettingsSection

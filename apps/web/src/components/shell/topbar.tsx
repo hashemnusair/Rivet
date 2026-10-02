@@ -41,7 +41,7 @@ const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
 ];
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
-  const { session, organizations, selectOrganization, setBranch, toggleDir, dir, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
+  const { session, organizations, selectOrganization, setBranch, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
   const { signOut: signOutClerk } = useClerk();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -233,13 +233,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
                 aria-label="Force empty lists"
               />
             </label>
-            <label className="flex items-center justify-between gap-3 cursor-pointer">
-              <div>
-                <p className="text-[13px] font-medium">Manual RTL layout</p>
-                <p className="text-[12px] text-ink-3">Flip the layout for Arabic without changing the language.</p>
-              </div>
-              <Switch checked={dir === "rtl"} onCheckedChange={toggleDir} aria-label="Manual RTL layout" />
-            </label>
+
           </div>
           <div className="border-t border-line px-4 py-3">
             <Button

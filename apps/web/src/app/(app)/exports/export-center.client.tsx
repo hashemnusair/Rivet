@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Download, FileSpreadsheet, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -38,6 +39,7 @@ function downloadExport(job: ExportJob) {
 }
 
 export default function ExportCenterClient() {
+  const t = useT();
   const params = useSearchParams();
   const { session } = useApp();
   const { can } = usePermissions();
@@ -60,7 +62,7 @@ export default function ExportCenterClient() {
   const available = EXPORTS.filter((item) => can(item.permission));
 
   return <div className="space-y-5">
-    <PageHeader sectionLabel="Your data" title="Downloads" description="Download the records you are allowed to see as a CSV file." />
+    <PageHeader sectionLabel="Your data" title={t("nav.item.downloads")} description="Download the records you are allowed to see as a CSV file." />
     <section className="rounded-lg border border-line bg-sunken/40 px-4 py-3"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success-deep" aria-hidden /><p className="text-[12px] leading-5 text-ink-2">You only get records you are allowed to see. Each file can be downloaded for 24 hours.</p></div></section>
     {Object.keys(filters).length ? <p className="text-[12px] text-ink-3">Filters applied: {Object.entries(filters).map(([key, value]) => `${FILTER_LABELS[key] ?? key}: ${key === "branchId" ? session?.branches.find((branch) => branch.id === value)?.name ?? value : value}`).join(" · ")}</p> : null}
 

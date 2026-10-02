@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import {
   AlertTriangle,
@@ -206,6 +207,7 @@ function ReasonDialog({
   onSubmit: (reason: string) => void;
   pending: boolean;
 }) {
+  const t = useT();
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -220,12 +222,12 @@ function ReasonDialog({
           <DialogDescription>{action?.description}</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <Field label="Reason" hint="Saved in the activity log." required>
+          <Field label={t("common.label.reason")} hint="Saved in the activity log." required>
             <Textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why are you doing this?" required />
           </Field>
         </DialogBody>
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t("common.action.cancel")}</Button>
           <Button type="button" loading={pending} disabled={reason.trim().length < 3} onClick={() => onSubmit(reason.trim())}>{action?.confirmLabel ?? "Confirm"}</Button>
         </DialogFooter>
       </DialogContent>
@@ -254,6 +256,7 @@ function ManualJournalDialog({
   pending: boolean;
   onSubmit: (input: PostManualJournalInput) => void;
 }) {
+  const t = useT();
   // Manual journals from this workspace are always branch-scoped. The
   // organization-wide filter is deliberately read-only.
   const scope = "branch" as const;
@@ -316,10 +319,10 @@ function ManualJournalDialog({
         <form onSubmit={submit}>
           <DialogBody className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Branch" hint="Choose one branch. You cannot add an entry to all branches at once." required>
+              <Field label={t("common.label.branch")} hint="Choose one branch. You cannot add an entry to all branches at once." required>
                 <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)}>
-                  <SelectTrigger aria-label="Branch for this entry"><SelectValue placeholder="Choose branch" /></SelectTrigger>
-                  <SelectContent><SelectItem value="none">Choose branch</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+                  <SelectTrigger aria-label="Branch for this entry"><SelectValue placeholder={t("members.bulk.chooseBranch")} /></SelectTrigger>
+                  <SelectContent><SelectItem value="none">{t("members.bulk.chooseBranch")}</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
               <Field label="Entry date" required><Input type="date" value={postingDate} onChange={(event) => setPostingDate(event.target.value)} /></Field>
@@ -342,9 +345,9 @@ function ManualJournalDialog({
               </div>
               <Button type="button" variant="ghost" size="sm" className="mt-2" onClick={() => setLines((current) => [...current, { accountId: accounts[0]?.id ?? "", debit: "", credit: "", description: "" }])}><Plus /> Add line</Button>
             </div>
-            <Field label="Reason" hint="Saved in the activity log." required><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why are you making this entry?" required /></Field>
+            <Field label={t("common.label.reason")} hint="Saved in the activity log." required><Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why are you making this entry?" required /></Field>
           </DialogBody>
-          <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="submit" loading={pending} disabled={!memo.trim() || reason.trim().length < 3 || !idempotencyKey.trim() || !visibleBranchId(branches, branchId)}>Add entry</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button><Button type="submit" loading={pending} disabled={!memo.trim() || reason.trim().length < 3 || !idempotencyKey.trim() || !visibleBranchId(branches, branchId)}>Add entry</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -352,6 +355,7 @@ function ManualJournalDialog({
 }
 
 function TrialBalanceCard({ trialBalance, loading, currency }: { trialBalance?: AccountingTrialBalance; loading: boolean; currency: string }) {
+  const t = useT();
   if (loading) return <Skeleton className="h-80" />;
   if (!trialBalance || trialBalance.rows.length === 0) return <EmptyState icon={Scale} title="Nothing in the books yet" description="Add items from the list, or add a journal entry, to see balances here." compact />;
   const balanced = trialBalance.totalDebit.amount === trialBalance.totalCredit.amount;
@@ -370,7 +374,7 @@ function TrialBalanceCard({ trialBalance, loading, currency }: { trialBalance?: 
         <div className="col-span-2 px-4 py-3 sm:col-span-1"><p className="context-label">Difference</p><p className={cn("mt-1 text-[18px] font-semibold tabular", !balanced && "text-danger")}><MoneyText money={money(trialBalance.totalDebit.amount - trialBalance.totalCredit.amount, trialBalance.currency)} signed /></p></div>
       </div>
       <Table>
-        <TableHeader><TableRow><TableHead>Account</TableHead><TableHead>Type</TableHead><TableHead className="text-end">Debit</TableHead><TableHead className="text-end">Credit</TableHead><TableHead className="text-end">Balance</TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead>{t("marketing.memberShell.account")}</TableHead><TableHead>{t("common.label.type")}</TableHead><TableHead className="text-end">Debit</TableHead><TableHead className="text-end">Credit</TableHead><TableHead className="text-end">{t("reception.member.balance")}</TableHead></TableRow></TableHeader>
         <TableBody>{trialBalance.rows.map((row) => <TableRow key={row.accountId}><TableCell><p className="font-medium">{row.accountCode} · {row.accountName}</p><p className="text-[12px] text-ink-3">{statementGroupLabel(row.statementGroup)}</p></TableCell><TableCell className="capitalize text-[12px]">{row.accountType}</TableCell><TableCell className="text-end"><MoneyText money={row.debit} hideCurrency /></TableCell><TableCell className="text-end"><MoneyText money={row.credit} hideCurrency /></TableCell><TableCell className="text-end"><MoneyText money={row.balance} hideCurrency signed /></TableCell></TableRow>)}</TableBody>
       </Table>
     </section>
@@ -378,11 +382,12 @@ function TrialBalanceCard({ trialBalance, loading, currency }: { trialBalance?: 
 }
 
 function AccountsCard({ accounts, loading }: { accounts: AccountingAccount[]; loading: boolean }) {
+  const t = useT();
   if (loading) return <Skeleton className="h-72" />;
   return (
     <section className="panel overflow-hidden" aria-label="Chart of accounts">
       <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Accounts</p><h2 className="mt-1 text-[16px] font-semibold">Chart of accounts</h2><p className="mt-1 text-[12px] text-ink-3">The accounts your books use. They are set up for you.</p></div><Badge variant="outline">{accounts.length} accounts</Badge></header>
-      {accounts.length === 0 ? <EmptyState icon={BookOpen} title="No accounts set up yet" description="Contact RIVET support to set up your accounts." compact /> : <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Account</TableHead><TableHead>Statement section</TableHead><TableHead>Cash flow section</TableHead></TableRow></TableHeader><TableBody>{accounts.map((account) => <TableRow key={account.id}><TableCell className="font-mono text-[12px]">{account.code}</TableCell><TableCell><p className="font-medium">{account.name}</p>{account.nameAr ? <p className="rtl-font text-[12px] text-ink-3" dir="rtl">{account.nameAr}</p> : null}</TableCell><TableCell className="text-[12px]">{statementGroupLabel(account.statementGroup)}</TableCell><TableCell className="text-[12px]">{cashflowGroupLabel(account.cashflowGroup)}</TableCell></TableRow>)}</TableBody></Table>}
+      {accounts.length === 0 ? <EmptyState icon={BookOpen} title="No accounts set up yet" description="Contact RIVET support to set up your accounts." compact /> : <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>{t("marketing.memberShell.account")}</TableHead><TableHead>Statement section</TableHead><TableHead>Cash flow section</TableHead></TableRow></TableHeader><TableBody>{accounts.map((account) => <TableRow key={account.id}><TableCell className="font-mono text-[12px]">{account.code}</TableCell><TableCell><p className="font-medium">{account.name}</p>{account.nameAr ? <p className="rtl-font text-[12px] text-ink-3" dir="rtl">{account.nameAr}</p> : null}</TableCell><TableCell className="text-[12px]">{statementGroupLabel(account.statementGroup)}</TableCell><TableCell className="text-[12px]">{cashflowGroupLabel(account.cashflowGroup)}</TableCell></TableRow>)}</TableBody></Table>}
     </section>
   );
 }
@@ -404,15 +409,16 @@ function JournalTable({
   onReverse: (entry: AccountingJournalEntrySummary) => void;
   canReverse: boolean;
 }) {
+  const t = useT();
   if (loading) return <Skeleton className="h-72" />;
   if (entries.length === 0) return <EmptyState icon={FileText} title="No journal entries here" description="Entries show here once items or journal entries are added to the books." compact />;
   return (
     <Table>
-      <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead>Branch</TableHead><TableHead>Status</TableHead><TableHead className="text-end">Amount</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
+      <TableHeader><TableRow><TableHead>{t("common.label.date")}</TableHead><TableHead>Description</TableHead><TableHead>{t("common.label.branch")}</TableHead><TableHead>{t("common.label.status")}</TableHead><TableHead className="text-end">{t("common.label.amount")}</TableHead><TableHead><span className="sr-only">{t("common.label.actions")}</span></TableHead></TableRow></TableHeader>
       <TableBody>{entries.map((entry) => <TableRow key={entry.id} className={cn(selectedId === entry.id && "bg-sunken/50")}>
         <TableCell className="whitespace-nowrap"><button type="button" className="text-start font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink" onClick={() => onSelect(entry.id)} aria-label={`View entry ${entry.memo}`}><DateText iso={entry.postingDate} /></button></TableCell>
         <TableCell><button type="button" className="max-w-[260px] text-start font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink" onClick={() => onSelect(entry.id)}>{entry.memo}</button>{entry.sourceType ? <p className="text-[12px] text-ink-3">{sourceLabel(entry.sourceType)}</p> : null}</TableCell>
-        <TableCell className="text-[12px]">{entry.scope === "consolidated" ? "All branches" : branchName(branches, entry.branchId)}</TableCell>
+        <TableCell className="text-[12px]">{entry.scope === "consolidated" ? t("common.label.allBranches") : branchName(branches, entry.branchId)}</TableCell>
         <TableCell><StatusBadge status={entry.status} /></TableCell>
         <TableCell className="text-end"><MoneyText money={entry.totalDebit} /></TableCell>
         <TableCell className="text-end">{canReverse && entry.status === "posted" ? <Button type="button" variant="ghost" size="xs" onClick={() => onReverse(entry)} aria-label={`Reverse entry ${entry.memo}`}><RotateCcw /> Reverse</Button> : null}</TableCell>
@@ -422,15 +428,16 @@ function JournalTable({
 }
 
 function JournalDetail({ detail, loading, error, onRetry }: { detail?: AccountingJournalEntryDetail; loading: boolean; error?: unknown; onRetry: () => void }) {
+  const t = useT();
   if (!detail && loading) return <Skeleton className="h-64" />;
   if (error) return <QueryErrorState error={error} onRetry={onRetry} />;
   if (!detail) return <StatePanel icon={FileText} title="Choose a journal entry" description="Pick a row above to see its lines and reason." compact />;
   return (
     <section className="panel overflow-hidden" aria-label="Journal entry detail">
-      <header className="border-b border-line px-4 py-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="context-label">Entry details</p><h2 className="mt-1 text-[16px] font-semibold">{detail.memo}</h2><p className="mt-1 text-[12px] text-ink-3">{detail.scope === "consolidated" ? "All branches" : "One branch"}</p></div><StatusBadge status={detail.status} /></div></header>
+      <header className="border-b border-line px-4 py-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="context-label">Entry details</p><h2 className="mt-1 text-[16px] font-semibold">{detail.memo}</h2><p className="mt-1 text-[12px] text-ink-3">{detail.scope === "consolidated" ? t("common.label.allBranches") : "One branch"}</p></div><StatusBadge status={detail.status} /></div></header>
       <div className="grid gap-3 border-b border-line px-4 py-3 text-[12px] sm:grid-cols-3"><div><p className="context-label">Entry date</p><p className="mt-1"><DateText iso={detail.postingDate} /></p></div><div><p className="context-label">Added</p><p className="mt-1"><DateTimeText iso={detail.createdAt} /></p></div><div><p className="context-label">Policy</p><p className="mt-1 font-mono text-[11px]">{detail.policyCode ?? "Manual entry"}{detail.policyVersion ? ` · v${detail.policyVersion}` : ""}</p></div></div>
       {detail.reason ? <p className="border-b border-line px-4 py-3 text-[12px] text-ink-2"><span className="font-medium text-ink">Reason:</span> {detail.reason}</p> : null}
-      <Table><TableHeader><TableRow><TableHead>Account</TableHead><TableHead>Note</TableHead><TableHead className="text-end">Debit</TableHead><TableHead className="text-end">Credit</TableHead></TableRow></TableHeader><TableBody>{detail.lines.map((line) => <TableRow key={line.id}><TableCell><p className="font-medium">{line.accountCode} · {line.accountName}</p><p className="text-[12px] text-ink-3">{statementGroupLabel(line.statementGroup)}</p></TableCell><TableCell className="text-[12px] text-ink-2">{line.description ?? "—"}</TableCell><TableCell className="text-end"><MoneyText money={line.debit} /></TableCell><TableCell className="text-end"><MoneyText money={line.credit} /></TableCell></TableRow>)}</TableBody></Table>
+      <Table><TableHeader><TableRow><TableHead>{t("marketing.memberShell.account")}</TableHead><TableHead>{t("memberProfile.followUp.evidenceKind.note")}</TableHead><TableHead className="text-end">Debit</TableHead><TableHead className="text-end">Credit</TableHead></TableRow></TableHeader><TableBody>{detail.lines.map((line) => <TableRow key={line.id}><TableCell><p className="font-medium">{line.accountCode} · {line.accountName}</p><p className="text-[12px] text-ink-3">{statementGroupLabel(line.statementGroup)}</p></TableCell><TableCell className="text-[12px] text-ink-2">{line.description ?? "—"}</TableCell><TableCell className="text-end"><MoneyText money={line.debit} /></TableCell><TableCell className="text-end"><MoneyText money={line.credit} /></TableCell></TableRow>)}</TableBody></Table>
     </section>
   );
 }
@@ -462,28 +469,31 @@ function SourceQueue({
   onExclude: (source: AccountingSourcePosting) => void;
   onReconsider: (source: AccountingSourcePosting) => void;
 }) {
+  const t = useT();
   const rows = statusFilter === "all" ? sources : sources.filter((source) => source.status === statusFilter);
   return (
     <section className="panel overflow-hidden" aria-label="Items to add to the books" data-testid="source-posting-queue">
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Sales and costs</p><h2 className="mt-1 text-[16px] font-semibold">Items to add to the books</h2><p className="mt-1 max-w-xl text-[12px] text-ink-3">Refresh finds new sales and costs from the rest of RIVET. Nothing goes into the books until someone adds it.</p></div><div className="flex items-center gap-2"><Select value={statusFilter} onValueChange={(value) => onStatusFilter(value as AccountingSourceStatus | "all")}><SelectTrigger className="w-40" sizeVariant="sm" aria-label="Status filter"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem>{SOURCE_STATUSES.map((status) => <SelectItem key={status} value={status}>{statusText(status)}</SelectItem>)}</SelectContent></Select>{canRefresh ? <Button type="button" size="sm" variant="secondary" loading={refreshPending} onClick={onRefresh}><RefreshCw /> Refresh list</Button> : null}</div></header>
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Sales and costs</p><h2 className="mt-1 text-[16px] font-semibold">Items to add to the books</h2><p className="mt-1 max-w-xl text-[12px] text-ink-3">Refresh finds new sales and costs from the rest of RIVET. Nothing goes into the books until someone adds it.</p></div><div className="flex items-center gap-2"><Select value={statusFilter} onValueChange={(value) => onStatusFilter(value as AccountingSourceStatus | "all")}><SelectTrigger className="w-40" sizeVariant="sm" aria-label="Status filter"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("members.list.filters.allStatuses")}</SelectItem>{SOURCE_STATUSES.map((status) => <SelectItem key={status} value={status}>{statusText(status)}</SelectItem>)}</SelectContent></Select>{canRefresh ? <Button type="button" size="sm" variant="secondary" loading={refreshPending} onClick={onRefresh}><RefreshCw /> Refresh list</Button> : null}</div></header>
       {!canRefresh ? <div className="border-b border-line bg-sunken/30 px-4 py-2.5 text-[12px] text-ink-2" role="status">You can only view this list. Someone with bookkeeping access must refresh it and add items.</div> : !canWrite ? <div className="border-b border-line bg-sunken/30 px-4 py-2.5 text-[12px] text-ink-2" role="status">All branches together: Refresh list checks every branch. Choose one branch to add items.</div> : null}
-      {loading ? <Skeleton className="m-4 h-64" /> : rows.length === 0 ? <EmptyState icon={ClipboardList} title={statusFilter === "all" ? "No items to add yet" : `No items marked “${statusText(statusFilter)}”`} description={canRefresh ? "Press Refresh list to find payments, memberships, purchases, stock, supplies and equipment costs." : "Nothing matches this status."} compact /> : <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Item</TableHead><TableHead>Status</TableHead><TableHead>Policy</TableHead><TableHead className="text-end">Amount</TableHead><TableHead><span className="sr-only">Action</span></TableHead></TableRow></TableHeader><TableBody>{rows.map((source) => <TableRow key={source.id}><TableCell className="whitespace-nowrap"><DateTimeText iso={source.occurredAt} /></TableCell><TableCell><p className="font-medium">{sourceLabel(source.sourceType)}</p>{source.details ? <p className="max-w-[260px] truncate text-[12px] text-ink-3">{sourceDetailsLine(source.details)}</p> : null}</TableCell><TableCell><StatusBadge status={source.status} />{source.reviewExcludedAt ? <p className="mt-1 text-[12px] text-ink-3">Left out <DateText iso={source.reviewExcludedAt} /></p> : null}{source.reason ? <p className="mt-1 max-w-[220px] text-[12px] text-ink-3">{source.reason}</p> : null}</TableCell><TableCell className="font-mono text-[11px]">{source.policyCode ? `${source.policyCode}${source.policyVersion ? ` · v${source.policyVersion}` : ""}` : "Not set up"}</TableCell><TableCell className="text-end"><MoneyText money={source.amount} /></TableCell><TableCell className="text-end">{source.status === "posted" ? <span className="text-[12px] text-ink-3">Added</span> : source.status === "reversed" ? <span className="text-[12px] text-ink-3">Reversed</span> : source.status === "excluded" ? (source.reviewExcludedAt && canRefresh ? <Button type="button" size="xs" variant="ghost" onClick={() => onReconsider(source)} aria-label={`Bring back ${sourceLabel(source.sourceType)}`}>Bring back</Button> : <span className="text-[12px] text-ink-3">{source.reviewExcludedAt ? "Left out by your team" : "Left out automatically"}</span>) : <span className="inline-flex items-center justify-end gap-1.5">{canWrite && source.status === "pending" ? <Button type="button" size="xs" variant="secondary" loading={postPendingId === source.id} onClick={() => onPost(source)}>Add to books</Button> : null}{canRefresh ? <Button type="button" size="xs" variant="ghost" onClick={() => onExclude(source)} aria-label={`Leave ${sourceLabel(source.sourceType)} out of the books`}>Leave out</Button> : <span className="text-[12px] text-ink-3">Review</span>}</span>}</TableCell></TableRow>)}</TableBody></Table>}
+      {loading ? <Skeleton className="m-4 h-64" /> : rows.length === 0 ? <EmptyState icon={ClipboardList} title={statusFilter === "all" ? "No items to add yet" : `No items marked “${statusText(statusFilter)}”`} description={canRefresh ? "Press Refresh list to find payments, memberships, purchases, stock, supplies and equipment costs." : "Nothing matches this status."} compact /> : <Table><TableHeader><TableRow><TableHead>{t("common.label.date")}</TableHead><TableHead>Item</TableHead><TableHead>{t("common.label.status")}</TableHead><TableHead>Policy</TableHead><TableHead className="text-end">{t("common.label.amount")}</TableHead><TableHead><span className="sr-only">{t("palette.kind.action")}</span></TableHead></TableRow></TableHeader><TableBody>{rows.map((source) => <TableRow key={source.id}><TableCell className="whitespace-nowrap"><DateTimeText iso={source.occurredAt} /></TableCell><TableCell><p className="font-medium">{sourceLabel(source.sourceType)}</p>{source.details ? <p className="max-w-[260px] truncate text-[12px] text-ink-3">{sourceDetailsLine(source.details)}</p> : null}</TableCell><TableCell><StatusBadge status={source.status} />{source.reviewExcludedAt ? <p className="mt-1 text-[12px] text-ink-3">Left out <DateText iso={source.reviewExcludedAt} /></p> : null}{source.reason ? <p className="mt-1 max-w-[220px] text-[12px] text-ink-3">{source.reason}</p> : null}</TableCell><TableCell className="font-mono text-[11px]">{source.policyCode ? `${source.policyCode}${source.policyVersion ? ` · v${source.policyVersion}` : ""}` : "Not set up"}</TableCell><TableCell className="text-end"><MoneyText money={source.amount} /></TableCell><TableCell className="text-end">{source.status === "posted" ? <span className="text-[12px] text-ink-3">Added</span> : source.status === "reversed" ? <span className="text-[12px] text-ink-3">Reversed</span> : source.status === "excluded" ? (source.reviewExcludedAt && canRefresh ? <Button type="button" size="xs" variant="ghost" onClick={() => onReconsider(source)} aria-label={`Bring back ${sourceLabel(source.sourceType)}`}>Bring back</Button> : <span className="text-[12px] text-ink-3">{source.reviewExcludedAt ? "Left out by your team" : "Left out automatically"}</span>) : <span className="inline-flex items-center justify-end gap-1.5">{canWrite && source.status === "pending" ? <Button type="button" size="xs" variant="secondary" loading={postPendingId === source.id} onClick={() => onPost(source)}>Add to books</Button> : null}{canRefresh ? <Button type="button" size="xs" variant="ghost" onClick={() => onExclude(source)} aria-label={`Leave ${sourceLabel(source.sourceType)} out of the books`}>Leave out</Button> : <span className="text-[12px] text-ink-3">{t("dashboard.today.action.review")}</span>}</span>}</TableCell></TableRow>)}</TableBody></Table>}
       <div className="border-t border-line px-4 py-2.5 text-[12px] text-ink-3">Ready to add: can go into the books now. Needs setup: something is missing, see the row. Left out: kept out of the books; use Bring back to undo. Failed: needs checking. Added and Reversed are final.</div>
     </section>
   );
 }
 
 function PeriodsTable({ periods, loading, canClose, onClose, onReopen }: { periods: AccountingPeriod[]; loading: boolean; canClose: boolean; onClose: (period: AccountingPeriod) => void; onReopen: (period: AccountingPeriod) => void }) {
+  const t = useT();
   if (loading) return <Skeleton className="h-64" />;
   return (
     <section className="panel overflow-hidden" aria-label="Months">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Month-end</p><h2 className="mt-1 text-[16px] font-semibold">Months</h2><p className="mt-1 text-[12px] text-ink-3">Close a month when its books are final. No new entries can be dated in a closed month. Only the owner can reopen it.</p></div><CalendarClock className="size-5 text-ink-3" aria-hidden /></header>
-      {periods.length === 0 ? <EmptyState icon={CalendarClock} title="No months yet" description="A month shows here when its first entry is added to the books." compact /> : <Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead>Status</TableHead><TableHead>Closed or reopened</TableHead><TableHead><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{periods.map((period) => <TableRow key={period.id}><TableCell><p className="font-medium">{periodLabel(period)}</p></TableCell><TableCell><StatusBadge status={period.status} /></TableCell><TableCell className="text-[12px]">{period.status === "closed" ? <DateTimeText iso={period.closedAt} /> : period.reopenedAt ? <span>Reopened <DateTimeText iso={period.reopenedAt} /></span> : "Open for new entries"}</TableCell><TableCell className="text-end">{canClose ? period.status === "open" ? <Button type="button" size="xs" variant="secondary" onClick={() => onClose(period)}>Close month</Button> : <Button type="button" size="xs" variant="ghost" onClick={() => onReopen(period)}><RotateCcw /> Reopen</Button> : <span className="text-[12px] text-ink-3">Only the owner</span>}</TableCell></TableRow>)}</TableBody></Table>}
+      {periods.length === 0 ? <EmptyState icon={CalendarClock} title="No months yet" description="A month shows here when its first entry is added to the books." compact /> : <Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead>{t("common.label.status")}</TableHead><TableHead>Closed or reopened</TableHead><TableHead><span className="sr-only">{t("common.label.actions")}</span></TableHead></TableRow></TableHeader><TableBody>{periods.map((period) => <TableRow key={period.id}><TableCell><p className="font-medium">{periodLabel(period)}</p></TableCell><TableCell><StatusBadge status={period.status} /></TableCell><TableCell className="text-[12px]">{period.status === "closed" ? <DateTimeText iso={period.closedAt} /> : period.reopenedAt ? <span>Reopened <DateTimeText iso={period.reopenedAt} /></span> : "Open for new entries"}</TableCell><TableCell className="text-end">{canClose ? period.status === "open" ? <Button type="button" size="xs" variant="secondary" onClick={() => onClose(period)}>Close month</Button> : <Button type="button" size="xs" variant="ghost" onClick={() => onReopen(period)}><RotateCcw /> Reopen</Button> : <span className="text-[12px] text-ink-3">Only the owner</span>}</TableCell></TableRow>)}</TableBody></Table>}
     </section>
   );
 }
 
 export function ManagementLedgerWorkspace() {
+  const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
@@ -589,7 +599,7 @@ export function ManagementLedgerWorkspace() {
   const reasonPending = reverseMutation.isPending || closeMutation.isPending || reopenMutation.isPending || excludeMutation.isPending || reconsiderMutation.isPending;
 
   if (!canRead) return <ForbiddenState description="You don't have access to bookkeeping. Ask the gym owner if you need it." />;
-  if (workspaceQuery.isLoading) return <><PageHeader sectionLabel="Management ledger" title="Bookkeeping" description="Loading the books…" /><LoadingGrid /></>;
+  if (workspaceQuery.isLoading) return <><PageHeader sectionLabel={t("nav.section.managementLedger")} title="Bookkeeping" description="Loading the books…" /><LoadingGrid /></>;
   if (workspaceQuery.error || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
   if (!financeModule?.entitled) return <StatePanel icon={LockKeyhole} title="Bookkeeping is not in your plan" description="Your plan does not include bookkeeping, month closing and cash control. Contact RIVET to add them." className="mt-4" />;
   if (!financeModule.enabled) return <StatePanel icon={LockKeyhole} title="Bookkeeping is turned off" description="The gym owner can turn it on in Settings." className="mt-4" />;
@@ -597,19 +607,19 @@ export function ManagementLedgerWorkspace() {
   return (
     <div className="space-y-5" data-testid="management-ledger-workspace">
       <PageHeader
-        sectionLabel="Management ledger"
+        sectionLabel={t("nav.section.managementLedger")}
         title="Bookkeeping"
         description="Add sales and costs to the books, fix mistakes, and close each month. This is for running the gym, not for tax or official accounts."
         actions={canOwner && scopeBranchId ? <Button type="button" onClick={() => setManualOpen(true)}><Plus /> Add journal entry</Button> : <Badge variant="outline">{canOwner ? "Choose a branch to add entries" : "View only"}</Badge>}
       />
 
       <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Branch and month">
-        <Field label="Branch" className="w-full sm:w-56"><Select value={branchFilter} onValueChange={setBranchFilter}><SelectTrigger aria-label="Branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All your branches</SelectItem>{session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label={t("common.label.branch")} className="w-full sm:w-56"><Select value={branchFilter} onValueChange={setBranchFilter}><SelectTrigger aria-label={t("common.label.branch")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All your branches</SelectItem>{session?.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
         <Field label="Month" className="w-full sm:w-72"><Select value={periodFilter} onValueChange={setPeriodFilter}><SelectTrigger aria-label="Month"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All months</SelectItem>{periods.map((period) => <SelectItem key={period.id} value={period.id}>{periodLabel(period)}</SelectItem>)}</SelectContent></Select></Field>
-        <div className="ms-auto flex items-center gap-2"><span className="text-[12px] text-ink-3">{branchFilter === "all" ? "All branches together" : branchName(session?.branches ?? [], branchFilter)}</span><Button type="button" variant="ghost" size="sm" onClick={retryAll} disabled={loading}><RefreshCw /> Refresh</Button></div>
+        <div className="ms-auto flex items-center gap-2"><span className="text-[12px] text-ink-3">{branchFilter === "all" ? "All branches together" : branchName(session?.branches ?? [], branchFilter)}</span><Button type="button" variant="ghost" size="sm" onClick={retryAll} disabled={loading}><RefreshCw />{" "}{t("common.action.refresh")}</Button></div>
       </section>
 
-      {dataError && !loading ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some parts could not load. Showing what did load. <button type="button" className="font-medium underline" onClick={retryAll}>Try again</button></div> : null}
+      {dataError && !loading ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some parts could not load. Showing what did load. <button type="button" className="font-medium underline" onClick={retryAll}>{t("common.action.retry")}</button></div> : null}
 
       {/* Unfinished work first, control totals after. */}
       <section className="grid gap-3 sm:grid-cols-3" aria-label="Books summary">

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { loginHref } from "@/lib/routing/host-routing";
 import { useAuth, useClerk } from "@clerk/nextjs";
@@ -38,6 +39,7 @@ function initialsOf(name: string): string {
 }
 
 export function PlatformShell({ children }: { children: ReactNode }) {
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
   const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
@@ -82,7 +84,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
     }
   };
 
-  if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
+  if (signingOut) return <AuthTransition title={t("shell.topbar.signingOut")} detail="Returning to secure sign in…" />;
 
   if (experienceStatus === "error") {
     return (
@@ -118,7 +120,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex justify-end p-3">
-              <Button variant="night-ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close navigation">
+              <Button variant="night-ghost" size="icon" onClick={() => setOpen(false)} aria-label={t("nav.chrome.closeNavigation")}>
                 <X />
               </Button>
             </div>
@@ -145,7 +147,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
             >
               {administratorInitials}
             </span>
-            <Button variant="ghost" size="icon" onClick={() => void signOut()} aria-label="Sign out">
+            <Button variant="ghost" size="icon" onClick={() => void signOut()} aria-label={t("common.action.signOut")}>
               <LogOut />
             </Button>
           </div>
@@ -157,11 +159,12 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 }
 
 function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
+  const t = useT();
   return (
     <>
       <div className="px-5 pb-6 pt-5">
         <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3" aria-label="Platform overview">
-          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt="RIVET" />
+          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt={t("common.brand.name")} />
           <span className="border-s border-night-line ps-3 text-[12px] font-medium text-night-ink-3">Platform</span>
         </Link>
       </div>

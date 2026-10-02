@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import {
   AlertTriangle,
@@ -193,6 +194,7 @@ function statementWarnings(report: ManagementReportCompleteness | undefined, kin
 }
 
 function ReportQuality({ report, warnings, kind, controlsHref }: { report?: ManagementReportCompleteness; warnings?: readonly string[]; kind?: ManagementStatementKind; controlsHref?: string }) {
+  const t = useT();
   if (!report) return null;
   const visibleWarnings = warnings ?? dedupeStatementWarnings(report.warnings).map(plainReportText);
   const needsAttention = report.queueCoverage !== "proven" || visibleWarnings.length > 0;
@@ -208,13 +210,14 @@ function ReportQuality({ report, warnings, kind, controlsHref }: { report?: Mana
         {report.queueCoverage !== "proven" ? <Badge variant="warning">May be missing items</Badge> : null}
         {!needsAttention ? <span className="inline-flex items-center gap-1 text-success-deep"><CheckCircle2 className="size-3.5" aria-hidden /> Everything is in the books</span> : null}
       </div>
-      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul>{controlsHref ? <p className="mt-2"><Link href={controlsHref} className="font-medium underline underline-offset-2">Fix this in Bookkeeping</Link></p> : null}</div></div></section> : report.queueCoverage !== "proven" && controlsHref ? <p className="text-[12px] text-ink-3">Some items may not be in the books yet. <Link href={controlsHref} className="font-medium text-ink-2 underline underline-offset-2">Refresh the list in Bookkeeping</Link>.</p> : null}
+      {visibleWarnings.length > 0 ? <section className="rounded-md border border-warning/40 bg-warning-bg px-4 py-3 text-[12px] text-warning-deep" role="status" aria-label="Statement warnings"><div className="flex items-start gap-2"><ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden /><div><p className="font-medium">Some figures may be incomplete</p><ul className="mt-1 list-disc space-y-0.5 ps-5">{visibleWarnings.map((warning) => <li key={normalizedWarningKey(warning)}>{warning}</li>)}</ul>{controlsHref ? <p className="mt-2"><Link href={controlsHref} className="font-medium underline underline-offset-2">Fix this in Bookkeeping</Link></p> : null}</div></div></section> : report.queueCoverage !== "proven" && controlsHref ? <p className="text-[12px] text-ink-3">Some items may not be in the books yet. <Link href={controlsHref} className="font-medium text-ink-2 underline underline-offset-2">Refresh the list in Bookkeeping</Link>{t("members.bulk.toast.end")}</p> : null}
       <div className="flex items-start gap-2 rounded-md border border-line bg-sunken/30 px-4 py-3 text-[12px] text-ink-3"><CircleHelp className="mt-0.5 size-4 shrink-0" aria-hidden /><p>{plainReportText(report.disclaimer)}</p></div>
     </section>
   );
 }
 
 function IncomeStatementView({ report, journalsHref }: { report: IncomeStatement; journalsHref?: string }) {
+  const t = useT();
   return (
     <div className="space-y-4" data-testid="income-statement">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -229,7 +232,7 @@ function IncomeStatementView({ report, journalsHref }: { report: IncomeStatement
         </div>
       ) : null}
       <div className="grid gap-4 lg:grid-cols-2">
-        <StatementSectionCard journalsHref={journalsHref} title="Revenue" description="Money the gym earned from members and sales." section={report.revenue} tone="positive" />
+        <StatementSectionCard journalsHref={journalsHref} title={t("palette.moduleBoundary.name.revenue")} description="Money the gym earned from members and sales." section={report.revenue} tone="positive" />
         <StatementSectionCard journalsHref={journalsHref} title="Cost of sales" description="What the things you sold cost you." section={report.costOfSales} tone="negative" />
         <StatementSectionCard journalsHref={journalsHref} title="Operating expenses" description="Running costs, like repairs, supplies and equipment wear." section={report.operatingExpenses} tone="negative" />
         <StatementSectionCard journalsHref={journalsHref} title="Other income" description="Income from outside normal gym work." section={report.otherIncome} tone="positive" />
@@ -355,6 +358,7 @@ function StatementScopeFilters({
   onBranchChange: (value: string) => void;
   onRangeChange: (from: string, to: string) => void;
 }) {
+  const t = useT();
   const validRange = fromDate.length > 0 && toDate.length > 0 && fromDate <= toDate;
   const presets = rangePresets();
   return (
@@ -368,7 +372,7 @@ function StatementScopeFilters({
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <Field label="From date" className="w-full sm:w-44"><Input type="date" value={fromDate} onChange={(event) => onFromDateChange(event.target.value)} dir="ltr" /></Field>
         <Field label="To date" className="w-full sm:w-44"><Input type="date" value={toDate} onChange={(event) => onToDateChange(event.target.value)} dir="ltr" /></Field>
-        <Field label="Branch" className="w-full sm:w-64"><Select value={branchFilter} onValueChange={onBranchChange}><SelectTrigger aria-label="Branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All your branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label={t("common.label.branch")} className="w-full sm:w-64"><Select value={branchFilter} onValueChange={onBranchChange}><SelectTrigger aria-label={t("common.label.branch")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All your branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></Field>
         <div className="flex items-center gap-2 text-[12px] text-ink-3 sm:ms-auto"><CalendarDays className="size-4" aria-hidden /><span>{branchFilter === "all" ? "All your branches together" : branches.find((branch) => branch.id === branchFilter)?.name}</span></div>
       </div>
       {!validRange ? <p className="basis-full text-[12px] text-danger" role="alert">The from date must be on or before the to date.</p> : null}
@@ -378,6 +382,7 @@ function StatementScopeFilters({
 
 /** One statement per route; only the selected report projection is fetched. */
 export function ManagementStatementPage({ kind }: { kind: ManagementStatementKind }) {
+  const t = useT();
   const { session, sessionLoading } = useApp();
   const { can } = usePermissions();
   const router = useRouter();
@@ -478,9 +483,9 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
   const reportView = report ? kind === "income" ? <IncomeStatementView report={report as IncomeStatement} journalsHref={journalsHref} /> : kind === "balance" ? <BalanceSheetView report={report as BalanceSheet} journalsHref={journalsHref} /> : <CashflowView report={report as CashflowStatement} journalsHref={journalsHref} /> : null;
   const reportWarnings = statementWarnings(report, kind);
 
-  if (sessionLoading && !session) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading the statement…" /><StatementLoading /></>;
+  if (sessionLoading && !session) return <><PageHeader sectionLabel={t("nav.section.managementLedger")} title={definition.label} description="Loading the statement…" /><StatementLoading /></>;
   if (!canRead) return <ForbiddenState description="You don't have access to the financial statements. Ask the gym owner if you need them." />;
-  if (workspaceQuery.isLoading) return <><PageHeader sectionLabel="Management ledger" title={definition.label} description="Loading the statement…" /><StatementLoading /></>;
+  if (workspaceQuery.isLoading) return <><PageHeader sectionLabel={t("nav.section.managementLedger")} title={definition.label} description="Loading the statement…" /><StatementLoading /></>;
   if (workspaceQuery.error || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
   if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Financial statements are not in your plan" description="Your plan does not include the income statement, balance sheet and cash flow statement. Contact RIVET to add them." className="mt-4" />;
   if (!reportingModule.enabled) return <StatePanel icon={LockKeyhole} title="Financial statements are turned off" description="The gym owner can turn them on in Settings." className="mt-4" />;
@@ -489,10 +494,10 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
     <div className="space-y-5" data-testid="management-statements-workspace" data-kind={kind}>
       {/* Same back link as Ledger controls, so the three statements and the controls read as one place. */}
       <Link href={scopedStatementHref("/finance", fromDate, toDate, effectiveBranchFilter)} className="inline-flex items-center gap-1.5 text-[12px] text-ink-2 underline-offset-2 hover:text-ink hover:underline"><ArrowLeft className="size-3.5" aria-hidden /> All statements</Link>
-      <PageHeader sectionLabel="Management ledger" title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Badge variant="outline">{readOnly ? "View only" : "From the books"}</Badge>{!readOnly ? <Button asChild variant="secondary"><Link href={effectiveBranchFilter === "all" ? "/finance/controls" : `/finance/controls?branchId=${encodeURIComponent(effectiveBranchFilter)}`}>Bookkeeping</Link></Button> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
+      <PageHeader sectionLabel={t("nav.section.managementLedger")} title={definition.label} description={definition.description} actions={<div className="flex flex-wrap items-center justify-end gap-2"><Badge variant="outline">{readOnly ? "View only" : "From the books"}</Badge>{!readOnly ? <Button asChild variant="secondary"><Link href={effectiveBranchFilter === "all" ? "/finance/controls" : `/finance/controls?branchId=${encodeURIComponent(effectiveBranchFilter)}`}>Bookkeeping</Link></Button> : null}<Button type="button" variant="secondary" onClick={refresh} disabled={statementQuery.isLoading || !validRange}><RefreshCw className={statementQuery.isLoading ? "animate-spin" : undefined} /> Reload</Button></div>} />
       <StatementScopeFilters branches={availableBranches} fromDate={fromDate} toDate={toDate} branchFilter={effectiveBranchFilter} onFromDateChange={setFromDate} onToDateChange={setToDate} onBranchChange={setBranchFilter} onRangeChange={(from, to) => { setFromDate(from); setToDate(to); }} />
       <ReportQuality report={report} warnings={reportWarnings} kind={kind} controlsHref={!readOnly ? "/finance/controls" : undefined} />
-      {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Numbers may be out of date">These numbers may be out of date. The last reload failed. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>Try again</button></div> : null}
+      {statementQuery.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Numbers may be out of date">These numbers may be out of date. The last reload failed. <button type="button" className="font-medium underline" onClick={refresh} disabled={!validRange || statementQuery.isLoading}>{t("common.action.retry")}</button></div> : null}
       <ReportErrorOrLoading loading={statementQuery.isLoading} error={statementQuery.isError ? statementQuery.error : undefined} onRetry={refresh} title={definition.label} />
       {reportView}
     </div>

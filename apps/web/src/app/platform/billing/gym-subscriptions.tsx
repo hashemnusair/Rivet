@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useState } from "react";
 import { Ban, CircleAlert, Receipt, RotateCcw } from "lucide-react";
@@ -26,6 +27,7 @@ export function GymSubscriptions({ gyms, onBill }: {
   gyms: MarketplaceGym[];
   onBill: (gymId: string) => void;
 }) {
+  const t = useT();
   const [action, setAction] = useState<StatusAction>();
   const [reason, setReason] = useState("");
   const tenants = gyms.filter((gym) => gym.isProvisioned === true && !gym.isArchived);
@@ -45,11 +47,11 @@ export function GymSubscriptions({ gyms, onBill }: {
         <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
-              <TableHead className="ps-4 sm:ps-5">Gym</TableHead>
+              <TableHead className="ps-4 sm:ps-5">{t("shell.topbar.gym")}</TableHead>
               <TableHead>Plan · billing</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>{t("common.label.status")}</TableHead>
               <TableHead>Paid through</TableHead>
-              <TableHead className="pe-4 text-end sm:pe-5">Actions</TableHead>
+              <TableHead className="pe-4 text-end sm:pe-5">{t("common.label.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -63,9 +65,9 @@ export function GymSubscriptions({ gyms, onBill }: {
                   <TableCell className="whitespace-nowrap text-[12.5px] text-ink-2">{gym.subscriptionStatus === "trial" && gym.trialEndsAt ? `Trial ends ${formatBillingDate(new Date(gym.trialEndsAt))}` : gym.currentPeriodEndsAt ? formatBillingDate(new Date(gym.currentPeriodEndsAt)) : "Not recorded"}</TableCell>
                   <TableCell className="pe-4 sm:pe-5">
                     <div className="flex flex-wrap justify-end gap-1">
-                      <Button size="sm" variant={active ? "secondary" : "primary"} onClick={() => onBill(gym.id)}>{active ? <><Receipt /> Change plan</> : <><RotateCcw /> Reactivate & bill</>}</Button>
+                      <Button size="sm" variant={active ? "secondary" : "primary"} onClick={() => onBill(gym.id)}>{active ? <><Receipt />{" "}{t("renewFlow.adjust.planChange.submit")}</> : <><RotateCcw /> Reactivate & bill</>}</Button>
                       {active ? <Button size="sm" variant="secondary" onClick={() => { setReason(""); setAction({ gym, kind: "suspend" }); }}><CircleAlert /> Suspend</Button> : null}
-                      {gym.subscriptionStatus !== "cancelled" ? <Button size="sm" variant="secondary" onClick={() => { setReason(""); setAction({ gym, kind: "cancel" }); }}><Ban /> Cancel</Button> : null}
+                      {gym.subscriptionStatus !== "cancelled" ? <Button size="sm" variant="secondary" onClick={() => { setReason(""); setAction({ gym, kind: "cancel" }); }}><Ban />{" "}{t("common.action.cancel")}</Button> : null}
                     </div>
                   </TableCell>
                 </TableRow>

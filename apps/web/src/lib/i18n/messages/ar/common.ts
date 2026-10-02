@@ -1,26 +1,21 @@
 import { plural } from "../../dictionary";
 import type { common as EnCommon } from "../en/common";
 
-/**
- * Modern Standard Arabic drafts (see docs/arabic/GLOSSARY.md). The action
- * words, time words and plural groups come from origin/arabic-localisation and
- * are re-checked against current English; dialect words from that branch
- * (شيفت, كاش) are replaced by MSA.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const common: typeof EnCommon = {
   action: {
-    save: "حفظ",
+    save: "حفظ التغييرات",
     saveChanges: "حفظ التغييرات",
     cancel: "إلغاء",
     close: "إغلاق",
     confirm: "تأكيد",
-    continue: "مواصلة",
+    continue: "التالي",
     back: "رجوع",
     next: "التالي",
     done: "تم",
     edit: "تعديل",
     delete: "حذف",
-    remove: "إزالة",
+    remove: "حذف",
     add: "إضافة",
     create: "إنشاء",
     search: "بحث",
@@ -59,8 +54,8 @@ export const common: typeof EnCommon = {
     searching: "جارٍ البحث…",
     empty: "لا يوجد شيء هنا بعد",
     error: "حدث خطأ ما",
-    noResults: "لا توجد نتائج",
-    required: "مطلوب",
+    noResults: "لا توجد نتائج مطابقة.",
+    required: "هذا الحقل مطلوب.",
     optional: "اختياري",
     notSet: "غير محدد",
     sending: "جارٍ الإرسال…",
@@ -76,7 +71,7 @@ export const common: typeof EnCommon = {
     forbiddenDescription: "لا يمكن لدوركم فتح هذه الصفحة. اطلبوا ذلك من المالك أو المدير عند الحاجة.",
     notFoundTitle: "غير موجود",
     notFoundDescription: "لم نعثر على هذا العنصر. ربما أُزيل، أو أن الرابط غير صحيح.",
-    backToDashboard: "العودة إلى لوحة التحكم",
+    backToDashboard: "العودة إلى الرئيسية",
     previousPage: "الصفحة السابقة",
     pageRange: "{range} من {total}",
     nextPage: "الصفحة التالية",
@@ -89,7 +84,7 @@ export const common: typeof EnCommon = {
   },
   a11y: {
     closeDialog: "إغلاق النافذة",
-    loading: "جارٍ التحميل",
+    loading: "جارٍ التحميل…",
   },
   label: {
     name: "الاسم",
@@ -102,7 +97,7 @@ export const common: typeof EnCommon = {
     from: "من",
     to: "إلى",
     status: "الحالة",
-    branch: "الفرع",
+    branch: "فرع",
     allBranches: "كل الفروع",
     amount: "المبلغ",
     total: "الإجمالي",
@@ -127,8 +122,8 @@ export const common: typeof EnCommon = {
     thisWeek: "هذا الأسبوع",
     thisMonth: "هذا الشهر",
     lastMonth: "الشهر الماضي",
-    last7Days: "آخر ٧ أيام",
-    last30Days: "آخر ٣٠ يومًا",
+    last7Days: "آخر 7 أيام",
+    last30Days: "آخر 30 يومًا",
   },
   count: {
     members: plural({ zero: "لا أعضاء", one: "عضو واحد", two: "عضوان", few: "{count} أعضاء", many: "{count} عضوًا", other: "{count} عضو" }),
@@ -150,6 +145,6 @@ export const common: typeof EnCommon = {
   },
   brand: {
     name: "RIVET",
-    tagline: "كل عضو. كل دينار. كل شيفت.",
+    tagline: "كل تفاصيل ناديك و مشتركينه في مكان واحد",
   },
 };

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check, MessageSquareText, RefreshCcw, RotateCcw, Search, Send, UserCheck, UserMinus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -21,6 +22,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 
 export default function SupportPage() {
+  const t = useT();
   const { platformSnapshot, experienceStatus, retryExperience } = useExperience();
   const identity = useRivetIdentity();
   const searchParams = useSearchParams();
@@ -89,7 +91,7 @@ export default function SupportPage() {
   }
 
   if (cases.length === 0) {
-    return <PlatformPage><PageHeader title="Support inbox" description="Cases created inside gym workspaces, with assignments and resolution history." /><div className="mt-5"><StatePanel layout="page" icon={MessageSquareText} title="No support cases have been recorded" description="Cases created inside gym workspaces appear here in realtime." action={<Button variant="secondary" size="sm" onClick={retryExperience}><RefreshCcw /> Refresh</Button>} /></div></PlatformPage>;
+    return <PlatformPage><PageHeader title="Support inbox" description="Cases created inside gym workspaces, with assignments and resolution history." /><div className="mt-5"><StatePanel layout="page" icon={MessageSquareText} title="No support cases have been recorded" description="Cases created inside gym workspaces appear here in realtime." action={<Button variant="secondary" size="sm" onClick={retryExperience}><RefreshCcw />{" "}{t("common.action.refresh")}</Button>} /></div></PlatformPage>;
   }
 
   return (
@@ -154,7 +156,7 @@ export default function SupportPage() {
           <DialogBody className="space-y-4">
             <Field label="Resolution summary" htmlFor="support-resolution-summary"><Textarea id="support-resolution-summary" value={resolutionSummary} onChange={(event) => setResolutionSummary(event.target.value)} placeholder="What was resolved and what should happen next?" /></Field>
           </DialogBody>
-          <DialogFooter><Button variant="secondary" onClick={() => setResolutionOpen(false)}>Cancel</Button><Button loading={saving === "resolve"} disabled={!selected || Boolean(saving) || !resolutionSummary.trim()} onClick={() => { if (!selected) return; void run("resolve", () => getApi().resolvePlatformSupportCase(selected.id, resolutionSummary.trim()), "Support case resolved.").then((updated) => { if (updated) { setResolutionSummary(""); setResolutionOpen(false); } }); }}>Resolve case</Button></DialogFooter>
+          <DialogFooter><Button variant="secondary" onClick={() => setResolutionOpen(false)}>{t("common.action.cancel")}</Button><Button loading={saving === "resolve"} disabled={!selected || Boolean(saving) || !resolutionSummary.trim()} onClick={() => { if (!selected) return; void run("resolve", () => getApi().resolvePlatformSupportCase(selected.id, resolutionSummary.trim()), "Support case resolved.").then((updated) => { if (updated) { setResolutionSummary(""); setResolutionOpen(false); } }); }}>Resolve case</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </PlatformPage>

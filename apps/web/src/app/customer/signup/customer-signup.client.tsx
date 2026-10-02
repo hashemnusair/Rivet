@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useAuth, useSignUp } from "@clerk/nextjs";
 import { ArrowLeft, ArrowRight, Check, MailCheck, RefreshCcw, ShieldCheck } from "lucide-react";
@@ -188,6 +189,7 @@ function hasField(fields: readonly string[] | undefined, ...names: string[]): bo
 }
 
 export function CustomerSignupClient() {
+  const t = useT();
   const { isLoaded: authLoaded, isSignedIn } = useAuth();
   const { signUp, errors: _errors, fetchStatus } = useSignUp();
   const router = useRouter();
@@ -463,33 +465,33 @@ export function CustomerSignupClient() {
 
       {step === "details" ? (
         <form onSubmit={submitDetails} className="mt-7 space-y-4" noValidate>
-          <Field label="Full name" htmlFor="customer-signup-name" error={fieldErrors.fullName} required>
+          <Field label={t("common.label.fullName")} htmlFor="customer-signup-name" error={fieldErrors.fullName} required>
             <Input id="customer-signup-name" value={values.fullName} onChange={(event) => updateValue("fullName", event.target.value)} autoComplete="name" placeholder="Lina Haddad" autoFocus aria-invalid={Boolean(fieldErrors.fullName)} />
           </Field>
-          <Field label="Email address" htmlFor="customer-signup-email" error={fieldErrors.email} required>
+          <Field label={t("auth.signIn.emailLabel")} htmlFor="customer-signup-email" error={fieldErrors.email} required>
             <Input id="customer-signup-email" type="email" value={values.email} onChange={(event) => updateValue("email", event.target.value)} autoComplete="email" placeholder="you@example.com" aria-invalid={Boolean(fieldErrors.email)} />
           </Field>
-          <Field label="Mobile number" htmlFor="customer-signup-phone" error={fieldErrors.phone} hint="Gyms use this to confirm your trial booking." required>
+          <Field label={t("auth.memberSetup.mobile")} htmlFor="customer-signup-phone" error={fieldErrors.phone} hint="Gyms use this to confirm your trial booking." required>
             <Input id="customer-signup-phone" type="tel" value={values.phone} onChange={(event) => updateValue("phone", event.target.value)} autoComplete="tel" placeholder="+962 79 000 0000" aria-invalid={Boolean(fieldErrors.phone)} />
           </Field>
-          <Field label="Gender" htmlFor="customer-signup-gender" error={fieldErrors.gender} required>
+          <Field label={t("memberProfile.details.gender")} htmlFor="customer-signup-gender" error={fieldErrors.gender} required>
             <select id="customer-signup-gender" value={values.gender} onChange={(event) => updateValue("gender", event.target.value)} className="h-11 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" aria-invalid={Boolean(fieldErrors.gender)} required>
-              <option value="" disabled>Choose female or male</option>
-              <option value="female">Female</option>
-              <option value="male">Male</option>
+              <option value="" disabled>{t("auth.validation.genderRequired")}</option>
+              <option value="female">{t("memberProfile.details.female")}</option>
+              <option value="male">{t("memberProfile.details.male")}</option>
             </select>
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Password" htmlFor="customer-signup-password" error={fieldErrors.password} required>
+            <Field label={t("common.label.password")} htmlFor="customer-signup-password" error={fieldErrors.password} required>
               <PasswordInput id="customer-signup-password" value={values.password} onChange={(event) => updateValue("password", event.target.value)} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "customer-signup-password-error" : undefined} />
             </Field>
-            <Field label="Confirm password" htmlFor="customer-signup-confirm" error={fieldErrors.confirmPassword} required>
+            <Field label={t("auth.invitation.form.confirmPassword")} htmlFor="customer-signup-confirm" error={fieldErrors.confirmPassword} required>
               <PasswordInput id="customer-signup-confirm" value={values.confirmPassword} onChange={(event) => updateValue("confirmPassword", event.target.value)} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.confirmPassword)} aria-describedby={fieldErrors.confirmPassword ? "customer-signup-confirm-error" : undefined} />
             </Field>
           </div>
           {formError ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{formError}</p> : null}
-          {existingAccount ? <p className="text-[12px] text-ink-2">Already have an account? <Link href={signInHref(context.returnTo)} className="font-semibold underline underline-offset-4">Sign in</Link>.</p> : null}
-          <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!signUp || !authLoaded}>Create account <ArrowRight /></Button>
+          {existingAccount ? <p className="text-[12px] text-ink-2">Already have an account? <Link href={signInHref(context.returnTo)} className="font-semibold underline underline-offset-4">{t("common.action.signIn")}</Link>{t("members.bulk.toast.end")}</p> : null}
+          <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!signUp || !authLoaded}>{t("marketing.actions.createAccount")}{" "}<ArrowRight /></Button>
           <div id="clerk-captcha" role="group" aria-label="Security check" />
           <p className="text-center text-[12.5px] leading-relaxed text-ink-3">We will email you a code to confirm your email address.</p>
         </form>
@@ -506,7 +508,7 @@ export function CustomerSignupClient() {
             <Field label={`Code from your ${verificationKind === "email" ? "email" : "phone"}`} htmlFor="customer-signup-code" error={formError} required>
               <Input id="customer-signup-code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="123456" aria-invalid={Boolean(formError)} />
             </Field>
-            <Button type="submit" size="lg" className="w-full" loading={busy} disabled={code.length !== 6}>Verify and continue <ArrowRight /></Button>
+            <Button type="submit" size="lg" className="w-full" loading={busy} disabled={code.length !== 6}>{t("auth.signIn.verify.submit")}{" "}<ArrowRight /></Button>
           </form>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-[12px]">
             <button type="button" onClick={() => void startOver()} className="inline-flex items-center gap-1.5 text-ink-3 transition-colors hover:text-ink"><ArrowLeft className="size-3.5" /> Start over</button>
@@ -520,11 +522,11 @@ export function CustomerSignupClient() {
           <p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><ShieldCheck className="size-4" /> Your account is created</p>
           <p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep">We still need to finish setting up your member account before you continue.</p>
           {profileError ? <p className="mt-3 text-[12px] text-danger" role="alert">{profileError}</p> : null}
-          <Button type="button" size="lg" className="mt-5 w-full" loading={busy} onClick={() => void finishProfile(values)}><Check /> Finish member setup</Button>
+          <Button type="button" size="lg" className="mt-5 w-full" loading={busy} onClick={() => void finishProfile(values)}><Check />{" "}{t("auth.memberSetup.submit")}</Button>
         </div>
       ) : null}
 
-      <p className="mt-5 text-center text-[12px] text-ink-3">Already have an account? <Link href={signInHref(context.returnTo)} className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">Sign in</Link></p>
+      <p className="mt-5 text-center text-[12px] text-ink-3">Already have an account? <Link href={signInHref(context.returnTo)} className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink">{t("common.action.signIn")}</Link></p>
     </LoginLayout>
   );
 }

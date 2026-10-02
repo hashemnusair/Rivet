@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -23,6 +24,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function MyProfileSection() {
+  const t = useT();
   const { session, refreshSession } = useApp();
   const invalidate = useInvalidate();
   const profileQuery = useApiQuery(qk.myProfile, (api) => api.getMyProfile());
@@ -74,7 +76,7 @@ export function MyProfileSection() {
           <Field label="Your name" required error={nameInvalid ? "Enter a name between 2 and 160 characters." : undefined}>
             <Input value={form.name} autoComplete="name" aria-invalid={nameInvalid || undefined} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
           </Field>
-          <Field label="Phone" hint="Optional. Your team can see this number." error={phoneInvalid ? "Use 40 characters or fewer." : undefined}>
+          <Field label={t("common.label.phone")} hint="Optional. Your team can see this number." error={phoneInvalid ? "Use 40 characters or fewer." : undefined}>
             <Input dir="ltr" type="tel" inputMode="tel" autoComplete="tel" value={form.phone} aria-invalid={phoneInvalid || undefined} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
           </Field>
           <Field label="Sign-in email" hint="You change this in your sign-in account, not here.">

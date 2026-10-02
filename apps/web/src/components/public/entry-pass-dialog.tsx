@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { RefreshCcw } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -27,6 +28,7 @@ export function EntryPassDialog({
   memberNumber: string;
   gymName: string;
 }) {
+  const t = useT();
   const [token, setToken] = useState("");
   const [expiresAt, setExpiresAt] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -80,7 +82,7 @@ export function EntryPassDialog({
           ) : error ? (
             <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-start text-[13px] text-danger">
               <p>{error}</p>
-              <Button className="mt-3" size="sm" variant="secondary" onClick={() => void load()}>Try again</Button>
+              <Button className="mt-3" size="sm" variant="secondary" onClick={() => void load()}>{t("common.action.retry")}</Button>
             </div>
           ) : token ? (
             <>

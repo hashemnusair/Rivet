@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { MailX } from "lucide-react";
 import { qk } from "@/lib/api/keys";
@@ -38,6 +39,7 @@ function outcome(delivery: PlatformEmailDelivery): string {
  * its code, so a missing message is explained here rather than guessed at.
  */
 export function PlatformEmailLog() {
+  const t = useT();
   const query = useApiQuery(qk.platformEmailDeliveries, (api) => api.listPlatformEmailDeliveries());
   if (query.isLoading) return <PlatformPage><div className="space-y-3" role="status" aria-label="Loading email log"><Skeleton className="h-8 w-56" /><Skeleton className="h-64 w-full" /></div></PlatformPage>;
   if (query.isError || !query.data) return <PlatformPage><QueryErrorState error={query.error} onRetry={() => void query.refetch()} /></PlatformPage>;
@@ -55,11 +57,11 @@ export function PlatformEmailLog() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Queued</TableHead>
-                <TableHead>Message</TableHead>
-                <TableHead>To</TableHead>
-                <TableHead>Gym</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t("marketing.device.kpi.renewalsValue")}</TableHead>
+                <TableHead>{t("memberProfile.whatsapp.message")}</TableHead>
+                <TableHead>{t("common.label.to")}</TableHead>
+                <TableHead>{t("shell.topbar.gym")}</TableHead>
+                <TableHead>{t("common.label.status")}</TableHead>
                 <TableHead>What happened</TableHead>
               </TableRow>
             </TableHeader>

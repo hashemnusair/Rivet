@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
@@ -116,11 +117,12 @@ export function ReportScopeBar({
   refreshing?: boolean;
   note?: ReactNode;
 }) {
+  const t = useT();
   const from = reportScopeFrom(scope);
   return (
     <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Report filters">
       {branches.length > 1 ? (
-        <Field label="Branch" className="w-full sm:w-52">
+        <Field label={t("common.label.branch")} className="w-full sm:w-52">
           <Select value={scope.branchId} onValueChange={(branchId) => onChange({ branchId })}>
             <SelectTrigger aria-label="Branch filter"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -135,12 +137,12 @@ export function ReportScopeBar({
           <Field label="Date range" className="w-auto">
             <ScopePills label="Date range" value={scope.rangeDays} items={REPORT_RANGES.map((days) => ({ value: days, label: `${days} days` }))} onChange={(rangeDays) => onChange({ rangeDays })} className="min-h-9 items-center" />
           </Field>
-          <Field label="End date" className="w-full sm:w-44">
+          <Field label={t("renewFlow.adjust.extend.endDate")} className="w-full sm:w-44">
             <Input type="date" dir="ltr" value={scope.to} max={todayISODate()} onChange={(event) => { const to = validISODate(event.target.value); if (to) onChange({ to }); }} />
           </Field>
         </>
       ) : null}
-      <Button variant="ghost" size="sm" className="ms-auto" onClick={onRefresh} disabled={refreshing}><RefreshCw className={refreshing ? "animate-spin" : undefined} /> Refresh</Button>
+      <Button variant="ghost" size="sm" className="ms-auto" onClick={onRefresh} disabled={refreshing}><RefreshCw className={refreshing ? "animate-spin" : undefined} />{" "}{t("common.action.refresh")}</Button>
       <p className="basis-full text-[12px] text-ink-3" dir="auto">
         {ranged ? <><span dir="ltr">{formatDate(from)} – {formatDate(scope.to)}</span> · gym local time · </> : null}
         {scopeBranchName(branches, scope.branchId)}

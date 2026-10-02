@@ -94,7 +94,7 @@ function ShiftsWorkspace() {
   const branchPicker = canPickBranch ? (
     <Select value={effectiveBranch ?? ""} onValueChange={setBranchId}>
       <SelectTrigger sizeVariant="sm" className="w-48" aria-label={t("common.label.branch")} data-touch-target>
-        <SelectValue placeholder="Choose a branch" />
+        <SelectValue placeholder={t("renewFlow.adjust.transfer.chooseBranch")} />
       </SelectTrigger>
       <SelectContent>
         {session?.branches.map((b) => (
@@ -267,7 +267,7 @@ function ShiftsWorkspace() {
                   <ReconRow label={t("domain.transactionStatus.refunded")}><MoneyText money={money(-recon.totalRefunded.amount)} /></ReconRow>
                   <ReconRow label="Discounts given"><MoneyText money={recon.discountsTotal} /></ReconRow>
                   <div className="border-t border-line pt-2.5">
-                    <ReconRow label="Cash difference" strong>
+                    <ReconRow label={t("dashboard.today.kind.cash_variance")} strong>
                       <span className={cn(recon.totalVariance.amount !== 0 && "font-semibold text-warning-deep")}>
                         <MoneyText money={recon.totalVariance} signed />
                       </span>
@@ -299,7 +299,7 @@ function ShiftsWorkspace() {
             {historyQuery.data!.items.map((shift) => {
               const historyStatus = cashShiftHistoryStatus(shift);
               return <li key={shift.id} className="space-y-3 px-4 py-3.5">
-                <div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold"><span className="tabular">{formatDateTime(shift.openedAt)}</span></p><p className="mt-0.5 text-[12px] text-ink-3">Opened by {shift.openedByName}</p></div>{shift.status === "open" ? <Badge variant="success" dot>Open</Badge> : historyStatus === "variance_pending" ? <Badge variant="warning">Needs review</Badge> : historyStatus === "variance_approved" ? <Badge variant="neutral">Difference approved</Badge> : historyStatus === "variance_rejected" ? <Badge variant="signal">Difference rejected</Badge> : <Badge variant="outline">No difference</Badge>}</div>
+                <div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold"><span className="tabular">{formatDateTime(shift.openedAt)}</span></p><p className="mt-0.5 text-[12px] text-ink-3">Opened by {shift.openedByName}</p></div>{shift.status === "open" ? <Badge variant="success" dot>{t("dashboard.today.action.open")}</Badge> : historyStatus === "variance_pending" ? <Badge variant="warning">Needs review</Badge> : historyStatus === "variance_approved" ? <Badge variant="neutral">Difference approved</Badge> : historyStatus === "variance_rejected" ? <Badge variant="signal">Difference rejected</Badge> : <Badge variant="outline">No difference</Badge>}</div>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]"><div><dt className="text-ink-3">Starting cash</dt><dd className="mt-0.5"><MoneyText money={shift.openingFloat} /></dd></div><div><dt className="text-ink-3">Expected</dt><dd className="mt-0.5">{shift.expectedCash ? <MoneyText money={shift.expectedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">Counted</dt><dd className="mt-0.5">{shift.countedCash ? <MoneyText money={shift.countedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">Difference</dt><dd className={cn("mt-0.5", shift.variance && shift.variance.amount !== 0 && "font-semibold text-warning-deep")}>{shift.variance ? <MoneyText money={shift.variance} signed /> : "—"}</dd></div></dl>
                 {canReviewCashVariance(shift) ? <Gate permission="reconciliation.approve_variance"><div className="flex justify-end gap-2 border-t border-line pt-3"><Button variant="secondary" size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "rejected" })}><X /> Reject</Button><Button size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "approved" })}><Check /> Approve</Button></div></Gate> : shift.varianceExplanation ? <p className="border-s-2 border-line-2 ps-3 text-[12px] text-ink-3">{shift.varianceExplanation}</p> : null}
               </li>;
@@ -316,7 +316,7 @@ function ShiftsWorkspace() {
                 <TableHead className="text-end">Difference</TableHead>
                 <TableHead>{t("common.label.status")}</TableHead>
                 <Gate permission="reconciliation.approve_variance">
-                  <TableHead aria-label="Review" />
+                  <TableHead aria-label={t("dashboard.today.action.review")} />
                 </Gate>
               </TableRow>
             </TableHeader>
@@ -335,7 +335,7 @@ function ShiftsWorkspace() {
                   </TableCell>
                   <TableCell>
                     {s.status === "open" ? (
-                      <Badge variant="success" dot>Open</Badge>
+                      <Badge variant="success" dot>{t("dashboard.today.action.open")}</Badge>
                     ) : historyStatus === "variance_pending" ? (
                       <Badge variant="warning">Needs review</Badge>
                     ) : historyStatus === "variance_approved" ? (

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ExternalLink, Undo2 } from "lucide-react";
 import Link from "next/link";
@@ -27,6 +28,7 @@ export function supplierPaymentHref(paymentId: string): string {
  * happens once, with a reason, leaving the original untouched.
  */
 export function ReverseSupplierPaymentDialog({ payment, open, onOpenChange, onReversed }: { payment: SupplierPayment | null; open: boolean; onOpenChange: (open: boolean) => void; onReversed: () => void }) {
+  const t = useT();
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -39,17 +41,17 @@ export function ReverseSupplierPaymentDialog({ payment, open, onOpenChange, onRe
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Reverse supplier payment</DialogTitle>
-          <DialogDescription>{payment ? <>This cancels the <MoneyText money={payment.amount} /> paid to {payment.supplierName} by {payment.method === "cliq" ? SUPPLIER_PAYMENT_METHOD_LABELS.cliq : SUPPLIER_PAYMENT_METHOD_LABELS[payment.method].toLowerCase()}. The bills it paid will show as owed again{payment.method === "cash" ? ", and the cash goes back into the open drawer" : ""}.</> : null}</DialogDescription>
+          <DialogDescription>{payment ? <>This cancels the <MoneyText money={payment.amount} /> paid to {payment.supplierName} by {payment.method === "cliq" ? SUPPLIER_PAYMENT_METHOD_LABELS.cliq : SUPPLIER_PAYMENT_METHOD_LABELS[payment.method].toLowerCase()}. The bills it paid will show as owed again{payment.method === "cash" ? ", and the cash goes back into the open drawer" : ""}{t("members.bulk.toast.end")}</> : null}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-3">
           <p className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[12.5px] text-danger">This cannot be undone. Your name is saved with it.</p>
-          <Field label="Reason" required>
+          <Field label={t("common.label.reason")} required>
             <Textarea rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="For example: paid the same invoice twice" data-testid="reverse-supplier-payment-reason" />
           </Field>
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{t("common.action.cancel")}</Button>
           <Button variant="signal" loading={mutation.isPending} disabled={!payment || reason.trim().length < 5} onClick={() => mutation.mutate()} data-testid="confirm-reverse-supplier-payment"><Undo2 /> Reverse payment</Button>
         </DialogFooter>
       </DialogContent>
@@ -58,6 +60,7 @@ export function ReverseSupplierPaymentDialog({ payment, open, onOpenChange, onRe
 }
 
 export function SupplierPaymentRow({ payment, writeEnabled, onReverse }: { payment: SupplierPayment; writeEnabled: boolean; onReverse?: (payment: SupplierPayment) => void }) {
+  const t = useT();
   const reversed = payment.status === "reversed";
   return (
     <li className="space-y-1.5 px-4 py-3" data-testid="supplier-payment-row">
@@ -67,7 +70,7 @@ export function SupplierPaymentRow({ payment, writeEnabled, onReverse }: { payme
           <p className="text-[12px] text-ink-3"><DateTimeText iso={payment.occurredAt} /> · {payment.recordedByName} · {payment.branchName}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {reversed ? <Badge variant="danger" dot>Reversed</Badge> : <Badge variant="success" dot>Recorded</Badge>}
+          {reversed ? <Badge variant="danger" dot>Reversed</Badge> : <Badge variant="success" dot>{t("marketing.device.kpi.newMembersValue")}</Badge>}
           <LedgerStatusBadge status={payment.ledgerPostingStatus} />
         </div>
       </div>
@@ -83,6 +86,7 @@ export function SupplierPaymentRow({ payment, writeEnabled, onReverse }: { payme
 
 /** Payment history for one payable or one supplier, opened from the table. */
 export function SupplierPaymentHistoryDialog({ open, onOpenChange, query, title, description, writeEnabled }: { open: boolean; onOpenChange: (open: boolean) => void; query: SupplierPaymentsQuery; title: string; description?: string; writeEnabled: boolean }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const [reversing, setReversing] = useState<SupplierPayment | null>(null);
   const historyQuery = useApiQuery(qk.supplierPayments({ kind: "history", ...query }), (api) => api.listSupplierPayments({ ...query, pageSize: 50 }), { enabled: open });
@@ -97,10 +101,10 @@ export function SupplierPaymentHistoryDialog({ open, onOpenChange, query, title,
           <DialogBody className="max-h-[60vh] overflow-y-auto p-0">
             {historyQuery.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
               : historyQuery.isError ? <div className="p-4"><QueryErrorState error={historyQuery.error} onRetry={() => void historyQuery.refetch()} /></div>
-                : (historyQuery.data?.items.length ?? 0) === 0 ? <EmptyState compact title="No payments yet" description="Payments for this bill will show here." className="m-4" />
+                : (historyQuery.data?.items.length ?? 0) === 0 ? <EmptyState compact title={t("members.tabs.payments.noPayments")} description="Payments for this bill will show here." className="m-4" />
                   : <ul className="divide-y divide-line">{historyQuery.data!.items.map((payment) => <SupplierPaymentRow key={payment.id} payment={payment} writeEnabled={writeEnabled} onReverse={setReversing} />)}</ul>}
           </DialogBody>
-          <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Close</Button></DialogFooter>
+          <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.close")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <ReverseSupplierPaymentDialog payment={reversing} open={Boolean(reversing)} onOpenChange={(next) => { if (!next) setReversing(null); }} onReversed={async () => { setReversing(null); await invalidate([qk.payables(), qk.supplierPayments()]); }} />

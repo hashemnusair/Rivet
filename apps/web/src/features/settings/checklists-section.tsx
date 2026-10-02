@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ChecklistAssigneeSelect } from "@/features/checklists/checklist-assignment";
 
@@ -68,6 +69,7 @@ function draftFrom(template: ChecklistTemplate | undefined, branchId: string, ty
 }
 
 export function ChecklistsSection() {
+  const t = useT();
   const { session } = useApp();
   const invalidate = useInvalidate();
   const branches = session?.branches ?? [];
@@ -131,7 +133,7 @@ export function ChecklistsSection() {
           bodyClassName="p-0"
           control={branches.length > 1 ? (
             <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
-              <span>Branch</span>
+              <span>{t("common.label.branch")}</span>
               <Select value={branchId} onValueChange={setBranchId}>
                 <SelectTrigger aria-label="Checklist branch" className="w-52"><SelectValue /></SelectTrigger>
                 <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
@@ -153,7 +155,7 @@ export function ChecklistsSection() {
                     </div>
                     <p className="mt-0.5 text-[12.5px] text-ink-3">Due <span className="tabular">{template.dueTime}</span> · {template.assignedUserName ?? ROLE_LABELS[template.assignedRole]} · {template.items.length} item{template.items.length === 1 ? "" : "s"}</p>
                   </div>
-                  <Button size="sm" variant="secondary" data-touch-target aria-label={`Edit ${template.name}`} onClick={() => setDraft(draftFrom(template, branchId, template.type))}>Edit</Button>
+                  <Button size="sm" variant="secondary" data-touch-target aria-label={`Edit ${template.name}`} onClick={() => setDraft(draftFrom(template, branchId, template.type))}>{t("common.action.edit")}</Button>
                 </li>
               ))}
             </ul>
@@ -170,8 +172,8 @@ export function ChecklistsSection() {
           {draft ? (
             <DialogBody className="space-y-5">
               <FieldGrid className="sm:grid-cols-2">
-                <Field label="Name" required><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Opening walkthrough" /></Field>
-                <Field label="When">
+                <Field label={t("common.label.name")} required><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Opening walkthrough" /></Field>
+                <Field label={t("members.tabs.checkIns.when")}>
                   <Select value={draft.type} onValueChange={(value) => setDraft({ ...draft, type: value as ChecklistType })}>
                     <SelectTrigger aria-label="Checklist type"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="opening">Opening</SelectItem><SelectItem value="closing">Closing</SelectItem></SelectContent>
@@ -199,7 +201,7 @@ export function ChecklistsSection() {
                         <Button variant="ghost" size="icon" aria-label={`Remove item ${index + 1}`} disabled={draft.items.length === 1} onClick={() => setDraft({ ...draft, items: draft.items.filter((_, i) => i !== index) })}><X /></Button>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px] text-ink-2">
-                        <label className="flex min-h-9 cursor-pointer items-center gap-2"><Checkbox checked={item.required} onCheckedChange={(checked: boolean) => updateItem(index, { required: checked })} aria-label={`Item ${index + 1} required`} /> Required</label>
+                        <label className="flex min-h-9 cursor-pointer items-center gap-2"><Checkbox checked={item.required} onCheckedChange={(checked: boolean) => updateItem(index, { required: checked })} aria-label={`Item ${index + 1} required`} />{" "}{t("common.state.required")}</label>
                         <label className="flex min-h-9 cursor-pointer items-center gap-2"><Checkbox checked={item.offerMaintenance} onCheckedChange={(checked: boolean) => updateItem(index, { offerMaintenance: checked })} aria-label={`Item ${index + 1} offers maintenance job`} /> Offer a maintenance job if it fails</label>
                         {zones.length > 0 ? (
                           <Select value={item.zoneId || "none"} onValueChange={(value) => updateItem(index, { zoneId: value === "none" ? "" : value })}>
@@ -234,7 +236,7 @@ export function ChecklistsSection() {
             </DialogBody>
           ) : null}
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDraft(undefined)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setDraft(undefined)}>{t("common.action.cancel")}</Button>
             <Button loading={save.isPending} disabled={!draft || !draft.name.trim() || draft.items.every((item) => !item.label.trim())} onClick={submit}>Save checklist</Button>
           </DialogFooter>
         </DialogContent>

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { FileText, Receipt } from "lucide-react";
 import { feeLabel, findPlan } from "../../../convex/planCatalogue";
@@ -37,6 +38,7 @@ const DESCRIPTION = "Your RIVET plan, what it costs, and every invoice RIVET has
 
 /** The plan this gym is on, what it costs, and when the paid term ends. */
 function SubscriptionSummary() {
+  const t = useT();
   const { session } = useApp();
   const subscription = session?.organization?.subscription;
   if (!subscription) return null;
@@ -44,7 +46,7 @@ function SubscriptionSummary() {
   const plan = findPlan(subscription.plan);
   const term = subscription.status === "trial" ? subscription.trialEndsAt : subscription.currentPeriodEndsAt;
   const rows: Array<{ label: string; value: string }> = [
-    { label: "Plan", value: subscription.plan ?? "—" },
+    { label: t("renewFlow.adjust.planChange.rowPlan"), value: subscription.plan ?? "—" },
     { label: "Billing", value: subscription.billingInterval === "annual" ? "Yearly, paid once a year" : "Monthly" },
     ...(plan ? [{ label: "Fee", value: `${feeLabel(plan.priceMinor, subscription.billingInterval)}, plus any tax` }] : []),
     { label: subscription.status === "trial" ? "Trial ends" : "Paid until", value: term ? formatBillingDate(new Date(term)) : "—" },
@@ -66,6 +68,7 @@ function SubscriptionSummary() {
 
 /** Settings → Subscription: the plan this gym is on, and every RIVET invoice with its PDF. */
 export function SubscriptionSection() {
+  const t = useT();
   const { session } = useApp();
   const query = useApiQuery(qk.myPlatformInvoices, (api) => api.listMyPlatformInvoices());
   if (query.isLoading) {
@@ -112,11 +115,11 @@ export function SubscriptionSection() {
           <Table className="hidden md:table">
             <TableHeader>
               <TableRow>
-                <TableHead>Invoice</TableHead>
+                <TableHead>{t("renewFlow.payment.invoice")}</TableHead>
                 <TableHead>Sent</TableHead>
                 <TableHead>Due</TableHead>
-                <TableHead className="text-end">Amount</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className="text-end">{t("common.label.amount")}</TableHead>
+                <TableHead>{t("common.label.status")}</TableHead>
                 <TableHead className="text-end">PDF</TableHead>
               </TableRow>
             </TableHeader>

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -92,6 +93,7 @@ export function CinematicHeader({
   /** Whose page this is: a gym-facing page leads to the application, a member page to account creation. */
   audience?: "gym" | "member";
 }) {
+  const t = useT();
   const onLanding = page === "landing";
   const publicHref = usePublicSiteHref();
   const viewer = usePublicViewer();
@@ -295,19 +297,15 @@ export function CinematicHeader({
           inert={open}
           onClick={onLanding ? (event) => navigate(event, "#top") : undefined}
         >
-          <Image src={open ? "/brand/rivet-lockup-rev.png" : "/brand/rivet-lockup.png"} alt="RIVET" width={122} height={31} priority />
+          <Image src={open ? "/brand/rivet-lockup-rev.png" : "/brand/rivet-lockup.png"} alt={t("common.brand.name")} width={122} height={31} priority />
         </Link>
 
         <div className={styles.headerActions}>
           {signedOut ? (
             <>
-              <Link href="/login" className={styles.memberLink} inert={open}>
-                Sign in
-              </Link>
+              <Link href="/login" className={styles.memberLink} inert={open}>{t("common.action.signIn")}</Link>
               {audience === "member" ? (
-                <Link href="/login/member/create" className={styles.apply} inert={open}>
-                  Create account
-                </Link>
+                <Link href="/login/member/create" className={styles.apply} inert={open}>{t("marketing.actions.createAccount")}</Link>
               ) : (
                 <Link href={`${publicHref.split("?")[0]}signup`} className={styles.apply} inert={open}>
                   Apply for access
@@ -328,7 +326,7 @@ export function CinematicHeader({
             onClick={() => setOpen((current) => !current)}
           >
             <span className={styles.menuPin} aria-hidden />
-            <span>{open ? "Close" : "Menu"}</span>
+            <span>{open ? t("common.action.close") : t("nav.drawer.menu")}</span>
           </button>
         </div>
       </header>
@@ -342,7 +340,7 @@ export function CinematicHeader({
         aria-modal="true"
         aria-label="RIVET navigation"
       >
-        <button type="button" className={styles.menuScrim} aria-label="Close navigation" onClick={dismiss} />
+        <button type="button" className={styles.menuScrim} aria-label={t("nav.chrome.closeNavigation")} onClick={dismiss} />
         <div className={styles.menuPlate}>
           <nav className={styles.menuPrimary} aria-label={onLanding ? "Landing page sections" : "Home page sections"}>
             <ol className={styles.menuList}>
@@ -366,7 +364,7 @@ export function CinematicHeader({
 
           <div className={cn(styles.menuMeta, !onLanding && styles.menuMetaDocument)}>
             <div>
-              <span className={styles.metaKey}>Contact</span>
+              <span className={styles.metaKey}>{t("memberProfile.followUp.evidenceKind.contact")}</span>
               <a href="mailto:hello@rivet.jo">hello@rivet.jo</a>
             </div>
             <div>
@@ -376,7 +374,7 @@ export function CinematicHeader({
             {onLanding ? (
               <div className={styles.menuInterface}>
                 <span className={styles.metaKey}>Interface</span>
-                <span>English · <span lang="ar">العربية</span></span>
+                <span>English · <span lang="ar">{t("common.language.arabic")}</span></span>
               </div>
             ) : (
               <div className={styles.menuLegal}>
@@ -400,12 +398,12 @@ export function CinematicHeader({
               {signedIn ? (
                 <>
                   <button type="button" className={styles.menuSignIn} onClick={() => void signOut()} disabled={signingOut}>
-                    {signingOut ? "Signing out…" : "Sign out"}
+                    {signingOut ? "Signing out…" : t("common.action.signOut")}
                   </button>
                   <Link href={signedIn.destination.href} className={styles.menuCta} onClick={close}>{signedIn.destination.verb}</Link>
                 </>
               ) : signedOut ? (
-                <Link href={`${publicHref.split("?")[0]}signup`} className={styles.menuCta} onClick={close}>Send gym application</Link>
+                <Link href={`${publicHref.split("?")[0]}signup`} className={styles.menuCta} onClick={close}>{t("marketing.actions.applyShort")}</Link>
               ) : null}
             </div>
           </div>

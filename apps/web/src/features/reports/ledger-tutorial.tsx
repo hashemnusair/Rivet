@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowLeft, ArrowRight, GraduationCap } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -71,13 +72,14 @@ function QueueRow({ label, badge, hint, delay }: { label: string; badge: ReactNo
 }
 
 function QueueArt() {
+  const t = useT();
   return (
     <div className="relative flex h-44 flex-col justify-center gap-2 overflow-hidden px-2">
       <div
         className="pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-signal/10 to-transparent animate-qr-scan"
         aria-hidden
       />
-      <QueueRow label="Membership sale" badge={<Badge variant="warning">Ready to add</Badge>} delay="0.5s" />
+      <QueueRow label={t("crm.lead.membershipSale")} badge={<Badge variant="warning">Ready to add</Badge>} delay="0.5s" />
       <QueueRow label="Machine purchase" badge={<Badge variant="warning">Ready to add</Badge>} delay="0.8s" />
       <QueueRow
         label="Stock change"
@@ -255,6 +257,7 @@ const TUTORIAL_STEPS: readonly { key: string; context: string; title: string; bo
 ];
 
 export function LedgerTutorial() {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const step = TUTORIAL_STEPS[stepIndex]!;
@@ -295,8 +298,7 @@ export function LedgerTutorial() {
           </DialogBody>
           <DialogFooter className="items-center">
             <Button type="button" variant="ghost" disabled={stepIndex === 0} onClick={() => setStepIndex((index) => Math.max(0, index - 1))}>
-              <ArrowLeft className="rtl:rotate-180" /> Back
-            </Button>
+              <ArrowLeft className="rtl:rotate-180" />{" "}{t("common.action.back")}</Button>
             <div className="mx-auto flex items-center gap-1.5" role="tablist" aria-label="Tutorial steps">
               {TUTORIAL_STEPS.map((candidate, index) => (
                 <button
@@ -314,10 +316,9 @@ export function LedgerTutorial() {
               ))}
             </div>
             {lastStep ? (
-              <Button type="button" onClick={() => setOpen(false)}>Done</Button>
+              <Button type="button" onClick={() => setOpen(false)}>{t("common.action.done")}</Button>
             ) : (
-              <Button type="button" onClick={() => setStepIndex((index) => Math.min(TUTORIAL_STEPS.length - 1, index + 1))}>
-                Next <ArrowRight className="rtl:rotate-180" />
+              <Button type="button" onClick={() => setStepIndex((index) => Math.min(TUTORIAL_STEPS.length - 1, index + 1))}>{t("common.action.next")}{" "}<ArrowRight className="rtl:rotate-180" />
               </Button>
             )}
           </DialogFooter>

@@ -63,7 +63,7 @@ function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: str
         <Link href="/customer/profile"><UserRound />{" "}{t("marketing.memberShell.profile")}</Link>
       </DropdownMenuItem>
       <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/getting-started"><GraduationCap /> Getting started</Link>
+        <Link href="/customer/getting-started"><GraduationCap />{" "}{t("shell.account.gettingStarted")}</Link>
       </DropdownMenuItem>
       <DropdownMenuItem asChild className={itemClass}>
         <Link href="/customer/profile#communication"><MessageSquare /> Offers and news</Link>
@@ -130,7 +130,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   if (!previewSessionReady) return <AuthTransition title="Loading your account" detail="Just a moment…" />;
 
   if (signingOut) return <AuthTransition title={t("marketing.memberShell.signingOut")} detail="Returning to secure sign in…" />;
-  if (elevatedDestination) return <AuthTransition title="Opening your account" detail="Taking you to the right page…" />;
+  if (elevatedDestination) return <AuthTransition title={t("auth.identity.openingAccount")} detail="Taking you to the right page…" />;
 
   // A visitor who is not signed in as a member is on the public site: the
   // marketplace and a gym's page wear the site's own bar and footer, with the

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowRight, QrCode, Search, UserRound } from "lucide-react";
 import Link from "next/link";
@@ -24,6 +25,7 @@ export default function MemberDashboardPage() {
 }
 
 function MemberHome() {
+  const t = useT();
   const customer = useCustomerPersona();
   const { customerMemberships, experienceStatus } = useExperience();
   const gyms = useMarketplaceGyms();
@@ -88,7 +90,7 @@ function MemberHome() {
             icon={Search}
             title="No gym membership yet"
             description="Find a gym and book a free trial. When the gym adds your membership, it shows here."
-            action={<Button asChild><Link href="/customer/discover"><Search /> Find a gym</Link></Button>}
+            action={<Button asChild><Link href="/customer/discover"><Search />{" "}{t("marketing.actions.findGym")}</Link></Button>}
           />
         )}
       </section>
@@ -107,6 +109,7 @@ function MemberHome() {
 }
 
 function MembershipPass({ membership, gym, onShowPass }: { membership: CustomerMembership; gym?: MarketplaceGym; onShowPass: () => void }) {
+  const t = useT();
   const name = membership.gymName ?? gym?.name ?? "Gym";
   const status = membershipDisplayStatus(membership);
   const cover = membership.gymCoverUrl ?? gym?.cover?.url;
@@ -130,7 +133,7 @@ function MembershipPass({ membership, gym, onShowPass }: { membership: CustomerM
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
         <Button size="sm" onClick={onShowPass}><QrCode /> Entry code</Button>
-        <Button asChild size="sm" variant="secondary"><Link href={href}>Membership <ArrowRight /></Link></Button>
+        <Button asChild size="sm" variant="secondary"><Link href={href}>{t("memberProfile.followUp.membershipFallback")}{" "}<ArrowRight /></Link></Button>
         <span className="ms-auto font-mono text-[12px] text-ink-3">{membership.memberNumber}</span>
       </div>
     </article>
@@ -146,13 +149,14 @@ function GateLoading() {
 }
 
 function SignedOut() {
+  const t = useT();
   return (
     <main className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center">
       <span className="flex size-11 items-center justify-center rounded-lg border border-line-2 bg-surface text-ink-2"><UserRound className="size-5" aria-hidden /></span>
       <h1 className="mt-5 font-display text-[22px] font-semibold tracking-tight">Sign in to your member account</h1>
       <p className="mt-2 text-[13.5px] text-ink-2">Sign in to see your memberships and profile.</p>
       <div className="mt-6 flex gap-2">
-        <Button asChild><Link href="/login">Sign in</Link></Button>
+        <Button asChild><Link href="/login">{t("common.action.signIn")}</Link></Button>
         <Button asChild variant="secondary"><Link href="/login/member/create">Create an account</Link></Button>
       </div>
     </main>

@@ -1,11 +1,7 @@
 import { plural } from "../../dictionary";
 import type { marketing as EnMarketing } from "../en/marketing";
 
-/**
- * The public site in Arabic. The headline keeps its three-beat rhythm rather
- * than translating word-for-word — "كل عضو. كل دينار. كل شيفت." lands the same
- * way, and "شيفت" is the word a gym in Amman actually uses for a shift.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const marketing: typeof EnMarketing = {
   nav: {
     product: "المنتج",
@@ -34,14 +30,14 @@ export const marketing: typeof EnMarketing = {
 
   hero: {
     eyebrow: "نظام الإيرادات والعمليات · صُنع في عمّان",
-    line1: "كل عضو.",
-    line2: "كل دينار.",
-    line3: "كل شيفت.",
-    body: "يجمع RIVET مكتب المبيعات وصالة النادي والكاش وهاتف العضو في سجل واحد — من أول تجربة مجانية حتى التجديد العاشر.",
+    line1: "كل تفاصيل ناديك",
+    line2: "و مشتركينه",
+    line3: "في مكان واحد",
+    body: "يجمع RIVET المبيعات وعمليات النادي والصندوق وتطبيق المشترك في سجل واحد — من أول زيارة تجريبية إلى التجديد العاشر.",
     accessNote: "يُمنح النادي حق الوصول بعد مراجعة الطلب وإتمام تهيئة المشغّل.",
     stats: {
-      tenderTerm: "نقدًا · بطاقة · كليك",
-      tenderDetail: "إيصال لكل عملية دفع",
+      tenderTerm: "كاش · بطاقة · كليك",
+      tenderDetail: "وصل لكل دفعة",
       branchTerm: "فروع متعددة",
       branchDetail: "دفتر واحد لكل صالة",
       localeTerm: "العربية / من اليمين لليسار",
@@ -59,15 +55,15 @@ export const marketing: typeof EnMarketing = {
     greeting: "صباح الخير",
     live: "مباشر",
     gymOwner: "مالك النادي",
-    needsAttention: "يحتاج انتباهًا",
+    needsAttention: "يتطلب انتباهك",
     drawerVariance: "فرق في الكاش بانتظار الموافقة",
-    revenue30: "الإيرادات · آخر ٣٠ يومًا",
+    revenue30: "الإيرادات · آخر 30 يومًا",
     receptionLive: "الاستقبال · مباشر",
     memberEntry: "دخول عضو",
     kpi: {
       collectedToday: "المحصّل اليوم",
       collectedTodayValue: "مُوصَل",
-      collectedTodayNote: "نقدًا · بطاقة · كليك",
+      collectedTodayNote: "كاش · بطاقة · كليك",
       thisMonth: "هذا الشهر",
       thisMonthValue: "في الدفتر",
       thisMonthNote: "مُسوّى",
@@ -77,7 +73,7 @@ export const marketing: typeof EnMarketing = {
       newMembers: "أعضاء جدد",
       newMembersValue: "مسجّل",
       newMembersNote: "هذا الشهر",
-      renewals: "التجديدات ≤ ٧ أيام",
+      renewals: "التجديدات ≤ 7 أيام",
       renewalsValue: "في الطابور",
       renewalsNote: "قابلة للتنفيذ",
       checkIns: "الدخول اليوم",
@@ -86,16 +82,16 @@ export const marketing: typeof EnMarketing = {
     },
     verdict: {
       valid: "سارٍ",
-      validNote: "العضوية فعّالة",
+      validNote: "الاشتراك فعّال",
       expiring: "قارب الانتهاء",
       expiringNote: "التجديد مستحق",
       frozen: "مجمّد",
-      frozenNote: "العضوية مجمّدة",
+      frozenNote: "الاشتراك مجمّد",
     },
     phone: {
       member: "RIVET · عضو",
-      active: "فعّالة",
-      membership: "عضويتك",
+      active: "فعّال",
+      membership: "اشتراكك",
       gymBranch: "النادي المختار · الفرع",
       statusLabel: "الحالة",
       statusValue: "سارية",
@@ -110,17 +106,17 @@ export const marketing: typeof EnMarketing = {
   },
 
   vocabulary: {
-    lead: "فرصة",
+    lead: "مهتم بالاشتراك",
     freeTrial: "تجربة مجانية",
-    offer: "عرض",
-    membership: "عضوية",
-    tender: "نقدًا · بطاقة · كليك",
-    receipt: "إيصال",
+    offer: "عرض اشتراك",
+    membership: "اشتراك",
+    tender: "كاش · بطاقة · كليك",
+    receipt: "وصل دفع",
     checkIn: "تسجيل دخول",
     verdict: "الحكم",
     freeze: "تجميد",
     transfer: "نقل",
-    shiftClose: "إغلاق الشيفت",
+    shiftClose: "إغلاق الصندوق",
     drawerVariance: "فرق الكاش",
     overrideReason: "سبب التجاوز",
     auditEntry: "قيد تدقيق",
@@ -133,7 +129,7 @@ export const marketing: typeof EnMarketing = {
     oneValue: "واحد",
     oneLabel: "سجل زمني واحد لكل عضو",
     auditedValue: "مُدقَّقة",
-    auditedLabel: "المدفوعات والشيفتات والتجاوزات",
+    auditedLabel: "المدفوعات والصناديق والاستثناءات",
     scopedValue: "مُحدَّدة",
     scopedLabel: "الأدوار والفروع وصلاحيات الوصول",
   },
@@ -146,7 +142,7 @@ export const marketing: typeof EnMarketing = {
     stagesLabel: "مراحل الدورة",
     stages: {
       lead: {
-        label: "فرصة",
+        label: "مهتم بالاشتراك",
         detail:
           "حجز من المتجر، أو زائر مباشر، أو ترشيح من صديق — كل اسم يصل إلى مسار واحد مع مسؤول ووقت متابعة. لا شيء يبقى في دفتر.",
       },
@@ -161,19 +157,19 @@ export const marketing: typeof EnMarketing = {
           "تُحجز التجارب على مواعيد حقيقية وتُؤكَّد قبل الزيارة، فيعرف المكتب من سيدخل ولماذا جاء.",
       },
       offer: {
-        label: "عرض",
+        label: "عرض اشتراك",
         detail:
           "الباقات والأسعار تأتي من الكتالوج، فيُسعَّر العرض دون تخمين — وكل خصم يحمل سببًا وعليه اسم.",
       },
       membership: {
-        label: "عضوية",
+        label: "اشتراك",
         detail:
-          "البيع يكتب العضوية: التواريخ والشروط والتجميد والنقل كلها على السجل، لا على ورقة ملصقة على مكتب الاستقبال.",
+          "البيع يكتب الاشتراك: التواريخ والشروط والتجميد والنقل كلها على السجل، لا على ورقة ملصقة على مكتب الاستقبال.",
       },
       payment: {
         label: "دفعة",
         detail:
-          "نقدًا أو ببطاقة أو عبر كليك — كل دينار يُوصَل لحظة حركته، ويستقر في كاش لا بد أن يتسوّى عند الإغلاق.",
+          "كاش أو بطاقة أو كليك — تُسجَّل كل دفعة عند استلامها، وتُطابَق مبالغ الصندوق عند الإغلاق.",
       },
       checkIn: {
         label: "تسجيل دخول",
@@ -183,7 +179,7 @@ export const marketing: typeof EnMarketing = {
       renewal: {
         label: "تجديد",
         detail:
-          "الأعضاء المقبلون على الانتهاء يدخلون طابور التجديد قبل أن تنقضي عضويتهم، وتعيد الدورة البيع إلى الثقل الأول.",
+          "الأعضاء المقبلون على الانتهاء يدخلون طابور التجديد قبل أن ينقضي اشتراكهم، وتعيد الدورة البيع إلى الثقل الأول.",
       },
     },
   },
@@ -204,7 +200,7 @@ export const marketing: typeof EnMarketing = {
       copy: "سارٍ أو قارب الانتهاء أو مجمّد أو مستنفد أو ممنوع — ومعه الإجراء التالي جاهزًا.",
     },
     drawer: {
-      label: "الشيفت والكاش",
+      label: "الصندوق والنقد",
       title: "أغلِق في تسعين ثانية",
       copy: "المتوقع مقابل الكاش المعدود، مع تسمية كل فرق وتفسيره وتوجيهه للموافقة.",
     },
@@ -219,25 +215,25 @@ export const marketing: typeof EnMarketing = {
     eyebrow: "RIVET للأعضاء",
     title: "الجهة الأخرى من المكتب.",
     description:
-      "حساب واحد يجد أندية جديدة، ويحجز تجربة مجانية، ويحمل كل عضوية فعّالة — بلا متجر تطبيقات، وبلا بطاقة بلاستيكية، وبلا صور لإيصالات قديمة.",
+      "حساب واحد يجد أندية جديدة، ويحجز تجربة مجانية، ويحمل كل اشتراك فعّال — بلا متجر تطبيقات، وبلا بطاقة بلاستيكية، وبلا صور لوصول دفع قديمة.",
     benefits: {
-      status: "حالة العضوية وتاريخ انتهائها والزيارات والرصيد في لمحة",
+      status: "حالة الاشتراك وتاريخ انتهائه والزيارات والرصيد في لمحة",
       qr: "هوية QR مخصّصة لدخول سريع عند المكتب",
-      receipts: "إيصالات وسجل مدفوعات تبقى حتى لو ضاع الهاتف",
+      receipts: "وصول دفع وسجل مدفوعات تبقى حتى لو ضاع الهاتف",
       language: "بالعربية أو الإنجليزية، لكل عضو على حدة",
     },
     card: {
       badge: "عضو RIVET",
       live: "مساحة عمل مباشرة",
-      eyebrow: "عضويتك في النادي",
+      eyebrow: "اشتراكك في النادي",
       title: "سجل عضو واحد موثّق",
       meta: "الباقة · الفرع · رقم العضو",
-      membershipLabel: "العضوية",
+      membershipLabel: "اشتراك",
       membershipValue: "حالة النادي المباشرة",
       visitsLabel: "الزيارات",
       visitsValue: "زيارات مسجّلة",
       qrTitle: "رمز الدخول بعد التفعيل",
-      qrNote: "يُصدر فقط من عضوية فعّالة ومحفوظة.",
+      qrNote: "يُصدر فقط من اشتراك فعّال ومحفوظة.",
       footer: "هوية الدخول · معتمدة من النادي",
     },
   },
@@ -257,7 +253,7 @@ export const marketing: typeof EnMarketing = {
     eyebrow: "الأسعار",
     title: "فرع واحد أو ثمانية. النظام نفسه.",
     description:
-      "كل باقة تشمل الظهور في الدليل، وتطبيق العضو، وصلاحيات الموظفين، وسجل التدقيق، ودورة الإيرادات كاملة. غيّر الباقة في أي وقت قبل انتهاء التجربة.",
+      "كل باقة تشمل الظهور في الدليل، وتطبيق العضو، وصلاحيات الموظفين، وسجل التغييرات، ودورة الإيرادات كاملة. غيّر الباقة في أي وقت قبل انتهاء التجربة.",
     emptyTitle: "يجري تجهيز الأسعار",
     emptyDescription: "أسعار RIVET غير متاحة من الكتالوج المباشر بعد.",
     mostPopular: "الأكثر طلبًا",
@@ -305,9 +301,9 @@ export const marketing: typeof EnMarketing = {
     signIn: "تسجيل الدخول",
     createMemberAccount: "إنشاء حساب عضو",
     myDashboard: "لوحتي",
-    copyright: "© ٢٠٢٦ RIVET · عمّان، الأردن",
+    copyright: "© 2026 RIVET · عمّان، الأردن",
     rivetForGyms: "RIVET للأندية",
-    copyrightShort: "© ٢٠٢٦ RIVET · عمّان",
+    copyrightShort: "© 2026 RIVET · عمّان",
   },
 
   memberShell: {

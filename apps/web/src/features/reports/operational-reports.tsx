@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Download, FileBarChart } from "lucide-react";
 import Link from "next/link";
@@ -77,6 +78,7 @@ function downloadCsv(fileName: string, title: string, rows: string[][], metadata
  * one scope bar and one set of filters.
  */
 export function OperationalReports({ view, scope, branches, onScopeChange }: { view: OperationalReportKind; scope: ReportScope; branches: ReadonlyArray<{ id: string; name: string }>; onScopeChange: (patch: Partial<ReportScope>) => void }) {
+  const t = useT();
   const { session } = useApp();
   const from = reportScopeFrom(scope);
   const to = scope.to;
@@ -98,7 +100,7 @@ export function OperationalReports({ view, scope, branches, onScopeChange }: { v
     <div className="space-y-4">
       <ReportScopeBar branches={branches} scope={scope} onChange={onScopeChange} ranged={RANGED[view]} onRefresh={() => void active.refetch()} refreshing={active.isFetching} note={RANGED[view] ? undefined : "as of today"} />
 
-      {active.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Report may be out of date">This report may be out of date. The last refresh failed. <button type="button" className="font-medium underline" onClick={() => void active.refetch()}>Try again</button></div> : null}
+      {active.isBackgroundError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Report may be out of date">This report may be out of date. The last refresh failed. <button type="button" className="font-medium underline" onClick={() => void active.refetch()}>{t("common.action.retry")}</button></div> : null}
       {active.isLoading ? <Skeleton className="h-72 w-full" /> : null}
       {active.isError ? <ErrorState onRetry={() => void active.refetch()} /> : null}
 
@@ -119,6 +121,7 @@ export function OperationalReports({ view, scope, branches, onScopeChange }: { v
 // --- Classes ---------------------------------------------------------------
 
 function ClassesView({ report, from, to }: { report: ClassUtilizationReport; from: string; to: string }) {
+  const t = useT();
   const percent = (value?: number) => value === undefined ? "—" : `${Math.round(value * 100)}%`;
   const exportCsv = () => downloadCsv(`rivet-class-utilization-${from}-${to}.csv`, "How full classes were", [
     ["Class", "Times scheduled", "Times held", "Classes cancelled", "Places", "Places booked", "Places filled", "Attended", "No-shows", "Attendance", "Waiting list", "Bookings cancelled"],
@@ -141,12 +144,12 @@ function ClassesView({ report, from, to }: { report: ClassUtilizationReport; fro
             <StatCell label="Places filled">{percent(report.totals.fillRate)}</StatCell>
             <StatCell label="Attendance">{percent(report.totals.attendanceRate)}</StatCell>
             <StatCell label="Joined waiting list">{report.totals.waitlisted}</StatCell>
-            <StatCell label="No-shows" tone={report.totals.noShows > 0 ? "warning" : undefined}>{report.totals.noShows}</StatCell>
+            <StatCell label={t("dashboard.trainer.noShows")} tone={report.totals.noShows > 0 ? "warning" : undefined}>{report.totals.noShows}</StatCell>
             <StatCell label="Cancelled classes" tone={report.totals.cancelledOccurrences > 0 ? "warning" : undefined}>{report.totals.cancelledOccurrences}</StatCell>
           </div>
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader><TableRow><TableHead>Class</TableHead><TableHead className="text-end">Scheduled</TableHead><TableHead className="text-end">Places booked</TableHead><TableHead className="text-end">Places filled</TableHead><TableHead className="text-end">Attended</TableHead><TableHead className="text-end">No-shows</TableHead><TableHead className="text-end">Waiting list</TableHead><TableHead className="text-end">Cancelled bookings</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Class</TableHead><TableHead className="text-end">{t("renewFlow.adjust.membershipStatus.scheduled")}</TableHead><TableHead className="text-end">Places booked</TableHead><TableHead className="text-end">Places filled</TableHead><TableHead className="text-end">Attended</TableHead><TableHead className="text-end">{t("dashboard.trainer.noShows")}</TableHead><TableHead className="text-end">Waiting list</TableHead><TableHead className="text-end">Cancelled bookings</TableHead></TableRow></TableHeader>
               <TableBody>{report.rows.map((row) => <TableRow key={`${row.templateId}:${row.className}`}>
                 <TableCell><p className="font-medium">{row.className}</p>{row.cancelledOccurrences ? <p className="mt-0.5 text-[12px] text-warning-deep">{row.cancelledOccurrences} class{row.cancelledOccurrences === 1 ? "" : "es"} cancelled</p> : null}</TableCell>
                 <TableCell className="text-end tabular">{row.occurrences}</TableCell>
@@ -166,13 +169,14 @@ function ClassesView({ report, from, to }: { report: ClassUtilizationReport; fro
 }
 
 function ReportHeader({ title, definition, onExport, exportDisabled }: { title: string; definition: string; onExport: () => void; exportDisabled?: boolean }) {
+  const t = useT();
   return (
     <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
       <div className="min-w-0 flex-1">
         <h2 className="text-[16px] font-semibold">{title}</h2>
         <p className="mt-1 max-w-3xl text-[12px] leading-4 text-ink-3">{definition}</p>
       </div>
-      <Button variant="secondary" size="sm" onClick={onExport} disabled={exportDisabled}><Download /> Download</Button>
+      <Button variant="secondary" size="sm" onClick={onExport} disabled={exportDisabled}><Download />{" "}{t("common.action.download")}</Button>
     </header>
   );
 }
@@ -184,6 +188,7 @@ function StatCell({ label, children, tone }: { label: string; children: React.Re
 // --- Peak hours -------------------------------------------------------------
 
 function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: string; to: string }) {
+  const t = useT();
   const byCell = useMemo(() => new Map(report.cells.map((cell) => [`${cell.weekday}:${cell.hour}`, cell.count])), [report.cells]);
   const max = report.busiest?.count ?? 0;
   const hours = useMemo(() => {
@@ -208,7 +213,7 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
         <EmptyState icon={FileBarChart} title="No check-ins in these dates" description="Choose more days or another branch." />
       ) : (
         <div className="space-y-4 p-4">
-          <p className="text-[12.5px] text-ink-2">{report.admittedTotal} check-ins{report.excludedTotal > 0 ? ` · ${report.excludedTotal} refused entries not counted` : ""}{report.busiest ? ` · busiest time: ${WEEKDAYS[report.busiest.weekday]} ${String(report.busiest.hour).padStart(2, "0")}:00` : ""}.</p>
+          <p className="text-[12.5px] text-ink-2">{report.admittedTotal} check-ins{report.excludedTotal > 0 ? ` · ${report.excludedTotal} refused entries not counted` : ""}{report.busiest ? ` · busiest time: ${WEEKDAYS[report.busiest.weekday]} ${String(report.busiest.hour).padStart(2, "0")}:00` : ""}{t("members.bulk.toast.end")}</p>
           <div className="overflow-x-auto">
             <div className="min-w-[640px]">
               <div className="grid" style={{ gridTemplateColumns: `88px repeat(${hours.length}, 1fr)` }} aria-hidden>
@@ -230,7 +235,7 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
             <summary className="cursor-pointer text-[12px] text-ink-2">Show as a table</summary>
             <div className="mt-2 overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Day</TableHead><TableHead>Hour</TableHead><TableHead className="text-end">Check-ins</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Day</TableHead><TableHead>Hour</TableHead><TableHead className="text-end">{t("palette.pages.receptionSubtitle")}</TableHead></TableRow></TableHeader>
                 <TableBody>{report.cells.map((cell) => <TableRow key={`${cell.weekday}:${cell.hour}`}><TableCell>{WEEKDAYS[cell.weekday]}</TableCell><TableCell className="font-mono text-[11px]">{String(cell.hour).padStart(2, "0")}:00</TableCell><TableCell className="text-end tabular">{cell.count}</TableCell></TableRow>)}</TableBody>
               </Table>
             </div>
@@ -244,6 +249,7 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
 // --- Retention --------------------------------------------------------------
 
 function RetentionView({ report }: { report: RetentionReport }) {
+  const t = useT();
   const cell = (checkpoint: { retained: number; eligible: number }) =>
     checkpoint.eligible === 0 ? <span className="text-ink-4">too new</span> : <span className="tabular">{Math.round((checkpoint.retained / checkpoint.eligible) * 100)}% <span className="text-[12px] text-ink-3">({checkpoint.retained} of {checkpoint.eligible})</span></span>;
   const exportCsv = () => downloadCsv("rivet-retention-cohorts.csv", "How many new members stay", [
@@ -263,7 +269,7 @@ function RetentionView({ report }: { report: RetentionReport }) {
       ) : (
         <div className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>Joined in</TableHead><TableHead className="text-end">Members</TableHead><TableHead className="text-end">After 1 month</TableHead><TableHead className="text-end">After 3 months</TableHead><TableHead className="text-end">After 6 months</TableHead><TableHead className="text-end">After 12 months</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Joined in</TableHead><TableHead className="text-end">{t("palette.groups.members")}</TableHead><TableHead className="text-end">After 1 month</TableHead><TableHead className="text-end">After 3 months</TableHead><TableHead className="text-end">After 6 months</TableHead><TableHead className="text-end">After 12 months</TableHead></TableRow></TableHeader>
             <TableBody>
               {report.cohorts.map((cohort) => (
                 <TableRow key={cohort.cohortMonth}>
@@ -286,6 +292,7 @@ function RetentionView({ report }: { report: RetentionReport }) {
 // --- Renewals ---------------------------------------------------------------
 
 function RenewalsView({ report, currency }: { report: RenewalForecastReport; currency: string }) {
+  const t = useT();
   const total = report.buckets.reduce((sum, bucket) => sum + bucket.count, 0);
   const exportCsv = () => downloadCsv("rivet-renewal-forecast.csv", "Memberships ending soon", [
     ["Ends in", "Member", "Plan", "Membership ends", "Value if renewed", "Currency"],
@@ -314,7 +321,7 @@ function RenewalsView({ report, currency }: { report: RenewalForecastReport; cur
           </div>
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader><TableRow><TableHead>Member</TableHead><TableHead>Plan</TableHead><TableHead>Ends</TableHead><TableHead>Ends in</TableHead><TableHead className="text-end">Value</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>{t("palette.kind.member")}</TableHead><TableHead>{t("renewFlow.adjust.planChange.rowPlan")}</TableHead><TableHead>{t("crm.queues.ends")}</TableHead><TableHead>Ends in</TableHead><TableHead className="text-end">Value</TableHead></TableRow></TableHeader>
               <TableBody>
                 {report.buckets.flatMap((bucket) => bucket.rows.map((row) => (
                   <TableRow key={row.membershipId}>
@@ -337,6 +344,7 @@ function RenewalsView({ report, currency }: { report: RenewalForecastReport; cur
 // --- Collections ------------------------------------------------------------
 
 function CollectionsView({ report, from, to, currency }: { report: CollectionsReport; from: string; to: string; currency: string }) {
+  const t = useT();
   const exportCsv = () => downloadCsv(`rivet-collections-${from}-${to}.csv`, "Charged and paid", [
     ["What", "Count", "Amount", "Currency"],
     ["Charged", String(report.chargedCount), formatMinorUnits(report.chargedMinor, currency), currency],
@@ -354,7 +362,7 @@ function CollectionsView({ report, from, to, currency }: { report: CollectionsRe
       />
       <div className="grid grid-cols-2 divide-line sm:grid-cols-3 xl:grid-cols-5">
         <StatCell label="Charged"><MoneyText money={money(report.chargedMinor)} compact /></StatCell>
-        <StatCell label="Collected"><MoneyText money={money(report.collectedMinor)} compact /></StatCell>
+        <StatCell label={t("dashboard.owner.collected")}><MoneyText money={money(report.collectedMinor)} compact /></StatCell>
         <StatCell label="Refunds" tone={report.refundedMinor > 0 ? "warning" : undefined}><MoneyText money={money(report.refundedMinor)} compact /></StatCell>
         <StatCell label="Cancelled payments" tone={report.voidedMinor > 0 ? "warning" : undefined}><MoneyText money={money(report.voidedMinor)} compact /></StatCell>
         <StatCell label="Unpaid now" tone={report.outstandingNowMinor > 0 ? "warning" : undefined}><MoneyText money={money(report.outstandingNowMinor)} compact /></StatCell>
@@ -367,6 +375,7 @@ function CollectionsView({ report, from, to, currency }: { report: CollectionsRe
 // --- CRM --------------------------------------------------------------------
 
 function CrmView({ report, from, to }: { report: CrmFunnelReport; from: string; to: string }) {
+  const t = useT();
   const exportCsv = () => downloadCsv(`rivet-crm-funnel-${from}-${to}.csv`, "Lead follow-up and sales", [
     ["What", "Value"],
     ["New leads", String(report.leadsCreated)],
@@ -389,11 +398,11 @@ function CrmView({ report, from, to }: { report: CrmFunnelReport; from: string; 
       ) : (
         <div className="grid grid-cols-2 divide-line sm:grid-cols-4 xl:grid-cols-7">
           <StatCell label="New leads">{report.leadsCreated}</StatCell>
-          <StatCell label="Contacted">{report.leadsContacted}</StatCell>
+          <StatCell label={t("memberProfile.contact.stage.contacted")}>{report.leadsContacted}</StatCell>
           <StatCell label="Time to first contact">{report.medianFirstResponseHours === undefined ? "—" : `${report.medianFirstResponseHours} ${report.medianFirstResponseHours === 1 ? "hour" : "hours"}`}</StatCell>
           <StatCell label="Trials">{report.trialsBooked}</StatCell>
           <StatCell label="Attended">{report.trialsAttended}</StatCell>
-          <StatCell label="Sold">{report.membershipsSold}</StatCell>
+          <StatCell label={t("domain.leadStage.won")}>{report.membershipsSold}</StatCell>
           <StatCell label="Joined after trial">{report.trialToSaleRate === undefined ? "—" : `${Math.round(report.trialToSaleRate * 100)}%`}</StatCell>
         </div>
       )}
@@ -404,6 +413,7 @@ function CrmView({ report, from, to }: { report: CrmFunnelReport; from: string; 
 // --- Controls ---------------------------------------------------------------
 
 function ControlsView({ report, from, to, currency }: { report: ControlTrendsReport; from: string; to: string; currency: string }) {
+  const t = useT();
   const exportCsv = () => downloadTextFile({
     fileName: `rivet-commercial-controls-${from}-${to}.csv`,
     mimeType: "text/csv;charset=utf-8",
@@ -412,7 +422,7 @@ function ControlsView({ report, from, to, currency }: { report: ControlTrendsRep
       metadata: [{ label: "Date range", value: `${from} to ${to} (your gym's time)` }],
       sections: [
         {
-          title: "Summary",
+          title: t("renewFlow.sale.summary"),
           headers: ["What", "Count", "Amount", "Currency"],
           rows: [
             ["Refunds", report.refunds.count, formatMinorUnits(report.refunds.amountMinor, currency), currency],
@@ -450,7 +460,7 @@ function ControlsView({ report, from, to, currency }: { report: ControlTrendsRep
       ) : (
         <div className="overflow-x-auto border-t border-line">
           <Table>
-            <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Type</TableHead><TableHead>What happened</TableHead><TableHead>Staff</TableHead><TableHead>Details</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>{t("members.tabs.checkIns.when")}</TableHead><TableHead>{t("common.label.type")}</TableHead><TableHead>What happened</TableHead><TableHead>Staff</TableHead><TableHead>{t("common.label.details")}</TableHead></TableRow></TableHeader>
             <TableBody>
               {report.recent.map((event) => (
                 <TableRow key={event.id}>
@@ -458,7 +468,7 @@ function ControlsView({ report, from, to, currency }: { report: ControlTrendsRep
                   <TableCell className="text-[12px]">{CONTROL_ACTION_LABELS[event.action] ?? event.action}</TableCell>
                   <TableCell className="max-w-72 truncate text-[12px]" title={event.summary}>{event.summary}</TableCell>
                   <TableCell className="text-[12px]">{event.actorName}</TableCell>
-                  <TableCell><Link href="/audit" className="text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink">Activity log</Link></TableCell>
+                  <TableCell><Link href="/audit" className="text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink">{t("nav.item.activityLog")}</Link></TableCell>
                 </TableRow>
               ))}
             </TableBody>

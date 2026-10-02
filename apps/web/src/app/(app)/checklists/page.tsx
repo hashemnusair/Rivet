@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ChecklistRunAssignment } from "@/features/checklists/checklist-assignment";
 
@@ -40,6 +41,7 @@ const ROLE_NAMES: Record<ChecklistRun["assignedRole"], string> = { owner: "Owner
 const RESULT_WORDS: Record<ChecklistRunItem["status"], string> = { pending: "not done yet", completed: "done", failed: "failed", skipped: "skipped" };
 
 export default function ChecklistsPage() {
+  const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
   const branches = session?.branches ?? [];
@@ -67,11 +69,11 @@ export default function ChecklistsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Daily checklist"
+        title={t("nav.item.checklists")}
         description="Tick each item when it is done. If something is wrong, say why."
         actions={branches.length > 1 ? (
           <Select value={branchId ?? ""} onValueChange={chooseBranch}>
-            <SelectTrigger sizeVariant="sm" className="w-44" aria-label="Branch"><SelectValue /></SelectTrigger>
+            <SelectTrigger sizeVariant="sm" className="w-44" aria-label={t("common.label.branch")}><SelectValue /></SelectTrigger>
             <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
           </Select>
         ) : <span className="text-[13px] text-ink-2">{branchName}</span>}
@@ -84,7 +86,7 @@ export default function ChecklistsPage() {
           <EmptyState icon={ClipboardCheck} title="No checklists for this branch yet" description={canEscalate ? "Set up opening and closing checklists in Settings, under Daily checklists." : "Ask a manager to set up the daily checklists."} />
         ) : (
           <div className="space-y-5">
-            {dayQuery.error ? <p role="status" className="text-[12px] text-warning-deep">The checklist could not update. It may be out of date. <Button size="sm" variant="ghost" onClick={() => void dayQuery.refetch()}>Try again</Button></p> : null}
+            {dayQuery.error ? <p role="status" className="text-[12px] text-warning-deep">The checklist could not update. It may be out of date. <Button size="sm" variant="ghost" onClick={() => void dayQuery.refetch()}>{t("common.action.retry")}</Button></p> : null}
             {day.carryover?.length ? <p className="text-sm text-warning-deep" role="status">{day.carryover.length} {day.carryover.length === 1 ? "checklist" : "checklists"} from the last 7 days {day.carryover.length === 1 ? "is" : "are"} not finished.</p> : null}
             {[...(day.carryover ?? []), ...day.runs].sort((a, b) => Number(b.items.some((item) => item.status === "failed")) - Number(a.items.some((item) => item.status === "failed"))).map((run) => (
               <RunCard
@@ -118,6 +120,7 @@ function RunCard({ run, branchId, canAssign, busy, onComplete, onProblem, onCorr
   onCorrect: (item: ChecklistRunItem) => void;
   onEscalate?: (item: ChecklistRunItem) => void;
 }) {
+  const t = useT();
   const Icon = run.type === "opening" ? Sun : Moon;
   const failedCount = run.items.filter((item) => item.status === "failed").length;
   return (
@@ -128,7 +131,7 @@ function RunCard({ run, branchId, canAssign, busy, onComplete, onProblem, onCorr
           <h2 className="text-[15px] font-semibold">{run.name}</h2>
           <p className="text-[12px] text-ink-3">{formatDate(run.localDate)} · {run.type === "opening" ? "Opening" : "Closing"} · due {run.dueTime} · {run.assignedUserName ?? ROLE_NAMES[run.assignedRole] ?? run.assignedRole}</p>
         </div>
-        {failedCount > 0 ? <Badge variant="danger">{failedCount} failed</Badge> : run.complete ? <Badge variant="success">Complete</Badge> : run.overdue ? <Badge variant="warning">Overdue</Badge> : null}
+        {failedCount > 0 ? <Badge variant="danger">{failedCount} failed</Badge> : run.complete ? <Badge variant="success">{t("dashboard.trainer.complete")}</Badge> : run.overdue ? <Badge variant="warning">{t("dashboard.owner.overdueCol")}</Badge> : null}
         <span className="tabular-nums text-[12px] text-ink-3">{run.progress.done} of {run.progress.total}</span>
       </header>
       {canAssign ? <ChecklistRunAssignment run={run} /> : null}
@@ -153,9 +156,9 @@ function RunCard({ run, branchId, canAssign, busy, onComplete, onProblem, onCorr
                   {item.status === "completed" ? <Check className="size-4" /> : item.status === "failed" ? <CircleAlert className="size-4" /> : item.status === "skipped" ? "–" : null}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className={cn("block text-[13.5px]", item.status === "completed" && "text-ink-3 line-through decoration-line-3")}>{item.label}{!item.required ? <span className="ms-2 text-[12px] text-ink-3">Optional</span> : null}</span>
+                  <span className={cn("block text-[13.5px]", item.status === "completed" && "text-ink-3 line-through decoration-line-3")}>{item.label}{!item.required ? <span className="ms-2 text-[12px] text-ink-3">{t("common.state.optional")}</span> : null}</span>
                   {item.instructions && !done ? <span className="block text-[12px] text-ink-3">{item.instructions}</span> : null}
-                  {done && item.actorName && item.at ? <span className="block text-[12px] text-ink-3">{item.status === "completed" ? "Done" : item.status === "failed" ? "Failed" : "Skipped"} by {item.actorName} at {formatTime(item.at)}{item.reason ? ` — ${item.reason}` : ""}</span> : null}
+                  {done && item.actorName && item.at ? <span className="block text-[12px] text-ink-3">{item.status === "completed" ? t("common.action.done") : item.status === "failed" ? "Failed" : "Skipped"} by {item.actorName} at {formatTime(item.at)}{item.reason ? ` — ${item.reason}` : ""}</span> : null}
                 </span>
               </button>
               {!done ? (
@@ -174,6 +177,7 @@ function RunCard({ run, branchId, canAssign, busy, onComplete, onProblem, onCorr
 }
 
 function ProblemDialog({ state, onClose, onDone }: { state?: ProblemDialogState; onClose: () => void; onDone: () => Promise<unknown> }) {
+  const t = useT();
   const [status, setStatus] = useState<"failed" | "skipped" | "completed" | "pending">("failed");
   const [reason, setReason] = useState("");
   const mutate = useApiMutation((api, input: SetChecklistItemInput) => api.setChecklistItem(input), {
@@ -191,7 +195,7 @@ function ProblemDialog({ state, onClose, onDone }: { state?: ProblemDialogState;
             <p className="text-[13px] font-medium">{state.item.label}</p>
             {correcting ? (
               <>
-                <p className="text-[12px] text-ink-3">Marked {RESULT_WORDS[state.item.status]} by {state.item.actorName ?? "staff"}.</p>
+                <p className="text-[12px] text-ink-3">Marked {RESULT_WORDS[state.item.status]} by {state.item.actorName ?? "staff"}{t("members.bulk.toast.end")}</p>
                 <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
                   <SelectTrigger aria-label="New result"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -217,14 +221,12 @@ function ProblemDialog({ state, onClose, onDone }: { state?: ProblemDialogState;
           </DialogBody>
         ) : null}
         <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose}>{t("common.action.cancel")}</Button>
           <Button
             loading={mutate.isPending}
             disabled={!state || (needsReason && reason.trim().length < 3)}
             onClick={() => state && mutate.mutate({ templateId: state.run.templateId, date: state.run.localDate, itemId: state.item.itemId, status, reason: reason.trim() || undefined })}
-          >
-            Save
-          </Button>
+          >{t("common.action.save")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -232,6 +234,7 @@ function ProblemDialog({ state, onClose, onDone }: { state?: ProblemDialogState;
 }
 
 function EscalateDialog({ state, branchId, onClose, onDone }: { state?: EscalateDialogState; branchId?: string; onClose: () => void; onDone: () => Promise<unknown> }) {
+  const t = useT();
   const [zoneId, setZoneId] = useState<string>("");
   const zonesQuery = useApiQuery(["zones", branchId ?? ""], (api) => api.listZones({ branchId }), { enabled: Boolean(state && branchId && !state.item.zoneId) });
   const zones = zonesQuery.data ?? [];
@@ -247,7 +250,7 @@ function EscalateDialog({ state, branchId, onClose, onDone }: { state?: Escalate
         {state ? (
           <DialogBody className="space-y-3">
             <p className="text-[12px] text-ink-2">No one is assigned to the job yet. Your reason is added to its details.</p>
-            <p className="text-[13px]">A job will be added to Maintenance for <span className="font-medium">{state.item.label}</span>{state.item.reason ? <> — “{state.item.reason}”</> : null}.</p>
+            <p className="text-[13px]">A job will be added to Maintenance for <span className="font-medium">{state.item.label}</span>{state.item.reason ? <> — “{state.item.reason}”</> : null}{t("members.bulk.toast.end")}</p>
             {!state.item.zoneId ? (
               zonesQuery.isError ? <QueryErrorState error={zonesQuery.error} onRetry={() => void zonesQuery.refetch()} /> : zones.length === 0 && !zonesQuery.isLoading ? (
                 <p className="text-[12px] text-warning-deep">This branch has no areas yet. An owner can add one in Settings.</p>
@@ -263,7 +266,7 @@ function EscalateDialog({ state, branchId, onClose, onDone }: { state?: Escalate
           </DialogBody>
         ) : null}
         <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose}>{t("common.action.cancel")}</Button>
           <Button loading={mutate.isPending} disabled={!state || !effectiveZone} onClick={() => state && mutate.mutate({ templateId: state.run.templateId, date: state.run.localDate, itemId: state.item.itemId, zoneId: effectiveZone })}>Create job</Button>
         </DialogFooter>
       </DialogContent>

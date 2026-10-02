@@ -29,9 +29,9 @@ describe("members list", () => {
   it("renders the page, filters and rows in Arabic with LTR phone numbers", async () => {
     await renderWithApp(<LocaleProvider initialLocale="ar"><MembersPage /></LocaleProvider>);
     expect(screen.getByRole("heading", { name: "الأعضاء" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "بحث في الأعضاء" })).toHaveAttribute("placeholder", "الاسم، الهاتف، رقم العضو…");
+    expect(screen.getByRole("textbox", { name: "ابحث عن مشترك" })).toHaveAttribute("placeholder", "الاسم، الهاتف، رقم العضو…");
     expect(screen.getByRole("combobox", { name: "ترتيب الأعضاء" })).toHaveTextContent("الاسم (أ–ي)");
-    expect(screen.getByRole("combobox", { name: "تصفية حسب حالة العضوية" })).toHaveTextContent("كل الحالات");
+    expect(screen.getByRole("combobox", { name: "تصفية حسب حالة الاشتراك" })).toHaveTextContent("كل الحالات");
     expect(screen.getByRole("link", { name: /إضافة عضو/ })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByTestId("member-card").length).toBeGreaterThan(0));
     expect(screen.getAllByText("المتبقي").length).toBeGreaterThan(0);

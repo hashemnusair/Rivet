@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { History } from "lucide-react";
 import { useMemo } from "react";
@@ -16,6 +17,7 @@ import { OPEN_ISSUE_STATUSES, relatedRepairHistory } from "../../../convex/branc
  * safety status and the repair decision are untouched.
  */
 export function RepairHistoryPanel({ asset, issues, workOrders }: { asset: EquipmentAsset; issues: EquipmentIssue[]; workOrders: EquipmentWorkOrder[] }) {
+  const t = useT();
   const machineIssues = useMemo(() => issues.filter((issue) => issue.assetId === asset.id).sort((left, right) => right.reportedAt.localeCompare(left.reportedAt)), [issues, asset.id]);
   const anchor = machineIssues.find((issue) => OPEN_ISSUE_STATUSES.has(issue.status)) ?? machineIssues[0];
   if (!anchor) {
@@ -32,7 +34,7 @@ export function RepairHistoryPanel({ asset, issues, workOrders }: { asset: Equip
         <p className="mt-0.5 text-[13px] font-medium">{anchor.title}</p>
         <p className="mt-0.5 text-[12px] text-ink-3"><StatusBadge status={anchor.status} /> · How serious: {severityLabel(anchor.severity)} · <StatusBadge status={anchor.safetyStatus} /> · reported <DateTimeText iso={anchor.reportedAt} /></p>
       </div>
-      <p className="text-[12px] text-ink-3" data-testid="repair-history-disclosure">{history.entries.length ? <>{machineIssues.length} problems reported on this machine since <DateText iso={firstReportedAt} />.</> : "No earlier problems on this machine."}</p>
+      <p className="text-[12px] text-ink-3" data-testid="repair-history-disclosure">{history.entries.length ? <>{machineIssues.length} problems reported on this machine since <DateText iso={firstReportedAt} />{t("members.bulk.toast.end")}</> : "No earlier problems on this machine."}</p>
       <p className="text-[12.5px] text-ink-2" data-testid="repair-history-recurring">{similarReports ? `${similarReports} earlier ${similarReports === 1 ? "problem uses" : "problems use"} similar words. Check the details to see if it is the same fault.` : "No earlier problem uses similar words."}</p>
       {history.entries.length ? (
         <ul className="space-y-2" data-testid="repair-history-entries">

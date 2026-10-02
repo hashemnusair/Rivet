@@ -859,7 +859,7 @@ function VerdictPanel({
     ? `Already checked in at ${formatTime(lastAcceptedCheckIn.occurredAt)}${lastAcceptedCheckIn.actorName ? ` by ${lastAcceptedCheckIn.actorName}` : ""}. No second visit was recorded.`
     : message;
   // A future term has a start, not an expiry; a past one has already ended.
-  const termLabel = membership?.status === "scheduled" ? "Starts" : membership?.status === "expired" ? "Ended" : t("crm.queues.ends");
+  const termLabel = membership?.status === "scheduled" ? t("renewFlow.adjust.planChange.starts") : membership?.status === "expired" ? "Ended" : t("crm.queues.ends");
   const termValue = formatDate(membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate);
 
   return (
@@ -904,7 +904,7 @@ function VerdictPanel({
             muted={membership?.remainingVisits == null}
           />
           <Cell
-            label="Owes"
+            label={t("members.list.columns.balance")}
             value={formatMoney(outstanding, { hideCurrency: true })}
             mono
             tone={hasBalance ? "warn" : undefined}
@@ -946,13 +946,13 @@ function VerdictPanel({
               title={cashBlocked ? "No shift is open. Take card, bank transfer or CliQ, not cash." : undefined}
               data-testid="quick-collect"
             >
-              <Banknote /> Collect {formatMoney(outstanding, { hideCurrency: true })}
+              <Banknote />{" "}{t("memberProfile.header.collect")}{" "}{formatMoney(outstanding, { hideCurrency: true })}
             </Button>
           ) : null}
 
           {canSell && (decision === "blocked" || member.membershipEndDate) ? (
             <Button size="sm" variant="night-outline" onClick={onRenew} data-testid="quick-renew">
-              <RotateCcw /> {renewable ? "Renew" : "Sell membership"}
+              <RotateCcw /> {renewable ? t("memberProfile.header.renew") : t("renewFlow.sale.titleSell")}
             </Button>
           ) : null}
 
@@ -970,8 +970,7 @@ function VerdictPanel({
           ) : decision === "blocked" ? (
             canOverride ? (
               <Button size="sm" variant="signal" onClick={onOverride} data-testid="override-checkin">
-                <ShieldAlert /> Let in anyway
-              </Button>
+                <ShieldAlert />{" "}{t("domain.checkInDecision.overridden")}</Button>
             ) : (
               <span className="text-[12px] text-night-ink-3">Only a manager can let them in.</span>
             )

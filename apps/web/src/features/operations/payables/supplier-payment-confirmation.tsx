@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowLeft, Download, Printer, Undo2, WalletCards } from "lucide-react";
 import Link from "next/link";
@@ -27,6 +28,7 @@ import { ReverseSupplierPaymentDialog } from "./supplier-payment-history-dialog"
  * explicit line about whether the ledger has posted the settlement yet.
  */
 export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paymentId?: string } = {}) {
+  const t = useT();
   const params = useParams<{ paymentId: string }>();
   const paymentId = paymentIdProp ?? params.paymentId;
   const { session } = useApp();
@@ -52,12 +54,12 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
   return (
     <div className="mx-auto max-w-5xl space-y-4" data-testid="supplier-payment-confirmation">
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
-        <Button asChild variant="ghost" size="sm"><Link href="/operations/payables"><ArrowLeft /> Supplier bills</Link></Button>
+        <Button asChild variant="ghost" size="sm"><Link href="/operations/payables"><ArrowLeft />{" "}{t("palette.pages.supplierBills")}</Link></Button>
         <div className="flex flex-wrap items-center gap-2">
           {writeEnabled ? <Button asChild variant="secondary" size="sm"><Link href={`/operations/payables?pay=1&supplier=${encodeURIComponent(detail.supplierId)}`}><WalletCards /> Record another payment</Link></Button> : null}
           {writeEnabled && !reversed ? <Button variant="danger" size="sm" onClick={() => setReverseOpen(true)} data-testid="reverse-supplier-payment"><Undo2 /> Reverse payment…</Button> : null}
-          <Button variant="secondary" size="sm" onClick={download}><Download /> Download</Button>
-          <Button size="sm" onClick={() => window.print()}><Printer /> Print</Button>
+          <Button variant="secondary" size="sm" onClick={download}><Download />{" "}{t("common.action.download")}</Button>
+          <Button size="sm" onClick={() => window.print()}><Printer />{" "}{t("common.action.print")}</Button>
         </div>
       </div>
 
@@ -73,17 +75,17 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
 
           <dl className="grid grid-cols-[130px_1fr] gap-x-4 gap-y-2 border-b border-dashed border-line-3 py-4 text-[12.5px]">
             <dt className="text-ink-3">Paid to</dt><dd className="font-semibold">{detail.supplierName}</dd>
-            <dt className="text-ink-3">Amount</dt><dd className="font-semibold tabular"><MoneyText money={detail.amount} /></dd>
-            <dt className="text-ink-3">Method</dt><dd>{SUPPLIER_PAYMENT_METHOD_LABELS[detail.method]}{detail.shiftId ? " · from the cash drawer" : ""}</dd>
+            <dt className="text-ink-3">{t("common.label.amount")}</dt><dd className="font-semibold tabular"><MoneyText money={detail.amount} /></dd>
+            <dt className="text-ink-3">{t("renewFlow.shared.method")}</dt><dd>{SUPPLIER_PAYMENT_METHOD_LABELS[detail.method]}{detail.shiftId ? " · from the cash drawer" : ""}</dd>
             {detail.reference ? <><dt className="text-ink-3">Reference</dt><dd className="font-mono" dir="ltr">{detail.reference}</dd></> : null}
-            <dt className="text-ink-3">Recorded</dt><dd>{formatDateTime(detail.occurredAt)} by {detail.recordedByName}</dd>
-            {detail.notes ? <><dt className="text-ink-3">Notes</dt><dd>{detail.notes}</dd></> : null}
+            <dt className="text-ink-3">{t("marketing.device.kpi.newMembersValue")}</dt><dd>{formatDateTime(detail.occurredAt)} by {detail.recordedByName}</dd>
+            {detail.notes ? <><dt className="text-ink-3">{t("common.label.notes")}</dt><dd>{detail.notes}</dd></> : null}
           </dl>
 
           <section className="border-b border-dashed border-line-3 py-4">
             <h2 className="text-[12px] font-semibold text-ink-3">Bills paid</h2>
             <table className="mt-2 w-full text-[12.5px]">
-              <thead className="text-start text-[12px] text-ink-3"><tr><th className="py-1 text-start font-medium">Bill</th><th className="py-1 ps-3 text-end font-medium">Paid now</th><th className="py-1 ps-3 text-end font-medium">Still owed</th></tr></thead>
+              <thead className="text-start text-[12px] text-ink-3"><tr><th className="py-1 text-start font-medium">Bill</th><th className="py-1 ps-3 text-end font-medium">Paid now</th><th className="py-1 ps-3 text-end font-medium">{t("renewFlow.receipt.stillOwed")}</th></tr></thead>
               <tbody>
                 {detail.allocations.map((allocation) => {
                   const payable = detail.payables.find((candidate) => candidate.payableId === allocation.payableId);
@@ -107,9 +109,9 @@ export function SupplierPaymentConfirmation({ paymentId: paymentIdProp }: { paym
 
         <aside className="no-print space-y-4 self-start">
           <section className="panel p-4">
-            <h3 className="context-label mb-2.5">Status</h3>
-            <div className="flex flex-wrap gap-1.5">{reversed ? <Badge variant="danger" dot>Reversed</Badge> : <Badge variant="success" dot>Recorded</Badge>}<LedgerStatusBadge status={detail.ledgerPostingStatus} /></div>
-            {detail.reversal ? <p className="mt-2 text-[12px] text-ink-2">Reversal: {ledgerStatusLabel(detail.reversal.ledgerPostingStatus).toLowerCase()}.</p> : null}
+            <h3 className="context-label mb-2.5">{t("common.label.status")}</h3>
+            <div className="flex flex-wrap gap-1.5">{reversed ? <Badge variant="danger" dot>Reversed</Badge> : <Badge variant="success" dot>{t("marketing.device.kpi.newMembersValue")}</Badge>}<LedgerStatusBadge status={detail.ledgerPostingStatus} /></div>
+            {detail.reversal ? <p className="mt-2 text-[12px] text-ink-2">Reversal: {ledgerStatusLabel(detail.reversal.ledgerPostingStatus).toLowerCase()}{t("members.bulk.toast.end")}</p> : null}
             <p className="mt-2 text-[12px] text-ink-3">An owner adds payments to the accounts in Statements, under Ledger controls.</p>
           </section>
           <section className="panel p-4 text-[12.5px]">

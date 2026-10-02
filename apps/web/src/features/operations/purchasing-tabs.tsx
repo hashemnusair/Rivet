@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { PurchaseOrderDeliveryDate } from "./purchase-order-delivery-date";
 import { isApiError } from "@/lib/api/errors";
@@ -19,6 +20,7 @@ import { EmptyState, QueryErrorState } from "@/components/ui/states";
 import { DeleteDialog, FormPanel, LoadingGrid, ReadOnlyNotice, SectionHeader, StatusBadge, minorValue, newKey, type OperationsMutations } from "./operations-shared";
 
 export function SupplierForm({ defaultBranchId, branches, supplier, pending, onCancel, onSubmit }: { defaultBranchId?: string; branches: Array<{ id: string; name: string }>; supplier?: Supplier; pending: boolean; onCancel: () => void; onSubmit: (input: UpsertSupplierInput) => void }) {
+  const t = useT();
   const [form, setForm] = useState(() => ({ name: supplier?.name ?? "", contactName: supplier?.contactName ?? "", email: supplier?.email ?? "", phone: supplier?.phone ?? "", terms: supplier?.terms ?? "", branchIds: supplier?.branchIds ?? (defaultBranchId ? [defaultBranchId] : []) }));
   const editing = Boolean(supplier);
   return (
@@ -26,17 +28,18 @@ export function SupplierForm({ defaultBranchId, branches, supplier, pending, onC
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSubmit({ id: supplier?.id, name: form.name, contactName: form.contactName || undefined, email: form.email || undefined, phone: form.phone || undefined, terms: form.terms || undefined, branchIds: form.branchIds }); }}>
         <Field label="Supplier name" required><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required placeholder="Jordan Sports Supply" /></Field>
         <Field label="Contact name"><Input value={form.contactName} onChange={(event) => setForm((current) => ({ ...current, contactName: event.target.value }))} placeholder="Maya Haddad" /></Field>
-        <Field label="Email"><Input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="orders@example.com" /></Field>
-        <Field label="Phone"><Input type="tel" dir="ltr" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="+962 …" /></Field>
+        <Field label={t("common.label.email")}><Input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="orders@example.com" /></Field>
+        <Field label={t("common.label.phone")}><Input type="tel" dir="ltr" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} placeholder="+962 …" /></Field>
         <Field label="Payment terms"><Input value={form.terms} onChange={(event) => setForm((current) => ({ ...current, terms: event.target.value }))} placeholder="Pay within 15 days" /></Field>
         <div className="sm:col-span-2"><p className="mb-1.5 text-[13px] font-medium text-ink-2">Branches</p><div className="flex flex-wrap gap-2">{branches.map((branch) => <label key={branch.id} className="inline-flex items-center gap-2 rounded-md border border-line-2 px-2.5 py-2 text-[12px]"><input type="checkbox" checked={form.branchIds.includes(branch.id)} onChange={(event) => setForm((current) => ({ ...current, branchIds: event.target.checked ? [...current.branchIds, branch.id] : current.branchIds.filter((id) => id !== branch.id) }))} />{branch.name}</label>)}</div></div>
-        <div className="flex justify-end gap-2 sm:col-span-2"><Button type="submit" loading={pending}><Store /> {editing ? "Save changes" : "Save supplier"}</Button></div>
+        <div className="flex justify-end gap-2 sm:col-span-2"><Button type="submit" loading={pending}><Store /> {editing ? t("common.action.saveChanges") : "Save supplier"}</Button></div>
       </form>
     </FormPanel>
   );
 }
 
 export function PurchaseOrderForm({ currency, products, suppliers, branchId, defaultProductId, pending, onCancel, onSubmit }: { currency: string; products: Product[]; suppliers: Supplier[]; branchId?: string; defaultProductId?: string; pending: boolean; onCancel: () => void; onSubmit: (input: CreatePurchaseOrderInput) => void }) {
+  const t = useT();
   const activeSuppliers = suppliers.filter((supplier) => supplier.status === "active");
   const [form, setForm] = useState<{ sourceType: PurchaseOrderSourceType; supplierId: string; productId: string; quantity: string; unitCost: string; notes: string; expectedDeliveryDate: string }>({ sourceType: activeSuppliers.length ? "supplier" : "private", supplierId: activeSuppliers[0]?.id ?? "", productId: defaultProductId && products.some((product) => product.id === defaultProductId) ? defaultProductId : products[0]?.id ?? "", quantity: "", unitCost: "", notes: "", expectedDeliveryDate: "" });
   return (
@@ -48,7 +51,7 @@ export function PurchaseOrderForm({ currency, products, suppliers, branchId, def
         <Field label="Quantity" required><Input type="number" min="1" step="1" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} required /></Field>
         <Field label={"Unit cost (" + currency + ")"} required><Input type="number" min="0" step="0.001" dir="ltr" value={form.unitCost} onChange={(event) => setForm((current) => ({ ...current, unitCost: event.target.value }))} required /></Field>
         <Field label="Expected delivery date" hint="When the stock should arrive. This is not the date you must pay."><Input type="date" value={form.expectedDeliveryDate} onChange={event => setForm(current => ({ ...current, expectedDeliveryDate: event.target.value }))} /></Field>
-        <Field label="Notes" className="sm:col-span-2"><Textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Anything to remember about this order" /></Field>
+        <Field label={t("common.label.notes")} className="sm:col-span-2"><Textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Anything to remember about this order" /></Field>
         <div className="flex justify-end sm:col-span-2"><Button type="submit" loading={pending} disabled={!branchId}><ShoppingCart /> Save draft</Button></div>
       </form>
     </FormPanel>
@@ -56,9 +59,10 @@ export function PurchaseOrderForm({ currency, products, suppliers, branchId, def
 }
 
 export function PurchaseOrderRow({ order, writeEnabled, currency, mutations }: { order: PurchaseOrder; writeEnabled: boolean; currency: string; mutations: OperationsMutations }) {
+  const t = useT();
   const [reason, setReason] = useState("");
   const sourceLabel = order.sourceType === "private" ? "Bought elsewhere" : order.supplierName;
-  return <div className="space-y-2 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[13px] font-medium">{sourceLabel}</p><p className="mt-0.5 text-[12px] text-ink-3">{order.lines.map((line) => line.productName + " × " + line.orderedQuantity).join(", ")}</p></div><div className="text-end"><StatusBadge status={order.status} /><p className="mt-1"><MoneyText money={order.total} /></p></div></div>{writeEnabled && ["draft", "approved", "partially_received"].includes(order.status) ? <div className="flex flex-wrap items-center gap-2">{order.status === "draft" ? <Input aria-label={"Reason for approving " + sourceLabel} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Approval reason (optional)" className="max-w-xs" /> : null}{order.status === "draft" ? <Button size="xs" onClick={() => mutations.approveOrder.mutate({ id: order.id, reason: reason.trim() || undefined })} loading={mutations.approveOrder.isPending}><Check /> Approve</Button> : null}{["approved", "partially_received"].includes(order.status) ? <Button size="xs" variant="secondary" onClick={() => mutations.receiveOrder.mutate({ purchaseOrderId: order.id, idempotencyKey: newKey("receive") })} loading={mutations.receiveOrder.isPending}><PackagePlus /> Receive stock</Button> : null}</div> : null}<PurchaseOrderDeliveryDate key={`${order.id}:${order.expectedDeliveryDate ?? ""}`} order={order} editable={writeEnabled} /><p className="text-[12px] text-ink-3">Created <DateText iso={order.createdAt} /> · {currency}</p></div>;
+  return <div className="space-y-2 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[13px] font-medium">{sourceLabel}</p><p className="mt-0.5 text-[12px] text-ink-3">{order.lines.map((line) => line.productName + " × " + line.orderedQuantity).join(", ")}</p></div><div className="text-end"><StatusBadge status={order.status} /><p className="mt-1"><MoneyText money={order.total} /></p></div></div>{writeEnabled && ["draft", "approved", "partially_received"].includes(order.status) ? <div className="flex flex-wrap items-center gap-2">{order.status === "draft" ? <Input aria-label={"Reason for approving " + sourceLabel} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Approval reason (optional)" className="max-w-xs" /> : null}{order.status === "draft" ? <Button size="xs" onClick={() => mutations.approveOrder.mutate({ id: order.id, reason: reason.trim() || undefined })} loading={mutations.approveOrder.isPending}><Check /> Approve</Button> : null}{["approved", "partially_received"].includes(order.status) ? <Button size="xs" variant="secondary" onClick={() => mutations.receiveOrder.mutate({ purchaseOrderId: order.id, idempotencyKey: newKey("receive") })} loading={mutations.receiveOrder.isPending}><PackagePlus /> Receive stock</Button> : null}</div> : null}<PurchaseOrderDeliveryDate key={`${order.id}:${order.expectedDeliveryDate ?? ""}`} order={order} editable={writeEnabled} /><p className="text-[12px] text-ink-3">{t("common.label.createdAt")}{" "}<DateText iso={order.createdAt} /> · {currency}</p></div>;
 }
 
 const ORDER_FILTERS = [
@@ -70,6 +74,7 @@ const ORDER_FILTERS = [
 type OrderFilter = (typeof ORDER_FILTERS)[number]["value"];
 
 export function PurchaseOrdersTab({ branchId, currency, writeEnabled, products, suppliers, orders, loading, error, onRetry, mutations, highlightOrderId }: { branchId?: string; currency: string; writeEnabled: boolean; products: Product[]; suppliers: Supplier[]; orders: PurchaseOrder[]; loading: boolean; error?: unknown; onRetry: () => void; mutations: OperationsMutations; highlightOrderId?: string }) {
+  const t = useT();
   const params = useSearchParams();
   const router = useRouter();
   const [filter, setFilter] = useState<OrderFilter>(() => ORDER_FILTERS.find((entry) => entry.value === params.get("orders"))?.value ?? (highlightOrderId && orders.some((order) => order.id === highlightOrderId && ["received", "cancelled"].includes(order.status)) ? "all" : "open"));
@@ -84,7 +89,7 @@ export function PurchaseOrdersTab({ branchId, currency, writeEnabled, products, 
     <div className="space-y-4" data-testid="operations-orders">
       {!writeEnabled ? <ReadOnlyNotice /> : null}
       <section className="panel overflow-hidden">
-        <SectionHeader icon={ShoppingCart} title="Purchase orders" description="Approve a draft, then receive the stock when it arrives. Received supplier orders go to Supplier bills." actions={<div className="flex flex-wrap items-center gap-2"><div className="flex rounded-md border border-line-2 bg-sunken/50 p-0.5" role="group" aria-label="Order status">{ORDER_FILTERS.map((entry) => <button key={entry.value} type="button" aria-pressed={filter === entry.value} className={cn("rounded px-2.5 py-1.5 text-[12px] transition-colors", filter === entry.value ? "bg-surface font-medium text-ink" : "text-ink-3 hover:text-ink")} onClick={() => { setFilter(entry.value); const next = new URLSearchParams(params.toString()); next.set("orders", entry.value); router.replace(`/operations?${next}`, { scroll: false }); }}>{entry.label}</button>)}</div><Button asChild size="sm" variant="secondary"><Link href={branchId ? `/operations?tab=payables&branch=${encodeURIComponent(branchId)}` : "/operations?tab=payables"}><WalletCards /> Supplier bills</Link></Button>{writeEnabled ? <Button size="sm" onClick={() => setOrderForm(true)} disabled={!branchId}><Plus /> New purchase order</Button> : null}</div>} />
+        <SectionHeader icon={ShoppingCart} title="Purchase orders" description="Approve a draft, then receive the stock when it arrives. Received supplier orders go to Supplier bills." actions={<div className="flex flex-wrap items-center gap-2"><div className="flex rounded-md border border-line-2 bg-sunken/50 p-0.5" role="group" aria-label="Order status">{ORDER_FILTERS.map((entry) => <button key={entry.value} type="button" aria-pressed={filter === entry.value} className={cn("rounded px-2.5 py-1.5 text-[12px] transition-colors", filter === entry.value ? "bg-surface font-medium text-ink" : "text-ink-3 hover:text-ink")} onClick={() => { setFilter(entry.value); const next = new URLSearchParams(params.toString()); next.set("orders", entry.value); router.replace(`/operations?${next}`, { scroll: false }); }}>{entry.label}</button>)}</div><Button asChild size="sm" variant="secondary"><Link href={branchId ? `/operations?tab=payables&branch=${encodeURIComponent(branchId)}` : "/operations?tab=payables"}><WalletCards />{" "}{t("palette.pages.supplierBills")}</Link></Button>{writeEnabled ? <Button size="sm" onClick={() => setOrderForm(true)} disabled={!branchId}><Plus /> New purchase order</Button> : null}</div>} />
         {!branchId && writeEnabled ? <div className="border-b border-line bg-warning-bg/40 px-4 py-2.5 text-[12px] text-warning-deep" role="status">Choose a branch above to create or receive purchase orders.</div> : null}
         {visible.length === 0 ? <EmptyState compact title={filter === "overdue" ? "No overdue deliveries" : filter === "open" ? "No open purchase orders" : "No purchase orders"} description={filter === "open" ? "Create a draft when stock runs low. Received orders move to the Received list." : "Orders for this branch will show here."} className="m-4" /> : <div className="divide-y divide-line">{visible.map((order) => <div key={order.id} className={cn(highlightOrderId === order.id && "bg-sunken/40")} data-testid="purchase-order-row" data-highlighted={highlightOrderId === order.id ? "true" : undefined}><PurchaseOrderRow order={order} writeEnabled={writeEnabled} currency={currency} mutations={mutations} /></div>)}</div>}
       </section>

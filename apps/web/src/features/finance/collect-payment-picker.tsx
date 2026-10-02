@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Search } from "lucide-react";
 import { useState } from "react";
@@ -20,6 +21,7 @@ import { CollectPaymentDialog } from "@/features/membership-actions/payment-dial
  * then the standard collect-payment dialog takes over.
  */
 export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 250);
   const [member, setMember] = useState<MemberSummary | null>(null);
@@ -39,7 +41,7 @@ export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boole
       <Dialog open={open && !member} onOpenChange={onOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Collect payment</DialogTitle>
+            <DialogTitle>{t("renewFlow.payment.collectPlain")}</DialogTitle>
             <DialogDescription>Find the member. You will see what each person owes.</DialogDescription>
           </DialogHeader>
           <div className="px-5 pb-5">

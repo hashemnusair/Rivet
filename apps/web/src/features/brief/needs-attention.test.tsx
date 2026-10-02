@@ -71,7 +71,7 @@ describe("Needs attention", () => {
   it("shows Arabic wording, with money and times kept left-to-right, when the language is Arabic", async () => {
     const { api } = await renderWithApp(<LocaleProvider initialLocale="ar"><NeedsAttention /></LocaleProvider>, { role: "owner" });
     const brief = await api.getOperatingBrief({});
-    expect(await screen.findByRole("heading", { name: "تحتاج إلى انتباه" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "يتطلب انتباهك" })).toBeInTheDocument();
     const lines = await screen.findAllByTestId("needs-attention-line");
     expect(lines).toHaveLength(brief.attention.length);
     for (const [index, line] of brief.attention.entries()) {

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check, Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -89,6 +90,7 @@ export default function SubscriptionsPage() {
 }
 
 function PlanCard({ plan, onEdit }: { plan: PlatformSaasPlan; onEdit: () => void }) {
+  const t = useT();
   const annual = calculatePlanPrice(plan, "annual");
   const features = [
     `Up to ${plan.branches.toLocaleString()} branch${plan.branches === 1 ? "" : "es"}`,
@@ -102,7 +104,7 @@ function PlanCard({ plan, onEdit }: { plan: PlatformSaasPlan; onEdit: () => void
         <h3 className="text-[15px] font-semibold">{plan.name}</h3>
         <Button variant="ghost" size="icon-sm" aria-label={`Edit ${plan.name} plan`} onClick={onEdit}><Pencil /></Button>
       </div>
-      <p className="mt-3 text-[23px] font-semibold leading-none tabular tracking-[-0.01em]">{formatMoney({ amount: plan.priceMinor, currency: "JOD" })}<span className="ms-1 text-[13px] font-medium text-ink-3">/ month</span></p>
+      <p className="mt-3 text-[23px] font-semibold leading-none tabular tracking-[-0.01em]">{formatMoney({ amount: plan.priceMinor, currency: "JOD" })}<span className="ms-1 text-[13px] font-medium text-ink-3">{t("marketing.pricing.perMonth")}</span></p>
       <p className="mt-1.5 text-[12.5px] text-ink-3">JOD {formatJodMinor(annual.annualTotalMinor)} billed annually</p>
       <ul className="mt-4 grid gap-1.5 border-t border-line pt-4 text-[12.5px] leading-relaxed text-ink-2">
         {features.map((feature) => <li key={feature} className="flex items-start gap-2"><Check className="mt-1 size-3.5 shrink-0 text-ink-3" aria-hidden />{feature}</li>)}
@@ -112,6 +114,7 @@ function PlanCard({ plan, onEdit }: { plan: PlatformSaasPlan; onEdit: () => void
 }
 
 function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan: PlatformSaasPlan; open: boolean; saving: boolean; error: Error | null; onOpenChange: (open: boolean) => void; onSave: (input: PlanUpdateInput) => void }) {
+  const t = useT();
   const [price, setPrice] = useState(String(plan.priceMinor / 1000));
   const [branches, setBranches] = useState(String(plan.branches));
   const [staff, setStaff] = useState(String(plan.staff));
@@ -174,7 +177,7 @@ function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan:
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Edit {plan.name} plan</DialogTitle><DialogDescription>These values update the public landing page, new applications, and the entitlement catalog. Existing gym subscriptions are changed in Billing.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{t("common.action.edit")}{" "}{plan.name} plan</DialogTitle><DialogDescription>These values update the public landing page, new applications, and the entitlement catalog. Existing gym subscriptions are changed in Billing.</DialogDescription></DialogHeader>
         <DialogBody className="grid gap-4 sm:grid-cols-2">
           <Field label="Monthly price (JOD)" required error={errors.price}><Input value={price} onChange={(event) => { setPrice(event.target.value); setErrors((current) => ({ ...current, price: undefined, changes: undefined })); }} inputMode="decimal" aria-invalid={Boolean(errors.price)} /></Field>
           <Field label="Branches" required error={errors.branches}><Input value={branches} onChange={(event) => { setBranches(event.target.value); setErrors((current) => ({ ...current, branches: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.branches)} /></Field>
@@ -202,7 +205,7 @@ function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan:
           </Field>
           {error ? <p className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger sm:col-span-2" role="alert">{error.message || "The plan could not be saved."}</p> : null}
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button><Button loading={saving} onClick={submit}>Save plan</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>{t("common.action.cancel")}</Button><Button loading={saving} onClick={submit}>Save plan</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

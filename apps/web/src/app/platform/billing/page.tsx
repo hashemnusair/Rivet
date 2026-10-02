@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { openInvoicePdf } from "@/features/billing/invoice-pdf";
 
@@ -29,6 +30,7 @@ import { downloadTextFile } from "@/lib/exports/download";
 type InvoiceAction = { invoice: PlatformBillingInvoice; kind: "payment" | "past_due" | "void" };
 
 export default function BillingPage() {
+  const t = useT();
   const { platformSnapshot } = useExperience();
   const searchParams = useSearchParams();
   const requestedInvoiceId = searchParams.get("invoice")?.trim() || undefined;
@@ -150,7 +152,7 @@ export default function BillingPage() {
 
       {requestedCaseId ? (
         <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line bg-sunken/50 px-4 py-2.5 text-[12.5px] text-ink-2" role="status" data-testid="billing-case-banner">
-          <span>Reviewing for support case <span className="font-mono text-[12px]">{requestedCaseId}</span>{linkedCase ? ` · ${linkedCase.subject} · ${linkedCase.gym}` : " · not in the current snapshot"}.</span>
+          <span>Reviewing for support case <span className="font-mono text-[12px]">{requestedCaseId}</span>{linkedCase ? ` · ${linkedCase.subject} · ${linkedCase.gym}` : " · not in the current snapshot"}{t("members.bulk.toast.end")}</span>
           <Link className="font-medium text-ink underline-offset-4 hover:underline" href={`/platform/support?case=${encodeURIComponent(requestedCaseId)}`}>Back to the case</Link>
         </div>
       ) : null}
@@ -165,8 +167,8 @@ export default function BillingPage() {
       ) : null}
 
       <section className="mt-5 grid gap-3 sm:grid-cols-3" aria-label="Billing totals">
-        <PlatformPanel className="p-4"><Stat label="Outstanding" value={platformSnapshot ? formatMoney(invoiceTotals.outstanding) : "—"} context="Open and past-due invoices" tone={invoiceTotals.outstanding.amount ? "warning" : undefined} /></PlatformPanel>
-        <PlatformPanel className="p-4"><Stat label="Collected" value={platformSnapshot ? formatMoney(invoiceTotals.collected) : "—"} context="Paid invoice records" /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label={t("marketing.device.kpi.outstanding")} value={platformSnapshot ? formatMoney(invoiceTotals.outstanding) : "—"} context="Open and past-due invoices" tone={invoiceTotals.outstanding.amount ? "warning" : undefined} /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label={t("dashboard.owner.collected")} value={platformSnapshot ? formatMoney(invoiceTotals.collected) : "—"} context="Paid invoice records" /></PlatformPanel>
         <PlatformPanel className="p-4"><Stat label="Automatic charging" value="Not configured" context="Bank or reference payment confirmation only" /></PlatformPanel>
       </section>
 
@@ -186,7 +188,7 @@ export default function BillingPage() {
             <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">Record the payment reference on an invoice to mark it paid and reactivate the gym. RIVET never charges cards automatically.</p>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setPolicyOpen(false)}>Close</Button>
+            <Button variant="secondary" onClick={() => setPolicyOpen(false)}>{t("common.action.close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -231,6 +233,7 @@ export default function BillingPage() {
 const selectClass = "h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px] text-ink transition-colors hover:border-line-3 focus:border-[var(--tenant-brand-primary)]";
 
 function CreateInvoiceDialog({ open, onOpenChange, gyms, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; gyms: Array<{ id: string; name: string }>; onCreated: (invoice: PlatformBillingInvoice) => void }) {
+  const t = useT();
   const [gymId, setGymId] = useState("");
   const [amount, setAmount] = useState("");
   const [dueAt, setDueAt] = useState("");
@@ -253,12 +256,12 @@ function CreateInvoiceDialog({ open, onOpenChange, gyms, onCreated }: { open: bo
       <DialogContent>
         <DialogHeader><DialogTitle>Create a platform invoice</DialogTitle><DialogDescription>This creates a draft in the manual ledger. It does not charge a card or contact the gym.</DialogDescription></DialogHeader>
         <DialogBody className="grid gap-4">
-          <Field label="Gym" htmlFor="platform-invoice-gym"><select id="platform-invoice-gym" className={selectClass} value={gymId} onChange={(event) => setGymId(event.target.value)}><option value="">Choose a provisioned gym</option>{gyms.map((gym) => <option key={gym.id} value={gym.id}>{gym.name}</option>)}</select></Field>
+          <Field label={t("shell.topbar.gym")} htmlFor="platform-invoice-gym"><select id="platform-invoice-gym" className={selectClass} value={gymId} onChange={(event) => setGymId(event.target.value)}><option value="">Choose a provisioned gym</option>{gyms.map((gym) => <option key={gym.id} value={gym.id}>{gym.name}</option>)}</select></Field>
           <Field label="Amount (JOD)" htmlFor="platform-invoice-amount" error={amountError}><Input id="platform-invoice-amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="149.000" aria-invalid={Boolean(amountError)} /></Field>
           <div className="grid gap-4 sm:grid-cols-2"><Field label="Period start" htmlFor="platform-invoice-period-start"><Input id="platform-invoice-period-start" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></Field><Field label="Period end" htmlFor="platform-invoice-period-end" error={validPeriod ? undefined : "Period end must be on or after the period start."}><Input id="platform-invoice-period-end" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} aria-invalid={!validPeriod} /></Field></div>
-          <Field label="Due date" htmlFor="platform-invoice-due"><Input id="platform-invoice-due" type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></Field>
+          <Field label={t("memberProfile.createTask.dueDate")} htmlFor="platform-invoice-due"><Input id="platform-invoice-due" type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></Field>
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={create.isPending} disabled={!valid} onClick={() => create.mutate({ gymId, amountMinor: parsedAmount.amountMinor ?? 0, currency: "JOD", dueAt, periodStart, periodEnd })}>Create draft</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button><Button loading={create.isPending} disabled={!valid} onClick={() => create.mutate({ gymId, amountMinor: parsedAmount.amountMinor ?? 0, currency: "JOD", dueAt, periodStart, periodEnd })}>Create draft</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -273,18 +276,19 @@ function LifecycleCard({ label, count, amount, detail, tone }: { label: string; 
 }
 
 function InvoiceTable({ invoices, focusedInvoiceId, issueInvoice, setAction }: { invoices: PlatformBillingInvoice[]; focusedInvoiceId?: string; issueInvoice: { isPending: boolean; variables?: string; mutate: (invoiceId: string) => void }; setAction: (action: InvoiceAction) => void }) {
+  const t = useT();
   return (
     <Table className="min-w-[960px]">
       <TableHeader>
         <TableRow>
-          <TableHead className="ps-4 sm:ps-5">Invoice</TableHead>
-          <TableHead>Gym</TableHead>
+          <TableHead className="ps-4 sm:ps-5">{t("renewFlow.payment.invoice")}</TableHead>
+          <TableHead>{t("shell.topbar.gym")}</TableHead>
           <TableHead>Issued</TableHead>
           <TableHead>Due</TableHead>
           <TableHead>Grace / period</TableHead>
-          <TableHead className="text-end">Amount</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="pe-4 text-end sm:pe-5">Actions</TableHead>
+          <TableHead className="text-end">{t("common.label.amount")}</TableHead>
+          <TableHead>{t("common.label.status")}</TableHead>
+          <TableHead className="pe-4 text-end sm:pe-5">{t("common.label.actions")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -295,6 +299,7 @@ function InvoiceTable({ invoices, focusedInvoiceId, issueInvoice, setAction }: {
 }
 
 function InvoiceActionDialog({ action, onOpenChange, onPastDue, onPayment, onVoid, saving }: { action?: InvoiceAction; onOpenChange: (open: boolean) => void; onPastDue: (input: { invoiceId: string; reason: string }) => void; onPayment: (input: RecordPlatformInvoicePaymentInput) => void; onVoid: (input: { invoiceId: string; reason: string }) => void; saving: boolean }) {
+  const t = useT();
   const [reference, setReference] = useState("");
   const [reason, setReason] = useState("");
   const key = action ? `${action.invoice.id}:${action.kind}` : "closed";
@@ -308,9 +313,9 @@ function InvoiceActionDialog({ action, onOpenChange, onPastDue, onPayment, onVoi
         <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
         <DialogBody className="grid gap-4">
           {action?.kind === "payment" ? <Field label="Payment reference" htmlFor="platform-invoice-reference"><Input id="platform-invoice-reference" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Bank transfer or receipt reference" /></Field> : null}
-          <Field label="Reason" htmlFor="platform-invoice-reason"><Textarea id="platform-invoice-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the audit trail" /></Field>
+          <Field label={t("common.label.reason")} htmlFor="platform-invoice-reason"><Textarea id="platform-invoice-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required for the audit trail" /></Field>
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={saving} disabled={!action || !reason.trim() || (action.kind === "payment" && !reference.trim())} variant={action?.kind === "void" ? "danger" : "primary"} onClick={() => { if (!action) return; if (action.kind === "payment") onPayment({ invoiceId: action.invoice.id, reference: reference.trim(), reason: reason.trim() }); else if (action.kind === "past_due") onPastDue({ invoiceId: action.invoice.id, reason: reason.trim() }); else onVoid({ invoiceId: action.invoice.id, reason: reason.trim() }); }}>{submitLabel}</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button><Button loading={saving} disabled={!action || !reason.trim() || (action.kind === "payment" && !reference.trim())} variant={action?.kind === "void" ? "danger" : "primary"} onClick={() => { if (!action) return; if (action.kind === "payment") onPayment({ invoiceId: action.invoice.id, reference: reference.trim(), reason: reason.trim() }); else if (action.kind === "past_due") onPastDue({ invoiceId: action.invoice.id, reason: reason.trim() }); else onVoid({ invoiceId: action.invoice.id, reason: reason.trim() }); }}>{submitLabel}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

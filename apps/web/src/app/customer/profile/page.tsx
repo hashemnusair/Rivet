@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -29,6 +30,7 @@ const FIELD = "h-11 sm:h-9";
 const SELECT_CLASS = "h-11 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px] text-ink transition-colors hover:border-line-3 focus:border-[var(--tenant-brand-primary)] sm:h-9";
 
 export default function MemberProfilePage() {
+  const t = useT();
   const customer = useCustomerPersona();
   const { updateCustomerProfile } = useExperience();
   const { ready, identitySignedIn, profileSelected } = useMemberGate();
@@ -83,51 +85,51 @@ export default function MemberProfilePage() {
 
   return (
     <main className="mx-auto max-w-[900px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-      <PageHeader sectionLabel="Your account" title="Profile" description="Keep your contact and emergency details up to date. Every gym you join sees these details." />
+      <PageHeader sectionLabel="Your account" title={t("marketing.memberShell.profile")} description="Keep your contact and emergency details up to date. Every gym you join sees these details." />
 
       <form onSubmit={submit} className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-5">
         <div className="space-y-4">
           <section className="panel p-4 sm:p-5" aria-labelledby="profile-personal-title">
             <h2 id="profile-personal-title" className="text-[15px] font-semibold">Personal information</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label="Full name" htmlFor="profile-name" required className="sm:col-span-2"><Input id="profile-name" className={FIELD} value={form.fullName ?? ""} onChange={(event) => update("fullName", event.target.value)} autoComplete="name" required /></Field>
-              <Field label="Email" htmlFor="profile-email" hint="Your sign-in email cannot be changed here."><Input id="profile-email" className={FIELD} value={customer.email} disabled readOnly autoComplete="email" /></Field>
-              <Field label="Phone" htmlFor="profile-phone"><Input id="profile-phone" className={FIELD} type="tel" inputMode="tel" value={form.phone ?? ""} onChange={(event) => update("phone", event.target.value)} autoComplete="tel" /></Field>
+              <Field label={t("common.label.fullName")} htmlFor="profile-name" required className="sm:col-span-2"><Input id="profile-name" className={FIELD} value={form.fullName ?? ""} onChange={(event) => update("fullName", event.target.value)} autoComplete="name" required /></Field>
+              <Field label={t("common.label.email")} htmlFor="profile-email" hint="Your sign-in email cannot be changed here."><Input id="profile-email" className={FIELD} value={customer.email} disabled readOnly autoComplete="email" /></Field>
+              <Field label={t("common.label.phone")} htmlFor="profile-phone"><Input id="profile-phone" className={FIELD} type="tel" inputMode="tel" value={form.phone ?? ""} onChange={(event) => update("phone", event.target.value)} autoComplete="tel" /></Field>
               <Field label="Birth date" htmlFor="profile-birth-date"><Input id="profile-birth-date" className={FIELD} type="date" value={form.dateOfBirth ?? ""} onChange={(event) => update("dateOfBirth", event.target.value)} autoComplete="bday" /></Field>
-              <Field label="Gender" htmlFor="profile-gender" required>
+              <Field label={t("memberProfile.details.gender")} htmlFor="profile-gender" required>
                 <select id="profile-gender" value={form.gender ?? ""} onChange={(event) => update("gender", event.target.value)} className={SELECT_CLASS} required>
-                  <option value="" disabled>Choose female or male</option><option value="female">Female</option><option value="male">Male</option>
+                  <option value="" disabled>{t("auth.validation.genderRequired")}</option><option value="female">{t("memberProfile.details.female")}</option><option value="male">{t("memberProfile.details.male")}</option>
                 </select>
               </Field>
-              <Field label="Preferred language" htmlFor="profile-language" hint="Used for messages about your bookings and payments." className="sm:col-span-2">
+              <Field label={t("members.header.preferredLanguage")} htmlFor="profile-language" hint="Used for messages about your bookings and payments." className="sm:col-span-2">
                 <select id="profile-language" value={form.preferredLanguage ?? "en"} onChange={(event) => update("preferredLanguage", event.target.value)} className={SELECT_CLASS}>
-                  <option value="en">English</option><option value="ar">العربية</option>
+                  <option value="en">{t("common.language.english")}</option><option value="ar">{t("common.language.arabic")}</option>
                 </select>
               </Field>
             </div>
           </section>
 
           <section className="panel p-4 sm:p-5" aria-labelledby="profile-address-title">
-            <h2 id="profile-address-title" className="text-[15px] font-semibold">Address</h2>
+            <h2 id="profile-address-title" className="text-[15px] font-semibold">{t("memberProfile.details.address")}</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label="Address" htmlFor="profile-address" className="sm:col-span-2"><Input id="profile-address" className={FIELD} value={form.addressLine1 ?? ""} onChange={(event) => update("addressLine1", event.target.value)} autoComplete="street-address" /></Field>
+              <Field label={t("memberProfile.details.address")} htmlFor="profile-address" className="sm:col-span-2"><Input id="profile-address" className={FIELD} value={form.addressLine1 ?? ""} onChange={(event) => update("addressLine1", event.target.value)} autoComplete="street-address" /></Field>
               <Field label="City" htmlFor="profile-city"><Input id="profile-city" className={FIELD} value={form.city ?? ""} onChange={(event) => update("city", event.target.value)} autoComplete="address-level2" /></Field>
             </div>
           </section>
 
           <section className="panel p-4 sm:p-5" aria-labelledby="profile-emergency-title">
-            <h2 id="profile-emergency-title" className="text-[15px] font-semibold">Emergency contact</h2>
+            <h2 id="profile-emergency-title" className="text-[15px] font-semibold">{t("members.header.emergencyContact")}</h2>
             <p className="mt-1 text-[13px] text-ink-2">Add someone your gym can call in an emergency.</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label="Name" htmlFor="emergency-name"><Input id="emergency-name" className={FIELD} value={form.emergencyContactName ?? ""} onChange={(event) => update("emergencyContactName", event.target.value)} autoComplete="off" /></Field>
+              <Field label={t("common.label.name")} htmlFor="emergency-name"><Input id="emergency-name" className={FIELD} value={form.emergencyContactName ?? ""} onChange={(event) => update("emergencyContactName", event.target.value)} autoComplete="off" /></Field>
               <Field label="Relationship" htmlFor="emergency-relationship"><Input id="emergency-relationship" className={FIELD} value={form.emergencyContactRelationship ?? ""} onChange={(event) => update("emergencyContactRelationship", event.target.value)} autoComplete="off" placeholder="Parent, spouse…" /></Field>
-              <Field label="Phone" htmlFor="emergency-phone"><Input id="emergency-phone" className={FIELD} type="tel" inputMode="tel" value={form.emergencyContactPhone ?? ""} onChange={(event) => update("emergencyContactPhone", event.target.value)} autoComplete="off" /></Field>
+              <Field label={t("common.label.phone")} htmlFor="emergency-phone"><Input id="emergency-phone" className={FIELD} type="tel" inputMode="tel" value={form.emergencyContactPhone ?? ""} onChange={(event) => update("emergencyContactPhone", event.target.value)} autoComplete="off" /></Field>
             </div>
           </section>
 
           {error ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[13px] text-danger">{error}</p> : null}
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" loading={saving} className="w-full sm:w-auto">Save profile</Button>
+            <Button type="submit" loading={saving} className="w-full sm:w-auto">{t("members.header.saveProfile")}</Button>
             {saved ? <span role="status" className="inline-flex items-center gap-1.5 text-[13px] text-success-deep"><Check className="size-4" aria-hidden /> Saved. Your gyms can see the changes.</span> : null}
           </div>
         </div>

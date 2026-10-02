@@ -1,12 +1,7 @@
 import { plural } from "../../dictionary";
 import type { dashboard as En } from "../en/dashboard";
 
-/**
- * Modern Standard Arabic drafts (see docs/arabic/GLOSSARY.md). Staff screens use
- * neutral or plural-polite wording. Counted nouns follow the Arabic rules: a
- * singular form for one, a dual for two, a plural for 3 to 10, and a singular
- * accusative noun after 11 and above.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const dashboard: typeof En = {
   greeting: {
     morning: "صباح الخير",
@@ -32,7 +27,7 @@ export const dashboard: typeof En = {
     newMembers: "أعضاء جدد",
     joinedThisMonth: "انضموا هذا الشهر",
     endingThisWeek: "تنتهي هذا الأسبوع",
-    memberships: "عضويات",
+    memberships: "اشتراكات",
     checkInsToday: "تسجيل الحضور اليوم",
     openLeads: plural({
       zero: "لا توجد فرص مفتوحة",
@@ -63,15 +58,15 @@ export const dashboard: typeof En = {
     outstanding: "المستحق",
     unpaidBalances: "أرصدة غير مدفوعة",
     thisMonthContext: "هذا الشهر",
-    renewals7d: "التجديدات ≤ ٧ أيام",
-    expiredContext: "{count} منتهية ≤ ٣٠ يومًا",
+    renewals7d: "التجديدات ≤ 7 أيام",
+    expiredContext: "{count} منتهية ≤ 30 يومًا",
     openLeadsContext: "{count} فرصة مفتوحة",
-    needsAttention: "يحتاج انتباهًا",
-    fullAuditTrail: "سجل التدقيق الكامل",
-    revenueByBranch: "الإيرادات حسب الفرع — ٣٠ يومًا",
+    needsAttention: "يتطلب انتباهك",
+    fullAuditTrail: "سجل التغييرات الكامل",
+    revenueByBranch: "الإيرادات حسب الفرع — 30 يومًا",
     operatingPriorities: "أولويات التشغيل",
-    renewalsDue: "تجديدات مستحقة خلال ٧ أيام",
-    renewalsDueDetail: "{count} منتهية دون عضوية أحدث",
+    renewalsDue: "تجديدات مستحقة خلال 7 أيام",
+    renewalsDueDetail: "{count} منتهية دون اشتراك أحدث",
     outstandingBalances: "أرصدة مستحقة",
     outstandingBalancesDetail: "حصّل الرسوم المفتوحة",
     openLeadFollowUp: "متابعة الفرص المفتوحة",
@@ -108,7 +103,7 @@ export const dashboard: typeof En = {
     funnelNote: "النسب هي من مرحلة إلى التي تليها، بحسب الوضع الحالي للفرص.",
   },
   needsAttention: {
-    title: "تحتاج إلى انتباه",
+    title: "يتطلب انتباهك",
     updated: "آخر تحديث {time}.",
     checking: "جارٍ فحص النادي…",
     stale: "تعذّر التحديث. هذه الأرقام من {time}.",
@@ -121,7 +116,7 @@ export const dashboard: typeof En = {
 
     source: {
       queue: "مهام اليوم",
-      expired: "العضويات المنتهية",
+      expired: "الاشتراكات المنتهية",
       equipment: "تقارير الأجهزة",
       stock: "مستويات المخزون",
       support: "طلبات دعم RIVET",
@@ -185,20 +180,20 @@ export const dashboard: typeof En = {
         other: "{count} عضو بمبالغ غير مدفوعة",
       }),
       renewalsEnding: plural({
-        zero: "لا توجد عضويات تنتهي خلال الأيام السبعة القادمة",
-        one: "عضوية واحدة تنتهي خلال الأيام السبعة القادمة",
+        zero: "لا توجد اشتراكات تنتهي خلال الأيام السبعة القادمة",
+        one: "اشتراك واحدة تنتهي خلال الأيام السبعة القادمة",
         two: "عضويتان تنتهيان خلال الأيام السبعة القادمة",
-        few: "{count} عضويات تنتهي خلال الأيام السبعة القادمة",
-        many: "{count} عضوية تنتهي خلال الأيام السبعة القادمة",
-        other: "{count} عضوية تنتهي خلال الأيام السبعة القادمة",
+        few: "{count} اشتراكات تنتهي خلال الأيام السبعة القادمة",
+        many: "{count} اشتراك تنتهي خلال الأيام السبعة القادمة",
+        other: "{count} اشتراك تنتهي خلال الأيام السبعة القادمة",
       }),
       renewalsEnded: plural({
-        zero: "لا توجد عضويات انتهت خلال آخر 30 يومًا دون تجديد",
-        one: "عضوية واحدة انتهت خلال آخر 30 يومًا ولم تُجدَّد",
+        zero: "لا توجد اشتراكات انتهت خلال آخر 30 يومًا دون تجديد",
+        one: "اشتراك واحدة انتهت خلال آخر 30 يومًا ولم تُجدَّد",
         two: "عضويتان انتهتا خلال آخر 30 يومًا ولم تُجدَّدا",
-        few: "{count} عضويات انتهت خلال آخر 30 يومًا ولم تُجدَّد",
-        many: "{count} عضوية انتهت خلال آخر 30 يومًا ولم تُجدَّد",
-        other: "{count} عضوية انتهت خلال آخر 30 يومًا ولم تُجدَّد",
+        few: "{count} اشتراكات انتهت خلال آخر 30 يومًا ولم تُجدَّد",
+        many: "{count} اشتراك انتهت خلال آخر 30 يومًا ولم تُجدَّد",
+        other: "{count} اشتراك انتهت خلال آخر 30 يومًا ولم تُجدَّد",
       }),
       followupsLate: plural({
         zero: "لا توجد متابعات متأخرة",
@@ -319,8 +314,8 @@ export const dashboard: typeof En = {
       outstanding_balance: "غير مدفوع",
       access_denial: "دخول مرفوض",
       approval: "موافقة",
-      cash_variance: "فرق الصندوق",
-      facility_task: "صيانة",
+      cash_variance: "الفرق في المبلغ النقدي",
+      facility_task: "الصيانة",
       branch_checklist: "قائمة مهام",
       equipment_issue: "جهاز",
       low_stock: "المخزون",
@@ -340,7 +335,7 @@ export const dashboard: typeof En = {
 
     item: {
       collectFrom: "تحصيل من {name}",
-      renew: "تجديد عضوية {name}",
+      renew: "تجديد اشتراك {name}",
       winBack: "استعادة {name}",
       contact: "التواصل مع {name}",
       refusedEntry: "رُفض دخول {name}",
@@ -392,8 +387,8 @@ export const dashboard: typeof En = {
     liveFacts: "وقائع مباشرة عن الدخول والكاش والوافدين والأرصدة في هذا الفرع.",
     checkInsToday: "تسجيلات الدخول اليوم",
     peakHour: "ساعة الذروة",
-    openShift: "شيفت مفتوح",
-    expectedCash: "الكاش المتوقع",
+    openShift: "صندوق مفتوح",
+    expectedCash: "رصيد الصندوق المتوقع",
     outstandingMembers: "أعضاء عليهم مستحقات",
     todayLog: "سجل دخول اليوم",
     entryConsole: "وحدة الدخول",
@@ -416,7 +411,7 @@ export const dashboard: typeof En = {
     collectedThisMonth: "المحصّل هذا الشهر",
     leadsConverted: "فرص تحوّلت",
     followUpCompleted: "تمت المتابعة.",
-    completedFromDashboard: "أُنجزت من لوحة التحكم",
+    completedFromDashboard: "أُنجزت من الرئيسية",
     openContact: "فتح جهة الاتصال",
   },
   trainer: {
@@ -449,21 +444,21 @@ export const dashboard: typeof En = {
     collectedToday: "المحصّل اليوم",
     checkInsToday: "تسجيلات الدخول اليوم",
     pendingApprovals: "موافقات معلّقة",
-    shiftVariances: "فروقات الشيفتات",
+    shiftVariances: "فروقات الصندوق",
     overdueFollowUps: "متابعات متأخرة",
     renewalsQueue: "طابور التجديدات",
     operationalAttention: "انتباه تشغيلي",
-    auditTrail: "سجل التدقيق",
+    auditTrail: "سجل التغييرات",
     noAlerts: "لا توجد تنبيهات تشغيلية",
     noAlertsDetail: "هذا يعكس السجلات المحفوظة حاليًا.",
     queues: "الطوابير",
     approvalsAwaiting: "موافقات بانتظار المراجعة",
     variancesAwaiting: "فروقات كاش بانتظار المراجعة",
     overdueCrmTasks: "مهام متابعة متأخرة",
-    expiringMemberships: "عضويات تقارب الانتهاء",
+    expiringMemberships: "اشتراكات تقارب الانتهاء",
   },
   charts: {
     avgPerDay: "بمعدل {amount} يوميًا",
-    collected30: "المحصّل — آخر ٣٠ يومًا",
+    collected30: "المحصّل — آخر 30 يومًا",
   },
 };

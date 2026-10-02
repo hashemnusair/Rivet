@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Download, FileBarChart } from "lucide-react";
 import Link from "next/link";
@@ -40,6 +41,7 @@ function parseView(value: string | null): ReportsView {
  * export cannot drift away from the ledger that staff see at the desk.
  */
 function ReportsPageInner() {
+  const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
   const router = useRouter();
@@ -126,7 +128,7 @@ function ReportsPageInner() {
           ],
           sections: [
             {
-              title: "Overview",
+              title: t("nav.section.overview"),
               headers: ["Item", "Value"],
               rows: [
                 ["Revenue today", formatMoney(dashboard.kpis.revenueToday)],
@@ -165,7 +167,7 @@ function ReportsPageInner() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Reports"
+        title={t("nav.item.reports")}
         description={view === "overview" ? OVERVIEW_QUESTION : OPERATIONAL_REPORT_QUESTIONS[view]}
         actions={view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || transactions.length === 0}><Download /> Download report</Button> : undefined}
       />
@@ -174,7 +176,7 @@ function ReportsPageInner() {
         <nav aria-label="Report views" className={tabListClassName}>
           {VIEWS.map((kind) => (
             <Link key={kind} href={hrefFor(kind)} replace scroll={false} onClick={(event) => selectView(event, kind)} aria-current={view === kind ? "page" : undefined} className={tabTriggerClassName} data-tab-value={kind}>
-              {kind === "overview" ? "Overview" : OPERATIONAL_REPORT_LABELS[kind]}
+              {kind === "overview" ? t("nav.section.overview") : OPERATIONAL_REPORT_LABELS[kind]}
             </Link>
           ))}
         </nav>
@@ -182,7 +184,7 @@ function ReportsPageInner() {
         {view !== "overview" ? <OperationalReports view={view} scope={scope} branches={branches} onScopeChange={changeScope} /> : <>
         <ReportScopeBar branches={branches} scope={scope} onChange={changeScope} ranged onRefresh={refresh} refreshing={dashboardQuery.isFetching || rangeQuery.isFetching} note={rangeQuery.data?.truncated ? `only the newest ${transactions.length} counted` : undefined} />
 
-        {stale ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Report may be out of date">These numbers may be out of date. The last refresh failed. <button type="button" className="font-medium underline" onClick={refresh}>Try again</button></div> : null}
+        {stale ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Report may be out of date">These numbers may be out of date. The last refresh failed. <button type="button" className="font-medium underline" onClick={refresh}>{t("common.action.retry")}</button></div> : null}
         {error ? <ErrorState onRetry={refresh} /> : null}
         {loading ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-24" />)}</div> : null}
 
@@ -190,11 +192,11 @@ function ReportsPageInner() {
           {/* Unresolved money and reversals first; healthy totals after. */}
           <section className="panel grid grid-cols-2 divide-line sm:grid-cols-3 xl:grid-cols-6" aria-label="Report totals">
             <ReportStat label="Unpaid now" value={<MoneyText money={dashboard.kpis.outstandingTotal} compact />} tone={dashboard.kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context="owed by members, from any date" href={ledgerHref({ type: "payment" })} />
-            <ReportStat label="Refunded" value={<MoneyText money={money(totals.refunded)} compact />} tone={totals.refunded > 0 ? "warning" : undefined} context={countLabel(totals.refundCount, "refund")} href={ledgerHref({ type: "refund" })} />
+            <ReportStat label={t("memberProfile.pt.orderStatus.refunded")} value={<MoneyText money={money(totals.refunded)} compact />} tone={totals.refunded > 0 ? "warning" : undefined} context={countLabel(totals.refundCount, "refund")} href={ledgerHref({ type: "refund" })} />
             <ReportStat label="Cancelled payments" value={<MoneyText money={money(totals.voided)} compact />} tone={totals.voided > 0 ? "warning" : undefined} context={countLabel(totals.voidCount, "payment")} />
-            <ReportStat label="Collected" value={<MoneyText money={money(totals.collected)} compact />} context={countLabel(totals.paymentCount, "payment")} />
+            <ReportStat label={t("dashboard.owner.collected")} value={<MoneyText money={money(totals.collected)} compact />} context={countLabel(totals.paymentCount, "payment")} />
             <ReportStat label="After refunds" value={<MoneyText money={money(totals.collected - totals.refunded)} compact signed={totals.collected - totals.refunded < 0} />} context="collected minus refunds" />
-            <ReportStat label="This month" value={<MoneyText money={dashboard.kpis.revenueThisMonth} compact />} context={`${dashboard.kpis.newMembersThisMonth} new member${dashboard.kpis.newMembersThisMonth === 1 ? "" : "s"}`} />
+            <ReportStat label={t("common.time.thisMonth")} value={<MoneyText money={dashboard.kpis.revenueThisMonth} compact />} context={`${dashboard.kpis.newMembersThisMonth} new member${dashboard.kpis.newMembersThisMonth === 1 ? "" : "s"}`} />
           </section>
 
           <div className="grid gap-5 xl:grid-cols-2">
@@ -207,7 +209,7 @@ function ReportsPageInner() {
             {transactions.length === 0 ? <p className="p-5 text-[13px] text-ink-3">No payments or refunds in these dates.</p> : <>
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Member</TableHead><TableHead>Branch</TableHead><TableHead>Method</TableHead><TableHead>Type</TableHead><TableHead className="text-end">Amount</TableHead><TableHead>Status</TableHead><TableHead>Receipt</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>{t("members.tabs.checkIns.when")}</TableHead><TableHead>{t("palette.kind.member")}</TableHead><TableHead>{t("common.label.branch")}</TableHead><TableHead>{t("renewFlow.shared.method")}</TableHead><TableHead>{t("common.label.type")}</TableHead><TableHead className="text-end">{t("common.label.amount")}</TableHead><TableHead>{t("common.label.status")}</TableHead><TableHead>{t("renewFlow.payment.receipt")}</TableHead></TableRow></TableHeader>
                   <TableBody>{tablePage.items.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-[12px]">{formatDate(item.occurredAt)}</TableCell><TableCell><p className="font-medium">{item.memberName}</p><p className="font-mono text-[11px] text-ink-3">{item.memberNumber}</p></TableCell><TableCell className="text-[12px]">{item.branchName}</TableCell><TableCell className="text-[12px]">{PAYMENT_METHOD_LABELS[item.method] ?? item.method}</TableCell><TableCell className="text-[12px]">{TRANSACTION_TYPE_LABELS[item.type]}</TableCell><TableCell className="text-end"><MoneyText money={item.amount} className={item.type === "refund" ? "text-danger" : undefined} /></TableCell><TableCell><TransactionStatusChip status={item.status} /></TableCell><TableCell>{ledgerHref({ q: item.receiptNumber }) ? <Link href={ledgerHref({ q: item.receiptNumber })!} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink">{item.receiptNumber}</Link> : <span className="font-mono text-[12px]">{item.receiptNumber}</span>}</TableCell></TableRow>)}</TableBody>
                 </Table>
               </div>

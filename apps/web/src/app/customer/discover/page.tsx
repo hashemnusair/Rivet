@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowRight, Search, SearchX } from "lucide-react";
 import Link from "next/link";
@@ -28,6 +29,7 @@ export default function DiscoverGymsPage() {
 }
 
 function DiscoverGyms() {
+  const t = useT();
   const gyms = useMarketplaceGyms();
   const { experienceError, experienceStatus, retryExperience } = useExperience();
   const router = useRouter();
@@ -67,7 +69,7 @@ function DiscoverGyms() {
     <main className="mx-auto max-w-[1080px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <header>
         <p className="text-[12px] font-medium text-ink-3">Gyms on RIVET · Amman</p>
-        <h1 className="mt-1 font-display text-[26px] font-semibold leading-tight tracking-tight">Find a gym</h1>
+        <h1 className="mt-1 font-display text-[26px] font-semibold leading-tight tracking-tight">{t("marketing.actions.findGym")}</h1>
         <p className="mt-1 max-w-xl text-[13.5px] text-ink-2">Compare gyms, pick a branch and book a free trial. The gym confirms your visit.</p>
       </header>
 
@@ -79,7 +81,7 @@ function DiscoverGyms() {
             onRetry={retryExperience}
             emptyTitle="No gyms here yet"
             emptyDescription="Gyms show here after RIVET approves them. Do you run a gym? Send an application and we will contact you."
-            emptyAction={<Button asChild variant="secondary" size="sm"><Link href="/signup">Send a gym application <ArrowRight /></Link></Button>}
+            emptyAction={<Button asChild variant="secondary" size="sm"><Link href="/signup">{t("marketing.actions.apply")}{" "}<ArrowRight /></Link></Button>}
           />
         </div>
       ) : (
@@ -112,6 +114,7 @@ function DiscoverGyms() {
 }
 
 function GymCard({ gym }: { gym: MarketplaceGym }) {
+  const t = useT();
   const href = `/customer/gyms/${gym.id}`;
   const cover = gym.cover?.url;
   return (
@@ -133,12 +136,12 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
         <p className="mt-3 line-clamp-2 text-[13.5px] leading-relaxed text-ink-2">{gym.tagline}</p>
         <dl className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3 text-[12px]">
           <CardFact label="Branches" value={String(gym.branchCount)} />
-          <CardFact label="Members" value={gym.memberCount.toLocaleString()} />
+          <CardFact label={t("palette.groups.members")} value={gym.memberCount.toLocaleString()} />
           <CardFact label="PT trainers" value={String(gym.trainers?.length ?? 0)} />
         </dl>
         <div className="mt-auto flex items-end justify-between gap-3 pt-4">
           <div>
-            <p className="text-[12px] text-ink-3">From</p>
+            <p className="text-[12px] text-ink-3">{t("common.label.from")}</p>
             <p className={cn("mt-0.5 font-semibold tabular text-ink", gym.fromPriceMinor > 0 ? "text-[16px]" : "text-[13.5px]")}>
               {gym.fromPriceMinor > 0 ? <>{formatMoney(money(gym.fromPriceMinor))}<span className="text-[12px] font-normal text-ink-3"> a month</span></> : "Ask the gym"}
             </p>

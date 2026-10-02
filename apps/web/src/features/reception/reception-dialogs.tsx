@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -38,6 +39,7 @@ export function OverrideCheckInDialog({
   actorName: string;
   onOverridden: (result: CheckInResult) => void;
 }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const [reason, setReason] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
@@ -69,8 +71,7 @@ export function OverrideCheckInDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldAlert className="size-4 text-signal" aria-hidden /> Let in anyway
-          </DialogTitle>
+            <ShieldAlert className="size-4 text-signal" aria-hidden />{" "}{t("domain.checkInDecision.overridden")}</DialogTitle>
           <DialogDescription>
             {member.fullName} · <span className="font-mono">{member.memberNumber}</span>
           </DialogDescription>
@@ -88,7 +89,7 @@ export function OverrideCheckInDialog({
           </div>
 
           <Field
-            label="Reason"
+            label={t("common.label.reason")}
             required
             hint={`Saved with your name, ${actorName}. Managers check these every day.`}
           >
@@ -104,18 +105,14 @@ export function OverrideCheckInDialog({
         </DialogBody>
         <DialogFooter>
           {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
           <Button
             variant="signal"
             disabled={reason.trim().length < 4}
             loading={mutation.isPending}
             onClick={() => mutation.mutate()}
             data-testid="confirm-override"
-          >
-            Let in anyway
-          </Button>
+          >{t("domain.checkInDecision.overridden")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

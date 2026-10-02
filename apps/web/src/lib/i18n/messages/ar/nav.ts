@@ -1,42 +1,36 @@
 import type { nav as EnNav } from "../en/nav";
 
-/**
- * Navigation labels. Dashboard, reception, members, payments, follow-ups,
- * leads, support and settings come from origin/arabic-localisation; sections
- * and the other items are new drafts for the current navigation (the old branch
- * had a different section layout). "Audit log" became "Activity log" in the
- * plain-language pass, so it is re-translated as سجل النشاط.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const nav: typeof EnNav = {
   section: {
     overview: "نظرة عامة",
     dailyWork: "العمل اليومي",
     sales: "المبيعات",
     finance: "المالية",
-    managementLedger: "الدفتر الإداري",
+    managementLedger: "السجل المالي للإدارة",
     admin: "الإدارة",
     workspace: "مساحة العمل",
     system: "النظام",
   },
   item: {
-    dashboard: "لوحة التحكم",
+    dashboard: "الرئيسية",
     reception: "الاستقبال",
-    checkout: "نقطة البيع",
+    checkout: "إتمام البيع",
     checklists: "قائمة المهام اليومية",
     members: "الأعضاء",
     classes: "الحصص",
     personalTraining: "التدريب الشخصي",
     operations: "المخزون والمشتريات",
-    leads: "الفرص",
+    leads: "مهتم بالاشتراك",
     followUps: "المتابعات",
     payments: "المدفوعات",
     reports: "التقارير",
     statements: "القوائم المالية",
-    activityLog: "سجل النشاط",
-    downloads: "التنزيلات",
+    activityLog: "سجل التغييرات",
+    downloads: "تحميل البيانات",
     support: "الدعم",
     settings: "الإعدادات",
-    auditLog: "سجل التدقيق",
+    auditLog: "سجل التغييرات",
   },
   sidebar: {
     primary: "التنقل الرئيسي",

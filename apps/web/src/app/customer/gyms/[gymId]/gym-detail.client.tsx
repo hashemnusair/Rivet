@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, CalendarCheck, Check, Clock, MapPin } from "lucide-react";
@@ -39,6 +40,7 @@ export function resolveRequestedBranchId(search: string, branchIds: readonly str
 }
 
 export default function GymDetailClient({ gymId }: { gymId: string }) {
+  const t = useT();
   const gyms = useMarketplaceGyms();
   const gym = gyms.find((item) => item.id === gymId);
   const customer = useCustomerPersona();
@@ -188,9 +190,9 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
 
       <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-4">
         <GymFact label="Branches" value={String(gym.branchCount)} />
-        <GymFact label="Members" value={gym.memberCount.toLocaleString()} />
+        <GymFact label={t("palette.groups.members")} value={gym.memberCount.toLocaleString()} />
         <GymFact label="PT trainers" value={String(trainerCount)} />
-        <GymFact label="From" value={gym.fromPriceMinor > 0 ? `${formatMoney(money(gym.fromPriceMinor))} a month` : "Ask the gym"} />
+        <GymFact label={t("common.label.from")} value={gym.fromPriceMinor > 0 ? `${formatMoney(money(gym.fromPriceMinor))} a month` : "Ask the gym"} />
       </dl>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-8">
@@ -232,7 +234,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                       <h3 className="text-[14px] font-semibold">{plan.name}</h3>
                       <p className="mt-0.5 text-[12.5px] text-ink-3">
                         {plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits${plan.visitValidityDays ? ` · use within ${plan.visitValidityDays} days` : ""}`}
-                        {" · "}{plan.branchAccess === "all" ? "All branches" : `${plan.branchIds.length} branch${plan.branchIds.length === 1 ? "" : "es"}`}
+                        {" · "}{plan.branchAccess === "all" ? t("common.label.allBranches") : `${plan.branchIds.length} branch${plan.branchIds.length === 1 ? "" : "es"}`}
                         {plan.includedPtSessions > 0 ? ` · includes ${plan.includedPtSessions} PT session${plan.includedPtSessions === 1 ? "" : "s"}` : ""}
                       </p>
                     </div>
@@ -276,7 +278,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
 
           {gym.ptPackages?.length ? (
             <section aria-labelledby="gym-packages-title">
-              <h2 id="gym-packages-title" className="text-[17px] font-semibold">PT packages</h2>
+              <h2 id="gym-packages-title" className="text-[17px] font-semibold">{t("memberProfile.pt.packages")}</h2>
               <div className="panel mt-3 divide-y divide-line overflow-hidden">
                 {gym.ptPackages.map((item) => (
                   <article key={item.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3">
@@ -306,7 +308,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                 <p className="text-[13.5px] font-medium">{confirmedBranch?.name ?? "Selected branch"}</p>
                 <p className="mt-1 text-[12.5px] text-ink-2">{referralToken ? "Your friend's referral is saved with this request. They get their reward only after you buy your first membership." : customerSignedIn ? "The gym has your request and your contact details." : "Sign in or create a member account to keep future bookings under your name."}</p>
               </div>
-              <Button asChild className="mt-4 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login/member"}>{customerSignedIn ? "Open your gyms" : "Sign in"}</Link></Button>
+              <Button asChild className="mt-4 w-full"><Link href={customerSignedIn ? "/customer/my-gyms" : "/login/member"}>{customerSignedIn ? "Open your gyms" : t("common.action.signIn")}</Link></Button>
             </div>
           ) : (
             <>
@@ -319,20 +321,20 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                 </p>
               ) : null}
               <form onSubmit={submit} className="mt-4 space-y-4" noValidate>
-                <Field label="Full name" htmlFor="trial-name" error={errors.fullName?.message}>
+                <Field label={t("common.label.fullName")} htmlFor="trial-name" error={errors.fullName?.message}>
                   <Input id="trial-name" className="h-11 sm:h-9" autoComplete="name" aria-invalid={Boolean(errors.fullName) || undefined} {...register("fullName")} />
                 </Field>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                  <Field label="Phone" htmlFor="trial-phone" error={errors.phone?.message}>
+                  <Field label={t("common.label.phone")} htmlFor="trial-phone" error={errors.phone?.message}>
                     <Input id="trial-phone" type="tel" inputMode="tel" autoComplete="tel" className="h-11 sm:h-9" aria-invalid={Boolean(errors.phone) || undefined} {...register("phone")} />
                   </Field>
-                  <Field label="Email" htmlFor="trial-email" error={errors.email?.message}>
+                  <Field label={t("common.label.email")} htmlFor="trial-email" error={errors.email?.message}>
                     <Input id="trial-email" type="email" inputMode="email" autoComplete="email" className="h-11 sm:h-9" aria-invalid={Boolean(errors.email) || undefined} {...register("email")} />
                   </Field>
                 </div>
-                <Field label="Branch" htmlFor="trial-branch" error={errors.branchId?.message}>
+                <Field label={t("common.label.branch")} htmlFor="trial-branch" error={errors.branchId?.message}>
                   <select id="trial-branch" className={SELECT_CLASS} aria-invalid={Boolean(errors.branchId) || undefined} {...register("branchId")}>
-                    <option value="">Choose branch</option>
+                    <option value="">{t("members.bulk.chooseBranch")}</option>
                     {gym.branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                   </select>
                 </Field>
@@ -340,7 +342,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                   <Field label="Preferred date" htmlFor="trial-date" error={errors.preferredDate?.message}>
                     <Input id="trial-date" type="date" className="h-11 sm:h-9" min={new Date().toISOString().slice(0, 10)} aria-invalid={Boolean(errors.preferredDate) || undefined} {...register("preferredDate")} />
                   </Field>
-                  <Field label="Time" htmlFor="trial-time" error={errors.preferredTime?.message}>
+                  <Field label={t("common.label.time")} htmlFor="trial-time" error={errors.preferredTime?.message}>
                     <Input id="trial-time" type="time" className="h-11 sm:h-9" min={availableTrialWindow?.opensAt} max={availableTrialWindow?.closesAt} disabled={!availableTrialWindow} aria-invalid={Boolean(errors.preferredTime) || undefined} {...register("preferredTime")} />
                   </Field>
                 </div>

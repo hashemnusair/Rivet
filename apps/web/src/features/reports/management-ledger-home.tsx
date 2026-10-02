@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowRight, Banknote, LockKeyhole, Scale, SlidersHorizontal, TrendingUp } from "lucide-react";
 import Link from "next/link";
@@ -21,6 +22,7 @@ const STATEMENT_CARDS: readonly { kind: "income" | "balance" | "cashflow"; title
 ];
 
 export function ManagementLedgerHome() {
+  const t = useT();
   const { session, sessionLoading } = useApp();
   const { can } = usePermissions();
   const searchParams = useSearchParams();
@@ -34,11 +36,11 @@ export function ManagementLedgerHome() {
   const canManageControls = session?.roles.some((role) => role === "owner" || role === "manager") ?? false;
 
   if (sessionLoading && !session) {
-    return <><PageHeader title="Management ledger" description="Loading your reports…" /><div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading management ledger"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div></>;
+    return <><PageHeader title={t("nav.section.managementLedger")} description="Loading your reports…" /><div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading management ledger"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div></>;
   }
   if (!canRead) return <ForbiddenState description="You don't have access to the financial statements. Ask the gym owner if you need them." />;
   if (workspaceQuery.isLoading) {
-    return <><PageHeader title="Management ledger" description="Loading your reports…" /><div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading management ledger"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div></>;
+    return <><PageHeader title={t("nav.section.managementLedger")} description="Loading your reports…" /><div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading management ledger"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div></>;
   }
   if (workspaceQuery.error || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
   if (!reportingModule?.entitled) return <StatePanel icon={LockKeyhole} title="Financial statements are not in your plan" description="Your plan does not include the income statement, balance sheet and cash flow statement. Contact RIVET to add them." className="mt-4" />;
@@ -46,7 +48,7 @@ export function ManagementLedgerHome() {
 
   return (
     <div className="space-y-6" data-testid="management-ledger-home">
-      <PageHeader title="Management ledger" description="See if the gym makes money, what it owns and owes, and where cash went." />
+      <PageHeader title={t("nav.section.managementLedger")} description="See if the gym makes money, what it owns and owes, and where cash went." />
       <div className={canManageControls ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "grid gap-4 sm:grid-cols-3"} aria-label="Financial statements">
         {STATEMENT_CARDS.map((card) => (
           <Link key={card.kind} href={scopedStatementHref(card.href, fromDate, toDate, branchFilter)} data-testid={`statement-card-${card.kind}`} className="group panel flex min-h-44 flex-col p-5 transition-colors hover:border-ink-3 hover:bg-sunken/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink">

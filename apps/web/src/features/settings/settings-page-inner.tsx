@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import { AgreementSection } from "@/features/settings/agreement-section";
@@ -111,6 +112,7 @@ const PERMISSION_COPY: Record<string, string> = {
 };
 
 export function SettingsPageInner() {
+  const t = useT();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -199,7 +201,7 @@ export function SettingsPageInner() {
   return (
     <div className="-mt-2 mx-auto max-w-[1480px] space-y-3 lg:-mt-3">
       <PageHeader
-        title="Settings"
+        title={t("shell.account.settings")}
         description="Your gym, staff, money, messages and daily rules."
         className="bg-paper py-0.5 lg:sticky lg:top-14 lg:z-20 lg:h-[72px] lg:border-b lg:border-line/80 lg:py-2"
       />

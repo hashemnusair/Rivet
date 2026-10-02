@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check, Plus, Search } from "lucide-react";
 import type { KeyboardEvent } from "react";
@@ -31,6 +32,7 @@ export interface ProductPickerProps {
  * is exactly what a barcode scanner does.
  */
 export function ProductPicker({ products, inventory, currency, cart, search, onSearch, onAdd, loading, error, onRetry }: ProductPickerProps) {
+  const t = useT();
   const { products: visible, exactSkuMatch } = filterSellableProducts(products, search);
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter") return;
@@ -82,7 +84,7 @@ export function ProductPicker({ products, inventory, currency, cart, search, onS
                 <span className="shrink-0 text-[13.5px] font-semibold tabular" dir="ltr">{price ? <MoneyText money={price} hideCurrency /> : "—"}</span>
                 <Button type="button" size="sm" variant={quantity > 0 ? "secondary" : "primary"} className="h-11 min-w-11 shrink-0 sm:h-9" onClick={() => onAdd(product)} disabled={Boolean(reason) || atLimit} aria-label={quantity > 0 ? `Add another ${product.name}` : `Add ${product.name}`} title={atLimit && !reason ? "No more in stock" : undefined}>
                   {quantity > 0 ? <Check /> : <Plus />}
-                  <span className="hidden sm:inline">{quantity > 0 ? `${quantity} in sale` : "Add"}</span>
+                  <span className="hidden sm:inline">{quantity > 0 ? `${quantity} in sale` : t("common.action.add")}</span>
                   {quantity > 0 ? <span className="sm:hidden">{quantity}</span> : null}
                 </Button>
               </li>

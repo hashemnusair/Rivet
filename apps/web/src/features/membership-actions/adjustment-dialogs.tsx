@@ -184,7 +184,7 @@ export function FreezeDialog({
         <DialogHeader>
           <DialogTitle>{t("renewFlow.adjust.freeze.title")}</DialogTitle>
           <DialogDescription>
-            <bdi>{membership.memberName}</bdi> · <bdi>{membership.planName}</bdi>. {t("renewFlow.adjust.freeze.descriptionIntro")}{" "}
+            <bdi>{membership.memberName}</bdi> · <bdi>{membership.planName}</bdi>{t("members.bulk.toast.end")}{" "}{t("renewFlow.adjust.freeze.descriptionIntro")}{" "}
             {emphasize(t("renewFlow.adjust.freeze.daysLeft", { count: allowanceRemaining }), String(allowanceRemaining))}
           </DialogDescription>
         </DialogHeader>

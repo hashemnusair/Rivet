@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -13,9 +14,10 @@ import { HandoverGroupsView } from "@/features/branch-ops/handover-groups";
  * reassigns or re-dates an item.
  */
 export function ChecklistHandover({ branchId }: { branchId: string }) {
+  const t = useT();
   const day = useApiQuery(qk.checklistDay(branchId), api => api.getChecklistDay({ branchId }));
   if (day.isLoading) return <p className="text-xs text-ink-3">Loading unfinished checklist items…</p>;
-  if (day.isError) return <p className="text-xs text-warning-deep">Unfinished checklist items could not load. <Button size="sm" variant="ghost" onClick={() => void day.refetch()}>Try again</Button></p>;
+  if (day.isError) return <p className="text-xs text-warning-deep">Unfinished checklist items could not load. <Button size="sm" variant="ghost" onClick={() => void day.refetch()}>{t("common.action.retry")}</Button></p>;
   if (!day.data) return null;
   return (
     <div className="space-y-2">

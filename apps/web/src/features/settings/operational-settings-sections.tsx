@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -409,6 +410,7 @@ export function OperationalRulesSection() {
 const HOURS_DESCRIPTION = "When each branch is open, and when visitors can ask for a free trial. Times use your gym’s time zone.";
 
 export function HoursAndTrialsSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const { session } = useApp();
   const { settingsQuery, policies, setPolicies, dirty, discard, markSaved } = useOperationalPoliciesDraft();
@@ -456,9 +458,9 @@ export function HoursAndTrialsSection() {
           bodyClassName="p-0"
           control={
             <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
-              <span>Branch</span>
+              <span>{t("common.label.branch")}</span>
               <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
-                <SelectTrigger className="w-52" aria-label="Branch schedule"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
+                <SelectTrigger className="w-52" aria-label="Branch schedule"><SelectValue placeholder={t("renewFlow.adjust.transfer.chooseBranch")} /></SelectTrigger>
                 <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
               </Select>
             </label>
@@ -493,7 +495,7 @@ export function HoursAndTrialsSection() {
               </div>
             </div>
           ) : (
-            <EmptyState layout="section" className="m-4 sm:m-5" title="Choose a branch" description="Choose a branch above to edit its hours and trial times." />
+            <EmptyState layout="section" className="m-4 sm:m-5" title={t("renewFlow.adjust.transfer.chooseBranch")} description="Choose a branch above to edit its hours and trial times." />
           )}
         </SettingsPanel>
       )}

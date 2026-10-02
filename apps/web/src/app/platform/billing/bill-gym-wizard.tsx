@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Receipt, Search } from "lucide-react";
@@ -38,6 +39,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
   /** Skip the gym step and open directly on this tenant's plan step. */
   initialGymId?: string;
 }) {
+  const t = useT();
   const [step, setStep] = useState<Step>("gym");
   const [search, setSearch] = useState("");
   const [gymId, setGymId] = useState<string>();
@@ -155,15 +157,15 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
 
           {step === "plan" && gym ? (
             <div className="grid gap-4">
-              <p className="text-[13px] text-ink-2"><span className="font-semibold text-ink">{gym.name}</span> is currently <span className="font-semibold text-ink">{gym.subscriptionStatus === "overdue" ? "past due" : gym.subscriptionStatus}</span> on {gym.rivetPlan} · {currentCadence}.</p>
-              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Plan">
+              <p className="text-[13px] text-ink-2"><span className="font-semibold text-ink">{gym.name}</span> is currently <span className="font-semibold text-ink">{gym.subscriptionStatus === "overdue" ? "past due" : gym.subscriptionStatus}</span> on {gym.rivetPlan} · {currentCadence}{t("members.bulk.toast.end")}</p>
+              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t("renewFlow.adjust.planChange.rowPlan")}>
                 {plans.map((item) => (
                   <button key={item.name} type="button" role="radio" aria-checked={selectedPlan === item.name} onClick={() => setPlan(item.name as PlanName)} className={cn("grid gap-1 rounded-md border px-4 py-3 text-start transition-colors", selectedPlan === item.name ? "border-ink bg-sunken" : "border-line-2 hover:border-line-3")}>
                     <span className="flex items-center justify-between gap-2">
                       <span className="text-[13.5px] font-semibold">{item.name}</span>
-                      {item.name === gym.rivetPlan ? <Badge variant="ink">Current</Badge> : null}
+                      {item.name === gym.rivetPlan ? <Badge variant="ink">{t("marketing.device.phone.statusValue")}</Badge> : null}
                     </span>
-                    <span className="text-[12.5px] text-ink-2">JOD {(item.priceMinor / 1_000).toFixed(3)} / month</span>
+                    <span className="text-[12.5px] text-ink-2">JOD {(item.priceMinor / 1_000).toFixed(3)}{" "}{t("marketing.pricing.perMonth")}</span>
                   </button>
                 ))}
               </div>
@@ -206,11 +208,11 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
         </DialogBody>
         <DialogFooter className="flex-wrap justify-between gap-2">
           <div>
-            {step !== "gym" ? <Button variant="secondary" onClick={() => setStep(step === "review" ? "plan" : "gym")} disabled={bill.isPending}><ArrowLeft className="rtl:rotate-180" />Back</Button> : null}
+            {step !== "gym" ? <Button variant="secondary" onClick={() => setStep(step === "review" ? "plan" : "gym")} disabled={bill.isPending}><ArrowLeft className="rtl:rotate-180" />{t("common.action.back")}</Button> : null}
           </div>
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => close(false)} disabled={bill.isPending}>Cancel</Button>
-            {step === "plan" ? <Button onClick={() => setStep("review")} disabled={!selectedPlan}>Review<ArrowRight className="rtl:rotate-180" /></Button> : null}
+            <Button variant="secondary" onClick={() => close(false)} disabled={bill.isPending}>{t("common.action.cancel")}</Button>
+            {step === "plan" ? <Button onClick={() => setStep("review")} disabled={!selectedPlan}>{t("dashboard.today.action.review")}<ArrowRight className="rtl:rotate-180" /></Button> : null}
             {step === "review" ? <Button variant="signal" loading={bill.isPending} disabled={alreadyExact || !reason.trim()} onClick={() => bill.mutate()}><Check />Confirm & bill</Button> : null}
           </div>
         </DialogFooter>

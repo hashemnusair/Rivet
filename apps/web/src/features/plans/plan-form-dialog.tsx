@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
@@ -49,6 +50,7 @@ export function PlanFormDialog({
   onOpenChange: (v: boolean) => void;
   plan?: MembershipPlan;
 }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const branchesQuery = useApiQuery(qk.branches, (api) => api.listBranches(), { enabled: open });
   const [serverError, setServerError] = useState<string | null>(null);
@@ -197,7 +199,7 @@ export function PlanFormDialog({
                 render={({ field }) => (
                   <RadioGroup value={field.value} onValueChange={field.onChange} className="grid grid-cols-2 gap-2">
                     <RadioCard value="all">
-                      <span className="block text-[13px] font-medium">All branches</span>
+                      <span className="block text-[13px] font-medium">{t("common.label.allBranches")}</span>
                     </RadioCard>
                     <RadioCard value="selected">
                       <span className="block text-[13px] font-medium">Selected branches</span>
@@ -233,11 +235,9 @@ export function PlanFormDialog({
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
             <Button type="submit" loading={mutation.isPending}>
-              {plan ? "Save changes" : "Add plan"}
+              {plan ? t("common.action.saveChanges") : "Add plan"}
             </Button>
           </DialogFooter>
         </form>

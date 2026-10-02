@@ -60,14 +60,14 @@ describe("renew flow in Arabic", () => {
       </LocaleProvider>,
     );
 
-    expect(screen.getByRole("heading", { name: "تحصيل دفعة" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "استلام دفعة" })).toBeInTheDocument();
     expect(screen.getByText("غير مدفوع")).toBeInTheDocument();
     expect(screen.getByText("المتبقي بعد هذه الدفعة")).toBeInTheDocument();
 
     const amount = await screen.findByTestId("payment-amount");
     await user.clear(amount);
     await user.type(amount, "30");
-    await waitFor(() => expect(screen.getByTestId("confirm-payment")).toHaveTextContent(`تحصيل ${LRI}JOD 30.000${PDI}`));
+    await waitFor(() => expect(screen.getByTestId("confirm-payment")).toHaveTextContent(`تحصيل ${LRI}30.000 \u062f.\u0623${PDI}`));
   });
 
   it("prints the receipt in Arabic with the receipt number kept left-to-right", async () => {
@@ -90,7 +90,7 @@ describe("renew flow in Arabic", () => {
     expect(number).toHaveAttribute("dir", "ltr");
     const printed = number.closest("#receipt-print")!;
     expect(printed).toHaveTextContent("دفعة");
-    expect(printed).toHaveTextContent("المدفوع (نقدًا)");
+    expect(printed).toHaveTextContent("المدفوع (كاش)");
     expect(printed).toHaveTextContent("5.000");
     expect(printed).toHaveTextContent(/JOD.*المبالغ بعملة/);
     expect(printed).not.toHaveTextContent("Paid");
@@ -113,10 +113,10 @@ describe("renew flow in Arabic", () => {
 
     // Stacked modals hide each other from the accessibility tree, so match hidden headings too.
     const hidden = { hidden: true } as const;
-    expect(await screen.findByRole("heading", { name: "بيع عضوية", ...hidden })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "تجميد العضوية", ...hidden })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "إلغاء العضوية", ...hidden })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "تغيير باقة العضوية", ...hidden })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "بيع اشتراك", ...hidden })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "تجميد الاشتراك", ...hidden })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "إلغاء الاشتراك", ...hidden })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "تغيير نوع الاشتراك", ...hidden })).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.tagName === "P" && /تتبقى 3 أيام تجميد/.test(element.textContent ?? ""))).toBeInTheDocument();
     expect(warn.mock.calls.filter(([message]) => String(message).startsWith("[i18n]"))).toEqual([]);
     warn.mockRestore();

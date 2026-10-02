@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import Image from "next/image";
@@ -15,6 +16,7 @@ import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
  * member discovery and signup pages.
  */
 export function PublicFooter() {
+  const t = useT();
   const publicHref = usePublicSiteHref();
   const viewer = usePublicViewer();
   const signedIn = viewer.status === "signed-in" ? viewer : null;
@@ -50,14 +52,14 @@ export function PublicFooter() {
     <footer className="night-surface bg-night text-night-ink">
       <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:grid-cols-2 sm:px-8 lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr] lg:px-12">
         <div>
-            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={36} />
+            <Image src="/brand/rivet-lockup-rev.png" alt={t("common.brand.name")} width={140} height={36} />
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
             RIVET helps gyms sell memberships, collect payments and run the front desk. Members use it to find a gym, join and get in.
           </p>
           <p className="mt-6 text-[12px] font-medium text-night-ink-3">صُنع في عمّان · Made in Amman</p>
         </div>
-        <FooterColumn title="Product" links={productLinks} />
-        <FooterColumn title="Members" links={memberLinks} />
+        <FooterColumn title={t("marketing.footer.product")} links={productLinks} />
+        <FooterColumn title={t("palette.groups.members")} links={memberLinks} />
         {signedIn ? (
           <nav aria-label="Your account">
             <p className="text-[12px] font-medium text-night-ink-3">Your account</p>
@@ -71,15 +73,15 @@ export function PublicFooter() {
                 disabled={signingOut}
                 className="w-fit cursor-pointer text-start text-[13px] text-night-ink-2 transition-colors hover:text-night-ink disabled:cursor-default disabled:text-night-ink-3"
               >
-                {signingOut ? "Signing out…" : "Sign out"}
+                {signingOut ? "Signing out…" : t("common.action.signOut")}
               </button>
             </div>
           </nav>
         ) : (
-          <FooterColumn title="Sign in" links={[["Sign in to RIVET", "/login"]]} />
+          <FooterColumn title={t("common.action.signIn")} links={[["Sign in to RIVET", "/login"]]} />
         )}
         <nav aria-label="Contact RIVET">
-          <p className="text-[12px] font-medium text-night-ink-3">Contact</p>
+          <p className="text-[12px] font-medium text-night-ink-3">{t("memberProfile.followUp.evidenceKind.contact")}</p>
           <div className="mt-4 grid gap-3 text-[13px]">
             <a href={RIVET_CONTACT.phoneHref} className="text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>
             <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink">WhatsApp RIVET</a>
@@ -90,11 +92,11 @@ export function PublicFooter() {
       </div>
       <div className="border-t border-night-line px-5 py-5 sm:px-8 lg:px-12">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 text-[12px] font-medium text-night-ink-3">
-          <span>© 2026 RIVET · Amman, Jordan</span>
+          <span>{t("marketing.footer.copyright")}</span>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {LEGAL_LINKS.map((item) => <Link key={item.href} href={item.href} className="transition-colors hover:text-night-ink">{item.label}</Link>)}
           </span>
-          <span>Every member. Every dinar. Every shift.</span>
+          <span>{t("common.brand.tagline")}</span>
         </div>
       </div>
     </footer>

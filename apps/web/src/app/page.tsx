@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
 
 
 import {
@@ -54,7 +54,7 @@ const HERO_STEP = {
 } as const;
 
 export default function LandingPage() {
-  const t = useT();
+  const { t, locale } = useLocale();
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
   const marketplaceGyms = useMarketplaceGyms();
   const pricingPlans = resolvePublicPricingPlans(saasPlans);
@@ -94,6 +94,7 @@ export default function LandingPage() {
           <div className={`${styles.heroMotion} relative mx-auto grid max-w-[1440px] items-center gap-10 px-5 pb-10 pt-[calc(4.25rem+2.5rem)] sm:px-8 sm:pb-14 lg:min-h-[100svh] lg:grid-cols-[1fr_1fr] lg:gap-12 lg:px-12 lg:pb-20 lg:pt-28`}>
             <div>
               <h1 className="marketing-display text-[clamp(1.9rem,9.2vw,4.7rem)] leading-[0.9] lg:text-[clamp(2.6rem,4.7vw,4.7rem)] xl:text-[clamp(2.6rem,5vw,4.7rem)]">
+                {locale === "ar" ? <span className="block animate-rise-in leading-[1.25]">{t("common.brand.tagline")}</span> : <>
                 <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>{t("marketing.hero.line1")}</span>
                 <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>{t("marketing.hero.line2")}</span>
                 <span className="block animate-rise-in text-signal" style={{ animationDelay: `${HERO_STEP.line3}ms` }}>
@@ -101,6 +102,7 @@ export default function LandingPage() {
                   <span className="relative inline-block">{t("marketing.hero.line3")}<span className="absolute inset-x-0 -bottom-1 h-[3px] origin-left animate-underline bg-signal [animation-delay:620ms] rtl:origin-right" />
                   </span>
                 </span>
+                </>}
               </h1>
 
               <p
@@ -280,8 +282,7 @@ export default function LandingPage() {
                           <span className="relative flex items-center justify-between text-[12.5px] font-semibold tracking-[-0.01em]">
                             {gym.shortName}
                             <span className="flex items-center gap-1 text-[11.5px] font-medium">
-                              <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0} PT
-                            </span>
+                              <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0}{" "}{t("memberProfile.tabs.pt")}</span>
                           </span>
                           <Dumbbell
                             className="absolute bottom-3 end-4 size-8 opacity-30 transition-transform duration-500 ease-out group-hover:-rotate-12 group-hover:scale-110"

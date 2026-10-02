@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, CalendarDays, Check, CreditCard, ReceiptText, WalletCards } from "lucide-react";
@@ -43,6 +44,7 @@ export function QuickMembershipStep({
   onBack: () => void;
   onSubmit: (sale: CreateMemberMembershipSaleInput["sale"]) => void;
 }) {
+  const t = useT();
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 50 }));
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const plans = useMemo(
@@ -123,13 +125,13 @@ export function QuickMembershipStep({
 
         <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_260px]">
           <div className="space-y-5">
-            <Field label="Membership" required error={form.formState.errors.planId?.message}>
+            <Field label={t("memberProfile.followUp.membershipFallback")} required error={form.formState.errors.planId?.message}>
               <Controller
                 control={form.control}
                 name="planId"
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger aria-label="Membership" className="min-h-12" data-testid="quick-sale-plan">
+                    <SelectTrigger aria-label={t("memberProfile.followUp.membershipFallback")} className="min-h-12" data-testid="quick-sale-plan">
                       <SelectValue placeholder={plansQuery.isLoading ? "Loading memberships…" : "Choose a membership"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -149,10 +151,10 @@ export function QuickMembershipStep({
             <div className="rounded-lg border border-line bg-paper px-4 py-4">
               <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
                 <span>
-                  <span className="block text-[13.5px] font-semibold">Collect payment now</span>
+                  <span className="block text-[13.5px] font-semibold">{t("renewFlow.sale.collectNow")}</span>
                   <span className="mt-0.5 block text-[12px] text-ink-3">Turn this off if the member will pay later. The full price will show as unpaid.</span>
                 </span>
-                <Controller control={form.control} name="collectNow" render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Collect payment now" />} />
+                <Controller control={form.control} name="collectNow" render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} aria-label={t("renewFlow.sale.collectNow")} />} />
               </label>
 
               {collectNow ? (
@@ -160,13 +162,13 @@ export function QuickMembershipStep({
                   <Field label={`Amount (${currency})`} error={form.formState.errors.payAmount?.message} hint="Leave empty to take the full price.">
                     <Input inputMode="decimal" dir="ltr" className="min-h-11" placeholder={plan ? toMajorString(plan.basePrice) : toMajorString(money(0, currency))} {...form.register("payAmount")} />
                   </Field>
-                  <Field label="Payment method" error={form.formState.errors.payMethod?.message}>
+                  <Field label={t("renewFlow.shared.paymentMethodAria")} error={form.formState.errors.payMethod?.message}>
                     <Controller
                       control={form.control}
                       name="payMethod"
                       render={({ field }) => (
                         <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger aria-label="Payment method" className="min-h-11"><SelectValue /></SelectTrigger>
+                          <SelectTrigger aria-label={t("renewFlow.shared.paymentMethodAria")} className="min-h-11"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {methods.map((method) => <SelectItem key={method.key} value={method.key}>{PAYMENT_METHOD_LABELS[method.key] ?? method.label}</SelectItem>)}
                           </SelectContent>
@@ -176,8 +178,8 @@ export function QuickMembershipStep({
                     {settingsQuery.isError ? <InlineRetry label="Could not load payment methods." onRetry={() => { void settingsQuery.refetch(); }} /> : null}
                   </Field>
                   {referenceRequired ? (
-                    <Field className="sm:col-span-2" label="Reference number" required error={form.formState.errors.paymentReference?.message} hint="The reference number on the card slip, CliQ payment or bank transfer.">
-                      <Input className="min-h-11" placeholder="For example: POS-88213" {...form.register("paymentReference")} />
+                    <Field className="sm:col-span-2" label={t("renewFlow.shared.referenceNumber")} required error={form.formState.errors.paymentReference?.message} hint="The reference number on the card slip, CliQ payment or bank transfer.">
+                      <Input className="min-h-11" placeholder={t("renewFlow.shared.referencePlaceholder")} {...form.register("paymentReference")} />
                     </Field>
                   ) : null}
                 </FieldGrid>
@@ -196,7 +198,7 @@ export function QuickMembershipStep({
 
       <div className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
         {error ? <p role="alert" className="me-auto max-w-md text-[13px] text-danger">{error}</p> : null}
-        <Button type="button" variant="secondary" className="max-sm:w-full" onClick={onBack} disabled={pending}><ArrowLeft /> Back</Button>
+        <Button type="button" variant="secondary" className="max-sm:w-full" onClick={onBack} disabled={pending}><ArrowLeft />{" "}{t("common.action.back")}</Button>
         <Button type="submit" className="max-sm:w-full" loading={pending} disabled={!plan || (collectNow && methods.length === 0)} data-testid="confirm-member-sale">
           <WalletCards /> Save member and membership
           {plan ? ` · ${toMajorString(plan.basePrice)} ${plan.basePrice.currency}` : ""}
@@ -207,15 +209,16 @@ export function QuickMembershipStep({
 }
 
 function SaleSummary({ plan, payingNow, remaining }: { plan?: MembershipPlan; payingNow: ReturnType<typeof money>; remaining: ReturnType<typeof money> }) {
+  const t = useT();
   const start = todayISODate();
   const end = plan ? addDays(start, plan.kind === "visits" ? (plan.visitValidityDays ?? 90) : (plan.durationDays ?? 30)) : undefined;
   return (
-    <aside className="self-start rounded-lg border border-line bg-sunken/55 p-4" aria-label="Summary">
-      <p className="context-label">Summary</p>
+    <aside className="self-start rounded-lg border border-line bg-sunken/55 p-4" aria-label={t("renewFlow.sale.summary")}>
+      <p className="context-label">{t("renewFlow.sale.summary")}</p>
       <dl className="mt-4 space-y-3 text-[13px]">
-        <SummaryRow icon={<WalletCards className="size-4" />} label="Membership" value={plan?.name ?? "Not chosen"} />
-        <SummaryRow icon={<CalendarDays className="size-4" />} label="Dates" value={end ? `${formatDate(start)} – ${formatDate(end)}` : "—"} tabular />
-        <SummaryRow icon={<CreditCard className="size-4" />} label="Paying now" value={<MoneyText money={payingNow} />} />
+        <SummaryRow icon={<WalletCards className="size-4" />} label={t("memberProfile.followUp.membershipFallback")} value={plan?.name ?? "Not chosen"} />
+        <SummaryRow icon={<CalendarDays className="size-4" />} label={t("renewFlow.sale.rowDates")} value={end ? `${formatDate(start)} – ${formatDate(end)}` : "—"} tabular />
+        <SummaryRow icon={<CreditCard className="size-4" />} label={t("renewFlow.sale.rowPayingNow")} value={<MoneyText money={payingNow} />} />
         <div className="border-t border-line pt-3">
           <SummaryRow icon={<ReceiptText className="size-4" />} label="Left to pay" value={<MoneyText money={remaining} />} warning={remaining.amount > 0} />
         </div>
@@ -236,5 +239,6 @@ function SummaryRow({ icon, label, value, tabular, warning }: { icon: React.Reac
 }
 
 function InlineRetry({ label, onRetry }: { label: string; onRetry: () => void }) {
-  return <p role="alert" className="mt-2 text-[12px] text-danger">{label} <button type="button" className="font-medium underline underline-offset-2" onClick={onRetry}>Try again</button></p>;
+  const t = useT();
+  return <p role="alert" className="mt-2 text-[12px] text-danger">{label} <button type="button" className="font-medium underline underline-offset-2" onClick={onRetry}>{t("common.action.retry")}</button></p>;
 }

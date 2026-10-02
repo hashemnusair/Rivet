@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RefreshCcw } from "lucide-react";
@@ -99,6 +100,7 @@ function initialsOf(fullName: string): string {
 }
 
 export function ExperienceProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const convexMode = isConvexMode();
   const identity = useRivetIdentity();
   const [customerId, setCustomerId] = useState<string>();
@@ -564,8 +566,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         <div data-experience-notice className="sticky top-0 z-[60] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[12px] text-warning-deep" role="status" aria-live="polite">
           <span>Could not connect. Showing your last saved information.</span>
           <button type="button" onClick={retryExperience} className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline">
-            <RefreshCcw className="size-3" aria-hidden /> Try again
-          </button>
+            <RefreshCcw className="size-3" aria-hidden />{" "}{t("common.action.retry")}</button>
         </div>
       ) : null}
       {children}

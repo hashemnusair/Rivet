@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Ban, Download, Eye, FileSignature, PenLine, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -36,6 +37,7 @@ function newKey(prefix: string) {
  * and an audited reveal of the signatory's ID number.
  */
 export function PlatformAgreements() {
+  const t = useT();
   const searchParams = useSearchParams();
   const requested = searchParams.get("agreement");
   const [selectedId, setSelectedId] = useState<string | null>(requested);
@@ -61,13 +63,13 @@ export function PlatformAgreements() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Gym</TableHead>
+                <TableHead>{t("shell.topbar.gym")}</TableHead>
                 <TableHead>Reference</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Starts</TableHead>
+                <TableHead>{t("renewFlow.adjust.planChange.rowPlan")}</TableHead>
+                <TableHead>{t("renewFlow.adjust.planChange.starts")}</TableHead>
                 <TableHead>Signed</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-end">Open</TableHead>
+                <TableHead>{t("common.label.status")}</TableHead>
+                <TableHead className="text-end">{t("dashboard.today.action.open")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -79,7 +81,7 @@ export function PlatformAgreements() {
                   <TableCell dir="ltr">{row.startDate}</TableCell>
                   <TableCell>{formatDateTime(row.signedAt)}</TableCell>
                   <TableCell><Badge variant={row.status === "void" ? "neutral" : row.status === "countersigned" ? "success" : "warning"} dot>{row.status === "void" ? "Void" : row.status === "countersigned" ? "Countersigned" : "Awaiting RIVET"}</Badge></TableCell>
-                  <TableCell className="text-end"><Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)} aria-label={`Open agreement ${row.reference}`}><Eye /> Open</Button></TableCell>
+                  <TableCell className="text-end"><Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)} aria-label={`Open agreement ${row.reference}`}><Eye />{" "}{t("dashboard.today.action.open")}</Button></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -93,6 +95,7 @@ export function PlatformAgreements() {
 }
 
 function AgreementDialog({ agreementId, summary, onClose }: { agreementId: string; summary?: PlatformAgreementSummary; onClose: () => void }) {
+  const t = useT();
   const { session } = useApp();
   const invalidate = useInvalidate();
   const detail = useApiQuery(qk.platformAgreement(agreementId), (api) => api.getPlatformAgreement(agreementId));
@@ -186,14 +189,14 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
                 <section className="panel space-y-3 p-4">
                   <p className="context-label">Reveal ID number</p>
                   <p className="text-[12px] text-ink-3">Revealed {agreement.idRevealCount} {agreement.idRevealCount === 1 ? "time" : "times"} so far. Each reveal is written to the platform audit trail.</p>
-                  <Field label="Reason" required><Textarea rows={2} value={revealReason} onChange={(event) => setRevealReason(event.target.value)} placeholder="Verifying the signatory before countersigning" data-testid="reveal-reason" /></Field>
+                  <Field label={t("common.label.reason")} required><Textarea rows={2} value={revealReason} onChange={(event) => setRevealReason(event.target.value)} placeholder="Verifying the signatory before countersigning" data-testid="reveal-reason" /></Field>
                   <Button variant="secondary" size="sm" disabled={revealReason.trim().length < 3} loading={reveal.isPending} onClick={() => reveal.mutate()} data-testid="reveal-id"><Eye /> Reveal ID number</Button>
                 </section>
                 <section className="panel space-y-3 p-4">
                   <p className="context-label">Countersign for RIVET</p>
                   {agreement.status === "countersigned" && !replacing ? (
                     <>
-                      <p className="text-[12.5px] text-ink-2">Countersigned by {agreement.countersign?.byName} ({agreement.countersign?.title}) on {agreement.countersign ? formatDateTime(agreement.countersign.at) : ""}.</p>
+                      <p className="text-[12.5px] text-ink-2">Countersigned by {agreement.countersign?.byName} ({agreement.countersign?.title}) on {agreement.countersign ? formatDateTime(agreement.countersign.at) : ""}{t("members.bulk.toast.end")}</p>
                       <Button size="xs" variant="secondary" onClick={() => setReplacing(true)} data-testid="replace-countersignature"><PenLine /> Replace RIVET&apos;s signature</Button>
                     </>
                   ) : (
@@ -204,7 +207,7 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
                       <Field label="Type your full name to confirm" required hint="Must match your RIVET account name exactly."><Input value={typedName} onChange={(event) => setTypedName(event.target.value)} data-testid="countersign-name" /></Field>
                       <Field label="Sign for RIVET" required><SignaturePad value={countersignature} onChange={setCountersignature} signatoryName={typedName} /></Field>
                       <Button size="sm" disabled={title.trim().length < 2 || typedName.trim().length < 2 || !countersignatureReady} loading={countersign.isPending} onClick={() => countersign.mutate()} data-testid="countersign"><PenLine /> {replacing ? "Replace the signature" : "Countersign"}</Button>
-                      {replacing ? <Button size="xs" variant="ghost" onClick={() => setReplacing(false)}>Cancel</Button> : null}
+                      {replacing ? <Button size="xs" variant="ghost" onClick={() => setReplacing(false)}>{t("common.action.cancel")}</Button> : null}
                     </>
                   )}
                 </section>
@@ -235,10 +238,10 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
                   <p className="text-[12px] text-ink-3">Voiding keeps the record as evidence, marks it void with your reason, and asks the owner to sign again through the current agreement. Use it when the signed details are wrong or the agreement was signed under an older text.</p>
                   {voiding ? (
                     <>
-                      <Field label="Reason" required><Textarea rows={2} value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder="Signed under version 1.0 before the short form; re-signing on 1.1" data-testid="void-reason" /></Field>
+                      <Field label={t("common.label.reason")} required><Textarea rows={2} value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder="Signed under version 1.0 before the short form; re-signing on 1.1" data-testid="void-reason" /></Field>
                       <div className="flex gap-2">
                         <Button size="sm" variant="danger" disabled={voidReason.trim().length < 3} loading={voidAgreement.isPending} onClick={() => { setError(null); voidAgreement.mutate(); }} data-testid="void-confirm"><Ban /> Void and ask the owner to sign again</Button>
-                        <Button size="sm" variant="ghost" onClick={() => setVoiding(false)}>Cancel</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setVoiding(false)}>{t("common.action.cancel")}</Button>
                       </div>
                     </>
                   ) : (
@@ -252,7 +255,7 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" disabled={!agreement} onClick={() => { if (agreement) downloadAgreementPdf(agreement); }} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>
-          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <Button variant="secondary" onClick={onClose}>{t("common.action.close")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

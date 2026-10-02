@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock3, Copy, Dumbbell, MapPin, MessageCircle, Phone, QrCode, ScanLine, Share2, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
@@ -75,6 +76,7 @@ export default function MembershipDetailClient({ membershipId }: { membershipId:
 }
 
 function MembershipDetail({ membershipId }: { membershipId: string }) {
+  const t = useT();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -126,8 +128,7 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
   return (
     <main className="mx-auto max-w-[1080px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
       <Link href="/customer/my-gyms" className="inline-flex min-h-8 items-center gap-1.5 rounded-xs text-[13px] text-ink-3 transition-colors hover:text-ink">
-        <ArrowLeft className="size-3.5" aria-hidden /> Home
-      </Link>
+        <ArrowLeft className="size-3.5" aria-hidden />{" "}{t("marketing.memberShell.home")}</Link>
 
       {cover ? <div className="mt-4 h-32 overflow-hidden rounded-lg border border-line bg-cover bg-center sm:h-40" role="img" aria-label={`${gym.name} cover image`} style={{ backgroundImage: `url(${cover})` }} /> : null}
 
@@ -137,7 +138,7 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
           <h1 className="font-display text-[24px] font-semibold leading-tight tracking-tight">{gym.name}</h1>
           <p className="mt-1 flex items-start gap-1.5 text-[13px] text-ink-2">
             <MapPin className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />
-            <span>{branch ? `${branch.name} · ${branch.address}` : "Branch unavailable"}</span>
+            <span>{branch ? `${branch.name} · ${branch.address}` : t("shell.topbar.branchUnavailable")}</span>
           </p>
         </div>
         <Button className="w-full sm:w-auto" onClick={() => setQrOpen(true)}><QrCode /> Show entry code</Button>
@@ -149,14 +150,14 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
         value={section}
         onChange={setSection}
         items={[
-          { value: "membership", label: "Membership" },
-          { value: "classes", label: <><CalendarDays className="size-3.5" aria-hidden /> Classes</>, name: "Classes" },
-          { value: "pt", label: <><Dumbbell className="size-3.5" aria-hidden /> PT</>, name: "PT" },
+          { value: "membership", label: t("memberProfile.followUp.membershipFallback") },
+          { value: "classes", label: <><CalendarDays className="size-3.5" aria-hidden />{" "}{t("nav.item.classes")}</>, name: "Classes" },
+          { value: "pt", label: <><Dumbbell className="size-3.5" aria-hidden />{" "}{t("memberProfile.tabs.pt")}</>, name: "PT" },
         ]}
       />
 
       {section === "membership" ? (
-        <div className="mt-4 space-y-4" role="tabpanel" aria-label="Membership">
+        <div className="mt-4 space-y-4" role="tabpanel" aria-label={t("memberProfile.followUp.membershipFallback")}>
           <MembershipSummary membership={membership} gym={gym} branchName={branch?.name ?? membership.branchName} status={status} />
           <FreezeRequestCard membershipId={membership.id} />
           {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} /> : null}
@@ -174,6 +175,7 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
 }
 
 function MembershipSummary({ membership, gym, branchName, status }: { membership: CustomerMembership; gym: MarketplaceGym; branchName?: string; status: MembershipDisplayStatus }) {
+  const t = useT();
   const total = Math.max(diffDays(membership.startDate, membership.endDate), 1);
   const elapsed = Math.min(Math.max(diffDays(membership.startDate, todayISODate()), 0), total);
   const percent = Math.round((elapsed / total) * 100);
@@ -197,16 +199,16 @@ function MembershipSummary({ membership, gym, branchName, status }: { membership
           </div>
           <div className="mt-1.5 flex justify-between text-[12px] text-ink-3">
             <span>Started {formatDate(membership.startDate)}</span>
-            <span>Ends {formatDate(membership.endDate)}</span>
+            <span>{t("crm.queues.ends")}{" "}{formatDate(membership.endDate)}</span>
           </div>
         </div>
       )}
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4 text-[13px] sm:grid-cols-4">
         <Fact label="Member number"><span className="font-mono text-[12.5px]">{membership.memberNumber}</span></Fact>
-        <Fact label="Branch">{branchName ?? "Branch unavailable"}</Fact>
+        <Fact label={t("common.label.branch")}>{branchName ?? "Branch unavailable"}</Fact>
         <Fact label="Total visits"><span className="tabular">{membership.totalCheckIns ?? membership.visitHistory.length}</span></Fact>
-        <Fact label="Unpaid"><MoneyText money={money(membership.balanceMinor)} className={membership.balanceMinor > 0 ? "font-medium text-warning-deep" : undefined} /></Fact>
+        <Fact label={t("domain.paymentStatus.unpaid")}><MoneyText money={money(membership.balanceMinor)} className={membership.balanceMinor > 0 ? "font-medium text-warning-deep" : undefined} /></Fact>
       </dl>
 
       {phone ? (
@@ -233,6 +235,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const experience = useApiQuery(qk.customerClasses(membershipId), (api) => api.getCustomerClassExperience(membershipId));
   // One day at a time, bounded to the rolling week. The view resets to the new
@@ -271,12 +274,12 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
     },
   });
 
-  if (experience.isLoading) return <div className="mt-4 grid gap-3 sm:grid-cols-2" role="tabpanel" aria-label="Classes" aria-busy="true"><Skeleton className="h-56 w-full" /><Skeleton className="h-56 w-full" /></div>;
-  if (experience.isError) return <div className="mt-4" role="tabpanel" aria-label="Classes"><ErrorState layout="section" title="Classes could not be loaded" description="Your membership is not affected. Try again." onRetry={() => experience.refetch()} /></div>;
+  if (experience.isLoading) return <div className="mt-4 grid gap-3 sm:grid-cols-2" role="tabpanel" aria-label={t("nav.item.classes")} aria-busy="true"><Skeleton className="h-56 w-full" /><Skeleton className="h-56 w-full" /></div>;
+  if (experience.isError) return <div className="mt-4" role="tabpanel" aria-label={t("nav.item.classes")}><ErrorState layout="section" title="Classes could not be loaded" description="Your membership is not affected. Try again." onRetry={() => experience.refetch()} /></div>;
   const value = experience.data!;
   if (!value.policy.enabled) {
     return (
-      <section className="panel mt-4 p-6 text-center" role="tabpanel" aria-label="Classes">
+      <section className="panel mt-4 p-6 text-center" role="tabpanel" aria-label={t("nav.item.classes")}>
         <CalendarDays className="mx-auto size-6 text-ink-3" aria-hidden />
         <h2 className="mt-3 text-[16px] font-semibold">Book classes at reception</h2>
         <p className="mt-1 text-[13px] text-ink-2">{value.gymName} does not take class bookings in the app yet. Ask the front desk to book a spot for you.</p>
@@ -293,7 +296,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   const attendedCount = value.history.filter((occurrence) => occurrence.booking?.status === "attended").length;
 
   return (
-    <div className="mt-4 space-y-4" role="tabpanel" aria-label="Classes">
+    <div className="mt-4 space-y-4" role="tabpanel" aria-label={t("nav.item.classes")}>
       {experience.isBackgroundError ? <ErrorState layout="inline" title="The class times could not be updated" description="You are seeing an older copy. Try again to check for changes." onRetry={() => experience.refetch()} /> : null}
       {value.profileCorrectionRequired ? (
         <div className="rounded-md border border-warning/30 bg-warning-bg px-4 py-3 text-[13px] text-warning-deep" role="status">
@@ -306,7 +309,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
         value={panelView}
         onChange={setPanelView}
         items={[
-          { value: "week", label: "This week" },
+          { value: "week", label: t("common.time.thisWeek") },
           { value: "history", label: <>My history{attendedCount ? <span className="tabular text-[12px] font-normal text-ink-3">{attendedCount}</span> : null}</>, name: "My history" },
         ]}
       />
@@ -316,7 +319,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
           <div className="flex items-center justify-between gap-3">
             <Button variant="secondary" size="icon" aria-label="Previous day" disabled={date <= today} onClick={() => setSelectedDate(addDays(date, -1))}><ChevronLeft /></Button>
             <div className="min-w-0 text-center">
-              <h3 className="text-[15px] font-semibold">{date === today ? "Today" : date === addDays(today, 1) ? "Tomorrow" : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3>
+              <h3 className="text-[15px] font-semibold">{date === today ? t("common.time.today") : date === addDays(today, 1) ? t("common.time.tomorrow") : formatWeekday(`${date}T12:00:00Z`)} · {formatDate(date)}</h3>
               <p className="text-[12px] text-ink-3">Showing the next 7 days.</p>
             </div>
             <Button variant="secondary" size="icon" aria-label="Next day" disabled={date >= weekEnd} onClick={() => setSelectedDate(addDays(date, 1))}><ChevronRight /></Button>
@@ -401,6 +404,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
 }
 
 function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: { occurrence: CustomerClassOccurrence; cutoffHours: number; busy: boolean; onBook: () => void; onCancel: () => void }) {
+  const t = useT();
   const active = occurrence.booking && ["booked", "waitlisted"].includes(occurrence.booking.status);
   const full = occurrence.spotsRemaining === 0;
   const minutes = Math.round((Date.parse(occurrence.endsAt) - Date.parse(occurrence.startsAt)) / 60_000);
@@ -427,10 +431,10 @@ function CustomerClassCard({ occurrence, cutoffHours, busy, onBook, onCancel }: 
         {active ? (
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? (occurrence.booking.position ? `On the waitlist · number ${occurrence.booking.position}` : "On the waitlist") : occurrence.booking?.fromWaitlist ? "Booked from the waitlist" : "Booked"}</p>
+              <p className="text-[13px] font-semibold text-success-deep">{occurrence.booking?.status === "waitlisted" ? (occurrence.booking.position ? `On the waitlist · number ${occurrence.booking.position}` : "On the waitlist") : occurrence.booking?.fromWaitlist ? "Booked from the waitlist" : t("memberProfile.pt.bookingStatus.reserved")}</p>
               <p className="mt-0.5 text-[12px] text-ink-3" dir="ltr">{cancelHint}</p>
             </div>
-            <Button size="sm" variant="secondary" loading={busy} disabled={preview?.outcome === "closed"} onClick={onCancel}>{occurrence.booking?.status === "waitlisted" ? "Leave" : "Cancel"}</Button>
+            <Button size="sm" variant="secondary" loading={busy} disabled={preview?.outcome === "closed"} onClick={onCancel}>{occurrence.booking?.status === "waitlisted" ? "Leave" : t("common.action.cancel")}</Button>
           </div>
         ) : (
           <div className="mt-3">
@@ -451,6 +455,7 @@ const REFERRAL_STATUS_META: Record<CustomerReferralRewardEvent["status"], { labe
 };
 
 function ReferralCard({ initialProgram, gymName }: { initialProgram: CustomerReferralProgram; gymName: string }) {
+  const t = useT();
   const [program, setProgram] = useState(initialProgram);
   useEffect(() => setProgram(initialProgram), [initialProgram]);
   const ensureLink = useApiMutation((api, membershipId: string) => api.ensureCustomerReferralLink(membershipId), { onSuccess: setProgram });
@@ -471,13 +476,13 @@ function ReferralCard({ initialProgram, gymName }: { initialProgram: CustomerRef
   };
   return (
     <section className="panel p-4 sm:p-5" aria-labelledby="referral-title">
-      <h2 id="referral-title" className="text-[16px] font-semibold leading-tight">Bring a friend. Earn {dayWord(program.rewardDays)}.</h2>
+      <h2 id="referral-title" className="text-[16px] font-semibold leading-tight">Bring a friend. Earn {dayWord(program.rewardDays)}{t("members.bulk.toast.end")}</h2>
       <p className="mt-1 text-[13px] text-ink-2">Share your link. When a friend books through it and buys their first membership, {gymName} adds the free days to yours.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {sharePath ? (
           <>
             <Button size="sm" onClick={() => void share()}><Share2 /> Share link</Button>
-            <Button size="sm" variant="secondary" onClick={() => void copy()}><Copy /> Copy</Button>
+            <Button size="sm" variant="secondary" onClick={() => void copy()}><Copy />{" "}{t("common.action.copy")}</Button>
           </>
         ) : (
           <Button size="sm" loading={ensureLink.isPending} onClick={() => ensureLink.mutate(program.membershipId)}><Share2 /> Create my link</Button>
@@ -579,12 +584,13 @@ function VisitHistory({ visits }: { visits: CustomerVisit[] }) {
 }
 
 function ActivityHistory({ membership, visits }: { membership: CustomerMembership; visits: CustomerVisit[] }) {
+  const t = useT();
   const activity = membership.activity ?? [];
   const count = activity.length || visits.length;
   return (
     <details className="panel overflow-hidden">
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[13.5px] font-semibold">
-        <span>Recent activity</span>
+        <span>{t("dashboard.owner.recentActivity")}</span>
         <span className="text-[12px] font-normal tabular text-ink-3">{count} recorded</span>
       </summary>
       <div className="border-t border-line">
@@ -597,7 +603,7 @@ function ActivityHistory({ membership, visits }: { membership: CustomerMembershi
                     <p className="text-[13px] font-medium">{item.title}</p>
                     <p className="mt-0.5 text-[12px] text-ink-3">{item.detail ? `${item.detail} · ` : ""}{formatDateTime(item.occurredAt)}</p>
                   </div>
-                  {item.href ? <Link href={item.href} className="shrink-0 text-[12.5px] font-medium text-ink underline underline-offset-4">View receipt</Link> : null}
+                  {item.href ? <Link href={item.href} className="shrink-0 text-[12.5px] font-medium text-ink underline underline-offset-4">{t("memberProfile.timeline.viewReceipt")}</Link> : null}
                 </div>
               </li>
             ))}
@@ -611,6 +617,7 @@ function ActivityHistory({ membership, visits }: { membership: CustomerMembershi
 }
 
 function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId: string; gymName: string; branchNames: Map<string, string> }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const [trainerId, setTrainerId] = useState("");
   const [branchId, setBranchId] = useState("");
@@ -648,18 +655,18 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
 
   // The panel exists as soon as the tab is chosen; loading and failure are
   // states inside it, so the tab never points at nothing.
-  if (experience.isLoading) return <div className="mt-4" role="tabpanel" aria-label="Personal training" aria-busy="true"><Skeleton className="h-80 w-full" /></div>;
-  if (experience.isError) return <div className="mt-4" role="tabpanel" aria-label="Personal training"><ErrorState layout="section" title="Personal training could not be loaded" onRetry={() => experience.refetch()} /></div>;
+  if (experience.isLoading) return <div className="mt-4" role="tabpanel" aria-label={t("palette.notificationGroups.family.pt")} aria-busy="true"><Skeleton className="h-80 w-full" /></div>;
+  if (experience.isError) return <div className="mt-4" role="tabpanel" aria-label={t("palette.notificationGroups.family.pt")}><ErrorState layout="section" title="Personal training could not be loaded" onRetry={() => experience.refetch()} /></div>;
   const value = experience.data!;
   const cutoffHours = value.cancellationCutoffHours ?? PT_DEFAULT_CANCELLATION_CUTOFF_HOURS;
   const nextBooking = ptNextBooking(value.upcomingBookings);
   const canPickSlot = (value.availableSessions > 0 || Boolean(rescheduleBookingId)) && Boolean(trainerId && selectedBranchId);
   return (
-    <div className="mt-4 space-y-4" role="tabpanel" aria-label="Personal training">
+    <div className="mt-4 space-y-4" role="tabpanel" aria-label={t("palette.notificationGroups.family.pt")}>
       {experience.isBackgroundError ? <ErrorState layout="inline" title="Personal training could not be updated" description="You are seeing an older copy. Try again." onRetry={() => experience.refetch()} /> : null}
       <dl className="grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-surface">
         <PtStat label="Available" value={String(value.availableSessions)} />
-        <PtStat label="Booked" value={String(value.reservedSessions)} />
+        <PtStat label={t("memberProfile.pt.bookingStatus.reserved")} value={String(value.reservedSessions)} />
         <PtStat label="Next session" value={nextBooking ? formatDateTime(nextBooking.startsAt) : "None"} />
       </dl>
 
@@ -676,26 +683,26 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
             <div className="mt-4 rounded-md border border-warning/30 bg-warning-bg p-4 text-[13px] text-warning-deep" role="status">You have no PT sessions left. Request a package below. You can book after you pay the gym in full.</div>
           ) : (
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Field label="Trainer" htmlFor="pt-trainer">
+              <Field label={t("members.tabs.pt.trainer")} htmlFor="pt-trainer">
                 <select id="pt-trainer" className={SELECT_CLASS} value={trainerId} onChange={(event) => { setTrainerId(event.target.value); setBranchId(""); }}>
                   <option value="">Choose trainer</option>
                   {value.trainers.map((trainer) => <option key={trainer.id} value={trainer.id}>{trainer.displayName}</option>)}
                 </select>
               </Field>
-              <Field label="Branch" htmlFor="pt-branch">
+              <Field label={t("common.label.branch")} htmlFor="pt-branch">
                 <select id="pt-branch" className={SELECT_CLASS} disabled={!selectedTrainer} value={selectedBranchId} onChange={(event) => setBranchId(event.target.value)}>
-                  <option value="">Choose branch</option>
+                  <option value="">{t("members.bulk.chooseBranch")}</option>
                   {selectedTrainer?.branchIds.map((id) => <option key={id} value={id}>{branchNames.get(id) ?? id}</option>)}
                 </select>
               </Field>
-              <Field label="Date" htmlFor="pt-date">
+              <Field label={t("common.label.date")} htmlFor="pt-date">
                 <Input id="pt-date" type="date" className="h-11 sm:h-9" min={todayISODate()} value={date} onChange={(event) => setDate(event.target.value)} />
               </Field>
             </div>
           )}
           {canPickSlot ? (
             <div className="mt-5">
-              <p className="text-[12px] font-medium text-ink-3">Available times</p>
+              <p className="text-[12px] font-medium text-ink-3">{t("members.tabs.pt.availableTimes")}</p>
               {slots.isLoading ? <p className="mt-2 text-[13px] text-ink-3" role="status">Loading free times…</p> : slots.data?.length ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {slots.data.map((slot) => (
@@ -710,7 +717,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
         </section>
 
         <section className="panel overflow-hidden" aria-labelledby="pt-packages-title">
-          <header className="border-b border-line px-4 py-3"><h2 id="pt-packages-title" className="text-[14px] font-semibold">PT packages</h2></header>
+          <header className="border-b border-line px-4 py-3"><h2 id="pt-packages-title" className="text-[14px] font-semibold">{t("memberProfile.pt.packages")}</h2></header>
           <div className="divide-y divide-line">
             {value.packages.length ? value.packages.map((item) => (
               <article key={item.id} className="flex items-start justify-between gap-3 p-4">
@@ -740,7 +747,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
       </div>
 
       <section className="panel overflow-hidden" aria-labelledby="pt-upcoming-title">
-        <header className="border-b border-line px-4 py-3"><h2 id="pt-upcoming-title" className="text-[14px] font-semibold">Upcoming bookings</h2><p className="mt-0.5 text-[12px] text-ink-3">Each booking uses one session. You can change or cancel for free until {cutoffHours} hours before it starts.</p></header>
+        <header className="border-b border-line px-4 py-3"><h2 id="pt-upcoming-title" className="text-[14px] font-semibold">{t("members.tabs.pt.upcomingBookings")}</h2><p className="mt-0.5 text-[12px] text-ink-3">Each booking uses one session. You can change or cancel for free until {cutoffHours} hours before it starts.</p></header>
         {value.upcomingBookings.length ? (
           <div className="divide-y divide-line">
             {value.upcomingBookings.map((booking) => {
@@ -761,7 +768,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
                     <>
                       <Badge variant="outline">{PT_BOOKING_LABELS[booking.status]}</Badge>
                       {beforeCutoff ? <Button size="sm" variant="secondary" onClick={() => { setRescheduleBookingId(booking.id); setTrainerId(booking.trainerProfileId); setBranchId(booking.branchId); setDate(booking.startsAt.slice(0, 10)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Change time</Button> : null}
-                      <Button size="sm" variant="ghost" loading={cancel.isPending && cancel.variables === booking.id} onClick={() => setCancelBooking(booking)}>Cancel</Button>
+                      <Button size="sm" variant="ghost" loading={cancel.isPending && cancel.variables === booking.id} onClick={() => setCancelBooking(booking)}>{t("common.action.cancel")}</Button>
                       {!beforeCutoff ? <p className="w-full text-[12px] text-warning-deep">Less than {cutoffHours} hours to go. If you cancel now, you lose this session. Only the gym can change the time.</p> : null}
                     </>
                   )}
@@ -808,6 +815,7 @@ function PtStat({ label, value }: { label: string; value: string }) {
 }
 
 function FreezeRequestCard({ membershipId }: { membershipId: string }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const requestsQuery = useApiQuery(["customerFreezeRequests", membershipId] as const, (api) => api.listCustomerFreezeRequests(membershipId));
   const policyQuery = useApiQuery(["customerFreezePolicy", membershipId] as const, (api) => api.getCustomerFreezePolicy(membershipId));
@@ -837,10 +845,10 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
 
   const fee = (minor: number) => <MoneyText money={money(minor, policy.currency)} />;
   const summary = pending ? (
-    <>Requested {pending.days} days from {formatDate(pending.startDate)}. Waiting for the gym to confirm{pending.expectedFeeMinor > 0 ? <> (expected fee {fee(pending.expectedFeeMinor)})</> : null}.</>
+    <>Requested {pending.days} days from {formatDate(pending.startDate)}. Waiting for the gym to confirm{pending.expectedFeeMinor > 0 ? <> (expected fee {fee(pending.expectedFeeMinor)})</> : null}{t("members.bulk.toast.end")}</>
   ) : latestDecided ? (
     latestDecided.status === "approved"
-      ? <>Your last request was approved{(latestDecided.feeMinor ?? 0) > 0 ? <> with a {fee(latestDecided.feeMinor ?? 0)} fee</> : null}.{latestDecided.decisionNote ? ` ${latestDecided.decisionNote}` : ""}</>
+      ? <>Your last request was approved{(latestDecided.feeMinor ?? 0) > 0 ? <> with a {fee(latestDecided.feeMinor ?? 0)} fee</> : null}{t("members.bulk.toast.end")}{latestDecided.decisionNote ? ` ${latestDecided.decisionNote}` : ""}</>
       : <>Your last request was not approved.{latestDecided.decisionNote ? ` ${latestDecided.decisionNote}` : ""}</>
   ) : policy.requestsEnabled ? "Need a break? Ask the gym to pause your membership." : "This gym is not accepting new freeze requests right now.";
   const invalidDays = !Number.isSafeInteger(days) || days < policy.minimumDays || days > policy.maximumDays;
@@ -849,7 +857,7 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
     <section className="panel p-4 sm:p-5" aria-labelledby="freeze-title">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 id="freeze-title" className="text-[14px] font-semibold">Freeze</h2>
+          <h2 id="freeze-title" className="text-[14px] font-semibold">{t("memberProfile.followUp.evidenceKind.freeze")}</h2>
           <p className="mt-1 text-[13px] text-ink-2">{summary}</p>
         </div>
         {!pending && policy.requestsEnabled ? <Button size="sm" variant="secondary" onClick={() => { setDays(Math.max(policy.minimumDays, Math.min(7, policy.maximumDays))); setOpen(true); }}>Request a freeze</Button> : null}
@@ -861,7 +869,7 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
             <DialogDescription>The gym reviews every request and confirms the dates.</DialogDescription>
           </DialogHeader>
           <DialogBody className="grid gap-4">
-            <Field label="From" htmlFor="freeze-start" required>
+            <Field label={t("common.label.from")} htmlFor="freeze-start" required>
               <Input id="freeze-start" type="date" className="h-11 sm:h-9" min={todayISODate()} value={startDate} onChange={(event) => setStartDate(event.target.value)} />
             </Field>
             <Field label="Days" htmlFor="freeze-days" hint={`Choose ${policy.minimumDays} to ${policy.maximumDays} days.`} error={startDate && invalidDays ? `Choose ${policy.minimumDays} to ${policy.maximumDays} days.` : undefined} required>
@@ -876,7 +884,7 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setOpen(false)}>{t("common.action.cancel")}</Button>
             <Button loading={submit.isPending} disabled={!startDate || !reason.trim() || invalidDays} onClick={() => submit.mutate()}>Send request</Button>
           </DialogFooter>
         </DialogContent>

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ChecklistHandover } from "@/features/checklists/checklist-handover";
 
@@ -47,6 +48,7 @@ export function OpenShiftDialog({
   branchId: UUID;
   onOpened?: (shift: CashShift) => void;
 }) {
+  const t = useT();
   const [serverError, setServerError] = useState<string | null>(null);
   const { session } = useApp();
   // The drawer is counted in the gym's currency at its own precision.
@@ -92,8 +94,8 @@ export function OpenShiftDialog({
             {serverError ? <p role="alert" className="mt-2 text-[12.5px] text-danger">{serverError}</p> : null}
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending} data-testid="confirm-open-shift">Open shift</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
+            <Button type="submit" loading={mutation.isPending} data-testid="confirm-open-shift">{t("dashboard.reception.openShift")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -135,6 +137,7 @@ export function CloseShiftDialog({
   shift: CashShift;
   onClosed?: (shift: CashShift) => void;
 }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const currency = shift.openingFloat.currency;
   const [serverError, setServerError] = useState<string | null>(null);
@@ -263,9 +266,7 @@ export function CloseShiftDialog({
           {serverError ? <p role="alert" className="text-[12.5px] text-danger">{serverError}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
           <Button
             onClick={() => {
               setServerError(null);

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent } from "react";
 import { Reveal } from "@/components/marketing/reveal";
@@ -691,6 +692,7 @@ export function OperationalDay() {
 // ---------------------------------------------------------------------------
 
 export function AccountabilityLedger() {
+  const t = useT();
   return (
     <section
       id="accountability"
@@ -700,7 +702,7 @@ export function AccountabilityLedger() {
       className={cn(styles.coverSheet, styles.inkSheet, styles.layer5, styles.accountSection)}
     >
       <div className={styles.accountInner}>
-        <StoryMarker label="Accountability" dark />
+        <StoryMarker label={t("marketing.ops.accountability.label")} dark />
         <div className={styles.accountBody}>
           <div>
             <Reveal>
@@ -714,7 +716,7 @@ export function AccountabilityLedger() {
             <div className={styles.trail}>
               <div className={styles.trailHead}>
                 <span>One payment, as the owner sees it</span>
-                <span>Audit trail</span>
+                <span>{t("dashboard.manager.auditTrail")}</span>
               </div>
               {TRAIL.map((row, index) => (
                 <div key={row.key} className={styles.trailRow} style={{ "--row-delay": `${260 + index * 220}ms` } as CSSProperties}>

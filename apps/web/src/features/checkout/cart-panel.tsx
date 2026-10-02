@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronUp, Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
@@ -91,10 +92,11 @@ export function CartLines({ lines, inventory, currency, onQuantity, onRemove }: 
 }
 
 export function CartTotals({ total, itemCount }: { total: Money; itemCount: number }) {
+  const t = useT();
   return (
     <div className="border-t border-line bg-sunken/30 px-4 py-3">
       <div className="flex items-center justify-between text-[12.5px] text-ink-2"><span>{itemCount} {itemCount === 1 ? "item" : "items"}</span><MoneyText money={total} /></div>
-      <div className="mt-1 flex items-center justify-between text-[17px] font-semibold"><span>Total</span><MoneyText money={total} /></div>
+      <div className="mt-1 flex items-center justify-between text-[17px] font-semibold"><span>{t("common.label.total")}</span><MoneyText money={total} /></div>
     </div>
   );
 }

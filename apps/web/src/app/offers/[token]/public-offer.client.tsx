@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowLeft, Check, Clock3, ShieldCheck, X } from "lucide-react";
 import Image from "next/image";
@@ -19,6 +20,7 @@ import { formatMoney } from "@/lib/utils/money";
 type ResponseMode = OfferOutcome | undefined;
 
 export default function PublicOfferClient({ token }: { token: string }) {
+  const t = useT();
   const offerQuery = useApiQuery(qk.publicOffer(token), (api) => api.getPublicOffer(token), {
     retry: false,
     refetchInterval: (query) => query.state.data?.status === "preparing" ? 3_000 : false,
@@ -73,7 +75,7 @@ export default function PublicOfferClient({ token }: { token: string }) {
             <>
               <p className="text-[14px] text-ink-2">Prepared for <span className="font-semibold text-ink">{offer.recipientName}</span></p>
               <div className="mt-6 border-y border-line py-6">
-                <p className="context-label">Membership</p>
+                <p className="context-label">{t("memberProfile.followUp.membershipFallback")}</p>
                 <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
                   <h2 className="break-words text-[26px] font-semibold tracking-tight">{offer.planName}</h2>
                   <p className="text-[22px] font-semibold tabular">{formatMoney(offer.price)}</p>
@@ -98,7 +100,7 @@ export default function PublicOfferClient({ token }: { token: string }) {
           </DialogHeader>
           {mode === "declined" ? <DialogBody><label className="grid gap-2 text-[12.5px] font-medium">Note (optional)<Textarea rows={3} value={reason} onChange={(event) => setReason(event.target.value.slice(0, 240))} placeholder="Price, timing, plan, or something else…" /></label></DialogBody> : null}
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setMode(undefined)}>Go back</Button>
+            <Button type="button" variant="secondary" onClick={() => setMode(undefined)}>{t("common.action.goBack")}</Button>
             <Button type="button" loading={respond.isPending} onClick={() => mode && respond.mutate(mode)}>{mode === "accepted" ? <><Check /> Confirm acceptance</> : <><X /> Confirm decline</>}</Button>
           </DialogFooter>
         </DialogContent>
@@ -108,7 +110,8 @@ export default function PublicOfferClient({ token }: { token: string }) {
 }
 
 function OfferFrame({ children }: { children: React.ReactNode }) {
-  return <main className="min-h-screen bg-paper px-5 py-8 sm:px-8 sm:py-12"><div className="mx-auto mb-6 flex max-w-2xl items-center justify-between"><Link href="/" className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-ink-2 hover:text-ink"><ArrowLeft className="size-3.5" /> RIVET</Link><span className="text-[12px] font-medium text-ink-4">Secure page</span></div>{children}<p className="mx-auto mt-6 max-w-2xl text-center text-[12px] text-ink-4">Powered by RIVET · Gym revenue &amp; operations</p></main>;
+  const t = useT();
+  return <main className="min-h-screen bg-paper px-5 py-8 sm:px-8 sm:py-12"><div className="mx-auto mb-6 flex max-w-2xl items-center justify-between"><Link href="/" className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-ink-2 hover:text-ink"><ArrowLeft className="size-3.5" />{" "}{t("common.brand.name")}</Link><span className="text-[12px] font-medium text-ink-4">Secure page</span></div>{children}<p className="mx-auto mt-6 max-w-2xl text-center text-[12px] text-ink-4">Powered by RIVET · Gym revenue &amp; operations</p></main>;
 }
 
 function StatusCard({ icon: Icon, context, title, description, compact = false }: { icon: typeof Check; context: string; title: string; description: string; compact?: boolean }) {

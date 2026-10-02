@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowRight, CircleAlert } from "lucide-react";
 import Link from "next/link";
@@ -13,6 +14,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { formatMoney } from "@/lib/utils/money";
 
 export default function PlatformOverviewPage() {
+  const t = useT();
   const { platformSnapshot } = useExperience();
   // The platform snapshot is the authoritative tenant directory. The public
   // marketplace stream intentionally excludes hidden/suspended tenants and
@@ -43,18 +45,18 @@ export default function PlatformOverviewPage() {
       <div className="mt-5">{overview ? <AttentionStrip overview={overview} /> : <p className="text-[12.5px] text-ink-3" role="status">Loading the platform snapshot…</p>}</div>
 
       <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Network totals">
-        <PlatformPanel className="p-4"><Stat label="Active gyms" value={overview ? String(overview.gymCounts.active) : "—"} context={overview ? gymCountsDetail(overview.gymCounts) : "Loading"} /></PlatformPanel>
-        <PlatformPanel className="p-4"><Stat label="Active MRR" value={overview ? formatMoney(overview.activeMrr) : "—"} context={overview ? "Annual plans at their real monthly rate" : "Loading"} /></PlatformPanel>
-        <PlatformPanel className="p-4"><Stat label="Active members" value={overview ? overview.memberCount.toLocaleString() : "—"} context={overview ? `${overview.branchCount} branches · ${overview.activeStaffCount} staff` : "Loading"} /></PlatformPanel>
-        <PlatformPanel className="p-4"><Stat label="Open support cases" value={overview ? String(openCases) : "—"} context={overview ? urgentCases > 0 ? `${urgentCases} urgent` : "None urgent" : "Loading"} tone={urgentCases > 0 ? "warning" : undefined} /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label="Active gyms" value={overview ? String(overview.gymCounts.active) : "—"} context={overview ? gymCountsDetail(overview.gymCounts) : t("common.a11y.loading")} /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label="Active MRR" value={overview ? formatMoney(overview.activeMrr) : "—"} context={overview ? "Annual plans at their real monthly rate" : t("common.a11y.loading")} /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label={t("members.list.activeMembers")} value={overview ? overview.memberCount.toLocaleString() : "—"} context={overview ? `${overview.branchCount} branches · ${overview.activeStaffCount} staff` : t("common.a11y.loading")} /></PlatformPanel>
+        <PlatformPanel className="p-4"><Stat label="Open support cases" value={overview ? String(openCases) : "—"} context={overview ? urgentCases > 0 ? `${urgentCases} urgent` : "None urgent" : t("common.a11y.loading")} tone={urgentCases > 0 ? "warning" : undefined} /></PlatformPanel>
       </section>
 
       <PlatformPanel className="mt-5" aria-labelledby="billing-position-title">
         <PlatformPanelHeader id="billing-position-title" title="Billing position" description="Platform invoices across every gym." actions={<Button asChild variant="secondary" size="sm"><Link href="/platform/billing">Open billing <ArrowRight /></Link></Button>} />
         <div className="grid gap-4 px-4 py-4 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-line sm:px-5">
-          <Stat label="Collected" value={overview ? formatMoney(overview.invoiceTotals.collected) : "—"} className="sm:pe-5" />
-          <Stat label="Outstanding" value={overview ? formatMoney(overview.invoiceTotals.outstanding) : "—"} className="sm:px-5" />
-          <Stat label="Overdue" value={overview ? formatMoney(overview.invoiceTotals.overdue) : "—"} tone={overview?.invoiceTotals.overdue.amount ? "warning" : undefined} className="sm:ps-5" />
+          <Stat label={t("dashboard.owner.collected")} value={overview ? formatMoney(overview.invoiceTotals.collected) : "—"} className="sm:pe-5" />
+          <Stat label={t("marketing.device.kpi.outstanding")} value={overview ? formatMoney(overview.invoiceTotals.outstanding) : "—"} className="sm:px-5" />
+          <Stat label={t("dashboard.owner.overdueCol")} value={overview ? formatMoney(overview.invoiceTotals.overdue) : "—"} tone={overview?.invoiceTotals.overdue.amount ? "warning" : undefined} className="sm:ps-5" />
         </div>
         <div className="border-t border-line px-4 py-4 sm:px-5">
           <ContextLabel as="h3">Monthly invoice history</ContextLabel>
@@ -65,7 +67,7 @@ export default function PlatformOverviewPage() {
                   <span className="font-medium">{displayMonth(month.month)}</span>
                   <span className="text-end tabular text-ink-2 sm:col-start-2">{formatMoney(month.issued)} issued</span>
                   <span className="text-end tabular text-success-deep sm:col-start-3">{formatMoney(month.collected)} paid</span>
-                  <span className="text-end tabular text-warning-deep sm:col-start-4">{formatMoney(month.outstanding)} due</span>
+                  <span className="text-end tabular text-warning-deep sm:col-start-4">{formatMoney(month.outstanding)}{" "}{t("memberProfile.relatedTask.due")}</span>
                 </div>
               ))}
             </div>
@@ -75,7 +77,7 @@ export default function PlatformOverviewPage() {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.45fr_0.9fr]">
         <PlatformPanel aria-labelledby="subscribed-gyms-title">
-          <PlatformPanelHeader id="subscribed-gyms-title" title="Subscribed gyms" actions={<Button asChild variant="ghost" size="sm"><Link href="/platform/gyms">View all <ArrowRight /></Link></Button>} />
+          <PlatformPanelHeader id="subscribed-gyms-title" title="Subscribed gyms" actions={<Button asChild variant="ghost" size="sm"><Link href="/platform/gyms">{t("common.action.viewAll")}{" "}<ArrowRight /></Link></Button>} />
           <div className="divide-y divide-line">
             {directoryGyms.length ? directoryGyms.map((gym) => (
               <Link key={gym.id} href={`/platform/gyms/${gym.id}`} className="grid grid-cols-[1fr_auto] items-center gap-4 px-4 py-3 transition-colors hover:bg-sunken/60 sm:grid-cols-[1fr_110px_90px_auto] sm:px-5">
@@ -132,6 +134,7 @@ function gymCountsDetail(counts: { trial: number; past_due: number; suspended: n
 
 /** Only work that actually needs the operator, ahead of the healthy totals; quiet when there is none. */
 function AttentionStrip({ overview }: { overview: PlatformOverview }) {
+  const t = useT();
   const items = [
     { count: overview.pendingApplications, one: "application awaiting review", many: "applications awaiting review", href: "/platform/applications?status=pending" },
     { count: overview.provisioningFailures, one: "provisioning failure", many: "provisioning failures", href: "/platform/applications?status=approved" },
@@ -141,7 +144,7 @@ function AttentionStrip({ overview }: { overview: PlatformOverview }) {
   ].filter((item) => item.count > 0).map((item) => ({ ...item, label: item.count === 1 ? item.one : item.many }));
   if (items.length === 0) return <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2" role="status">Nothing needs your attention right now.</p>;
   return (
-    <section className="flex flex-wrap gap-2" aria-label="Needs attention">
+    <section className="flex flex-wrap gap-2" aria-label={t("marketing.device.needsAttention")}>
       {items.map((item) => (
         <Link key={item.label} href={item.href} data-touch-target className="inline-flex items-center gap-2 rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12.5px] font-medium text-warning-deep transition-colors hover:border-warning">
           <CircleAlert className="size-3.5" aria-hidden />{item.count} {item.label}

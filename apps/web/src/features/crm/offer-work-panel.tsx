@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check, Clock3, Copy, Link2, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -30,6 +31,7 @@ interface OfferWorkPanelProps {
 }
 
 export function OfferWorkPanel(props: OfferWorkPanelProps) {
+  const t = useT();
   const invalidate = useInvalidate();
   const [open, setOpen] = useState(false);
   const activePlans = useMemo(() => props.plans.filter((plan) => plan.status === "active"), [props.plans]);
@@ -79,9 +81,9 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
             <DialogDescription>Choose the plan, the price and how long the offer lasts. Nobody sees the link until you share it.</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
-            <Field label="Membership plan" required>
+            <Field label={t("crm.lead.membership.planLabel")} required>
               <Select value={planId} onValueChange={(value) => { setPlanId(value); const plan = activePlans.find((item) => item.id === value); if (plan) setPrice(toMajorString(plan.basePrice)); }}>
-                <SelectTrigger aria-label="Offer membership plan"><SelectValue placeholder="Choose a plan" /></SelectTrigger>
+                <SelectTrigger aria-label="Offer membership plan"><SelectValue placeholder={t("renewFlow.sale.errors.choosePlan")} /></SelectTrigger>
                 <SelectContent>{activePlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · {formatMoney(plan.basePrice)}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
@@ -90,7 +92,7 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
               <Field label="Ends after (days)" hint="1 to 60 days"><Input type="number" min="1" max="60" value={expiresInDays} onChange={(event) => setExpiresInDays(event.target.value)} /></Field>
             </FieldGrid>
           </DialogBody>
-          <DialogFooter><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button type="button" loading={create.isPending} disabled={!planId || !priceRead.ok || Number(expiresInDays) < 1 || Number(expiresInDays) > 60} onClick={() => create.mutate()}><Link2 /> Create link</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="secondary" onClick={() => setOpen(false)}>{t("common.action.cancel")}</Button><Button type="button" loading={create.isPending} disabled={!planId || !priceRead.ok || Number(expiresInDays) < 1 || Number(expiresInDays) > 60} onClick={() => create.mutate()}><Link2 /> Create link</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </section>

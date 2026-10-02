@@ -1,40 +1,33 @@
 import type { domain as EnDomain } from "../en/domain";
 
-/**
- * Status words are read at speed by a receptionist with a member waiting, so
- * they are short. Membership statuses agree with the feminine noun عضوية.
- * Most entries come from origin/arabic-localisation; the lead stages won/lost
- * and the check-in decisions were re-translated because the English changed in
- * the plain-language pass (Sold / Not sold, Refused / Let in anyway).
- * See docs/arabic/GLOSSARY.md.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const domain: typeof EnDomain = {
   membershipStatus: {
-    active: "سارية",
+    active: "فعّال",
     expiring: "تنتهي قريبًا",
-    frozen: "مجمّدة",
-    expired: "منتهية",
-    cancelled: "ملغاة",
+    frozen: "مجمّد",
+    expired: "منتهي",
+    cancelled: "ملغي",
     depleted: "استُنفدت الزيارات",
-    scheduled: "لم تبدأ بعد",
-    none: "لا توجد عضوية",
+    scheduled: "اشتراك قادم",
+    none: "لا يوجد اشتراك فعّال حاليًا.",
   },
   paymentStatus: {
     paid: "مدفوع",
     partial: "مدفوع جزئيًا",
     unpaid: "غير مدفوع",
     refunded: "مُسترد",
-    void: "ملغى",
+    void: "ملغي",
   },
   transactionStatus: {
     completed: "مكتملة",
-    voided: "ملغاة",
+    voided: "ملغي",
     refunded: "مستردة",
     partially_refunded: "مستردة جزئيًا",
   },
   transactionType: {
     payment: "دفعة",
-    refund: "استرداد",
+    refund: "استرداد المبلغ",
     void: "دفعة ملغاة",
     retail_sale: "بيع بالتجزئة",
   },
@@ -52,11 +45,11 @@ export const domain: typeof EnDomain = {
     allowed: "مسموح",
     warning: "تنبيه",
     blocked: "مرفوض",
-    overridden: "سُمح بالدخول رغم ذلك",
+    overridden: "السماح بالدخول استثنائيًا",
   },
   leadSource: {
     instagram: "إنستغرام",
-    walk_in: "زيارة مباشرة",
+    walk_in: "زيارة دون موعد",
     referral: "ترشيح",
     whatsapp: "واتساب",
     google: "جوجل",
@@ -64,18 +57,18 @@ export const domain: typeof EnDomain = {
     other: "أخرى",
   },
   paymentMethod: {
-    cash: "نقدًا",
+    cash: "كاش",
     card: "بطاقة",
     bank_transfer: "حوالة بنكية",
     cliq: "كليك",
     other: "أخرى",
   },
   role: {
-    owner: "المالك",
+    owner: "مالك النادي",
     manager: "المدير",
     salesperson: "المبيعات",
     receptionist: "الاستقبال",
-    trainer: "المدرّب",
+    trainer: "مدرّب",
     auditor: "المدقّق",
   },
 };

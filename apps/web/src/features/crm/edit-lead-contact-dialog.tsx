@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
@@ -36,6 +37,7 @@ export function EditLeadContactDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<FormValues>({
@@ -78,20 +80,20 @@ export function EditLeadContactDialog({
         </DialogHeader>
         <form onSubmit={form.handleSubmit((values) => { setServerError(null); mutation.mutate(values); })}>
           <DialogBody className="space-y-4">
-            <Field label="Full name" required error={form.formState.errors.fullName?.message}>
+            <Field label={t("common.label.fullName")} required error={form.formState.errors.fullName?.message}>
               <Input autoFocus {...form.register("fullName")} />
             </Field>
-            <Field label="Phone" required error={form.formState.errors.phone?.message}>
+            <Field label={t("common.label.phone")} required error={form.formState.errors.phone?.message}>
               <Input type="tel" autoComplete="tel" dir="ltr" {...form.register("phone")} />
             </Field>
-            <Field label="Email" hint="Optional. Leave empty to remove it." error={form.formState.errors.email?.message}>
+            <Field label={t("common.label.email")} hint="Optional. Leave empty to remove it." error={form.formState.errors.email?.message}>
               <Input type="email" autoComplete="email" {...form.register("email")} />
             </Field>
             {form.formState.isDirty ? <p role="status" className="text-[12px] text-ink-3">Changes not saved yet</p> : null}
             {serverError ? <p role="alert" className="text-[12.5px] text-danger">{serverError}</p> : null}
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="secondary" disabled={mutation.isPending} onClick={() => close(false)}>Cancel</Button>
+            <Button type="button" variant="secondary" disabled={mutation.isPending} onClick={() => close(false)}>{t("common.action.cancel")}</Button>
             <Button type="submit" loading={mutation.isPending} disabled={!form.formState.isDirty}>Save contact</Button>
           </DialogFooter>
         </form>

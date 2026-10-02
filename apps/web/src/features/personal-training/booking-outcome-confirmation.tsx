@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ export function BookingOutcomeConfirmation({
   onOpenChange: (open: boolean) => void;
   onConfirm: (input: { booking: PtBooking; action: PtBookingOutcomeAction; reason?: string; cancelledByGym: boolean }) => void;
 }) {
+  const t = useT();
   const [reason, setReason] = useState("");
   const [byGym, setByGym] = useState(cancelledByGym);
   useEffect(() => { if (open) { setReason(""); setByGym(cancelledByGym); } }, [open, booking?.id, action, cancelledByGym]);
@@ -59,8 +61,8 @@ export function BookingOutcomeConfirmation({
         <DialogHeader><DialogTitle>{TITLE[action]}</DialogTitle><DialogDescription>Check the details, then confirm.</DialogDescription></DialogHeader>
         <DialogBody className="space-y-4">
           <dl className="grid gap-3 rounded-md border border-line bg-sunken p-3 text-[12px] sm:grid-cols-2">
-            <div><dt className="context-label">Member</dt><dd className="mt-1 font-medium text-ink">{booking.memberName}</dd></div>
-            <div><dt className="context-label">Trainer</dt><dd className="mt-1 font-medium text-ink">{booking.trainerName}</dd></div>
+            <div><dt className="context-label">{t("palette.kind.member")}</dt><dd className="mt-1 font-medium text-ink">{booking.memberName}</dd></div>
+            <div><dt className="context-label">{t("members.tabs.pt.trainer")}</dt><dd className="mt-1 font-medium text-ink">{booking.trainerName}</dd></div>
             <div className="sm:col-span-2"><dt className="context-label">Session time</dt><dd className="mt-1 font-medium text-ink">{formatDateTime(booking.startsAt)} · {booking.branchName}</dd></div>
           </dl>
           {action === "cancelled" && allowCancellationChoice ? (
@@ -70,9 +72,9 @@ export function BookingOutcomeConfirmation({
             </RadioGroup>
           ) : null}
           <p className={consequence.effect === "consume" ? "rounded-md border border-warning/30 bg-warning-bg p-3 text-[12px] text-warning-deep" : "rounded-md border border-success/30 bg-success-bg p-3 text-[12px] text-success-deep"} role="status">{consequence.text}</p>
-          {reasonRequired ? <Field label={action === "no_show" ? "No-show reason" : "Cancellation reason"} htmlFor={reasonId} required><Textarea id={reasonId} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={action === "no_show" ? "What happened?" : byGym ? "Why is the gym cancelling this session?" : "What did the member say?"} /></Field> : <p className="text-[12px] text-ink-3">No reason is needed to complete a session.</p>}
+          {reasonRequired ? <Field label={action === "no_show" ? "No-show reason" : "Cancellation reason"} htmlFor={reasonId} required><Textarea id={reasonId} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={action === "no_show" ? t("memberProfile.contact.whatHappened") : byGym ? "Why is the gym cancelling this session?" : "What did the member say?"} /></Field> : <p className="text-[12px] text-ink-3">No reason is needed to complete a session.</p>}
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Back</Button><Button variant={action === "completed" ? "primary" : action === "cancelled" ? "danger" : "secondary"} loading={pending} disabled={reasonRequired && reason.trim().length < 3} onClick={() => onConfirm({ booking, action, reason: reason.trim() || undefined, cancelledByGym: action === "cancelled" && byGym })}>{ACTION[action]}</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.back")}</Button><Button variant={action === "completed" ? "primary" : action === "cancelled" ? "danger" : "secondary"} loading={pending} disabled={reasonRequired && reason.trim().length < 3} onClick={() => onConfirm({ booking, action, reason: reason.trim() || undefined, cancelledByGym: action === "cancelled" && byGym })}>{ACTION[action]}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

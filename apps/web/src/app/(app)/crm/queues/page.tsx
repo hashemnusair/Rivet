@@ -63,7 +63,7 @@ function RetentionWorkspace() {
   return <div className="space-y-4">
     <PageHeader title={t("crm.queues.title")} description="Call members who stopped coming or need to renew." />
     <div className={tabListClassName} role="group" aria-label="Follow-up lists">
-      <button type="button" aria-pressed={view === "at-risk"} onClick={() => setView("at-risk")} className={tabTriggerClassName}><Activity className="size-3.5" /> At risk</button>
+      <button type="button" aria-pressed={view === "at-risk"} onClick={() => setView("at-risk")} className={tabTriggerClassName}><Activity className="size-3.5" />{" "}{t("dashboard.today.kind.at_risk")}</button>
       <button type="button" aria-pressed={view === "renewals"} onClick={() => setView("renewals")} className={tabTriggerClassName}><CalendarClock className="size-3.5" />{" "}{t("dashboard.owner.renewalsCol")}</button>
     </div>
     {view === "at-risk" ? <AtRiskQueuePage /> : <RenewalQueuePage />}
@@ -146,7 +146,7 @@ function MissingSelectionNotice({ memberId, onClear }: { memberId: string; onCle
     </div>
     <div className="flex flex-wrap gap-2">
       <Button asChild size="sm"><Link href={`/members/${memberId}`}>{t("crm.queues.openMemberRecord")}{" "}<ArrowUpRight /></Link></Button>
-      <Button type="button" variant="ghost" size="sm" onClick={onClear}>Clear selection</Button>
+      <Button type="button" variant="ghost" size="sm" onClick={onClear}>{t("members.list.clearSelection")}</Button>
     </div>
   </aside>;
 }
@@ -175,18 +175,18 @@ function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: 
       {lapsedSnooze ? <p className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] leading-relaxed text-ink-2" data-testid="at-risk-lapsed-snooze">Hidden until {formatDate(lapsedSnooze)}, and back on this list since then. The note is on the timeline.</p> : null}
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]">
         <ContextRow label={t("crm.lead.membership.plan")}>{item.membership.planName}</ContextRow>
-        <ContextRow label="Membership ends">{formatDate(item.membership.endDate)}</ContextRow>
+        <ContextRow label={t("members.list.columns.expiry")}>{formatDate(item.membership.endDate)}</ContextRow>
         <ContextRow label="Last visit">{item.lastVisitAt ? <RelativeText iso={item.lastVisitAt} /> : "No visits recorded"}</ContextRow>
         <ContextRow label={t("crm.queues.lastContact")}>{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">Not contacted yet</span>}</ContextRow>
-        {item.membership.outstanding.amount > 0 ? <ContextRow label="Owes"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}
+        {item.membership.outstanding.amount > 0 ? <ContextRow label={t("members.list.columns.balance")}><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}
       </dl>
     </div>
     <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3" aria-label="Follow-up actions">
       <Button asChild variant="secondary" size="sm"><a href={`tel:${item.member.phone}`}><PhoneCall /> Call</a></Button>
       <WhatsAppHandoff subject="member" subjectId={item.member.id} recipientName={item.member.fullName} phone={item.member.phone} initialMessage={initialMessage} onLogged={onClose} />
       <LogContactDialog subject="member" memberId={item.member.id} onLogged={onClose} />
-      {needsRenewal && canSell ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=renew`}><RotateCcw /> Renew</Link></Button> : null}
-      {item.membership.outstanding.amount > 0 && canCollect ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=collect`}><Banknote /> Collect payment</Link></Button> : null}
+      {needsRenewal && canSell ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=renew`}><RotateCcw />{" "}{t("memberProfile.header.renew")}</Link></Button> : null}
+      {item.membership.outstanding.amount > 0 && canCollect ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=collect`}><Banknote />{" "}{t("renewFlow.payment.collectPlain")}</Link></Button> : null}
       <SnoozeRiskDialog item={item} onSnoozed={onClose} />
     </footer>
   </aside>;
@@ -205,7 +205,7 @@ function SnoozeRiskDialog({ item, onSnoozed }: { item: AtRiskMemberItem; onSnooz
     setReason("");
   }, [item.member.id, item.recommendedSnoozeDays, today]);
   const snooze = useApiMutation((api) => api.snoozeAtRiskMember({ memberId: item.member.id, until, reason: reason.trim() || undefined }), { onSuccess: async () => { toast.success(`Hidden until ${formatDate(until)}.`); setOpen(false); await invalidate(); onSnoozed(); }, onError: () => toast.error("Not saved. Try again.") });
-  return <><Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}><CalendarClock /> Remind me later</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Remind me later</DialogTitle><DialogDescription>{item.member.fullName} leaves this list until the date you choose. This is noted on their timeline.</DialogDescription></DialogHeader><DialogBody className="space-y-3"><label htmlFor="risk-snooze-until" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Show again on<Input id="risk-snooze-until" type="date" min={addDays(today, 1)} max={addDays(today, 90)} value={until} onChange={(event) => setUntil(event.target.value)} /></label><label htmlFor="risk-snooze-reason" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Note <span className="font-normal text-ink-4">{t("common.state.optional")}</span><Input id="risk-snooze-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travelling, asked us to call next week…" /></label></DialogBody><DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t("common.action.cancel")}</Button><Button type="button" loading={snooze.isPending} disabled={!until} onClick={() => snooze.mutate()}>Hide until then</Button></DialogFooter></DialogContent></Dialog></>;
+  return <><Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}><CalendarClock /> Remind me later</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Remind me later</DialogTitle><DialogDescription>{item.member.fullName} leaves this list until the date you choose. This is noted on their timeline.</DialogDescription></DialogHeader><DialogBody className="space-y-3"><label htmlFor="risk-snooze-until" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Show again on<Input id="risk-snooze-until" type="date" min={addDays(today, 1)} max={addDays(today, 90)} value={until} onChange={(event) => setUntil(event.target.value)} /></label><label htmlFor="risk-snooze-reason" className="grid gap-1.5 text-[12px] font-medium text-ink-2">{t("memberProfile.followUp.evidenceKind.note")}{" "}<span className="font-normal text-ink-4">{t("common.state.optional")}</span><Input id="risk-snooze-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travelling, asked us to call next week…" /></label></DialogBody><DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t("common.action.cancel")}</Button><Button type="button" loading={snooze.isPending} disabled={!until} onClick={() => snooze.mutate()}>Hide until then</Button></DialogFooter></DialogContent></Dialog></>;
 }
 
 function RenewalQueuePage() {
@@ -318,8 +318,8 @@ function RenewalQueuePage() {
           <Button asChild variant="secondary" size="sm"><a href={`tel:${selectedItem.member.phone}`}><PhoneCall /> Call</a></Button>
           <WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} />
           <LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} />
-          {(session?.permissions ?? []).includes("memberships.sell") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=renew`}><RotateCcw /> Renew</Link></Button> : null}
-          {selectedItem.membership.outstanding.amount > 0 && (session?.permissions ?? []).includes("payments.collect") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=collect`}><Banknote /> Collect payment</Link></Button> : null}
+          {(session?.permissions ?? []).includes("memberships.sell") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=renew`}><RotateCcw />{" "}{t("memberProfile.header.renew")}</Link></Button> : null}
+          {selectedItem.membership.outstanding.amount > 0 && (session?.permissions ?? []).includes("payments.collect") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=collect`}><Banknote />{" "}{t("renewFlow.payment.collectPlain")}</Link></Button> : null}
         </footer>
         </aside> : null}
       </div>
@@ -337,7 +337,7 @@ function EmptyQueue({ text, description, onReset }: { text: string; description:
 
 function RenewalContext({ item }: { item: RenewalQueueItem }) {
   const t = useT();
-  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label={t("crm.lead.membership.plan")}>{item.membership.planName}</ContextRow><ContextRow label={t("crm.queues.ends")}><span className="tabular">{formatDate(item.membership.endDate)}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Owes"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label={t("crm.queues.lastContact")}>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></ContextRow> : <ContextRow label={t("crm.queues.lastContact")}><span className="font-medium text-warning-deep">Not contacted yet</span></ContextRow>}</dl>;
+  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label={t("crm.lead.membership.plan")}>{item.membership.planName}</ContextRow><ContextRow label={t("crm.queues.ends")}><span className="tabular">{formatDate(item.membership.endDate)}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label={t("members.list.columns.balance")}><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label={t("crm.queues.lastContact")}>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></ContextRow> : <ContextRow label={t("crm.queues.lastContact")}><span className="font-medium text-warning-deep">Not contacted yet</span></ContextRow>}</dl>;
 }
 
 function FollowUpHeader({ member, onClose }: { member: { id: string; fullName: string; phone: string }; onClose: () => void }) {

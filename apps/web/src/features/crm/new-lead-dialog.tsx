@@ -162,7 +162,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="none">Choose branch</SelectItem>
+                            <SelectItem value="none">{t("members.bulk.chooseBranch")}</SelectItem>
                             {session?.branches.map((b) => (
                               <SelectItem key={b.id} value={b.id}>
                                 {b.name}

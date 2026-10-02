@@ -1,0 +1,5706 @@
+{
+  "catalogVersion": "2026-09-30-v1",
+  "revision": 607,
+  "note": "Implementation tracking only; does not modify the locked approval evidence. A mapped key does not certify a complete workflow.",
+  "decisions": [
+    {
+      "id": "voice",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "buttons",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "address",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "digits",
+      "keys": [],
+      "rules": [
+        "apps/web/src/lib/i18n/format.test.ts",
+        "apps/web/src/lib/utils/text.test.ts"
+      ],
+      "candidateOccurrences": [],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "calendar",
+      "keys": [],
+      "rules": [
+        "apps/web/src/lib/i18n/format.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/marketing/landing-story.tsx",
+          "line": 78
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "months",
+      "keys": [],
+      "rules": [
+        "apps/web/src/lib/i18n/format.test.ts"
+      ],
+      "candidateOccurrences": [],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "money-format",
+      "keys": [],
+      "rules": [
+        "apps/web/src/lib/i18n/format.test.ts"
+      ],
+      "candidateOccurrences": [],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "time-format",
+      "keys": [],
+      "rules": [
+        "apps/web/src/lib/i18n/format.test.ts"
+      ],
+      "candidateOccurrences": [],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "brand",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "english-terms",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "plural",
+      "keys": [],
+      "rules": [
+        "apps/web/src/lib/i18n/dictionary.test.ts"
+      ],
+      "candidateOccurrences": [],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "politeness",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "dashboard",
+      "keys": [
+        "nav.item.dashboard"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 219
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 63
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 140
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 47
+        },
+        {
+          "path": "apps/web/src/lib/auth/public-viewer.ts",
+          "line": 31
+        },
+        {
+          "path": "apps/web/src/lib/auth/public-viewer.ts",
+          "line": 36
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 18
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5030
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 37
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "reception",
+      "keys": [
+        "domain.role.receptionist",
+        "marketing.ops.reception.label",
+        "nav.item.reception"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 38
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 219
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 219
+        },
+        {
+          "path": "apps/web/src/components/marketing/landing-story.tsx",
+          "line": 25
+        },
+        {
+          "path": "apps/web/src/components/marketing/landing-story.tsx",
+          "line": 44
+        },
+        {
+          "path": "apps/web/src/components/marketing/landing-story.tsx",
+          "line": 56
+        },
+        {
+          "path": "apps/web/src/components/marketing/landing-story.tsx",
+          "line": 62
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 67
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 53
+        },
+        {
+          "path": "apps/web/src/features/branch-ops/handover-groups.tsx",
+          "line": 14
+        },
+        {
+          "path": "apps/web/src/features/settings/checklists-section.tsx",
+          "line": 26
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 264
+        },
+        {
+          "path": "apps/web/src/lib/auth/public-viewer.ts",
+          "line": 32
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 128
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 146
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 73
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 200
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 19
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5031
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 38
+        },
+        {
+          "path": "apps/web/convex/permissions.ts",
+          "line": 95
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "needs-attention",
+      "keys": [
+        "dashboard.owner.needsAttention",
+        "dashboard.needsAttention.title",
+        "marketing.device.needsAttention"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 169
+        },
+        {
+          "path": "apps/web/src/app/platform/applications/page.tsx",
+          "line": 260
+        },
+        {
+          "path": "apps/web/src/app/platform/page.tsx",
+          "line": 144
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 263
+        },
+        {
+          "path": "apps/web/src/features/automations/automation-monitoring.client.tsx",
+          "line": 49
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/dashboard.ts",
+          "line": 63
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/dashboard.ts",
+          "line": 87
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 58
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "members",
+      "keys": [
+        "marketing.footer.members",
+        "members.list.title",
+        "members.list.listLabel",
+        "nav.item.members",
+        "palette.groups.members"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/audit/page.tsx",
+          "line": 24
+        },
+        {
+          "path": "apps/web/src/app/(app)/exports/export-center.client.tsx",
+          "line": 21
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/duplicates/page.tsx",
+          "line": 56
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 224
+        },
+        {
+          "path": "apps/web/src/app/customer/discover/page.tsx",
+          "line": 136
+        },
+        {
+          "path": "apps/web/src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+          "line": 191
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 158
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 219
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 32
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 70
+        },
+        {
+          "path": "apps/web/src/components/public/public-footer.tsx",
+          "line": 60
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 56
+        },
+        {
+          "path": "apps/web/src/features/legal/terms-of-service.tsx",
+          "line": 23
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 250
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 266
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 282
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 10
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 12
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 22
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 24
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5032
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 41
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "membership",
+      "keys": [
+        "crm.lead.membership.heading",
+        "marketing.vocabulary.membership",
+        "marketing.loop.stages.membership.label",
+        "marketing.member.card.membershipLabel",
+        "memberProfile.followUp.membershipFallback"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 287
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 294
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/new/quick-membership-step.tsx",
+          "line": 126
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/new/quick-membership-step.tsx",
+          "line": 132
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/new/quick-membership-step.tsx",
+          "line": 216
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 152
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 159
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/page.tsx",
+          "line": 133
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 221
+        },
+        {
+          "path": "apps/web/src/app/offers/[token]/public-offer.client.tsx",
+          "line": 76
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 485
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 345
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/crm.ts",
+          "line": 129
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 113
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 167
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 233
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 339
+        },
+        {
+          "path": "apps/web/convex/automations.ts",
+          "line": 142
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 2808
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 3747
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4923
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 11890
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 12213
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "plans",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/plans/page.tsx",
+          "line": 57
+        },
+        {
+          "path": "apps/web/src/app/(app)/plans/page.tsx",
+          "line": 109
+        },
+        {
+          "path": "apps/web/src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+          "line": 227
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 64
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "branch",
+      "keys": [
+        "common.label.branch",
+        "crm.newLead.branch",
+        "members.list.columns.branch",
+        "members.tabs.checkIns.branch",
+        "reception.activity.branch"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 74
+        },
+        {
+          "path": "apps/web/src/app/(app)/classes/page.tsx",
+          "line": 330
+        },
+        {
+          "path": "apps/web/src/app/(app)/exports/export-center.client.tsx",
+          "line": 31
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 261
+        },
+        {
+          "path": "apps/web/src/app/(app)/memberships/page.tsx",
+          "line": 147
+        },
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 231
+        },
+        {
+          "path": "apps/web/src/app/(app)/reports/page.tsx",
+          "line": 141
+        },
+        {
+          "path": "apps/web/src/app/(app)/reports/page.tsx",
+          "line": 210
+        },
+        {
+          "path": "apps/web/src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+          "line": 333
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 207
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 547
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 547
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 685
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 175
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 483
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 175
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 319
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 411
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 607
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 607
+        },
+        {
+          "path": "apps/web/src/features/operations/maintenance-workspace.tsx",
+          "line": 41
+        },
+        {
+          "path": "apps/web/src/features/operations/maintenance-workspace.tsx",
+          "line": 45
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-export.ts",
+          "line": 21
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-export.ts",
+          "line": 28
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-export.ts",
+          "line": 54
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 127
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 160
+        },
+        {
+          "path": "apps/web/src/features/operations/stock-purchasing-workspace.tsx",
+          "line": 129
+        },
+        {
+          "path": "apps/web/src/features/operations/stock-purchasing-workspace.tsx",
+          "line": 132
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 371
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 371
+        },
+        {
+          "path": "apps/web/src/features/reports/report-scope.tsx",
+          "line": 123
+        },
+        {
+          "path": "apps/web/src/features/settings/checklists-section.tsx",
+          "line": 134
+        },
+        {
+          "path": "apps/web/src/features/settings/operational-settings-sections.tsx",
+          "line": 459
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 341
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 106
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/crm.ts",
+          "line": 65
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 48
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 240
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/reception.ts",
+          "line": 22
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 3949
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4568
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4569
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4570
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4573
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4664
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4689
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4734
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4785
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5013
+        },
+        {
+          "path": "apps/web/convex/payables.ts",
+          "line": 517
+        },
+        {
+          "path": "apps/web/convex/payables.ts",
+          "line": 546
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "workspace",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/support/page.tsx",
+          "line": 79
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/page.tsx",
+          "line": 102
+        },
+        {
+          "path": "apps/web/src/app/signup/page.tsx",
+          "line": 217
+        },
+        {
+          "path": "apps/web/src/features/settings/brand-kit-section.tsx",
+          "line": 205
+        },
+        {
+          "path": "apps/web/convex/messagingWorker.ts",
+          "line": 68
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "staff",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/payments/page.tsx",
+          "line": 168
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 427
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 453
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-page-inner.tsx",
+          "line": 72
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 467
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 474
+        },
+        {
+          "path": "apps/web/convex/payables.ts",
+          "line": 529
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "settings",
+      "keys": [
+        "nav.item.settings",
+        "shell.account.settings"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/audit/page.tsx",
+          "line": 34
+        },
+        {
+          "path": "apps/web/src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+          "line": 152
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 34
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 85
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 92
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-page-inner.tsx",
+          "line": 202
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 34
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/shell.ts",
+          "line": 19
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5042
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "activity-log",
+      "keys": [
+        "nav.item.activityLog",
+        "nav.item.auditLog"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/audit/page.tsx",
+          "line": 130
+        },
+        {
+          "path": "apps/web/src/app/(app)/exports/export-center.client.tsx",
+          "line": 27
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 82
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 89
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 461
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 31
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4560
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5037
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 59
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "downloads",
+      "keys": [
+        "nav.item.downloads"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/exports/export-center.client.tsx",
+          "line": 63
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 83
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 90
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 32
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5036
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 61
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "getting-started",
+      "keys": [
+        "shell.account.gettingStarted"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/public/public-shell.tsx",
+          "line": 66
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/shell.ts",
+          "line": 20
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 63
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "search",
+      "keys": [
+        "members.list.search.label",
+        "members.list.searchLabel"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 162
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 476
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 20
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 72
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "save",
+      "keys": [
+        "common.action.save",
+        "common.action.saveChanges"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+          "line": 143
+        },
+        {
+          "path": "apps/web/src/features/operations/inventory-tab.tsx",
+          "line": 35
+        },
+        {
+          "path": "apps/web/src/features/operations/purchasing-tabs.tsx",
+          "line": 33
+        },
+        {
+          "path": "apps/web/src/features/plans/plan-form-dialog.tsx",
+          "line": 240
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-layout.tsx",
+          "line": 128
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 434
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 14
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cancel",
+      "keys": [
+        "common.action.cancel"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/automations/[ruleId]/rule-editor.client.tsx",
+          "line": 293
+        },
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 220
+        },
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 266
+        },
+        {
+          "path": "apps/web/src/app/(app)/classes/page.tsx",
+          "line": 478
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/duplicates/page.tsx",
+          "line": 60
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 263
+        },
+        {
+          "path": "apps/web/src/app/(app)/memberships/page.tsx",
+          "line": 269
+        },
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 84
+        },
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 122
+        },
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 170
+        },
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 216
+        },
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 231
+        },
+        {
+          "path": "apps/web/src/app/(app)/support/page.tsx",
+          "line": 112
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 433
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 764
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 879
+        },
+        {
+          "path": "apps/web/src/app/platform/agreements/platform-agreements.client.tsx",
+          "line": 207
+        },
+        {
+          "path": "apps/web/src/app/platform/agreements/platform-agreements.client.tsx",
+          "line": 241
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/bill-gym-wizard.tsx",
+          "line": 212
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/gym-subscriptions.tsx",
+          "line": 68
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/page.tsx",
+          "line": 261
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/page.tsx",
+          "line": 313
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 290
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 333
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 352
+        },
+        {
+          "path": "apps/web/src/app/platform/subscriptions/page.tsx",
+          "line": 205
+        },
+        {
+          "path": "apps/web/src/app/platform/support/page.tsx",
+          "line": 157
+        },
+        {
+          "path": "apps/web/src/features/checklists/checklist-assignment.tsx",
+          "line": 32
+        },
+        {
+          "path": "apps/web/src/features/crm/edit-lead-contact-dialog.tsx",
+          "line": 94
+        },
+        {
+          "path": "apps/web/src/features/crm/offer-work-panel.tsx",
+          "line": 93
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 228
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 347
+        },
+        {
+          "path": "apps/web/src/features/finance/shift-dialogs.tsx",
+          "line": 95
+        },
+        {
+          "path": "apps/web/src/features/finance/shift-dialogs.tsx",
+          "line": 267
+        },
+        {
+          "path": "apps/web/src/features/operations/facility-task-workspace.tsx",
+          "line": 110
+        },
+        {
+          "path": "apps/web/src/features/operations/inventory-tab.tsx",
+          "line": 72
+        },
+        {
+          "path": "apps/web/src/features/operations/operations-shared.tsx",
+          "line": 114
+        },
+        {
+          "path": "apps/web/src/features/operations/operations-shared.tsx",
+          "line": 143
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/record-supplier-payment-dialog.tsx",
+          "line": 228
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/supplier-payment-history-dialog.tsx",
+          "line": 52
+        },
+        {
+          "path": "apps/web/src/features/operations/purchase-order-delivery-date.tsx",
+          "line": 23
+        },
+        {
+          "path": "apps/web/src/features/plans/plan-form-dialog.tsx",
+          "line": 237
+        },
+        {
+          "path": "apps/web/src/features/reception/reception-dialogs.tsx",
+          "line": 108
+        },
+        {
+          "path": "apps/web/src/features/settings/checklists-section.tsx",
+          "line": 237
+        },
+        {
+          "path": "apps/web/src/features/settings/gym-public-profile-section.tsx",
+          "line": 402
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 242
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 433
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 632
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 690
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 15
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "remove",
+      "keys": [
+        "common.action.remove"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/classes/page.tsx",
+          "line": 487
+        },
+        {
+          "path": "apps/web/src/app/(app)/classes/page.tsx",
+          "line": 555
+        },
+        {
+          "path": "apps/web/src/features/checkout/customer-attach.tsx",
+          "line": 72
+        },
+        {
+          "path": "apps/web/src/features/settings/brand-kit-section.tsx",
+          "line": 187
+        },
+        {
+          "path": "apps/web/src/features/settings/gym-public-profile-section.tsx",
+          "line": 432
+        },
+        {
+          "path": "apps/web/src/features/settings/gym-public-profile-section.tsx",
+          "line": 434
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 24
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "retry",
+      "keys": [
+        "common.action.retry"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 87
+        },
+        {
+          "path": "apps/web/src/app/(app)/classes/page.tsx",
+          "line": 536
+        },
+        {
+          "path": "apps/web/src/app/(app)/classes/page.tsx",
+          "line": 650
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/new/quick-membership-step.tsx",
+          "line": 239
+        },
+        {
+          "path": "apps/web/src/app/(app)/reports/page.tsx",
+          "line": 185
+        },
+        {
+          "path": "apps/web/src/app/customer/receipts/[receiptId]/receipt.client.tsx",
+          "line": 76
+        },
+        {
+          "path": "apps/web/src/app/offline/page.tsx",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/components/public/entry-pass-dialog.tsx",
+          "line": 83
+        },
+        {
+          "path": "apps/web/src/features/checklists/checklist-assignment.tsx",
+          "line": 11
+        },
+        {
+          "path": "apps/web/src/features/checklists/checklist-handover.tsx",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/features/checkout/payment-section.tsx",
+          "line": 41
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 612
+        },
+        {
+          "path": "apps/web/src/features/operations/facility-task-workspace.tsx",
+          "line": 185
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 191
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/record-supplier-payment-dialog.tsx",
+          "line": 171
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/record-supplier-payment-dialog.tsx",
+          "line": 196
+        },
+        {
+          "path": "apps/web/src/features/operations/stock-purchasing-workspace.tsx",
+          "line": 114
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 495
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 101
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 31
+        },
+        {
+          "path": "apps/web/src/lib/providers/experience-provider.tsx",
+          "line": 567
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "continue",
+      "keys": [
+        "common.action.continue"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 18
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "back",
+      "keys": [
+        "common.action.back"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/new/quick-membership-step.tsx",
+          "line": 199
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/bill-gym-wizard.tsx",
+          "line": 209
+        },
+        {
+          "path": "apps/web/src/features/legal/subscription-agreement-modal.tsx",
+          "line": 297
+        },
+        {
+          "path": "apps/web/src/features/legal/subscription-agreement-modal.tsx",
+          "line": 333
+        },
+        {
+          "path": "apps/web/src/features/personal-training/booking-outcome-confirmation.tsx",
+          "line": 75
+        },
+        {
+          "path": "apps/web/src/features/reports/ledger-tutorial.tsx",
+          "line": 298
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 19
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "all-branches",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/reports/page.tsx",
+          "line": 125
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 607
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 205
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 371
+        },
+        {
+          "path": "apps/web/src/features/reports/report-scope.tsx",
+          "line": 67
+        },
+        {
+          "path": "apps/web/src/features/reports/report-scope.tsx",
+          "line": 127
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "empty-search",
+      "keys": [
+        "common.state.noResults"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 63
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "loading",
+      "keys": [
+        "common.state.loading",
+        "common.a11y.loading"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 230
+        },
+        {
+          "path": "apps/web/src/app/platform/page.tsx",
+          "line": 46
+        },
+        {
+          "path": "apps/web/src/app/platform/page.tsx",
+          "line": 47
+        },
+        {
+          "path": "apps/web/src/app/platform/page.tsx",
+          "line": 48
+        },
+        {
+          "path": "apps/web/src/app/platform/page.tsx",
+          "line": 49
+        },
+        {
+          "path": "apps/web/src/features/finance/shift-dialogs.tsx",
+          "line": 244
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 93
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "renew",
+      "keys": [
+        "renewFlow.sale.titleRenew"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 43
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "freeze",
+      "keys": [
+        "memberProfile.header.menu.freeze",
+        "renewFlow.adjust.freeze.title"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 69
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 149
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "unfreeze",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "extend",
+      "keys": [
+        "memberProfile.header.menu.extend",
+        "renewFlow.adjust.extend.title"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 71
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 177
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "change-plan",
+      "keys": [
+        "memberProfile.header.menu.changePlan",
+        "renewFlow.adjust.planChange.submit"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/billing/gym-subscriptions.tsx",
+          "line": 66
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 73
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 232
+        },
+        {
+          "path": "apps/web/convex/followupAssist.ts",
+          "line": 567
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "home-branch",
+      "keys": [
+        "crm.lead.membership.homeBranch",
+        "memberProfile.edit.homeBranch",
+        "members.bulk.homeBranch",
+        "members.header.homeBranch"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/duplicates/page.tsx",
+          "line": 21
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 146
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/crm.ts",
+          "line": 122
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 86
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 102
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 154
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4567
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4644
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "transfer-member",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "active",
+      "keys": [
+        "domain.membershipStatus.active",
+        "marketing.device.phone.active",
+        "members.list.filters.recordActive",
+        "renewFlow.adjust.membershipStatus.active"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/memberships/page.tsx",
+          "line": 93
+        },
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 170
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 63
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 163
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 168
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 177
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 222
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 252
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 253
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 336
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 14
+        },
+        {
+          "path": "apps/web/src/features/operations/operations-shared.tsx",
+          "line": 55
+        },
+        {
+          "path": "apps/web/src/features/operations/operations-shared.tsx",
+          "line": 90
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 33
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 234
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 426
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 461
+        },
+        {
+          "path": "apps/web/src/features/settings/subscription-section.tsx",
+          "line": 30
+        },
+        {
+          "path": "apps/web/src/lib/domain/status.ts",
+          "line": 37
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 9
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 93
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 24
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 125
+        },
+        {
+          "path": "apps/web/src/lib/public/membership-status.ts",
+          "line": 41
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "expired",
+      "keys": [
+        "domain.membershipStatus.expired",
+        "memberProfile.header.ended"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/crm/queues/page.tsx",
+          "line": 37
+        },
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 862
+        },
+        {
+          "path": "apps/web/src/lib/public/membership-status.ts",
+          "line": 33
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cancelled",
+      "keys": [
+        "crm.lead.cancelled",
+        "domain.membershipStatus.cancelled",
+        "domain.paymentStatus.void",
+        "domain.transactionStatus.voided",
+        "memberProfile.pt.bookingStatus.cancelled",
+        "memberProfile.pt.orderStatus.cancelled",
+        "members.list.filters.cancelled",
+        "renewFlow.adjust.membershipStatus.cancelled",
+        "renewFlow.receipt.cancelled"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+          "line": 42
+        },
+        {
+          "path": "apps/web/src/app/(app)/exports/export-job-presentation.ts",
+          "line": 30
+        },
+        {
+          "path": "apps/web/src/app/(app)/memberships/page.tsx",
+          "line": 97
+        },
+        {
+          "path": "apps/web/src/app/customer/finance/customer-finance.client.tsx",
+          "line": 26
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 45
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 55
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 66
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 172
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 242
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/page.tsx",
+          "line": 31
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/page.tsx",
+          "line": 201
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 19
+        },
+        {
+          "path": "apps/web/src/features/legal/agreement-record.tsx",
+          "line": 98
+        },
+        {
+          "path": "apps/web/src/features/legal/agreement-record.tsx",
+          "line": 113
+        },
+        {
+          "path": "apps/web/src/features/legal/agreement-record.tsx",
+          "line": 143
+        },
+        {
+          "path": "apps/web/src/features/operations/facility-task-workspace.tsx",
+          "line": 36
+        },
+        {
+          "path": "apps/web/src/features/operations/facility-task-workspace.tsx",
+          "line": 106
+        },
+        {
+          "path": "apps/web/src/features/operations/operations-shared.tsx",
+          "line": 54
+        },
+        {
+          "path": "apps/web/src/features/operations/operations-shared.tsx",
+          "line": 101
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 151
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 362
+        },
+        {
+          "path": "apps/web/src/features/settings/agreement-section.tsx",
+          "line": 44
+        },
+        {
+          "path": "apps/web/src/features/settings/subscription-section.tsx",
+          "line": 23
+        },
+        {
+          "path": "apps/web/src/features/settings/subscription-section.tsx",
+          "line": 33
+        },
+        {
+          "path": "apps/web/src/lib/domain/status.ts",
+          "line": 41
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/crm.ts",
+          "line": 93
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 13
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 23
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 27
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 211
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 221
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 32
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 129
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "frozen",
+      "keys": [
+        "domain.membershipStatus.frozen",
+        "marketing.device.verdict.frozen",
+        "members.list.filters.frozen",
+        "renewFlow.adjust.membershipStatus.frozen"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/memberships/page.tsx",
+          "line": 96
+        },
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 171
+        },
+        {
+          "path": "apps/web/src/lib/domain/status.ts",
+          "line": 39
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 11
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 31
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 127
+        },
+        {
+          "path": "apps/web/src/lib/public/membership-status.ts",
+          "line": 30
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "scheduled",
+      "keys": [
+        "domain.membershipStatus.scheduled"
+      ],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "ends-tomorrow",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "remaining-visits",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/imports/member-import.ts",
+          "line": 27
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "unlimited",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "freeze-allowance",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "freeze-request",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 855
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 860
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "freeze-pending",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/audit/page.tsx",
+          "line": 167
+        },
+        {
+          "path": "apps/web/src/app/(app)/audit/page.tsx",
+          "line": 221
+        },
+        {
+          "path": "apps/web/src/features/dashboard/manager-dashboard.tsx",
+          "line": 37
+        },
+        {
+          "path": "apps/web/convex/operatingBrief.ts",
+          "line": 263
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "reason",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/billing/bill-gym-wizard.tsx",
+          "line": 202
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/gym-subscriptions.tsx",
+          "line": 85
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 288
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/[gymId]/gym-admin-detail.tsx",
+          "line": 330
+        },
+        {
+          "path": "apps/web/src/app/platform/subscriptions/page.tsx",
+          "line": 200
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "member-timeline",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "duplicate",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "merge",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "import",
+      "keys": [
+        "members.list.actions.import"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 225
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 15
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 67
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "map-columns",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "import-skipped",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "emergency-contact",
+      "keys": [
+        "memberProfile.edit.emergencyContact",
+        "members.header.emergencyContact"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/profile/page.tsx",
+          "line": 119
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 88
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 158
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4914
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "consent",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "check-in",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 278
+        },
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 372
+        },
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 980
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 70
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "check-out",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "inside",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "allow-entry",
+      "keys": [
+        "domain.checkInDecision.overridden"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/audit/page.tsx",
+          "line": 52
+        },
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 803
+        },
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 973
+        },
+        {
+          "path": "apps/web/src/features/dashboard/reception-dashboard.tsx",
+          "line": 26
+        },
+        {
+          "path": "apps/web/src/features/reception/reception-dialogs.tsx",
+          "line": 72
+        },
+        {
+          "path": "apps/web/src/features/reception/reception-dialogs.tsx",
+          "line": 117
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 53
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 51
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "entry-blocked",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "already-inside",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 805
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "no-valid-membership",
+      "keys": [
+        "domain.membershipStatus.none",
+        "memberProfile.checkIns.reason.NO_ACTIVE_MEMBERSHIP"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 249
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "wrong-branch",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "no-visits",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "qr-code",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "entry-history",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "collect-payment",
+      "keys": [
+        "memberProfile.header.collectPayment",
+        "memberProfile.createTask.types.payment_collection",
+        "palette.actions.collectPayment.title",
+        "renewFlow.payment.title",
+        "renewFlow.payment.collectPlain"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/crm/queues/page.tsx",
+          "line": 189
+        },
+        {
+          "path": "apps/web/src/app/(app)/crm/queues/page.tsx",
+          "line": 322
+        },
+        {
+          "path": "apps/web/src/app/(app)/payments/page.tsx",
+          "line": 87
+        },
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 112
+        },
+        {
+          "path": "apps/web/src/features/finance/collect-payment-picker.tsx",
+          "line": 42
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 51
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 305
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 74
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 90
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 113
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5053
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "payment",
+      "keys": [
+        "domain.transactionType.payment",
+        "marketing.loop.stages.payment.label",
+        "memberProfile.memberships.payment",
+        "members.tabs.membershipColumns.payment",
+        "renewFlow.receipt.kindPayment"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/memberships/page.tsx",
+          "line": 145
+        },
+        {
+          "path": "apps/web/src/app/(app)/memberships/page.tsx",
+          "line": 213
+        },
+        {
+          "path": "apps/web/src/app/customer/finance/customer-finance.client.tsx",
+          "line": 25
+        },
+        {
+          "path": "apps/web/src/app/customer/receipts/[receiptId]/receipt.client.tsx",
+          "line": 142
+        },
+        {
+          "path": "apps/web/src/components/shared/status-chip.tsx",
+          "line": 132
+        },
+        {
+          "path": "apps/web/src/features/checkout/payment-section.tsx",
+          "line": 23
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 74
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-export.ts",
+          "line": 59
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 362
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 362
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 32
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 172
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 162
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 201
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4956
+        },
+        {
+          "path": "apps/web/convex/invariants.ts",
+          "line": 104
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "unpaid",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 286
+        },
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 294
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "paid",
+      "keys": [
+        "domain.paymentStatus.paid",
+        "memberProfile.pt.orderStatus.active"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/memberships/page.tsx",
+          "line": 108
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/page.tsx",
+          "line": 398
+        },
+        {
+          "path": "apps/web/src/app/platform/page.tsx",
+          "line": 67
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 62
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 36
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 222
+        },
+        {
+          "path": "apps/web/src/features/settings/subscription-section.tsx",
+          "line": 20
+        },
+        {
+          "path": "apps/web/src/lib/domain/payables.ts",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 19
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 218
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4571
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4572
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4718
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4759
+        },
+        {
+          "path": "apps/web/convex/platformInvoicePdf.ts",
+          "line": 44
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "part-paid",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cash",
+      "keys": [
+        "domain.paymentMethod.cash"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 119
+        },
+        {
+          "path": "apps/web/src/components/shared/status-chip.tsx",
+          "line": 139
+        },
+        {
+          "path": "apps/web/src/features/checkout/checkout-model.ts",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/lib/domain/payables.ts",
+          "line": 10
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 63
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 122
+        },
+        {
+          "path": "apps/web/convex/platformProvisioning.ts",
+          "line": 18
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "card",
+      "keys": [
+        "domain.paymentMethod.card"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/shared/status-chip.tsx",
+          "line": 140
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 64
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 123
+        },
+        {
+          "path": "apps/web/convex/platformProvisioning.ts",
+          "line": 19
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "bank-transfer",
+      "keys": [
+        "domain.paymentMethod.bank_transfer"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/shared/status-chip.tsx",
+          "line": 141
+        },
+        {
+          "path": "apps/web/src/lib/domain/payables.ts",
+          "line": 11
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 65
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 124
+        },
+        {
+          "path": "apps/web/convex/platformInvoicePdf.ts",
+          "line": 126
+        },
+        {
+          "path": "apps/web/convex/platformProvisioning.ts",
+          "line": 20
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "reference",
+      "keys": [
+        "renewFlow.shared.referenceNumber"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/new/quick-membership-step.tsx",
+          "line": 179
+        },
+        {
+          "path": "apps/web/src/features/checkout/payment-section.tsx",
+          "line": 37
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 20
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "receipt",
+      "keys": [
+        "marketing.vocabulary.receipt",
+        "memberProfile.payments.receipt",
+        "members.tabs.payments.receipt",
+        "palette.kind.receipt",
+        "renewFlow.payment.receipt",
+        "renewFlow.receipt.heading"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/reports/page.tsx",
+          "line": 210
+        },
+        {
+          "path": "apps/web/src/app/customer/receipts/[receiptId]/receipt.client.tsx",
+          "line": 110
+        },
+        {
+          "path": "apps/web/src/features/checkout/sale-result.tsx",
+          "line": 24
+        },
+        {
+          "path": "apps/web/src/features/checkout/sale-result.tsx",
+          "line": 32
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 115
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 229
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 228
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 40
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 93
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5073
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "invoice",
+      "keys": [
+        "renewFlow.shared.invoice",
+        "renewFlow.payment.invoice"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/billing/page.tsx",
+          "line": 280
+        },
+        {
+          "path": "apps/web/src/features/settings/subscription-section.tsx",
+          "line": 115
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 25
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 96
+        },
+        {
+          "path": "apps/web/convex/platformInvoicePdf.ts",
+          "line": 59
+        },
+        {
+          "path": "apps/web/convex/platformInvoicePdf.ts",
+          "line": 145
+        },
+        {
+          "path": "apps/web/convex/platformInvoicePdf.ts",
+          "line": 146
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "refund",
+      "keys": [
+        "domain.transactionType.refund",
+        "renewFlow.receipt.refundButton",
+        "renewFlow.receipt.kindRefund"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/audit/page.tsx",
+          "line": 41
+        },
+        {
+          "path": "apps/web/src/app/customer/finance/customer-finance.client.tsx",
+          "line": 25
+        },
+        {
+          "path": "apps/web/src/app/customer/receipts/[receiptId]/receipt.client.tsx",
+          "line": 142
+        },
+        {
+          "path": "apps/web/src/components/shared/status-chip.tsx",
+          "line": 133
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 75
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 49
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 362
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 33
+        },
+        {
+          "path": "apps/web/convex/followupAssist.ts",
+          "line": 559
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "void-payment",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "refund-warning",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "discount",
+      "keys": [
+        "memberProfile.memberships.discount",
+        "members.tabs.membershipColumns.discount",
+        "renewFlow.sale.rowDiscount",
+        "renewFlow.receipt.discount"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 161
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 200
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 70
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/renewFlow.ts",
+          "line": 262
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "price-override",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "payment-saved",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "open-shift",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/finance/shift-dialogs.tsx",
+          "line": 84
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 62
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "close-shift",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 63
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "opening-cash",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 284
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "expected-cash",
+      "keys": [
+        "dashboard.reception.expectedCash"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/dashboard.ts",
+          "line": 213
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "counted-cash",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cash-difference",
+      "keys": [
+        "dashboard.today.kind.cash_variance"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/payments/shifts/page.tsx",
+          "line": 270
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 1074
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/dashboard.ts",
+          "line": 157
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cash-short",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cash-over",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "approve-difference",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 64
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cash-in",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cash-out",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "end-of-day",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/payments/shifts/page.tsx",
+          "line": 213
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "lead",
+      "keys": [
+        "marketing.vocabulary.lead",
+        "marketing.loop.stages.lead.label",
+        "nav.item.leads",
+        "palette.kind.lead"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/crm/pipeline/page.tsx",
+          "line": 434
+        },
+        {
+          "path": "apps/web/src/features/branch-ops/notification-groups.tsx",
+          "line": 29
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 110
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 147
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 39
+        },
+        {
+          "path": "apps/web/convex/branchOpsAssist.ts",
+          "line": 293
+        },
+        {
+          "path": "apps/web/convex/branchOpsAssist.ts",
+          "line": 336
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "pipeline",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "follow-up",
+      "keys": [
+        "dashboard.today.kind.follow_up",
+        "memberProfile.createTask.types.follow_up"
+      ],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "assigned-to",
+      "keys": [
+        "memberProfile.createTask.assignedTo"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 299
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "walk-in",
+      "keys": [
+        "domain.leadSource.walk_in"
+      ],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "trial",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "no-answer",
+      "keys": [
+        "memberProfile.contact.outcome.no_answer"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/crm/pipeline/page.tsx",
+          "line": 401
+        },
+        {
+          "path": "apps/web/src/app/(app)/crm/pipeline/page.tsx",
+          "line": 463
+        },
+        {
+          "path": "apps/web/src/lib/crm/contact-outcomes.ts",
+          "line": 27
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 383
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "not-interested",
+      "keys": [
+        "crm.lead.reason.notInterested",
+        "memberProfile.contact.outcome.answered_not_interested"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/crm/contact-outcomes.ts",
+          "line": 29
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/crm.ts",
+          "line": 115
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 385
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "lost-lead",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "converted",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "retention",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 76
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "at-risk",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "inactive-member",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "followup-due",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "whatsapp",
+      "keys": [
+        "memberProfile.whatsapp.open"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/crm/offer-work-panel.tsx",
+          "line": 137
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 426
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "message-draft",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "sent",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/email-log/platform-email-log.client.tsx",
+          "line": 51
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 49
+        },
+        {
+          "path": "apps/web/src/features/settings/subscription-section.tsx",
+          "line": 116
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "message-failed",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "offer",
+      "keys": [
+        "marketing.vocabulary.offer",
+        "marketing.loop.stages.offer.label"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 112
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 162
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "class",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 124
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 149
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 151
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4891
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "book-class",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "session",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "trainer",
+      "keys": [
+        "domain.role.trainer",
+        "memberProfile.pt.trainer",
+        "members.tabs.pt.trainer"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 38
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 679
+        },
+        {
+          "path": "apps/web/src/features/branch-ops/handover-groups.tsx",
+          "line": 14
+        },
+        {
+          "path": "apps/web/src/features/personal-training/booking-outcome-confirmation.tsx",
+          "line": 63
+        },
+        {
+          "path": "apps/web/src/features/settings/checklists-section.tsx",
+          "line": 27
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 129
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 147
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 74
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 187
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/members.ts",
+          "line": 223
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 3947
+        },
+        {
+          "path": "apps/web/convex/permissions.ts",
+          "line": 101
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "package",
+      "keys": [
+        "memberProfile.pt.packageFallback"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 112
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 732
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/memberProfile.ts",
+          "line": 200
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 3839
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "credits",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "no-show",
+      "keys": [
+        "crm.lead.noShow",
+        "dashboard.trainer.noShow",
+        "memberProfile.pt.bookingStatus.no_show"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 84
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "waitlist",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/settings/operational-settings-sections.tsx",
+          "line": 310
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "class-full",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "spots",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cancel-booking",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 392
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cancel-class",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/classes/cancel-occurrence-dialog.tsx",
+          "line": 19
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "return-credit",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "mark-complete",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "availability",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 117
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "trainer-timeoff",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/pt/page.tsx",
+          "line": 231
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "recurring",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "stock",
+      "keys": [
+        "dashboard.today.kind.low_stock"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/inventory-tab.tsx",
+          "line": 112
+        },
+        {
+          "path": "apps/web/src/features/operations/inventory-tab.tsx",
+          "line": 115
+        },
+        {
+          "path": "apps/web/src/features/operations/stock-purchasing-workspace.tsx",
+          "line": 123
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/dashboard.ts",
+          "line": 161
+        },
+        {
+          "path": "apps/web/convex/operatingBrief.ts",
+          "line": 148
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "checkout",
+      "keys": [
+        "nav.item.checkout"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 68
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 54
+        },
+        {
+          "path": "apps/web/src/features/checkout/checkout-workspace.tsx",
+          "line": 115
+        },
+        {
+          "path": "apps/web/src/features/checkout/checkout-workspace.tsx",
+          "line": 130
+        },
+        {
+          "path": "apps/web/src/features/operations/stock-purchasing-workspace.tsx",
+          "line": 132
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 20
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 39
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "supplier",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/payables/payables-export.ts",
+          "line": 22
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-export.ts",
+          "line": 28
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-export.ts",
+          "line": 62
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 128
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 165
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 218
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/record-supplier-payment-dialog.tsx",
+          "line": 137
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/record-supplier-payment-dialog.tsx",
+          "line": 139
+        },
+        {
+          "path": "apps/web/src/features/operations/purchasing-tabs.tsx",
+          "line": 46
+        },
+        {
+          "path": "apps/web/src/features/operations/purchasing-tabs.tsx",
+          "line": 46
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4779
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "supplier-bills",
+      "keys": [
+        "palette.pages.supplierBills"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/payables/payables-export.ts",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 179
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 179
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/payables-workspace.tsx",
+          "line": 215
+        },
+        {
+          "path": "apps/web/src/features/operations/payables/supplier-payment-confirmation.tsx",
+          "line": 55
+        },
+        {
+          "path": "apps/web/src/features/operations/purchasing-tabs.tsx",
+          "line": 87
+        },
+        {
+          "path": "apps/web/src/features/operations/stock-purchasing-workspace.tsx",
+          "line": 126
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 66
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 47
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "purchase-order",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "receive-stock",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/purchasing-tabs.tsx",
+          "line": 61
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "partial-delivery",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "low-stock",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/inventory-tab.tsx",
+          "line": 115
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "out-of-stock",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/checkout/checkout-model.ts",
+          "line": 53
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "stock-adjustment",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "stock-transfer",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "in-transit",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "unit-cost",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/operations.ts",
+          "line": 751
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "selling-price",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/inventory-tab.tsx",
+          "line": 115
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "supplier-payment",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/payables/record-supplier-payment-dialog.tsx",
+          "line": 131
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "reverse-supplier",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/payables/supplier-payment-history-dialog.tsx",
+          "line": 41
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "supplier-missing",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "machine",
+      "keys": [
+        "dashboard.today.kind.equipment_issue"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/branch-ops/report-intake.tsx",
+          "line": 45
+        },
+        {
+          "path": "apps/web/src/features/branch-ops/report-intake.tsx",
+          "line": 47
+        },
+        {
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 97
+        },
+        {
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 97
+        },
+        {
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 129
+        },
+        {
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 129
+        },
+        {
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 186
+        },
+        {
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 187
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/dashboard.ts",
+          "line": 160
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "repair",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 48
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "maintenance",
+      "keys": [
+        "dashboard.today.kind.facility_task",
+        "palette.pages.maintenance"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/maintenance-workspace.tsx",
+          "line": 41
+        },
+        {
+          "path": "apps/web/src/features/operations/stock-purchasing-workspace.tsx",
+          "line": 132
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/dashboard.ts",
+          "line": 158
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 67
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 48
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "problem",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 162
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "out-of-service",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "working",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "repairer",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "area",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "same-area",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "checklist",
+      "keys": [
+        "nav.item.checklists"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 70
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 69
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 55
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 21
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 40
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "pass-check",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "fail-check",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "not-applicable",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "handover",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "priority",
+      "keys": [
+        "dashboard.needsAttention.urgent"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/support/page.tsx",
+          "line": 79
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 88
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/dashboard.ts",
+          "line": 93
+        },
+        {
+          "path": "apps/web/convex/operatingBrief.ts",
+          "line": 278
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "blocked-task",
+      "keys": [
+        "reception.decision.blocked"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/dev/design-system/design-system-gallery.tsx",
+          "line": 170
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/reception.ts",
+          "line": 46
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "resolved",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/support/page.tsx",
+          "line": 139
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 79
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "reports",
+      "keys": [
+        "nav.item.reports"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/reports/page.tsx",
+          "line": 168
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 77
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 75
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 29
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 53
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "bookkeeping",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/audit/page.tsx",
+          "line": 32
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 592
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 601
+        },
+        {
+          "path": "apps/web/src/features/reports/management-ledger-home.tsx",
+          "line": 60
+        },
+        {
+          "path": "apps/web/src/features/reports/management-ledger-home.tsx",
+          "line": 62
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 492
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "ledger",
+      "keys": [
+        "nav.section.managementLedger"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 78
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 79
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 592
+        },
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 600
+        },
+        {
+          "path": "apps/web/src/features/reports/management-ledger-home.tsx",
+          "line": 37
+        },
+        {
+          "path": "apps/web/src/features/reports/management-ledger-home.tsx",
+          "line": 41
+        },
+        {
+          "path": "apps/web/src/features/reports/management-ledger-home.tsx",
+          "line": 49
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 481
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 483
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 492
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 12
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 54
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "charged-paid",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 29
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 340
+        },
+        {
+          "path": "apps/web/src/features/reports/operational-reports.tsx",
+          "line": 351
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "revenue",
+      "keys": [
+        "palette.moduleBoundary.name.revenue"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
+          "line": 105
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 232
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 152
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "collections",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 78
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "expenses",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "profit-loss",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/ledger-tutorial.tsx",
+          "line": 229
+        },
+        {
+          "path": "apps/web/src/features/reports/management-ledger-home.tsx",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 296
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 55
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "balance-sheet",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/ledger-tutorial.tsx",
+          "line": 236
+        },
+        {
+          "path": "apps/web/src/features/reports/management-ledger-home.tsx",
+          "line": 19
+        },
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 297
+        },
+        {
+          "path": "apps/web/convex/navigationCatalogue.ts",
+          "line": 56
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "cash-flow",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/ledger-tutorial.tsx",
+          "line": 243
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "assets-finance",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "liabilities",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 249
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "receivables",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/accounting.ts",
+          "line": 80
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "payables",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "debit-credit",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "journal-entry",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "post-entry",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "reconcile",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "balanced",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 288
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "incomplete-report",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 211
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "period-closed",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "roles",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/settings/settings-page-inner.tsx",
+          "line": 73
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 724
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 725
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 732
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "owner",
+      "keys": [
+        "crm.newLead.owner",
+        "crm.lead.ownerLabel",
+        "domain.role.owner"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 38
+        },
+        {
+          "path": "apps/web/src/app/(app)/crm/pipeline/page.tsx",
+          "line": 434
+        },
+        {
+          "path": "apps/web/src/app/platform/applications/page.tsx",
+          "line": 321
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 186
+        },
+        {
+          "path": "apps/web/src/features/branch-ops/handover-groups.tsx",
+          "line": 14
+        },
+        {
+          "path": "apps/web/src/features/legal/agreement-record.tsx",
+          "line": 115
+        },
+        {
+          "path": "apps/web/src/features/legal/subscription-agreement-modal.tsx",
+          "line": 309
+        },
+        {
+          "path": "apps/web/src/features/settings/checklists-section.tsx",
+          "line": 23
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 125
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 143
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/crm.ts",
+          "line": 67
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/crm.ts",
+          "line": 105
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 70
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4568
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 4667
+        },
+        {
+          "path": "apps/web/convex/permissions.ts",
+          "line": 77
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "manager",
+      "keys": [
+        "domain.role.manager"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 38
+        },
+        {
+          "path": "apps/web/src/features/branch-ops/handover-groups.tsx",
+          "line": 14
+        },
+        {
+          "path": "apps/web/src/features/settings/checklists-section.tsx",
+          "line": 24
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 126
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 144
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 71
+        },
+        {
+          "path": "apps/web/convex/permissions.ts",
+          "line": 83
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "sales-role",
+      "keys": [
+        "domain.role.salesperson",
+        "nav.section.sales"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 38
+        },
+        {
+          "path": "apps/web/src/components/marketing/landing-story.tsx",
+          "line": 10
+        },
+        {
+          "path": "apps/web/src/components/marketing/product-screens.tsx",
+          "line": 76
+        },
+        {
+          "path": "apps/web/src/components/shell/nav-config.ts",
+          "line": 63
+        },
+        {
+          "path": "apps/web/src/features/branch-ops/handover-groups.tsx",
+          "line": 14
+        },
+        {
+          "path": "apps/web/src/features/settings/checklists-section.tsx",
+          "line": 25
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 127
+        },
+        {
+          "path": "apps/web/src/lib/domain/permissions.ts",
+          "line": 145
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/domain.ts",
+          "line": 72
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 10
+        },
+        {
+          "path": "apps/web/convex/permissions.ts",
+          "line": 89
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "permission-denied",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/security.ts",
+          "line": 325
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "inactive-account",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/security.ts",
+          "line": 211
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "required-reason",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/security.ts",
+          "line": 144
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "required-field",
+      "keys": [
+        "common.state.required"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/onboarding/onboarding-checklist.tsx",
+          "line": 79
+        },
+        {
+          "path": "apps/web/src/features/settings/checklists-section.tsx",
+          "line": 202
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 64
+        },
+        {
+          "path": "apps/web/convex/classes.ts",
+          "line": 872
+        },
+        {
+          "path": "apps/web/convex/classes.ts",
+          "line": 916
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 3400
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 9214
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 9321
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 9337
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 9535
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 9587
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 9588
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 9906
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 11155
+        },
+        {
+          "path": "apps/web/convex/media.ts",
+          "line": 231
+        },
+        {
+          "path": "apps/web/convex/media.ts",
+          "line": 235
+        },
+        {
+          "path": "apps/web/convex/operations.ts",
+          "line": 948
+        },
+        {
+          "path": "apps/web/convex/operations.ts",
+          "line": 948
+        },
+        {
+          "path": "apps/web/convex/security.ts",
+          "line": 145
+        },
+        {
+          "path": "apps/web/convex/security.ts",
+          "line": 356
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "invalid-phone",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/new/page.tsx",
+          "line": 38
+        },
+        {
+          "path": "apps/web/src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+          "line": 25
+        },
+        {
+          "path": "apps/web/src/features/crm/edit-lead-contact-dialog.tsx",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/features/crm/new-lead-dialog.tsx",
+          "line": 28
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 373
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 6899
+        },
+        {
+          "path": "apps/web/convex/legalAgreement.ts",
+          "line": 422
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "save-failed",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "offline",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/providers/experience-provider.tsx",
+          "line": 565
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "session-ended",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "not-found",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "conflict",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "unsaved",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "irreversible",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "rate-limit",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "unknown-outcome",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "my-gyms",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/public/public-footer.tsx",
+          "line": 44
+        },
+        {
+          "path": "apps/web/src/lib/auth/public-viewer.ts",
+          "line": 33
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "browse-gyms",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "join",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "profile",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/settings/my-profile-section.tsx",
+          "line": 59
+        },
+        {
+          "path": "apps/web/src/features/settings/my-profile-section.tsx",
+          "line": 60
+        },
+        {
+          "path": "apps/web/src/features/settings/my-profile-section.tsx",
+          "line": 71
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-page-inner.tsx",
+          "line": 54
+        },
+        {
+          "path": "apps/web/convex/domain.ts",
+          "line": 5043
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "finance-member",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "contact-gym",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "sign-in",
+      "keys": [
+        "auth.pageTitle.signIn",
+        "auth.invitation.signIn",
+        "common.action.signIn",
+        "marketing.actions.signIn",
+        "marketing.footer.signIn"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+          "line": 309
+        },
+        {
+          "path": "apps/web/src/app/customer/my-gyms/page.tsx",
+          "line": 155
+        },
+        {
+          "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
+          "line": 491
+        },
+        {
+          "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
+          "line": 527
+        },
+        {
+          "path": "apps/web/src/app/signup/page.tsx",
+          "line": 195
+        },
+        {
+          "path": "apps/web/src/app/signup/page.tsx",
+          "line": 221
+        },
+        {
+          "path": "apps/web/src/components/marketing/cinematic-header.tsx",
+          "line": 305
+        },
+        {
+          "path": "apps/web/src/components/public/public-footer.tsx",
+          "line": 79
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/auth.ts",
+          "line": 70
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/auth.ts",
+          "line": 259
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 39
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 20
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 283
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "create-account",
+      "keys": [
+        "auth.invitation.form.submit",
+        "marketing.actions.createAccount"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
+          "line": 492
+        },
+        {
+          "path": "apps/web/src/components/marketing/cinematic-header.tsx",
+          "line": 309
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/auth.ts",
+          "line": 284
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 26
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "email-code",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "resend-code",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "sign-out",
+      "keys": [
+        "common.action.signOut",
+        "shell.account.signOut"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/marketing/cinematic-header.tsx",
+          "line": 403
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-shell.tsx",
+          "line": 148
+        },
+        {
+          "path": "apps/web/src/components/public/public-footer.tsx",
+          "line": 74
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 40
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/shell.ts",
+          "line": 21
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "register-gym",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "marketing-promise",
+      "keys": [
+        "common.brand.tagline"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/components/public/public-footer.tsx",
+          "line": 97
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/common.ts",
+          "line": 147
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "marketing-ops",
+      "keys": [
+        "auth.brand.chooser.context"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/auth.ts",
+          "line": 29
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "trial-plan",
+      "keys": [
+        "marketing.vocabulary.freeTrial",
+        "marketing.loop.stages.trial.label"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 111
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
+          "line": 157
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "privacy",
+      "keys": [
+        "auth.chrome.privacy"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/signup/page.tsx",
+          "line": 194
+        },
+        {
+          "path": "apps/web/src/features/legal/agreement-record.tsx",
+          "line": 86
+        },
+        {
+          "path": "apps/web/src/features/legal/privacy-policy.tsx",
+          "line": 211
+        },
+        {
+          "path": "apps/web/src/features/legal/privacy-policy.tsx",
+          "line": 212
+        },
+        {
+          "path": "apps/web/src/features/legal/privacy-policy.tsx",
+          "line": 222
+        },
+        {
+          "path": "apps/web/src/features/legal/terms-of-service.tsx",
+          "line": 213
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/auth.ts",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/lib/rivet-contact.ts",
+          "line": 22
+        },
+        {
+          "path": "apps/web/convex/emailTemplate.ts",
+          "line": 99
+        },
+        {
+          "path": "apps/web/convex/emailTemplate.ts",
+          "line": 123
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "terms",
+      "keys": [
+        "auth.chrome.terms"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/signup/page.tsx",
+          "line": 194
+        },
+        {
+          "path": "apps/web/src/features/legal/agreement-record.tsx",
+          "line": 86
+        },
+        {
+          "path": "apps/web/src/features/legal/privacy-policy.tsx",
+          "line": 216
+        },
+        {
+          "path": "apps/web/src/features/legal/terms-of-service.tsx",
+          "line": 208
+        },
+        {
+          "path": "apps/web/src/features/legal/terms-of-service.tsx",
+          "line": 209
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/auth.ts",
+          "line": 19
+        },
+        {
+          "path": "apps/web/src/lib/rivet-contact.ts",
+          "line": 23
+        },
+        {
+          "path": "apps/web/convex/emailTemplate.ts",
+          "line": 99
+        },
+        {
+          "path": "apps/web/convex/emailTemplate.ts",
+          "line": 123
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "signature",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/legalAgreementText.ts",
+          "line": 100
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "legal-consent",
+      "keys": [
+        "agreementFlow.electronicLabel"
+      ],
+      "rules": [
+        "apps/web/src/features/legal/subscription-agreement-modal.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/legal/subscription-agreement-modal.tsx",
+          "line": 326
+        }
+      ],
+      "status": "in_progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "gym-applications",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/applications/page.tsx",
+          "line": 254
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "under-review",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/applications/page.tsx",
+          "line": 23
+        },
+        {
+          "path": "apps/web/src/app/platform/applications/page.tsx",
+          "line": 261
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 33
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "approve",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/applications/page.tsx",
+          "line": 351
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "reject",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/applications/page.tsx",
+          "line": 352
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "entitlements",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/subscriptions/page.tsx",
+          "line": 73
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-shell.tsx",
+          "line": 26
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "billing",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/page.tsx",
+          "line": 337
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-shell.tsx",
+          "line": 27
+        },
+        {
+          "path": "apps/web/src/features/settings/subscription-section.tsx",
+          "line": 48
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "past-due",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/billing/bill-gym-wizard.tsx",
+          "line": 158
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/page.tsx",
+          "line": 184
+        },
+        {
+          "path": "apps/web/src/app/platform/billing/page.tsx",
+          "line": 338
+        },
+        {
+          "path": "apps/web/src/app/platform/gyms/page.tsx",
+          "line": 29
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 16
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 17
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 63
+        },
+        {
+          "path": "apps/web/convex/operationalEmail.ts",
+          "line": 160
+        },
+        {
+          "path": "apps/web/convex/platformInvoicePdf.ts",
+          "line": 45
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "suspended",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/gyms/page.tsx",
+          "line": 30
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-status.tsx",
+          "line": 18
+        },
+        {
+          "path": "apps/web/src/features/settings/subscription-section.tsx",
+          "line": 32
+        },
+        {
+          "path": "apps/web/convex/operationalEmail.ts",
+          "line": 161
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "support-case",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "support-reply",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "reopen",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "notifications",
+      "keys": [
+        "nav.aria.notifications",
+        "palette.notifications.title"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/settings/settings-page-inner.tsx",
+          "line": 86
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 1069
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 1070
+        },
+        {
+          "path": "apps/web/src/features/settings/settings-sections.tsx",
+          "line": 1087
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/nav.ts",
+          "line": 71
+        },
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 97
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "mark-read",
+      "keys": [
+        "palette.notifications.markAllRead"
+      ],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/messages/en/palette.ts",
+          "line": 103
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "automations-paused",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "email-log",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/email-log/platform-email-log.client.tsx",
+          "line": 49
+        },
+        {
+          "path": "apps/web/src/components/platform/platform-shell.tsx",
+          "line": 29
+        }
+      ],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "receipt-email",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    },
+    {
+      "id": "renewal-message",
+      "keys": [],
+      "rules": [],
+      "candidateOccurrences": [],
+      "status": "pending",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+    }
+  ]
+}

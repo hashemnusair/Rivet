@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Archive, ArrowLeft, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, MapPin, Receipt, Search } from "lucide-react";
 import Link from "next/link";
@@ -46,6 +47,7 @@ function isGymTab(value: string | null): value is GymTab {
  * Sections are tabs (Gym info, Members, Team, Settings), synced to `?tab=`.
  */
 export default function GymAdminDetail({ gymId }: { gymId: string }) {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
@@ -183,7 +185,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         <TabsContent value="info" className="mt-5 grid gap-5">
           <PlatformPanel className="overflow-hidden" aria-label="Usage">
             <dl className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3 xl:grid-cols-6">
-              <Usage label="Active members" field={detail.usage.memberCount} />
+              <Usage label={t("members.list.activeMembers")} field={detail.usage.memberCount} />
               <Usage label="Active staff" field={detail.usage.activeStaffCount} />
               <Usage label="Staff plan limit" field={detail.usage.staffLimit} />
               <Usage label="Automation rules" field={detail.usage.automationRuleCount} />
@@ -201,8 +203,8 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
                   : <p className="text-[13px]"><UnavailableValue state={detail.owner.state} /></p>}
               </div>
               <dl className="divide-y divide-line px-4 pb-1.5 sm:px-5">
-                <FactRow label="Email">{detail.owner.state === "available" ? <span dir="ltr">{detail.owner.value.email}</span> : <span className="text-ink-3">Not available</span>}</FactRow>
-                <FactRow label="Phone">{detail.owner.state === "available" && detail.owner.value.phone ? <span dir="ltr">{detail.owner.value.phone}</span> : <span className="text-ink-3">Not available</span>}</FactRow>
+                <FactRow label={t("common.label.email")}>{detail.owner.state === "available" ? <span dir="ltr">{detail.owner.value.email}</span> : <span className="text-ink-3">Not available</span>}</FactRow>
+                <FactRow label={t("common.label.phone")}>{detail.owner.state === "available" && detail.owner.value.phone ? <span dir="ltr">{detail.owner.value.phone}</span> : <span className="text-ink-3">Not available</span>}</FactRow>
                 <FactRow label="Subscription agreement">
                   {detail.agreement.state === "available" ? <Link href={`/platform/agreements?agreement=${detail.agreement.value.id}`} className="text-ink underline-offset-4 hover:underline" data-testid="gym-agreement-link"><span className="font-mono text-[12px]">{detail.agreement.value.reference}</span> · {detail.agreement.value.status === "countersigned" ? "countersigned" : "awaiting RIVET"}</Link> : detail.agreement.state === "not_configured" ? <span className="text-warning-deep">Not signed yet</span> : <span className="text-ink-3">Not available</span>}
                 </FactRow>
@@ -231,16 +233,16 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           <PlatformPanel className="overflow-hidden" aria-labelledby="subscription-facts-title">
             <PlatformPanelHeader id="subscription-facts-title" title="Subscription facts" actions={<Link href={`/platform/billing?bill=${detail.id}`} className="text-[12.5px] font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline">Manage in Billing</Link>} />
             <dl className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
-              <Fact label="Plan"><FieldValue field={detail.subscription.plan} /></Fact>
-              <Fact label="Status"><FieldValue field={detail.subscription.status} render={subscriptionStatusLabel} /></Fact>
+              <Fact label={t("renewFlow.adjust.planChange.rowPlan")}><FieldValue field={detail.subscription.plan} /></Fact>
+              <Fact label={t("common.label.status")}><FieldValue field={detail.subscription.status} render={subscriptionStatusLabel} /></Fact>
               <Fact label="Billing cadence"><FieldValue field={detail.subscription.billingInterval ?? { state: "not_configured" }} render={billingIntervalLabel} /></Fact>
               <Fact label="Recurring amount"><FieldValue field={detail.subscription.recurringAmount} render={(value) => formatMoney(value)} /></Fact>
               <Fact label="Started"><FieldValue field={detail.subscription.startedAt} render={(value) => formatDateTime(value)} /></Fact>
               <Fact label="Trial ends"><FieldValue field={detail.subscription.trialEndsAt} render={(value) => formatDateTime(value)} /></Fact>
               <Fact label="Period ends"><FieldValue field={detail.subscription.currentPeriodEndsAt} render={(value) => formatDateTime(value)} /></Fact>
-              <Fact label="Renewal"><FieldValue field={detail.subscription.renewalDate} render={displayDateOrText} /></Fact>
-              <Fact label="Cancelled"><FieldValue field={detail.subscription.cancelledAt} render={(value) => formatDateTime(value)} /></Fact>
-              <Fact label="Payment method"><FieldValue field={detail.subscription.paymentMethod} /></Fact>
+              <Fact label={t("memberProfile.followUp.evidenceKind.renewal")}><FieldValue field={detail.subscription.renewalDate} render={displayDateOrText} /></Fact>
+              <Fact label={t("renewFlow.adjust.membershipStatus.cancelled")}><FieldValue field={detail.subscription.cancelledAt} render={(value) => formatDateTime(value)} /></Fact>
+              <Fact label={t("renewFlow.shared.paymentMethodAria")}><FieldValue field={detail.subscription.paymentMethod} /></Fact>
               <Fact label="Invoices"><FieldValue field={detail.subscription.invoices} render={(value) => `${value.length} recorded`} /></Fact>
               <Fact label="Last change reason"><FieldValue field={detail.subscription.statusReason} /></Fact>
             </dl>
@@ -265,7 +267,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
                   <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-ink-2">
                     {publicPage
                       ? publicPage.publishedVersion > 0
-                        ? <>Live at v{publicPage.publishedVersion}.{draftAwaitingReview ? <> Draft v{publicPage.draftVersion} saved {publicPage.draftUpdatedAt ? formatDateTime(publicPage.draftUpdatedAt) : "by the gym"} — awaiting your review.</> : " No draft awaiting review."}</>
+                        ? <>Live at v{publicPage.publishedVersion}{t("members.bulk.toast.end")}{draftAwaitingReview ? <> Draft v{publicPage.draftVersion} saved {publicPage.draftUpdatedAt ? formatDateTime(publicPage.draftUpdatedAt) : "by the gym"} — awaiting your review.</> : " No draft awaiting review."}</>
                         : draftAwaitingReview
                           ? <>Never published. Draft v{publicPage.draftVersion} is waiting — the gym&rsquo;s first publish is self-serve, but you can publish it for them.</>
                           : "Never published, and the gym has not saved a draft."
@@ -287,7 +289,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
                   <div className="mt-4 grid gap-3 border-t border-line pt-4">
                     <Field label="Reason for this change"><Textarea value={listingReason} onChange={(event) => setListingReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></Field>
                     <div className="flex flex-wrap justify-end gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => { setIsPublic(detail.organization.state === "available" && detail.controls.isPublic); setListingReason(""); }}>Cancel</Button>
+                      <Button variant="secondary" size="sm" onClick={() => { setIsPublic(detail.organization.state === "available" && detail.controls.isPublic); setListingReason(""); }}>{t("common.action.cancel")}</Button>
                       <Button size="sm" loading={saveListing.isPending} disabled={!listingReason.trim()} onClick={() => saveListing.mutate()}><Check />Save listing</Button>
                     </div>
                   </div>
@@ -330,7 +332,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             <Field label="Reason for this change" htmlFor="publish-page-reason"><Textarea id="publish-page-reason" value={publishPageReason} onChange={(event) => setPublishPageReason(event.target.value)} placeholder="Required for the immutable platform audit trail" /></Field>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setPublishPageOpen(false)} disabled={publishPage.isPending}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setPublishPageOpen(false)} disabled={publishPage.isPending}>{t("common.action.cancel")}</Button>
             <Button loading={publishPage.isPending} disabled={!publishPageReason.trim()} onClick={() => publishPage.mutate()}><Check />Publish draft</Button>
           </DialogFooter>
         </DialogContent>
@@ -344,12 +346,12 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           </DialogHeader>
           <DialogBody className="grid gap-4">
             <Field label="Type the gym name to confirm" htmlFor="delete-gym-confirmation"><Input id="delete-gym-confirmation" value={deleteConfirmation} onChange={(event) => { setDeleteConfirmation(event.target.value); setDeleteError(undefined); }} placeholder={detail.name} autoComplete="off" /></Field>
-            <Field label="Reason for archiving" htmlFor="delete-gym-reason"><Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></Field>
+            <Field label={t("members.bulk.archiveReason")} htmlFor="delete-gym-reason"><Textarea id="delete-gym-reason" value={deleteReason} onChange={(event) => { setDeleteReason(event.target.value); setDeleteError(undefined); }} placeholder="Required for the platform audit trail" /></Field>
             {deleteConfirmation.length > 0 && deleteConfirmation !== detail.name ? <p className="text-[12.5px] text-danger" role="alert">The confirmation must match “{detail.name}” exactly.</p> : null}
             {deleteError ? <p className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{deleteError}</p> : null}
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={archive.isPending}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={archive.isPending}>{t("common.action.cancel")}</Button>
             <Button variant="danger" loading={archive.isPending} disabled={deleteConfirmation !== detail.name || !deleteReason.trim()} onClick={() => archive.mutate({ gymId, confirmation: deleteConfirmation, reason: deleteReason.trim() })}><Archive />Archive gym</Button>
           </DialogFooter>
         </DialogContent>
@@ -408,6 +410,7 @@ function countOf<T>(field: PlatformData<T[]>): number | undefined {
 const DIRECTORY_PAGE_SIZE = 20;
 
 function StaffDirectory({ field }: { field: PlatformData<PlatformGymStaff[]> }) {
+  const t = useT();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const filtered = useMemo(() => {
@@ -430,10 +433,10 @@ function StaffDirectory({ field }: { field: PlatformData<PlatformGymStaff[]> }) 
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="ps-4 sm:ps-5">Name</TableHead>
-                  <TableHead>Role</TableHead>
+                  <TableHead className="ps-4 sm:ps-5">{t("common.label.name")}</TableHead>
+                  <TableHead>{t("common.label.role")}</TableHead>
                   <TableHead className="hidden md:table-cell">Branches</TableHead>
-                  <TableHead className="pe-4 text-end sm:pe-5">Status</TableHead>
+                  <TableHead className="pe-4 text-end sm:pe-5">{t("common.label.status")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -441,7 +444,7 @@ function StaffDirectory({ field }: { field: PlatformData<PlatformGymStaff[]> }) 
                   <TableRow key={staff.id}>
                     <TableCell className="ps-4 sm:ps-5"><p className="font-semibold">{staff.name}</p><p className="mt-0.5 text-[12.5px] text-ink-3" dir="ltr">{staff.email}</p></TableCell>
                     <TableCell className="whitespace-nowrap text-ink-2">{labelize(staff.role)}</TableCell>
-                    <TableCell className="hidden text-ink-2 md:table-cell">{staff.branchScope === "all" ? "All branches" : staff.branchNames.length > 0 ? staff.branchNames.join(", ") : "No active branch"}</TableCell>
+                    <TableCell className="hidden text-ink-2 md:table-cell">{staff.branchScope === "all" ? t("common.label.allBranches") : staff.branchNames.length > 0 ? staff.branchNames.join(", ") : "No active branch"}</TableCell>
                     <TableCell className="pe-4 text-end sm:pe-5"><DirectoryStatus status={staff.status} /></TableCell>
                   </TableRow>
                 ))}
@@ -456,6 +459,7 @@ function StaffDirectory({ field }: { field: PlatformData<PlatformGymStaff[]> }) 
 }
 
 function MemberDirectory({ field }: { field: PlatformData<PlatformGymMember[]> }) {
+  const t = useT();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const filtered = useMemo(() => {
@@ -473,17 +477,17 @@ function MemberDirectory({ field }: { field: PlatformData<PlatformGymMember[]> }
       <PlatformPanelHeader id="member-directory-title" title="Member directory" description="Every current member record, with status and membership context." />
       {field.state === "available" ? (
         <>
-          <DirectorySearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} label="Search members" placeholder="Search by name, number, plan, or branch" />
+          <DirectorySearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} label={t("members.list.searchLabel")} placeholder="Search by name, number, plan, or branch" />
           {filtered.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="ps-4 sm:ps-5">Member</TableHead>
+                  <TableHead className="ps-4 sm:ps-5">{t("palette.kind.member")}</TableHead>
                   <TableHead className="hidden sm:table-cell">Number</TableHead>
-                  <TableHead className="hidden lg:table-cell">Branch</TableHead>
-                  <TableHead className="hidden md:table-cell">Plan</TableHead>
-                  <TableHead className="hidden md:table-cell">Membership</TableHead>
-                  <TableHead className="pe-4 text-end sm:pe-5">Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t("common.label.branch")}</TableHead>
+                  <TableHead className="hidden md:table-cell">{t("renewFlow.adjust.planChange.rowPlan")}</TableHead>
+                  <TableHead className="hidden md:table-cell">{t("memberProfile.followUp.membershipFallback")}</TableHead>
+                  <TableHead className="pe-4 text-end sm:pe-5">{t("common.label.status")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -512,10 +516,11 @@ function DirectorySearch({ value, onChange, label, placeholder }: { value: strin
 }
 
 function DirectoryPager({ page, totalPages, totalItems, onPageChange }: { page: number; totalPages: number; totalItems: number; onPageChange: (page: number) => void }) {
+  const t = useT();
   if (totalItems === 0) return null;
   const first = (page - 1) * DIRECTORY_PAGE_SIZE + 1;
   const last = Math.min(page * DIRECTORY_PAGE_SIZE, totalItems);
-  return <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-2.5 text-[12px] text-ink-3 sm:px-5"><span>Showing {first}–{last} of {totalItems}</span><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Previous page" disabled={page <= 1} onClick={() => onPageChange(page - 1)}><ChevronLeft className="rtl:rotate-180" aria-hidden /></Button><span className="min-w-12 text-center tabular">{page} / {totalPages}</span><Button type="button" variant="ghost" size="icon-sm" aria-label="Next page" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}><ChevronRight className="rtl:rotate-180" aria-hidden /></Button></div></div>;
+  return <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-2.5 text-[12px] text-ink-3 sm:px-5"><span>Showing {first}–{last} of {totalItems}</span><div className="flex items-center gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label={t("common.pagination.previous")} disabled={page <= 1} onClick={() => onPageChange(page - 1)}><ChevronLeft className="rtl:rotate-180" aria-hidden /></Button><span className="min-w-12 text-center tabular">{page} / {totalPages}</span><Button type="button" variant="ghost" size="icon-sm" aria-label={t("common.pagination.next")} disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}><ChevronRight className="rtl:rotate-180" aria-hidden /></Button></div></div>;
 }
 
 function DirectoryStatus({ status }: { status: string }) {

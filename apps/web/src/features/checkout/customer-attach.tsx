@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check, ChevronDown, Search, UserRound, UserRoundPlus, X } from "lucide-react";
 import { useState } from "react";
@@ -49,6 +50,7 @@ function MemberSearch({ branchId, onPick, onCancel }: { branchId: string; onPick
  * name on the paper. Neither creates a profile of any kind.
  */
 export function CustomerAttach({ value, onChange, branchId }: { value: CustomerAttachment; onChange: (next: CustomerAttachment) => void; branchId: string }) {
+  const t = useT();
   const [searching, setSearching] = useState(false);
   return (
     <section className="panel p-4" aria-labelledby="customer-heading" data-testid="customer-attach">
@@ -69,14 +71,14 @@ export function CustomerAttach({ value, onChange, branchId }: { value: CustomerA
         <div className="mt-3 flex items-center gap-3 rounded-md border border-success/30 bg-success-bg/40 p-3" data-testid="selected-member">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-success text-white" aria-hidden><Check className="size-4" /></span>
           <div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{value.member.fullName}</p><p className="font-mono text-[11px] text-ink-3">{value.member.memberNumber} · {value.member.phone}</p></div>
-          <Button type="button" variant="ghost" size="sm" className="h-11 sm:h-8" onClick={() => onChange({ kind: "walk_in" })} aria-label="Remove member from sale"><X /> Remove</Button>
+          <Button type="button" variant="ghost" size="sm" className="h-11 sm:h-8" onClick={() => onChange({ kind: "walk_in" })} aria-label="Remove member from sale"><X />{" "}{t("common.action.remove")}</Button>
         </div>
       ) : null}
       {value.kind === "guest" ? (
         <div className="mt-3 space-y-3" data-testid="receipt-details">
           <FieldGrid className="sm:grid-cols-2">
-            <Field label="Guest name" required><Input value={value.fullName} onChange={(event) => onChange({ ...value, fullName: event.target.value })} placeholder="Full name" autoComplete="name" className="h-11 sm:h-9" /></Field>
-            <Field label="Phone number" required hint="Printed on the receipt"><Input dir="ltr" value={value.phone} onChange={(event) => onChange({ ...value, phone: event.target.value })} placeholder="07…" autoComplete="tel" inputMode="tel" className="h-11 sm:h-9" /></Field>
+            <Field label="Guest name" required><Input value={value.fullName} onChange={(event) => onChange({ ...value, fullName: event.target.value })} placeholder={t("common.label.fullName")} autoComplete="name" className="h-11 sm:h-9" /></Field>
+            <Field label={t("memberProfile.whatsapp.phoneNumber")} required hint="Printed on the receipt"><Input dir="ltr" value={value.phone} onChange={(event) => onChange({ ...value, phone: event.target.value })} placeholder="07…" autoComplete="tel" inputMode="tel" className="h-11 sm:h-9" /></Field>
           </FieldGrid>
           <Button type="button" variant="ghost" size="sm" onClick={() => onChange({ kind: "walk_in" })}><X /> Remove name and phone</Button>
         </div>

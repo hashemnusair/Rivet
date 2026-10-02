@@ -65,7 +65,7 @@ describe("message catalogues", () => {
   });
 
   it("have no accidental raw English in Arabic (brands and technical tokens are allowlisted)", () => {
-    const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID)\b|™/g;
+    const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID|SHA)\b|™/g;
     const raw = [...arLeaves.entries()].flatMap(([key, leaf]) =>
       strings(leaf)
         .filter(() => key !== "crm.newLead.emailPlaceholder") // Literal email example, not product prose.
@@ -82,27 +82,15 @@ describe("message catalogues", () => {
   });
 });
 
-describe("docs/arabic/GLOSSARY.md", () => {
-  const glossary = readFileSync(join(process.cwd(), "../../docs/arabic/GLOSSARY.md"), "utf8");
-  const arabicCorpus = [...arLeaves.values()].flatMap(strings).join("\n");
-
-  // Rows whose last column is an em dash are reserved for a later area.
-  const rows = glossary
-    .split("\n")
-    .filter((line) => line.startsWith("|") && !line.startsWith("| ---") && !line.startsWith("| English concept"))
-    .map((line) => line.split("|").slice(1, -1).map((cell) => cell.trim()))
-    .filter((cells) => cells.length >= 5);
-
-  it("has a row for every recurring concept", () => {
-    expect(rows.length).toBeGreaterThan(60);
+describe("approved Arabic decisions", () => {
+  const decisions = JSON.parse(readFileSync(join(process.cwd(), "../../docs/arabic/approved-decisions.v1.json"), "utf8")) as { decisions: Array<{ id: string; agreedText: string }> };
+  const coverage = JSON.parse(readFileSync(join(process.cwd(), "../../docs/arabic/decision-coverage.json"), "utf8")) as { decisions: Array<{ id: string; keys: string[] }> };
+  it("keeps all mapped catalogue labels equal to the approved contextual wording", () => {
+    for (const entry of coverage.decisions) for (const key of entry.keys) {
+      expect(arLeaves.get(key), `${entry.id}: ${key}`).toBe(decisions.decisions.find(decision => decision.id === entry.id)?.agreedText);
+    }
   });
-
-  it("uses each in-use term in the Arabic catalogue (glossary and messages have not drifted)", () => {
-    const missing = rows
-      .filter(([, term, , , where]) => where !== "—" && /[؀-ۿ]/.test(term as string))
-      // A row is in use when its term or any of its listed forms appears (e.g. حصة / الحصص).
-      .filter(([, term, forms]) => ![term, ...(forms ?? "").split(/[,،]/).map((form) => form.replace(/\(.*\)/, "").trim())].some((candidate) => candidate && /[\u0600-\u06FF]/.test(candidate) && arabicCorpus.includes(candidate)))
-      .map(([concept, term]) => `${concept} -> ${term}`);
-    expect(missing).toEqual([]);
+  it("accounts for all decisions without certifying untranslated occurrences", () => {
+    expect(coverage.decisions.map(entry => entry.id).sort()).toEqual(decisions.decisions.map(entry => entry.id).sort());
   });
 });

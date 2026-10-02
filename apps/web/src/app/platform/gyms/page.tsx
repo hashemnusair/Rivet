@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ArrowRight, Building2, MapPin, Search, Users } from "lucide-react";
 import Link from "next/link";
@@ -37,6 +38,7 @@ function parseFilter(value: string | null): GymFilter {
 }
 
 export default function PlatformGymsPage() {
+  const t = useT();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -129,8 +131,8 @@ export default function PlatformGymsPage() {
       </PlatformPanel>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-ink-3" aria-live="polite">
-        <p>{gyms.length} {gyms.length === 1 ? "gym" : "gyms"} shown{hasFilters ? " with the current filters" : ""}.</p>
-        {hasFilters ? <Button variant="link" size="sm" onClick={clearFilters}>Clear filters</Button> : null}
+        <p>{gyms.length} {gyms.length === 1 ? "gym" : "gyms"} shown{hasFilters ? " with the current filters" : ""}{t("members.bulk.toast.end")}</p>
+        {hasFilters ? <Button variant="link" size="sm" onClick={clearFilters}>{t("common.action.clearFilters")}</Button> : null}
       </div>
 
       {gyms.length > 0 ? (
@@ -144,7 +146,7 @@ export default function PlatformGymsPage() {
             icon={Building2}
             title={hasFilters ? "No gyms match these filters" : "No gyms in the directory"}
             description={hasFilters ? "Try another search or subscription status, or clear the filters to see every tenant." : "No provisioned gym organizations are available yet. Review applications to add the first tenant."}
-            action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button> : <Button asChild variant="secondary" size="sm"><Link href="/platform/applications">Review applications <ArrowRight className="rtl:rotate-180" /></Link></Button>}
+            action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}>{t("common.action.clearFilters")}</Button> : <Button asChild variant="secondary" size="sm"><Link href="/platform/applications">Review applications <ArrowRight className="rtl:rotate-180" /></Link></Button>}
           />
         </div>
       )}
@@ -153,6 +155,7 @@ export default function PlatformGymsPage() {
 }
 
 function GymCard({ gym }: { gym: MarketplaceGym }) {
+  const t = useT();
   const titleId = `gym-card-${gym.id}`;
   const lifecycle = lifecycleDeadline(gym);
   return (
@@ -174,7 +177,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
           <p className="mt-0.5 truncate text-[13px] font-medium">{lifecycle.value}</p>
         </div>
         <Button asChild variant="secondary" size="sm">
-          <Link href={`/platform/gyms/${gym.id}`} aria-label={`Open ${gym.name} admin details`}>Open <ArrowRight className="rtl:rotate-180" /></Link>
+          <Link href={`/platform/gyms/${gym.id}`} aria-label={`Open ${gym.name} admin details`}>{t("dashboard.today.action.open")}{" "}<ArrowRight className="rtl:rotate-180" /></Link>
         </Button>
       </div>
     </article>

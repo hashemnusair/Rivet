@@ -1,16 +1,12 @@
 import type { reception as EnReception } from "../en/reception";
 
-/**
- * "الكاش" is the cash drawer and "شيفت" the shift — the words staff in an Amman
- * gym actually use, not their MSA equivalents. Note that شيفت is masculine where
- * وردية was feminine, so the agreement travels with the noun.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const reception: typeof EnReception = {
   forbidden: "تحتاج وحدة الاستقبال إلى صلاحية البحث عن الأعضاء.",
   pickBranch: "اختر فرعًا واحدًا من محدّد الفروع — المكتب يعمل على باب واحد في كل مرة.",
 
   lookup: {
-    placeholder: "امسح الرمز، أو اكتب اسمًا أو رقم هاتف أو رقم عضوية",
+    placeholder: "امسح الرمز، أو اكتب اسمًا أو رقم هاتف أو رقم اشتراك",
     label: "البحث عن عضو",
     clear: "مسح",
     esc: "Esc",
@@ -22,16 +18,16 @@ export const reception: typeof EnReception = {
   activity: {
     label: "نشاط الفرع",
     checkInsToday: "تسجيلات الدخول اليوم",
-    branch: "الفرع",
+    branch: "فرع",
     peakHour: "ساعة الذروة",
     todayLog: "سجل دخول اليوم",
     noCheckIns: "لا توجد تسجيلات دخول اليوم بعد.",
   },
 
   shift: {
-    none: "لا يوجد شيفت مفتوح.",
-    history: "سجل الشيفتات",
-    openBeforeCash: "افتح شيفت قبل تحصيل الكاش",
+    none: "لا يوجد صندوق مفتوح.",
+    history: "سجل الصناديق",
+    openBeforeCash: "يرجى فتح الصندوق قبل استلام دفعة كاش",
   },
 
   member: {
@@ -46,6 +42,6 @@ export const reception: typeof EnReception = {
 
   decision: {
     allowed: "مسموح",
-    blocked: "ممنوع",
+    blocked: "متوقف",
   },
 };

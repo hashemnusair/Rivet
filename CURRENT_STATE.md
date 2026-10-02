@@ -1,5 +1,7 @@
 # GymOS / RIVET current implementation state
 
+See [the Arabic execution record](docs/arabic/EXECUTION.md) for current implementation progress, validation and unresolved package gates.
+
 ## 2 October 2026 — Arabic integration in progress
 
 Integrating `901150a` (approved Arabic history), `7cd509e` (current main) and `9fbd53c` (newer local foundation) in `codex/complete-arabic-support`. The saved revision-607 standard passes checksum and 247-agreement verification. Work packages A–H remain in progress; no deployment or full-support claim is made. The foundation wording below is historical draft evidence and is superseded by `docs/arabic/STANDARD.md`.

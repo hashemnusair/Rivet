@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { ClipboardCheck, ShieldAlert } from "lucide-react";
 import Link from "next/link";
@@ -22,6 +23,7 @@ export interface ReportIntakeFiling {
  * and the final filing remain in the existing reviewed form.
  */
 export function ReportIntake({ branchId, machines, spaces, onFileIssue }: { branchId: string; machines: EquipmentAsset[]; spaces: ReportSpaceLike[]; onFileIssue: (filing: ReportIntakeFiling) => void }) {
+  const t = useT();
   const [draft, setDraft] = useState("");
   const [assetId, setAssetId] = useState(machines[0]?.id ?? "");
   useEffect(() => {
@@ -42,9 +44,9 @@ export function ReportIntake({ branchId, machines, spaces, onFileIssue }: { bran
       <Field label="What did you find?" hint={`Write ${BRANCHOPS_DESCRIPTION_MIN_LENGTH} to ${BRANCHOPS_DESCRIPTION_MAX_LENGTH} characters, in English or Arabic.`}>
         <Textarea value={draft} maxLength={BRANCHOPS_DESCRIPTION_MAX_LENGTH} onChange={(event) => setDraft(event.target.value)} placeholder="TREAD-01 belt slipping again under load, grinding noise at speed 10" data-testid="report-intake-text" className="min-h-20" />
       </Field>
-      <Field label="Machine" required hint={machineLabel ? undefined : "Choose a machine first."}>
+      <Field label={t("dashboard.today.kind.equipment_issue")} required hint={machineLabel ? undefined : "Choose a machine first."}>
         <Select value={assetId} onValueChange={setAssetId}>
-          <SelectTrigger aria-label="Machine"><SelectValue placeholder="Choose a machine" /></SelectTrigger>
+          <SelectTrigger aria-label={t("dashboard.today.kind.equipment_issue")}><SelectValue placeholder="Choose a machine" /></SelectTrigger>
           <SelectContent>{machines.map((machine) => <SelectItem key={machine.id} value={machine.id}>{machine.code} · {machine.name}</SelectItem>)}</SelectContent>
         </Select>
       </Field>

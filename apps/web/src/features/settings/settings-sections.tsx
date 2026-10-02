@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check, Pencil, Plus, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -48,6 +49,7 @@ function StatusBadge({ status }: { status: string }) {
 const ORGANIZATION_DESCRIPTION = "Your gym’s name, time zone and language. Prices are always in JOD.";
 
 export function OrganizationSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const org = settingsQuery.data?.organization;
@@ -88,7 +90,7 @@ export function OrganizationSection() {
           <Field label="Time zone" hint="Used for shifts, reports and reminders."><Select value={form.timezone} onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}><SelectTrigger aria-label="Time zone"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Amman">Amman (UTC+3)</SelectItem><SelectItem value="Asia/Riyadh">Riyadh (UTC+3)</SelectItem><SelectItem value="Asia/Dubai">Dubai (UTC+4)</SelectItem></SelectContent></Select></Field>
           <Field label="Number and date format" hint="How numbers and dates look in RIVET."><Select value={form.locale} onValueChange={(v) => setForm((f) => ({ ...f, locale: v }))}><SelectTrigger aria-label="Number and date format"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en-JO">English (Jordan)</SelectItem><SelectItem value="ar-JO">العربية (الأردن)</SelectItem></SelectContent></Select></Field>
           <Field label="Default phone country" hint="For local numbers only. Numbers that start with + or 00 keep their own country code."><div className="relative"><span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3" aria-hidden>+</span><Input className="ps-7 font-mono" inputMode="numeric" aria-label="Default phone country calling code" value={form.phoneCountryCallingCode} onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: event.target.value.replace(/\D/g, "").slice(0, 3) }))} /></div></Field>
-          <Field label="Language for emails and documents" hint="Emails from RIVET to your gym, and your agreement copies, use this language. PDFs are in English."><Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}><SelectTrigger aria-label="Default language"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem></SelectContent></Select></Field>
+          <Field label="Language for emails and documents" hint="Emails from RIVET to your gym, and your agreement copies, use this language. PDFs are in English."><Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}><SelectTrigger aria-label="Default language"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">{t("common.language.english")}</SelectItem><SelectItem value="ar">{t("common.language.arabic")}</SelectItem></SelectContent></Select></Field>
         </div>
       </SettingsPanel>
       <SettingsSaveBar
@@ -111,6 +113,7 @@ export function OrganizationSection() {
 const BRANCHES_DESCRIPTION = "Your gym’s locations. The branch code starts each member number and appears on receipts.";
 
 export function BranchesSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const { refreshSession } = useApp();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
@@ -165,19 +168,19 @@ export function BranchesSection() {
                   <p className="mt-0.5 text-[12.5px] text-ink-2">{b.address || "No address yet"}</p>
                   <p className="mt-0.5 text-[12px] text-ink-3">Capacity <span className="tabular">{b.capacity}</span>{b.phone ? <> · <span dir="ltr">{b.phone}</span></> : null}</p>
                 </div>
-                <Button variant="secondary" size="sm" aria-label={`Edit ${b.name}`} data-touch-target onClick={() => setDialog({ open: true, branch: b })}><Pencil /> Edit</Button>
+                <Button variant="secondary" size="sm" aria-label={`Edit ${b.name}`} data-touch-target onClick={() => setDialog({ open: true, branch: b })}><Pencil />{" "}{t("common.action.edit")}</Button>
               </li>
             ))}
           </ul>
           <Table className="hidden md:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Name</TableHead>
+                <TableHead>{t("common.label.name")}</TableHead>
                 <TableHead>Code</TableHead>
-                <TableHead>Address</TableHead>
+                <TableHead>{t("memberProfile.details.address")}</TableHead>
                 <TableHead className="text-end">Capacity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead><span className="sr-only">Edit</span></TableHead>
+                <TableHead>{t("common.label.status")}</TableHead>
+                <TableHead><span className="sr-only">{t("common.action.edit")}</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -208,38 +211,38 @@ export function BranchesSection() {
           </DialogHeader>
           <DialogBody className="space-y-4">
             <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
-              <Field label="Name" required>
+              <Field label={t("common.label.name")} required>
                 <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Forge — Khalda" />
               </Field>
               <Field label="Code" required hint="Up to 4 letters">
                 <Input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} className="font-mono uppercase" maxLength={4} placeholder="KHA" />
               </Field>
             </div>
-            <Field label="Address">
+            <Field label={t("memberProfile.details.address")}>
               <Input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
             </Field>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Phone">
+              <Field label={t("common.label.phone")}>
                 <Input dir="ltr" type="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
               </Field>
               <Field label="Capacity">
                 <Input type="number" min={1} inputMode="numeric" value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: Number(e.target.value) }))} />
               </Field>
-              <Field label="Status">
+              <Field label={t("common.label.status")}>
                 <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as "active" | "inactive" }))}>
-                  <SelectTrigger aria-label="Status">
+                  <SelectTrigger aria-label={t("common.label.status")}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectItem value="active">{t("renewFlow.adjust.membershipStatus.active")}</SelectItem>
+                    <SelectItem value="inactive">{t("memberProfile.header.inactive")}</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDialog({ open: false })}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setDialog({ open: false })}>{t("common.action.cancel")}</Button>
             <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.name.trim() || !form.code.trim()}>
               {dialog.branch ? "Save branch" : "Add branch"}
             </Button>
@@ -273,6 +276,7 @@ function newSpaceCode(): string {
 }
 
 export function GymSpacesSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const { session } = useApp();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
@@ -338,9 +342,9 @@ export function GymSpacesSection() {
           title={branchName ? `Areas in ${branchName}` : "Areas"}
           control={
             <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
-              <span>Branch</span>
+              <span>{t("common.label.branch")}</span>
               <Select value={branchId} onValueChange={setBranchId}>
-                <SelectTrigger aria-label="Gym areas branch" className="w-52"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
+                <SelectTrigger aria-label="Gym areas branch" className="w-52"><SelectValue placeholder={t("renewFlow.adjust.transfer.chooseBranch")} /></SelectTrigger>
                 <SelectContent>
                   {activeBranches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
                 </SelectContent>
@@ -368,18 +372,18 @@ export function GymSpacesSection() {
                       <div className="flex flex-wrap items-center gap-2"><p className="text-[13.5px] font-medium">{space.name}</p><StatusBadge status={space.status} /></div>
                       <p className="mt-0.5 text-[12.5px] text-ink-2">{SPACE_KIND_LABELS[space.kind]}{space.capacity ? <> · capacity <span className="tabular">{space.capacity.toLocaleString()}</span></> : null}</p>
                     </div>
-                    <Button variant="secondary" size="sm" aria-label={`Edit ${space.name}`} data-touch-target onClick={() => setDialog({ open: true, space })}><Pencil /> Edit</Button>
+                    <Button variant="secondary" size="sm" aria-label={`Edit ${space.name}`} data-touch-target onClick={() => setDialog({ open: true, space })}><Pencil />{" "}{t("common.action.edit")}</Button>
                   </li>
                 ))}
               </ul>
               <Table className="hidden md:table">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>{t("common.label.name")}</TableHead>
+                    <TableHead>{t("common.label.type")}</TableHead>
                     <TableHead className="text-end">Capacity</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead><span className="sr-only">Edit</span></TableHead>
+                    <TableHead>{t("common.label.status")}</TableHead>
+                    <TableHead><span className="sr-only">{t("common.action.edit")}</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -406,11 +410,11 @@ export function GymSpacesSection() {
             <DialogDescription>{branchName ? `In ${branchName}. ` : ""}Use the name your staff already use.</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
-            <Field label="Name" required hint="For example: Reception, Main floor, Ladies studio, or Locker room.">
+            <Field label={t("common.label.name")} required hint="For example: Reception, Main floor, Ladies studio, or Locker room.">
               <Input autoFocus value={form.name} maxLength={80} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Main floor" />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Type" required>
+              <Field label={t("common.label.type")} required>
                 <Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value as ZoneKind }))}>
                   <SelectTrigger aria-label="Gym area type"><SelectValue /></SelectTrigger>
                   <SelectContent>{Object.entries(SPACE_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
@@ -420,18 +424,18 @@ export function GymSpacesSection() {
                 <Input type="number" min={1} max={100000} inputMode="numeric" value={form.capacity} onChange={(event) => setForm((current) => ({ ...current, capacity: event.target.value }))} />
               </Field>
               {dialog.space ? (
-                <Field label="Status">
+                <Field label={t("common.label.status")}>
                   <Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as "active" | "archived" }))}>
                     <SelectTrigger aria-label="Gym area status"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent>
+                    <SelectContent><SelectItem value="active">{t("renewFlow.adjust.membershipStatus.active")}</SelectItem><SelectItem value="archived">{t("members.list.archived")}</SelectItem></SelectContent>
                   </Select>
                 </Field>
               ) : null}
             </div>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setDialog({ open: false })}>Cancel</Button>
-            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || (form.capacity !== "" && Number(form.capacity) < 1)}>{dialog.space ? "Save changes" : "Add gym area"}</Button>
+            <Button variant="secondary" onClick={() => setDialog({ open: false })}>{t("common.action.cancel")}</Button>
+            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || (form.capacity !== "" && Number(form.capacity) < 1)}>{dialog.space ? t("common.action.saveChanges") : "Add gym area"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -445,6 +449,7 @@ export function GymSpacesSection() {
 const USERS_DESCRIPTION = "Who can sign in, their role, and which branches they can see.";
 
 export function UsersSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const { session } = useApp();
   const usersQuery = useApiQuery(qk.users({ settings: true }), (api) => api.listUsers({ pageSize: 50 }));
@@ -453,12 +458,12 @@ export function UsersSection() {
   const [editTarget, setEditTarget] = useState<StaffUser | null>(null);
 
   const branchCodes = (user: StaffUser) => user.branchScope === "all"
-    ? "All branches"
+    ? t("common.label.allBranches")
     : user.branchIds.map((id) => settingsQuery.data?.branches.find((b) => b.id === id)?.code).filter(Boolean).join(", ") || "No branch";
   const canEdit = (user: StaffUser) => user.role !== "owner" && user.id !== session?.user.id;
   const activity = (user: StaffUser) => user.status === "invited"
     ? <>Invited {user.invitedAt ? formatDateTime(user.invitedAt) : "recently"}</>
-    : user.lastActiveAt ? <>Active <RelativeText iso={user.lastActiveAt} /></> : <>Not active yet</>;
+    : user.lastActiveAt ? <>{t("renewFlow.adjust.membershipStatus.active")}{" "}<RelativeText iso={user.lastActiveAt} /></> : <>Not active yet</>;
 
   const inviteAction = <Button onClick={() => setInviteOpen(true)}><UserPlus /> Invite staff</Button>;
   const users = usersQuery.data?.items ?? [];
@@ -491,12 +496,12 @@ export function UsersSection() {
           <Table className="hidden md:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Name</TableHead>
-                <TableHead>Role</TableHead>
+                <TableHead>{t("common.label.name")}</TableHead>
+                <TableHead>{t("common.label.role")}</TableHead>
                 <TableHead>Branches</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t("common.label.status")}</TableHead>
                 <TableHead>Last active</TableHead>
-                <TableHead><span className="sr-only">Actions</span></TableHead>
+                <TableHead><span className="sr-only">{t("common.label.actions")}</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -546,6 +551,7 @@ export function UsersSection() {
 }
 
 function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const { session } = useApp();
   const [form, setForm] = useState({ name: "", email: "", role: "receptionist" as RoleKey, branchScope: "selected" as "all" | "selected", branchIds: [] as string[] });
@@ -575,16 +581,16 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <DialogDescription>They show as Invited until they sign in. Their role and branches decide what they can see and do.</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          <Field label="Full name" required>
+          <Field label={t("common.label.fullName")} required>
             <Input value={form.name} autoComplete="off" onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </Field>
-          <Field label="Email" required hint="We send the invite to this email.">
+          <Field label={t("common.label.email")} required hint="We send the invite to this email.">
             <Input type="email" inputMode="email" autoComplete="off" dir="ltr" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Role">
+            <Field label={t("common.label.role")}>
               <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v as RoleKey }))}>
-                <SelectTrigger aria-label="Role">
+                <SelectTrigger aria-label={t("common.label.role")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -600,7 +606,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All branches</SelectItem>
+                  <SelectItem value="all">{t("common.label.allBranches")}</SelectItem>
                   <SelectItem value="selected">Only some branches</SelectItem>
                 </SelectContent>
               </Select>
@@ -629,7 +635,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           ) : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
           <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!form.name.trim() || !form.email.trim() || needsBranches}>
             Send invite
           </Button>
@@ -650,6 +656,7 @@ function EditAccessDialog({
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const [role, setRole] = useState<RoleKey>(user.role);
   const [status, setStatus] = useState(user.status === "deactivated" ? "deactivated" : "active");
   const deactivating = status === "deactivated" && user.status !== "deactivated";
@@ -670,9 +677,9 @@ function EditAccessDialog({
           <DialogDescription>Changes apply right away.</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          <Field label="Role">
+          <Field label={t("common.label.role")}>
             <Select value={role} onValueChange={(v) => setRole(v as RoleKey)}>
-              <SelectTrigger aria-label="Role">
+              <SelectTrigger aria-label={t("common.label.role")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -687,7 +694,7 @@ function EditAccessDialog({
           </div>
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
           <Button onClick={() => mutation.mutate()} loading={mutation.isPending} variant={deactivating ? "danger" : "primary"}>
             {deactivating ? "Deactivate and save" : "Save access"}
           </Button>
@@ -845,6 +852,7 @@ function parseLimit(value: string, currency: string): number | null {
 }
 
 export function PaymentsSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const { session } = useApp();
   const currency = session?.organization.currency ?? "JOD";
@@ -898,15 +906,15 @@ export function PaymentsSection() {
     onError: async () => { await invalidate([qk.settings]); },
   });
 
-  if (settingsQuery.isLoading || !form || !baseline) return <SettingsSection title="Payments" description={PAYMENTS_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Payments" description={PAYMENTS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading || !form || !baseline) return <SettingsSection title={t("renewFlow.receipt.back")} description={PAYMENTS_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title={t("renewFlow.receipt.back")} description={PAYMENTS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const invalidLimit = limitRoles.some((role) => parseLimit(form.limits[role.key] ?? "", currency) === null);
   const noMethod = form.methods.every((m) => !m.enabled);
   const saveDisabledReason = invalidLimit ? "Enter a discount limit of 0 or more for every role." : noMethod ? "Keep at least one payment method turned on." : undefined;
 
   return (
-    <SettingsSection title="Payments" description={PAYMENTS_DESCRIPTION}>
+    <SettingsSection title={t("renewFlow.receipt.back")} description={PAYMENTS_DESCRIPTION}>
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
         <SettingsPanel title="Payment methods" description="Methods you turn off are hidden when taking payments and at checkout." bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
@@ -1037,6 +1045,7 @@ export function ReceiptsSection() {
 const NOTIFICATIONS_DESCRIPTION = "Which alerts managers get in RIVET, and whether reminders are sent to members.";
 
 export function NotificationsSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const notifications = settingsQuery.data?.notifications;
@@ -1066,12 +1075,12 @@ export function NotificationsSection() {
     },
   });
 
-  if (settingsQuery.isLoading || !form || !baseline) return <SettingsSection title="Notifications" description={NOTIFICATIONS_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Notifications" description={NOTIFICATIONS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading || !form || !baseline) return <SettingsSection title={t("palette.notifications.title")} description={NOTIFICATIONS_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title={t("palette.notifications.title")} description={NOTIFICATIONS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const alerts = form.managerAlerts;
   const alertRows: Array<{ key: keyof typeof alerts; label: string; hint: string }> = [
-    { key: "cashVariance", label: "Cash difference", hint: "When a shift closes with too much or too little cash." },
+    { key: "cashVariance", label: t("dashboard.today.kind.cash_variance"), hint: "When a shift closes with too much or too little cash." },
     { key: "refundOrVoid", label: "Refund or cancelled payment", hint: "Right away, for every refund or cancelled payment." },
     { key: "checkinOverride", label: "Member let in anyway", hint: "When someone is let in against the rules." },
     { key: "discountApproval", label: "Discount approvals", hint: "Discounts waiting for a decision." },
@@ -1084,7 +1093,7 @@ export function NotificationsSection() {
   };
 
   return (
-    <SettingsSection title="Notifications" description={NOTIFICATIONS_DESCRIPTION}>
+    <SettingsSection title={t("palette.notifications.title")} description={NOTIFICATIONS_DESCRIPTION}>
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
         <SettingsPanel title="Manager alerts" description="Alerts shown to managers in RIVET." bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
@@ -1120,10 +1129,10 @@ export function NotificationsSection() {
             <p className="text-[13.5px] font-medium text-ink">Quiet hours</p>
             <p className="mt-0.5 text-[12px] leading-5 text-ink-3">Messages due in these hours wait and go out when the quiet hours end. Uses your gym&rsquo;s time zone.</p>
             <div className="mt-3 grid grid-cols-2 gap-3">
-              <Field label="From">
+              <Field label={t("common.label.from")}>
                 <Input type="time" value={form.quietHoursStart ?? ""} aria-label="Quiet hours from" onChange={(e) => update({ quietHoursStart: e.target.value })} />
               </Field>
-              <Field label="To">
+              <Field label={t("common.label.to")}>
                 <Input type="time" value={form.quietHoursEnd ?? ""} aria-label="Quiet hours to" onChange={(e) => update({ quietHoursEnd: e.target.value })} />
               </Field>
             </div>

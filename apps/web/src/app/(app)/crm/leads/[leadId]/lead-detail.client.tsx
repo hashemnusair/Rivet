@@ -182,7 +182,7 @@ export default function LeadDetailPageClient() {
         </div>
 
         <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label="Sales steps" data-testid="lead-stage-progress">
-          <SimpleStep number={1} title={t("crm.lead.trial")} state={trialDone ? "done" : trialStopped ? "stopped" : "current"} detail={trialDone ? t("crm.lead.completed") : trialStatus ? trialStatusLabel(trialStatus) : progressFacts.hasTrialBooking ? "Booked" : "Not booked"} />
+          <SimpleStep number={1} title={t("crm.lead.trial")} state={trialDone ? "done" : trialStopped ? "stopped" : "current"} detail={trialDone ? t("crm.lead.completed") : trialStatus ? trialStatusLabel(trialStatus) : progressFacts.hasTrialBooking ? t("memberProfile.pt.bookingStatus.reserved") : "Not booked"} />
           <SimpleStep number={2} title={t("crm.lead.membershipSale")} state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? t("crm.lead.membershipSold") : saleFailed ? t("crm.lead.notSold") : trialDone ? t("crm.lead.ready") : t("crm.lead.afterTrial")} />
           <SimpleStep number={3} title={t("crm.lead.member")} state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? "Member and membership added" : "Added after the sale"} />
         </ol>
@@ -233,7 +233,7 @@ export default function LeadDetailPageClient() {
                         <Field label={t("crm.lead.date")} required><Input type="date" min={todayISODate()} value={trialDate} onChange={(event) => setTrialDate(event.target.value)} /></Field>
                         <Field label={t("crm.lead.time")} required><Input type="time" min={trialWindow?.enabled ? trialWindow.opensAt : undefined} max={trialWindow?.enabled ? trialWindow.closesAt : undefined} disabled={!trialWindow?.enabled} value={trialTime} onChange={(event) => setTrialTime(event.target.value)} /></Field>
                       </div>
-                      {(settingsQuery.isError || settingsQuery.isBackgroundError) ? <ErrorState layout="section" title="Trial hours could not be loaded" onRetry={() => settingsQuery.refetch()} /> : settingsQuery.isLoading ? <p className="text-[12px] text-ink-3">Loading trial hours…</p> : trialWindow?.enabled ? <p className="text-[12px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}.</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] text-ink-2">No trials on this day. Choose another date, or ask an owner or manager to set trial hours in Settings.</p>}
+                      {(settingsQuery.isError || settingsQuery.isBackgroundError) ? <ErrorState layout="section" title="Trial hours could not be loaded" onRetry={() => settingsQuery.refetch()} /> : settingsQuery.isLoading ? <p className="text-[12px] text-ink-3">Loading trial hours…</p> : trialWindow?.enabled ? <p className="text-[12px] text-ink-3">Available from {trialWindow.opensAt} to {trialWindow.closesAt}{t("members.bulk.toast.end")}</p> : <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] text-ink-2">No trials on this day. Choose another date, or ask an owner or manager to set trial hours in Settings.</p>}
                     </DialogBody>
                     <DialogFooter><Button variant="secondary" onClick={() => setScheduleOpen(false)}>{t("common.action.cancel")}</Button><Button disabled={!trialDate || !trialTime || !trialWindow?.enabled || trialTime < trialWindow.opensAt || trialTime > trialWindow.closesAt} loading={scheduleTrial.isPending} onClick={() => scheduleTrial.mutate()}><CalendarClock />{" "}{t("crm.lead.scheduleTrial")}</Button></DialogFooter>
                   </DialogContent>
@@ -303,7 +303,7 @@ export default function LeadDetailPageClient() {
       <Dialog open={Boolean(trialOutcome)} onOpenChange={(next) => { if (!next) { setTrialOutcome(undefined); setTrialNote(""); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{trialOutcome === "completed" ? "Trial completed" : trialOutcome === "no_show" ? "Trial marked no-show" : "Trial cancelled"}</DialogTitle>
+            <DialogTitle>{trialOutcome === "completed" ? t("memberProfile.contact.stage.trial_completed") : trialOutcome === "no_show" ? "Trial marked no-show" : "Trial cancelled"}</DialogTitle>
             <DialogDescription>{trialOutcome === "completed" ? "Next, record if they bought a membership." : "Write a short reason. It helps the next follow-up."}</DialogDescription>
           </DialogHeader>
           <DialogBody><Field label={trialOutcome === "completed" ? "Note (optional)" : t("common.label.reason")} required={trialOutcome !== "completed"}><Input value={trialNote} onChange={(event) => setTrialNote(event.target.value)} placeholder={trialOutcome === "completed" ? "Optional note" : trialOutcome === "no_show" ? "Why did they miss the trial?" : "Why was the trial cancelled?"} /></Field></DialogBody>
@@ -426,7 +426,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
         router.replace(memberHref);
       },
       onError: (error) => {
-        setServerError(isApiError(error) ? error.message : "The sale was not saved. Try again.");
+        setServerError(isApiError(error) ? error.message : t("renewFlow.sale.errors.saveFailed"));
         if (isApiError(error) && error.code === ERR.DUPLICATE_MEMBER) {
           const first = Array.isArray(error.details?.matches) ? error.details.matches[0] : undefined;
           if (first && typeof first === "object" && typeof (first as { memberId?: unknown }).memberId === "string") setDuplicateMemberId((first as { memberId: string }).memberId);
@@ -451,11 +451,11 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
             <Field label={t("crm.lead.membership.starts")} required><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Gender" required>
-              <select aria-label="Gender" className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" value={gender} onChange={(event) => setGender(event.target.value as "male" | "female" | "")} disabled={navigationPending} required>
+            <Field label={t("memberProfile.details.gender")} required>
+              <select aria-label={t("memberProfile.details.gender")} className="h-9 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" value={gender} onChange={(event) => setGender(event.target.value as "male" | "female" | "")} disabled={navigationPending} required>
                 <option value="" disabled>Choose male or female</option>
-                <option value="female">Female</option>
-                <option value="male">Male</option>
+                <option value="female">{t("memberProfile.details.female")}</option>
+                <option value="male">{t("memberProfile.details.male")}</option>
               </select>
             </Field>
             <Field label={t("crm.lead.membership.preferredLanguage")} required>
@@ -493,7 +493,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
           {mode === "existing" ? (
             <>
               <Field label={t("crm.lead.membership.plan")} required>
-                <Select value={planId} onValueChange={setPlanId} disabled={plansQuery.isLoading}><SelectTrigger aria-label={t("crm.lead.membership.planLabel")}><SelectValue placeholder={plansQuery.isLoading ? "Loading plans…" : "Choose a plan"} /></SelectTrigger><SelectContent>{availablePlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select>
+                <Select value={planId} onValueChange={setPlanId} disabled={plansQuery.isLoading}><SelectTrigger aria-label={t("crm.lead.membership.planLabel")}><SelectValue placeholder={plansQuery.isLoading ? t("renewFlow.adjust.planChange.loadingPlans") : t("renewFlow.sale.errors.choosePlan")} /></SelectTrigger><SelectContent>{availablePlans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent></Select>
               </Field>
               {selectedPlan ? <PlanSummary plan={selectedPlan} /> : !plansQuery.isLoading ? <p className="rounded-md border border-line bg-sunken p-3 text-[12.5px] text-ink-2">No plans for this branch. Choose “Enter a custom membership”.</p> : null}
             </>
@@ -520,7 +520,7 @@ function CompleteSaleDialog({ leadId, fullName, phone, branchId, open, onOpenCha
 
 function PlanSummary({ plan }: { plan: MembershipPlan }) {
   const t = useT();
-  return <div className="grid grid-cols-3 divide-x divide-line rounded-md border border-line bg-sunken text-center text-[12px]"><div className="p-2"><p className="text-ink-3">{t("crm.lead.membership.priceColumn")}</p><p className="mt-0.5 font-medium"><MoneyText money={plan.basePrice} /></p></div><div className="p-2"><p className="text-ink-3">{t("crm.lead.membership.durationColumn")}</p><p className="mt-0.5 font-medium">{plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits`}</p></div><div className="p-2"><p className="text-ink-3">PT</p><p className="mt-0.5 font-medium">{plan.includedPtSessions} sessions</p></div></div>;
+  return <div className="grid grid-cols-3 divide-x divide-line rounded-md border border-line bg-sunken text-center text-[12px]"><div className="p-2"><p className="text-ink-3">{t("crm.lead.membership.priceColumn")}</p><p className="mt-0.5 font-medium"><MoneyText money={plan.basePrice} /></p></div><div className="p-2"><p className="text-ink-3">{t("crm.lead.membership.durationColumn")}</p><p className="mt-0.5 font-medium">{plan.kind === "time" ? `${plan.durationDays ?? 0} days` : `${plan.visitAllowance ?? 0} visits`}</p></div><div className="p-2"><p className="text-ink-3">{t("memberProfile.tabs.pt")}</p><p className="mt-0.5 font-medium">{plan.includedPtSessions} sessions</p></div></div>;
 }
 
 function ContextRow({ label, children }: { label: string; children: React.ReactNode }) {
