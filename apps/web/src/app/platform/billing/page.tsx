@@ -1,4 +1,5 @@
 "use client";
+import { makeExportCopy } from "@/lib/exports/copy";
 import { useLocale, useT, type TFunction } from "@/lib/i18n/provider";
 import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 
@@ -26,7 +27,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { exponentFor, money, readMoneyInput } from "@/lib/utils/money";
 import type { MoneyInputProblem } from "@/lib/utils/money";
-import { buildCsvDocument, exportStatusLabel, formatExportDateTime, formatMinorUnits } from "@/lib/exports/csv";
+import { buildCsvDocument, formatMinorUnits } from "@/lib/exports/csv";
 import { downloadTextFile } from "@/lib/exports/download";
 
 type InvoiceAction = { invoice: PlatformBillingInvoice; kind: "payment" | "past_due" | "void" };
@@ -411,6 +412,7 @@ function localizedMoneyInputError(problem: MoneyInputProblem, currency: string, 
 }
 
 function downloadInvoices(invoices: PlatformBillingInvoice[], locale: "en" | "ar", t: TFunction, timeZone: string) {
+  const copy = makeExportCopy(locale);
   downloadTextFile({
     fileName: "rivet-platform-invoices.csv",
     mimeType: "text/csv;charset=utf-8",
@@ -418,24 +420,24 @@ function downloadInvoices(invoices: PlatformBillingInvoice[], locale: "en" | "ar
       locale,
       title: t("platformFinance.billing.csvTitle"),
       metadata: [{ label: t("platformFinance.billing.csvTimezone"), value: timeZone }],
-      headers: ["Invoice ID", "Gym", "Invoice type", "Billing interval", "Service period starts", "Service period ends", "Issued", "Due", "Grace period ends", "Amount", "Currency", "Status", "Marked past due", "Payment reference", "Paid", "Voided", "Cycle key"],
+      headers: ["Invoice ID", "Gym", "Invoice type", "Billing interval", "Service period starts", "Service period ends", "Issued", "Due", "Grace period ends", "Amount", "Currency", "Status", "Marked past due", "Payment reference", "Paid", "Voided", "Cycle key"].map(copy.label),
       rows: invoices.map((invoice) => [
         invoice.id,
         invoice.gym,
-        isSubscriptionChange(invoice) ? "Subscription change" : isAutomaticRenewal(invoice) ? "Automatic renewal" : "Manual exception",
-        exportStatusLabel(invoice.billingInterval),
-        invoice.periodStart,
-        invoice.periodEnd,
-        formatExportDateTime(invoice.issuedAt ?? invoice.date, timeZone),
-        formatExportDateTime(invoice.dueAt, timeZone),
-        formatExportDateTime(graceEndAt(invoice), timeZone),
+        copy.label(isSubscriptionChange(invoice) ? "Subscription change" : isAutomaticRenewal(invoice) ? "Automatic renewal" : "Manual exception"),
+        copy.status(invoice.billingInterval),
+        copy.dateTime(invoice.periodStart, timeZone),
+        copy.dateTime(invoice.periodEnd, timeZone),
+        copy.dateTime(invoice.issuedAt ?? invoice.date, timeZone),
+        copy.dateTime(invoice.dueAt, timeZone),
+        copy.dateTime(graceEndAt(invoice), timeZone),
         invoice.amountMinor === undefined ? invoice.amount : formatMinorUnits(invoice.amountMinor, invoice.currency),
         invoice.currency,
-        exportStatusLabel(invoice.status),
-        formatExportDateTime(invoice.pastDueAt, timeZone),
+        copy.status(invoice.status),
+        copy.dateTime(invoice.pastDueAt, timeZone),
         invoice.paymentReference,
-        formatExportDateTime(invoice.paidAt, timeZone),
-        formatExportDateTime(invoice.voidedAt, timeZone),
+        copy.dateTime(invoice.paidAt, timeZone),
+        copy.dateTime(invoice.voidedAt, timeZone),
         invoice.cycleKey,
       ]),
     }),

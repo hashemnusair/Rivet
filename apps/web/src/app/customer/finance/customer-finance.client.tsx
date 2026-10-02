@@ -3,7 +3,7 @@ import { useFormat } from "@/lib/i18n/format";
 import { paymentMethodLabel } from "@/lib/i18n/labels";
 import { customerPaymentExplanation } from "@/lib/i18n/customer-finance";
 import type { TKey } from "@/lib/i18n/core";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
 
 import { ChevronRight, Download, FilterX, ReceiptText, Search, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
@@ -31,6 +31,7 @@ const STATUS_LABELS: Record<CustomerTransaction["status"], TKey> = { completed: 
 
 export function CustomerFinanceClient() {
   const t = useT();
+  const { locale } = useLocale();
   const f = useFormat();
   const { ready, identitySignedIn, profileSelected } = useMemberGate();
   const router = useRouter();
@@ -53,7 +54,7 @@ export function CustomerFinanceClient() {
   const query = useMemo<CustomerTransactionQuery>(() => ({ gymId, type: type ?? undefined, status: status ?? undefined, from, to, search: debouncedSearch || undefined, page, pageSize: 20, sort: "-occurredAt" }), [debouncedSearch, from, gymId, page, status, to, type]);
   const summary = useApiQuery(qk.customerFinance("summary"), (api) => api.getCustomerFinancialSummary(), { enabled });
   const transactions = useApiQuery(qk.customerFinance(query), (api) => api.listCustomerTransactions(query), { enabled });
-  const personalExport = useApiMutation((api) => api.requestMemberPersonalDataExport(crypto.randomUUID()), {
+  const personalExport = useApiMutation((api) => api.requestMemberPersonalDataExport(crypto.randomUUID(), locale), {
     successMessage: t("customerPortal.dataReady"),
     onSuccess: (job) => {
       if (!job.content || !job.fileName) return;

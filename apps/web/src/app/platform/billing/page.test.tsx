@@ -7,8 +7,11 @@ import BillingPage from "./page";
 
 const state = vi.hoisted(() => ({
   snapshot: undefined as PlatformSnapshot | undefined,
+  download: vi.fn(),
   mutations: [] as Array<{ isPending: boolean; mutate: ReturnType<typeof vi.fn> }>,
 }));
+
+vi.mock("@/lib/exports/download", () => ({ downloadTextFile: state.download }));
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
@@ -84,8 +87,24 @@ describe("BillingPage", () => {
   beforeEach(() => {
     state.snapshot = undefined;
     state.mutations = [];
+    state.download.mockReset();
     window.history.replaceState({}, "", "/platform/billing");
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+  });
+
+  it("downloads Arabic invoice headings, status and dates with exact numeric amounts", async () => {
+    const user = userEvent.setup();
+    state.snapshot = snapshot([invoice({ gym: "=Authored Gym", status: "past_due", billingInterval: "monthly", periodStart: "2026-10-01T21:00:00Z", periodEnd: "2026-11-01T21:00:00Z", paymentReference: "REF-1" })]);
+    render(<LocaleProvider initialLocale="ar"><BillingPage /></LocaleProvider>);
+    await user.click(screen.getByRole("button", { name: "تصدير السجل المالي" }));
+    const saved = state.download.mock.calls[0]?.[0] as { content: string; fileName: string };
+    expect(saved.fileName).toBe("rivet-platform-invoices.csv");
+    expect(saved.content).toContain("رقم الفاتورة,النادي,نوع الفاتورة");
+    expect(saved.content).toContain("متأخر عن السداد");
+    expect(saved.content).toContain("149.000,JOD");
+    expect(saved.content).toContain("'=Authored Gym");
+    expect(saved.content).toContain("2 تشرين الأول 2026");
+    expect(saved.content).toContain("REF-1");
   });
 
   it("opens the billing wizard on the tenant a gym page deep-links with ?bill=", async () => {
