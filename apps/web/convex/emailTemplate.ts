@@ -206,7 +206,7 @@ body{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
 [data-ogsc] .rv-button-link,[data-ogsb] .rv-button-link{color:${BRAND.paper}!important}
 @media only screen and (max-width:480px){
 .rv-outer{padding:8px 0!important}
-.rv-frame{border-left:0!important;border-right:0!important}
+.rv-frame{width:100%!important;max-width:100%!important;border-left:0!important;border-right:0!important}
 .rv-pad{padding-left:20px!important;padding-right:20px!important}
 .rv-header{padding:24px 20px!important}
 .rv-footer{padding:20px!important}
