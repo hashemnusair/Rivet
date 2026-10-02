@@ -1,3 +1,5 @@
+import type { Locale } from "../i18n/locale";
+import { createTranslator } from "../i18n/core";
 import { toMajorString } from "../utils/money";
 
 export type CsvValue = string | number | boolean | null | undefined;
@@ -32,17 +34,19 @@ export function csvRows(rows: CsvValue[][]): string {
   return rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
-function exportPreamble(title: string, metadata: CsvMetadataItem[], rowCount?: number): CsvValue[][] {
+function exportPreamble(title: string, metadata: CsvMetadataItem[], rowCount?: number, locale: Locale = "en"): CsvValue[][] {
+  const t = createTranslator(locale);
   return [
-    ["RIVET export", title],
+    [t("documents.csvTitle"), title],
     ...metadata.map((item) => [item.label, item.value]),
-    ...(rowCount === undefined ? [] : [["Data rows", rowCount] satisfies CsvValue[]]),
+    ...(rowCount === undefined ? [] : [[t("documents.csvRowCount"), rowCount] satisfies CsvValue[]]),
     [],
   ];
 }
 
 /** Builds a UTF-8, Excel-friendly CSV with a short human-readable preamble. */
 export function buildCsvDocument(input: {
+  locale?: Locale;
   title: string;
   metadata?: CsvMetadataItem[];
   headers: string[];
@@ -51,9 +55,9 @@ export function buildCsvDocument(input: {
 }): string {
   const tableRows = input.rows.length > 0
     ? [input.headers, ...input.rows]
-    : [[...input.headers], [input.emptyMessage ?? "No records matched this export."]];
+    : [[...input.headers], [input.emptyMessage ?? createTranslator(input.locale ?? "en")("documents.csvNoRecords")]];
   return `${UTF8_BOM}${csvRows([
-    ...exportPreamble(input.title, input.metadata ?? [], input.rows.length),
+    ...exportPreamble(input.title, input.metadata ?? [], input.rows.length, input.locale),
     ...tableRows,
   ])}\r\n`;
 }
@@ -65,16 +69,17 @@ export function buildCsvDocument(input: {
  * less useful than preserving their natural sections.
  */
 export function buildSectionedCsvDocument(input: {
+  locale?: Locale;
   title: string;
   metadata?: CsvMetadataItem[];
   sections: CsvSection[];
 }): string {
-  const rows: CsvValue[][] = [...exportPreamble(input.title, input.metadata ?? [])];
+  const rows: CsvValue[][] = [...exportPreamble(input.title, input.metadata ?? [], undefined, input.locale)];
   for (const [index, section] of input.sections.entries()) {
     if (index > 0) rows.push([]);
     rows.push([section.title]);
     rows.push(section.headers);
-    rows.push(...(section.rows.length > 0 ? section.rows : [[section.emptyMessage ?? "No records."]]));
+    rows.push(...(section.rows.length > 0 ? section.rows : [[section.emptyMessage ?? createTranslator(input.locale ?? "en")("documents.csvEmpty")]]));
   }
   return `${UTF8_BOM}${csvRows(rows)}\r\n`;
 }

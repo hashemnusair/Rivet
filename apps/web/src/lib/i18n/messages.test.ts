@@ -65,11 +65,13 @@ describe("message catalogues", () => {
   });
 
   it("have no accidental raw English in Arabic (brands and technical tokens are allowlisted)", () => {
-    const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID|SHA|JPEG|PNG|WebP|HTTP|HTTPS|UTC|Starter|Growth|Pro|STOP)\b|™/g;
+    const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID|SHA|JPEG|PNG|WebP|HTTP|HTTPS|UTC|Starter|Growth|Pro|STOP|Excel|xlsx)\b|™/g;
     const raw = [...arLeaves.entries()].flatMap(([key, leaf]) =>
       strings(leaf)
         .filter(() => key !== "crm.newLead.emailPlaceholder") // Literal email example, not product prose.
         .map((text) => text.replace(/\{\w+\}/g, "").replace(ALLOWED_LATIN, ""))
+        // Accepted source-file enum values are shown verbatim beside their Arabic equivalents.
+        .map((text) => key === "memberMigration.columnsHint" ? text.replace(/\b(?:male|female)\b/g, "") : text)
         .filter((text) => /[A-Za-z]{2,}/.test(text))
         .map((text) => `${key}: ${text}`),
     );
@@ -84,12 +86,19 @@ describe("message catalogues", () => {
 
 describe("approved Arabic decisions", () => {
   const decisions = JSON.parse(readFileSync(join(process.cwd(), "../../docs/arabic/approved-decisions.v1.json"), "utf8")) as { decisions: Array<{ id: string; agreedText: string }> };
-  const coverage = JSON.parse(readFileSync(join(process.cwd(), "../../docs/arabic/decision-coverage.json"), "utf8")) as { decisions: Array<{ id: string; keys: string[] }> };
+  const coverage = JSON.parse(readFileSync(join(process.cwd(), "../../docs/arabic/decision-coverage.json"), "utf8")) as { decisions: Array<{ id: string; keys: string[]; composedKeys?: Array<{ key: string; template: string }> }> };
   it("keeps all mapped catalogue labels equal to the approved contextual wording", () => {
     for (const entry of coverage.decisions) for (const key of entry.keys) {
       expect(arLeaves.get(key), `${entry.id}: ${key}`).toBe(decisions.decisions.find(decision => decision.id === entry.id)?.agreedText);
     }
   });
+  it("preserves exact approved terms inside labels that display a currency or amount", () => {
+    for (const entry of coverage.decisions) for (const composed of entry.composedKeys ?? []) {
+      const approved = decisions.decisions.find(decision => decision.id === entry.id)!.agreedText;
+      expect(arLeaves.get(composed.key), `${entry.id}: ${composed.key}`).toBe(composed.template.replace("{approved}", approved));
+    }
+  });
+
   it("accounts for all decisions without certifying untranslated occurrences", () => {
     expect(coverage.decisions.map(entry => entry.id).sort()).toEqual(decisions.decisions.map(entry => entry.id).sort());
   });

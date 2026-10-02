@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
 
 import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import type { MembershipSummary } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { money } from "@/lib/utils/money";
-import { formatDate } from "@/lib/utils/dates";
+import { useFormat } from "@/lib/i18n/format";
 import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
@@ -32,7 +32,8 @@ export default function MembershipsPage() {
 }
 
 function MembershipsWorkspace() {
-  const t = useT();
+  const { t, isolate } = useLocale();
+  const f = useFormat();
   const { session } = useApp();
   const router = useRouter();
   // Filters and the page live in the URL so a refresh, Back/Forward or a
@@ -69,7 +70,7 @@ function MembershipsWorkspace() {
     <div className="space-y-4">
       <PageHeader
         title={t("memberProfile.tabs.memberships")}
-        description="Every membership sold: current, past, frozen and cancelled."
+        description={t("memberEnrollment.membershipsHint")}
       />
 
       <FreezeRequestsPanel />
@@ -80,14 +81,14 @@ function MembershipsWorkspace() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Member name or number…"
+            placeholder={t("memberEnrollment.memberSearchPlaceholder")}
             className="ps-8"
-            aria-label="Search memberships"
+            aria-label={t("memberEnrollment.searchMemberships")}
             data-touch-target
           />
         </div>
         <Select value={status} onValueChange={(v) => replaceParams({ status: v === "all" ? undefined : v })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Status filter" data-touch-target>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label={t("memberEnrollment.statusFilter")} data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -102,12 +103,12 @@ function MembershipsWorkspace() {
           </SelectContent>
         </Select>
         <Select value={paymentStatus} onValueChange={(v) => replaceParams({ payment: v === "all" ? undefined : v })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Payment status filter" data-touch-target>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label={t("memberEnrollment.paymentFilter")} data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Any payment</SelectItem>
-            <SelectItem value="paid">{t("memberProfile.pt.orderStatus.active")}</SelectItem>
+            <SelectItem value="all">{t("memberEnrollment.anyPayment")}</SelectItem>
+            <SelectItem value="paid">{t("domain.paymentStatus.paid")}</SelectItem>
             <SelectItem value="partial">{t("domain.paymentStatus.partial")}</SelectItem>
             <SelectItem value="unpaid">{t("domain.paymentStatus.unpaid")}</SelectItem>
             <SelectItem value="refunded">{t("memberProfile.pt.orderStatus.refunded")}</SelectItem>
@@ -128,9 +129,9 @@ function MembershipsWorkspace() {
           </div>
         ) : !data || data.items.length === 0 ? (
           filtersActive ? (
-            <EmptyState title="No memberships match" description="Try other filters or another search." className="border-0" action={<Button variant="secondary" size="sm" onClick={clearFilters}>{t("common.action.clearFilters")}</Button>} />
+            <EmptyState title={t("memberEnrollment.noMembershipMatches")} description={t("memberEnrollment.tryOtherFilters")} className="border-0" action={<Button variant="secondary" size="sm" onClick={clearFilters}>{t("common.action.clearFilters")}</Button>} />
           ) : (
-            <EmptyState title="No memberships sold yet" description="Memberships show here once you sell one from a member's page or at reception." className="border-0" />
+            <EmptyState title={t("memberEnrollment.noMemberships")} description={t("memberEnrollment.noMembershipsHint")} className="border-0" />
           )
         ) : (
           <>
@@ -154,19 +155,19 @@ function MembershipsWorkspace() {
                 <TableRow key={m.id} interactive onClick={() => router.push(`/members/${m.memberId}`)}>
                   <TableCell>
                     <span className="block font-medium">{m.memberName}</span>
-                    <span className="font-mono text-[11px] text-ink-3">{m.memberNumber}</span>
+                    <span className="font-mono text-[11px] text-ink-3"><bdi dir="ltr">{m.memberNumber}</bdi></span>
                   </TableCell>
                   <TableCell className="text-[12.5px]">
                     {m.planName}
                     {m.remainingVisits != null ? (
                       <span className="block text-[12px] text-ink-3 tabular">
-                        {m.remainingVisits} of {m.totalVisits} visits left
+                        {t("memberEnrollment.visitsLeft", { remaining: f.number(m.remainingVisits), total: f.number(m.totalVisits ?? 0) })}
                       </span>
                     ) : null}
                   </TableCell>
                   <TableCell>
                     <span className="whitespace-nowrap text-[12px] tabular">
-                      {formatDate(m.startDate)} – {formatDate(m.endDate)}
+                      {t("memberEnrollment.dateRange", { start: isolate(f.date(m.startDate)), end: isolate(f.date(m.endDate)) })}
                     </span>
                     <DaysUntilText date={m.endDate} className="block text-[12px]" />
                   </TableCell>
@@ -180,7 +181,7 @@ function MembershipsWorkspace() {
                     {m.outstanding.amount > 0 ? (
                       <MoneyText money={m.outstanding} className="text-warning-deep" />
                     ) : (m.upcomingAmount?.amount ?? 0) > 0 ? (
-                      <span className="text-[12px] text-ink-3"><MoneyText money={m.upcomingAmount!} /> due on {formatDate(m.startDate)}</span>
+                      <span className="text-[12px] text-ink-3">{t("memberEnrollment.dueOn", { amount: isolate(f.money(m.upcomingAmount!)), date: isolate(f.date(m.startDate)) })}</span>
                     ) : (
                       <span className="text-[12px] tabular text-ink-4">—</span>
                     )}
@@ -200,22 +201,23 @@ function MembershipsWorkspace() {
 }
 
 function MembershipCompactRow({ membership, onOpen }: { membership: MembershipSummary; onOpen: () => void }) {
-  const t = useT();
+  const { t, isolate } = useLocale();
+  const f = useFormat();
   return (
     <li>
       <button type="button" className="block w-full px-4 py-3.5 text-start hover:bg-sunken/60" onClick={onOpen}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-[13.5px] font-semibold text-ink">{membership.memberName}</p>
-            <p className="mt-0.5 text-[12px] text-ink-3"><span className="font-mono">{membership.memberNumber}</span> · {membership.branchName.split("— ")[1] ?? membership.branchName}</p>
+            <p className="mt-0.5 text-[12px] text-ink-3"><span className="font-mono"><bdi dir="ltr">{membership.memberNumber}</bdi></span> · {membership.branchName.split("— ")[1] ?? membership.branchName}</p>
           </div>
           <MembershipStatusChip status={membership.status} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]">
           <div><p className="text-ink-3">{t("renewFlow.adjust.planChange.rowPlan")}</p><p className="mt-0.5 font-medium text-ink">{membership.planName}</p></div>
           <div><p className="text-ink-3">{t("members.tabs.membershipColumns.payment")}</p><div className="mt-0.5"><PaymentStatusChip status={membership.paymentStatus} /></div></div>
-          <div><p className="text-ink-3">{t("renewFlow.sale.rowDates")}</p><p className="mt-0.5 tabular text-ink">{formatDate(membership.startDate)} – {formatDate(membership.endDate)}</p><DaysUntilText date={membership.endDate} className="mt-0.5 block text-[12px]" /></div>
-          <div><p className="text-ink-3">{t("members.list.columns.balance")}</p><p className={`mt-0.5 font-medium ${membership.outstanding.amount > 0 ? "text-warning-deep" : "text-ink-3"}`}>{membership.outstanding.amount > 0 ? <MoneyText money={membership.outstanding} /> : "Nothing"}</p></div>
+          <div><p className="text-ink-3">{t("renewFlow.sale.rowDates")}</p><p className="mt-0.5 tabular text-ink">{t("memberEnrollment.dateRange", { start: isolate(f.date(membership.startDate)), end: isolate(f.date(membership.endDate)) })}</p><DaysUntilText date={membership.endDate} className="mt-0.5 block text-[12px]" /></div>
+          <div><p className="text-ink-3">{t("members.list.columns.balance")}</p><p className={`mt-0.5 font-medium ${membership.outstanding.amount > 0 ? "text-warning-deep" : "text-ink-3"}`}>{membership.outstanding.amount > 0 ? <MoneyText money={membership.outstanding} /> : t("memberEnrollment.nothing")}</p></div>
         </div>
       </button>
     </li>
@@ -223,7 +225,8 @@ function MembershipCompactRow({ membership, onOpen }: { membership: MembershipSu
 }
 
 function FreezeRequestsPanel() {
-  const t = useT();
+  const { t, isolate } = useLocale();
+  const f = useFormat();
   const { session } = useApp();
   const invalidate = useInvalidate();
   const requestsQuery = useApiQuery(["freezeRequests", "pending"] as const, (api) => api.listFreezeRequests({ status: "pending" }));
@@ -236,42 +239,42 @@ function FreezeRequestsPanel() {
       setNote("");
       await invalidate([["freezeRequests", "pending"], ["memberships"]]);
     },
-    successMessage: "Freeze request answered.",
+    successMessage: t("memberEnrollment.freezeAnswered"),
   });
 
   if (requestsQuery.isLoading) return <Skeleton className="h-24 w-full" />;
   if (requestsQuery.isError) {
-    return <section className="rounded-lg border border-line bg-surface p-4" aria-label="Freeze requests"><ErrorState title="Could not load freeze requests" description="No request was approved or declined. Try again before answering members." onRetry={() => requestsQuery.refetch()} /></section>;
+    return <section className="rounded-lg border border-line bg-surface p-4" aria-label={t("memberEnrollment.freezeRequests")}><ErrorState title={t("memberEnrollment.freezeRequestsFailed")} description={t("memberEnrollment.freezeRetryHint")} onRetry={() => requestsQuery.refetch()} /></section>;
   }
   const pending = requestsQuery.data ?? [];
   if (pending.length === 0) return null;
   return (
-    <section className="rounded-lg border border-warning/40 bg-warning-bg/30 p-4" aria-label="Freeze requests">
-      <h2 className="text-[15px] font-semibold">{pending.length} freeze request{pending.length === 1 ? "" : "s"} waiting</h2>
-      <p className="mt-1 text-[12px] text-ink-3">The fee is worked out again when you approve, using your current freeze rules.</p>
+    <section className="rounded-lg border border-warning/40 bg-warning-bg/30 p-4" aria-label={t("memberEnrollment.freezeRequests")}>
+      <h2 className="text-[15px] font-semibold">{t("memberEnrollment.freezeWaiting", { count: pending.length })}</h2>
+      <p className="mt-1 text-[12px] text-ink-3">{t("memberEnrollment.freezeFeeHint")}</p>
       <div className="mt-3 grid gap-2">
         {pending.map((request) => (
           <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2.5">
             <div className="min-w-0 text-[12.5px]">
               <p className="font-semibold">{request.memberName}</p>
-              <p className="text-ink-3">{request.days} days from {formatDate(request.startDate)} · “{request.reason}” · {request.expectedFeeMinor > 0 ? <>fee <MoneyText money={money(request.expectedFeeMinor, session?.organization.currency ?? "JOD")} /></> : "no fee"}</p>
+              <p className="text-ink-3">{t("memberEnrollment.freezeDetails", { days: t("memberEnrollment.days", { count: request.days }), date: isolate(f.date(request.startDate)), reason: isolate(request.reason), fee: request.expectedFeeMinor > 0 ? t("memberEnrollment.feeAmount", { amount: isolate(f.money(money(request.expectedFeeMinor, session?.organization.currency ?? "JOD"))) }) : t("memberEnrollment.noFee") })}</p>
             </div>
             <div className="flex gap-1.5">
-              <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>Approve</Button>
-              <Button size="sm" variant="secondary" onClick={() => { setDenyId(request.id); setNote(""); }}>Decline</Button>
+              <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ requestId: request.id, decision: "approved" })}>{t("memberEnrollment.approve")}</Button>
+              <Button size="sm" variant="secondary" onClick={() => { setDenyId(request.id); setNote(""); }}>{t("memberEnrollment.decline")}</Button>
             </div>
           </div>
         ))}
       </div>
       <Dialog open={Boolean(denyId)} onOpenChange={(open) => { if (!open) setDenyId(undefined); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Decline this freeze request?</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("memberEnrollment.declineFreeze")}</DialogTitle></DialogHeader>
           <DialogBody>
-            <label className="grid gap-1.5 text-[12px] font-medium">Reason the member will see<Textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
+            <label className="grid gap-1.5 text-[12px] font-medium">{t("memberEnrollment.memberSeesReason")}<Textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDenyId(undefined)}>{t("common.action.cancel")}</Button>
-            <Button variant="danger" loading={decide.isPending} disabled={!note.trim()} onClick={() => decide.mutate({ requestId: denyId!, decision: "denied", note: note.trim() })}>Decline request</Button>
+            <Button variant="danger" loading={decide.isPending} disabled={!note.trim()} onClick={() => decide.mutate({ requestId: denyId!, decision: "denied", note: note.trim() })}>{t("memberEnrollment.declineRequest")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

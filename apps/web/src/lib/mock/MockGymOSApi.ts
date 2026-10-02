@@ -1,3 +1,4 @@
+import { describeMemberImportError } from "@/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "@/lib/domain/workspace-module-error";
 import { makeFormatters } from "@/lib/i18n/formatters";
 import { createTranslator } from "@/lib/i18n/core";
@@ -2148,7 +2149,7 @@ export class MockGymOSApi implements GymOSApi {
           ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
           ...(duplicateIds.length ? ["A member with this phone or email already exists"] : []),
         ];
-        return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: plan?.name, membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
+        return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: plan?.name, membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, errorMessages: errors.map(describeMemberImportError), duplicateMemberIds: duplicateIds };
       });
       const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, migrationCutoffDate, planMappings: input.planMappings, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => (row.openingBalanceMinor ?? 0) > 0).length, historicalEvidenceRows: previewRows.filter((row) => (row.historicalPaidMinor ?? 0) > 0).length, currency: this.db.organization.currency, createdAt: nowISO() };
       this.memberImports.set(preview.id, preview);
@@ -2272,7 +2273,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const item = this.memberImports.get(importId);
       if (!item) throw ApiError.of(ERR.NOT_FOUND, "Import not found.");
-      return { ...item, rows: item.rows.map((row) => ({ ...row, errors: [...row.errors], duplicateMemberIds: [...row.duplicateMemberIds] })) };
+      return { ...item, rows: item.rows.map((row) => ({ ...row, errors: [...row.errors], errorMessages: row.errors.map(describeMemberImportError), duplicateMemberIds: [...row.duplicateMemberIds] })) };
     });
   }
 

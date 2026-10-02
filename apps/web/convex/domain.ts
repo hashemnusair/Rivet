@@ -1,3 +1,4 @@
+import { describeMemberImportError } from "../src/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "../src/lib/domain/workspace-module-error";
 import { searchKey } from "../src/lib/utils/text";
 import { ConvexError, v } from "convex/values";
@@ -6797,7 +6798,7 @@ function normalizedPlanMapping(value: unknown): Map<string, string> {
 }
 
 function memberImportView(value: Data, includeRows: boolean): Data {
-  const rows = arrayValue(value.rows).map(data);
+  const rows: Data[] = arrayValue(value.rows).map(value => { const row = data(value); return { ...row, errorMessages: arrayValue(row.errors).map(error => describeMemberImportError(String(error))) }; });
   return {
     id: stringValue(value.id),
     branchId: stringValue(value.branchId),
@@ -6924,7 +6925,7 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
       ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
       ...(duplicateMemberIds.length ? ["A member with this phone or email already exists"] : []),
     ];
-    return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: optionalString(plan?.name), membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };
+    return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: optionalString(plan?.name), membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, errorMessages: errors.map(describeMemberImportError), duplicateMemberIds };
   });
   const id = newPublicId();
   const now = Date.now();

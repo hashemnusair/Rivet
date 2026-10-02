@@ -1,4 +1,9 @@
 export const documents = {
+  csvTitle: "RIVET export",
+  csvRowCount: "Data rows",
+  csvNoRecords: "No records matched this export.",
+  csvEmpty: "No records.",
+
   "invoiceTitle": "Invoice",
   "draft": "Draft",
   "open": "Open",

@@ -524,7 +524,9 @@
     },
     {
       "id": "plans",
-      "keys": [],
+      "keys": [
+        "memberEnrollment.plansTitle"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -544,7 +546,7 @@
           "line": 64
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -2043,7 +2045,9 @@
     },
     {
       "id": "remaining-visits",
-      "keys": [],
+      "keys": [
+        "memberMigration.visitsRemaining"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -2051,7 +2055,7 @@
           "line": 27
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -2064,10 +2068,12 @@
     },
     {
       "id": "freeze-allowance",
-      "keys": [],
+      "keys": [
+        "memberEnrollment.freezeAllowed"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -2159,11 +2165,20 @@
     },
     {
       "id": "merge",
-      "keys": [],
+      "keys": [
+        "memberMigration.combineTitle",
+        "memberMigration.combineRecords"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "memberMigration.reviewCombine",
+          "template": "مراجعة و{approved}"
+        }
+      ]
     },
     {
       "id": "import",
@@ -2186,7 +2201,13 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "memberMigration.importMembers",
+          "template": "{approved}: {members}"
+        }
+      ]
     },
     {
       "id": "map-columns",
@@ -2201,8 +2222,14 @@
       "keys": [],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "memberMigration.finishedDetail",
+          "template": "تمت إضافة: {members}. {approved}: {rows}. يمكن التراجع عن الاستيراد خلال 7 أيام من قسم «عمليات الاستيراد الأخيرة» أدناه."
+        }
+      ]
     },
     {
       "id": "emergency-contact",
@@ -2230,7 +2257,21 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "memberEnrollment.emergencyDetails",
+          "template": "{approved} والملاحظات"
+        },
+        {
+          "key": "memberEnrollment.emergencyName",
+          "template": "اسم {approved}"
+        },
+        {
+          "key": "memberEnrollment.emergencyPhone",
+          "template": "هاتف {approved}"
+        }
+      ]
     },
     {
       "id": "consent",
@@ -3008,8 +3049,7 @@
     {
       "id": "opening-cash",
       "keys": [
-        "salesWorkspace.startingCash",
-        "salesWorkspace.startingCurrency"
+        "salesWorkspace.startingCash"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3019,7 +3059,13 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "salesWorkspace.startingCurrency",
+          "template": "{approved} ({currency})"
+        }
+      ]
     },
     {
       "id": "expected-cash",
@@ -3076,23 +3122,31 @@
     },
     {
       "id": "cash-short",
-      "keys": [
-        "salesWorkspace.cashShort"
-      ],
+      "keys": [],
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "salesWorkspace.cashShort",
+          "template": "{approved}: {amount}"
+        }
+      ]
     },
     {
       "id": "cash-over",
-      "keys": [
-        "salesWorkspace.cashOver"
-      ],
+      "keys": [],
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "salesWorkspace.cashOver",
+          "template": "{approved}: {amount}"
+        }
+      ]
     },
     {
       "id": "approve-difference",

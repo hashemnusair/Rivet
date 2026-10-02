@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
 
 import { Archive, Pencil, Plus } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { planDurationText } from "@/lib/i18n/member-enrollment";
 import { PlanFormDialog } from "@/features/plans/plan-form-dialog";
 
 export default function PlansPage() {
@@ -24,7 +25,7 @@ export default function PlansPage() {
 }
 
 function PlansWorkspace() {
-  const t = useT();
+  const { t, locale, isolateLtr } = useLocale();
   const { session } = useApp();
   const invalidate = useInvalidate();
   const params = useSearchParams();
@@ -41,7 +42,7 @@ function PlansWorkspace() {
 
   const archivePlan = useApiMutation((api, plan: MembershipPlan) => api.updatePlan(plan.id, { status: "archived" }), {
     onSuccess: async () => {
-      toast.success("Plan archived. Memberships already sold on it do not change.");
+      toast.success(t("memberEnrollment.planArchived"));
       await invalidate();
     },
   });
@@ -50,14 +51,14 @@ function PlansWorkspace() {
     plan.branchAccess === "all"
       ? t("common.label.allBranches")
       : plan.branchIds
-          .map((id) => session?.branches.find((b) => b.id === id)?.code ?? "?")
-          .join(", ");
+          .map((id) => isolateLtr(session?.branches.find((b) => b.id === id)?.code ?? "?"))
+          .join(locale === "ar" ? "، " : ", ");
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Membership plans"
-        description="The plans you sell. Changing a plan does not change memberships already sold."
+        title={t("memberEnrollment.plansTitle")}
+        description={t("memberEnrollment.plansHint")}
         actions={
           <Gate permission="settings.manage">
             <Button
@@ -66,13 +67,12 @@ function PlansWorkspace() {
                 setDialogOpen(true);
               }}
             >
-              <Plus /> Add plan
-            </Button>
+              <Plus /> {" "}{t("memberEnrollment.addPlan")}{" "}</Button>
           </Gate>
         }
       />
 
-      <div className="flex items-center gap-2" role="group" aria-label="Plan status">
+      <div className="flex items-center gap-2" role="group" aria-label={t("memberEnrollment.planStatus")}>
         {(["active", "archived"] as const).map((s) => (
           <button
             key={s}
@@ -86,7 +86,7 @@ function PlansWorkspace() {
               "rounded-full border px-3 py-1 text-[12px] capitalize transition-colors cursor-pointer"
             }
           >
-            {s}
+            {t(s === "active" ? "memberEnrollment.activePlan" : "memberEnrollment.archivedPlan")}
           </button>
         ))}
       </div>
@@ -102,13 +102,13 @@ function PlansWorkspace() {
           </div>
         ) : (query.data?.items.length ?? 0) === 0 ? (
           <EmptyState
-            title={showArchived ? "No archived plans" : "No plans yet"}
-            description={showArchived ? "Plans you archive are kept here." : "Add your first plan to start selling memberships."}
+            title={showArchived ? t("memberEnrollment.noArchivedPlans") : t("memberEnrollment.noPlans")}
+            description={showArchived ? t("memberEnrollment.archivedPlansHint") : t("memberEnrollment.addFirstPlan")}
             className="border-0"
           />
         ) : (
           <>
-          <ul className="divide-y divide-line lg:hidden" aria-label="Membership plans">
+          <ul className="divide-y divide-line lg:hidden" aria-label={t("memberEnrollment.plansTitle")}>
             {query.data!.items.map((plan) => (
               <PlanCompactRow
                 key={plan.id}
@@ -123,10 +123,10 @@ function PlansWorkspace() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>{t("renewFlow.adjust.planChange.rowPlan")}</TableHead>
-                <TableHead>Length</TableHead>
+                <TableHead>{t("memberEnrollment.length")}</TableHead>
                 <TableHead className="text-end">{t("renewFlow.adjust.planChange.rowPrice")}</TableHead>
-                <TableHead>Branches</TableHead>
-                <TableHead className="text-end">Freeze days</TableHead>
+                <TableHead>{t("memberEnrollment.branches")}</TableHead>
+                <TableHead className="text-end">{t("memberEnrollment.freezeDays")}</TableHead>
                 <TableHead className="text-end">{t("crm.lead.membership.ptSessions")}</TableHead>
                 <TableHead className="text-end">{t("members.list.activeMembers")}</TableHead>
                 <TableHead aria-label={t("common.label.actions")} />
@@ -136,17 +136,11 @@ function PlansWorkspace() {
               {query.data!.items.map((plan) => (
                 <TableRow key={plan.id}>
                   <TableCell>
-                    <span className="font-medium">{plan.name}</span>
-                    <span className="ms-2 font-mono text-[11px] text-ink-3">{plan.code}</span>
+                    <span className="font-medium"><bdi>{plan.name}</bdi></span>
+                    <span className="ms-2 font-mono text-[11px] text-ink-3"><bdi dir="ltr">{plan.code}</bdi></span>
                   </TableCell>
                   <TableCell className="text-[12.5px] text-ink-2">
-                    {plan.kind === "time" ? (
-                      <span className="tabular">{plan.durationDays} days</span>
-                    ) : (
-                      <span className="tabular">
-                        {plan.visitAllowance} visits{plan.visitValidityDays ? ` in ${plan.visitValidityDays} days` : ""}
-                      </span>
-                    )}
+                    <span className="tabular">{planDurationText(t, plan)}</span>
                   </TableCell>
                   <TableCell className="text-end">
                     <MoneyText money={plan.basePrice} />
@@ -167,7 +161,7 @@ function PlansWorkspace() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          aria-label={`Edit ${plan.name}`}
+                          aria-label={t("memberEnrollment.editPlan", { name: plan.name })}
                           onClick={() => {
                             setEditing(plan);
                             setDialogOpen(true);
@@ -179,7 +173,7 @@ function PlansWorkspace() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label={`Archive ${plan.name}`}
+                            aria-label={t("memberEnrollment.archivePlan", { name: plan.name })}
                             onClick={() => archivePlan.mutate(plan)}
                           >
                             <Archive />
@@ -202,26 +196,26 @@ function PlansWorkspace() {
 }
 
 function PlanCompactRow({ plan, branchLabel, onEdit, onArchive }: { plan: MembershipPlan; branchLabel: string; onEdit: () => void; onArchive: () => void }) {
-  const t = useT();
+  const { t } = useLocale();
   return (
     <li className="space-y-3 px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[13.5px] font-semibold text-ink">{plan.name}</p>
-          <p className="mt-0.5 font-mono text-[12px] text-ink-3">{plan.code}</p>
+          <p className="truncate text-[13.5px] font-semibold text-ink"><bdi>{plan.name}</bdi></p>
+          <p className="mt-0.5 font-mono text-[12px] text-ink-3"><bdi dir="ltr">{plan.code}</bdi></p>
         </div>
         <MoneyText money={plan.basePrice} className="text-[13.5px] font-semibold" />
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]">
-        <div><dt className="text-ink-3">Length</dt><dd className="mt-0.5 tabular">{plan.kind === "time" ? `${plan.durationDays} days` : `${plan.visitAllowance} visits${plan.visitValidityDays ? ` in ${plan.visitValidityDays} days` : ""}`}</dd></div>
-        <div><dt className="text-ink-3">Branches</dt><dd className="mt-0.5">{branchLabel}</dd></div>
+        <div><dt className="text-ink-3">{t("memberEnrollment.length")}</dt><dd className="mt-0.5 tabular">{planDurationText(t, plan)}</dd></div>
+        <div><dt className="text-ink-3">{t("memberEnrollment.branches")}</dt><dd className="mt-0.5">{branchLabel}</dd></div>
         <div><dt className="text-ink-3">{t("members.list.activeMembers")}</dt><dd className="mt-0.5 tabular">{plan.activeSubscribers}</dd></div>
-        <div><dt className="text-ink-3">Freeze and PT</dt><dd className="mt-0.5 tabular">{plan.freezeAllowanceDays > 0 ? `${plan.freezeAllowanceDays} freeze days` : "No freeze"}{plan.includedPtSessions > 0 ? ` · ${plan.includedPtSessions} PT sessions` : ""}</dd></div>
+        <div><dt className="text-ink-3">{t("memberEnrollment.freezePt")}</dt><dd className="mt-0.5 tabular">{plan.freezeAllowanceDays > 0 ? t("memberEnrollment.freezeAllowance", { count: plan.freezeAllowanceDays }) : t("memberEnrollment.noFreeze")}{plan.includedPtSessions > 0 ? ` · ${t("memberEnrollment.ptSessions", { count: plan.includedPtSessions })}` : ""}</dd></div>
       </dl>
       <Gate permission="settings.manage">
         <div className="flex justify-end gap-2 border-t border-line pt-3">
           <Button variant="secondary" size="sm" onClick={onEdit}><Pencil />{" "}{t("common.action.edit")}</Button>
-          {plan.status === "active" ? <Button variant="ghost" size="sm" onClick={onArchive}><Archive /> Archive</Button> : null}
+          {plan.status === "active" ? <Button variant="ghost" size="sm" onClick={onArchive}><Archive /> {" "}{t("memberEnrollment.archive")}</Button> : null}
         </div>
       </Gate>
     </li>

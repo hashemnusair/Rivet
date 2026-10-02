@@ -1,3 +1,4 @@
+import type { MemberImportErrorMessage } from "../imports/member-import-errors";
 import type {
   AuditCategory,
   AuditEvent,
@@ -249,6 +250,8 @@ export interface MemberImportRow {
   email?: string;
   status: "valid" | "duplicate" | "invalid" | "committed" | "skipped";
   errors: string[];
+  /** Optional structured projection; original row errors remain unchanged. */
+  errorMessages?: MemberImportErrorMessage[];
   duplicateMemberIds: string[];
   memberId?: string;
   sourcePlanName?: string;

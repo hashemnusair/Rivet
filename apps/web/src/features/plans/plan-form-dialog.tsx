@@ -1,12 +1,15 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
+import { enrollmentErrorText, enrollmentKey } from "@/lib/i18n/member-enrollment";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { latinDigits } from "@/lib/utils/text";
+import { useMoneyProblemText } from "@/features/membership-actions/renew-flow-format";
 import { qk } from "@/lib/api/keys";
 import type { MembershipPlan } from "@/lib/domain/types";
 import { money, parseMoneyInput, readMoneyInput, toMajorString } from "@/lib/utils/money";
@@ -18,28 +21,31 @@ import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioCard } from "@/components/ui/radio-group";
 
+const numeric = (schema: z.ZodNumber) => z.preprocess(value => typeof value === "string" ? latinDigits(value).replace(/٫/g, ".") : value, schema);
+
 const schema = z
   .object({
-    name: z.string().min(2, "Enter a plan name"),
-    code: z.string().min(1, "Enter a short code").max(8, "Use 8 characters or fewer"),
+    name: z.string().min(2, enrollmentKey("planNameRequired")),
+    code: z.string().min(1, enrollmentKey("planCodeRequired")).max(8, enrollmentKey("planCodeLength")),
     kind: z.enum(["time", "visits"]),
-    durationDays: z.coerce.number().int("Use a whole number").min(1, "Enter 1 or more").optional(),
-    visitAllowance: z.coerce.number().int("Use a whole number").min(1, "Enter 1 or more").optional(),
-    visitValidityDays: z.coerce.number().int("Use a whole number").min(1, "Enter 1 or more").optional(),
-    priceMajor: z.string().min(1, "Enter a price"),
+    durationDays: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(1, enrollmentKey("atLeastOne"))).optional(),
+    visitAllowance: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(1, enrollmentKey("atLeastOne"))).optional(),
+    visitValidityDays: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(1, enrollmentKey("atLeastOne"))).optional(),
+    priceMajor: z.string().min(1, enrollmentKey("priceRequired")),
     branchAccess: z.enum(["all", "selected"]),
     branchIds: z.array(z.string()),
-    freezeAllowanceDays: z.coerce.number().int("Use a whole number").min(0, "Enter 0 or more").max(180, "Use 180 days or fewer"),
-    includedPtSessions: z.coerce.number().int("Use a whole number").min(0, "Enter 0 or more").max(100, "Use 100 or fewer"),
+    freezeAllowanceDays: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(0, enrollmentKey("atLeastZero")).max(180, enrollmentKey("maxFreezeDays"))),
+    includedPtSessions: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(0, enrollmentKey("atLeastZero")).max(100, enrollmentKey("maxPtSessions"))),
   })
   .superRefine((v, ctx) => {
-    if (v.kind === "time" && !v.durationDays) ctx.addIssue({ code: "custom", path: ["durationDays"], message: "Enter the number of days" });
-    if (v.kind === "visits" && !v.visitAllowance) ctx.addIssue({ code: "custom", path: ["visitAllowance"], message: "Enter the number of visits" });
+    if (v.kind === "time" && !v.durationDays) ctx.addIssue({ code: "custom", path: ["durationDays"], message: enrollmentKey("durationRequired") });
+    if (v.kind === "visits" && !v.visitAllowance) ctx.addIssue({ code: "custom", path: ["visitAllowance"], message: enrollmentKey("visitsRequired") });
     if (v.branchAccess === "selected" && v.branchIds.length === 0)
-      ctx.addIssue({ code: "custom", path: ["branchIds"], message: "Choose at least one branch" });
+      ctx.addIssue({ code: "custom", path: ["branchIds"], message: enrollmentKey("branchRequired") });
   });
 
-type FormValues = z.infer<typeof schema>;
+type FormInput = z.input<typeof schema>;
+type FormValues = z.output<typeof schema>;
 
 export function PlanFormDialog({
   open,
@@ -50,18 +56,20 @@ export function PlanFormDialog({
   onOpenChange: (v: boolean) => void;
   plan?: MembershipPlan;
 }) {
-  const t = useT();
+  const { t, locale, isolate } = useLocale();
+  const moneyProblemText = useMoneyProblemText();
   const invalidate = useInvalidate();
   const branchesQuery = useApiQuery(qk.branches, (api) => api.listBranches(), { enabled: open });
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverCause, setServerError] = useState<unknown>();
+  const serverError = serverCause ? (isApiError(serverCause) ? localizeApiError(serverCause, locale).message : t("memberEnrollment.planSaveFailed")) : undefined;
 
   const { session } = useApp();
   // Prices are typed and stored in the gym's currency at its own precision.
   const currency = plan?.basePrice.currency ?? session?.organization.currency ?? "JOD";
-  const form = useForm<FormValues>({
+  const form = useForm<FormInput, unknown, FormValues>({
     resolver: zodResolver(schema.superRefine((value, context) => {
       const read = readMoneyInput(value.priceMajor, currency);
-      if (!read.ok) context.addIssue({ code: "custom", path: ["priceMajor"], message: read.message });
+      if (!read.ok) context.addIssue({ code: "custom", path: ["priceMajor"], message: enrollmentKey("validAmount") });
     })),
     defaultValues: {
       name: "",
@@ -100,6 +108,7 @@ export function PlanFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, plan?.id]);
 
+  const priceRead = readMoneyInput(form.watch("priceMajor"), currency);
   const kind = form.watch("kind");
   const branchAccess = form.watch("branchAccess");
 
@@ -125,7 +134,7 @@ export function PlanFormDialog({
         await invalidate();
         onOpenChange(false);
       },
-      onError: (e) => setServerError(isApiError(e) ? e.message : "The plan was not saved. Try again."),
+      onError: (e) => setServerError(e),
     },
   );
 
@@ -133,33 +142,33 @@ export function PlanFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>{plan ? `Edit ${plan.name}` : "Add plan"}</DialogTitle>
-          <DialogDescription>Price changes only apply to new sales.</DialogDescription>
+          <DialogTitle>{plan ? t("memberEnrollment.editPlan", { name: isolate(plan.name) }) : t("memberEnrollment.addPlan")}</DialogTitle>
+          <DialogDescription>{t("memberEnrollment.priceChangesHint")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
             <FieldGrid alignFrom="base" className="grid-cols-[1fr_110px]">
-              <Field label="Plan name" required error={form.formState.errors.name?.message}>
-                <Input placeholder="For example: Quarterly" {...form.register("name")} />
+              <Field label={t("memberEnrollment.planName")} required error={enrollmentErrorText(t, form.formState.errors.name?.message)}>
+                <Input placeholder={t("memberEnrollment.planExample")} {...form.register("name")} />
               </Field>
-              <Field label="Code" required error={form.formState.errors.code?.message}>
-                <Input placeholder="Q3" className="font-mono uppercase" {...form.register("code")} />
+              <Field label={t("memberEnrollment.planCode")} required error={enrollmentErrorText(t, form.formState.errors.code?.message)}>
+                <Input dir="ltr" placeholder="Q3" className="font-mono uppercase" {...form.register("code")} />
               </Field>
             </FieldGrid>
 
-            <Field label="Plan type">
+            <Field label={t("memberEnrollment.planType")}>
               <Controller
                 control={form.control}
                 name="kind"
                 render={({ field }) => (
                   <RadioGroup value={field.value} onValueChange={field.onChange} className="grid grid-cols-2 gap-2">
                     <RadioCard value="time">
-                      <span className="block text-[13px] font-medium">By days</span>
-                      <span className="block text-[12px] text-ink-3">Lasts a set number of days</span>
+                      <span className="block text-[13px] font-medium">{t("memberEnrollment.byDays")}</span>
+                      <span className="block text-[12px] text-ink-3">{t("memberEnrollment.byDaysHint")}</span>
                     </RadioCard>
                     <RadioCard value="visits">
-                      <span className="block text-[13px] font-medium">By visits</span>
-                      <span className="block text-[12px] text-ink-3">A set number of visits</span>
+                      <span className="block text-[13px] font-medium">{t("memberEnrollment.byVisits")}</span>
+                      <span className="block text-[12px] text-ink-3">{t("memberEnrollment.byVisitsHint")}</span>
                     </RadioCard>
                   </RadioGroup>
                 )}
@@ -168,31 +177,31 @@ export function PlanFormDialog({
 
             <FieldGrid className="sm:grid-cols-3">
               {kind === "time" ? (
-                <Field label="Length (days)" required error={form.formState.errors.durationDays?.message}>
-                  <Input type="number" min={1} {...form.register("durationDays")} />
+                <Field label={t("memberEnrollment.durationDays")} required error={enrollmentErrorText(t, form.formState.errors.durationDays?.message)}>
+                  <Input type="text" inputMode="numeric" dir="ltr" {...form.register("durationDays")} />
                 </Field>
               ) : (
                 <>
-                  <Field label="Number of visits" required error={form.formState.errors.visitAllowance?.message}>
-                    <Input type="number" min={1} {...form.register("visitAllowance")} />
+                  <Field label={t("memberEnrollment.numberVisits")} required error={enrollmentErrorText(t, form.formState.errors.visitAllowance?.message)}>
+                    <Input type="text" inputMode="numeric" dir="ltr" {...form.register("visitAllowance")} />
                   </Field>
-                  <Field label="Use within (days)">
-                    <Input type="number" min={1} placeholder="90" {...form.register("visitValidityDays")} />
+                  <Field label={t("memberEnrollment.validityDays")} error={enrollmentErrorText(t, form.formState.errors.visitValidityDays?.message)}>
+                    <Input type="text" inputMode="numeric" dir="ltr" placeholder="90" {...form.register("visitValidityDays")} />
                   </Field>
                 </>
               )}
-              <Field label={`Price (${currency})`} required error={form.formState.errors.priceMajor?.message}>
+              <Field label={t("memberEnrollment.priceCurrency", { currency: locale === "ar" && currency === "JOD" ? "د.أ" : currency })} required error={form.formState.errors.priceMajor && !priceRead.ok ? (priceRead.problem === "empty" ? t("memberEnrollment.priceRequired") : moneyProblemText(priceRead, currency)) : enrollmentErrorText(t, form.formState.errors.priceMajor?.message)}>
                 <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(money(0, currency))} aria-invalid={form.formState.errors.priceMajor ? true : undefined} {...form.register("priceMajor")} />
               </Field>
-              <Field label="Freeze days allowed">
-                <Input type="number" min={0} {...form.register("freezeAllowanceDays")} />
+              <Field label={t("memberEnrollment.freezeAllowed")} error={enrollmentErrorText(t, form.formState.errors.freezeAllowanceDays?.message)}>
+                <Input type="text" inputMode="numeric" dir="ltr" {...form.register("freezeAllowanceDays")} />
               </Field>
-              <Field label="PT sessions included" error={form.formState.errors.includedPtSessions?.message}>
-                <Input type="number" min={0} max={100} {...form.register("includedPtSessions")} />
+              <Field label={t("memberEnrollment.ptIncluded")} error={enrollmentErrorText(t, form.formState.errors.includedPtSessions?.message)}>
+                <Input type="text" inputMode="numeric" dir="ltr" {...form.register("includedPtSessions")} />
               </Field>
             </FieldGrid>
 
-            <Field label="Branches" error={form.formState.errors.branchIds?.message as string | undefined}>
+            <Field label={t("memberEnrollment.branches")} error={enrollmentErrorText(t, form.formState.errors.branchIds?.message) as string | undefined}>
               <Controller
                 control={form.control}
                 name="branchAccess"
@@ -202,7 +211,7 @@ export function PlanFormDialog({
                       <span className="block text-[13px] font-medium">{t("common.label.allBranches")}</span>
                     </RadioCard>
                     <RadioCard value="selected">
-                      <span className="block text-[13px] font-medium">Selected branches</span>
+                      <span className="block text-[13px] font-medium">{t("memberEnrollment.selectedBranches")}</span>
                     </RadioCard>
                   </RadioGroup>
                 )}
@@ -228,7 +237,7 @@ export function PlanFormDialog({
                       )}
                     />
                   ))}
-                  {branchesQuery.isLoading ? <span className="text-[12px] text-ink-3">Loading branches…</span> : null}
+                  {branchesQuery.isLoading ? <span className="text-[12px] text-ink-3">{t("memberEnrollment.loadingBranches")}</span> : null}
                 </div>
               ) : null}
             </Field>
@@ -237,7 +246,7 @@ export function PlanFormDialog({
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
             <Button type="submit" loading={mutation.isPending}>
-              {plan ? t("common.action.saveChanges") : "Add plan"}
+              {plan ? t("common.action.saveChanges") : t("memberEnrollment.addPlan")}
             </Button>
           </DialogFooter>
         </form>

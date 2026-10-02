@@ -1,5 +1,6 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
+import { enrollmentErrorText, enrollmentKey } from "@/lib/i18n/member-enrollment";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, CalendarDays, Check, CreditCard, ReceiptText, WalletCards } from "lucide-react";
@@ -7,7 +8,9 @@ import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
+import { paymentMethodLabel } from "@/lib/i18n/labels";
+import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
+import { useMoneyProblemText } from "@/features/membership-actions/renew-flow-format";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -16,11 +19,11 @@ import { Switch } from "@/components/ui/switch";
 import { qk } from "@/lib/api/keys";
 import type { CreateMemberMembershipSaleInput, MembershipPlan, PaymentMethodKey } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
-import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
-import { money, moneyInputError, parseMoneyInput, toMajorString } from "@/lib/utils/money";
+import { addDays, todayISODate } from "@/lib/utils/dates";
+import { money, readMoneyInput, parseMoneyInput, toMajorString } from "@/lib/utils/money";
 
 const schema = z.object({
-  planId: z.string().min(1, "Choose a membership"),
+  planId: z.string().min(1, enrollmentKey("chooseMembership")),
   collectNow: z.boolean(),
   payAmount: z.string().optional(),
   payMethod: z.enum(["cash", "card", "bank_transfer", "cliq", "other"]),
@@ -44,7 +47,9 @@ export function QuickMembershipStep({
   onBack: () => void;
   onSubmit: (sale: CreateMemberMembershipSaleInput["sale"]) => void;
 }) {
-  const t = useT();
+  const { t, isolate } = useLocale();
+  const f = useFormat();
+  const timeZone = useFormattingTimeZone();
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 50 }));
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const plans = useMemo(
@@ -63,8 +68,10 @@ export function QuickMembershipStep({
   const collectNow = form.watch("collectNow");
   const selectedMethod = form.watch("payMethod");
   const currency = plan?.basePrice.currency ?? "JOD";
+  const moneyProblemText = useMoneyProblemText();
   const rawAmount = (form.watch("payAmount") ?? "").trim();
   const parsedAmount = parseMoneyInput(rawAmount, currency);
+  const amountRead = readMoneyInput(rawAmount, currency);
   const payingNow = collectNow && plan ? (rawAmount ? (parsedAmount ?? money(0, plan.basePrice.currency)) : plan.basePrice) : money(0, plan?.basePrice.currency ?? "JOD");
   const remaining = money(Math.max(0, (plan?.basePrice.amount ?? 0) - payingNow.amount), plan?.basePrice.currency ?? "JOD");
   const referenceRequired = selectedMethod === "card" || selectedMethod === "bank_transfer" || selectedMethod === "cliq";
@@ -77,28 +84,28 @@ export function QuickMembershipStep({
   const submit = form.handleSubmit((values) => {
     if (!plan) return;
     if (values.collectNow && rawAmount && !parsedAmount) {
-      form.setError("payAmount", { message: moneyInputError(rawAmount, currency) ?? "Enter a valid amount" });
+      form.setError("payAmount", { message: enrollmentKey("validAmount") });
       return;
     }
     if (values.collectNow && payingNow.amount <= 0) {
-      form.setError("payAmount", { message: "Enter an amount greater than zero" });
+      form.setError("payAmount", { message: enrollmentKey("positiveAmount") });
       return;
     }
     if (payingNow.amount > plan.basePrice.amount) {
-      form.setError("payAmount", { message: "The amount cannot be more than the membership price" });
+      form.setError("payAmount", { message: enrollmentKey("amountAbovePrice") });
       return;
     }
     if (values.collectNow && !methods.some((method) => method.key === values.payMethod)) {
-      form.setError("payMethod", { message: "Choose a payment method from the list" });
+      form.setError("payMethod", { message: enrollmentKey("chooseMethod") });
       return;
     }
     if (values.collectNow && referenceRequired && !values.paymentReference?.trim()) {
-      form.setError("paymentReference", { message: "Enter the reference number from the card slip or transfer" });
+      form.setError("paymentReference", { message: enrollmentKey("enterReference") });
       return;
     }
     onSubmit({
       planId: plan.id,
-      startDate: todayISODate(),
+      startDate: todayISODate(timeZone),
       payment: values.collectNow
         ? {
             amount: payingNow,
@@ -111,58 +118,58 @@ export function QuickMembershipStep({
 
   return (
     <form onSubmit={submit} className="space-y-5">
-      <div className="flex items-center gap-2 text-[12px] text-ink-3" aria-label="Steps">
-        <span className="inline-flex items-center gap-1.5"><span className="grid size-5 place-items-center rounded-full bg-success text-[12px] text-white"><Check className="size-3" /></span> Member details</span>
+      <div className="flex items-center gap-2 text-[12px] text-ink-3" aria-label={t("memberEnrollment.steps")}>
+        <span className="inline-flex items-center gap-1.5"><span className="grid size-5 place-items-center rounded-full bg-success text-[12px] text-white"><Check className="size-3" /></span> {" "}{t("memberEnrollment.memberDetails")}</span>
         <span aria-hidden className="h-px w-8 bg-line-2" />
-        <span className="inline-flex items-center gap-1.5 font-medium text-ink"><span className="grid size-5 place-items-center rounded-full bg-ink text-[12px] text-paper">2</span> Membership and payment</span>
+        <span className="inline-flex items-center gap-1.5 font-medium text-ink"><span className="grid size-5 place-items-center rounded-full bg-ink text-[12px] text-paper">2</span> {" "}{t("memberEnrollment.membershipPayment")}</span>
       </div>
 
       <section className="panel overflow-hidden">
         <div className="border-b border-line bg-sunken/40 px-5 py-4">
-          <h2 className="font-display text-xl font-semibold tracking-tight">Choose {memberName}&apos;s membership</h2>
-          <p className="mt-1 text-[13px] text-ink-3">The member and membership are saved together when you confirm.</p>
+          <h2 className="font-display text-xl font-semibold tracking-tight">{t("memberEnrollment.chooseFor", { name: isolate(memberName) })}</h2>
+          <p className="mt-1 text-[13px] text-ink-3">{t("memberEnrollment.savedTogether")}</p>
         </div>
 
         <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_260px]">
           <div className="space-y-5">
-            <Field label={t("memberProfile.followUp.membershipFallback")} required error={form.formState.errors.planId?.message}>
+            <Field label={t("memberProfile.followUp.membershipFallback")} required error={enrollmentErrorText(t, form.formState.errors.planId?.message)}>
               <Controller
                 control={form.control}
                 name="planId"
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger aria-label={t("memberProfile.followUp.membershipFallback")} className="min-h-12" data-testid="quick-sale-plan">
-                      <SelectValue placeholder={plansQuery.isLoading ? "Loading memberships…" : "Choose a membership"} />
+                      <SelectValue placeholder={plansQuery.isLoading ? t("memberEnrollment.loadingMemberships") : t("memberEnrollment.chooseMembership")} />
                     </SelectTrigger>
                     <SelectContent>
                       {plans.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
-                          {item.name} · {toMajorString(item.basePrice)} {item.basePrice.currency}
+                          <bdi>{item.name}</bdi> · <MoneyText money={item.basePrice} />
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 )}
               />
-              {plansQuery.isError ? <InlineRetry label="Could not load memberships." onRetry={() => { void plansQuery.refetch(); }} /> : null}
-              {!plansQuery.isLoading && !plansQuery.isError && plans.length === 0 ? <p className="mt-2 text-[12.5px] text-warning-deep">No plans are for sale at this branch. Save the member without a membership, or ask a manager to add a plan for this branch.</p> : null}
+              {plansQuery.isError ? <InlineRetry label={t("memberEnrollment.plansFailed")} onRetry={() => { void plansQuery.refetch(); }} /> : null}
+              {!plansQuery.isLoading && !plansQuery.isError && plans.length === 0 ? <p className="mt-2 text-[12.5px] text-warning-deep">{t("memberEnrollment.noBranchPlans")}</p> : null}
             </Field>
 
             <div className="rounded-lg border border-line bg-paper px-4 py-4">
               <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
                 <span>
                   <span className="block text-[13.5px] font-semibold">{t("renewFlow.sale.collectNow")}</span>
-                  <span className="mt-0.5 block text-[12px] text-ink-3">Turn this off if the member will pay later. The full price will show as unpaid.</span>
+                  <span className="mt-0.5 block text-[12px] text-ink-3">{t("memberEnrollment.collectLaterHint")}</span>
                 </span>
                 <Controller control={form.control} name="collectNow" render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} aria-label={t("renewFlow.sale.collectNow")} />} />
               </label>
 
               {collectNow ? (
                 <FieldGrid className="mt-4 gap-4 border-t border-line pt-4 sm:grid-cols-2">
-                  <Field label={`Amount (${currency})`} error={form.formState.errors.payAmount?.message} hint="Leave empty to take the full price.">
+                  <Field label={t("memberEnrollment.amountCurrency", { currency })} error={form.formState.errors.payAmount && !amountRead.ok && rawAmount ? moneyProblemText(amountRead, currency) : enrollmentErrorText(t, form.formState.errors.payAmount?.message)} hint={t("memberEnrollment.fullPriceHint")}>
                     <Input inputMode="decimal" dir="ltr" className="min-h-11" placeholder={plan ? toMajorString(plan.basePrice) : toMajorString(money(0, currency))} {...form.register("payAmount")} />
                   </Field>
-                  <Field label={t("renewFlow.shared.paymentMethodAria")} error={form.formState.errors.payMethod?.message}>
+                  <Field label={t("renewFlow.shared.paymentMethodAria")} error={enrollmentErrorText(t, form.formState.errors.payMethod?.message)}>
                     <Controller
                       control={form.control}
                       name="payMethod"
@@ -170,15 +177,15 @@ export function QuickMembershipStep({
                         <Select value={field.value} onValueChange={field.onChange}>
                           <SelectTrigger aria-label={t("renewFlow.shared.paymentMethodAria")} className="min-h-11"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {methods.map((method) => <SelectItem key={method.key} value={method.key}>{PAYMENT_METHOD_LABELS[method.key] ?? method.label}</SelectItem>)}
+                            {methods.map((method) => <SelectItem key={method.key} value={method.key}>{paymentMethodLabel(t, method.key) ?? method.label}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       )}
                     />
-                    {settingsQuery.isError ? <InlineRetry label="Could not load payment methods." onRetry={() => { void settingsQuery.refetch(); }} /> : null}
+                    {settingsQuery.isError ? <InlineRetry label={t("memberEnrollment.methodsFailed")} onRetry={() => { void settingsQuery.refetch(); }} /> : null}
                   </Field>
                   {referenceRequired ? (
-                    <Field className="sm:col-span-2" label={t("renewFlow.shared.referenceNumber")} required error={form.formState.errors.paymentReference?.message} hint="The reference number on the card slip, CliQ payment or bank transfer.">
+                    <Field className="sm:col-span-2" label={t("renewFlow.shared.referenceNumber")} required error={enrollmentErrorText(t, form.formState.errors.paymentReference?.message)} hint={t("memberEnrollment.referenceHint")}>
                       <Input className="min-h-11" placeholder={t("renewFlow.shared.referencePlaceholder")} {...form.register("paymentReference")} />
                     </Field>
                   ) : null}
@@ -186,8 +193,7 @@ export function QuickMembershipStep({
               ) : (
                 <div className="mt-4 flex items-start gap-3 border-t border-line pt-4 text-[12.5px] text-ink-2">
                   <ReceiptText className="mt-0.5 size-4 shrink-0 text-warning-deep" aria-hidden />
-                  The membership starts today. The full price stays unpaid until the member pays.
-                </div>
+                  {" "}{t("memberEnrollment.startsUnpaid")}{" "}</div>
               )}
             </div>
           </div>
@@ -198,10 +204,9 @@ export function QuickMembershipStep({
 
       <div className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
         {error ? <p role="alert" className="me-auto max-w-md text-[13px] text-danger">{error}</p> : null}
-        <Button type="button" variant="secondary" className="max-sm:w-full" onClick={onBack} disabled={pending}><ArrowLeft />{" "}{t("common.action.back")}</Button>
+        <Button type="button" variant="secondary" className="max-sm:w-full" onClick={onBack} disabled={pending}><ArrowLeft className="rtl:rotate-180" />{" "}{t("common.action.back")}</Button>
         <Button type="submit" className="max-sm:w-full" loading={pending} disabled={!plan || (collectNow && methods.length === 0)} data-testid="confirm-member-sale">
-          <WalletCards /> Save member and membership
-          {plan ? ` · ${toMajorString(plan.basePrice)} ${plan.basePrice.currency}` : ""}
+          <WalletCards /> {" "}{t("memberEnrollment.saveMemberSale")}{" "}{plan ? ` · ${isolate(f.money(plan.basePrice))}` : ""}
         </Button>
       </div>
     </form>
@@ -209,21 +214,23 @@ export function QuickMembershipStep({
 }
 
 function SaleSummary({ plan, payingNow, remaining }: { plan?: MembershipPlan; payingNow: ReturnType<typeof money>; remaining: ReturnType<typeof money> }) {
-  const t = useT();
-  const start = todayISODate();
+  const { t, isolate } = useLocale();
+  const f = useFormat();
+  const timeZone = useFormattingTimeZone();
+  const start = todayISODate(timeZone);
   const end = plan ? addDays(start, plan.kind === "visits" ? (plan.visitValidityDays ?? 90) : (plan.durationDays ?? 30)) : undefined;
   return (
     <aside className="self-start rounded-lg border border-line bg-sunken/55 p-4" aria-label={t("renewFlow.sale.summary")}>
       <p className="context-label">{t("renewFlow.sale.summary")}</p>
       <dl className="mt-4 space-y-3 text-[13px]">
-        <SummaryRow icon={<WalletCards className="size-4" />} label={t("memberProfile.followUp.membershipFallback")} value={plan?.name ?? "Not chosen"} />
-        <SummaryRow icon={<CalendarDays className="size-4" />} label={t("renewFlow.sale.rowDates")} value={end ? `${formatDate(start)} – ${formatDate(end)}` : "—"} tabular />
+        <SummaryRow icon={<WalletCards className="size-4" />} label={t("memberProfile.followUp.membershipFallback")} value={plan?.name ?? t("memberEnrollment.notChosen")} />
+        <SummaryRow icon={<CalendarDays className="size-4" />} label={t("renewFlow.sale.rowDates")} value={end ? t("memberEnrollment.dateRange", { start: isolate(f.date(start)), end: isolate(f.date(end)) }) : "—"} tabular />
         <SummaryRow icon={<CreditCard className="size-4" />} label={t("renewFlow.sale.rowPayingNow")} value={<MoneyText money={payingNow} />} />
         <div className="border-t border-line pt-3">
-          <SummaryRow icon={<ReceiptText className="size-4" />} label="Left to pay" value={<MoneyText money={remaining} />} warning={remaining.amount > 0} />
+          <SummaryRow icon={<ReceiptText className="size-4" />} label={t("memberEnrollment.leftToPay")} value={<MoneyText money={remaining} />} warning={remaining.amount > 0} />
         </div>
       </dl>
-      <p className="mt-4 text-[12px] leading-relaxed text-ink-3">A receipt is made automatically when money is taken.</p>
+      <p className="mt-4 text-[12px] leading-relaxed text-ink-3">{t("memberEnrollment.receiptAutomatic")}</p>
     </aside>
   );
 }
@@ -239,6 +246,6 @@ function SummaryRow({ icon, label, value, tabular, warning }: { icon: React.Reac
 }
 
 function InlineRetry({ label, onRetry }: { label: string; onRetry: () => void }) {
-  const t = useT();
+  const { t } = useLocale();
   return <p role="alert" className="mt-2 text-[12px] text-danger">{label} <button type="button" className="font-medium underline underline-offset-2" onClick={onRetry}>{t("common.action.retry")}</button></p>;
 }

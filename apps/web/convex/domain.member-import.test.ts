@@ -69,3 +69,17 @@ describe("member migration batches", () => {
     expect(afterUndo.filter((record) => record.memberPublicId === memberId && ["membership", "charge", "migrationPaymentEvidence"].includes(record.entityType))).toHaveLength(0);
   });
 });
+
+
+it("projects Arabic row descriptors without rewriting legacy saved errors", async () => {
+  const t = convexTest(schema, modules);
+  await seed(t);
+  const owner = t.withIdentity({ subject: "clerk-import-owner" });
+  const preview = await owner.mutation(api.domain.mutate, operation("members.import.preview", { branchId: "import-branch", csv: "full_name,phone,gender\nأحمد Saleh,bad,unknown" })) as { id: string; rows: Array<{ errors: string[]; errorMessages: Array<{ key: string }> }> };
+  expect(preview.rows[0]).toMatchObject({ errors: ["Enter a valid phone number", "Gender must be male or female"], errorMessages: [{ key: "memberMigration.errorPhone" }, { key: "memberMigration.errorGender" }] });
+  const storedId = await t.run(async ctx => { const record = (await ctx.db.query("domainRecords").collect()).find(record => record.publicId === preview.id)!; const data = record.data as Record<string, unknown>; const rows = data.rows as Array<Record<string, unknown>>; const legacy = rows.map(({ errorMessages: _ignored, ...row }) => row); await ctx.db.patch(record._id, { data: { ...data, rows: legacy } }); return record._id; });
+  const before = await t.run(ctx => ctx.db.get(storedId));
+  const read = await owner.query(api.domain.query, operation("members.import.get", { importId: preview.id }));
+  expect(read).toMatchObject({ rows: [{ errorMessages: [{ key: "memberMigration.errorPhone" }, { key: "memberMigration.errorGender" }] }] });
+  expect(await t.run(ctx => ctx.db.get(storedId))).toEqual(before);
+});

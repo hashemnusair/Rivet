@@ -1,3 +1,5 @@
+import { memberMigration } from "./memberMigration";
+import { memberEnrollment } from "./memberEnrollment";
 import { salesWorkspace } from "./salesWorkspace";
 import { settingsPublic } from "./settingsPublic";
 import { settingsDetails } from "./settingsDetails";
@@ -37,6 +39,8 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  memberMigration,
+  memberEnrollment,
   salesWorkspace,
   settingsPublic,
   settingsDetails,

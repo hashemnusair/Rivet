@@ -120,7 +120,7 @@ export const salesWorkspace = {
   branchDrawerHint: "لكل فرع صندوق مستقل. يرجى اختيار فرع من الأعلى.",
   noShiftOpen: "الصندوق غير مفتوح",
   waitDrawer: "يرجى انتظار تحميل إجمالي الصندوق",
-  closeShiftMore: "إغلاق الصندوق…",
+  closeShiftMore: "إغلاق الصندوق",
   drawerCheckFailed: "تعذّر التحقق من الصندوق",
   drawerCheckHint: "تعذّر تحديد ما إذا كان الصندوق مفتوحًا في هذا الفرع.",
   opened: "وقت الفتح",
