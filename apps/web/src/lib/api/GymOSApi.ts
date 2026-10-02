@@ -1160,7 +1160,7 @@ export interface GymOSApi {
   // Data portability
   requestExport(input: ExportRequestInput): Promise<ExportJob>;
   listExportJobs(): Promise<ExportJob[]>;
-  requestMemberPersonalDataExport(idempotencyKey: string): Promise<ExportJob>;
+  requestMemberPersonalDataExport(idempotencyKey: string, locale?: "en" | "ar"): Promise<ExportJob>;
   searchWorkspace(query: string): Promise<WorkspaceSearchResult[]>;
   listRecentWorkspaceItems(): Promise<RecentWorkspaceItem[]>;
   recordRecentWorkspaceItem(item: Omit<RecentWorkspaceItem, "viewedAt">): Promise<void>;

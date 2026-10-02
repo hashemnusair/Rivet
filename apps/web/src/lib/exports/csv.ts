@@ -24,15 +24,15 @@ const FORMULA_PREFIX = /^\s*[=+\-@]/;
  * Escapes one spreadsheet cell and prevents values from being interpreted as
  * formulas when the file is opened in Excel, Numbers, or Google Sheets.
  */
-export function csvCell(value: CsvValue): string {
+export function csvCell(value: CsvValue, locale: Locale = "en"): string {
   if (value === undefined || value === null) return "";
-  const serialized = typeof value === "boolean" ? (value ? "Yes" : "No") : String(value);
+  const serialized = typeof value === "boolean" ? createTranslator(locale)(value ? "exportDocuments.phrases.yes" : "exportDocuments.phrases.no") : String(value);
   const safe = FORMULA_PREFIX.test(serialized) ? `'${serialized}` : serialized;
   return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
-export function csvRows(rows: CsvValue[][]): string {
-  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+export function csvRows(rows: CsvValue[][], locale: Locale = "en"): string {
+  return rows.map((row) => row.map((value) => csvCell(value, locale)).join(",")).join("\r\n");
 }
 
 function exportPreamble(title: string, metadata: CsvMetadataItem[], rowCount?: number, locale: Locale = "en"): CsvValue[][] {
@@ -60,7 +60,7 @@ export function buildCsvDocument(input: {
   return `${UTF8_BOM}${csvRows([
     ...exportPreamble(input.title, input.metadata ?? [], input.rows.length, input.locale),
     ...tableRows,
-  ])}\r\n`;
+  ], input.locale)}\r\n`;
 }
 
 /**
@@ -82,7 +82,7 @@ export function buildSectionedCsvDocument(input: {
     rows.push(section.headers);
     rows.push(...(section.rows.length > 0 ? section.rows : [[section.emptyMessage ?? createTranslator(input.locale ?? "en")("documents.csvEmpty")]]));
   }
-  return `${UTF8_BOM}${csvRows(rows)}\r\n`;
+  return `${UTF8_BOM}${csvRows(rows, input.locale)}\r\n`;
 }
 
 export function formatExportDateTime(value: string | number | Date | undefined, timeZone: string, locale: Locale = "en"): string {

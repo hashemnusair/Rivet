@@ -670,7 +670,7 @@ export class ConvexGymOSApi implements GymOSApi {
   subscribeOperationalEmailDeliveries(query: T.ListQuery, onValue: (page: T.Page<T.OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("operationalEmails.list", query, onValue, onError); }
   requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.request", input); }
   listExportJobs(): Promise<import("@/lib/domain/qol").ExportJob[]> { return this.query("exports.list"); }
-  requestMemberPersonalDataExport(idempotencyKey: string): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.member_personal_data", { idempotencyKey }); }
+  requestMemberPersonalDataExport(idempotencyKey: string, locale?: "en" | "ar"): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.member_personal_data", { idempotencyKey, locale }); }
   searchWorkspace(search: string): Promise<import("@/lib/domain/qol").WorkspaceSearchResult[]> { return this.query("workspace.search", { search }); }
   listRecentWorkspaceItems(): Promise<import("@/lib/domain/qol").RecentWorkspaceItem[]> { return this.query("workspace.recents"); }
   async recordRecentWorkspaceItem(item: Omit<import("@/lib/domain/qol").RecentWorkspaceItem, "viewedAt">): Promise<void> { await this.mutate("workspace.recent.record", item); }

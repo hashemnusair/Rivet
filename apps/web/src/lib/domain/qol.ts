@@ -160,6 +160,10 @@ export type ExportKind =
   | "member_personal_data";
 
 export interface ExportJob {
+  /** Language frozen with this download; older jobs without it are English. */
+  locale?: "en" | "ar";
+  failureMessageKey?: "exports.tooLarge";
+  failureMessageParams?: { count: number };
   id: UUID;
   kind: ExportKind;
   status: JobStatus;
@@ -181,6 +185,8 @@ export interface ExportJob {
 }
 
 export interface ExportRequestInput {
+  /** Presentation only; never changes member communication preferences. */
+  locale?: "en" | "ar";
   kind: ExportKind;
   filters?: Record<string, unknown>;
   idempotencyKey: string;
