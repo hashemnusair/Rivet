@@ -1,4 +1,7 @@
-import type { WorkspaceSubtitle } from "./qol";
+/** Optional source facts beside the original search/recent subtitle. Unknown history remains original. */
+export type WorkspaceSubtitle =
+  | { kind: "lead"; stage: string; phone: string }
+  | { kind: "receipt"; memberName?: string; status: string };
 
 /** Only known, bounded facts may accompany a saved recent item. Its original subtitle is retained. */
 export function parseWorkspaceSubtitle(value: unknown, recordKind: string): WorkspaceSubtitle | undefined {

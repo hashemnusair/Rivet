@@ -1,3 +1,5 @@
+import type { WorkspaceSubtitle } from "./workspace-subtitle";
+export type { WorkspaceSubtitle } from "./workspace-subtitle";
 import type { ISODateTime, Money, ReceiptDetail, TransactionStatus, TransactionType, UUID } from "./types";
 
 export type SavedViewSurface = "members" | "leads" | "customer_finance";
@@ -185,11 +187,6 @@ export interface ExportRequestInput {
 }
 
 export type WorkspaceSearchKind = "member" | "lead" | "receipt" | "page" | "action";
-
-/** Optional source facts beside the original search/recent subtitle. Unknown history remains original. */
-export type WorkspaceSubtitle =
-  | { kind: "lead"; stage: string; phone: string }
-  | { kind: "receipt"; memberName?: string; status: string };
 
 export interface WorkspaceSearchResult {
   kind: WorkspaceSearchKind;
