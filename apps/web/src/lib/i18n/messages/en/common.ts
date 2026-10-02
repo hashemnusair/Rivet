@@ -9,6 +9,7 @@ import { plural } from "../../dictionary";
  * object, and literal types would demand identical English strings.
  */
 export const common = {
+  breadcrumb: "Breadcrumb",
   action: {
     save: "Save",
     saveChanges: "Save changes",

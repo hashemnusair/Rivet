@@ -43,7 +43,8 @@ describe("EntryPassDialog", () => {
     state.getEntryPass.mockResolvedValueOnce({ token: "ok", expiresAt: new Date(Date.now() + 60_000).toISOString(), membershipId: "m1" });
     render(<EntryPassDialog open onOpenChange={() => undefined} membershipId="m1" memberNumber="ABD-2214" gymName="Forge Fitness Club" />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("The desk scanner is offline.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("The desk scanner is offline.");
     expect(screen.queryByLabelText("Membership entry QR code")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByLabelText("Membership entry QR code")).toBeInTheDocument();

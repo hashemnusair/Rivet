@@ -39,8 +39,9 @@ export function PageHeader({
 }
 
 export function Breadcrumbs({ items }: { items: Array<{ label: string; href?: string }> }) {
+  const t = useT();
   return (
-    <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[12.5px] text-ink-3">
+    <nav aria-label={t("common.breadcrumb")} className="flex items-center gap-1.5 text-[12.5px] text-ink-3">
       {items.map((item, i) => (
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 ? <span aria-hidden className="text-ink-4">/</span> : null}

@@ -3,6 +3,7 @@ import type { common as EnCommon } from "../en/common";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const common: typeof EnCommon = {
+  breadcrumb: "مسار التنقل",
   action: {
     save: "حفظ التغييرات",
     saveChanges: "حفظ التغييرات",
