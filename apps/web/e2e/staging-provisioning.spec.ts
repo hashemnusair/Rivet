@@ -3,6 +3,7 @@ import { newRoleContext, requireStagingJourney, StagingCleanupLedger } from "./s
 
 test.describe("staged provisioning", () => {
   test("reviews, provisions, and suspends one disposable gym workspace", async ({ browser, baseURL }, testInfo) => {
+    test.setTimeout(120_000);
     test.skip(process.env.PLAYWRIGHT_STAGING_FULL_SUITE !== "1" || process.env.PLAYWRIGHT_TARGET_CLASSIFICATION !== "staging", "Enable the isolated full staging suite explicitly.");
     const guard = requireStagingJourney("provisioning", baseURL);
     const cleanup = new StagingCleanupLedger(guard.runId, "provisioning");
@@ -23,6 +24,7 @@ test.describe("staged provisioning", () => {
       await owner.getByLabel("Email address").fill(email);
       await owner.getByLabel("Contact number").fill(`+96279${Date.now().toString().slice(-7)}`);
       await owner.getByLabel("Gym name").fill(gymName);
+      await owner.getByLabel("Gym address").fill("12 Airport Road, Amman");
       await owner.getByRole("button", { name: /Send gym application/i }).click();
       await expect(owner.getByRole("heading", { name: /We.ll be in touch soon/i })).toBeVisible();
 
@@ -46,14 +48,12 @@ test.describe("staged provisioning", () => {
       gymUrl = platform.url();
       cleanupEntry = cleanup.plan({ targetType: "provisioned_gym", targetId: gymUrl.split("/").at(-1), action: "suspend", reason: "Disposable provisioning journey workspace" });
 
-      await platform.getByRole("button", { name: "Suspend", exact: true }).click();
-      await platform.getByLabel("Reason for this change").fill("Disposable isolated staging workspace cleanup");
-      await platform.getByRole("button", { name: "Save controls", exact: true }).click();
-      await expect(platform.getByRole("button", { name: "Restore access", exact: true })).toBeVisible();
+      const suspendedInline = await suspendGymFromBilling(platform, gymName);
+      if (!suspendedInline) throw new Error("The provisioned staging gym could not be suspended from the billing page.");
       cleanup.complete(cleanupEntry);
     } finally {
       if (gymUrl && cleanupEntry !== undefined) {
-        const suspended = await suspendGym(platform, gymUrl);
+        const suspended = await suspendGymFromBilling(platform, gymName);
         if (suspended) cleanup.complete(cleanupEntry);
         else cleanup.fail(cleanupEntry, "Provisioned staging gym could not be suspended");
       }
@@ -64,16 +64,21 @@ test.describe("staged provisioning", () => {
   });
 });
 
-async function suspendGym(page: import("@playwright/test").Page, gymUrl: string): Promise<boolean> {
+/** Subscription actions live on the billing page; a second call is a no-op
+ * when the row already offers reactivation instead of suspension. */
+async function suspendGymFromBilling(page: import("@playwright/test").Page, gymName: string): Promise<boolean> {
   try {
-    await page.goto(gymUrl, { waitUntil: "domcontentloaded" });
-    const suspend = page.getByRole("button", { name: "Suspend", exact: true });
+    await page.goto("/platform/billing", { waitUntil: "domcontentloaded" });
+    const row = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: new RegExp(gymName) });
+    await expect(row).toBeVisible();
+    const suspend = row.getByRole("button", { name: "Suspend", exact: true });
     if (await suspend.count()) {
       await suspend.click();
-      await page.getByLabel("Reason for this change").fill("Disposable isolated staging workspace cleanup");
-      await page.getByRole("button", { name: "Save controls", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: /Suspend .*\?/ });
+      await dialog.getByLabel("Reason for this change").fill("Disposable isolated staging workspace cleanup");
+      await dialog.getByRole("button", { name: "Suspend gym", exact: true }).click();
     }
-    await expect(page.getByRole("button", { name: "Restore access", exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: /Reactivate & bill/ })).toBeVisible();
     return true;
   } catch {
     return false;

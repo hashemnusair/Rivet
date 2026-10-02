@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Field } from "./field";
+import { Field, FieldGrid } from "./field";
 import { Input } from "./input";
 
 describe("Field label association", () => {
@@ -36,5 +36,33 @@ describe("Field label association", () => {
 
     expect(screen.getByText("Custom picker")).not.toHaveAttribute("for");
     expect(screen.getByTestId("custom-control")).not.toHaveAttribute("id");
+  });
+});
+
+describe("FieldGrid", () => {
+  it("reserves a shared two-line label rhythm from the selected breakpoint", () => {
+    render(
+      <FieldGrid className="sm:grid-cols-3">
+        <Field label="Short"><Input /></Field>
+        <Field label="A label that can wrap"><Input /></Field>
+      </FieldGrid>,
+    );
+
+    const grid = screen.getByText("Short").closest('[data-slot="field-grid"]');
+    expect(grid).toHaveClass("grid", "sm:grid-cols-3");
+    expect(grid?.className).toContain("sm:[&>[data-slot=field]>[data-slot=field-label]]:min-h-[2lh]");
+    expect(screen.getByText("Short")).toHaveAttribute("data-slot", "field-label");
+  });
+
+  it("can align an always-multicolumn group without waiting for a breakpoint", () => {
+    render(
+      <FieldGrid alignFrom="base" className="grid-cols-2">
+        <Field label="Amount"><Input /></Field>
+        <Field label="Payment method"><Input /></Field>
+      </FieldGrid>,
+    );
+
+    const grid = screen.getByText("Amount").closest('[data-slot="field-grid"]');
+    expect(grid?.className).toContain("[&>[data-slot=field]>[data-slot=field-label]]:min-h-[2lh]");
   });
 });

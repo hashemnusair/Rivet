@@ -3,8 +3,12 @@
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { forwardRef, type ComponentPropsWithoutRef, type ComponentRef } from "react";
 import { cn } from "@/lib/utils/cn";
+import { useLocale } from "@/lib/i18n/provider";
 
-const DropdownMenu = DropdownMenuPrimitive.Root;
+function DropdownMenu(props: ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Root>) {
+  const { dir } = useLocale();
+  return <DropdownMenuPrimitive.Root dir={dir} {...props} />;
+}
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 
@@ -48,7 +52,7 @@ const DropdownMenuLabel = forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn("px-2.5 py-1.5 font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3", className)}
+    className={cn("px-2.5 py-1.5 text-[12px] font-medium text-ink-3", className)}
     {...props}
   />
 ));

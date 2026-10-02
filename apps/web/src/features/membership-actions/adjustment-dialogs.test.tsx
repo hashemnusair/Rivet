@@ -1,9 +1,10 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MembershipSummary } from "@/lib/domain/types";
+import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
-import { ExtendDialog } from "./adjustment-dialogs";
+import { ExtendDialog, FreezeDialog } from "./adjustment-dialogs";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
@@ -38,13 +39,46 @@ const membership: MembershipSummary = {
 };
 
 describe("ExtendDialog", () => {
-  it("treats edited day counts as numbers in the expiry preview", async () => {
+  it("treats edited day counts as numbers in the end date preview", async () => {
     await renderWithApp(<ExtendDialog open onOpenChange={() => undefined} membership={membership} />);
 
     const days = screen.getByRole("spinbutton");
     fireEvent.change(days, { target: { value: "15" } });
 
-    expect(screen.getByText("2026-09-25")).toBeInTheDocument();
-    expect(screen.queryByText("2029-06-10")).not.toBeInTheDocument();
+    expect(screen.getByText(formatDate("2026-09-25"))).toBeInTheDocument();
+    expect(screen.queryByText(formatDate("2029-06-10"))).not.toBeInTheDocument();
+  });
+});
+
+describe("FreezeDialog", () => {
+  it("proposes only what the plan still allows and stops a longer freeze before it is sent", async () => {
+    const today = todayISODate();
+    await renderWithApp(
+      <FreezeDialog open onOpenChange={() => undefined} membership={{ ...membership, endDate: addDays(today, 60) }} allowanceRemaining={3} />,
+    );
+
+    const dates = document.querySelectorAll<HTMLInputElement>('input[type="date"]');
+    expect(dates[0]).toHaveValue(today);
+    expect(dates[1]).toHaveValue(addDays(today, 2));
+    expect(screen.getByText("3 days")).toBeInTheDocument();
+    expect(screen.getByTestId("confirm-freeze")).toBeEnabled();
+
+    fireEvent.change(dates[1]!, { target: { value: addDays(today, 5) } });
+
+    expect(await screen.findByTestId("freeze-problem")).toHaveTextContent("This plan allows 3 more freeze days.");
+    expect(screen.getByTestId("confirm-freeze")).toBeDisabled();
+  });
+
+  it("refuses a freeze that begins after the term ends", async () => {
+    const today = todayISODate();
+    await renderWithApp(
+      <FreezeDialog open onOpenChange={() => undefined} membership={{ ...membership, endDate: addDays(today, 5) }} allowanceRemaining={10} />,
+    );
+    const dates = document.querySelectorAll<HTMLInputElement>('input[type="date"]');
+    fireEvent.change(dates[0]!, { target: { value: addDays(today, 6) } });
+    fireEvent.change(dates[1]!, { target: { value: addDays(today, 8) } });
+
+    expect(await screen.findByTestId("freeze-problem")).toHaveTextContent(`A freeze must start on or before ${formatDate(addDays(today, 5))}, when the membership ends.`);
+    expect(screen.getByTestId("confirm-freeze")).toBeDisabled();
   });
 });

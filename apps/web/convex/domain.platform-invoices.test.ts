@@ -107,6 +107,7 @@ describe("exported Convex platform invoice boundaries", () => {
     };
 
     await expectCode(staff.mutation(api.domain.mutate, operation("platform.invoice.create", input)), "FORBIDDEN");
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.invoice.create", { ...input, currency: "USD" })), "VALIDATION_ERROR");
     const draft = await platform.mutation(api.domain.mutate, operation("platform.invoice.create", input)) as { id: string; status: string };
     expect(draft).toMatchObject({ id: expect.stringMatching(/^INV-/), status: "draft" });
 
@@ -139,6 +140,33 @@ describe("exported Convex platform invoice boundaries", () => {
     expect(persisted.notifications).toEqual([expect.objectContaining({ kind: "platform_invoice_past_due", dedupeKey: `platform-invoice-past-due:${draft.id}` })]);
   });
 
+  it("never moves a gym's paid-through date backwards when a stale invoice is paid", async () => {
+    const t = convexTest(schema, modules);
+    await seedPlatformInvoiceFixtures(t);
+    const platform = t.withIdentity({ subject: "clerk-platform-invoice" });
+    const paidThrough = Date.parse("2027-06-30T12:00:00.000Z");
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-invoice")).unique();
+      await ctx.db.patch(organization!._id, { currentPeriodEndsAt: paidThrough, billingInterval: "annual" });
+    });
+
+    // An old term's invoice, settled late, covers a period already behind the
+    // gym: paying it must not take back the year it has paid for.
+    const draft = await platform.mutation(api.domain.mutate, operation("platform.invoice.create", {
+      gymId: "invoice-gym",
+      amountMinor: 149_000,
+      currency: "JOD",
+      periodStart: "2026-08-01",
+      periodEnd: "2026-08-31",
+      dueAt: "2026-09-07",
+    })) as { id: string };
+    await platform.mutation(api.domain.mutate, operation("platform.invoice.issue", { invoiceId: draft.id }));
+    await platform.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: draft.id, reference: "BANK-LATE", reason: "Late transfer for an old term." }));
+
+    const organization = await t.run(async (ctx) => await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-invoice")).unique());
+    expect(organization).toMatchObject({ status: "active", currentPeriodEndsAt: paidThrough });
+  });
+
   it("requires a reason to void and leaves the immutable invoice record present", async () => {
     const t = convexTest(schema, modules);
     await seedPlatformInvoiceFixtures(t);
@@ -158,5 +186,75 @@ describe("exported Convex platform invoice boundaries", () => {
     const rows = await t.run(async (ctx) => await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect());
     expect(rows).toHaveLength(1);
     expect(rows[0]?.data).toMatchObject({ id: draft.id, status: "void" });
+  });
+
+  it("projects automatic invoice lifecycle fields through the platform snapshot", async () => {
+    const t = convexTest(schema, modules);
+    await seedPlatformInvoiceFixtures(t);
+    const platform = t.withIdentity({ subject: "clerk-platform-invoice" });
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-invoice")).unique();
+      if (!organization) throw new Error("invoice organization missing");
+      await ctx.db.insert("domainRecords", {
+        organizationId: organization._id,
+        entityType: "platformInvoice",
+        publicId: "INV-AUTOMATIC-PROJECTION",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        data: {
+          id: "INV-AUTOMATIC-PROJECTION",
+          gymId: "invoice-gym",
+          gym: "Invoice Gym",
+          amount: "JOD 119.520",
+          amountMinor: 119_520,
+          currency: "JOD",
+          status: "open",
+          cycleKey: "subscription:org-invoice:annual:1788177600000",
+          billingInterval: "annual",
+          issuedAt: "2026-08-28T12:00:00.000Z",
+          dueAt: "2026-08-31T12:00:00.000Z",
+          periodStart: "2026-08-31T12:00:00.000Z",
+          periodEnd: "2027-08-31T12:00:00.000Z",
+        },
+      });
+    });
+    const snapshot = await platform.query(api.domain.query, operation("platform.snapshot")) as { invoices: Array<Record<string, unknown>> };
+    expect(snapshot.invoices.find((invoice) => invoice.id === "INV-AUTOMATIC-PROJECTION")).toMatchObject({
+      gymId: "invoice-gym",
+      cycleKey: "subscription:org-invoice:annual:1788177600000",
+      billingInterval: "annual",
+      dueAt: "2026-08-31T12:00:00.000Z",
+      periodStart: "2026-08-31T12:00:00.000Z",
+      periodEnd: "2027-08-31T12:00:00.000Z",
+    });
+  });
+
+  it("rejects invoices when the directory row and target organization disagree", async () => {
+    const t = convexTest(schema, modules);
+    await seedPlatformInvoiceFixtures(t);
+    const platform = t.withIdentity({ subject: "clerk-platform-invoice" });
+    await t.run(async (ctx) => {
+      const listing = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).unique();
+      if (!listing) throw new Error("seed marketplace listing missing");
+      const otherOrganization = await ctx.db.insert("organizations", {
+        publicId: "org-other-invoice",
+        name: "Other Invoice Gym",
+        slug: "other-invoice-gym",
+        status: "active",
+        timezone: "Asia/Amman",
+        currency: "JOD",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.patch(listing._id, { organizationId: otherOrganization, updatedAt: Date.now() });
+    });
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.invoice.create", {
+      gymId: "invoice-gym",
+      amountMinor: 149_000,
+      currency: "JOD",
+      periodStart: "2026-08-01",
+      periodEnd: "2026-08-31",
+      dueAt: "2026-09-07",
+    })), "CONFIGURATION_ERROR");
   });
 });

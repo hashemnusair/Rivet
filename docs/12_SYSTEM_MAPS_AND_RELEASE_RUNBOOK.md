@@ -1,6 +1,342 @@
 # 12 — System Maps and Release Runbook
 
-Last reviewed: 2026-08-14 after the PT, CMS, member-experience, and staging-harness release.
+## Public Arabic review — 1 October 2026
+
+- Hashem explicitly requested a standalone, unauthenticated room with an Elias/Hashem picker. Canonical route is now `https://www.rivetjo.com/arabic-room`; old `/platform/arabic-room` links redirect before the platform shell mounts and preserve the question parameter. The name picker appears on opening/reload; a Switch name action is available after saving drafts.
+- Review endpoints deliberately accept only the self-selected keys `elias` and `hashem`. Anyone with the link can read and edit either review identity. This is not account authentication and grants no access to gym/platform data. Shared server persistence, live queries, history, presence/following, conflicts, exports and dual approvals remain. Public mutations are rate-limited.
+- Review-table identity validators now accept strings, retaining compatibility with legacy user IDs. The internal idempotent `arabicReview:migrateNamedReviewers` function remaps only review data and preserves answers, comments, history and approvals; it refuses duplicate answer conflicts and validates the old founder accounts. The pre-change production export showed zero answers, but migration is still run at release to catch intervening edits. No account permissions are changed.
+- Updated the implementation prompt and review-room guide for the public route and self-declared identities. The questionnaire/version and all 247 questions are unchanged. An unrelated mock subscription test had a fixed September 30 expiry that failed on October 1; its asserted future boundaries now use relative dates.
+- Verified locally: all 1,688 tests in 266 files, 14 CLI/environment guards, both typechecks, lint, production build and the updated browser journey pass. The browser journey covers old-link redirect, name selection/switching, keyboard answers, saving, export and 360/390/768/1440 layouts. Recheck with `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, and `pnpm --filter web exec playwright test e2e/arabic-review.spec.ts`.
+- Released runtime `83efaef043e6f125f783b8a47711647496c38f58` to `main`. Guarded Convex Production dry run/deploy passed with no index deletions; the internal migration completed (zero existing answers/history/rooms) and health returned `ok` at `1790844996513`. Anonymous production snapshot queries return the two fixed reviewer names. Vercel Production `dpl_9VHkXjinxQJcCnrjf3HWkcHcYJyU` is READY at that exact runtime SHA. A signed-out hosted browser followed the old link to the new public route, chose both names and showed connected live data without a login prompt or page errors. The hosted prompt download matches the committed file. [CI run 36839515858](https://github.com/hashemnusair/Rivet/actions/runs/36839515858) passed all 13 jobs, including all eight browser shards. No deployment commands remain owed.
+- Read `docs/arabic/README.md`, `docs/arabic/IMPLEMENTATION_PROMPT.md`, and `apps/web/convex/arabicReview.ts` first.
+
+## Arabic review room — 30 September 2026
+
+- Canonical route: `https://platform.rivetjo.com/platform/arabic-room`, protected by existing Clerk/platform identity and server-side `requirePlatformAdmin` checks on all review endpoints. Intended reviewers are the existing two founder admins; additional active platform admins would join the required approval roster.
+- Adds four platform-only tables: `arabicReviewVotes`, `arabicReviewHistory`, `arabicReviewRooms`, `arabicReviewPresence`. No tenant schema contract, money operation, authorization role or messaging setting changes. Additive schema must be deployed with `pnpm convex:deploy` before exposing the frontend route.
+- Answers/comments persist per user, card and catalog version. Matching answers from all reviewers plus each person's approval produce `readyForImplementation`. Any edit or reviewer-roster change invalidates approval. Questionnaire changes require a version bump; old answers must not approve new options.
+- Export the reviewed preferences in the room or through the read-only internal query: `CONVEX_DEPLOY_KEY='' pnpm --filter web exec convex run arabicReview:exportForImplementation --prod`. Output contains review comments, not credentials; keep it within the implementation task. Do not create votes or approvals on behalf of the founders.
+- Source inventory, usage/architecture notes and the whole-product implementation prompt live in `docs/arabic/`. The prompt is also downloaded from the room. Actual Arabic implementation remains future work, based on the approved choices.
+- Local tests: 1,686 tests, 14 CLI/environment guards, both typechecks, lint, build and review-page browser journey pass.
+
+**Release verified:** runtime commit `5d3e562b13c0e822615486177744d8c5384df524` is pushed to `main`. Guarded Convex Production deployment to `descriptive-meerkat-589` succeeded after a clean dry run; the four review tables and six indexes (including the admin lookup index) are additive, with no index deletions. Health returned `ok` at `1790790287551`. The production export confirms exactly two reviewers (Elias Hreish Admin and Hashem Nusair admin), all 247 questions, revision 0 and no fabricated votes. An anonymous production query is rejected with `UNAUTHENTICATED`. Vercel Production `dpl_FxwPYGWd4JJ7eQEbRW1Rqx1poYT7` is READY at the same runtime SHA on all canonical domains. The review page and prompt download return HTTP 200; the downloaded prompt exactly matches the committed file. [GitHub CI run 36753603971](https://github.com/hashemnusair/Rivet/actions/runs/36753603971) passed all 13 jobs, including all eight browser shards. The founders can begin at https://platform.rivetjo.com/platform/arabic-room. No server deploy remains owed.
+
+## Plain-language follow-up — 30 September 2026
+
+Before this follow-up, Elias’s frontend commit `0970df0` was live on deployment
+`dpl_8PHZ2LzSaANiShidYzt3QLuTsWBa`. It changes the Needs attention response
+contract and therefore requires the matching Convex update.
+
+- Guarded dry run and deployment from `de6960d` selected Production
+  `descriptive-meerkat-589`; schema validation passed and no indexes were
+  deleted. `health:check` returned `ok` at `1790784535383`.
+- This releases Elias’s attention/renewal fixes and removes the obsolete
+  Resolve function. It also changes new server error/notification wording.
+  Existing stored audit events and notifications are preserved.
+- Final server wording deployed from `2636398` through a second guarded dry
+  run and release. No indexes were deleted; health returned `ok` at
+  `1790784838755`. All 1,667 unit/component tests, both typechecks, lint,
+  production build, dependency audit and 14 CLI/environment guards pass.
+- Mac and Linux references were recaptured and inspected without changing
+  screenshot thresholds. The complete standard browser suite passed on
+  `b7cb6e3`; that run failed only its newly indexed dependency audit.
+- Patched Vercel Production `dpl_CxJtxLfQ5k2kSPMnT881YDTsppr1` is READY at
+  `8027f36a6bf1f94dd82b7f84dee82c79d4f45f93` on all canonical domains.
+  Signup and all three sign-in doors return HTTP 200. Final CI passed all
+  13 jobs at that exact source SHA (linked below). No backend deploy is owed.
+- The repaired staging automation journey reads the paused monitor and
+  history as owner and manager. It creates no rules and sends no messages.
+  Staging credentials are still needed to exercise that live journey.
+- Arabic localization is excluded. No account, payment, messaging setting or
+  production data mutation is needed to verify this copy release.
+
+**Release-gate follow-up:** standard CI `36743388036` built successfully but
+its dependency audit detected newly indexed Next.js advisory
+[GHSA-vcvr-r3jv-pc5j](https://github.com/advisories/GHSA-vcvr-r3jv-pc5j).
+Next.js and its ESLint packages are patched from 16.3.3 to 16.3.6 with the
+lockfile updated. This small security update is required to close the release
+gate; it does not change the product scope. The application has no `next/og`
+`ImageResponse` usage. The patched local production audit reports no known
+vulnerabilities. The patched production build, lint and all 1,667 unit/component
+tests pass. All eight browser shards passed in the standard `b7cb6e3` run;
+its only failure was the dependency audit. Patched hosted verification passed
+all 13 jobs in [run 36744034609](https://github.com/hashemnusair/Rivet/actions/runs/36744034609)
+at exact `8027f36a6bf1f94dd82b7f84dee82c79d4f45f93`.
+
+## Walkthrough follow-up release, 28 September 2026
+
+**Verified release:** all 13 jobs passed in
+[run 36437542914](https://github.com/hashemnusair/Rivet/actions/runs/36437542914)
+at `c2866dc119f936da282bfe83afa529278db168c1`. Vercel Production
+`dpl_9tSuRKWHxDXgbE3cuwLALxcZPPJ3` is READY at that exact SHA on all canonical
+domains. Convex was deployed from `c310a9c`; its backend and frontend runtime
+source is unchanged through `c2866dc` (only tests/references/handoff changed).
+No backend release remains owed for the feedback pass. Later handoff-only
+commits do not change this runtime evidence. Signup and all three sign-in
+doors returned HTTP 200.
+
+Hashem authorized closing the feedback-pass release and will retest manually
+later. The 27 September exploratory walkthrough already happened; see the
+coverage and email findings at the top of `CURRENT_STATE.md`.
+
+- Backup with file storage: owner-only local archive
+  `~/.local/share/rivet/backups/production-before-jev-retirement-2026-09-28.zip`.
+- Source `c310a9c` deployed with `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --yes`
+  after the guarded dry run selected Production `descriptive-meerkat-589`.
+  Schema validation passed. Seven retired Jev indexes were removed as expected;
+  all four populated retired tables retain the same record IDs as the backup.
+  This release does not purge data or reactivate Jev.
+- Post-deploy `health:check` returned `ok` at `1790605964359`.
+- Local verification: both typechecks, lint/secret audit, production build,
+  1,676 unit/component tests plus 14 CLI/environment guards, and 40 targeted
+  preview browser journeys passed. Hosted run `36436717162` passed 12 of 13
+  jobs; its sole failure was the stale equipment screenshot. The inspected
+  replacement references and manual-intake assertions pass locally and in
+  the final hosted run linked above.
+- Vercel `dpl_2EBmR1Lct5uUNmiZ3KP2NFwZWN8p` is READY at exact `c310a9c`
+  on the canonical domains. The one-hour project 5xx query returned no entries.
+- Email: Production has 8 provider-accepted allowlist attempts among the latest
+  16 deliveries. Other rows are suppressed for preference/type/provider reasons.
+  `RESEND_WEBHOOK_SECRET` is absent by names-only inspection. The accessible
+  Resend account does not own RIVET's domain. No send/retry, preference change,
+  live-mode activation, DNS change or secret change was performed. Resolve
+  provider access and inspect the actual invitation headers before declaring
+  inbox delivery fixed; Hashem owns later manual acceptance.
+
+
+The original feedback-pass publication did not deploy Convex. The follow-up
+release above records the subsequent authorized backend deployment.
+
+## Jev assistance retirement — 28 September 2026
+
+Jev suggestions and their AI Gateway integration are retired from the active
+runtime and setup path. Do not configure Jev feature flags, AI Gateway keys,
+model settings, or gym-level Jev switches for new deployments. The historical
+design and rollout record remains in `docs/21_JEV_ASSIST_FOUNDATION.md` and the
+older entries in `CURRENT_STATE.md` for audit context only.
+
+The removal is code and configuration cleanup, not a production data purge.
+Unused `jev*` table definitions have been removed from the application schema;
+existing deployment data is retained and is no longer included by the active
+tenant-purge table list. Convex's deployment schema view and
+`DefineSchemaOptions` documentation describe the schema/data boundary:
+[deployment schema guidance](https://docs.convex.dev/dashboard/deployments/schema)
+and [`DefineSchemaOptions`](https://docs.convex.dev/api/interfaces/server.DefineSchemaOptions).
+Before any future retention decision, take the normal deployment backup and
+obtain explicit approval for a targeted data operation. Never purge production
+Jev rows as part of this retirement.
+
+Release verification confirms the active package manifest, environment example,
+and setup documentation contain no Jev or AI Gateway configuration. The
+remaining product surfaces should continue to operate through their ordinary
+deterministic paths after the feature files are removed.
+
+## Deployment target selection
+
+Production is `rivet:rivet:production` / `descriptive-meerkat-589`;
+Development is `fleet-otter-621`. The local `apps/web/.env.local` deploy-key
+override previously made a plain `--prod` inspection target Development.
+For a deliberately authorized Production release, suppress that local override
+with `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --dry-run --yes` and verify
+the target before applying the release. Names-only Production inspection uses
+`CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod`. These empty overrides
+do not expose or change the stored key. Retired Jev walkthrough instructions
+are archived in `docs/21_JEV_ASSIST_FOUNDATION.md`, not active release steps.
+
+## Fresh start: removing the Production test gyms, 14 September 2026
+
+Elias decided on 14 September 2026 to delete the Production test gym and start
+Production fresh. **Executed by Elias on 17 September 2026** (results in
+`CURRENT_STATE.md`); the procedure stays here for any future test tenant.
+The tooling behind it is the set of internal Convex functions in
+`apps/web/convex/tenantPurge.ts` (tests in `tenantPurge.test.ts`). The web app
+cannot reach them: they run only from the Convex dashboard's function runner
+or `convex run` by an operator who holds the Production deployment.
+
+What "fresh" means here. A test organization is removed with everything it
+owns: every row in every table that carries an `organizationId` (the test
+verifies that list against the schema), its stored media files, and the gym
+applications that provisioned it. Its Clerk organization is deleted and the
+pending RIVET invitations that pointed at it are revoked. Afterwards the
+accounts that belong to no gym and are not platform administrators, and any
+leftover applications, are listed and removed only by explicit choice.
+Platform administrators, the platform audit trail, the plan catalogue and the
+global configuration rows stay. `platformAuditEvents` receives a start event
+with the reason, a completion event with per-table counts, and the Clerk
+outcome for every purge, so the trail explains why a gym disappeared.
+
+### Before you start
+
+1. Release the current `main` through the guarded flow (`pnpm convex:deploy
+   -- --dry-run --yes`, then `pnpm convex:deploy -- --yes`). The purge
+   functions must be on Production before they can be run; they were not
+   deployed by the session that wrote them.
+2. Take a fresh snapshot export from the Convex dashboard (Settings → Backup
+   & Restore) and note its time. It is the only way back.
+3. Confirm `RIVET_MESSAGING_MODE` and `RIVET_EMAIL_MODE` are not `live` (the
+   names-only check: `pnpm convex:env:names -- --prod` proves presence, not
+   value; the dashboard shows the value). Nothing about a deleted gym should
+   be mid-delivery while its rows disappear.
+4. Decide which accounts must survive. Everyone who will use Production
+   afterwards, Elias and Hashem included, must either be a platform
+   administrator or simply not be passed to the residue deletion in step 6.
+   The purge itself never deletes a user.
+
+### Procedure
+
+Run every command from `apps/web` in a shell where no `CONVEX_DEPLOY_KEY` is
+exported, so `--prod` selects the Production deployment of the linked project
+(the CLI warns when a deploy key overrides it). Never add `--verbose`; the
+secret-safe command policy below still applies. Results contain counts,
+slugs and masked emails only; they are safe to paste into the handoff.
+
+1. List the organizations and note the exact `slug` and `name` of each test
+   gym. On 17 September 2026 there were five, all test or demo tenants:
+   `forge-fitness` ("Forge Fitness Club", the seeded demo tenant),
+   `elias-gym-aa87cea8990b` ("elias gym"), `rivet-qa-gym-20260808-8dcc74222ced`
+   ("RIVET QA Gym 20260808"), `hashem-test-5fb83293ee76` ("Hashem Test") and
+   `elias-test-gym-1-2159fbd31f08` ("elias test gym 1"):
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:listOrganizations --prod
+   ```
+
+2. Inventory one gym (read-only, repeatable): per-table counts, the linked
+   applications, and whether a Clerk organization id is recorded.
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:inventory '{"slug":"<slug>"}' --prod
+   ```
+
+3. Purge that gym. All four guards must match: the slug, the organization's
+   exact name, a reason of at least ten characters, and the acknowledgement
+   sentence verbatim. `clerk: "delete"` also removes the Clerk organization
+   and revokes its pending invitations; `"keep"` leaves Clerk untouched.
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:purge '{"slug":"<slug>","confirmName":"<exact name>","reason":"Retiring the Production test gym before launch","acknowledge":"permanently delete this organization and everything it owns","clerk":"delete"}' --prod
+   ```
+
+   The result lists rows deleted per table, stored files deleted, linked
+   applications deleted, and the Clerk outcome (`completed`, `skipped: …`,
+   `partial: …` or `failed: …`). Rows are removed in bounded pages (100 per
+   transaction by default; add `"batch":25` if a table with very large rows,
+   such as exports, trips a transaction limit). A run that stops part-way is
+   re-run with the same arguments and continues; once the organization row is
+   gone the slug no longer resolves. If the Clerk outcome is not `completed`,
+   finish it in the Clerk dashboard (Organizations → delete; Invitations →
+   revoke) and record that.
+
+4. Repeat steps 2 and 3 for the other test gym.
+
+5. List the residue: the organizations left (none, if both test gyms are
+   gone), the platform administrator count, the accounts attached to no gym
+   (masked email, and whether a Clerk user exists behind the account or it is
+   a placeholder that never signed in), and the applications.
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:listResidue --prod
+   ```
+
+6. Delete only the accounts and applications you choose. Each account is
+   re-checked at deletion time (platform administrators and accounts that
+   meanwhile joined a gym are skipped and reported); `clerk: "delete"` also
+   deletes the matching Clerk users.
+
+   ```bash
+   pnpm --filter web exec convex run tenantPurge:deleteResidue '{"userPublicIds":["<publicId>","…"],"applicationPublicIds":["<publicId>","…"],"reason":"Fresh start before launch","acknowledge":"permanently delete these accounts and applications","clerk":"delete"}' --prod
+   ```
+
+7. Verify: `tenantPurge:listOrganizations` returns `[]`, `tenantPurge:listResidue`
+   shows only the accounts you kept, `health:check` returns `ok`, the public
+   gym directory is empty, the platform console lists no gyms, a kept account
+   signs in and lands on its area, and Clerk's Organizations page no longer
+   shows the test gyms.
+
+8. Record the value-free results (counts and outcomes, the snapshot time, the
+   Production deployment name) in `CURRENT_STATE.md`, and close the
+   "two test gyms are publicly listed" and "restore the test gym" items in
+   docs/13.
+
+### What survives on purpose
+
+- Global rows without tenant data: `platformAuditEvents` (including the purge
+  events), `publicRequestGuards`, `publicRequestIdempotency`,
+  `marketingPreferenceMigrations`, `messagingWorkerState`,
+  `maintenanceState`, `operationalEmailWebhookEvents`.
+- Users with `platformAdmin: true`, always. Other users only go through
+  `deleteResidue`, by the ids you pass.
+
+### Do not
+
+- Do not clear tables from the dashboard or import an empty snapshot instead:
+  that also removes platform administrators, role catalogues and the audit
+  trail, and leaves the Clerk organizations behind.
+- Do not run `seed:seedDemoTenant` on Production afterwards; a fresh
+  Production gets its first gym through a real application and provisioning.
+- Do not run any of this against Production from an agent session. The
+  session that built the tool ran it only against the in-memory test harness.
+
+## Domain routing release, 11 September 2026
+
+All four hosts serve the same `rivet-web` Next.js deployment. Route ownership is enforced in `src/lib/routing/host-routing.ts`, before Clerk redirects in `src/proxy.ts`, and on cached browser navigation by `HostRouteGuard`.
+
+| Host | Entry and owned routes |
+| --- | --- |
+| `rivetjo.com` | Permanent redirect to `www`, or directly to the owner of an old app URL |
+| `www.rivetjo.com` | Landing, gym application `/signup`, terms and privacy. The landing is never shown to a signed-in account: it hands off to `/login`, which opens `dashboard`, `app` or `platform` by role. Terms and privacy stay readable when signed in. |
+| `dashboard.rivetjo.com` | Root opens `/dashboard`; all gym workspace routes, `/login/gym` and invitation acceptance. Includes employed trainers. |
+| `app.rivetjo.com` | Root opens `/customer/discover`; `/customer/*`, member login/signup and public offers. `/signup` redirects to `/login/member/create`. Includes member PT booking. |
+| `platform.rivetjo.com` | Root opens `/platform`; `/platform/*` and `/login/admin`. Convex platform-admin authorization remains required. |
+| `admin.rivetjo.com` | Legacy alias, redirects to the canonical route owner. |
+
+`/login` is a shared identity resolver. A successful password sign-in always goes through it. It reads the Convex role, opens `/login` on the account's destination host before initializing member/branch state, and then opens the workspace. A `next` continuation survives when it belongs to that account's area. Browser-normalized external paths, auth loops and requests for another area use the role's default instead. Deep-link query strings are retained; explicit browser handoffs retain fragments. Generic login, API endpoints, Clerk handshakes and assets remain local on the four canonical hosts. Localhost and Vercel preview URLs do not redirect to production.
+
+Clerk uses the existing production instance for the root domain. [Clerk supports shared sessions across subdomains by default](https://clerk.com/docs/guides/dashboard/dns-domains/subdomain-allowlist); this setup does not require satellite domains. The provider explicitly allows redirects among the four origins and apex. If Clerk's Allowed Subdomains restriction is enabled, it must contain `www`, `dashboard`, `app` and `platform` under `rivetjo.com`. No cookies or tokens are copied through application URLs or browser storage.
+
+Release checks:
+
+- Run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`.
+- Run `CI=1 PLAYWRIGHT_PORT=3123 pnpm --filter web exec playwright test e2e/host-routing.spec.ts e2e/role-routing.spec.ts --retries=0`. The hostname tests send production host headers to the local mock server. Client handoffs have unit coverage; role journeys run on localhost because Clerk development initialization is not a production-domain session test.
+- Check that the same Ready production deployment serves all four canonical hosts.
+- Verify `www/login/gym` → `dashboard/login/gym`, `www/customer/my-gyms` → `app/customer/my-gyms`, `www/platform` → `platform/platform`, and `app/signup` → `app/login/member/create`. Use HTTPS URLs and check preserved query strings without credentials.
+- In a real signed-in browser, test owner/manager/receptionist, member and platform-admin role handoffs, branch selection, sign-out and opening an old URL. Provider session checks require an existing authorized account; mock-role tests do not establish Clerk production session continuity.
+
+No Convex deployment or DNS change is required for this frontend release. Do not deploy unrelated backend work to release these routing changes. Deployment evidence and test outcomes are recorded in `CURRENT_STATE.md`.
+
+## Before Hashem and Elias's walkthrough
+
+1. Pick the test environment and a disposable gym. Record the site URL, Vercel project, Convex deployment and Clerk instance. Keep the existing live messaging pause in place. Note that the Production test gyms are scheduled for removal (see "Fresh start" above); after that removal the walkthrough gym must come from a real application and provisioning.
+2. Agree on the release commit. From a clean main checkout, run `git pull --ff-only` and `git rev-parse HEAD`. In GitHub Actions, open the run for that exact commit and inspect every job. A successful build or code-generation job alone does not establish a passing browser suite or a deployment.
+3. In Vercel, open the deployment serving the walkthrough domain. Check its source commit, Ready status, environment and domain assignment. Check each separately deployed app/console domain that the walkthrough uses. An unrelated Ready preview does not prove that the intended domain serves the chosen commit.
+4. Have Elias confirm the Convex target and successful release from the agreed checkout. Done for `db43d7d` on 11 September 2026. Since then the backend commits `7687434`, `65f3858`, `c53666a`, `eba4696`, `936da61`, `8c83f47`, `05d3f65` and `7948027` (payables precision, trainer-account rule and deactivated identity projection, currency text in audit/timeline/notifications, trainer profile archived on deactivation) are on `main` but not released; the guarded dry run from `bef1656` on 14 September 2026 confirmed the Production target `descriptive-meerkat-589`, clean schema validation and no index deletions, and Elias then deployed those commits through the guarded flow on 14 September 2026; a later read-only dry run showed no remaining schema or index change. On 17 September 2026, on Elias's instruction, the agent session released `0d938f5` (WhatsApp-only worker, `tenantPurge` functions, public-surface guard test) through the guarded wrapper: dry run clean, deploy succeeded, post-deploy `health:check` ok; no schema or index change. Repeat the dry run and deploy for any later backend commit. Use the guarded `pnpm convex:deploy` workflow and the additive ordering below if that release is still pending. Record the source SHA, deployment name, time and deploy result. Convex code generation and the frontend Git SHA do not prove backend deployment; do not assume the dashboard exposes a matching Git SHA automatically.
+5. Confirm that the frontend points to that Convex target and that its Clerk instance matches the backend authentication configuration. Compare target names/URLs and instance identities in provider dashboards; do not copy secret values into chat, logs or this document. The existing safe environment-name command can establish presence, not verify secret values.
+6. Use separate real staff/member browser sessions. Verify the new class cancellation, purchase-date update and checklist assignment once on synthetic records, then run the business-day scenario below. Record expected versus actual behavior and the exact release identifiers for each failure.
+
+Deployment confirmation is a separate step from this code change. No new Convex release or live-provider activation is claimed here.
+
+## Repository workflow release requirements, 8 September 2026
+
+This section supersedes the earlier integrity-only statement that no new indexes or public operations are required. The full coding batch in `CURRENT_STATE.md` has not been released to Convex by this task. The deploy command remains `pnpm convex:deploy`; never use raw deploy or verbose output.
+
+1. Verify the exact Git SHA and target environment before release. Drain in-flight messaging actions using the existing controls. The new code still includes the earlier renewal lease-token protection.
+2. Deploy additive schema/indexes and backend functions together before allowing the new frontend actions. New indexes are `domainRecords.by_message_due`, `domainRecords.by_message_lease`, and `renewalDeliveries.by_status_channel_due`. Convex builds them over existing records; there are no duplicate queue-projection columns or custom messaging data migrations. The singleton `messagingWorkerState` table records source rotation.
+3. New optional fields cover purchase expected delivery dates, checklist assignee snapshots, identity backfill issue markers, and maintenance cursors/skipped counts. Existing records validate without invented delivery dates or staff assignments. The new operations are dated class cancellation, purchase delivery-date update, checklist assignee listing and dated assignment.
+4. The existing 15-minute identity maintenance cron now uses `customer_membership_identity_v2` and visits 100 records per run through a stable cursor. Member reads retain compatibility scanning until v2 completes. Inspect only safe counts/status plus synthetic fixture outcomes; `skippedCount` includes profile-only and identity-less records, whose per-record issue markers allow a separate recovery review. Completion means the scan finished, not that every historical identity was repairable.
+5. In a synthetic runtime, verify cancellation twice, cancelled-date booking refusal, next-week availability, purchase-date edits through receiving, branch-ineligible assignment refusal, and correcting a previous-day checklist without modifying today. Confirm both queue sources make progress, expired leases are reclaimed, disabled gyms advance behind the due window, and the identity cursor reaches later records.
+6. Release the corresponding frontend and record its SHA plus backend/environment verification. Restore messaging controls only after safe checks. Hashem's joint business-day walkthrough and live-provider activation remain explicitly deferred.
+
+Rollback must keep all stored optional fields and the new table accepted. A frontend rollback cannot undo recorded cancellations, reassignment audits, receipt/stock facts or backfill projections. Do not erase those records or automatically replay provider requests. No historical money repair is included.
+
+## Backend integrity release requirements, 8 September 2026
+
+The backend integrity commits listed in `CURRENT_STATE.md` are code changes only. No Convex deployment or provider activation was performed. Main publication remains separate from backend release; the inspected GitHub workflow runs checks and credential-gated codegen, while Vercel builds with `pnpm build`.
+
+For a later authorized release, first verify the exact target and exercise the changes with synthetic data in an independently owned, non-production runtime. Have the operator drain in-flight messaging actions using the existing delivery controls before replacing worker code. Deploy schema and functions together through `pnpm convex:deploy`, then verify attempt ownership, opt-out suppression and cleanup progress before restoring the previous delivery settings. Do not use live messages to prove the change.
+
+`renewalDeliveries.leaseToken` is optional, so existing rows validate without a migration. A legacy queued row receives its token when next leased. In-flight workers from old code have no stored token, so their late completion is rejected; draining them avoids unnecessarily repeating an ambiguous provider request. No indexes or public API operations change, and no generated files need regeneration for this schema-only type addition.
+
+Rollback must keep the optional field accepted while stored rows contain it. An application rollback alone neither rolls back Convex nor restores expired files/CSV bodies removed by cleanup. Suppressed messages, attempt events and member timelines are durable facts; do not erase or replay them automatically. No historical financial repair is part of this release.
 
 ## Purpose
 
@@ -13,14 +349,620 @@ This is the orientation and release-control document for RIVET. Use it to answer
 
 Never record secret values in this file, screenshots, commits, issues, or chat. Record variable names, environment ownership, verification result, date, and operator only.
 
+## Current repository state — 31 August 2026
+
+### Combined dated-class and daily-operations batch — 31 August 2026
+
+- Additive Convex tables are `classOccurrences`, `classBookings`,
+  `classMemberStats`, `checklistTemplates`, and `checklistRuns`. The analytics
+  work also adds `domainRecords.by_organization_type_created`. Treat all of
+  these as one deployment unit; do not publish only the frontend surfaces.
+- Dated class writes own capacity, membership/branch access, audience policy,
+  waitlists, attendance finalization, promotion, no-show projection,
+  substitution, timeline, and audit evidence. Coach payout and all analytics
+  operations are read-only and create no money or ledger facts.
+- Daily checklist runs are idempotent per template and branch-local date.
+  Templates snapshot into a run so later edits do not rewrite completed work;
+  failures/corrections are reasoned and audited, and maintenance escalation
+  uses the existing operations contract.
+- Reports use server branch scope and tenant-local boundaries. Class
+  utilization derives untouched weekly timetable dates in the requested range
+  as zero-booking capacity, then overlays saved occurrence/booking facts. This
+  avoids the false claim that only interacted-with classes were offered.
+- Application history preserves the parallel branch through merge `6a970cd`;
+  the class-utilization completion is `6cc54a6`. No provider was enabled and no
+  Production tenant record was mutated by this implementation batch.
+- The combined static gate passed both TypeScript checks, zero-warning
+  lint/secret audit, 176 Vitest files / 1,054 tests plus 14 repository-safety
+  tests, the 59-route Production build, dependency audit, and diff check.
+- The final clean-server Playwright run passed all 47 credential-free journeys;
+  the 14 isolated-staging journeys were explicitly skipped and no journey
+  failed.
+- Application tip `fdd6dac` is pushed on matching local/GitHub `main`.
+  GitHub Actions run `33349634901` passed all three jobs, and Vercel deployment
+  `A9RNZUP3tK2taFs2vU7VVD9Mho19` completed for that exact SHA.
+- The guarded names-only check and dry run selected Production
+  `descriptive-meerkat-589`. The matching deploy completed schema validation,
+  added 21 class/checklist/reporting indexes, deleted none, and returned
+  `status: ok` from the read-only health operation. No provider activation,
+  seed, import, restore, or Production tenant-data write occurred.
+
+### Credentialed Development release pass — 31 August 2026
+
+- Role-specific Development sessions passed owner settings, staff
+  authorization, membership lifecycle, reception, finance reconciliation,
+  member portal, isolation/audit, personal training, and realtime coverage.
+  Cleanup evidence is now executable: any planned, failed, or abandoned entry
+  fails the journey instead of merely being attached to the report.
+- Live checks corrected legacy-role capability compatibility and the dedicated
+  staff-invitation action argument contract. The fixes have unit, permission,
+  adapter, and credentialed browser coverage.
+- Public trial/CRM and gym provisioning remain intentionally blocked until the
+  Development deployment `fleet-otter-621` receives a private
+  `RIVET_PUBLIC_REQUEST_PEPPER`; do not record or pass its value through a
+  command or agent transcript. Refresh the Development salesperson browser
+  state before rerunning the trial journey. Automation remains disabled.
+- The local static gate passed both typechecks, lint/secret audit, 169 Vitest
+  files / 1,013 tests plus 14 repository-safety tests, the 58-page Production
+  build, a focused two-role class browser regression, dependency audit, and
+  diff check. The pushed GitHub workflow owns the clean-server, complete
+  credential-free Playwright result for the release commit.
+- Release tip `b1da867` is pushed on matching local/GitHub `main`. Vercel is
+  green for the exact SHA. The guarded Convex dry run and deploy explicitly
+  selected Production `descriptive-meerkat-589`, passed schema validation, and
+  deleted no indexes. Production health is `ok`; the renewal aggregate is zero;
+  subscription reconciliation remains disabled and previewed zero invoice,
+  past-due, or suspension writes across five organizations.
+- The authenticated owner session passed Audit, Operations, Finance/Statements,
+  and Settings after a hard reload, with no recovery banner or browser errors.
+  Renewal recovery was visibly off and external delivery disabled. GitHub run
+  `33341837875` passed all three jobs, including the clean-server
+  credential-free browser suite.
+
+### Membership-state migration and referral-sharing batch — 30 August 2026
+
+- The file-first CSV/XLSX importer accepts profile-only rows or mapped
+  active/scheduled membership state at an explicit cutoff date: source plan,
+  start/end, remaining visits, current freeze, opening balance, and read-only
+  historical paid-total evidence. Source plan labels must be mapped to an
+  active RIVET plan before commit.
+- Imported terms are not sales and use zero sale price. Opening balances are
+  migration receivables with accounting-source posting disabled. Historical
+  paid totals are evidence records, not payments or receipts. This prevents a
+  migration from inventing cash, revenue, tax, or shift history.
+- Batch resume, rejected-row export, seven-day undo, and audit provenance cover
+  every artifact created by an import. Undo succeeds only while the exact row
+  versions are untouched and no later operational or financial reference
+  exists. The original workbook body is never retained.
+- Member referral URLs use opaque tokens. Creation is authenticated and tied
+  to the member's exact portal/operational membership; public trial submission
+  validates the token against the target tenant/gym and a live referrer. Only
+  the resulting CRM lead carries `referredByMemberId`; the public token is not
+  persisted on the trial booking.
+- A completed trial sale creates the referred member with that attribution and
+  then uses the existing one-time referral reward rules. Gym-configured enable,
+  reward days, rolling cap, active-referrer membership, and immutable reward/
+  audit evidence remain authoritative.
+- Application commits are `d4a66c8`, `24e3749`, `fe54838`, and `31eae98`,
+  following partner-preserving merge `d2a45e2`. The local gate passed both
+  TypeScript checks, lint/secret audit, 169 Vitest files / 1,011 tests plus 14
+  repository-safety tests, the 58-page Production build, dependency audit,
+  diff check, and 46 credential-free Playwright journeys with 14 explicit
+  staging-only skips and zero failures. No Convex deploy, provider activation,
+  or Production tenant-data import was performed for these commits. Elias's
+  follow-up `3c43829` records a clean Convex Production deploy through the
+  preceding merge `d2a45e2`; release the newer migration/referral tip only
+  through the exact-target procedure below.
+
+### Migration and front-desk transaction batch — 30 August 2026
+
+- Member migration is file-first and accepts CSV or XLSX. Parsing and column
+  inference happen in the browser; Convex receives canonical mapped CSV plus
+  source filename/kind/header/mapping provenance. The original workbook body is
+  not stored.
+- `memberImport` records own preview rows, per-row outcomes, cursor progress,
+  created-member references, and the seven-day undo deadline. Commit and undo
+  are bounded and idempotent. Undo archives only members that still match their
+  import-created version and have no subsequent operational or financial
+  references; changed records are skipped and reported.
+- `members.create_and_sell` is the atomic front-desk boundary for a new member
+  and first membership. It enforces member-write and membership-sale
+  permissions, plan/branch/payment rules, duplicate review, and a year-long
+  idempotency record inside one Convex transaction. Any thrown validation or
+  payment error rolls back the member, membership, charge, and receipt.
+- Member migration now supports the bounded membership-state contract above.
+  It still excludes fabricated historical sales/payments/receipts/cash shifts,
+  multiple old terms, and posted financial history.
+- Application commits are `f60a724`, `8726737`, `7f336c9`, and `822f328`.
+  The local gate passed 166 Vitest files / 990 tests plus 14 repository-safety
+  tests, both TypeScript checks, lint/secret audit, the 57-page build, 43
+  credential-free Playwright passes / 14 explicit staging-only skips / 0
+  failures, the Production dependency audit, and the diff check. Exact
+  deployment and hosted verification evidence follows.
+- Release commit `156f9b1` is aligned on local and GitHub `main`. GitHub
+  Actions run `33311009377` passed all three jobs, including the credential-free
+  browser gate. Vercel deployment `dpl_HXZ7Qym8nDaaSiVkQMFTRUCxjngq` is
+  `READY` for the exact SHA; the canonical site returned HTTP 200.
+- The exact-target guarded Convex dry run and deploy selected Production
+  `descriptive-meerkat-589`, completed schema validation, deleted no indexes,
+  and added `domainRecords.by_type_customer_profile`,
+  `domainRecords.by_type_customer_user`,
+  `domainRecords.by_type_export_expiry`, and `maintenanceState.by_key`.
+  Read-only `domain:query` operation `health` returned `status: ok`.
+- Convex repeated the existing Free-plan overage warning. No plan/PAYG change,
+  provider activation, seed, import, restore, or Production product-data
+  mutation was performed.
+
+### Quality-of-life architecture batch — 30 August 2026
+
+- New private persistence is owned by the authenticated user and organization:
+  `userSavedViews`, `userOnboardingProgress`, `pushSubscriptions`,
+  `recentWorkspaceItems`, and `pinnedWorkspaceItems`. Bulk jobs, duplicate
+  cases/merge records, and export jobs use the existing bounded domain-record
+  storage pattern. Every adapter path remains behind `GymOSApi`; mock and
+  Convex implementations have parity coverage.
+- New staff routes are `/members/duplicates`, `/getting-started`, `/exports`,
+  and `/automations/[ruleId]`. New member routes are `/customer/finance`,
+  `/customer/receipts/[receiptId]`, and `/customer/getting-started`; `/offline`
+  is the intentionally non-sensitive offline fallback.
+- Saved views and onboarding progress are tenant/user scoped. Bulk work,
+  duplicate decisions, exports, workspace search, recents, and pinned actions
+  are permission and branch scoped at the server boundary. Duplicate merge
+  projections link history without changing completed payment, receipt,
+  accounting, or audit facts; member-owned identities are blocked from
+  automatic merge until supervised identity resolution. State-derived owner
+  readiness cannot be completed with a tutorial-progress mutation.
+- The service worker is served at `/sw.js`. Its allowlist contains the offline
+  and brand shell only; all authenticated, customer, finance, receipt, QR,
+  check-in, API, and Convex traffic is network-only. Push subscriptions store
+  user consent/readiness only; no delivery provider was activated.
+- Automation delivery remains fail-closed. The read-only monitor may expose
+  existing rules and execution facts, but create/update/manual-run/retry paths
+  require the server environment name `RIVET_AUTOMATIONS_LIVE` to equal
+  `"true"`. Keep it absent until provider configuration, consent, and release
+  approval are complete.
+- Export content is generated from authorized projections, includes generation
+  time, tenant timezone, branch scope, and applied filters, and is available
+  inline for at most 24 hours. Sensitive export requests produce immutable
+  audit evidence and do not place personal data in filenames or logs. CSV
+  strings are neutralized against spreadsheet-formula execution and PT exports
+  derive their member set from the actor's branch-scoped projection.
+- Local evidence at review-branch tip `6296fea` passed both TypeScript checks,
+  lint/secret audit, 161 Vitest files / 977 tests, 14 repository-safety tests,
+  the 57-route Production build, 43 credential-free Playwright journeys with
+  14 explicitly staging-only skips, the production dependency audit, and the
+  diff check. No Convex/Vercel deploy, environment mutation, provider
+  activation, or Production tenant-data write was performed.
+- Release operators must still run the credentialed isolated-staging journeys
+  and the existing exact-target deploy/runbook gates before release. Legal and
+  commercial copy, full Arabic localization, and measured performance work are
+  intentionally reserved for final pre-launch closure.
+
+### Clean-tenant engagement and operations batch — 29 August 2026
+
+- A new gym starts with an isolated, empty tenant. Existing records arrive
+  through explicit onboarding workflows, beginning with the preview-first
+  member CSV importer; no Production demo seed is part of tenant creation.
+  Import accepts a selected file or pasted CSV, exposes a template, normalizes
+  contacts, surfaces duplicates and errors before commit, and is independently
+  capped by the server at 5 MB (UTF-8 bytes) and 10,000 rows.
+- Phone identity and WhatsApp URLs share an international normalization
+  contract. Organization calling code is configurable, Jordan `962` is the
+  provisioning default, and explicit `+`/`00` country codes win. A WhatsApp
+  handoff logs only that RIVET opened an external conversation and scheduled a
+  follow-up; it is not provider delivery evidence.
+- Branded offer links are bearer-token public resources with explicit expiry,
+  rate limiting, idempotent accept/decline, and immutable response/timeline
+  facts. Acceptance does not collect money or activate a membership.
+- The Facilities tab is authenticated and branch-scoped. Zone QR codes are
+  navigation shortcuts that prefill a task; they never grant public write
+  authority. Waiver/document capture is not included without approved legal
+  copy, retention policy, and pilot demand.
+- Facility list/Today reads now select status and relationship indexes rather
+  than broad organization scans. Regression volumes cover 600 facility tasks
+  and 25,000 Today candidates; the dashboard returns a bounded ranked set only
+  after truthful totals and deduplication are calculated.
+- These changes are committed in `ea19e03` through `0db74af`, with release
+  documentation at `63d97de`. A final fetch found no newer partner commit.
+  Both TypeScript checks, lint/secret audit, 157 files / 958 Vitest tests, 14
+  repository-safety tests, the 51-page build, 41 Playwright passes / 14
+  explicit credential-gated skips, the clean Production dependency audit,
+  Impeccable detector, and diff check passed.
+- Exact Production Convex `descriptive-meerkat-589` passed the guarded dry run
+  with no deleted indexes; the additive facility-status index and matching
+  functions were deployed, and `health:check` returned `ok`. No tenant records
+  were seeded or changed. GitHub Actions run `33260137190` passed all jobs and
+  exact-SHA Vercel Production deployment
+  `dpl_F2BWHM7DQWmVEaJA8HtwnbUUauQm` is `READY`; canonical public surfaces
+  returned successfully.
+
+### Platform closure and recovery artifact — 29 August 2026
+
+- `main` and `origin/main` matched at `04b1f0f` after a fresh fetch with no new
+  partner work before this release-record update. Read-only Production
+  platform-owner acceptance passed for Overview, Applications, Gyms, Pricing
+  & entitlements, Billing, and Support without page or console errors.
+- The explicitly approved Hashem Test listing change was saved with an
+  immutable audit reason. The hidden state persisted after reload, public
+  discovery retained Elias Test but no longer returned Hashem Test, and the
+  hidden tenant's direct URL returned not-found without QA-content leakage.
+  No tenant history was archived or deleted.
+- The obsolete Production deploy key `vercel-production` was revoked after its
+  Vercel consumer had already been removed. `rivet_prod_cli` remains for the
+  trusted operator flow, and the documented non-Production GitHub credential
+  was not changed.
+- The Free plan disables Convex's managed **Backup Now** control. No purchase
+  or PAYG change was made. The supported CLI instead created an exact-target
+  snapshot export of `descriptive-meerkat-589`, including file storage, at
+  `/Users/hashemnusair/Documents/RIVET Production Backups/rivet-production-descriptive-meerkat-589-2026-08-29.zip`.
+  The local artifact is mode `0600`, passed ZIP integrity verification, and has
+  SHA-256 `bd11a9f179bb3674164a4cb9c5f598d92ce38b76edad75b674105c08dc20cbb4`.
+  Keep it outside source control and treat it as sensitive Production data.
+
+### Active-owner acceptance and public-profile repair — 29 August 2026
+
+- A fresh fetch found no newer partner commit; `main` and `origin/main` match
+  at `fb43a14`. The authenticated Production owner belongs to `elias test gym
+  1`, the intended pilot/test tenant.
+- Read-only owner acceptance passed for dashboard, Operations/inventory,
+  checkout readiness, Finance and all management statements, finance controls,
+  a completed receipt, Settings, Renewal recovery off, and direct denial from
+  `/platform`. The browser console remained clean and no product record or
+  setting was mutated. Credential-free responsive Playwright passed; the
+  authenticated Chrome viewport could not be forced to mobile and must not be
+  reported as signed-in mobile evidence.
+- `fb43a14` prevents a valid public gym detail from rendering **Gym not found**
+  while its first marketplace snapshot is still loading. The full local gate
+  passed with 148 files / 914 tests, both typechecks, lint and secret audit, 51
+  built routes, 39 Playwright passes / 14 isolated-staging skips, a clean
+  production audit, and diff check. GitHub Actions run `33240389955` passed all
+  jobs and Vercel Production deployment `dpl_Ep5eEmAYBdRrpyqH6Mf1hhvb29rj`
+  is `READY`; the canonical Elias Test detail loaded without console errors.
+- At this acceptance checkpoint, Hashem Test was still a public historical QA
+  tenant. The later platform-closure action documented above hid its listing
+  with audit evidence while preserving its transaction history.
+- Convex Production is healthy but reports 1.65 GB August database I/O against
+  a 1 GB Free-plan allowance. The later platform-closure action documented
+  above created and verified a current exact-target export outside the
+  repository. Capacity remains a launch gate; the missing-export gate is
+  closed. Clerk is confirmed as a live Production instance; open sign-up and
+  disabled MFA are documented policy decisions, not silently assumed release
+  defaults.
+
+### Production release closure — 29 August 2026
+
+- `main` and `origin/main` matched at `d06021e` after a fresh fetch. Convex
+  Production was explicitly selected as `descriptive-meerkat-589` with the
+  local Development key suppressed. The guarded dry run and deploy completed
+  schema validation, reported no deleted indexes, and deployed the current
+  functions without a destructive migration.
+- `health:check` returned `ok`. `renewalJobs.releaseAudit` returned zero rows in
+  all four categories. `subscriptionReconciliation.preview` processed five
+  organizations, found two eligible boundaries, projected zero invoice,
+  past-due, or suspension actions, and reported `enabled: false`. Operational
+  email and subscription reconciliation remain default-off.
+- The Vercel project-level Build Command was corrected from the legacy raw
+  Convex deploy hook to `pnpm build`. The Production `CONVEX_DEPLOY_KEY` was
+  removed from Vercel after the authenticated operator path was proven. Fresh
+  Production deployment `dpl_8thJP5sjVUgH9YZREpQjgerpUbfh` built exact head
+  `d06021e` with 51 pages and no Convex deploy command; it is `READY`, canonical
+  aliases resolve, and initial error/HTTP-500 scans were empty.
+- Public landing, directory, and gym-detail reads completed without page or
+  console errors. Two test gyms are publicly listed, and one exposes
+  disposable-verification copy and test membership data. Exact-target content
+  cleanup or unpublishing is required before launch. No tenant record was
+  changed during this read-only verification. Closed on 17 September 2026:
+  every test tenant was purged through the "Fresh start" procedure.
+
+- The approved topology is Next.js App Router on Vercel, Clerk for identity,
+  and Convex for tenant/branch-scoped data and business rules. `GymOSApi` is
+  the page-facing boundary; `ConvexGymOSApi` is the Production implementation
+  and `MockGymOSApi` is explicit preview/test infrastructure. The former
+  FastAPI/PostgreSQL/Redis topology is not an implementation requirement.
+- The repository-hardening sprint final application/code verification tip is
+  `3c99fc7`; the final pushed history also includes this documentation
+  reconciliation, after
+  starting from `e1cac31127a94659ad95f1e0f5f45f536678fa6f`. The local gate
+  passed with 148 Vitest files / 913 tests, 14 repository safety tests, both
+  TypeScript checks, lint and secret-output audit, a 51-route build, 39 passed
+  and 14 explicitly skipped credential-gated Playwright journeys, no known
+  production audit vulnerabilities, and a clean generated-output worktree.
+- Public catalog/marketplace subscriptions now have fresh-listener retry,
+  bounded first-snapshot timeouts, last-good-snapshot retention, and approved
+  fallback plans. CRM contact normalization/correction, owner validation,
+  audit facts, event-backed progression projections, and permanent
+  credential-free role-routing browser coverage are implemented and tested.
+- CI runs the credential-free Playwright suite with the sanctioned mock preview
+  mode, while 14 staging/Convex journeys remain skipped unless explicit
+  isolated credentials are supplied. It also audits production dependencies,
+  checks diffs, and asserts a clean worktree after build and browser tests.
+- This sprint did not deploy Convex, change Production provider configuration,
+  enable a provider or job, run credentialed staging, or mutate Production
+  data. GitHub Actions run [33127740606](https://github.com/hashemnusair/Rivet/actions/runs/33127740606)
+  passed for `3c99fc7`, and Vercel Production deployment
+  [`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
+  is `READY` for that exact tip; the canonical site returned HTTP 200.
+
+### Membership revenue policy v2 and review exclusions — 1 September 2026
+
+- Owner decision (docs/09, docs/18 §7): new membership sales/renewals post
+  their full net price as immediate revenue (`membership-sale.v2`,
+  1200 → 4100). Recognition schedules remain only for legacy v1-posted
+  deferred terms. Audited review exclusions
+  (`accounting.source.exclude`/`.reconsider`, additive
+  `reviewExcludedAt`/`reviewExcludedByUserId` schema fields) let
+  owners/managers clear never-postable facts from completeness warnings;
+  `excluded` rows and not-yet-due monthly schedules stopped counting toward
+  those warnings. Classes details popup and calendar chips now read booking
+  counts from the dated occurrence and list who booked.
+
+### Management Ledger forensic audit corrections — 31 August 2026
+
+- The full statements-system audit lives in
+  `docs/18_MANAGEMENT_STATEMENTS_FORENSIC_AUDIT.md` (accounting contract,
+  source-to-statement matrix, findings, open policy decisions). Behavior
+  changes shipped with it: void sources are dependency-gated on the posted
+  original payment (otherwise `excluded`); the balance sheet reports
+  `cumulativeEarnings` (legacy `currentEarnings` alias retained one release);
+  cash flow uses `cashflow-classification.v2` (transfer exclusion,
+  mixed-entry warning, documented cash definition); statements warn when a
+  posted source's operational record drifts in amount/currency/branch; mock
+  parity gaps closed (account 5900, freeze-history recognition, GM
+  drill-downs). Convex functions changed with no schema change.
+
+### Management Ledger accounting completeness — 26 August 2026 (working-tree update)
+
+- A complete source refresh now persists its scope, candidate digest, and
+  source projection fingerprints. Reports prove coverage only when the current
+  authoritative candidates match that evidence. Posted/reversed legacy rows
+  can be fingerprinted during refresh without rewriting financial facts.
+- Membership sale/renewal posting remains deferred (1200 → 2200). Monthly
+  recognition (2200 → 4100) is allowed only after the matching deferred source
+  is posted in the same branch/currency. Exact service-day allocation excludes
+  active/completed freezes, stops at cancellation, is capped by the posted
+  deferred amount, rejects future months, and is bounded to 120 months.
+- Depreciation requires a posted acquisition in the same branch/currency plus a
+  valid installation/purchase date, positive cost, and 1–600 month life. The
+  approved MVP convention is straight-line monthly with zero residual and
+  exact final-unit rounding (5600 → 1550, non-cash). Retired/replaced assets
+  stay unconfigured because no authoritative effective retirement date exists.
+- Statement UI warnings are conditional and deduplicated into one panel. A
+  missing/unposted fact remains visible; a proven and fully posted scope no
+  longer repeats generic membership, depreciation, and coverage warnings.
+
+### Management Ledger standalone reporting — 26 August 2026
+
+- `/finance` is the canonical Management Ledger hub. It is deliberately
+  separate from Payments, Shifts & cash, and general Reports: the hub presents
+  exactly three focused links—**Income statement**, **Balance sheet**, and
+  **Cash flow statement**—without payment or journal controls and without
+  placeholder preview figures.
+- The three links open dedicated, backend-backed pages:
+  `/finance/income-statement`, `/finance/balance-sheet`, and
+  `/finance/cash-flow`. Each page uses the shared statement shell and calls only
+  its corresponding existing report projection (`income_statement`,
+  `balance_sheet`, or `cashflow_statement`), including real posted-ledger
+  amounts, warnings, loading, retry, and stale-data handling. The income page
+  surfaces Net Income as part of its report.
+- Date and branch scope is carried in `from`, `to`, and `branchId` URL
+  parameters. Hub links preserve the current scope, and detail pages keep it
+  synchronized with the visible filters. The hub and all statement pages are
+  gated by the `reporting` workspace entitlement and
+  `reports.financial.read`. The primary sidebar now has a standalone
+  **Management ledger → Statements** section; the ledger is absent from the
+  Finance section and from the payment FinanceNav.
+- `/reports/statements` remains a compatibility redirect to `/finance`,
+  preserving supported scope parameters for existing bookmarks. Advanced
+  maintenance is intentionally separate at `/finance/controls`: journal
+  entries, source queue refresh/posting, periods, reversals, and close/reopen
+  actions remain under the `finance` module and existing mutation permissions.
+- Reporting remains truthful about coverage. Projections read posted or
+  reversed management-ledger entries only; incomplete source coverage and
+  report warnings are shown, and a background refresh failure labels the last
+  successful result as stale. The UI never estimates missing source facts.
+  Validated membership recognition and equipment depreciation are supported;
+  missing inputs remain explicitly unconfigured. Opening balances remain an
+  operator responsibility, and cash-flow arithmetic may reconcile while source
+  coverage is unproven. These are management reports and make no statutory or
+  tax claim.
+- Central invalidation covers both `finance` and `managementReports`, keeping
+  controls and statement projections aligned after source posting, manual
+  journals, reversals, and period changes.
+- Final local validation passed: `pnpm --dir apps/web test` (**142 files / 867
+  tests**), app and Convex TypeScript checks, production build, full lint and
+  secret-output audit, and `git diff --check`. No Playwright run was performed;
+  no browser visual verification or deployment success is claimed by this
+  working-tree evidence.
+
 ## Current release posture
 
-- The application is a release candidate, not a blank scaffold.
-- Main implementation commit `a374f0e` is deployed to Vercel Production; Convex Production target `descriptive-meerkat-589` was dry-run and deployed from the same code with no deleted indexes, and the read-only health query returned `status: ok`.
-- Current local gates pass: frontend and Convex typecheck, zero-warning lint, 453 unit/handler/component tests across 83 files, the production build, 24 preview browser journeys, and diff checks. Credential-complete functional staging remains gated on the manager Clerk storage state.
-- Manual staging run `31761753434` passed authenticated smoke, membership lifecycle, two-browser realtime, and owner-settings/trial-schedule with disposable cleanup; its functional suite stopped before writes at the missing manager credential. The five formerly missing product bodies are authored but still require credential-complete execution.
-- Production environment alignment, authenticated tenant resolution, and the supervised cash-path onboarding/operational sequence remain verified. Live operational email is disabled, and no Production product data was seeded, imported, restored, deleted, or mutated for this release.
+### Historical implementation status — 25 August 2026
+
+The current working tree contains the implemented P0/P1 readiness slices:
+explicit branch scope with read-only **All branches**, retail
+finance/accounting lifecycle hardening, invitation and multi-org identity
+security, public media and abuse controls, production fail-closed configuration
+and security headers, provisioning retry preservation, real Clerk customer
+signup, atomic inventory transfers, and truthful deferred handling for
+Facilities/Automations. The primary Operations scope is Inventory, Checkout,
+and Machines.
+
+The final independent security review also fixed required upload-intent and
+storage ownership checks, member-photo branch authorization, authorization
+before purchase-order and PT idempotent replay responses, and strict Clerk
+invitation/application/workspace metadata matching. External edge/IP/device
+rate limiting and provider-backed/Production verification remain open.
+
+Credential-free local validation passed: **136 Vitest files / 828 tests**,
+**14 Node deployment-safety tests**, application and Convex TypeScript checks,
+full lint and secret-output audit, the production Next build, and
+`git diff --check`.
+
+This evidence is local to the uncommitted working tree. No Playwright run was
+performed, no commit/push was made, and no Convex or Vercel Production deploy
+was performed. Live provider-backed invitation/signup checks and Production
+smoke, rollback, capacity/headroom, and backup/recovery gates remain open.
+
+- At that historical snapshot, `main` was
+  `fe86322251f5429c4f27162a0c99229ae3506a23`. It contained the
+  default-off platform-subscription reconciliation, aggregate impact preview,
+  retail refund/void recovery, and the final paid-translation-provider removal.
+  The earlier Production deployment at
+  `ca7831a712888cbd282d4c0cba15a8c22e1a6bde` remains valid historical evidence
+  for the subscription and retail release only; it predates this removal and
+  must not be treated as verification of the current provider-free build.
+- The provider-removal commit was not yet verified in Vercel Production at
+  that snapshot. The
+  normal Vercel build now validates the Convex/Clerk configuration and runs
+  Next.js without a paid translation runtime, compiler, catalog publisher, or
+  `RIVET_TRANSLATE_BUILD` switch. Native Arabic fields, IBM Plex Sans Arabic,
+  and the manual RTL layout remain available.
+- The guarded dry run and deploy targeted exact Convex Production
+  `descriptive-meerkat-589` from backend release `e7f8121`. Schema validation
+  passed, no indexes were deleted, and only retail-sale indexes were added.
+  `subscriptionReconciliation.preview` returned 5 processed rows, 1 eligible
+  boundary, and zero invoice, past-due, or suspension actions. The mutation
+  returned `enabled: false` with zero writes, and `health:check` returned
+  `status: ok`. Keep `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` absent until a
+  separately approved enablement decision.
+- At the time of this provider-removal pass, browser and staging journeys were
+  local-only under the then-current CI policy. The 31-journey /
+  14-credential-gated-skip result belongs to that prior release-closure
+  evidence; the current CI/browser posture is recorded above and in Phase C.
+  Authenticated staging and Production acceptance remain open.
+
+- The application is a release candidate, not a blank scaffold. The current
+  release also retains Elias's four-tier subscription/live-entitlement work,
+  the Five Pillars release, and unavailable-owner login recovery.
+- The guarded dry run and deploy targeted exact Convex Production deployment
+  `descriptive-meerkat-589`. Schema validation completed, no indexes were
+  deleted, and the current functions—including the default-off renewal gate
+  and aggregate audit—were deployed through `pnpm convex:deploy`.
+- Post-deploy `health:check` returned `status: ok`.
+  `renewalJobs.releaseAudit` returned zero renewal deliveries, delivery events,
+  member-timeline records, and staff call tasks; all groups and timestamps were
+  empty, so no cleanup was required.
+- The authenticated platform-admin session loaded the overview, applications,
+  billing, subscriptions, and support surfaces without page or console errors.
+  The affected owner identity was also verified in Production: its gym is
+  suspended or cancelled, so RIVET now renders a truthful unavailable-workspace
+  state and a working sign-out action without invoking member APIs. The full
+  gym-owner workspace, drill-down, authorization, and responsive checks still
+  require an authorized restoration of that test gym or another active owner.
+- Convex warned that the projects are above the Free-plan limits. Capacity or
+  billing must be resolved before pilot launch to avoid service interruption.
+  Resolved: Elias reported on 14 September 2026 that Convex capacity is in
+  order.
+  Credential-complete staging also remains gated on the documented role
+  storage states.
+- Provider-removal local gates passed: both typechecks, zero-warning lint and
+  secret-output audit, 128 test files / 725 tests, and the 47-route Production
+  build. No Playwright journey was run for this pass.
+- Live operational email, WhatsApp, SMS, supplier messaging, and other external providers remain disabled. No Production product data was seeded, imported, restored, deleted, or mutated for this release.
 - Production must never be seeded with `seed:seedDemoTenant`.
+
+### Operations branch comparison and equipment restoration — 25 August 2026 (working-tree update)
+
+- Inventory balances are independent per branch. A concrete branch selection
+  scopes available stock, low-stock alerts, checkout, purchase-order work,
+  and stock adjustments to that branch. **All branches** is an explicit
+  read-only comparison that totals stock while retaining branch-by-branch
+  quantities and alert labels; it must never fall back to the first branch.
+- Checkout uses the same branch context as Inventory. The in-page branch
+  selector synchronizes with the global gym selector, valid `branchId` deep
+  links update the shared context, and invalid or failed changes are visible
+  to the operator. Inventory mutations and retail checkout require a concrete
+  accessible branch, preventing accidental sales against an ambiguous
+  all-branches view.
+- The operator surface is a single same-page tab set: **Inventory**,
+  **Checkout**, and **Machines**. Inventory remains the primary stock view;
+  Checkout is the retail sale flow; Machines is the equipment repair and
+  safety workflow restored to the main Operations workspace. Dialog-based
+  create/edit/report actions remain centered and preserve the underlying tab.
+- Machines/equipment rules are enforced in both Convex and MockGymOSApi:
+  out-of-service issues move an active asset into maintenance; resolving an
+  issue requires `safe_to_operate`; a machine returns to active only when no
+  unsafe unresolved issue remains; retired/replaced assets cannot receive new
+  issues; assignees must be in the visible branch; and work orders follow
+  draft → approved → in-progress → completed, with cancellation available at
+  the permitted stages. Recommendations use completed, non-reversed repair
+  evidence and ignore cancelled work.
+- Working-tree validation passed: full Vitest coverage (**136 files / 828
+  tests**), app and Convex TypeScript checks, full ESLint and secret-output
+  audit, the production Next build, 14 Node deployment-safety tests, and
+  `git diff --check`. A mock-mode in-app browser visual pass (not Playwright)
+  verified the All branches comparison, independent Sweifieh stock with
+  global branch synchronization, Abdoun machine issue/work-order UI, the
+  centered Add machine dialog, and no app console errors. Commit/push and
+  Convex Production deployment remain pending the parent release review; this
+  section makes no production success claim.
+
+The 24 August simplification note below remains the product-policy baseline
+for the reduced stock and checkout model; this follow-up restores the Machines
+tab and makes branch scope explicit without reviving the removed tutorial or
+delivery-time operator fields.
+
+### Operations simplification and deletion policy — 24 August 2026
+
+- The primary Operations surface is intentionally small: an Inventory tab for
+  available stock, add-item, centered supplier/purchase-order dialogs, and a
+  low-stock alert when available is at or below the configured threshold; and
+  a same-page Checkout tab for retail sales.
+  The tutorial and the old multi-panel command-center presentation are not part
+  of this primary operator flow. Their historical records remain intact in the
+  backend.
+- The canonical product fields are SKU, name, unit, current availability for
+  the selected branch, low-stock threshold, and selling price. Availability
+  changes are audited stock adjustments. Refill targets, delivery/lead-time
+  forecasting, and product default supplier cost are intentionally absent from
+  the simplified operator workflow.
+- A purchase order requires either a saved supplier or the explicit
+  **Private / bought elsewhere** source. The unit cost on each order line is
+  retained as the actual recorded purchase cost. There is no WhatsApp or
+  supplier-provider integration in this release; gyms can keep that
+  communication outside RIVET until they configure an approved provider.
+- Checkout remains the atomic retail-sale workflow for members and guests. It
+  records the sale, receipt, payment method, and stock movement together;
+  supports Cash, CliQ, and Visa/card; clears external-reference requirements
+  for Cash; and keeps mock refund/void stock restoration aligned with the live
+  contract.
+- Product master deletion is the exception to the general archive policy. It is
+  an audited permanent master-row action with safety guards and historical
+  tombstone/snapshot evidence, so a deleted SKU can be reused without orphaning
+  movements, receipts, refunds/voids, purchase history, or audit facts. It must
+  not be implemented as a UI-only removal or as deletion of immutable financial
+  history.
+- Gym, supplier, member, zone, equipment, and other records with dependent
+  financial or operational history use clearly labelled archive/deactivate
+  actions. Archived zone and equipment identifiers may be reused only when
+  active-record uniqueness permits it; historical issue/work-order evidence is
+  retained.
+- Local validation passed with 738 Vitest tests, app and Convex TypeScript,
+  full ESLint, the secret-output audit, safe Convex CLI tests, and the Next
+  production build. No Playwright suite was run. GitHub static CI, credentialed
+  Convex codegen, and Vercel Production passed for `3f6b787`.
+- Convex Production `descriptive-meerkat-589` received the matching backend
+  through the guarded dry-run/deploy flow. Schema validation passed, no indexes
+  were deleted, the three product-tombstone indexes were added, and the
+  read-only `health:check` returned `status: ok`. No seed/import/restore or
+  tenant-data workflow was executed.
+
+### Five Pillars Production closure progress — 23 August 2026
+
+- Renewal recovery is explicitly opt-in through `notifications.renewalRecoveryEnabled`. Missing legacy values and explicit false behave as disabled; the scheduler creates no renewal delivery, event, member timeline, or staff call-task facts until an authorized settings user enables the journey.
+- The guarded dry run and deploy both targeted Production
+  `descriptive-meerkat-589`, passed schema validation, and reported no deleted
+  indexes. The Development deployment `fleet-otter-621` was not changed.
+- The aggregate-only `renewalJobs.releaseAudit` is deployed. Its Production
+  result was zero across renewal deliveries, events, timelines, and call tasks,
+  with empty groups and timestamps. The post-deploy health query returned
+  `status: ok`.
+- Chrome had authenticated Production RIVET and Convex sessions. Platform-admin
+  routes passed a read-only smoke without console errors. A separate gym-owner
+  session remains necessary because this identity redirects gym routes to the
+  platform console.
+- No staging role identities or connected-staging environment variables were available. No staging writes or cleanup actions were performed.
+- `FRONTEND_HANDOFF.md` remains frozen. The `arabic-localisation` branch remains unmerged. Arabic and performance work are deferred to the final pass.
 
 ## Map 1 — Provider and deployment topology
 
@@ -28,8 +970,9 @@ Never record secret values in this file, screenshots, commits, issues, or chat. 
 flowchart LR
     GH["GitHub main"] --> CI["GitHub Actions"]
     GH --> V["Vercel production"]
-    CI --> MOCK["Mock preview tests"]
-    CI --> STAGE["Development Clerk + Convex staging"]
+    CI --> STATIC["Static checks + production build"]
+    CI --> BROWSER["Credential-free mock Playwright"]
+    CI --> CODEGEN["Convex codegen (credential-gated)"]
     V --> WEB["Next.js application"]
     WEB --> CLERK["Clerk production identity"]
     WEB --> CONVEX["Convex production data/functions"]
@@ -76,7 +1019,7 @@ flowchart TB
 
 Domains provide clean entry points and canonical URLs. They are not authorization boundaries.
 
-## Map 3 — One sign-in, three identity outcomes
+## Map 3 — One sign-in, four identity outcomes
 
 ```mermaid
 flowchart TD
@@ -94,10 +1037,13 @@ flowchart TD
 
     STAFF -->|"One gym"| GYM["Gym workspace<br/>assigned role and branches"]
     STAFF -->|"Multiple gyms"| SELECT["Select organization"] --> GYM
-    STAFF -->|"None"| MEMBER["Member experience<br/>customer profile and My Gyms"]
+    STAFF -->|"None"| UNAVAILABLE{"Active gym membership<br/>blocked by tenant lifecycle?"}
+    UNAVAILABLE -->|"Yes"| RECOVER["Workspace unavailable<br/>sign out or admin restores gym"]
+    UNAVAILABLE -->|"No"| MEMBER["Member experience<br/>customer profile and My Gyms"]
 
     PLATFORM -. "cannot use member-only APIs" .-> BLOCKED["Forbidden"]
     GYM -. "cannot use member-only APIs" .-> BLOCKED
+    RECOVER -. "cannot initialize member APIs" .-> BLOCKED
 ```
 
 Production does not use persona switching. Convex identity state determines the workspace.
@@ -362,20 +1308,34 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `CLERK_SECRET_KEY` | Development server key | Dedicated development key or absent | Production server key | Same-environment server key | Staging secret |
 | `CLERK_FRONTEND_API_URL` | Optional in Next.js | Dedicated development issuer or absent | Production issuer | Required; must match Clerk environment | — |
 | `ENTRY_PASS_SIGNING_SECRET` | — | — | — | Unique per deployment | — |
+| `RIVET_PUBLIC_REQUEST_PEPPER` | Local/test value or explicit fallback | Preview value if public forms are exercised | Strong private value | Required; must match the protected runtime configuration | — |
+| `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` | `1` only for deterministic local/test work | Optional for mock-only preview | Must be unset or `0` | Must be unset in Production | — |
 | `RIVET_SITE_URL` | — | — | — | Correct environment origin | — |
 | `RESEND_API_KEY` | — | — | — | Production or sandbox key | — |
 | `RESEND_FROM_EMAIL` | — | — | — | Verified sender | — |
+| `RESEND_REPLY_TO_EMAIL` | — | — | — | Optional verified reply-to for gym-application mail only; defaults to `sales@rivetjo.com` | — |
 | `RESEND_WEBHOOK_SECRET` | — | — | — | Resend signing secret | — |
 | `RIVET_APPLICATION_RECIPIENTS` | — | — | — | Partner recipient list | — |
-| `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Global kill switch; default `false` | — |
+| `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Deprecated alias: `true` means `live` only while `RIVET_EMAIL_MODE` is unset | — |
+| `RIVET_EMAIL_MODE` | Absent (`off`) | `sandbox` if email is exercised | `allowlist` until go-live, then `live` | Authoritative email go-live flag: `off`, `sandbox`, `allowlist`, `live`; unrecognised values mean `off` | `sandbox` |
+| `RIVET_EMAIL_SANDBOX_TO` | — | Catch-all inbox | — | Required in `sandbox` mode; every email is redirected here | Catch-all inbox |
+| `RIVET_EMAIL_ALLOWLIST` | — | — | Comma list of addresses or `@domain`s | In `allowlist` mode the list plus everything that belongs to a subscribed gym (trial, active or past due) is sent: gym-facing mail to its active team, member-facing mail to the addresses its records hold; everyone else is suppressed with a reason | — |
+| `RIVET_MESSAGING_MODE` | Absent (`off`) | — | `allowlist` until go-live, then `live` | WhatsApp/SMS go-live flag: `off`, `sandbox`, `allowlist`, `live`; a gym must also switch external delivery on | `sandbox` |
+| `RIVET_MESSAGING_PROVIDER` | — | — | `twilio` | Only supported provider | `twilio` |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | — | — | Production account | Provider credentials | Test account |
+| `TWILIO_MESSAGING_SERVICE_SID` | — | — | SMS messaging service | SMS sender; without it SMS is "not configured" | Test service |
+| `TWILIO_WHATSAPP_FROM` | — | — | `whatsapp:+…` approved sender | WhatsApp sender; without it WhatsApp is "not configured" | Twilio sandbox sender |
+| `RIVET_MESSAGING_SANDBOX_TO` | — | RIVET test phone | — | Required in `sandbox` mode; every message is redirected here | RIVET test phone |
+| `RIVET_MESSAGING_ALLOWLIST` | — | — | Comma list of E.164 numbers or `+96279*` prefixes | Required in `allowlist` mode | — |
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
+| `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` | Absent / `0` | — | — | Global platform-billing gate; default off, exact enable value is `1` | — |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
 | `CONVEX_DEPLOY_KEY` | Development operator key | Never | Avoid unless Vercel is the approved deploy operator | — | Staging key for codegen/smoke |
-| `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Baseline staging session JSON secret |
-| `PLAYWRIGHT_CLERK_STORAGE_OWNER`, `PLAYWRIGHT_CLERK_STORAGE_MANAGER`, `PLAYWRIGHT_CLERK_STORAGE_SALESPERSON`, `PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST`, `PLAYWRIGHT_CLERK_STORAGE_TRAINER`, `PLAYWRIGHT_CLERK_STORAGE_MEMBER` | External file paths | — | Never | — | Role-specific staging session JSON secrets |
-| `PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE` | Safe staging inbox template containing `{runId}` | — | Never | — | Required only for staff-invitation journey |
-| `PLAYWRIGHT_STAGING_PT_TRAINER_NAME` | Published staging trainer display name | — | Never | — | Required only for PT journey |
-| `PLAYWRIGHT_TARGET_CLASSIFICATION` and staging guards | `staging` only for isolated writes | — | Never | — | Required for write journeys |
+| `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Local-only staging session JSON |
+| `PLAYWRIGHT_CLERK_STORAGE_OWNER`, `PLAYWRIGHT_CLERK_STORAGE_MANAGER`, `PLAYWRIGHT_CLERK_STORAGE_SALESPERSON`, `PLAYWRIGHT_CLERK_STORAGE_RECEPTIONIST`, `PLAYWRIGHT_CLERK_STORAGE_TRAINER`, `PLAYWRIGHT_CLERK_STORAGE_MEMBER` | External file paths | — | Never | — | Local-only role-specific staging sessions |
+| `PLAYWRIGHT_STAGING_STAFF_EMAIL_TEMPLATE` | Safe staging inbox template containing `{runId}` | — | Never | — | Local-only staff-invitation journey |
+| `PLAYWRIGHT_STAGING_PT_TRAINER_NAME` | Published staging trainer display name | — | Never | — | Local-only PT journey |
+| `PLAYWRIGHT_TARGET_CLASSIFICATION` and staging guards | `staging` only for isolated writes | — | Never | — | Local-only write journeys |
 
 ### Environment rules
 
@@ -388,6 +1348,12 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 7. Keep production secret values out of local project files whenever possible.
 8. Live operational email requires the global kill switch and the tenant/global message-type allowlist. Configuring Resend alone must not activate delivery.
 9. Staging write tests require an exact expected Convex URL, a non-Production host, a unique run ID, and the required role-specific Clerk storage states.
+
+### Signup address and applicant-email release notes — 28 September 2026
+
+- Gym application address capture is an additive, backend-first change. The public submit action requires a trimmed physical address of at least five characters, while `gymApplications.gymAddress` stays optional in the stored schema so historical rows without the field remain readable. The coordinated frontend, operator application detail, confirmation email and provisioning paths all carry the new value; deploy the Convex schema/functions before enabling a frontend that submits it. Legacy duplicate submissions are read-only with respect to the missing address.
+- Subscription prices and tier limits remain the existing catalog. The public cards use existing entitlement and module data to explain how tiers differ. Billing continues to issue an invoice three days before the term boundary and keeps the fourteen-day payment term from invoice issuance; applicant-facing reminders must describe the due date on the invoice rather than imply payment is due three days after issuance.
+- Signup spam placement still needs delivery evidence. The application now uses a RIVET reply path only for gym-application mail (`RESEND_REPLY_TO_EMAIL`, default `sales@rivetjo.com`), but code changes and published authentication records do not prove inbox placement. For a disposable test submission, retain the provider event and full delivered-message headers, then inspect alignment, bounces and complaints in [Resend's guidance for avoiding Gmail's spam folder](https://resend.com/docs/knowledge-base/how-do-i-avoid-gmails-spam-folder) and [Resend Deliverability Insights](https://resend.com/blog/deliverability-insights). Do not mark spam as resolved from DNS records alone.
 
 ## Release runbook
 
@@ -418,19 +1384,26 @@ Complete this phase before asking an agent to run staging or production checks. 
 
 #### A1. Convex Production
 
-- [ ] Confirm the selected deployment is Production, not the linked development deployment.
-- [ ] Confirm its deployment URL is the one referenced by Vercel Production `NEXT_PUBLIC_CONVEX_URL`.
-- [ ] Confirm the current schema/functions are deployed for commit `e3f1dcc` or later.
+- [x] Confirm the selected deployment is Production, not the linked development deployment.
+- [x] Confirm its deployment URL is the one referenced by Vercel Production `NEXT_PUBLIC_CONVEX_URL`.
+- [x] Confirm the current safety-gated schema/functions are deployed. Exact
+  repository head `db43d7d` was deployed through the guarded operator path on
+  11 September 2026 (additive indexes only; see `CURRENT_STATE.md`). Earlier
+  guarded releases: `fdd6dac` on 31 August and `d06021e` on 29 August 2026.
 - [ ] Confirm `CLERK_FRONTEND_API_URL` exists and points to the Clerk Production issuer.
 - [ ] Confirm `CLERK_SECRET_KEY` exists and is a production key.
 - [ ] Confirm `ENTRY_PASS_SIGNING_SECRET` exists and is unique to Production.
-- [ ] Confirm `RIVET_SITE_URL` is `https://www.rivetjo.com`.
+- [ ] Confirm `RIVET_PUBLIC_REQUEST_PEPPER` exists in Convex and Vercel Production, is at least 32 characters with mixed character classes, and is not the local fallback.
+- [x] Confirm `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` is unset or `0` in Production.
+- [x] Confirm `RIVET_SITE_URL` is `https://www.rivetjo.com`.
 - [ ] Confirm `RESEND_API_KEY` exists.
-- [ ] Confirm `RESEND_FROM_EMAIL` is a verified sender, normally `noreply@rivetjo.com`.
+- [x] Confirm `RESEND_FROM_EMAIL` is a verified sender, normally `noreply@rivetjo.com`. Elias confirmed on 14 September 2026 that every operational email sends from `noreply@rivetjo.com`; Clerk keeps its own sender for sign-in and invitation emails.
 - [ ] Confirm `RIVET_APPLICATION_RECIPIENTS` contains the intended RIVET operators.
+- [ ] Confirm `RIVET_EMAIL_MODE` is `allowlist` (with `RIVET_EMAIL_ALLOWLIST` = RIVET staff and the pilot gym) until the email go-live checklist in docs/19 is complete, then `live`.
+- [ ] Confirm `RIVET_MESSAGING_MODE` is `off` or `allowlist`; never `live` before the WhatsApp templates are approved and the docs/19 checklist is complete. RIVET sends WhatsApp only (decided 14 September 2026); there is no SMS sender variable.
 - [ ] Confirm the 8 August 2026 production backup/export still exists or create a fresh backup before pilot mutations.
-- [ ] Do not run `seed:seedDemoTenant`.
-- [ ] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.
+- [x] Do not run `seed:seedDemoTenant`.
+- [x] Do not use raw verbose deploy diagnostics or value-bearing environment inspection; use the guarded commands above.
 
 #### A2. Clerk Production
 
@@ -444,32 +1417,28 @@ Complete this phase before asking an agent to run staging or production checks. 
 
 #### A3. Resend
 
-- [ ] Confirm `rivetjo.com` is verified.
-- [ ] Confirm `noreply@rivetjo.com` is allowed as a sender.
+- [ ] Confirm `rivetjo.com` is verified. Public DNS on 14 September 2026 showed the Resend DKIM selector and the `send.rivetjo.com` return-path records published, and DMARC at `p=none` (docs/19 asks for `p=quarantine` before `live`).
+- [x] Confirm `noreply@rivetjo.com` is allowed as a sender. Elias confirmed on 14 September 2026.
 - [ ] Confirm the API key used by Convex Production is active and appropriately scoped.
 - [ ] Confirm the partner-recipient addresses are prepared to receive a disposable application.
 
 #### A4. Vercel Production and Preview
 
-- [ ] Confirm project `rivet-web` has root directory `apps/web`.
-- [ ] Confirm the effective Production build runs `pnpm build`.
-- [ ] Align the project-level Build Command with `pnpm build` so the dashboard does not show the legacy Convex deploy command.
-- [ ] Confirm Production `NEXT_PUBLIC_DATA_MODE=convex`.
-- [ ] Confirm the Production Convex URL and site URL point to the selected Production deployment.
+- [x] Confirm project `rivet-web` has root directory `apps/web`.
+- [x] Confirm the effective Production build runs `pnpm build`.
+- [x] Align the project-level Build Command with `pnpm build` so the dashboard does not show the legacy Convex deploy command.
+- [x] Confirm Production `NEXT_PUBLIC_DATA_MODE=convex`.
+- [x] Confirm the Production Convex URL and site URL point to the selected Production deployment.
 - [ ] Confirm Production Clerk variables are live/production values.
-- [ ] Confirm `NEXT_PUBLIC_SITE_URL=https://www.rivetjo.com`.
+- [x] Confirm `NEXT_PUBLIC_SITE_URL=https://www.rivetjo.com`.
 - [ ] Separate Preview Clerk values from Production: use a Development pair or remove them when Preview remains mock-only.
-- [ ] Decide the trusted Convex Production deployment path. If Vercel no longer deploys Convex, remove `CONVEX_DEPLOY_KEY` from Vercel after the replacement operator path is documented and tested.
+- [x] Use the authenticated, exact-target `pnpm convex:deploy` operator path. Vercel no longer deploys Convex, and its Production `CONVEX_DEPLOY_KEY` was removed after the replacement path passed a dry run, deploy, health check, and aggregate audits.
 
 #### A5. GitHub
 
-- [ ] Keep every Actions credential tied to the isolated staging environment: Convex URL/key, Clerk keys, baseline and role-specific Clerk storage states, Production URL comparison guard, safe invitation template, and PT trainer name.
-- [ ] Confirm the owner, manager, salesperson, receptionist, trainer, and member storage states belong to the same disposable staging gym and have the roles their names claim.
-- [ ] Confirm the staging member has one active membership with usable PT credit, and the named published trainer has branch availability in the next 30 days.
-- [ ] Confirm the published staging gym has at least one trial time in the next 21 days and the finance branch has card and cash recording enabled with no receptionist shift already open.
-- [ ] Never replace the staging `CONVEX_DEPLOY_KEY` with a production key.
-- [ ] Confirm the latest ordinary `main` workflow is green.
-- [ ] After release verification, protect `main` with pull requests and required static/browser checks.
+- [ ] Keep the optional `CONVEX_DEPLOY_KEY` tied to the isolated deployment used for generated-code verification; never use a Production key in GitHub Actions.
+- [x] Confirm the latest ordinary `main` workflow is green.
+- [ ] After release verification, protect `main` with pull requests and required static/codegen checks.
 
 #### Operator completion report
 
@@ -521,17 +1490,27 @@ After Phase A is reported complete, the release agent should:
 8. Open public signup, member discovery, gym login, and platform login without submitting data.
 9. Report mismatches before mutating staging or production.
 
-### Phase C — Current-head staging verification
+### Phase C — Current-head CI verification
 
-Run the manual `GymOS CI` workflow on current `main` in three passes:
+The `GymOS CI` workflow on current `main` runs the repository and browser gates
+on pushes, pull requests, and manual dispatch:
 
-1. `run_operational_flow=false`: authenticated Clerk → Convex read smoke.
-2. `run_operational_flow=true`: disposable member → membership → card payment → check-in → timeline/audit → cleanup.
-3. `run_functional_staging=true`: branch-scoped staff authorization, public trial → CRM → accepted offer → conversion, PT credit reservation/realtime trainer visibility/cancellation, and card/cash partial payments → non-zero shift variance → manager approval.
+1. Frozen dependency installation, web and Convex typechecks, lint, unit/component tests, and the production build.
+2. Production dependency audit, `git diff --check`, and a clean-worktree
+   assertion after the build.
+3. The credential-free Playwright suite in sanctioned mock/preview mode, with
+   the browser/system dependencies it needs installed in the job, followed by
+   its own diff and clean-worktree assertions.
+4. Credential-gated Convex code generation and generated-file verification when
+   `CONVEX_DEPLOY_KEY` is configured; otherwise an explicit skip notice is
+   reported.
 
-The third pass requires separate role storage states for owner, manager, salesperson, receptionist, trainer, and member. It also requires a safe invitation email template containing `{runId}` and the exact display name of the published staging trainer represented by the trainer session. Each journey attaches a cleanup ledger. Disposable members and invitations are archived/deactivated; immutable payment, shift, PT-booking, timeline, and audit facts are preserved.
-
-Stop if the authenticated smoke uses Production credentials or if the operational flow targets anything other than the isolated staging deployment.
+No staging writes, Production credentials, or Clerk session secrets are used by
+the credential-free browser job. The 14 staging/Convex journeys remain
+explicitly skipped unless their local/isolated credentials and switches are
+provided. If an isolated staging journey is needed, run the local commands in
+`README.md` with disposable Development Clerk/Convex data and the required
+cleanup.
 
 ### Phase D — Supervised production onboarding
 
@@ -561,21 +1540,39 @@ Evidence recorded 10 August 2026: steps 1–10, 12–14, 16–18, and subscripti
 
 ### Phase E — Repository governance and documentation
 
-1. Protect `main` with pull requests, current branches, and required static/browser checks.
+1. Protect `main` with pull requests, current branches, and required static/codegen checks.
 2. Update verification counts and dates in the README, `CURRENT_STATE.md`, and completion plan.
 3. Record the selected Production Convex deployment path and rollback owner.
 4. Record the production onboarding outcome without secrets or unnecessary personal data.
 5. Remove or hide public QA listings before pilot launch.
 
-### Phase F — Next engineering slice
+### Phase F — Product engineering trajectory
 
-After release configuration is stable:
+The authenticated ownership, member-only denial and cross-tenant identifier
+matrices from the former Phase F are implemented and retained in the permanent
+Convex suite. Continue the current product trajectory in this order:
 
-1. Add adversarial Convex tests for authenticated customer-profile ownership.
-2. Add trial-booking tests proving the authenticated customer owns the booking and that it routes only to the selected gym/branch.
-3. Add negative tests proving platform administrators and gym staff cannot call member-only operations.
-4. Add cross-tenant and cross-branch tests for member, lead, payment, check-in, entry-pass, and trial identifiers.
-5. Extend the production-shaped staged flow toward the complete product-level release sequence.
+1. **Completed:** the role-aware **Today** queue aggregates due CRM work,
+   renewals, balances, access denials, approvals, cash variances and facility
+   work through the existing dashboard query. Ranking, full counts and overdue
+   summaries are computed before the 12-row display limit, and write actions
+   remain permission-owned by the server.
+2. **Completed:** provider-free WhatsApp handoffs use the organization's
+   configurable default calling code (Jordan `962` at provisioning) while
+   preserving explicit international numbers. They record a handoff attempt
+   and follow-up, never fabricated delivery.
+3. **Completed:** stable branded offer links provide expiry, attribution,
+   explicit idempotent acceptance/decline, and timeline facts. Payment and
+   membership activation remain policy-gated.
+4. **Completed for the current working sets:** realistic-volume fixtures and
+   indexes cover facility status, Today aggregation, and member/lead
+   relationships without speculative caching.
+5. **Completed for facility tasks:** signed-in zone QR shortcuts, quick task
+   creation, active/history review, and one-tap status transitions. Keep
+   waiver/document collection demand- and legal-policy-gated.
+6. Next choose among provider-backed messaging, payment-backed offer checkout,
+   or approved waiver/documents. Keep Arabic/translation and final measured
+   performance work as the last pre-launch implementation pass.
 
 ### Ready-to-paste prompt for the next release agent
 
@@ -597,11 +1594,10 @@ bundle Clerk/Convex classification, production Convex public health, and public
 route loading. Report every mismatch and stop before mutations if environments
 appear crossed.
 
-If Phase B is clean, run the manual GitHub GymOS CI workflow on current main:
-first the authenticated staging smoke with run_operational_flow=false, then the
-isolated staging write flow with run_operational_flow=true. Confirm that both
-use only Development Clerk and the isolated staging Convex deployment. Wait for
-completion and report exact run URLs/results.
+If Phase B is clean, run the manual GitHub GymOS CI workflow on current main and
+wait for the repository gates, credential-free Playwright job, and
+credential-gated Convex codegen check to complete. Do not expect staging writes
+or Production credentials from CI.
 
 Then prepare the supervised Production onboarding checklist from Phase D. Do
 not submit an application, provision a tenant, send invitations, or clean up

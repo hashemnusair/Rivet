@@ -1,3 +1,7 @@
+import type { LeadProgressFacts } from "@/lib/crm/lead-progression";
+import type { Money } from "./money";
+export type { Money } from "./money";
+
 /**
  * RIVET / GymOS domain types.
  *
@@ -16,12 +20,6 @@
 export type UUID = string;
 export type ISODateTime = string;
 export type ISODate = string;
-
-export interface Money {
-  /** Integer minor units. JOD has 3 decimal places: 40_000 = JOD 40.000 */
-  amount: number;
-  currency: string; // ISO 4217, e.g. "JOD"
-}
 
 export interface Page<T> {
   items: T[];
@@ -47,27 +45,1255 @@ export type RoleKey =
   | "manager"
   | "salesperson"
   | "receptionist"
-  | "trainer"
-  | "auditor";
+  | "trainer";
 
-export type AuditActorRole = RoleKey | "member";
+/** Historical audit rows may still carry the retired auditor role. */
+export type AuditActorRole = RoleKey | "auditor" | "member";
 
 export type BranchScope = "all" | "selected";
+
+export type BrandPaletteKey = "rivet" | "gold" | "red" | "green" | "blue" | "violet";
+
+export interface BrandTokens {
+  primary: string;
+  primaryHover: string;
+  primaryForeground: string;
+  primarySoft: string;
+  primarySoftForeground: string;
+  focusRing: string;
+}
+
+export interface BrandKit {
+  organizationId: UUID;
+  paletteKey: BrandPaletteKey;
+  primaryColor: string;
+  tokens: BrandTokens;
+  logoAssetId?: UUID;
+  logoUrl?: string;
+  logoAltText?: string;
+  version: number;
+  updatedAt?: ISODateTime;
+  updatedById?: UUID;
+}
+
+export type ZoneKind = "floor" | "studio" | "weights" | "cardio" | "functional" | "locker_room" | "bathroom" | "reception" | "storage" | "other";
+
+export interface Zone {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  code: string;
+  name: string;
+  nameAr?: string;
+  kind: ZoneKind;
+  capacity?: number;
+  status: "active" | "archived";
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertZoneInput {
+  id?: UUID;
+  branchId: UUID;
+  code: string;
+  name: string;
+  nameAr?: string;
+  kind: ZoneKind;
+  capacity?: number;
+  status?: "active" | "archived";
+}
+
+// ---------------------------------------------------------------------------
+// Daily operations
+// ---------------------------------------------------------------------------
+
+export type OperationsRecordStatus = "active" | "archived";
+export type FinancialPostingStatus = "not_posted" | "pending" | "posted" | "failed" | "reversed";
+
+export type ProductUnit = "each" | "kg" | "liter" | "box" | "serving";
+
+export interface Product {
+  id: UUID;
+  organizationId: UUID;
+  sku: string;
+  name: string;
+  description?: string;
+  unit: ProductUnit;
+  reorderPoint: number;
+  preferredSupplierId?: UUID;
+  /** Customer-facing price used by retail checkout. Supplier cost is separate. */
+  retailPrice?: Money;
+  status: OperationsRecordStatus;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertProductInput {
+  id?: UUID;
+  /** Branch whose available quantity should be set through an audited adjustment. */
+  branchId?: UUID;
+  /** Current available stock for the selected branch. */
+  availableQuantity?: number;
+  sku: string;
+  name: string;
+  description?: string;
+  unit: ProductUnit;
+  reorderPoint: number;
+  preferredSupplierId?: UUID;
+  /** Customer-facing price used by retail checkout. Omit to keep the item unsellable. */
+  retailPrice?: Money;
+  status?: OperationsRecordStatus;
+}
+
+/**
+ * A permanent product-master deletion only removes the mutable catalog row.
+ * The backend keeps this identity snapshot so stock history, purchase orders,
+ * and retail-sale refunds remain explainable after the SKU is reused.
+ */
+export interface ProductTombstone {
+  id: UUID;
+  organizationId: UUID;
+  productId: UUID;
+  sku: string;
+  name: string;
+  unit: ProductUnit;
+  description?: string;
+  retailPrice?: Money;
+  deletedAt: ISODateTime;
+  deletedById: UUID;
+  reason: string;
+}
+
+export interface DeleteProductInput {
+  productId: UUID;
+  reason: string;
+  /** Required typed confirmation; the server accepts the SKU or name. */
+  confirmation: string;
+}
+
+export interface DeleteProductResult {
+  deleted: true;
+  productId: UUID;
+  sku: string;
+  name: string;
+  deletedAt: ISODateTime;
+}
+
+export interface Supplier {
+  id: UUID;
+  organizationId: UUID;
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  terms?: string;
+  branchIds: UUID[];
+  preferredProductIds: UUID[];
+  status: OperationsRecordStatus;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertSupplierInput {
+  id?: UUID;
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  terms?: string;
+  branchIds: UUID[];
+  preferredProductIds?: UUID[];
+  status?: OperationsRecordStatus;
+}
+
+export interface InventoryBalance {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  productId: UUID;
+  quantityOnHand: number;
+  /**
+   * Units on hand that are reserved for an outbound commitment and therefore
+   * not sellable. Stock arriving on an approved purchase order is never a
+   * commitment: it is tracked on the order and does not reduce availability.
+   */
+  committedQuantity: number;
+  /** quantityOnHand minus committedQuantity: what checkout may sell now. */
+  availableQuantity: number;
+  /** Moving-average inventory valuation for the on-hand quantity. */
+  totalCost?: Money;
+  /** False for retained deleted-product tombstone balances. */
+  sellable?: boolean;
+  lastMovementAt?: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export type StockMovementType = "receive" | "sale" | "consumption" | "adjustment" | "return" | "transfer_in" | "transfer_out" | "waste";
+
+export interface StockMovement {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  productId: UUID;
+  /** Snapshot fallback used when the product master is permanently deleted. */
+  productSku?: string;
+  productName?: string;
+  productUnit?: ProductUnit;
+  type: StockMovementType;
+  quantityDelta: number;
+  quantity: number;
+  unitCost?: Money;
+  /** Exact valuation for this movement. Unit cost is display-only and may round. */
+  totalCost?: Money;
+  reason?: string;
+  referenceType?: string;
+  referenceId?: UUID;
+  idempotencyKey: string;
+  financialPostingStatus: FinancialPostingStatus;
+  financialSourceId?: UUID;
+  occurredAt: ISODateTime;
+  createdAt: ISODateTime;
+  createdById: UUID;
+}
+
+/**
+ * Moves sellable stock between two active branches in the same gym. The
+ * server records a paired transfer_out/transfer_in movement atomically.
+ */
+export interface InventoryTransferInput {
+  sourceBranchId: UUID;
+  destinationBranchId: UUID;
+  productId: UUID;
+  quantity: number;
+  reason: string;
+  idempotencyKey: string;
+}
+
+export interface InventoryTransferResult {
+  id: UUID;
+  organizationId: UUID;
+  sourceBranchId: UUID;
+  destinationBranchId: UUID;
+  productId: UUID;
+  quantity: number;
+  reason: string;
+  idempotencyKey: string;
+  status: "completed";
+  totalCost?: Money;
+  sourceMovementId: UUID;
+  destinationMovementId: UUID;
+  sourceMovement: StockMovement;
+  destinationMovement: StockMovement;
+  sourceAvailableQuantity: number;
+  destinationAvailableQuantity: number;
+  createdById: UUID;
+  occurredAt: ISODateTime;
+}
+
+/** Immutable transfer facts retained for branch reconciliation and history. */
+export interface InventoryTransfer {
+  id: UUID;
+  organizationId: UUID;
+  sourceBranchId: UUID;
+  destinationBranchId: UUID;
+  productId: UUID;
+  quantity: number;
+  reason: string;
+  status: "completed";
+  sourceMovementId: UUID;
+  destinationMovementId: UUID;
+  totalCost?: Money;
+  sourceAvailableBefore: number;
+  destinationAvailableBefore: number;
+  sourceAvailableAfter: number;
+  destinationAvailableAfter: number;
+  idempotencyKey: string;
+  createdById: UUID;
+  occurredAt: ISODateTime;
+}
+
+export interface LowStockAlert {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  productId: UUID;
+  quantityOnHand: number;
+  committedQuantity: number;
+  availableQuantity: number;
+  reorderPoint: number;
+  status: "open" | "dismissed";
+  dismissedAt?: ISODateTime;
+  dismissedReason?: string;
+  updatedAt: ISODateTime;
+}
+
+export type PurchaseOrderStatus = "draft" | "approved" | "partially_received" | "received" | "cancelled";
+export type PurchaseOrderSourceType = "supplier" | "private";
+
+export interface PurchaseOrderLine {
+  productId: UUID;
+  sku: string;
+  productName: string;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  unitCost: Money;
+  lineTotal: Money;
+}
+
+export interface PurchaseOrder {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  sourceType: PurchaseOrderSourceType;
+  supplierId?: UUID;
+  supplierName: string;
+  lines: PurchaseOrderLine[];
+  status: PurchaseOrderStatus;
+  currency: string;
+  total: Money;
+  supplierInvoiceReference?: string;
+  notes?: string;
+  expectedDeliveryDate?: ISODate;
+  overdue?: boolean;
+  approvedAt?: ISODateTime;
+  approvedById?: UUID;
+  receivedAt?: ISODateTime;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+// ---------------------------------------------------------------------------
+// Outbound messaging (WhatsApp only; the sms channel value survives on
+// historical rows and is refused by the router)
+// ---------------------------------------------------------------------------
+export type MessagingMode = "off" | "sandbox" | "allowlist" | "live";
+
+/** Global provider state plus this gym's own delivery switch; never carries secrets. */
+export interface MessagingStatus {
+  mode: MessagingMode;
+  provider: "twilio" | "none";
+  whatsappReady: boolean;
+  sandboxConfigured: boolean;
+  allowlistSize: number;
+  warning?: string;
+  gymDeliveryMode: "sandbox" | "live";
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  catalogueVersion: string;
+}
+
+export interface MessageTemplateCatalogueEntry {
+  key: string;
+  family: "renewal" | "payment" | "class" | "entry";
+  name: string;
+  category: "utility";
+  channels: Array<"whatsapp" | "sms">;
+  variables: string[];
+  bodyEn: string;
+  bodyAr: string;
+  version: string;
+}
+
+// ---------------------------------------------------------------------------
+// Subscription agreement (e-signature at onboarding)
+// ---------------------------------------------------------------------------
+export type AgreementPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+export type AgreementIdType = "national" | "passport";
+export type AgreementSignatureMethod = "drawn" | "typed";
+
+export interface AgreementTextSection {
+  number: string;
+  heading: string;
+  paragraphs: string[];
+}
+
+export interface SubscriptionAgreementCustomer {
+  legalName: string;
+  tradeName?: string;
+  registrationNumber?: string;
+  /** One line, including the city. */
+  address: string;
+  city?: string;
+  branches?: number;
+}
+
+export interface SubscriptionAgreementSignatoryView {
+  name: string;
+  title?: string;
+  idType: AgreementIdType;
+  /** All but the last four characters masked; the full number is platform-only. */
+  idNumberMasked: string;
+  phone?: string;
+  /** Where the signer's copy is sent; the account email unless changed. */
+  email: string;
+}
+
+export interface SubscriptionAgreementTerms {
+  plan: AgreementPlan;
+  startDate: ISODate;
+  termMonths?: number;
+  quote?: string;
+  /** The fee RIVET published for the plan when the agreement was signed. */
+  feeLabel?: string;
+}
+
+export interface SubscriptionAgreementConsents {
+  agreement: boolean;
+  authority: boolean;
+  electronic: boolean;
+  accurate: boolean;
+}
+
+export interface SubscriptionAgreementSignature {
+  method: AgreementSignatureMethod;
+  /** PNG data URL when drawn; what the app shows on screen. */
+  imageDataUrl?: string;
+  /** The same drawn signature as an opaque JPEG, for the PDF. */
+  printImageDataUrl?: string;
+  typedName?: string;
+}
+
+export interface SubscriptionAgreementClient {
+  userAgent: string;
+  language: string;
+  viewport: string;
+  ipAddress?: string;
+}
+
+export interface SubscriptionAgreement {
+  id: UUID;
+  reference: string;
+  version: string;
+  status: "signed" | "countersigned" | "void";
+  organizationId: UUID;
+  organizationName: string;
+  customer: SubscriptionAgreementCustomer;
+  signatory: SubscriptionAgreementSignatoryView;
+  subscription: SubscriptionAgreementTerms;
+  consents: SubscriptionAgreementConsents;
+  signature: SubscriptionAgreementSignature;
+  client: SubscriptionAgreementClient;
+  placeOfSigning?: string;
+  /** Server receipt time; the browser clock is never trusted. */
+  signedAt: ISODateTime;
+  signedAtLocal: string;
+  timezone: string;
+  signedByName: string;
+  /** SHA-256 of the canonical agreement text the server published. */
+  documentSha256: string;
+  /** SHA-256 the signer's browser computed over the text it displayed. */
+  clientDocumentSha256?: string;
+  hashMatch: boolean;
+  countersign?: { at: ISODateTime; byName: string; title: string; typedName: string; signature?: SubscriptionAgreementSignature };
+  idRevealCount: number;
+  voidedAt?: ISODateTime;
+  voidReason?: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface SubscriptionAgreementPrefill {
+  legalName: string;
+  address?: string;
+  signatoryName: string;
+  /** The account email; the signer's copy goes here. */
+  email: string;
+  /** The plan RIVET set up on the account; shown, not chosen, at signing. */
+  plan: AgreementPlan;
+  /** The fee RIVET currently publishes for that plan, as the document prints it. */
+  feeLabel?: string;
+  startDate: ISODate;
+}
+
+/** Everything the signing page needs, from one server call. */
+export interface SubscriptionAgreementContext {
+  version: string;
+  sections: AgreementTextSection[];
+  /** The canonical text; hash this exact string to produce clientDocumentSha256. */
+  text: string;
+  sha256: string;
+  status: SubscriptionAgreementStatus | "signed" | "countersigned";
+  canSign: boolean;
+  organizationName: string;
+  timezone: string;
+  prefill: SubscriptionAgreementPrefill;
+  agreement?: SubscriptionAgreement;
+}
+
+export interface SignSubscriptionAgreementInput {
+  customer: SubscriptionAgreementCustomer;
+  signatory: { name: string; idType: AgreementIdType; idNumber: string; email: string; title?: string; phone?: string };
+  subscription: SubscriptionAgreementTerms;
+  consents: SubscriptionAgreementConsents;
+  signature: SubscriptionAgreementSignature;
+  client: SubscriptionAgreementClient;
+  placeOfSigning?: string;
+  clientDocumentSha256: string;
+  idempotencyKey: string;
+}
+
+export interface PlatformAgreementSummary {
+  id: UUID;
+  reference: string;
+  version: string;
+  status: "signed" | "countersigned" | "void";
+  organizationId: UUID;
+  organizationName: string;
+  plan: AgreementPlan;
+  startDate: ISODate;
+  termMonths?: number;
+  signatoryName: string;
+  signedAt: ISODateTime;
+  countersignedAt?: ISODateTime;
+  hashMatch: boolean;
+}
+
+export interface CountersignAgreementInput {
+  agreementId: UUID;
+  title: string;
+  /** Must match the admin's own account name; also the fallback signature. */
+  typedName: string;
+  /** RIVET's mark. Drawn is the default; typed adopts the name above. */
+  signature?: SubscriptionAgreementSignature;
+  /** Replace an existing countersignature instead of refusing it. */
+  replace?: boolean;
+  idempotencyKey: string;
+}
+
+export interface VoidAgreementInput {
+  agreementId: UUID;
+  /** Why the agreement is retired; written to the audit trail. */
+  reason: string;
+}
+
+export interface AttachPrintSignatureInput {
+  agreementId: UUID;
+  /** Opaque JPEG of a signature already stored as a transparent PNG. */
+  printImageDataUrl: string;
+  /** Which signature to complete. */
+  target: "signatory" | "countersign";
+}
+
+export interface PlatformEmailDelivery {
+  id: UUID;
+  kind: string;
+  gym: string;
+  recipientEmail?: string;
+  subject?: string;
+  status: "queued" | "leased" | "provider_accepted" | "delivered" | "retrying" | "failed" | "suppressed";
+  suppressionReason?: string;
+  lastErrorCode?: string;
+  providerId?: string;
+  attachments: string[];
+  attempts: Array<{ attemptedAt: ISODateTime; outcome: string; statusCode?: number; errorCode?: string; mode?: string; deliveredTo?: string }>;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export type AgreementCopyAudience = "rivet" | "all";
+
+export interface ResendAgreementCopiesInput {
+  agreementId: UUID;
+  /** "rivet" sends only to RIVET's own addresses; "all" includes the signatory. */
+  audience: AgreementCopyAudience;
+  idempotencyKey: string;
+}
+
+export interface ResendAgreementCopiesResult {
+  /** Which resend this was; each one gets its own delivery rows. */
+  sequence: number;
+  deliveries: Array<{ recipient: string; status: "queued" | "suppressed"; reason?: string }>;
+}
+
+export interface RevealAgreementIdInput {
+  agreementId: UUID;
+  reason: string;
+}
+
+export interface RevealAgreementIdResult {
+  idNumber: string;
+  idType: AgreementIdType;
+  revealCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Supplier payables and supplier payments
+// ---------------------------------------------------------------------------
+export type SupplierPaymentMethod = "cash" | "bank_transfer" | "cliq";
+export type PayableStatus = "unpaid" | "partially_paid" | "paid" | "reversed";
+/** Operational records whose completion credits accounts payable (2100). */
+export type PayableSourceType = "purchase_order" | "stock_receive" | "facility_supplies" | "equipment_acquisition" | "equipment_repair";
+export type PayableStatusFilter = PayableStatus | "open" | "all";
+
+/**
+ * A server-owned projection of one supplier-attributed 2100 balance. Payables
+ * are derived from purchase orders; amounts paid come from recorded supplier
+ * payment allocations. Nothing here is stored separately from those facts.
+ */
+export interface Payable {
+  /** Stable projection id: `${sourceType}:${sourceId}`. */
+  id: UUID;
+  sourceType: PayableSourceType;
+  sourceId: UUID;
+  sourceLabel: string;
+  supplierId: UUID;
+  supplierName: string;
+  branchId: UUID;
+  branchName: string;
+  currency: string;
+  /** When the goods were received (the payable is aged from this date). */
+  receivedAt: ISODateTime;
+  /** Present only when a real supplier due date was recorded; never invented. */
+  dueDate?: ISODate;
+  /** Whole days since receivedAt on the tenant calendar. */
+  ageDays: number;
+  original: Money;
+  paid: Money;
+  remaining: Money;
+  status: PayableStatus;
+  /** Supplier invoice or delivery reference recorded on the source. */
+  externalReference?: string;
+  ledgerPostingStatus: FinancialPostingStatus;
+  href: string;
+}
+
+/**
+ * A 2100 balance with no supplier attached (private purchases, equipment
+ * costs, facility supplies, repairs). Shown for reconciliation only; RIVET
+ * never guesses which supplier it belongs to.
+ */
+export interface UnattributedPayable {
+  id: UUID;
+  sourceType: PayableSourceType;
+  sourceId: UUID;
+  sourceLabel: string;
+  /** Free-text vendor hint captured on the source (e.g. repair vendor). Not a supplier link. */
+  vendorHint?: string;
+  branchId: UUID;
+  branchName: string;
+  recordedAt: ISODateTime;
+  amount: Money;
+  reason: string;
+  ledgerPostingStatus: FinancialPostingStatus;
+  href: string;
+}
+
+export interface PayablesQuery {
+  branchId?: UUID;
+  supplierId?: UUID;
+  status?: PayableStatusFilter;
+  /** Matches supplier name, purchase order id, or external reference. */
+  search?: string;
+  cursor?: string;
+  pageSize?: number;
+}
+
+export interface PayablesAgingBucket {
+  bucket: "0-30" | "31-60" | "61-90" | "90+";
+  outstanding: Money;
+  count: number;
+}
+
+export interface PayablesSupplierTotal {
+  supplierId: UUID;
+  supplierName: string;
+  outstanding: Money;
+  openCount: number;
+  oldestReceivedAt?: ISODateTime;
+}
+
+export interface PayablesPage {
+  currency: string;
+  /** Oldest-first page of payables matching the filters. */
+  items: Payable[];
+  nextCursor?: string;
+  matchedCount: number;
+  /** Totals over every payable matching the filters, not only this page. */
+  totals: { outstanding: Money; original: Money; paid: Money; openCount: number };
+  supplierTotals: PayablesSupplierTotal[];
+  aging: PayablesAgingBucket[];
+}
+
+/** Reconciliation view of 2100 balances that cannot be attributed to a supplier. */
+export interface PayablesReconciliation {
+  currency: string;
+  count: number;
+  /** Sum of the items recorded in the organization currency. */
+  total: Money;
+  foreignCurrencyCount: number;
+  truncated: boolean;
+  items: UnattributedPayable[];
+}
+
+export interface PayablesExportRow {
+  supplierName: string;
+  sourceLabel: string;
+  sourceId: UUID;
+  branchName: string;
+  receivedAt: ISODateTime;
+  dueDate?: ISODate;
+  ageDays: number;
+  original: Money;
+  paid: Money;
+  remaining: Money;
+  status: PayableStatus;
+  externalReference?: string;
+  ledgerPostingStatus: FinancialPostingStatus;
+}
+
+export interface PayablesExport {
+  currency: string;
+  generatedAt: ISODateTime;
+  rows: PayablesExportRow[];
+  /** True when the export hit the server row ceiling; narrow the filters. */
+  truncated: boolean;
+}
+
+export interface SupplierPaymentAllocation {
+  payableId: UUID;
+  sourceType: PayableSourceType;
+  sourceLabel: string;
+  amount: Money;
+}
+
+export interface SupplierPaymentReversal {
+  reason: string;
+  reversedAt: ISODateTime;
+  reversedById: UUID;
+  reversedByName: string;
+  /** Open cash shift that received the cash back (cash payments only). */
+  shiftId?: UUID;
+  ledgerPostingStatus: FinancialPostingStatus;
+}
+
+export interface SupplierPayment {
+  id: UUID;
+  organizationId: UUID;
+  supplierId: UUID;
+  supplierName: string;
+  branchId: UUID;
+  branchName: string;
+  method: SupplierPaymentMethod;
+  amount: Money;
+  /** Bank transfer / CliQ reference. Recorded as typed; never verified externally. */
+  reference?: string;
+  notes?: string;
+  status: "recorded" | "reversed";
+  /** Open cash shift that funded a cash payment. */
+  shiftId?: UUID;
+  allocations: SupplierPaymentAllocation[];
+  recordedById: UUID;
+  recordedByName: string;
+  occurredAt: ISODateTime;
+  /** Ledger settlement state; "recorded operationally" is not "posted". */
+  ledgerPostingStatus: FinancialPostingStatus;
+  reversal?: SupplierPaymentReversal;
+  idempotencyKey: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface SupplierPaymentDetail extends SupplierPayment {
+  organization: { name: string };
+  branch: { name: string; code: string; address: string; phone: string };
+  /** Outstanding supplier balance after this payment (all branches the actor can see). */
+  supplierRemaining: Money;
+  payables: Array<{ payableId: UUID; sourceLabel: string; original: Money; paid: Money; remaining: Money; status: PayableStatus }>;
+}
+
+export interface RecordSupplierPaymentInput {
+  supplierId: UUID;
+  branchId: UUID;
+  method: SupplierPaymentMethod;
+  amount: Money;
+  reference?: string;
+  notes?: string;
+  allocations: Array<{ payableId: UUID; amount: Money }>;
+  /** The open cash shift the operator saw; a different open shift means the screen is stale. */
+  expectedShiftId?: UUID;
+  idempotencyKey: string;
+}
+
+export interface ReverseSupplierPaymentInput {
+  paymentId: UUID;
+  reason: string;
+  idempotencyKey: string;
+}
+
+export interface SupplierPaymentsQuery {
+  supplierId?: UUID;
+  branchId?: UUID;
+  payableId?: UUID;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface CreatePurchaseOrderInput {
+  branchId: UUID;
+  /** Use `supplier` for a known supplier or `private` for an undisclosed source. */
+  sourceType?: PurchaseOrderSourceType;
+  supplierId?: UUID;
+  lines: Array<{ productId: UUID; quantity: number; unitCost: Money }>;
+  supplierInvoiceReference?: string;
+  notes?: string;
+  expectedDeliveryDate?: ISODate;
+}
+
+export interface ReceivePurchaseOrderInput {
+  purchaseOrderId: UUID;
+  lines?: Array<{ productId: UUID; quantity: number; unitCost?: Money }>;
+  idempotencyKey: string;
+}
+
+export interface SupplierNotificationResult {
+  purchaseOrderId: UUID;
+  status: "not_configured" | "sandboxed";
+  channel: "supplier_email" | "supplier_sms";
+  detail: string;
+  attemptedAt: ISODateTime;
+}
+
+export type FacilityTaskKind = "cleaning" | "inspection" | "incident";
+export type FacilityTaskSeverity = "low" | "medium" | "high" | "critical";
+export type FacilityTaskStatus = "open" | "in_progress" | "blocked" | "completed" | "cancelled";
+
+export interface TrafficContext {
+  checkInsLastHour?: number;
+  occupancyPercent?: number;
+  capturedAt?: ISODateTime;
+}
+
+export type ClassAudience = "mixed" | "women" | "men";
+
+export interface ClassRosterEntry {
+  memberId: UUID;
+  name: string;
+  bookedAt: string;
+  attended: boolean;
+}
+
+/** A slot on the fixed weekly schedule; the timetable repeats every week. */
+export interface ClassSession {
+  id: UUID;
+  branchId: UUID;
+  name: string;
+  coachId?: UUID;
+  coachName?: string;
+  /** 0 = Sunday … 6 = Saturday. */
+  dayOfWeek: number;
+  /** Minutes from midnight in the gym's timezone. */
+  startMinute: number;
+  durationMinutes: number;
+  capacity: number;
+  audience: ClassAudience;
+  imageAssetId?: string;
+  imageUrl?: string;
+  imageAltText?: string;
+  notes?: string;
+  roster: ClassRosterEntry[];
+  attendedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClassSessionQuery {
+  branchId: UUID;
+}
+
+export interface ClassCoach {
+  id: UUID;
+  name: string;
+  phone?: string;
+  specialty?: string;
+  currency?: string;
+  createdAt: string;
+}
+
+export interface UpsertClassCoachInput {
+  coachId?: UUID;
+  name: string;
+  phone?: string;
+  specialty?: string;
+}
+
+export type { ClassBookingStatus } from "./class-booking";
+import type { ClassBookingStatus } from "./class-booking";
+
+export interface ClassOccurrenceRosterEntry {
+  bookingId: UUID;
+  memberId: UUID;
+  membershipId: UUID;
+  name: string;
+  status: ClassBookingStatus;
+  bookedAt: ISODateTime;
+  fromWaitlist: boolean;
+  noShowCount?: number;
+}
+
+export interface ClassOccurrence {
+  id: UUID;
+  templateId: UUID;
+  branchId: UUID;
+  branchName: string;
+  date: ISODate;
+  startsAt: ISODateTime;
+  endsAt: ISODateTime;
+  name: string;
+  regularCoachId?: UUID;
+  regularCoachName?: string;
+  coachId?: UUID;
+  coachName?: string;
+  substituted: boolean;
+  capacity: number;
+  audience: ClassAudience;
+  imageUrl?: string;
+  imageAltText?: string;
+  notes?: string;
+  status: "scheduled" | "cancelled" | "completed";
+  cancelReason?: string;
+  attendanceFinalizedAt?: ISODateTime;
+  bookedCount: number;
+  waitlistCount: number;
+  spotsRemaining: number;
+  roster: ClassOccurrenceRosterEntry[];
+}
+
+export interface CustomerClassOccurrence extends Omit<ClassOccurrence, "roster"> {
+  booking?: {
+    id: UUID;
+    status: ClassBookingStatus;
+    position?: number;
+    fromWaitlist: boolean;
+  };
+  canBook: boolean;
+  bookingBlockReason?: string;
+}
+
+export interface ClassBookingPolicy {
+  enabled: boolean;
+  eligibilityMode: "all_active_memberships" | "selected_plans";
+  eligiblePlanIds: UUID[];
+  bookingHorizonDays: number;
+  cancellationCutoffHours: number;
+  maxActiveBookingsPerMember: number;
+  waitlistEnabled: boolean;
+  waitlistSize: number;
+  noShowTracking: boolean;
+  /** Optional visible calendar bounds; automatic when unset. */
+  calendarStartHour?: number;
+  calendarEndHour?: number;
+}
+
+export interface CustomerClassExperience {
+  membershipId: UUID;
+  gymName: string;
+  timezone: string;
+  policy: ClassBookingPolicy;
+  upcoming: CustomerClassOccurrence[];
+  history: CustomerClassOccurrence[];
+  noShowCount: number;
+  profileCorrectionRequired: boolean;
+}
+
+export interface ClassBookingResult {
+  occurrence: CustomerClassOccurrence;
+  outcome: "booked" | "waitlisted" | "cancelled" | "late_cancelled";
+  promotedMemberId?: UUID;
+}
+
+export interface ClassOccurrenceQuery {
+  branchId: UUID;
+  fromDate: ISODate;
+  toDate: ISODate;
+  coachId?: UUID;
+}
+
+export interface ClassOccurrenceRosterInput {
+  occurrenceId: UUID;
+  memberId: UUID;
+  membershipId: UUID;
+  overrideReason?: string;
+}
+
+export interface ClassOccurrenceAttendanceInput {
+  occurrenceId: UUID;
+  bookingId: UUID;
+  attended: boolean;
+}
+
+export interface SubstituteClassCoachInput {
+  occurrenceId: UUID;
+  coachId: UUID;
+  reason: string;
+}
+
+export interface UpsertClassSessionInput {
+  /** Provide to update; omit to create. The create dialog may pre-generate it
+   * so a class image can be uploaded before the first save. */
+  sessionId?: UUID;
+  branchId: UUID;
+  name: string;
+  coachId?: UUID;
+  dayOfWeek: number;
+  startMinute: number;
+  durationMinutes: number;
+  capacity: number;
+  audience: ClassAudience;
+  imageAssetId?: string;
+  notes?: string;
+}
+
+export interface ClassRosterInput {
+  sessionId: UUID;
+  memberId: UUID;
+}
+
+export interface ClassAttendanceInput extends ClassRosterInput {
+  attended: boolean;
+}
+
+export interface FacilityTask {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  zoneId: UUID;
+  zoneName: string;
+  kind: FacilityTaskKind;
+  severity: FacilityTaskSeverity;
+  status: FacilityTaskStatus;
+  title: string;
+  notes?: string;
+  assigneeId?: UUID;
+  dueAt?: ISODateTime;
+  completedAt?: ISODateTime;
+  trafficContext?: TrafficContext;
+  suppliesCost?: Money;
+  financialPostingStatus: FinancialPostingStatus;
+  financialSourceId?: UUID;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertFacilityTaskInput {
+  id?: UUID;
+  branchId: UUID;
+  zoneId: UUID;
+  kind: FacilityTaskKind;
+  severity: FacilityTaskSeverity;
+  status?: FacilityTaskStatus;
+  title: string;
+  notes?: string;
+  assigneeId?: UUID;
+  dueAt?: ISODateTime;
+  trafficContext?: TrafficContext;
+  suppliesCost?: Money;
+}
+
+export type EquipmentAssetStatus = "active" | "maintenance" | "retired" | "replaced";
+
+export interface EquipmentAsset {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  zoneId?: UUID;
+  code: string;
+  name: string;
+  manufacturer?: string;
+  model?: string;
+  serialNumber?: string;
+  purchaseDate?: ISODate;
+  installationDate?: ISODate;
+  purchaseCost?: Money;
+  warrantyEndDate?: ISODate;
+  status: EquipmentAssetStatus;
+  expectedServiceIntervalDays?: number;
+  expectedUsefulLifeMonths?: number;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertEquipmentAssetInput {
+  id?: UUID;
+  branchId: UUID;
+  zoneId?: UUID;
+  code: string;
+  name: string;
+  manufacturer?: string;
+  model?: string;
+  serialNumber?: string;
+  purchaseDate?: ISODate;
+  installationDate?: ISODate;
+  purchaseCost?: Money;
+  warrantyEndDate?: ISODate;
+  status?: EquipmentAssetStatus;
+  expectedServiceIntervalDays?: number;
+  expectedUsefulLifeMonths?: number;
+}
+
+export type EquipmentIssueSeverity = "low" | "medium" | "high" | "critical";
+export type EquipmentIssueStatus = "open" | "in_progress" | "resolved" | "cancelled";
+
+export interface EquipmentIssue {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  assetId: UUID;
+  title: string;
+  description?: string;
+  severity: EquipmentIssueSeverity;
+  status: EquipmentIssueStatus;
+  reportedAt: ISODateTime;
+  resolvedAt?: ISODateTime;
+  downtimeDays?: number;
+  safetyStatus: "unknown" | "safe_to_operate" | "out_of_service";
+  createdById: UUID;
+}
+
+export interface UpdateEquipmentIssueInput {
+  status?: EquipmentIssueStatus;
+  safetyStatus?: EquipmentIssue["safetyStatus"];
+  downtimeDays?: number;
+}
+
+export interface EquipmentWorkOrder {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  assetId: UUID;
+  issueId?: UUID;
+  status: "draft" | "approved" | "in_progress" | "completed" | "cancelled";
+  description: string;
+  assigneeId?: UUID;
+  vendorName?: string;
+  partsCost?: Money;
+  laborCost?: Money;
+  totalCost?: Money;
+  replacementEstimate?: Money;
+  financialPostingStatus: FinancialPostingStatus;
+  financialSourceId?: UUID;
+  openedAt: ISODateTime;
+  completedAt?: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertEquipmentWorkOrderInput {
+  id?: UUID;
+  branchId: UUID;
+  assetId: UUID;
+  issueId?: UUID;
+  status?: EquipmentWorkOrder["status"];
+  description: string;
+  assigneeId?: UUID;
+  vendorName?: string;
+  partsCost?: Money;
+  laborCost?: Money;
+  replacementEstimate?: Money;
+}
+
+export interface EquipmentRecommendation {
+  assetId: UUID;
+  decision: "fix" | "replace" | "insufficient_data";
+  confidence: "recorded_inputs_only";
+  repairCost?: Money;
+  replacementEstimate?: Money;
+  issueCount: number;
+  downtimeDays: number;
+  assetAgeMonths?: number;
+  expectedUsefulLifeMonths?: number;
+  rationale: string[];
+}
+
+
+/**
+ * The five launch pillars of the gym operating system. These keys are a
+ * product contract, not route names: a route may consume more than one
+ * module, and role/branch permissions remain a separate authorization layer.
+ */
+export type WorkspaceModuleKey =
+  | "foundation"
+  | "revenue"
+  | "operations"
+  | "finance"
+  | "reporting";
+
+export type WorkspaceModulePlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+
+export interface WorkspaceModuleCatalogEntry {
+  key: WorkspaceModuleKey;
+  version: number;
+  label: string;
+  description: string;
+  dependencies: WorkspaceModuleKey[];
+  required: boolean;
+  configurable: boolean;
+  availableOn: WorkspaceModulePlan[];
+  routePrefixes: string[];
+}
+
+export interface OrganizationEntitlements {
+  organizationId: UUID;
+  catalogVersion: number;
+  subscriptionPlan?: WorkspaceModulePlan;
+  entitledModules: WorkspaceModuleKey[];
+  source: "subscription_plan" | "legacy_default";
+  updatedAt?: ISODateTime;
+}
+
+export interface WorkspaceModulePreferences {
+  organizationId: UUID;
+  catalogVersion: number;
+  enabledModules: WorkspaceModuleKey[];
+  updatedAt?: ISODateTime;
+  updatedById?: UUID;
+}
+
+export interface WorkspaceModuleStatus extends WorkspaceModuleCatalogEntry {
+  entitled: boolean;
+  enabled: boolean;
+  lockedReason?: "not_entitled" | "dependency_disabled" | "required";
+}
+
+export interface WorkspaceAccess {
+  catalogVersion: number;
+  catalog: WorkspaceModuleCatalogEntry[];
+  entitlements: OrganizationEntitlements;
+  preferences: WorkspaceModulePreferences;
+  modules: WorkspaceModuleStatus[];
+}
+
+export interface UpdateWorkspaceModulePreferencesInput {
+  enabledModules: WorkspaceModuleKey[];
+}
 
 export interface Organization {
   id: UUID;
   name: string;
   slug: string;
-  subscriptionPlan?: "Starter" | "Growth" | "Pro";
+  subscriptionPlan?: WorkspaceModulePlan;
+  billingInterval?: "monthly" | "annual";
+  /** Platform subscription state mirrored by the preview adapter. */
+  status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+  subscriptionStartedAt?: ISODateTime;
+  trialEndsAt?: ISODateTime;
+  currentPeriodEndsAt?: ISODateTime;
+  cancelledAt?: ISODateTime;
+  subscriptionStatusReason?: string;
+  /** Platform lifecycle marker. Archiving is reversible at the data layer and
+   * never deletes tenant financial or operational history. */
+  archivedAt?: ISODateTime;
+  archiveReason?: string;
+  updatedAt?: ISODateTime;
   currency: string;
   timezone: string;
   locale: string;
+  /** Digits only (for example `962`). Used only when a phone omits `+`/`00`. */
+  phoneCountryCallingCode: string;
   defaultLanguage: "en" | "ar";
   taxRatePercent: number; // 0 means tax disabled
   receiptPrefix: string;
   nextReceiptNumber: number;
   receiptFooter: string;
-  status: "active" | "suspended";
+  brand?: BrandKit;
 }
 
 export interface Branch {
@@ -95,6 +1321,14 @@ export interface StaffUser {
   invitedAt?: ISODateTime;
 }
 
+/** The signed-in staff member's editable account profile. */
+export interface UserProfile {
+  id: UUID;
+  name: string;
+  email: string;
+  phone: string;
+}
+
 export interface Session {
   user: { id: UUID; name: string; email: string };
   organization: {
@@ -103,11 +1337,36 @@ export interface Session {
     currency: string;
     timezone: string;
     locale: string;
+    phoneCountryCallingCode?: string;
+    brand?: BrandKit;
+    /** What this gym pays RIVET, and when the paid term ends. */
+    subscription?: SessionSubscription;
   };
   branches: Array<{ id: UUID; name: string; code: string }>;
   activeBranchId?: UUID;
   roles: RoleKey[];
   permissions: string[];
+  /** Workspace entitlements/preferences are distinct from role permissions. */
+  workspace?: WorkspaceAccess;
+  /** Whether this gym still owes RIVET a signed subscription agreement. Owners are gated until they sign. */
+  legal?: SessionLegalState;
+}
+
+export interface SessionSubscription {
+  plan?: "Starter" | "Growth" | "Pro" | "Enterprise";
+  status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+  billingInterval: "monthly" | "annual";
+  /** The end of the paid term, ISO. */
+  currentPeriodEndsAt?: string;
+  /** The end of the onboarding trial, ISO, while one is running. */
+  trialEndsAt?: string;
+}
+
+export type SubscriptionAgreementStatus = "required" | "signed" | "countersigned" | "not_applicable";
+
+export interface SessionLegalState {
+  agreementStatus: SubscriptionAgreementStatus;
+  agreementReference?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +1445,7 @@ export interface CreateMemberInput {
   fullNameAr?: string;
   phone: string;
   email?: string;
-  gender?: "male" | "female";
+  gender: "male" | "female";
   dateOfBirth?: ISODate;
   homeBranchId: UUID;
   preferredLanguage: PreferredLanguage;
@@ -198,6 +1457,8 @@ export interface CreateMemberInput {
   source?: LeadSource;
   assignedSalespersonId?: UUID;
   tags?: string[];
+  /** Member who referred this person; rewarded on the first membership sale. */
+  referredByMemberId?: UUID;
   marketingOptIn?: boolean;
   marketingPreferenceSource?: MarketingPreferenceSource;
   notes?: string;
@@ -361,6 +1622,8 @@ export interface CreateMembershipSaleInput {
     amount: Money;
     method: PaymentMethodKey;
     externalReference?: string;
+    /** Branch whose drawer takes the money; defaults to the member's home branch. */
+    branchId?: UUID;
   };
 }
 
@@ -374,7 +1637,7 @@ export interface RenewMembershipInput {
   overrideReason?: string;
   discount?: Money;
   discountReason?: string;
-  payment?: { amount: Money; method: PaymentMethodKey; externalReference?: string };
+  payment?: { amount: Money; method: PaymentMethodKey; externalReference?: string; branchId?: UUID };
 }
 
 export type MembershipPlanChangeEffectiveDate = "immediate" | "next_renewal";
@@ -391,6 +1654,67 @@ export interface MembershipSaleResult {
   payment?: Payment;
   receipt?: Receipt;
   timelineEventIds: UUID[];
+}
+
+/**
+ * One front-desk transaction for a brand-new member and their first term.
+ * The member and sale are committed together, or neither is committed.
+ */
+export interface CreateMemberMembershipSaleInput {
+  member: CreateMemberInput;
+  sale: Omit<CreateMembershipSaleInput, "memberId" | "idempotencyKey">;
+  /** Exact matches the operator reviewed and confirmed belong to a different person. */
+  confirmedDuplicateMemberIds?: UUID[];
+  idempotencyKey: string;
+}
+
+export interface CreateMemberMembershipSaleResult {
+  member: MemberDetail;
+  sale: MembershipSaleResult;
+}
+
+
+export type FreezeRequestStatus = "pending" | "approved" | "denied";
+
+export interface CustomerFreezePolicy {
+  requestsEnabled: boolean;
+  minimumDays: number;
+  maximumDays: number;
+  expectedFeeMinor: number;
+  currency: string;
+  freeRequestsRemaining: number;
+}
+
+export interface MembershipFreezeRequest {
+  id: UUID;
+  membershipId: UUID;
+  memberId: UUID;
+  memberName: string;
+  startDate: ISODate;
+  days: number;
+  reason: string;
+  status: FreezeRequestStatus;
+  /** Fee the policy predicts at request time; the decision recomputes it. */
+  expectedFeeMinor: number;
+  feeMinor?: number;
+  chargeId?: string;
+  decisionNote?: string;
+  requestedAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+}
+
+export interface RequestMembershipFreezeInput {
+  membershipId: UUID;
+  startDate: ISODate;
+  days: number;
+  reason: string;
+}
+
+export interface DecideFreezeRequestInput {
+  requestId: UUID;
+  decision: "approved" | "denied";
+  note?: string;
 }
 
 export interface FreezeMembershipInput {
@@ -575,7 +1899,11 @@ export interface PtMemberExperience {
   membershipId: UUID;
   availableSessions: number;
   reservedSessions: number;
+  /** Gym PT policy: hours before the start inside which a member cancellation consumes the credit. */
+  cancellationCutoffHours?: number;
   entitlements: PtEntitlement[];
+  /** Every booking still holding a reserved credit, including a session that
+   * started without an outcome yet; sorted by start. */
   upcomingBookings: PtBooking[];
   orders: PtPackageOrder[];
   trainers: PtTrainerProfile[];
@@ -583,6 +1911,8 @@ export interface PtMemberExperience {
 }
 
 export interface PtWorkspace {
+  /** Gym PT policy: hours before the start inside which a member cancellation consumes the credit. */
+  cancellationCutoffHours?: number;
   trainers: PtTrainerProfile[];
   packages: PtPackage[];
   bookings: PtBooking[];
@@ -662,7 +1992,12 @@ export interface OperationalEmailActivationSettings {
   configurableKinds: string[];
   /** RIVET-controlled billing, subscription, and access notices. */
   mandatoryPlatformKinds: string[];
+  /** True when the worker runs (mode is not off) and a provider is configured. */
   liveWorkerEnabled: boolean;
+  /** RIVET_EMAIL_MODE: off | sandbox | allowlist | live. */
+  deliveryMode: "off" | "sandbox" | "allowlist" | "live";
+  deliveryModeSource: "RIVET_EMAIL_MODE" | "legacy_live_flag" | "default";
+  deliveryModeWarning?: string;
   providerConfigured: boolean;
   webhookConfigured: boolean;
   ownerConfirmed: boolean;
@@ -736,6 +2071,7 @@ export interface LeadSummary extends Lead {
   lastContactOutcome?: string;
   lastContactAt?: ISODateTime;
   overdue: boolean;
+  progressFacts?: LeadProgressFacts;
 }
 
 export type TrialBookingStatus =
@@ -775,6 +2111,12 @@ export interface LeadDetail extends LeadSummary {
   trialBooking?: LeadTrialBooking;
 }
 
+export interface UpdateLeadContactInput {
+  fullName: string;
+  phone: string;
+  email?: string;
+}
+
 export interface Offer {
   id: UUID;
   leadId?: UUID;
@@ -791,8 +2133,23 @@ export interface Offer {
   respondedAt?: ISODateTime;
   respondedById?: UUID;
   responseReason?: string;
+  /** High-entropy bearer token for the prospect-facing offer page. */
+  publicToken?: string;
   createdById: UUID;
   createdAt: ISODateTime;
+}
+
+export interface PublicOffer {
+  token: string;
+  recipientName: string;
+  organizationName: string;
+  planName: string;
+  price: Money;
+  expiresAt?: ISODateTime;
+  status: "preparing" | "available" | "accepted" | "declined" | "expired";
+  respondedAt?: ISODateTime;
+  responseReason?: string;
+  brand: Pick<BrandKit, "paletteKey" | "primaryColor" | "tokens" | "logoUrl" | "logoAltText">;
 }
 
 export type OfferDeliveryChannel = "email" | "whatsapp" | "sms" | "manual";
@@ -805,6 +2162,7 @@ export type ContactOutcome =
   | "answered_call_back"
   | "wrong_number"
   | "whatsapp_sent"
+  | "whatsapp_opened"
   | "trial_booked"
   | "trial_completed";
 
@@ -828,13 +2186,13 @@ export interface CreateLeadInput {
 }
 
 export type UpdateLeadInput = Partial<
-  Pick<Lead, "stage" | "ownerId" | "expectedValue" | "nextFollowUpAt" | "lostReason">
->;
+  Pick<Lead, "stage" | "expectedValue" | "nextFollowUpAt" | "lostReason">
+> & { ownerId?: UUID | "unassigned" };
 
 export interface ConvertLeadInput {
   homeBranchId: UUID;
   preferredLanguage: PreferredLanguage;
-  gender?: "male" | "female";
+  gender: "male" | "female";
   dateOfBirth?: ISODate;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
@@ -891,6 +2249,9 @@ export interface Task {
   completedAt?: ISODateTime;
   createdById: UUID;
   createdAt: ISODateTime;
+  /** An explicit, accepted link to an existing open task about the same person; never inferred. */
+  relatedTaskId?: UUID;
+  relatedTaskTitle?: string;
 }
 
 export interface CreateTaskInput {
@@ -901,6 +2262,7 @@ export interface CreateTaskInput {
   priority?: "low" | "normal" | "high";
   leadId?: UUID;
   memberId?: UUID;
+  relatedTaskId?: UUID;
 }
 
 export interface CompleteTaskInput {
@@ -950,6 +2312,7 @@ export type TimelineEventType =
   | "trial_completed"
   | "trial_no_show"
   | "trial_cancelled"
+  | "lead_contact_updated"
   | "lead_converted"
   | "pt_credit_granted"
   | "pt_package_requested"
@@ -961,6 +2324,11 @@ export type TimelineEventType =
   | "pt_session_completed"
   | "pt_session_no_show"
   | "pt_credit_refunded"
+  | "class_booked"
+  | "class_waitlisted"
+  | "class_waitlist_promoted"
+  | "class_cancelled"
+  | "class_cancelled_late"
   | "automation";
 
 export interface TimelineEvent {
@@ -988,6 +2356,7 @@ export type CheckInReasonCode =
   | "EXPIRES_SOON"
   | "OUTSTANDING_BALANCE"
   | "MEMBERSHIP_EXPIRED"
+  | "MEMBERSHIP_NOT_STARTED"
   | "NO_ACTIVE_MEMBERSHIP"
   | "WRONG_BRANCH"
   | "VISITS_DEPLETED"
@@ -1010,6 +2379,11 @@ export interface CheckInPreview {
   reasonCodes: CheckInReasonCode[];
   message: string;
   criticalNotes?: string;
+  /**
+   * Present only when the lookup matched several people. The desk must pick
+   * one (their member number resolves uniquely) before any decision is shown.
+   */
+  candidates?: MemberSummary[];
 }
 
 export interface CreateCheckInInput {
@@ -1088,10 +2462,16 @@ export interface Charge {
   dueDate?: ISODate;
   /** Server-derived. False for future, void, and refunded invoices. */
   collectible?: boolean;
+  migration?: {
+    importBatchId: UUID;
+    sourceRowNumber: number;
+    kind: "opening_receivable";
+    accountingPostingEligible: false;
+  };
   createdAt: ISODateTime;
 }
 
-export type TransactionType = "payment" | "refund" | "void";
+export type TransactionType = "payment" | "refund" | "void" | "retail_sale";
 export type TransactionStatus = "completed" | "voided" | "refunded" | "partially_refunded";
 
 export interface Payment {
@@ -1118,32 +2498,136 @@ export interface Payment {
   occurredAt: ISODateTime;
 }
 
-export interface TransactionSummary extends Payment {
+export interface TransactionSummaryBase {
   memberName: string;
   memberNumber: string;
   branchName: string;
+  /** Guest retail transactions carry a customer snapshot instead of memberId. */
+  customer?: RetailSaleCustomer;
 }
+
+export type TransactionSummary = (Payment | RetailPayment) & TransactionSummaryBase;
 
 export interface Receipt {
   id: UUID;
   receiptNumber: string;
   paymentId: UUID;
+  /** Set for a retail receipt; paymentId remains the receipt source identifier for compatibility. */
+  retailSaleId?: UUID;
   issuedAt: ISODateTime;
+}
+
+export interface RetailSaleLine {
+  productId: UUID;
+  sku: string;
+  productName: string;
+  quantity: number;
+  unitPrice: Money;
+  lineTotal: Money;
+  /** Internal accounting snapshot captured from branch stock at checkout. */
+  unitCost?: Money;
+}
+
+export interface RetailSaleCustomer {
+  /** `walk_in` is an anonymous sale: no member, no guest profile, nothing stored beyond this snapshot. */
+  kind: "member" | "guest" | "walk_in";
+  fullName: string;
+  phone?: string;
+  memberId?: UUID;
+  memberNumber?: string;
+}
+
+export interface RetailSale {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  receiptId: UUID;
+  receiptNumber: string;
+  customer: RetailSaleCustomer;
+  lines: RetailSaleLine[];
+  subtotal: Money;
+  total: Money;
+  status: "completed" | "partially_refunded" | "refunded" | "voided";
+  refundedAmount?: Money;
+  returnedLines?: Array<{ productId: UUID; quantity: number }>;
+  refundReason?: string;
+  voidReason?: string;
+  voidedAt?: ISODateTime;
+  method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
+  externalReference?: string;
+  shiftId?: UUID;
+  idempotencyKey: string;
+  createdById: UUID;
+  createdByName: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+/** Receipt payment projection for a retail sale. It is not a member payment. */
+export interface RetailPayment {
+  id: UUID;
+  organizationId: UUID;
+  branchId: UUID;
+  type: "retail_sale";
+  /** Stable customer snapshot; guests never receive a synthetic memberId. */
+  customer: RetailSaleCustomer;
+  amount: Money;
+  method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
+  status: "completed" | "partially_refunded" | "refunded" | "voided";
+  refundedAmount?: Money;
+  refundReason?: string;
+  voidReason?: string;
+  receiptId: UUID;
+  receiptNumber: string;
+  collectedById: UUID;
+  collectedByName: string;
+  shiftId?: UUID;
+  externalReference?: string;
+  idempotencyKey: string;
+  occurredAt: ISODateTime;
 }
 
 export interface ReceiptDetail {
   receipt: Receipt;
+  /** Convenience projection used by retail checkout responses; legacy callers use receipt.id. */
+  receiptId?: UUID;
   organization: { name: string; receiptFooter: string; taxRatePercent: number };
   branch: { name: string; code: string; address: string; phone: string };
-  member: { fullName: string; memberNumber: string };
-  payment: Payment;
+  /** Legacy member projection. Retail guest receipts expose customer instead. */
+  member?: { fullName: string; memberNumber: string };
+  payment: Payment | RetailPayment;
   charge?: Charge;
+  retailSale?: RetailSale;
+  customer?: RetailSaleCustomer;
   relatedPayments: Payment[]; // refunds/voids linked to this payment
+}
+
+export interface RetailCheckoutInput {
+  branchId: UUID;
+  memberId?: UUID;
+  guest?: { fullName: string; phone: string };
+  lines: Array<{ productId: UUID; quantity: number }>;
+  method: Extract<PaymentMethodKey, "cash" | "cliq" | "card">;
+  externalReference?: string;
+  idempotencyKey: string;
+}
+
+export interface RefundRetailSaleInput {
+  lines: Array<{ productId: UUID; quantity: number }>;
+  reason: string;
+  idempotencyKey: string;
+}
+
+export interface VoidRetailSaleInput {
+  reason: string;
+  idempotencyKey: string;
 }
 
 export interface CreatePaymentInput {
   memberId: UUID;
   chargeId?: UUID; // if omitted, applies to oldest outstanding charge
+  /** Branch whose drawer takes the money; defaults to the member's home branch. */
+  branchId?: UUID;
   amount: Money;
   method: PaymentMethodKey;
   externalReference?: string;
@@ -1199,17 +2683,380 @@ export interface ShiftTotals {
   paymentCount: number;
   refundCount: number;
   discountsTotal: Money;
+  /** Cash paid out to suppliers from this shift's drawer (real cash outflow). */
+  supplierCashPayments: Money;
+  /** Cash returned to this drawer by reversing a supplier cash payment. */
+  supplierCashReversals: Money;
 }
 
 export interface ReconciliationReport {
   branchId: UUID;
   date: ISODate;
   totalsByMethod: Array<{ method: PaymentMethodKey; payments: Money; refunds: Money; net: Money; count: number }>;
+  /** Supplier payments recorded at this branch on the day; cash ones leave the drawer. */
+  supplierPayments: { cashPaid: Money; cashReturned: Money; totalPaid: Money; count: number };
   totalCollected: Money;
   totalRefunded: Money;
   discountsTotal: Money;
   shifts: CashShift[];
   totalVariance: Money;
+}
+
+// ---------------------------------------------------------------------------
+// Management accounting ledger
+// ---------------------------------------------------------------------------
+
+export type AccountingAccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
+export type AccountingStatementGroup =
+  | "asset_current"
+  | "asset_noncurrent"
+  | "liability_current"
+  | "liability_noncurrent"
+  | "equity"
+  | "revenue"
+  | "cost_of_sales"
+  | "operating_expense"
+  | "other_income"
+  | "other_expense";
+export type AccountingCashflowGroup = "operating" | "investing" | "financing" | "non_cash";
+export type AccountingNormalBalance = "debit" | "credit";
+export type AccountingPeriodStatus = "open" | "closed";
+export type AccountingJournalStatus = "posted" | "reversed";
+export type AccountingSourceStatus = "pending" | "posted" | "unconfigured" | "excluded" | "failed" | "reversed";
+export type AccountingSourceType =
+  | "payment"
+  | "refund"
+  | "void"
+  | "membership_sale"
+  | "membership_renewal"
+  | "membership_revenue_recognition"
+  | "purchase_order_receipt"
+  | "stock_movement"
+  | "facility_supplies"
+  | "equipment_acquisition"
+  | "equipment_depreciation"
+  | "equipment_repair"
+  | "supplier_payment"
+  | "supplier_payment_reversal";
+
+export interface AccountingAccount {
+  id: UUID;
+  organizationId: UUID;
+  code: string;
+  name: string;
+  nameAr?: string;
+  accountType: AccountingAccountType;
+  statementGroup: AccountingStatementGroup;
+  cashflowGroup: AccountingCashflowGroup;
+  normalBalance: AccountingNormalBalance;
+  active: boolean;
+  isSystem: boolean;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface AccountingPeriod {
+  id: UUID;
+  organizationId: UUID;
+  periodStart: ISODate;
+  periodEnd: ISODate;
+  status: AccountingPeriodStatus;
+  closedAt?: ISODateTime;
+  closedById?: UUID;
+  closeReason?: string;
+  reopenedAt?: ISODateTime;
+  reopenedById?: UUID;
+  reopenReason?: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface AccountingJournalLine {
+  id: UUID;
+  journalEntryId: UUID;
+  branchId?: UUID;
+  accountId: UUID;
+  accountCode: string;
+  accountName: string;
+  debit: Money;
+  credit: Money;
+  description?: string;
+  statementGroup: AccountingStatementGroup;
+  cashflowGroup: AccountingCashflowGroup;
+}
+
+export interface AccountingJournalEntrySummary {
+  id: UUID;
+  organizationId: UUID;
+  branchId?: UUID;
+  scope: "branch" | "consolidated";
+  currency: string;
+  postingDate: ISODate;
+  periodId?: UUID;
+  status: AccountingJournalStatus;
+  memo: string;
+  sourceType?: AccountingSourceType;
+  sourceId?: UUID;
+  policyCode?: string;
+  policyVersion?: number;
+  totalDebit: Money;
+  totalCredit: Money;
+  lineCount: number;
+  createdAt: ISODateTime;
+  postedAt: ISODateTime;
+}
+
+export interface AccountingJournalEntryDetail extends AccountingJournalEntrySummary {
+  reason?: string;
+  idempotencyKey: string;
+  reversalOfEntryId?: UUID;
+  reversedByEntryId?: UUID;
+  createdById: UUID;
+  lines: AccountingJournalLine[];
+}
+
+export interface AccountingTrialBalanceRow {
+  accountId: UUID;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  statementGroup: AccountingStatementGroup;
+  debit: Money;
+  credit: Money;
+  balance: Money;
+}
+
+export interface AccountingTrialBalance {
+  organizationId: UUID;
+  branchId?: UUID;
+  periodId?: UUID;
+  currency: string;
+  rows: AccountingTrialBalanceRow[];
+  totalDebit: Money;
+  totalCredit: Money;
+}
+
+export interface AccountingSourcePosting {
+  id: UUID;
+  organizationId: UUID;
+  sourceType: AccountingSourceType;
+  sourceId: UUID;
+  branchId?: UUID;
+  status: AccountingSourceStatus;
+  amount?: Money;
+  currency: string;
+  policyCode?: string;
+  policyVersion?: number;
+  journalEntryId?: UUID;
+  idempotencyKey?: string;
+  reason?: string;
+  details?: Record<string, unknown>;
+  projectionFingerprint?: string;
+  /** Set when an owner/manager review permanently excluded this fact from the books. */
+  reviewExcludedAt?: ISODateTime;
+  occurredAt: ISODateTime;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface AccountingJournalQuery extends ListQuery {
+  branchId?: UUID;
+  periodId?: UUID;
+  status?: AccountingJournalStatus;
+  from?: ISODate;
+  to?: ISODate;
+}
+
+export interface AccountingSourcePostingQuery extends ListQuery {
+  branchId?: UUID;
+  sourceType?: AccountingSourceType;
+  status?: AccountingSourceStatus;
+}
+
+export interface RefreshAccountingSourceQueueInput {
+  branchId?: UUID;
+  sourceTypes?: AccountingSourceType[];
+  /** Optional report window. Omitted means all authoritative source dates. */
+  fromDate?: ISODate;
+  toDate?: ISODate;
+}
+
+export interface RefreshAccountingSourceQueueResult {
+  organizationId: UUID;
+  branchId?: UUID;
+  scanned: number;
+  created: number;
+  updated: number;
+  skippedPosted: number;
+  pending: number;
+  unconfigured: number;
+  excluded: number;
+  /** Whether this refresh completely covers its requested scope. */
+  queueCoverage?: "proven" | "refresh_required";
+  scannedFromDate?: ISODate;
+  scannedToDate?: ISODate;
+  items: AccountingSourcePosting[];
+}
+
+export interface PostManualJournalInput {
+  branchId?: UUID;
+  scope?: "branch" | "consolidated";
+  postingDate?: ISODate;
+  memo: string;
+  reason: string;
+  idempotencyKey: string;
+  lines: Array<{ accountId: UUID; debit: Money; credit: Money; description?: string }>;
+}
+
+export interface PostAccountingSourceInput {
+  sourceType: AccountingSourceType;
+  sourceId: UUID;
+  idempotencyKey: string;
+  reason?: string;
+}
+
+export interface ReviewAccountingSourceInput {
+  sourceType: AccountingSourceType;
+  sourceId: UUID;
+  /** Written to the audit trail; required. */
+  reason: string;
+}
+
+// ---------------------------------------------------------------------------
+// Management reporting projections
+// ---------------------------------------------------------------------------
+
+export interface ManagementReportInput {
+  fromDate: ISODate;
+  toDate: ISODate;
+  branchId?: UUID;
+}
+
+export type ManagementMetricStatus = "available" | "not_available" | "not_configured";
+export type ManagementQueueCoverage = "proven" | "refresh_required" | "unavailable";
+export type ManagementReconciliationStatus = "proven" | "unproven" | "not_available";
+
+export interface ManagementReportPolicyVersion {
+  code: string;
+  version: number;
+}
+
+export interface ManagementReportCompleteness {
+  organizationId: UUID;
+  branchId?: UUID;
+  fromDate: ISODate;
+  toDate: ISODate;
+  timezone: string;
+  currency: string;
+  generatedAt: ISODateTime;
+  policyVersions: ManagementReportPolicyVersion[];
+  sourcePostingCounts: Record<AccountingSourceStatus, number>;
+  queueCoverage: ManagementQueueCoverage;
+  lastQueueProjectionAt?: ISODateTime;
+  warnings: string[];
+  disclaimer: string;
+}
+
+export interface ManagementStatementLine {
+  accountId: UUID;
+  accountCode: string;
+  accountName: string;
+  amount: Money;
+  entryIds: UUID[];
+}
+
+export interface ManagementStatementSection {
+  lines: ManagementStatementLine[];
+  total: Money;
+}
+
+export interface IncomeStatement extends ManagementReportCompleteness {
+  revenue: ManagementStatementSection;
+  costOfSales: ManagementStatementSection;
+  operatingExpenses: ManagementStatementSection;
+  otherIncome: ManagementStatementSection;
+  otherExpenses: ManagementStatementSection;
+  totalRevenue: Money;
+  totalCosts: Money;
+  netIncome: Money;
+  membershipRevenueRecognition: ManagementMetricStatus;
+}
+
+export interface BalanceSheetSections {
+  current: ManagementStatementSection;
+  noncurrent: ManagementStatementSection;
+}
+
+export interface BalanceSheet extends ManagementReportCompleteness {
+  asOfDate: ISODate;
+  assets: BalanceSheetSections;
+  liabilities: BalanceSheetSections;
+  equity: ManagementStatementSection;
+  /**
+   * All revenue and expense activity from ledger inception through the as-of
+   * date. There is no period-close/retained-earnings roll-up, so this is
+   * cumulative unclosed earnings — not current-period income. Optional only
+   * to tolerate a backend deployed before the field existed; prefer it over
+   * the legacy alias below.
+   */
+  cumulativeEarnings?: Money;
+  /** @deprecated Misnamed legacy alias of `cumulativeEarnings`; same value. */
+  currentEarnings: Money;
+  totalAssets: Money;
+  totalLiabilities: Money;
+  totalEquity: Money;
+  totalLiabilitiesAndEquity: Money;
+  difference: Money;
+  balanced: boolean;
+  depreciationCoverage?: ManagementMetricStatus;
+}
+
+export type ManagementCashflowCategory = "operating" | "investing" | "financing";
+
+export interface CashflowSection {
+  category: ManagementCashflowCategory;
+  lines: ManagementStatementLine[];
+  netChange: Money;
+}
+
+export interface CashflowReconciliation {
+  status: ManagementReconciliationStatus;
+  /** Closing cash implied by opening cash plus classified in-period movement. */
+  expectedClosingCash: Money;
+  /** Independent cash-account/trial-balance position through the as-of date. */
+  asOfCash: Money;
+  /** expectedClosingCash - asOfCash; zero is arithmetic agreement only. */
+  difference: Money;
+  note?: string;
+}
+
+export interface CashflowStatement extends ManagementReportCompleteness {
+  openingCash: Money;
+  operating: CashflowSection;
+  investing: CashflowSection;
+  financing: CashflowSection;
+  netChange: Money;
+  closingCash: Money;
+  reconciliationDifference: Money;
+  reconciliationStatus: ManagementReconciliationStatus;
+  reconciliation: CashflowReconciliation;
+  balanced: boolean;
+  classificationPolicy: { code: string; version: number; description: string };
+}
+
+export interface ManagementAnalysisMetric {
+  key: string;
+  label: string;
+  status: ManagementMetricStatus;
+  value?: Money | number;
+  unit?: "money" | "count" | "days";
+  sourceCount: number;
+  drilldownIds: UUID[];
+  note?: string;
+}
+
+export interface GeneralManagerAnalysis extends ManagementReportCompleteness {
+  metrics: ManagementAnalysisMetric[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1228,8 +3075,9 @@ export type AutomationActionKey = "create_task" | "queue_message" | "notify_mana
 
 export interface AutomationAction {
   key: AutomationActionKey;
-  /** for queue_message */
+  /** for queue_message: a gym template id, or a key from the code-owned catalogue */
   templateId?: UUID;
+  templateKey?: string;
   channel?: "whatsapp" | "sms";
   /** for create_task */
   taskOwnerRole?: RoleKey;
@@ -1348,6 +3196,7 @@ export interface OperationalEmailDelivery {
 
 export type AuditCategory =
   | "auth"
+  | "legal"
   | "members"
   | "memberships"
   | "payments"
@@ -1355,6 +3204,8 @@ export type AuditCategory =
   | "crm"
   | "reconciliation"
   | "automations"
+  | "operations"
+  | "accounting"
   | "users"
   | "settings";
 
@@ -1362,6 +3213,8 @@ export interface AuditEvent {
   id: UUID;
   organizationId: UUID;
   branchId?: UUID;
+  /** Optional second branch for cross-branch operational events. */
+  destinationBranchId?: UUID;
   actorId: UUID;
   actorName: string;
   actorRole: AuditActorRole;
@@ -1445,6 +3298,196 @@ export interface DashboardAlert {
   occurredAt: ISODateTime;
 }
 
+export type TodayQueueKind =
+  | "follow_up"
+  | "at_risk"
+  | "renewal"
+  | "outstanding_balance"
+  | "access_denial"
+  | "approval"
+  | "cash_variance"
+  | "facility_task"
+  | "branch_checklist"
+  | "equipment_issue"
+  | "low_stock"
+  | "support_case";
+
+export type TodayQueuePriority = "urgent" | "high" | "normal";
+
+export interface TodayQueueAction {
+  kind: "navigate" | "complete_task";
+  label: string;
+  taskId?: UUID;
+}
+
+/**
+ * A role-safe unit of work for the dashboard. The backend chooses what the
+ * actor may see and do; the client only renders the supplied action.
+ */
+export interface TodayQueueItem {
+  id: string;
+  kind: TodayQueueKind;
+  priority: TodayQueuePriority;
+  title: string;
+  detail: string;
+  href: string;
+  action: TodayQueueAction;
+  subjectName?: string;
+  /**
+   * The person this work is about, when there is one. Lets the queue record
+   * the actual contact outcome in place instead of a bare "done".
+   */
+  subject?: { kind: "lead" | "member"; id: UUID };
+  branchName?: string;
+  dueAt?: ISODateTime;
+  occurredAt?: ISODateTime;
+  overdue?: boolean;
+  amount?: Money;
+}
+
+export interface TodayQueueData {
+  generatedAt: ISODateTime;
+  items: TodayQueueItem[];
+  totalItems: number;
+  urgentItems: number;
+  highPriorityItems: number;
+  kindCounts: Partial<Record<TodayQueueKind, number>>;
+  overdueItems: number;
+  overdueKindCounts: Partial<Record<TodayQueueKind, number>>;
+}
+
+// --- Daily branch checklists -----------------------------------------------
+
+export type ChecklistType = "opening" | "closing";
+export type ChecklistItemStatus = "pending" | "completed" | "failed" | "skipped";
+/** Server-side gym role keys a checklist can be assigned to. */
+export type ChecklistRole = "owner" | "manager" | "sales" | "receptionist" | "trainer";
+
+export interface ChecklistTemplateItem {
+  id: string;
+  label: string;
+  instructions?: string;
+  required: boolean;
+  order: number;
+  /** Optional linked gym space (zone public id). */
+  zoneId?: UUID;
+  /** Offer one-tap maintenance-task creation when this item fails. */
+  offerMaintenance?: boolean;
+}
+
+export interface ChecklistTemplate {
+  id: UUID;
+  branchId: UUID;
+  type: ChecklistType;
+  name: string;
+  active: boolean;
+  /** Branch-local due time, HH:MM. */
+  dueTime: string;
+  assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
+  assignedUserName?: string;
+  items: ChecklistTemplateItem[];
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface UpsertChecklistTemplateInput {
+  templateId?: UUID;
+  branchId: UUID;
+  type: ChecklistType;
+  name: string;
+  active?: boolean;
+  dueTime: string;
+  assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
+  items: Array<Pick<ChecklistTemplateItem, "label"> & Partial<Omit<ChecklistTemplateItem, "label" | "order">>>;
+}
+
+export interface ChecklistRunItem extends Omit<ChecklistTemplateItem, "id"> {
+  itemId: string;
+  status: ChecklistItemStatus;
+  actorId?: UUID;
+  actorName?: string;
+  at?: ISODateTime;
+  note?: string;
+  reason?: string;
+  facilityTaskId?: UUID;
+}
+
+export interface ChecklistRun {
+  /** Absent until the first recorded result persists the run. */
+  id?: UUID;
+  templateId: UUID;
+  branchId: UUID;
+  type: ChecklistType;
+  localDate: ISODate;
+  name: string;
+  dueTime: string;
+  assignedRole: ChecklistRole;
+  assignedUserId?: UUID;
+  assignedUserName?: string;
+  items: ChecklistRunItem[];
+  progress: { done: number; total: number; requiredPending: number; failedRequired: number };
+  complete: boolean;
+  overdue: boolean;
+}
+
+export interface ChecklistDay {
+  branchId: UUID;
+  date: ISODate;
+  runs: ChecklistRun[];
+  /** Persisted unresolved runs from the preceding seven local dates. */
+  carryover?: ChecklistRun[];
+}
+
+export interface SetChecklistItemInput {
+  templateId: UUID;
+  date?: ISODate;
+  itemId: string;
+  status: ChecklistItemStatus;
+  note?: string;
+  /** Required when failing/skipping a required item or correcting a recorded result. */
+  reason?: string;
+}
+
+export interface CreateChecklistTaskInput {
+  templateId: UUID;
+  date?: ISODate;
+  itemId: string;
+  zoneId?: UUID;
+  title?: string;
+  notes?: string;
+}
+
+// Read-only operational analytics (shared math in lib/analytics).
+export type {
+  PeakHoursReport,
+  PeakHoursCell,
+  ClassUtilizationReport,
+  ClassUtilizationRow,
+  RetentionReport,
+  RetentionCohort,
+  RetentionCheckpoint,
+  RenewalForecastReport,
+  RenewalForecastBucket,
+  RenewalForecastRow,
+  CollectionsReport,
+  CrmFunnelReport,
+  ControlTrendsReport,
+} from "@/lib/analytics/operational-reports";
+
+export interface AnalyticsReportInput {
+  branchId?: UUID;
+  /** Inclusive tenant-local calendar date. */
+  from: ISODate;
+  /** Inclusive tenant-local calendar date. */
+  to: ISODate;
+}
+
+export interface AnalyticsBranchInput {
+  branchId?: UUID;
+}
+
 export interface DashboardData {
   kpis: DashboardKpis;
   revenueSeries: RevenuePoint[]; // last 30 days
@@ -1452,7 +3495,43 @@ export interface DashboardData {
   funnel: FunnelStage[];
   leaderboard: SalespersonStat[];
   alerts: DashboardAlert[];
+  todayQueue: TodayQueueData;
   recentActivity: TimelineEvent[];
+}
+
+export type RetentionRiskKind = "inactive" | "expiring" | "expired";
+
+export interface RetentionRiskReason {
+  kind: RetentionRiskKind;
+  label: string;
+  daysInactive?: number;
+  daysUntilExpiry?: number;
+  daysSinceExpiry?: number;
+}
+
+export interface AtRiskMemberItem {
+  member: MemberSummary;
+  membership: MembershipSummary;
+  reasons: RetentionRiskReason[];
+  priority: TodayQueuePriority;
+  lastVisitAt?: ISODateTime;
+  lastContactAt?: ISODateTime;
+  lastContactOutcome?: string;
+  snoozedUntil?: ISODate;
+  recommendedSnoozeDays: number;
+}
+
+export interface AtRiskMemberQuery extends ListQuery {
+  branchId?: UUID;
+  reason?: RetentionRiskKind | "all";
+  includeSnoozed?: boolean;
+  search?: string;
+}
+
+export interface SnoozeAtRiskMemberInput {
+  memberId: UUID;
+  until: ISODate;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1466,18 +3545,22 @@ export interface RoleDefinition {
   permissions: string[];
   discountLimitMinor: number; // max discount without approval, in minor units
   isSystem: boolean;
+  /** Server-owned permission catalogue version, absent on legacy rows. */
+  catalogVersion?: number;
 }
 
 export interface OrganizationSettings {
   organization: Organization;
+  brand: BrandKit;
   branches: Branch[];
   paymentMethods: PaymentMethod[];
   roles: RoleDefinition[];
   notifications: NotificationSettings;
   operationalPolicies: OperationalPolicies;
+  workspace?: WorkspaceAccess;
 }
 
-export type MediaAssetOwnerType = "gym_logo" | "gym_cover" | "gym_gallery" | "trainer_photo" | "member_photo";
+export type MediaAssetOwnerType = "gym_logo" | "gym_cover" | "gym_gallery" | "trainer_photo" | "member_photo" | "class_image";
 
 export interface MediaAsset {
   id: UUID;
@@ -1500,6 +3583,9 @@ export interface GymPublicProfile {
   organizationId: UUID;
   version: number;
   status: "draft" | "published" | "unpublished";
+  /** True once any version has been published: later changes are saved as
+   * drafts and sent to RIVET support for review instead of self-publishing. */
+  publishLocked: boolean;
   shortName: string;
   taglineEn: string;
   taglineAr?: string;
@@ -1597,6 +3683,30 @@ export interface OperationalPolicies {
     bookingHorizonDays: number;
     cancellationCutoffHours: number;
   };
+  classBooking: ClassBookingPolicy;
+  retention: {
+    inactivityDays: number;
+    expiredWinBackDays: number;
+    defaultSnoozeDays: number;
+  };
+  /** Gym-customizable member-referral rewards: free days added to the
+   * referrer's active membership when a referred person buys their first
+   * membership, capped per referrer inside a rolling window. */
+  referrals: {
+    enabled: boolean;
+    rewardDays: number;
+    maxRewardDaysPerWindow: number;
+    windowDays: number;
+  };
+  /** Gym-customizable member freeze requests: how many freezes are free per
+   * rolling window, what later ones cost, and how long one freeze may run. */
+  memberFreezes: {
+    requestsEnabled: boolean;
+    freeFreezesPerWindow: number;
+    extraFreezeFeeMinor: number;
+    maxDaysPerFreeze: number;
+    windowDays: number;
+  };
 }
 
 export interface NotificationSettings {
@@ -1606,6 +3716,11 @@ export interface NotificationSettings {
     checkinOverride: boolean;
     discountApproval: boolean;
   };
+  /**
+   * The scheduled renewal journey is opt-in. Missing legacy values are false
+   * so a backend deploy cannot silently create member timelines or staff tasks.
+   */
+  renewalRecoveryEnabled?: boolean;
   automationDeliveryMode: "sandbox" | "live";
   quietHoursStart?: string;
   quietHoursEnd?: string;
@@ -1615,11 +3730,18 @@ export type UpdateOrganizationSettingsInput = Partial<{
   name: string;
   timezone: string;
   locale: string;
+  phoneCountryCallingCode: string;
   defaultLanguage: "en" | "ar";
   taxRatePercent: number;
   receiptPrefix: string;
   receiptFooter: string;
 }>;
+
+export interface UpdateBrandKitInput {
+  paletteKey: BrandPaletteKey;
+  primaryColor?: string;
+  logoAssetId?: UUID | null;
+}
 
 export interface InviteUserInput {
   name: string;
@@ -1637,7 +3759,50 @@ export interface UpdateUserAccessInput {
   status?: "active" | "deactivated";
 }
 
+export interface UpdateUserProfileInput {
+  name: string;
+  phone?: string;
+}
+
 export interface UpdateRolePermissionsInput {
   permissions?: string[];
   discountLimitMinor?: number;
 }
+
+
+export type {
+  ContactConsequences,
+  ContactSubjectKind,
+  FollowUpDelivery,
+  FollowUpEvidence,
+  FollowUpEvidenceFlag,
+  FollowUpMoney,
+  FollowUpRelatedTask,
+  FollowUpTopic,
+  MemberFollowUpContext,
+  ReasonActionKey,
+} from "../../../convex/followupAssist";
+
+// Branch operations: filing descriptions, repair history, handover and notification groups (shared module).
+export type {
+  HandoverGroup,
+  HandoverGrouping,
+  HandoverItem,
+  NotificationGroup,
+  NotificationGrouping,
+  RepairHistory,
+  RepairHistoryEntry,
+} from "../../../convex/branchOpsAssist";
+
+// The dashboard's "Needs attention" summary: counts, plain sentences and sources (shared module).
+export type {
+  BriefAttentionLine,
+  BriefFigure,
+  BriefScope,
+  BriefSection,
+  BriefSectionKey,
+  BriefSource,
+  BriefSourceKey,
+  BriefSourceStatus,
+  OperatingBrief,
+} from "../../../convex/operatingBrief";

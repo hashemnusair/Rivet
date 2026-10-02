@@ -2,8 +2,8 @@ import { plural } from "../../dictionary";
 
 /**
  * Vocabulary shared across every surface: actions that appear on more than one
- * screen, the states a panel can be in, and the words the product uses for its
- * own concepts. Area-specific copy lives in that area's file.
+ * screen, the states a panel can be in, and generic labels. Area-specific copy
+ * lives in that area's file. Wording follows docs/22_PLAIN_LANGUAGE_GUIDE.md.
  *
  * Deliberately not `as const`: the Arabic catalogue is typed against this
  * object, and literal types would demand identical English strings.
@@ -28,62 +28,70 @@ export const common = {
     filter: "Filter",
     clear: "Clear",
     clearFilters: "Clear filters",
-    apply: "Apply",
     retry: "Try again",
     refresh: "Refresh",
-    reset: "Reset",
-    export: "Export",
-    import: "Import",
-    print: "Print",
     download: "Download",
+    print: "Print",
     copy: "Copy",
     copied: "Copied",
     viewAll: "View all",
     viewDetails: "View details",
     signIn: "Sign in",
     signOut: "Sign out",
-    submit: "Submit",
     send: "Send",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
+    apply: "Apply",
+    reset: "Reset",
+    export: "Export",
+    import: "Import",
+    submit: "Submit",
     select: "Select",
     selectAll: "Select all",
     more: "More",
     less: "Less",
     showMore: "Show more",
     showLess: "Show less",
-    openMenu: "Open menu",
-    closeMenu: "Close menu",
     goBack: "Go back",
   },
-
   state: {
     loading: "Loading…",
     saving: "Saving…",
-    sending: "Sending…",
     searching: "Searching…",
     empty: "Nothing here yet",
     error: "Something went wrong",
+    noResults: "No results",
+    required: "Required",
+    optional: "Optional",
+    notSet: "Not set",
+    sending: "Sending…",
     errorDetail: "The request could not be completed. Try again, or refresh the page.",
     offline: "You appear to be offline",
     notFound: "Not found",
-    noResults: "No results",
     noResultsDetail: "Nothing matched that search. Try a different term or clear the filters.",
-    required: "Required",
-    optional: "Optional",
   },
-
   states: {
     errorTitle: "Something went wrong",
-    errorDescription: "The request could not be completed. Your last loaded data is preserved; try again.",
-    forbiddenTitle: "Not allowed for this role",
-    forbiddenDescription: "Your account role does not have permission to view this area.",
+    errorDescription: "Please try again. If this keeps happening, check your internet connection.",
+    forbiddenTitle: "You don't have access",
+    forbiddenDescription: "Your role cannot open this page. Ask the owner or a manager if you need it.",
     notFoundTitle: "Not found",
-    notFoundDescription: "The record you are looking for does not exist — it may have been removed, or the link is wrong.",
+    notFoundDescription: "We could not find this. It may have been removed, or the link is wrong.",
     backToDashboard: "Back to dashboard",
     previousPage: "Previous page",
     pageRange: "{range} of {total}",
     nextPage: "Next page",
   },
-
+  pagination: {
+    showing: "Showing {from} to {to} of {total}",
+    page: "Page {page} of {total}",
+    previous: "Previous page",
+    next: "Next page",
+  },
+  a11y: {
+    closeDialog: "Close dialog",
+    loading: "Loading",
+  },
   label: {
     name: "Name",
     fullName: "Full name",
@@ -103,41 +111,37 @@ export const common = {
     reason: "Reason",
     type: "Type",
     role: "Role",
-    actions: "Actions",
     details: "Details",
+    language: "Language",
+    actions: "Actions",
     createdAt: "Created",
     updatedAt: "Updated",
-    language: "Language",
   },
-
   time: {
     today: "Today",
     yesterday: "Yesterday",
     tomorrow: "Tomorrow",
-    now: "now",
+    now: "just now",
+    days: plural({ one: "{count} day", other: "{count} days" }),
+    hours: plural({ one: "{count} hour", other: "{count} hours" }),
+    minutes: plural({ one: "{count} minute", other: "{count} minutes" }),
     thisWeek: "This week",
     thisMonth: "This month",
     lastMonth: "Last month",
     last7Days: "Last 7 days",
     last30Days: "Last 30 days",
-    days: plural({ one: "{count} day", other: "{count} days" }),
-    hours: plural({ one: "{count} hour", other: "{count} hours" }),
-    minutes: plural({ one: "{count} minute", other: "{count} minutes" }),
   },
-
   count: {
     members: plural({ one: "{count} member", other: "{count} members" }),
     results: plural({ one: "{count} result", other: "{count} results" }),
     selected: plural({ one: "{count} selected", other: "{count} selected" }),
   },
-
   language: {
     switchTo: "Switch to {language}",
     label: "Language",
     english: "English",
     arabic: "العربية",
   },
-
   brand: {
     name: "RIVET",
     tagline: "Every member. Every dinar. Every shift.",

@@ -10,12 +10,19 @@ const clerk = vi.hoisted(() => ({
   },
 }));
 
+const navigation = vi.hoisted(() => ({ router: { replace: vi.fn() } }));
+
 vi.mock("@clerk/nextjs", () => ({
   useSignIn: () => clerk.hook,
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => navigation.router,
+}));
+
 describe("PasswordSignIn", () => {
   beforeEach(() => {
+    navigation.router.replace.mockReset();
     clerk.hook = {
       signIn: null,
       errors: { fields: { identifier: null, password: null, code: null } },
@@ -57,6 +64,86 @@ describe("PasswordSignIn", () => {
       expect(password).toHaveBeenCalledWith({ emailAddress: "admin@rivetjo.com", password: "secret-password" });
       expect(finalize).toHaveBeenCalledOnce();
     });
+  });
+
+  it("shows a Clerk rejection when password submission throws and re-enables sign in", async () => {
+    const password = vi.fn().mockRejectedValue({ errors: [{ longMessage: "Your password is incorrect." }] });
+    clerk.hook = {
+      signIn: {
+        status: "needs_first_factor",
+        password,
+        finalize: vi.fn(),
+        supportedSecondFactors: [],
+        mfa: {},
+      },
+      errors: { fields: { identifier: null, password: null, code: null } },
+      fetchStatus: "idle",
+    };
+
+    render(<PasswordSignIn />);
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "admin@rivetjo.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "wrong-password" } });
+    const submit = screen.getByRole("button", { name: "Sign in" });
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Your password is incorrect.");
+      expect(submit).not.toBeDisabled();
+    });
+  });
+
+  it("shows a Clerk rejection when finalizing throws and re-enables sign in", async () => {
+    const password = vi.fn().mockResolvedValue({ error: null });
+    const finalize = vi.fn().mockRejectedValue({ errors: [{ message: "The session could not be finalized." }] });
+    clerk.hook = {
+      signIn: {
+        status: "complete",
+        password,
+        finalize,
+        supportedSecondFactors: [],
+        mfa: {},
+      },
+      errors: { fields: { identifier: null, password: null, code: null } },
+      fetchStatus: "idle",
+    };
+
+    render(<PasswordSignIn />);
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "admin@rivetjo.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "secret-password" } });
+    const submit = screen.getByRole("button", { name: "Sign in" });
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("The session could not be finalized.");
+      expect(submit).not.toBeDisabled();
+    });
+  });
+
+  it("returns to a safe customer destination after sign-in and preserves it for signup", async () => {
+    const password = vi.fn().mockResolvedValue({ error: null });
+    const finalize = vi.fn().mockResolvedValue({ error: null });
+    clerk.hook = {
+      signIn: {
+        status: "complete",
+        password,
+        finalize,
+        supportedSecondFactors: [],
+        mfa: {},
+      },
+      errors: { fields: { identifier: null, password: null, code: null } },
+      fetchStatus: "idle",
+    };
+
+    render(<PasswordSignIn redirectUrl="/customer/gyms/forge?branchId=abdoun" />);
+    expect(screen.getByRole("link", { name: "Create a free account" })).toHaveAttribute(
+      "href",
+      "/login/member/create?returnTo=%2Fcustomer%2Fgyms%2Fforge%3FbranchId%3Dabdoun",
+    );
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "member@example.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "secret-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith("/login?next=%2Fcustomer%2Fgyms%2Fforge%3FbranchId%3Dabdoun"));
   });
 
   it("handles Clerk Client Trust without replacing the whole form", async () => {

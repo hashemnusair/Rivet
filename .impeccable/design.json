@@ -1,0 +1,663 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-03T14:00:58Z",
+  "title": "Design System: RIVET Product Interface",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Ledger Paper",
+        "canonical": "oklch(96.7% 0.007 97.4)",
+        "tonalRamp": [
+          "oklch(15% 0.002 97.4)",
+          "oklch(27% 0.002 97.4)",
+          "oklch(39% 0.003 97.4)",
+          "oklch(51% 0.004 97.4)",
+          "oklch(63% 0.006 97.4)",
+          "oklch(74% 0.007 97.4)",
+          "oklch(85% 0.003 97.4)",
+          "oklch(95% 0.003 97.4)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Record Surface",
+        "canonical": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0.002 89.9)",
+          "oklch(27% 0.002 89.9)",
+          "oklch(39% 0.002 89.9)",
+          "oklch(51% 0.002 89.9)",
+          "oklch(63% 0.002 89.9)",
+          "oklch(74% 0.002 89.9)",
+          "oklch(85% 0.002 89.9)",
+          "oklch(95% 0.002 89.9)"
+        ]
+      },
+      "sunken": {
+        "role": "neutral",
+        "displayName": "Inset Paper",
+        "canonical": "oklch(94.2% 0.009 100.0)",
+        "tonalRamp": [
+          "oklch(15% 0.002 100.0)",
+          "oklch(27% 0.003 100.0)",
+          "oklch(39% 0.005 100.0)",
+          "oklch(51% 0.006 100.0)",
+          "oklch(63% 0.008 100.0)",
+          "oklch(74% 0.009 100.0)",
+          "oklch(85% 0.004 100.0)",
+          "oklch(95% 0.004 100.0)"
+        ]
+      },
+      "sunken-strong": {
+        "role": "neutral",
+        "displayName": "Strong Inset",
+        "canonical": "oklch(91.2% 0.014 97.5)",
+        "tonalRamp": [
+          "oklch(15% 0.002 97.5)",
+          "oklch(27% 0.005 97.5)",
+          "oklch(39% 0.007 97.5)",
+          "oklch(51% 0.009 97.5)",
+          "oklch(63% 0.011 97.5)",
+          "oklch(74% 0.014 97.5)",
+          "oklch(85% 0.005 97.5)",
+          "oklch(95% 0.005 97.5)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ledger Ink",
+        "canonical": "oklch(21.7% 0.010 97.8)",
+        "tonalRamp": [
+          "oklch(15% 0.002 97.8)",
+          "oklch(27% 0.003 97.8)",
+          "oklch(39% 0.005 97.8)",
+          "oklch(51% 0.006 97.8)",
+          "oklch(63% 0.008 97.8)",
+          "oklch(74% 0.010 97.8)",
+          "oklch(85% 0.004 97.8)",
+          "oklch(95% 0.004 97.8)"
+        ]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "oklch(44.4% 0.018 98.6)",
+        "tonalRamp": [
+          "oklch(15% 0.002 98.6)",
+          "oklch(27% 0.006 98.6)",
+          "oklch(39% 0.009 98.6)",
+          "oklch(51% 0.012 98.6)",
+          "oklch(63% 0.015 98.6)",
+          "oklch(74% 0.018 98.6)",
+          "oklch(85% 0.007 98.6)",
+          "oklch(95% 0.007 98.6)"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(62.6% 0.019 96.2)",
+        "tonalRamp": [
+          "oklch(15% 0.002 96.2)",
+          "oklch(27% 0.006 96.2)",
+          "oklch(39% 0.010 96.2)",
+          "oklch(51% 0.013 96.2)",
+          "oklch(63% 0.016 96.2)",
+          "oklch(74% 0.019 96.2)",
+          "oklch(85% 0.007 96.2)",
+          "oklch(95% 0.007 96.2)"
+        ]
+      },
+      "ink-disabled": {
+        "role": "neutral",
+        "displayName": "Disabled Ink",
+        "canonical": "oklch(76.6% 0.018 96.2)",
+        "tonalRamp": [
+          "oklch(15% 0.002 96.2)",
+          "oklch(27% 0.006 96.2)",
+          "oklch(39% 0.009 96.2)",
+          "oklch(51% 0.012 96.2)",
+          "oklch(63% 0.015 96.2)",
+          "oklch(74% 0.018 96.2)",
+          "oklch(85% 0.007 96.2)",
+          "oklch(95% 0.007 96.2)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(90.8% 0.015 98.3)",
+        "tonalRamp": [
+          "oklch(15% 0.002 98.3)",
+          "oklch(27% 0.005 98.3)",
+          "oklch(39% 0.007 98.3)",
+          "oklch(51% 0.010 98.3)",
+          "oklch(63% 0.012 98.3)",
+          "oklch(74% 0.015 98.3)",
+          "oklch(85% 0.006 98.3)",
+          "oklch(95% 0.006 98.3)"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "oklch(85.3% 0.018 96.1)",
+        "tonalRamp": [
+          "oklch(15% 0.002 96.1)",
+          "oklch(27% 0.006 96.1)",
+          "oklch(39% 0.009 96.1)",
+          "oklch(51% 0.012 96.1)",
+          "oklch(63% 0.015 96.1)",
+          "oklch(74% 0.018 96.1)",
+          "oklch(85% 0.007 96.1)",
+          "oklch(95% 0.007 96.1)"
+        ]
+      },
+      "line-emphasis": {
+        "role": "neutral",
+        "displayName": "Emphasis Hairline",
+        "canonical": "oklch(78.5% 0.023 95.3)",
+        "tonalRamp": [
+          "oklch(15% 0.002 95.3)",
+          "oklch(27% 0.008 95.3)",
+          "oklch(39% 0.011 95.3)",
+          "oklch(51% 0.015 95.3)",
+          "oklch(63% 0.019 95.3)",
+          "oklch(74% 0.023 95.3)",
+          "oklch(85% 0.009 95.3)",
+          "oklch(95% 0.009 95.3)"
+        ]
+      },
+      "night": {
+        "role": "neutral",
+        "displayName": "Night Ledger",
+        "canonical": "oklch(19.1% 0.010 97.9)",
+        "tonalRamp": [
+          "oklch(15% 0.002 97.9)",
+          "oklch(27% 0.003 97.9)",
+          "oklch(39% 0.005 97.9)",
+          "oklch(51% 0.007 97.9)",
+          "oklch(63% 0.008 97.9)",
+          "oklch(74% 0.010 97.9)",
+          "oklch(85% 0.004 97.9)",
+          "oklch(95% 0.004 97.9)"
+        ]
+      },
+      "night-raised": {
+        "role": "neutral",
+        "displayName": "Night Raised",
+        "canonical": "oklch(22.6% 0.013 94.0)",
+        "tonalRamp": [
+          "oklch(15% 0.002 94.0)",
+          "oklch(27% 0.004 94.0)",
+          "oklch(39% 0.007 94.0)",
+          "oklch(51% 0.009 94.0)",
+          "oklch(63% 0.011 94.0)",
+          "oklch(74% 0.013 94.0)",
+          "oklch(85% 0.005 94.0)",
+          "oklch(95% 0.005 94.0)"
+        ]
+      },
+      "night-selected": {
+        "role": "neutral",
+        "displayName": "Night Selected",
+        "canonical": "oklch(27.6% 0.014 95.6)",
+        "tonalRamp": [
+          "oklch(15% 0.002 95.6)",
+          "oklch(27% 0.005 95.6)",
+          "oklch(39% 0.007 95.6)",
+          "oklch(51% 0.010 95.6)",
+          "oklch(63% 0.012 95.6)",
+          "oklch(74% 0.014 95.6)",
+          "oklch(85% 0.006 95.6)",
+          "oklch(95% 0.006 95.6)"
+        ]
+      },
+      "night-line": {
+        "role": "neutral",
+        "displayName": "Night Hairline",
+        "canonical": "oklch(29.2% 0.018 98.0)",
+        "tonalRamp": [
+          "oklch(15% 0.002 98.0)",
+          "oklch(27% 0.006 98.0)",
+          "oklch(39% 0.009 98.0)",
+          "oklch(51% 0.012 98.0)",
+          "oklch(63% 0.015 98.0)",
+          "oklch(74% 0.018 98.0)",
+          "oklch(85% 0.007 98.0)",
+          "oklch(95% 0.007 98.0)"
+        ]
+      },
+      "night-ink": {
+        "role": "neutral",
+        "displayName": "Night Ink",
+        "canonical": "oklch(95.4% 0.013 97.4)",
+        "tonalRamp": [
+          "oklch(15% 0.002 97.4)",
+          "oklch(27% 0.004 97.4)",
+          "oklch(39% 0.007 97.4)",
+          "oklch(51% 0.009 97.4)",
+          "oklch(63% 0.011 97.4)",
+          "oklch(74% 0.013 97.4)",
+          "oklch(85% 0.005 97.4)",
+          "oklch(95% 0.005 97.4)"
+        ]
+      },
+      "night-ink-secondary": {
+        "role": "neutral",
+        "displayName": "Night Secondary Ink",
+        "canonical": "oklch(71.4% 0.022 97.6)",
+        "tonalRamp": [
+          "oklch(15% 0.002 97.6)",
+          "oklch(27% 0.007 97.6)",
+          "oklch(39% 0.011 97.6)",
+          "oklch(51% 0.014 97.6)",
+          "oklch(63% 0.018 97.6)",
+          "oklch(74% 0.022 97.6)",
+          "oklch(85% 0.008 97.6)",
+          "oklch(95% 0.008 97.6)"
+        ]
+      },
+      "night-ink-muted": {
+        "role": "neutral",
+        "displayName": "Night Muted Ink",
+        "canonical": "oklch(53.0% 0.023 97.8)",
+        "tonalRamp": [
+          "oklch(15% 0.002 97.8)",
+          "oklch(27% 0.008 97.8)",
+          "oklch(39% 0.012 97.8)",
+          "oklch(51% 0.015 97.8)",
+          "oklch(63% 0.019 97.8)",
+          "oklch(74% 0.023 97.8)",
+          "oklch(85% 0.009 97.8)",
+          "oklch(95% 0.009 97.8)"
+        ]
+      },
+      "signal": {
+        "role": "primary",
+        "displayName": "RIVET Signal",
+        "canonical": "oklch(57.0% 0.214 25.8)",
+        "tonalRamp": [
+          "oklch(15% 0.023 25.8)",
+          "oklch(27% 0.071 25.8)",
+          "oklch(39% 0.107 25.8)",
+          "oklch(51% 0.142 25.8)",
+          "oklch(63% 0.178 25.8)",
+          "oklch(74% 0.214 25.8)",
+          "oklch(85% 0.081 25.8)",
+          "oklch(95% 0.081 25.8)"
+        ]
+      },
+      "signal-deep": {
+        "role": "primary",
+        "displayName": "RIVET Signal Deep",
+        "canonical": "oklch(48.3% 0.179 25.4)",
+        "tonalRamp": [
+          "oklch(15% 0.019 25.4)",
+          "oklch(27% 0.060 25.4)",
+          "oklch(39% 0.090 25.4)",
+          "oklch(51% 0.120 25.4)",
+          "oklch(63% 0.150 25.4)",
+          "oklch(74% 0.179 25.4)",
+          "oklch(85% 0.068 25.4)",
+          "oklch(95% 0.068 25.4)"
+        ]
+      },
+      "signal-soft": {
+        "role": "primary",
+        "displayName": "RIVET Signal Soft",
+        "canonical": "oklch(94.8% 0.019 17.5)",
+        "tonalRamp": [
+          "oklch(15% 0.002 17.5)",
+          "oklch(27% 0.006 17.5)",
+          "oklch(39% 0.009 17.5)",
+          "oklch(51% 0.012 17.5)",
+          "oklch(63% 0.015 17.5)",
+          "oklch(74% 0.019 17.5)",
+          "oklch(85% 0.007 17.5)",
+          "oklch(95% 0.007 17.5)"
+        ]
+      },
+      "success": {
+        "role": "success",
+        "displayName": "Success",
+        "canonical": "oklch(47.8% 0.105 156.8)",
+        "tonalRamp": [
+          "oklch(15% 0.011 156.8)",
+          "oklch(27% 0.035 156.8)",
+          "oklch(39% 0.052 156.8)",
+          "oklch(51% 0.070 156.8)",
+          "oklch(63% 0.087 156.8)",
+          "oklch(74% 0.105 156.8)",
+          "oklch(85% 0.040 156.8)",
+          "oklch(95% 0.040 156.8)"
+        ]
+      },
+      "success-deep": {
+        "role": "success",
+        "displayName": "Success Deep",
+        "canonical": "oklch(38.9% 0.085 157.1)",
+        "tonalRamp": [
+          "oklch(15% 0.009 157.1)",
+          "oklch(27% 0.028 157.1)",
+          "oklch(39% 0.042 157.1)",
+          "oklch(51% 0.056 157.1)",
+          "oklch(63% 0.071 157.1)",
+          "oklch(74% 0.085 157.1)",
+          "oklch(85% 0.032 157.1)",
+          "oklch(95% 0.032 157.1)"
+        ]
+      },
+      "success-soft": {
+        "role": "success",
+        "displayName": "Success Soft",
+        "canonical": "oklch(94.8% 0.015 158.2)",
+        "tonalRamp": [
+          "oklch(15% 0.002 158.2)",
+          "oklch(27% 0.005 158.2)",
+          "oklch(39% 0.007 158.2)",
+          "oklch(51% 0.010 158.2)",
+          "oklch(63% 0.012 158.2)",
+          "oklch(74% 0.015 158.2)",
+          "oklch(85% 0.006 158.2)",
+          "oklch(95% 0.006 158.2)"
+        ]
+      },
+      "warning": {
+        "role": "warning",
+        "displayName": "Warning",
+        "canonical": "oklch(54.0% 0.112 72.1)",
+        "tonalRamp": [
+          "oklch(15% 0.012 72.1)",
+          "oklch(27% 0.037 72.1)",
+          "oklch(39% 0.056 72.1)",
+          "oklch(51% 0.075 72.1)",
+          "oklch(63% 0.094 72.1)",
+          "oklch(74% 0.112 72.1)",
+          "oklch(85% 0.043 72.1)",
+          "oklch(95% 0.043 72.1)"
+        ]
+      },
+      "warning-deep": {
+        "role": "warning",
+        "displayName": "Warning Deep",
+        "canonical": "oklch(43.5% 0.091 73.1)",
+        "tonalRamp": [
+          "oklch(15% 0.010 73.1)",
+          "oklch(27% 0.030 73.1)",
+          "oklch(39% 0.045 73.1)",
+          "oklch(51% 0.061 73.1)",
+          "oklch(63% 0.076 73.1)",
+          "oklch(74% 0.091 73.1)",
+          "oklch(85% 0.034 73.1)",
+          "oklch(95% 0.034 73.1)"
+        ]
+      },
+      "warning-soft": {
+        "role": "warning",
+        "displayName": "Warning Soft",
+        "canonical": "oklch(94.9% 0.029 84.6)",
+        "tonalRamp": [
+          "oklch(15% 0.003 84.6)",
+          "oklch(27% 0.010 84.6)",
+          "oklch(39% 0.014 84.6)",
+          "oklch(51% 0.019 84.6)",
+          "oklch(63% 0.024 84.6)",
+          "oklch(74% 0.029 84.6)",
+          "oklch(85% 0.011 84.6)",
+          "oklch(95% 0.011 84.6)"
+        ]
+      },
+      "danger": {
+        "role": "danger",
+        "displayName": "Danger",
+        "canonical": "oklch(50.1% 0.178 28.7)",
+        "tonalRamp": [
+          "oklch(15% 0.019 28.7)",
+          "oklch(27% 0.059 28.7)",
+          "oklch(39% 0.089 28.7)",
+          "oklch(51% 0.119 28.7)",
+          "oklch(63% 0.149 28.7)",
+          "oklch(74% 0.178 28.7)",
+          "oklch(85% 0.068 28.7)",
+          "oklch(95% 0.068 28.7)"
+        ]
+      },
+      "danger-soft": {
+        "role": "danger",
+        "displayName": "Danger Soft",
+        "canonical": "oklch(94.2% 0.020 25.2)",
+        "tonalRamp": [
+          "oklch(15% 0.002 25.2)",
+          "oklch(27% 0.007 25.2)",
+          "oklch(39% 0.010 25.2)",
+          "oklch(51% 0.013 25.2)",
+          "oklch(63% 0.017 25.2)",
+          "oklch(74% 0.020 25.2)",
+          "oklch(85% 0.008 25.2)",
+          "oklch(95% 0.008 25.2)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "page-title": {
+        "displayName": "Page title",
+        "purpose": "One clear title for an operational route."
+      },
+      "section-title": {
+        "displayName": "Section title",
+        "purpose": "Major subdivision within a page or reference surface."
+      },
+      "panel-title": {
+        "displayName": "Panel title",
+        "purpose": "Compact heading inside an established panel or dialog."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default human-facing product copy."
+      },
+      "body-compact": {
+        "displayName": "Compact body",
+        "purpose": "Controls, dense rows, and brief operational descriptions."
+      },
+      "context-label": {
+        "displayName": "Context label",
+        "purpose": "Optional sentence-case human context that is not already obvious."
+      },
+      "technical-label": {
+        "displayName": "Technical label",
+        "purpose": "Identifiers, references, codes, and terse system metadata only."
+      },
+      "record": {
+        "displayName": "Record text",
+        "purpose": "Member numbers, receipts, references, SKUs, and equivalent values."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover",
+        "value": "0 1px 2px rgb(27 26 21 / 0.06), 0 12px 32px -8px rgb(27 26 21 / 0.18)",
+        "purpose": "Menus, selects, and temporary popovers only."
+      },
+      {
+        "name": "dialog",
+        "value": "0 2px 4px rgb(27 26 21 / 0.08), 0 24px 64px -12px rgb(27 26 21 / 0.28)",
+        "purpose": "Modal dialogs and high-priority temporary layers only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "120ms ease-out",
+        "purpose": "Color and border response for controls and selected states."
+      },
+      {
+        "name": "overlay",
+        "value": "200ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Interruptible opacity and transform for overlays."
+      },
+      {
+        "name": "page-enter",
+        "value": "240ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Subtle product route entrance; removed for reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      },
+      {
+        "name": "2xl",
+        "value": "1536px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Tenant primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main safe gym action; the tenant may control the accent.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Save changes</button>",
+      "css": ".ds-btn-primary { height: 36px; padding: 0 16px; border: 1px solid transparent; border-radius: 6px; background: var(--tenant-brand-primary, #1B1A15); color: var(--tenant-brand-primary-foreground, #F5F4EF); font: 600 13.5px/1 Manrope, system-ui, sans-serif; cursor: pointer; transition: background-color 120ms ease-out, border-color 120ms ease-out; } .ds-btn-primary:hover { background: var(--tenant-brand-primary-hover, #2A2820); } .ds-btn-primary:active { background: #15140F; } .ds-btn-primary:focus-visible { outline: 2px solid var(--tenant-brand-focus, #565449); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A visible alternative that does not compete with the main action.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">View receipt</button>",
+      "css": ".ds-btn-secondary { height: 36px; padding: 0 16px; border: 1px solid #D2CFC2; border-radius: 6px; background: #FFFFFF; color: #1B1A15; font: 550 13.5px/1 Manrope, system-ui, sans-serif; cursor: pointer; transition: background-color 120ms ease-out, border-color 120ms ease-out; } .ds-btn-secondary:hover { background: #F5F4EF; border-color: #BDB9A9; } .ds-btn-secondary:active { background: #EDECE5; } .ds-btn-secondary:focus-visible { outline: 2px solid #565449; outline-offset: 2px; }"
+    },
+    {
+      "name": "RIVET signal button",
+      "kind": "button",
+      "refersTo": "button-signal",
+      "description": "Rare brand-level emphasis, never the default action on every screen.",
+      "html": "<button class=\"ds-btn-signal\" type=\"button\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"M12 5v14M5 12h14\"/></svg>Add member</button>",
+      "css": ".ds-btn-signal { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border: 1px solid transparent; border-radius: 6px; background: #D9232B; color: #FFFFFF; font: 600 13.5px/1 Manrope, system-ui, sans-serif; cursor: pointer; transition: background-color 120ms ease-out; } .ds-btn-signal svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; } .ds-btn-signal:hover { background: #AD1B22; } .ds-btn-signal:active { background: #8D171C; } .ds-btn-signal:focus-visible { outline: 2px solid #D9232B; outline-offset: 2px; }"
+    },
+    {
+      "name": "Labeled text field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Visible human label, concise helper text, and a restrained focus ring.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Member phone</span><input value=\"+962 79 123 4567\" aria-describedby=\"ds-field-help\"/><small id=\"ds-field-help\">Jordan is the default; international numbers are supported.</small></label>",
+      "css": ".ds-field { display: grid; gap: 6px; width: 300px; color: #1B1A15; font-family: Manrope, system-ui, sans-serif; } .ds-field-label { font-size: 13px; font-weight: 550; } .ds-field input { height: 36px; padding: 0 12px; border: 1px solid #D2CFC2; border-radius: 6px; background: #FFFFFF; color: #1B1A15; font: 400 13.5px/1 Manrope, system-ui, sans-serif; transition: border-color 120ms ease-out, box-shadow 120ms ease-out; } .ds-field input:hover { border-color: #BDB9A9; } .ds-field input:focus { border-color: #565449; outline: none; box-shadow: 0 0 0 2px rgb(86 84 73 / 0.14); } .ds-field small { color: #8B887B; font-size: 12px; line-height: 1.4; }"
+    },
+    {
+      "name": "Success status",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Compact semantic status with readable sans text.",
+      "html": "<span class=\"ds-status-success\"><span aria-hidden=\"true\"></span>Payment posted</span>",
+      "css": ".ds-status-success { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 4px; background: #E6F1EA; color: #0F5232; font: 600 11px/1.3 Manrope, system-ui, sans-serif; } .ds-status-success > span { width: 6px; height: 6px; border-radius: 9999px; background: #176E44; } .ds-status-success:focus-visible { outline: 2px solid #176E44; outline-offset: 2px; }"
+    },
+    {
+      "name": "Flat record panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "One meaningful surface boundary with internal dividers instead of nested cards.",
+      "html": "<section class=\"ds-panel\"><header><div><h3>Recent payments</h3><p>Amounts recorded by the selected branch.</p></div><button type=\"button\">View all</button></header><div class=\"ds-panel-row\"><span>RV-001042</span><strong>JOD 85.000</strong></div></section>",
+      "css": ".ds-panel { width: 360px; overflow: hidden; border: 1px solid #E3E1D6; border-radius: 8px; background: #FFFFFF; color: #1B1A15; font-family: Manrope, system-ui, sans-serif; } .ds-panel header { display: flex; align-items: start; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid #E3E1D6; } .ds-panel h3 { margin: 0; font-size: 15px; line-height: 1.4; } .ds-panel p { margin: 3px 0 0; color: #8B887B; font-size: 12px; line-height: 1.4; } .ds-panel button { border: 0; background: transparent; color: #565449; font: 550 12px Manrope, system-ui, sans-serif; cursor: pointer; } .ds-panel button:hover { color: #1B1A15; } .ds-panel button:focus-visible { outline: 2px solid #565449; outline-offset: 2px; border-radius: 3px; } .ds-panel-row { display: flex; justify-content: space-between; padding: 12px 16px; font-size: 13px; } .ds-panel-row span { font: 500 12px IBM Plex Mono, monospace; } .ds-panel-row strong { font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Light active navigation",
+      "kind": "nav",
+      "refersTo": "navigation-active-light",
+      "description": "One quiet tonal active cue with no colored rail.",
+      "html": "<nav class=\"ds-nav-light\" aria-label=\"Settings example\"><a href=\"#organization\">Organization</a><a class=\"ds-active\" href=\"#payments\" aria-current=\"page\">Payments</a><a href=\"#notifications\">Notifications</a></nav>",
+      "css": ".ds-nav-light { display: grid; gap: 3px; width: 210px; font: 450 13.5px/1.2 Manrope, system-ui, sans-serif; } .ds-nav-light a { padding: 9px 12px; border-radius: 6px; color: #565449; text-decoration: none; transition: background-color 120ms ease-out, color 120ms ease-out; } .ds-nav-light a:hover { background: #F5F4EF; color: #1B1A15; } .ds-nav-light a.ds-active { background: #EDECE5; color: #1B1A15; font-weight: 600; } .ds-nav-light a:focus-visible { outline: 2px solid #565449; outline-offset: 2px; }"
+    },
+    {
+      "name": "Night active navigation",
+      "kind": "nav",
+      "refersTo": "navigation-active-night",
+      "description": "The sidebar selection uses contrast and a night tonal step, not tenant or signal color.",
+      "html": "<nav class=\"ds-nav-night\" aria-label=\"Workspace example\"><a href=\"#dashboard\">Dashboard</a><a class=\"ds-active\" href=\"#members\" aria-current=\"page\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75\"/></svg>Members</a><a href=\"#classes\">Classes</a></nav>",
+      "css": ".ds-nav-night { display: grid; gap: 3px; width: 220px; padding: 10px; border-radius: 8px; background: #15140F; font: 450 13.5px/1.2 Manrope, system-ui, sans-serif; } .ds-nav-night a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 6px; color: #A6A394; text-decoration: none; transition: background-color 120ms ease-out, color 120ms ease-out; } .ds-nav-night a:hover { background: #1E1C15; color: #F2F0E6; } .ds-nav-night a.ds-active { background: #2A2820; color: #F2F0E6; font-weight: 600; } .ds-nav-night svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .ds-nav-night a:focus-visible { outline: 2px solid #F2F0E6; outline-offset: 2px; }"
+    },
+    {
+      "name": "Section error state",
+      "kind": "custom",
+      "description": "A contextual recoverable interruption that preserves the surrounding workflow.",
+      "html": "<div class=\"ds-state\" role=\"alert\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 8v5M12 17h.01\"/></svg><div><strong>Payments could not refresh</strong><p>Your last loaded results are still shown.</p></div><button type=\"button\">Retry</button></div>",
+      "css": ".ds-state { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; width: 460px; padding: 14px 16px; border: 1px dashed #D2CFC2; border-radius: 8px; background: #F5F4EF; color: #1B1A15; font-family: Manrope, system-ui, sans-serif; } .ds-state svg { width: 20px; height: 20px; fill: none; stroke: #B3261E; stroke-width: 1.8; stroke-linecap: round; } .ds-state strong { font-size: 13.5px; } .ds-state p { margin: 2px 0 0; color: #8B887B; font-size: 12px; } .ds-state button { height: 32px; padding: 0 12px; border: 1px solid #D2CFC2; border-radius: 4px; background: #FFFFFF; color: #1B1A15; font: 550 12.5px Manrope, system-ui, sans-serif; cursor: pointer; } .ds-state button:hover { border-color: #BDB9A9; background: #EDECE5; } .ds-state button:focus-visible { outline: 2px solid #565449; outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Operations Ledger",
+    "overview": "RIVET is an operating system for busy gym teams, not a decorative dashboard. Its product interface should feel calm, exact, accountable, and ready for a distracted employee to use quickly at a reception desk. The visual language comes from durable ledgers and well-kept operational records: warm paper, strong ink, hairline structure, clear states, tabular figures, and a small amount of deliberate signal color.\n\nThe product is compact without being cramped. It uses familiar controls, visible labels, restrained geometry, and one obvious next action. Personality comes from the RIVET mark, the warm neutral palette, excellent typography, and precise interaction details—not from ornamental cards, gradients, oversized illustrations, or repetitive label formulas.",
+    "keyCharacteristics": [
+      "Warm, flat product surfaces with high legibility.",
+      "Manrope for human language; IBM Plex Mono only for machine-like records.",
+      "Compact operational density with 44px coarse-pointer targets.",
+      "One quiet tonal navigation state, never decorative active rails.",
+      "Hairlines and spacing establish hierarchy before cards or shadows.",
+      "Signal red is rare enough to remain meaningful.",
+      "Tenant branding appears on the gym’s primary safe actions without rewriting RIVET’s system."
+    ],
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "Red must remain rare. A screen should normally have no more than one signal-red action or emphasis region.",
+        "section": "colors"
+      },
+      {
+        "name": "The Human Language Rule",
+        "body": "If an employee or member would say it aloud, set it in Manrope and sentence case. Mono uppercase is not an “eyebrow” decoration.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-at-Rest Rule",
+        "body": "If an element is not temporarily floating above the workflow, it does not receive a shadow.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One Boundary Rule",
+        "body": "A meaningful region gets one boundary. Inside it, use headings, whitespace, dividers, or rows before adding another bordered container.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do make the likely next safe action immediately visible.",
+      "Do use Manrope sentence case for human-facing labels and navigation groups.",
+      "Do reserve IBM Plex Mono for IDs, receipts, references, SKUs, and technical sequence markers.",
+      "Do use one panel boundary, then rely on spacing and dividers inside it.",
+      "Do align money, counts, dates, fields, units, and row actions consistently.",
+      "Do use the quiet tonal active state in primary, Settings, and segmented navigation.",
+      "Do keep data-heavy screens compact while preserving 12px helper text and 44px coarse-pointer targets.",
+      "Do provide keyboard alternatives, visible focus, semantic controls, useful errors, and safe-area spacing.",
+      "Do preserve tenant accent for the gym’s main safe action while keeping semantic colors truthful.",
+      "Do test representative interfaces at 360, 390, 768, 820, 1280, and 1440px."
+    ],
+    "donts": [
+      "Don't repeat uppercase monospaced “eyebrows” above every page, card, dialog, and metric.",
+      "Don't show colored vertical active rails or multiple active signals at once.",
+      "Don't create nested card walls, framed-icon formulas, or background changes without semantic purpose.",
+      "Don't use gradients, glass effects, neon, decorative color washes, heavy shadows, or a new shadow family.",
+      "Don't use signal red as routine decoration or as every gym’s primary action color.",
+      "Don't shrink normal human copy below 12px to force a layout to fit.",
+      "Don't hide a primary action in an overflow menu or make hover the only discovery mechanism.",
+      "Don't use placeholders as labels, vague permission copy for setup problems, or empty states for failed queries.",
+      "Don't animate layout, use transition-all, add delayed snap-back, or retain transformed ancestors after motion finishes.",
+      "Don't treat the night surfaces as permission to add a general dark mode.",
+      "Don't import marketing typography or motion rules into the product interface."
+    ]
+  }
+}
+

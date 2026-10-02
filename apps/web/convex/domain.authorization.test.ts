@@ -81,6 +81,52 @@ describe("Convex authorization matrix", () => {
     await expectCode(trainer.mutation(api.domain.mutate, operation("members.note", { memberId: "missing-member", body: "Should fail" })), "FORBIDDEN");
   });
 
+  it("requires an explicit branch for selected multi-branch actors while keeping All branches read-only", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-auth-owner" });
+    const reception = t.withIdentity({ subject: "clerk-auth-reception" });
+
+    const allBranches = await owner.query(api.domain.query, operation("branches.list")) as Array<{ id: string }>;
+    expect(allBranches.map((branch) => branch.id)).toEqual(expect.arrayContaining(["auth-branch-a", "auth-branch-a2"]));
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-auth-a")).unique();
+      const user = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", "auth-reception")).unique();
+      if (!organization || !user) throw new Error("authorization fixtures missing");
+      const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organization._id).eq("userId", user._id)).unique();
+      const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
+      if (!membership || branches.length < 2) throw new Error("multi-branch fixture missing");
+      await ctx.db.patch(membership._id, { branchIds: branches.slice(0, 2).map((branch) => branch._id), branchScope: "selected", updatedAt: Date.now() });
+    });
+
+    await expectCode(reception.query(api.domain.query, operation("session")), "ORGANIZATION_SELECTION_REQUIRED");
+    const selected = await reception.query(api.domain.query, operation("session", {}, { activeBranchId: "auth-branch-a" })) as { activeBranchId?: string };
+    expect(selected.activeBranchId).toBe("auth-branch-a");
+    await expectCode(reception.query(api.domain.query, operation("members.list")), "ORGANIZATION_SELECTION_REQUIRED");
+  });
+
+  it("fails closed for stale, inactive, and foreign active-branch selections", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-auth-owner" });
+
+    await expectCode(owner.query(api.domain.query, operation("session", {}, { activeBranchId: "auth-branch-not-real" })), "FORBIDDEN");
+    await expectCode(owner.query(api.domain.query, operation("members.list", { branchId: "auth-branch-not-real" })), "NOT_FOUND");
+    await expectCode(owner.query(api.domain.query, operation("members.list", { branchId: "auth-branch-b" })), "NOT_FOUND");
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-auth-a")).unique();
+      const branch = organization
+        ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "auth-branch-a")).unique()
+        : null;
+      if (!branch) throw new Error("authorization branch fixture missing");
+      await ctx.db.patch(branch._id, { active: false, status: "inactive", updatedAt: Date.now() });
+    });
+    await expectCode(owner.query(api.domain.query, operation("session", {}, { activeBranchId: "auth-branch-a" })), "FORBIDDEN");
+    await expectCode(owner.query(api.domain.query, operation("members.list", { branchId: "auth-branch-a" })), "NOT_FOUND");
+  });
+
   it("blocks finance, cash, check-in, staff and privilege escalation actions by role", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
@@ -103,5 +149,46 @@ describe("Convex authorization matrix", () => {
     await expectCode(owner.mutation(api.domain.mutate, operation("payments.refund", { paymentId: "missing", reason: "Owner verification", idempotencyKey: "missing-owner-refund" })), "NOT_FOUND");
     await expectCode(owner.mutation(api.domain.mutate, operation("payments.void", { paymentId: "missing", reason: "Owner verification", idempotencyKey: "missing-owner-void" })), "NOT_FOUND");
     await expectCode(owner.mutation(api.domain.mutate, operation("checkins.override", { branchId: "auth-branch-a", memberId: "missing", reason: "Owner verification" })), "NOT_FOUND");
+  });
+
+  it("scopes profile reads and writes to the authenticated staff member", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const reception = t.withIdentity({ subject: "clerk-auth-reception", name: "Provider Reception Name", email: "auth-reception@example.com" });
+    const manager = t.withIdentity({ subject: "clerk-auth-manager", name: "Provider Manager Name", email: "auth-manager@example.com" });
+
+    // These roles do not have settings.manage or users.manage, but personal
+    // profile access is intentionally available to every active staff role.
+    await expect(reception.query(api.domain.query, operation("users.profile.get"))).resolves.toMatchObject({ id: "auth-reception", name: "auth-reception" });
+    await expect(manager.mutation(api.domain.mutate, operation("users.profile.update", { name: "  Manager Profile  ", phone: "+962790000123", userId: "auth-reception" }))).resolves.toMatchObject({ id: "auth-manager", name: "Manager Profile", phone: "+962790000123" });
+
+    // A caller-supplied target id is ignored. It cannot turn the self-service
+    // operation into an access-management mutation.
+    await expect(reception.mutation(api.domain.mutate, operation("users.profile.update", { name: "Reception Profile", userId: "auth-manager" }))).resolves.toMatchObject({ id: "auth-reception", name: "Reception Profile" });
+    await expect(reception.query(api.domain.query, operation("users.profile.get"))).resolves.toMatchObject({ id: "auth-reception", name: "Reception Profile" });
+    await expect(manager.query(api.domain.query, operation("users.profile.get"))).resolves.toMatchObject({ id: "auth-manager", name: "Manager Profile" });
+
+    const searchResults = await reception.query(api.domain.query, operation("workspace.search", { search: "settings" })) as Array<{ href?: string }>;
+    expect(searchResults).toEqual(expect.arrayContaining([expect.objectContaining({ href: "/settings" })]));
+
+    // The explicit local name marker survives a later Clerk bootstrap using
+    // the provider's stale name.
+    await expect(reception.mutation(api.users.ensureCurrent, { fullName: "Stale Provider Name" })).resolves.toMatchObject({ synced: true });
+    await expect(reception.query(api.domain.query, operation("users.profile.get"))).resolves.toMatchObject({ name: "Reception Profile" });
+
+    // Tenant selection remains enforced by requireActor, even for a personal
+    // profile operation.
+    await expectCode(reception.query(api.domain.query, operation("users.profile.get", {}, { organizationId: "org-auth-b" })), "FORBIDDEN");
+    await expectCode(reception.mutation(api.domain.mutate, operation("settings.organization.update", { name: "Should not change the gym" })), "FORBIDDEN");
+
+    await t.run(async (ctx) => {
+      const user = await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", "auth-reception")).unique();
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-auth-a")).unique();
+      if (!user || !organization) throw new Error("profile authorization fixtures missing");
+      const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organization._id).eq("userId", user._id)).unique();
+      if (!membership) throw new Error("profile membership fixture missing");
+      await ctx.db.patch(membership._id, { active: false, updatedAt: Date.now() });
+    });
+    await expectCode(reception.query(api.domain.query, operation("users.profile.get")), "FORBIDDEN");
   });
 });

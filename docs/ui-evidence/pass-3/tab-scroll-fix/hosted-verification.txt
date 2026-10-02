@@ -1,0 +1,5 @@
+Source: b413d08
+Deployment: dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg
+Target: protected mock Preview
+Checks: horizontal wheel isolation; bounded recovery at 30fps; live fine-to-coarse pointer emulation; repeated native swipes; unchanged tab selection during swipes; tab activation and branch picker afterward.
+Result: 1 passed (9.1s total; test 8.7s).

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isQuietHours, triggerMatches } from "./automations";
+import { automationAttentionHref, isQuietHours, triggerMatches } from "./automations";
 
 describe("automation scheduling invariants", () => {
+  it("routes manager attention to an existing record or immutable audit history", () => {
+    expect(automationAttentionHref("member-1")).toBe("/members/member-1");
+    expect(automationAttentionHref(undefined, "lead-1")).toBe("/crm/leads/lead-1");
+    expect(automationAttentionHref()).toBe("/audit?category=automations");
+  });
+
   it("handles quiet hours that cross midnight in the tenant timezone", () => {
     expect(isQuietHours("Asia/Amman", "22:00", "08:00", new Date("2026-08-04T20:30:00.000Z"))).toBe(true);
     expect(isQuietHours("Asia/Amman", "22:00", "08:00", new Date("2026-08-04T10:00:00.000Z"))).toBe(false);

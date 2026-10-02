@@ -296,9 +296,9 @@ describe("TODO-006 persisted money and staff handler matrix", () => {
     await expect(owner.mutation(api.domain.mutate, operation("memberships.sale", { memberId: "member-a-date", planId: "plan-a", startDate: "2099-01-01", overrideReason: "Member requested a deferred start." }))).resolves.toMatchObject({ membership: { memberId: "member-a-date" } });
 
     const [aFirst, aSecond, bFirst] = await Promise.all([
-      sales.mutation(api.domain.mutate, operation("members.create", { fullName: "Concurrent A one", phone: "+962790000911", homeBranchId: "branch-a1" })),
-      sales.mutation(api.domain.mutate, operation("members.create", { fullName: "Concurrent A two", phone: "+962790000912", homeBranchId: "branch-a1" })),
-      foreign.mutation(api.domain.mutate, operation("members.create", { fullName: "Concurrent B one", phone: "+962790000913", homeBranchId: "branch-b1" })),
+      sales.mutation(api.domain.mutate, operation("members.create", { fullName: "Concurrent A one", phone: "+962790000911", gender: "male", homeBranchId: "branch-a1" })),
+      sales.mutation(api.domain.mutate, operation("members.create", { fullName: "Concurrent A two", phone: "+962790000912", gender: "male", homeBranchId: "branch-a1" })),
+      foreign.mutation(api.domain.mutate, operation("members.create", { fullName: "Concurrent B one", phone: "+962790000913", gender: "male", homeBranchId: "branch-b1" })),
     ]) as [{ member: { memberNumber: string; id: string } }, { member: { memberNumber: string; id: string } }, { member: { memberNumber: string; id: string } }];
     expect(new Set([aFirst.member.memberNumber, aSecond.member.memberNumber]).size).toBe(2);
     expect(aFirst.member.memberNumber).toMatch(/^A1-100\d$/);

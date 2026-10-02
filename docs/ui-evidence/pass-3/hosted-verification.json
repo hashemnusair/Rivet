@@ -1,0 +1,55 @@
+{
+  "source": "ce264d3",
+  "target": "mock Preview",
+  "width": 390,
+  "routes": [
+    {
+      "route": "/checklists?branch=10000000-0000-4a00-8a00-000000000002",
+      "status": 200,
+      "title": "Daily checklist",
+      "overflow": false
+    },
+    {
+      "route": "/operations?branch=10000000-0000-4a00-8a00-000000000002",
+      "status": 200,
+      "title": "Stock & purchasing",
+      "overflow": false
+    },
+    {
+      "route": "/operations?tab=orders&branch=10000000-0000-4a00-8a00-000000000002",
+      "status": 200,
+      "title": "Stock & purchasing",
+      "overflow": false
+    },
+    {
+      "route": "/operations?tab=suppliers&branch=10000000-0000-4a00-8a00-000000000002",
+      "status": 200,
+      "title": "Stock & purchasing",
+      "overflow": false
+    },
+    {
+      "route": "/operations?tab=equipment&branch=10000000-0000-4a00-8a00-000000000002",
+      "status": 200,
+      "title": "Stock & purchasing",
+      "overflow": false
+    },
+    {
+      "route": "/maintenance?branch=10000000-0000-4a00-8a00-000000000002",
+      "status": 200,
+      "title": "Maintenance",
+      "overflow": false
+    },
+    {
+      "route": "/operations/payables?branch=10000000-0000-4a00-8a00-000000000002",
+      "status": 200,
+      "title": "Payables",
+      "overflow": false
+    },
+    {
+      "route": "/operations/payables/payments/[paymentId]",
+      "confirmation": true,
+      "reasonRequired": true
+    }
+  ],
+  "pageErrors": []
+}

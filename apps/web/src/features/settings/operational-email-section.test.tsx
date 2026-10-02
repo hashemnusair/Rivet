@@ -20,14 +20,14 @@ describe("OperationalEmailSection", () => {
     expect(disabledOperationalEmailKinds(["receipt"], ["receipt"])).toEqual([]);
   });
 
-  it("separates owner-configurable member service preferences from locked platform notices", async () => {
+  it("separates the emails a gym can choose from the RIVET emails it cannot turn off", async () => {
     await renderWithApp(<OperationalEmailSection />);
-    expect(await screen.findByRole("heading", { name: "Member service email" })).toBeInTheDocument();
-    expect(screen.getByText("Mandatory RIVET platform notices")).toBeInTheDocument();
-    expect(screen.getByText("Platform invoice issued")).toBeInTheDocument();
-    expect(screen.getByText("Subscription suspended")).toBeInTheDocument();
-    expect(screen.queryByRole("checkbox", { name: "Platform invoice issued" })).not.toBeInTheDocument();
-    expect(screen.getByText(/cannot activate the global worker or Resend delivery/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Emails to members" })).toBeInTheDocument();
+    expect(screen.getByText("RIVET emails you cannot turn off")).toBeInTheDocument();
+    expect(screen.getByText("RIVET invoice sent")).toBeInTheDocument();
+    expect(screen.getByText("RIVET subscription suspended")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "RIVET invoice sent" })).not.toBeInTheDocument();
+    expect(screen.getByText(/RIVET has turned off email sending for now/i)).toBeInTheDocument();
   });
 
   it("does not gate an ordinary service preference enablement with a reason", async () => {
@@ -35,8 +35,8 @@ describe("OperationalEmailSection", () => {
     await renderWithApp(<OperationalEmailSection />);
     const receipt = await screen.findByRole("checkbox", { name: "Payment receipt" });
     await user.click(receipt);
-    expect(screen.getByRole("button", { name: "Save member service preferences" })).toBeEnabled();
-    expect(screen.getByLabelText("Change note (optional)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save email settings" })).toBeEnabled();
+    expect(screen.getByLabelText("Note (optional)")).toBeInTheDocument();
   });
 
   it("requires a reason for disable-only and same-count swap changes", async () => {
@@ -45,7 +45,7 @@ describe("OperationalEmailSection", () => {
     const update = vi.spyOn(api, "updateOperationalEmailSettings");
     const receipt = await screen.findByRole("checkbox", { name: "Payment receipt" });
     await user.click(screen.getByRole("checkbox", { name: "Payment receipt" }));
-    await user.click(screen.getByRole("button", { name: "Save member service preferences" }));
+    await user.click(screen.getByRole("button", { name: "Save email settings" }));
     await waitFor(() => {
       expect(update).toHaveBeenCalledWith({ enabledKinds: ["payment_receipt"], reason: "" });
       expect(receipt).toHaveAttribute("data-state", "checked");
@@ -53,27 +53,27 @@ describe("OperationalEmailSection", () => {
     });
 
     await user.click(screen.getByRole("checkbox", { name: "Payment receipt" }));
-    expect(screen.getByLabelText(/Reason for disabling service messages/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save member service preferences" })).toBeDisabled();
+    expect(screen.getByLabelText(/Why are you turning off these emails/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save email settings" })).toBeDisabled();
 
-    await user.click(screen.getByRole("checkbox", { name: "Trial status" }));
-    expect(screen.getByLabelText(/Reason for disabling service messages/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save member service preferences" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "Trial update" }));
+    expect(screen.getByLabelText(/Why are you turning off these emails/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save email settings" })).toBeDisabled();
   });
 
-  it("keeps a saved no-op update routine and ungated", async () => {
+  it("returns to a clean state after saving", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<OperationalEmailSection />);
     const update = vi.spyOn(api, "updateOperationalEmailSettings");
     const receipt = await screen.findByRole("checkbox", { name: "Payment receipt" });
     await user.click(receipt);
-    await user.click(screen.getByRole("button", { name: "Save member service preferences" }));
+    await user.click(screen.getByRole("button", { name: "Save email settings" }));
     await waitFor(() => {
       expect(update).toHaveBeenCalledWith({ enabledKinds: ["payment_receipt"], reason: "" });
       expect(receipt).toHaveAttribute("data-state", "checked");
       expect(screen.getByText(/Last changed by/)).toBeInTheDocument();
     });
-    expect(screen.getByLabelText("Change note (optional)")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save member service preferences" })).toBeEnabled();
+    expect(screen.getByLabelText("Note (optional)")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save email settings" })).not.toBeInTheDocument();
   });
 });

@@ -13,7 +13,7 @@ async function signIn(page: Page, persona: "Owner" | "Manager" | "Sales" | "Rece
   // Every sign-in starts at /login; the gym team has its own portal beneath it.
   await page.goto("/login/gym");
   await page.getByRole("radio", { name: new RegExp(persona, "i") }).click();
-  await page.getByRole("button", { name: /^Open .+ workspace$/i }).click();
+  await page.getByRole("button", { name: /^Sign in as .+$/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
 }
 
@@ -36,7 +36,8 @@ test.describe("member lookup → renewal → payment → timeline", () => {
 
     // ---- Work the expiring-members queue ----------------------------------
     await page.goto("/crm/queues");
-    await page.getByRole("button", { name: /Expiring/ }).click();
+    await page.getByRole("button", { name: "Renewals", exact: true }).click();
+    await page.getByTestId("follow-up-filters").getByRole("button", { name: "Ending soon", exact: true }).click();
 
     const firstRow = page.locator("li > button").filter({ has: page.locator("span") }).first();
     await expect(firstRow).toBeVisible();
@@ -68,7 +69,8 @@ test.describe("member lookup → renewal → payment → timeline", () => {
   test("changes an expiring member's plan with an explicit successor term", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/crm/queues");
-    await page.getByRole("button", { name: /Expiring/ }).click();
+    await page.getByRole("button", { name: "Renewals", exact: true }).click();
+    await page.getByTestId("follow-up-filters").getByRole("button", { name: "Ending soon", exact: true }).click();
     const firstRow = page.locator("li > button").filter({ has: page.locator("span") }).first();
     await firstRow.click();
     await page.getByTestId("follow-up-panel").getByRole("link", { name: "Open member record" }).click();
@@ -77,13 +79,13 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     await page.getByRole("button", { name: "More actions" }).click();
     await page.getByRole("menuitem", { name: /Change plan/ }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText(/no proration/i);
+    await expect(dialog).toContainText(/nothing is taken off for unused days/i);
     await dialog.getByLabel("New membership plan").click();
     await page.getByRole("option").first().click();
-    await dialog.getByPlaceholder("e.g. Member moving to unlimited access at next renewal").fill("Member selected a different tier at renewal.");
+    await dialog.getByPlaceholder("For example: Member moving to unlimited access at next renewal").fill("Member selected a different tier at renewal.");
     await dialog.getByRole("button", { name: "Change plan" }).click();
     await expect(dialog).toBeHidden();
-    await expect(page.getByText(/successor term created/i)).toBeVisible();
+    await expect(page.getByText(/a new membership was added for the new plan/i)).toBeVisible();
   });
 
   test("reception collects an outstanding balance and the receipt is reachable", async ({ page }) => {
@@ -92,24 +94,30 @@ test.describe("member lookup → renewal → payment → timeline", () => {
     // Find a member who owes money.
     await page.goto("/members");
     await page.getByLabel("Membership status filter").click();
-    await page.getByRole("option", { name: /has balance due/i }).click();
+    await page.getByRole("option", { name: /owes money/i }).click();
 
+    // Only click once the filtered result set is on screen: a balance-due row
+    // shows a positive "JOD …" amount, while unfiltered rows show "0.000".
+    // Clicking earlier races the refetch and can open a paid member.
     const row = page.getByTestId("member-row").first();
-    await expect(row).toBeVisible();
+    await expect(row).toContainText(/JOD/);
     await row.click();
 
     // Collect the balance from the member header.
     await page.getByTestId("collect-outstanding").click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText(/outstanding balance/i);
+    await expect(dialog).toContainText(/unpaid/i);
     await dialog.getByTestId("confirm-payment").click();
+    // The dialog confirms what the server recorded before it closes.
+    await expect(dialog.getByTestId("payment-collected")).toContainText(/Receipt R-\d+/);
+    await dialog.getByTestId("payment-done").click();
     await expect(dialog).toBeHidden();
 
     // The balance is settled and the timeline records the payment.
     await expect(page.getByText(/payment collected/i).first()).toBeVisible();
 
     // The receipt opens from the timeline and is a real printable document.
-    await page.getByRole("link", { name: /^receipt$/i }).first().click();
+    await page.getByRole("link", { name: /^view receipt$/i }).first().click();
     await expect(page).toHaveURL(/\/payments\/receipts\//);
     const receipt = page.locator("#receipt-print");
     await expect(receipt).toBeVisible();
@@ -119,6 +127,20 @@ test.describe("member lookup → renewal → payment → timeline", () => {
 });
 
 test.describe("reception check-in", () => {
+  test("treats a missing branch as operating scope and remembers the desk", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.goto("/reception");
+
+    await expect(page.getByRole("heading", { name: "Choose a branch to open Reception" })).toBeVisible();
+    await expect(page.getByText("You don't have access")).toHaveCount(0);
+    await page.getByRole("button", { name: "Forge — Abdoun" }).click();
+    await expect(page.getByTestId("reception-search")).toBeFocused();
+
+    await page.reload();
+    await expect(page.getByTestId("reception-search")).toBeFocused();
+    await expect(page.getByText("Front desk · Forge — Abdoun")).toBeVisible();
+  });
+
   test("looks a member up, checks them in, and updates today's attendance log", async ({ page }) => {
     await signIn(page, "Reception");
     // Reception signs straight into the console, not the dashboard.
@@ -153,7 +175,7 @@ test.describe("reception check-in", () => {
       await expect(page.getByText(/checked in ·/i)).toBeVisible();
       await expect(page.getByTestId("next-member")).toBeVisible();
       const activity = page.getByRole("complementary", { name: "Branch activity" });
-      await expect(activity.getByText("Today's check-in log")).toBeVisible();
+      await expect(activity.getByText("Who checked in today")).toBeVisible();
       await expect(activity).toContainText(memberName.trim());
     } else {
       // A blocked member offers a remedy instead of entry.
@@ -175,28 +197,30 @@ test.describe("role restrictions", () => {
   test("describes the actual dashboard branch scope", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/dashboard");
-    await expect(page.getByText("All 2 branches, consolidated.")).toBeVisible();
+    await expect(page.getByText("All 2 branches together.").first()).toBeVisible();
   });
 
-  test("hides finance and system areas from reception", async ({ page }) => {
+  test("keeps finance restricted while exposing personal Settings to reception", async ({ page }) => {
     await signIn(page, "Reception");
     const nav = page.getByRole("navigation").first();
     await expect(nav.getByRole("link", { name: /^Payments$/ })).toHaveCount(0);
-    await expect(nav.getByRole("link", { name: /^Audit log$/ })).toHaveCount(0);
-    await expect(nav.getByRole("link", { name: /^Settings$/ })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: /^Activity log$/ })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
+    await page.goto("/settings?section=organization");
+    await expect(page.getByText(/needs the “Manage settings” access/i)).toBeVisible();
   });
 
   test("refuses the transaction ledger by URL, not just by hiding the link", async ({ page }) => {
     await signIn(page, "Reception");
     await page.goto("/payments");
-    await expect(page.getByText(/not allowed for this role/i)).toBeVisible();
+    await expect(page.getByText(/you don't have access/i)).toBeVisible();
   });
 
   test("gives the owner the simplified finance and settings entry points", async ({ page }) => {
     await signIn(page, "Owner");
     const nav = page.getByRole("navigation").first();
     await expect(nav.getByRole("link", { name: /^Payments$/ })).toBeVisible();
-    await expect(nav.getByRole("link", { name: /^Audit log$/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /^Activity log$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Support$/ })).toBeVisible();
     await expect(nav.getByRole("link", { name: /^Settings$/ })).toBeVisible();
   });
@@ -226,8 +250,12 @@ test.describe("sidebar layout", () => {
       }));
 
     const expanded = await measure();
-    await page.getByRole("button", { name: "Collapse sidebar" }).click({ force: true });
-    await page.waitForTimeout(250);
+    const collapseButton = page.getByRole("button", { name: "Collapse sidebar" });
+    await expect(sidebar).toHaveCSS("width", "228px");
+    await expect(collapseButton).toBeVisible();
+    await collapseButton.click();
+    await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+    await expect(sidebar).toHaveCSS("width", "60px");
     const collapsed = await measure();
 
     expect(collapsed.width).toBe(60);
@@ -252,24 +280,183 @@ test.describe("personal training operations", () => {
     await page.goto("/pt");
     await expect(page.getByRole("heading", { name: "Personal training" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Intro credits", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Trainer", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Package", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add trainer", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add package", exact: true })).toBeVisible();
+  });
+});
+
+test.describe("members filtering", () => {
+  test("keeps the wide toolbar on one row and reflows without overflow on phones", async ({ page }) => {
+    await signIn(page, "Owner");
+    await page.setViewportSize({ width: 1180, height: 900 });
+    await page.goto("/members");
+
+    const toolbar = page.getByTestId("member-filters");
+    await expect(toolbar).toBeVisible();
+    const wideMetrics = await toolbar.evaluate((node) => ({
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      rowTops: Array.from(node.children, (child) => Math.round(child.getBoundingClientRect().top)),
+    }));
+    expect(new Set(wideMetrics.rowTops).size).toBe(1);
+    expect(wideMetrics.scrollWidth).toBeLessThanOrEqual(wideMetrics.clientWidth + 1);
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    const tabletMetrics = await toolbar.evaluate((node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth }));
+    expect(tabletMetrics.scrollWidth).toBeLessThanOrEqual(tabletMetrics.clientWidth + 1);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const phoneMetrics = await toolbar.evaluate((node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth }));
+    expect(phoneMetrics.scrollWidth).toBeLessThanOrEqual(phoneMetrics.clientWidth + 1);
+    const toolbarBox = await toolbar.boundingBox();
+    const searchBox = await page.getByTestId("member-search").boundingBox();
+    expect(toolbarBox).not.toBeNull();
+    expect(searchBox).not.toBeNull();
+    expect(searchBox!.width).toBeGreaterThanOrEqual(toolbarBox!.width - 1);
+    await expect(page.getByRole("button", { name: "Save current view" })).toBeVisible();
   });
 });
 
 test.describe("settings navigation", () => {
-  test("keeps the full settings tab row reachable by keyboard at tablet width", async ({ page }) => {
+  test("uses the compact selector on tablets and the searchable rail on desktop", async ({ page }) => {
     await signIn(page, "Owner");
-    await page.setViewportSize({ width: 900, height: 900 });
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/settings");
-    const tabs = page.getByRole("tablist");
-    await expect(tabs).toBeVisible();
-    const dimensions = await tabs.evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
-    expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth);
-    await page.getByRole("tab", { name: "Organization" }).focus();
-    await page.keyboard.press("End");
-    await expect(page.getByRole("tab", { name: "Rules & hours" })).toBeFocused();
-    await expect(page.getByRole("tabpanel")).toContainText(/rules|hours|operating/i);
+
+    const rootScrollPhysics = await page.evaluate(() => ({
+      html: getComputedStyle(document.documentElement).overscrollBehaviorY,
+      body: getComputedStyle(document.body).overscrollBehaviorY,
+      coarsePointer: matchMedia("(pointer: coarse)").matches,
+    }));
+    expect(rootScrollPhysics).toEqual({ html: "none", body: "none", coarsePointer: false });
+    await expect(page.getByTestId("app-scroll-shell")).toHaveAttribute("data-overscroll-mode", "damped");
+    await expect(page.getByTestId("app-topbar")).toHaveCSS("position", "sticky");
+    await expect(page.getByTestId("app-topbar").locator("xpath=ancestor::*[@data-testid='app-scroll-shell']")).toHaveCount(0);
+    const topbarBeforePull = await page.getByTestId("app-topbar").boundingBox();
+    const dampedEdge = await page.evaluate(() => {
+      window.scrollTo({ top: 0 });
+      const shell = document.querySelector<HTMLElement>("[data-testid='app-scroll-shell']");
+      const event = new WheelEvent("wheel", { deltaY: -240, cancelable: true });
+      window.dispatchEvent(event);
+      return { prevented: event.defaultPrevented, transform: shell?.style.transform ?? "" };
+    });
+    expect(dampedEdge.prevented).toBe(true);
+    expect(dampedEdge.transform).toMatch(/^translate3d\(0(?:px)?, 7px, 0(?:px)?\)$/);
+    const topbarDuringPull = await page.getByTestId("app-topbar").boundingBox();
+    expect(topbarBeforePull).not.toBeNull();
+    expect(topbarDuringPull).not.toBeNull();
+    expect(topbarDuringPull!.y).toBe(topbarBeforePull!.y);
+    await expect.poll(() => page.getByTestId("app-scroll-shell").evaluate((node) => (node as HTMLElement).style.transform)).toBe("");
+
+    const springRelease = await page.evaluate(async () => {
+      const shell = document.querySelector<HTMLElement>("[data-testid='app-scroll-shell']");
+      if (!shell) throw new Error("Missing app scroll shell");
+      window.scrollTo({ top: 0 });
+      const startedAt = performance.now();
+      window.dispatchEvent(new WheelEvent("wheel", { deltaY: -240, cancelable: true }));
+      const initialTransform = shell.style.transform;
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const returningTransform = shell.style.transform;
+      while (shell.style.transform && performance.now() - startedAt < 500) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+      return {
+        elapsedMs: performance.now() - startedAt,
+        initialTransform,
+        returningTransform,
+        settledTransform: shell.style.transform,
+      };
+    });
+    expect(springRelease.initialTransform).toMatch(/^translate3d\(0(?:px)?, 7px, 0(?:px)?\)$/);
+    expect(springRelease.returningTransform).not.toBe(springRelease.initialTransform);
+    expect(springRelease.settledTransform).toBe("");
+    expect(springRelease.elapsedMs).toBeLessThan(400);
+
+    const mobileSectionPicker = page.getByRole("combobox", { name: "Settings section" });
+    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await expect(page.locator("main").getByText("System", { exact: true })).toHaveCount(0);
+    await expect(mobileSectionPicker).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeHidden();
+    await mobileSectionPicker.click();
+    await page.getByRole("option", { name: "Gym rules" }).click();
+    await page.evaluate(() => window.scrollTo({ top: 320 }));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect.poll(async () => {
+      const y = (await mobileSectionPicker.boundingBox())?.y ?? -1;
+      return y >= 63 && y <= 66;
+    }).toBe(true);
+
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.evaluate(() => window.scrollTo({ top: 0 }));
+
+    const sectionPicker = page.getByRole("combobox", { name: "Settings section" });
+    await expect(sectionPicker).toBeVisible();
+    await expect(page.getByRole("tablist")).toHaveCount(0);
+    await sectionPicker.click();
+    await page.getByRole("option", { name: "Gym rules" }).click();
+    await expect(page).toHaveURL(/section=operations/);
+    await expect(page.getByRole("tabpanel")).toContainText(/entry and access|class booking/i);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const rail = page.getByRole("tablist");
+    await expect(rail).toBeVisible();
+    await expect(rail).toHaveAttribute("aria-orientation", "vertical");
+    const desktopTopbar = await page.getByTestId("app-topbar").boundingBox();
+    const desktopBrandRow = await page.getByTestId("sidebar-brand-row").boundingBox();
+    expect(desktopTopbar).not.toBeNull();
+    expect(desktopBrandRow).not.toBeNull();
+    expect(desktopTopbar!.y).toBe(desktopBrandRow!.y);
+    expect(desktopTopbar!.height).toBe(desktopBrandRow!.height);
+    const settingsNavigation = page.getByRole("navigation", { name: "Settings sections" });
+    const verticalFit = await settingsNavigation.evaluate((node) => ({ scrollHeight: node.scrollHeight, clientHeight: node.clientHeight }));
+    expect(verticalFit.scrollHeight).toBeLessThanOrEqual(verticalFit.clientHeight + 1);
+    // The rail never scrolls sideways — sections stack vertically.
+    const dimensions = await rail.evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+    // Search narrows by synonyms, not just exact labels.
+    await page.getByRole("textbox", { name: "Search settings" }).fill("freeze");
+    await expect(page.getByRole("tab")).toHaveCount(1);
+    await expect(page.getByRole("tab", { name: "Gym rules" })).toBeVisible();
+
+    // Selecting a rail item must not jump the page and move the remaining touch targets.
+    await page.evaluate(() => window.scrollTo({ top: 360 }));
+    const scrollBeforeSelection = await page.evaluate(() => window.scrollY);
+    expect(scrollBeforeSelection).toBeGreaterThan(0);
+    await expect.poll(async () => {
+      const y = (await page.getByRole("heading", { name: "Settings" }).boundingBox())?.y ?? -1;
+      return y >= 63 && y <= 66;
+    }).toBe(true);
+    await expect.poll(async () => {
+      const y = (await settingsNavigation.boundingBox())?.y ?? -1;
+      return y >= 139 && y <= 141;
+    }).toBe(true);
+    await page.getByRole("tab", { name: "Gym rules" }).click();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBeforeSelection);
+  });
+
+  test("keeps native elasticity and pull-to-refresh available on touch-first mobile", async ({ browser, baseURL }) => {
+    const mobileContext = await browser.newContext({
+      baseURL,
+      hasTouch: true,
+      isMobile: true,
+      viewport: { width: 390, height: 844 },
+    });
+    const mobilePage = await mobileContext.newPage();
+
+    try {
+      await signIn(mobilePage, "Owner");
+      await mobilePage.goto("/settings");
+
+      const rootScrollPhysics = await mobilePage.evaluate(() => ({
+        html: getComputedStyle(document.documentElement).overscrollBehaviorY,
+        body: getComputedStyle(document.body).overscrollBehaviorY,
+        coarsePointer: matchMedia("(pointer: coarse)").matches,
+      }));
+      expect(rootScrollPhysics).toEqual({ html: "auto", body: "auto", coarsePointer: true });
+      await expect(mobilePage.getByTestId("app-scroll-shell")).toHaveAttribute("data-overscroll-mode", "native");
+    } finally {
+      await mobileContext.close();
+    }
   });
 });
 
@@ -300,12 +487,12 @@ test.describe("CRM lead capture", () => {
     await expect(view.getByRole("button", { name: "Board" })).toHaveAttribute("aria-pressed", "true");
     await view.getByRole("button", { name: "List" }).click();
     await expect(view.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
-    const leadLink = page.locator('a[href^="/crm/leads/"]').first();
+    const leadLink = page.locator('a[href^="/crm/leads/"]:visible').first();
     await expect(leadLink).toBeVisible();
     await leadLink.click();
     await expect(page).toHaveURL(/\/crm\/leads\//);
-    await expect(page.getByRole("list", { name: "Simple sales progress" })).toContainText("Trial");
-    await expect(page.getByRole("list", { name: "Simple sales progress" })).toContainText("Membership sale");
+    await expect(page.getByRole("list", { name: "Sales steps" })).toContainText("Trial");
+    await expect(page.getByRole("list", { name: "Sales steps" })).toContainText("Membership sale");
     await expect(page.getByRole("button", { name: "Create offer" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Convert to member/i })).toHaveCount(0);
   });
@@ -315,14 +502,24 @@ test.describe("sensitive actions are audited", () => {
   test("a manager override appears in the audit log with its reason", async ({ page }) => {
     await signIn(page, "Manager");
 
-    // Find an expired member so the check-in is blocked.
+    // Find an expired member so the check-in is blocked. Reception is a
+    // concrete branch lane that fails closed on the organization-wide scope,
+    // so pick one branch first — after this point every navigation stays
+    // client-side so the in-memory selection and mock tenant survive.
     await page.goto("/members");
+    await page.getByRole("combobox", { name: "Active branch" }).click();
+    await page.getByRole("option", { name: "Forge — Abdoun" }).click();
     await page.getByLabel("Membership status filter").click();
     await page.getByRole("option", { name: /^Expired$/ }).click();
-    const number = await page.getByTestId("member-row").first().locator("p.font-mono").first().innerText();
+    await expect(page).toHaveURL(/membership=expired/);
+    const expiredRow = page.getByTestId("member-row").first();
+    await expect(expiredRow).toContainText("Expired");
+    const memberNumber = await expiredRow.locator("p.font-mono").first().innerText();
+    const phone = await expiredRow.locator('td[dir="ltr"]').first().innerText();
 
-    await page.goto("/reception");
-    await page.getByTestId("reception-search").fill(number.trim());
+    await page.getByRole("link", { name: "Reception", exact: true }).click();
+    await expect(page).toHaveURL(/\/reception/);
+    await page.getByTestId("reception-search").fill(phone.trim());
     await expect(page.getByTestId("checkin-verdict")).toHaveAttribute("data-decision", "blocked");
 
     await page.getByTestId("override-checkin").click();
@@ -335,8 +532,12 @@ test.describe("sensitive actions are audited", () => {
     // memory for the page's lifetime, so a full reload would re-seed it and
     // discard the override. Audit is intentionally a deep route, not a
     // primary-navigation item.
-    await page.getByRole("link", { name: "RIVET home" }).click();
-    await page.getByRole("link", { name: /^Audit trail$/ }).click();
+    // The tenant shell uses the organization name for the brand link (for
+    // example, "Forge Fitness Club home"), so it is intentionally not a
+    // stable cross-tenant contract. The primary navigation's Dashboard link
+    // is the accessible, tenant-independent route back to the manager home.
+    await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+    await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Activity log", exact: true }).click();
     await expect(page).toHaveURL(/\/audit/);
     await page.getByLabel("Category filter").click();
     await page.getByRole("option", { name: /check-?ins/i }).click();
@@ -346,24 +547,28 @@ test.describe("sensitive actions are audited", () => {
     const row = page
       .getByRole("button", { expanded: false })
       .filter({ hasText: /override/i })
-      .filter({ hasText: number.trim() })
+      .filter({ hasText: memberNumber.trim() })
       .first();
     await expect(row).toBeVisible();
     await row.click();
 
-    // The expanded detail carries the reason and says the trail is append-only.
+    // The expanded detail carries the reason and a reference number.
     await expect(page.getByText(reason)).toBeVisible();
-    await expect(page.getByText(/append-only/i)).toBeVisible();
+    await expect(page.getByText(/^Reference/)).toBeVisible();
   });
 });
 
 test.describe("internationalization", () => {
-  test("flips the whole shell to right-to-left", async ({ page }) => {
+  test("supports the native manual RTL layout without changing the language", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/members");
 
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
-    await page.getByRole("button", { name: /right-to-left/i }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await page.getByRole("button", { name: "Demo controls" }).click();
+    const directionToggle = page.getByRole("switch", { name: "Manual RTL layout" });
+    await directionToggle.click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
 
     // The table still renders and the sidebar has moved to the right edge.
@@ -374,7 +579,8 @@ test.describe("internationalization", () => {
     expect(box!.x).toBeGreaterThan(viewport.width / 2);
 
     // And back again.
-    await page.getByRole("button", { name: /left-to-right|right-to-left/i }).click();
+    await directionToggle.click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
   });
 });

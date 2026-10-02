@@ -4,8 +4,104 @@
     {
       "name": "gymos-web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
+      "runtimeArgs": [
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "web-mock",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "dev",
+        "--webpack",
+        "-p",
+        "3210"
+      ],
+      "port": 3210
+    },
+    {
+      "name": "web-mock-pass7",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "NEXT_DIST_DIR=.next-playwright/pass7",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "dev",
+        "--webpack",
+        "-p",
+        "3310"
+      ],
+      "port": 3310
+    },
+    {
+      "name": "web-mock-classes-pt",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "NEXT_DIST_DIR=.next-playwright/classes-pt",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "dev",
+        "--webpack",
+        "-p",
+        "3410"
+      ],
+      "port": 3410
+    },
+    {
+      "name": "web-pass6-e2e",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "NEXT_DIST_DIR=.next-pass6",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "dev",
+        "--webpack",
+        "-p",
+        "3160"
+      ],
+      "port": 3160
+    },
+    {
+      "name": "web-mock-finops",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "NEXT_DIST_DIR=.next-playwright/finops",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "dev",
+        "--webpack",
+        "-p",
+        "3510"
+      ],
+      "port": 3510
     }
   ]
 }

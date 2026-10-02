@@ -1,0 +1,522 @@
+# Go-live decisions: messaging, operational email, legal documents, pricing
+
+Written 3 September 2026. This is the working sheet for the four items that
+were "live but provisional" in RIVET: WhatsApp/SMS reminders, operational
+email, the legal documents and e-signature, and the pricing tiers. Each
+section says what the product does today, what must be decided, and what
+must be true before the switch is flipped. Decisions marked **[decide]**
+need Elias or Hashem to sign the table at the end. Keep secret values,
+provider credentials and applicant details out of this file.
+
+### Decisions recorded on 14 September 2026 (Elias)
+
+- **Channel: WhatsApp only.** RIVET does not send SMS. The sender is RIVET's
+  own business number, +962 77 837 8608 (`RIVET_CONTACT.phoneE164`), which
+  is registered with WhatsApp Business. The code retired the SMS channel the
+  same day (section 1).
+- **Operational email sends from `noreply@rivetjo.com`.** Clerk keeps
+  sending its own sign-in and invitation emails from its configured sender;
+  every RIVET operational email uses the Resend sender above (section 2).
+- **Convex capacity is resolved** as reported by Elias; the earlier
+  Free-plan warning is no longer a launch gate.
+- **The Production test gym is to be removed** and Production started
+  fresh. The guarded purge procedure is in
+  `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`; nothing was deleted by the
+  session that recorded this decision.
+- Still open from the lists below: who pays message costs per tier, the
+  Friday prayer window, the pricing table in section 4, and the WhatsApp
+  Business Platform steps (Meta verification, template approval, inbound
+  STOP webhook).
+
+## 1. WhatsApp reminders
+
+### What the product does today
+
+- Reminders run in a **sandbox ledger**. Automation rules and the renewal
+  journey create `messageDelivery` and `renewalDeliveries` rows with the
+  channel the gym asked for, the language of the member, consent facts,
+  quiet-hour decisions, and an attempt history, and nothing leaves RIVET.
+- Two switches now exist and **both must be on** before a member receives
+  anything:
+  1. `RIVET_MESSAGING_MODE` on the server (`off` by default; `sandbox`
+     redirects every message to `RIVET_MESSAGING_SANDBOX_TO`; `allowlist`
+     sends only to `RIVET_MESSAGING_ALLOWLIST`; `live` sends to members).
+  2. The gym's own **Settings → Notifications → External delivery** switch.
+- The provider seam is **Twilio's WhatsApp sender** (`RIVET_MESSAGING_PROVIDER=twilio`,
+  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, which
+  should be `whatsapp:+962778378608` once the number is registered as an API
+  sender). A minute worker leases due rows for live gyms, renders the body,
+  calls Twilio, and records the provider id, the mode and the number actually
+  used. Transient failures retry at 1, 5 and 30 minutes; a final failure
+  notifies the gym's managers.
+- **WhatsApp only, since 14 September 2026.** There is no SMS sender and no
+  `TWILIO_MESSAGING_SERVICE_SID`. The catalogue templates are WhatsApp-only,
+  the renewal journey always picks WhatsApp (or the one-day staff call task),
+  and any row still queued on the `sms` channel from before that date is
+  leased, refused with the recorded reason "SMS was retired on 14 September
+  2026; RIVET sends WhatsApp only", and written to the member's timeline as
+  not sent. Staff can still record by hand that they texted someone from a
+  phone; that is a contact note, not a RIVET message.
+- **Quiet hours** are per gym (default 22:00–08:00, gym timezone). A
+  message that falls inside the window is deferred to the end of the window,
+  never dropped, for live and sandbox gyms alike, so the sandbox ledger shows
+  the decision a live gym would get (7 September 2026; earlier sandbox rows
+  read "suppressed: Tenant quiet hours").
+- **What the member record shows.** When the worker gets a terminal answer it
+  writes a `message` timeline event on the member (or lead): *accepted by the
+  provider* (never "delivered"; sandbox mode says the message went to the
+  sandbox number), *failed* after the retry budget, or *not sent* with the
+  suppression reason. A final failure on either queue notifies the gym's
+  owners and managers with a link to the person, not to Settings.
+- Phone numbers are normalised to E.164 with Jordan (+962) as the default.
+- Every message names the gym. Marketing-class messages carry the opt-out
+  line ("Reply STOP to stop these messages" / "أرسل إيقاف لإيقاف هذه الرسائل").
+
+### Template catalogue (code-owned, `convex/messagingTemplates.ts`)
+
+| Key | Family | Channels | Variables |
+|---|---|---|---|
+| `renewal_7d` | Renewal, 7 days before | WhatsApp | member_name, gym_name, end_date, branch_name |
+| `renewal_3d` | Renewal, 3 days before | WhatsApp | member_name, gym_name, end_date |
+| `renewal_today` | Renewal, ends today | WhatsApp | member_name, gym_name, branch_name |
+| `renewal_expired_3d` | Renewal, 3 days after expiry | WhatsApp | member_name, gym_name, end_date |
+| `payment_due_3d` | Payment due in 3 days | WhatsApp | member_name, gym_name, amount, due_date |
+| `payment_due_today` | Payment due today | WhatsApp | member_name, gym_name, amount |
+| `payment_overdue_3d` | Payment 3 days overdue | WhatsApp | member_name, gym_name, amount |
+| `class_booking_confirmation` | Class booked | WhatsApp | member_name, gym_name, class_name, class_time, branch_name |
+| `class_reminder` | Class in 2 hours | WhatsApp | member_name, gym_name, class_name, class_time |
+| `entry_pass` | Entry pass | WhatsApp | member_name, gym_name, pass_link |
+
+All ten are Meta **utility** templates (operational, no marketing consent
+needed) in Arabic and English. The catalogue version is
+`1.0 · 3 September 2026`; the settings page shows the full text.
+
+### Decisions needed
+
+- **Provider: decided 14 September 2026.** WhatsApp only, through the
+  implemented Twilio WhatsApp sender; no SMS aggregator. The Meta Cloud API
+  stays available as a later swap behind the same seam (one more `send`
+  function; the ledger does not change).
+- **[decide] WhatsApp Business Platform onboarding.** The number is already a
+  WhatsApp Business account. Sending through Twilio or the Cloud API means
+  registering it as a WhatsApp Business *Platform* sender under Meta business
+  verification of the RIVET legal entity, with the display name and template
+  approval for the ten catalogue templates (submit both languages). Check
+  first whether Meta's app-and-API coexistence is available to the account;
+  without it, API registration moves the number off the WhatsApp Business
+  app on the phone. Budget two to three weeks.
+- **[decide] Inbound STOP / إيقاف.** WhatsApp is the only channel, so the
+  inbound webhook that marks the member `whatsappOptedOut` is now required
+  before `live`; it is not built yet. There is no SMS opt-out to configure.
+- **[decide] Who pays message costs** per tier (included, capped, or passed
+  through). The Terms say "included or passed through as stated in the
+  subscription agreement"; the agreement quote must state it.
+- **[decide] Friday prayer window.** The privacy policy no longer promises
+  it; if RIVET wants it, it becomes a second per-gym quiet window.
+
+### Before flipping `RIVET_MESSAGING_MODE` to `live`
+
+- [ ] Twilio production account and the approved WhatsApp sender
+  (+962 77 837 8608); credentials in the Convex environment, never in the
+  repository
+- [ ] Ten catalogue templates approved by Meta in Arabic and English
+- [ ] `sandbox` for one week against RIVET's own numbers, then `allowlist`
+  with RIVET staff plus one pilot gym for two weeks with zero unexplained
+  failures in the delivery ledger
+- [ ] Inbound WhatsApp STOP handling live
+- [ ] Twilio status webhook (delivered / failed) wired to the attempt
+  history, or accept "accepted by provider" as the final state (documented)
+- [ ] Pilot gym has consent facts on its members and has switched External
+  delivery on knowingly
+- [ ] Runbook: how to set the mode back to `allowlist` in under five minutes
+
+## 2. Operational email
+
+### What the product does today
+
+- `RIVET_EMAIL_MODE` = `off` | `sandbox` | `allowlist` | `live`, read on the
+  server. `off` is the default and the fallback for any unrecognised value.
+  `sandbox` sends everything to `RIVET_EMAIL_SANDBOX_TO` with the original
+  recipient in the subject. `allowlist` sends only to
+  `RIVET_EMAIL_ALLOWLIST` (addresses or `@domain`s) and suppresses the rest
+  with a visible reason. The old `RIVET_OPERATIONAL_EMAIL_LIVE=true` counts
+  as `live` only while the new variable is unset.
+- Gym-controlled member service kinds still require the owner's confirmed
+  preferences; RIVET-controlled platform kinds (invoices, subscription
+  notices, and now the signed and countersigned agreement copies) are
+  mandatory.
+- Every attempt records the mode and the address actually used; Settings →
+  Operational email shows the mode in plain language.
+
+### Before flipping `RIVET_EMAIL_MODE` to `live`
+
+- [x] **Decided 14 September 2026:** the sending address is
+  `noreply@rivetjo.com` (`RESEND_FROM_EMAIL`). Clerk's own sign-in and
+  invitation emails stay on Clerk's configured sender.
+- [ ] SPF, DKIM and DMARC published and verified. Public DNS on 14 September
+  2026 showed the Resend DKIM selector (`resend._domainkey`) and the
+  `send.rivetjo.com` return-path records published, the root SPF pointing at
+  the mailbox provider, and DMARC still at `p=none`; raise it to
+  `p=quarantine` at minimum before `live`.
+- [ ] Resend production key in the Convex environment; webhook secret set
+- [ ] Bounce and complaint webhooks handled (already recorded as delivery
+  events); a hard bounce must mark the address bad before go-live
+- [ ] Templates reviewed in Arabic and English with RIVET's contact details
+- [ ] Reply-to routed to a monitored inbox
+- [ ] Two weeks in `allowlist` with RIVET staff and one pilot gym, zero
+  unexplained failures
+- [ ] Runbook: how to switch back to `allowlist` in under five minutes
+
+## 3. Legal documents and the e-signature
+
+### What exists
+
+| Document | Where | Status |
+|---|---|---|
+| Privacy policy | `/privacy` | Draft 1.1 · 14 September 2026 (WhatsApp-only wording) |
+| Terms of service with the data processing addendum | `/terms` | Draft 1.1 · 14 September 2026 (WhatsApp-only wording) |
+| Subscription agreement, signed at onboarding | blocking modal in the app shell (owner); copy under `/settings?section=agreement`; `/platform/agreements` (RIVET) | Draft 1.1 · 3 September 2026 |
+
+All three are consistent with each other (14-day payment terms, 7-day
+suspension notice, 30-day notice to end, 60-day fee-change notice, 99.5%
+availability target, support 09:00–21:00 Saturday to Thursday, liability
+capped at twelve months of fees, Jordanian law, courts of Amman) and with
+what the platform actually records.
+
+### How the e-signature works
+
+1. A newly provisioned gym's owner signs in; the session says the agreement
+   is required and the app shell opens a modal over the workspace that
+   cannot be closed (no close button, Escape and outside clicks are
+   ignored). Staff are never blocked; they see the workspace as usual.
+2. **Step 1, read.** The modal shows the whole document in order on the
+   document sheet: 1 Parties and 2 Details filled from what RIVET already
+   holds, with the address and the ID marked as confirmed in the next step,
+   then the clauses 3 to 12, then 13 Signatures; a reading progress bar
+   tracks the scroll. "I have read and agree" stays disabled until the
+   end of the text has been scrolled into view.
+3. **Step 2, details.** Only what the agreement needs, prefilled from the
+   account where RIVET already knows it: registered name of the gym or
+   company, gym address (one line, with the city), the owner's full name as
+   on their ID, Jordanian national ID (ten digits) or passport number, and
+   the contract start date. The plan is shown read-only from the account
+   RIVET set up; the signer's copy goes to the account email. Trade name,
+   commercial registration, branch count, role, phone, quote number, term
+   and place of signing are no longer asked for (the record keeps them as
+   optional fields for a future form).
+4. **Step 3, sign.** A summary of the details with the ID masked, a drawn or
+   typed signature, and two declarations (owner or authorised and details
+   true; electronic signature is binding). The "read and agree" click from
+   step 1 is recorded as the agreement consent.
+5. The browser hashes the exact text it displayed (SHA-256). The server
+   hashes its own copy, records the signing with **its own clock**, and
+   stores the evidence record. A hash mismatch is flagged for review, never
+   silently rejected.
+6. **Copies, with the agreement attached as a PDF.** The same rendered copy
+   (details with the ID masked, the full agreement text, the fingerprint) is
+   queued to the signer and to `elias@rivetjo.com` and `hashem@rivetjo.com`
+   (`AGREEMENT_COPY_RECIPIENTS` in `convex/legalAgreementText.ts`, kind
+   `subscription_agreement_copy`), each carrying
+   `RIVET-agreement-<reference>.pdf`. All three go through the operational
+   email boundary, so `RIVET_EMAIL_MODE` decides whether anything leaves the
+   platform; the queue rows, attachment bytes included, are the evidence
+   either way. The confirmation screen names all three addresses and offers
+   the same PDF as a download, then "Continue to RIVET" closes the modal.
+7. RIVET countersigns from Platform → Agreements by hand; the completed
+   agreement, with the PDF, goes to the signatory and to `elias@rivetjo.com`
+   and `hashem@rivetjo.com`, each under a key tied to that countersignature
+   so replacing the signature sends fresh copies. In allowlist mode the
+   signatory's own copy is dropped unless their address is listed; the
+   founders' copies are the ones that prove the chain. The same dialog
+   has **Send the copies again**, which re-renders the email and the PDF from
+   the record as it stands and queues fresh delivery rows: RIVET's addresses
+   always, the signatory only when the box is ticked. Use it when the first
+   copies were suppressed, because a suppressed row is never revisited by the
+   worker and the original dedupe keys block a repeat. The result names each
+   recipient and says "queued" or gives the suppression reason, so a copy that
+   is not going to arrive says so on the spot. The same dialog has **Void this
+   agreement**: with a reason, it marks the record void (the evidence stays),
+   writes a platform audit event, and the owner is asked to sign again the
+   next time they open RIVET. Use it when an agreement was signed under an
+   older text or with wrong details; the replacement is a new agreement with
+   its own reference and its own copies.
+
+   `convex/communications.e2e.test.ts` drives this whole chain against the
+   real backend on every run: sign, countersign by hand, re-send, void,
+   sign again, then issue, chase and settle an invoice, checking every email
+   for the branded template and every attachment for a readable PDF. Run it
+   with `RIVET_DUMP_DIR=<folder>` to write the emails and PDFs out. The owner can
+   view or print the record under Settings → Agreement.
+8. The ID number is stored only in the agreement row (Convex encrypts at
+   rest), masked in every view, email and audit payload, and revealed to a
+   platform admin only with a reason and a platform audit event.
+
+Agreement text 1.1 (same date) replaced 1.0 before any real signature: the
+signature block no longer carries a quote number or a fixed initial term, so
+section 02 points to RIVET's written quote or published prices and section
+03 runs the agreement until ended with 30 days' notice.
+
+### Before a lawyer sees them
+
+- RIVET's legal entity name, legal form, commercial registration number and
+  registered address (the documents say "RIVET, Amman, Jordan")
+- Whether RIVET must register or appoint a data protection officer under
+  the Personal Data Protection Law No. 24 of 2023
+- Retention periods in Privacy section 09, especially commercial and tax
+  records
+- Whether the ID number should be collected at all, and the wording gyms
+  must show members if they collect member IDs
+- Arabic versions of all three documents and which language prevails
+  (Terms section 18 currently says English unless the law requires otherwise)
+
+### Branding: email, PDF and invoice
+
+The transactional communications follow the identity system designed for
+RIVET in September 2026. One family across three surfaces, built from
+`convex/brandTokens.ts` (palette, contact block, the placeholders RIVET has
+not filled in yet) and `convex/brandAssets.ts` (the marks as print-ready
+JPEGs, embedded because the server has no image codec).
+
+**Email** (`convex/emailTemplate.ts`). One column at 600px: a paper header
+with the lockup at 112px, an optional gym name for member-facing mail, one
+headline, one or two paragraphs, an optional summary card of label/value
+rows, exactly one primary button, an attachment chip when a PDF rides along,
+and a sunken footer carrying RIVET's contact block, the legal links, why the
+message was received, the copyright and, once registered, RIVET's legal line. The
+message is light in every client: no dark palette is shipped, the
+colour-scheme declarations refuse inversion where a client honours them,
+and Outlook's recolouring is overridden back to paper, white and ink.
+Gmail offers a sender no such switch, so every surface also carries a
+one-pixel background image of its own colour, served from
+`/brand/email-*.png`; Gmail's inverter leaves an element with a
+background image alone. The paint goes on the elements holding text as well
+as the panels behind them: painting only the panels keeps the background and
+loses the writing, because Gmail lightens the ink on a panel it has been made
+to leave alone. A reader with images off still sees the colour,
+which is set inline and as a `bgcolor` as well. On a
+phone the gutters tighten, each summary row stacks label over value, and
+the button goes full width. Arabic mirrors the layout without mirroring the
+logo. Every operational email
+goes through it, and a member-facing message colours its button with the
+gym's own accent. The one signal red is reserved for past due and suspension.
+
+**PDF** (`convex/pdfDocument.ts`). A4 at 56pt margins, the identity's own
+type embedded in every file: Manrope regular and semibold for text, IBM Plex
+Mono for the meta line, the technical label, references and the footer.
+The faces are WinAnsi subsets built by `scripts/build-pdf-fonts.mjs` from
+the open-licence files in `scripts/pdf-fonts/` (SIL OFL 1.1, licences
+alongside) into `convex/pdfFonts.ts`; they add about 100 KB to a file.
+Hairlines and JPEG images complete the toolkit. Page one carries the lockup and an
+uppercase technical label; later pages carry a running header with the glyph,
+the document title and the reference. Every page ends with the page number,
+the reference and the legal-entity placeholder. The renderer draws status
+chips, label/value rows on a 52mm label column, ruled tables, right-aligned
+totals, sunken panels and hairline frames for signatures.
+
+**Documents on screen** (`src/features/legal/document-sheet.tsx`). The
+same master page, rendered in the app: the privacy policy and the terms at
+`/privacy` and `/terms`, the agreement as the owner reads it in the signing
+modal, and the signed record in Settings → Agreement and in the platform
+console all use one sheet with the lockup, the technical label, the title
+and status chip, the mono meta line, numbered sections at the document
+scale, label/value rows on the 52mm column, framed signatures and the
+footer. The legal pages carry a Download PDF action that reads the rendered
+page back into the PDF renderer (`src/features/legal/document-pdf.ts`,
+`convex/documentPdf.ts`), so the file says exactly what the page says.
+
+**Language.** Settings → Organization has "Language for emails and
+documents". Every email addressed to the gym, invoices and the copies of its
+agreement included, follows it; member-facing mail follows the member's own
+language. PDFs stay English: the renderer has only the standard Helvetica
+faces, and Arabic needs an embedded font with shaping that is not in this
+release. The agreement email is fully translated (`convex/legalAgreementEmail.ts`);
+RIVET's own internal copy stays English whatever the gym chose.
+
+**Invoices in the app.** Settings → Subscription & invoices lists the gym's
+own RIVET invoices with a View button that opens the invoice PDF, built in the
+browser from the same record and renderer as the emailed attachment. The
+platform billing console has the same PDF button on every row. The invoice
+emails' "View invoice" button lands on that settings section.
+
+**Who receives mail in allowlist mode.** Everything that belongs to a
+subscribed gym, meaning an organization in trial, active or past-due
+status: mail addressed to the gym goes to any active member of its team
+(invoices, agreements, support, subscription notices), and mail addressed to
+a member goes to the address the gym's own records hold for that person (PT
+bookings, receipts, renewal and expiry reminders, trial updates). No list
+entry is needed. `RIVET_EMAIL_ALLOWLIST` still governs everyone else, and
+`live` mode removes the distinction. The worker decides per message when it
+leases it, and a suppression names both conditions in its reason. Member
+service mail also passes the gym's own switch: the owner confirms which
+member email types are on under Settings → Operational email, and an
+unconfirmed gym's member mail is held with that reason.
+
+**Email log.** Platform → Email log lists the last hundred messages RIVET
+queued across every gym, newest first, with what happened to each: not sent
+with its suppression reason, failed with the provider's error code, redirected
+in sandbox mode, or delivered. It is the first place to look when a message
+did not arrive, before the provider's dashboard.
+
+**Agreement text 1.2 (4 September 2026).** Same clauses as 1.1, numbered 3 to
+12 so the document reads as one sequence with 1 Parties and 2 Details ahead
+of them and 13 Signatures after; the one internal cross-reference moved with
+its section. 1.1 stays in code because a test gym signed it. The details name
+the plan only, never limits the agreement does not promise. The fee row is
+the price RIVET publishes for that plan at the moment of signing (the
+console's catalogue if an operator has set one, else the launch price),
+frozen onto the agreement as `subscription.feeLabel` so the document keeps
+saying what was true then.
+
+**No placeholders on a customer's page.** `convex/brandTokens.ts` holds
+RIVET's registered facts as optional fields (`BRAND_LEGAL`: legal entity,
+commercial registration, tax number and treatment, bank and CliQ details).
+Each line is printed only once it is filled in; until then the documents
+name RIVET and Amman and say nothing bracketed. The one address RIVET prints
+anywhere is sales@rivetjo.com.
+
+**Agreement layout.** The PDF follows artboard P2's anatomy and flows
+without forced page breaks: 1 Parties and 2 Details (customer,
+representative, address, plan with limits, fee, billing interval, payment
+terms, start date, term, governing law), then the clauses 3 to 12 straight
+after with a hairline between sections, then 13 Signatures with the masked
+ID and the SHA-256 fingerprint, kept together on one page but taking the
+next free space. Every page fills. The on-screen record follows the same
+order.
+
+**Invoice** (`convex/platformInvoicePdf.ts`). The same furniture with an
+`INVOICE` label: parties, a four-across meta grid, the line items, totals
+with the total due at 20pt, and a how-to-pay panel whose bank and CliQ
+details are labelled placeholders. It is attached to the invoice issued,
+past due and paid emails. Tax treatment is shown as undecided rather than
+guessed.
+
+### The PDF
+
+`convex/pdfDocument.ts` is a small PDF writer with no dependencies: the
+standard Helvetica faces, WinAnsi text and JPEG images, which is what a Latin
+contract needs. It has no Convex imports, so the server builds the emailed
+attachment and the browser builds the "Download PDF" file from the same
+record, byte for byte. `convex/legalAgreementPdf.ts` lays out the document:
+the signed details with the ID masked, the full agreement text of the version
+that was signed, the signature, the server time, the fingerprint and the
+countersignature once it exists.
+
+Both sides sign by hand. The customer draws in the modal; RIVET draws in the
+platform console when countersigning, and the PDF carries the two marks side
+by side under "Signatures". A countersignature can be replaced, which is how
+a typed one becomes a drawn one; the replacement is audited and sends a fresh
+completed copy.
+
+A drawn signature is captured twice: the transparent PNG the app shows on
+screen, and an opaque JPEG (`signature.printImageDataUrl`) for the PDF,
+because a PDF embeds JPEG bytes directly and the server has no image decoder.
+Anything signed before the PDF existed has only the PNG, so opening the
+agreement in the platform console fills the gap: the browser can already
+display the PNG, so it flattens it to JPEG and sends it back through
+`legal.agreement.attach_print_signature`, which only ever fills an empty slot
+and is audited. Until that happens the PDF prints "Signature drawn in RIVET
+and held with the signed record" rather than a blank space.
+
+Two limits worth knowing:
+
+- **Latin only.** The embedded faces carry the WinAnsi range, so any Arabic
+  in a typed field, a gym's registered name for instance, appears as question
+  marks in the PDF. The app record and the email body show it correctly.
+  Arabic in the PDF needs an Arabic face with shaping, which is not in this
+  release.
+- **The masked ID travels, the full one does not.** A PDF gets forwarded, so
+  it carries the same masked number the app shows. The full number stays in
+  the platform console behind a reason and an audit event.
+
+### Known limitations recorded in docs/09
+
+- The signer's IP address is not captured (needs a trusted server hop).
+- The ID number is not field-level encrypted; access control and audit stand
+  in for it in this release.
+
+## 4. Pricing tiers: sign-off sheet
+
+Starter, Growth, Pro and Enterprise are live in the product as tier names,
+feature gates and prices. The platform pricing page and this sheet say they
+are **provisional**. Nothing goes into a quote or a signed agreement as final
+until the table at the end is signed.
+
+### What the product enforces today
+
+| | Starter | Growth | Pro | Enterprise |
+|---|---|---|---|---|
+| Monthly price (JOD) | 79.000 | 149.000 | 249.000 | 500.000 |
+| Annual price (JOD, 20% off) | 758.400 | 1,430.400 | 2,390.400 | 4,800.000 |
+| Branches | 1 | 3 | 8 | 25 |
+| Staff accounts | 8 | 25 | 80 | 250 |
+| Members | 500 | 2,500 | 10,000 | 50,000 |
+| Gym foundation (members, memberships, payments, reception) | ✓ | ✓ | ✓ | ✓ |
+| Revenue protection (leads, follow-ups, reminders) | ✓ | ✓ | ✓ | ✓ |
+| Daily operations (stock, purchasing, payables, equipment, maintenance) | — | ✓ | ✓ | ✓ |
+| Financial operating system (shifts, reconciliation, ledger) | — | — | ✓ | ✓ |
+| Management reporting (statements, analytics) | — | — | ✓ | ✓ |
+| Shown on the public site | ✓ | ✓ | ✓ | platform-only |
+
+Source of truth: `convex/planCatalogue.ts` (plan rows and the one annual
+formula, `termPriceMinor`), `convex/workspaceModules.ts` (module
+availability), `convex/subscriptionTerm.ts` (term dates and proration).
+
+### How a term is billed, and what a change costs
+
+One module, `convex/subscriptionTerm.ts`, answers every question about a term,
+and the server, the mock API and the admin preview all read it, so the figure
+an operator sees before saving is the figure that reaches the invoice.
+
+- **A term is one interval.** A monthly term is one calendar month, an annual
+  term twelve, taken from the day it starts. A term is never lengthened.
+- **A change of plan or cadence starts a new term that day.** The gym is
+  invoiced for the new term at list price.
+- **The unfinished part of the term it replaces comes back as money**, valued
+  at the rate the gym actually paid: the outgoing term's price times its
+  unused days over its whole length. The invoice prints it as a credit line
+  between the subtotal and the total. The credit never exceeds the invoice, so
+  no invoice is ever negative, and there is no stored credit balance: a
+  downgrade with more credit than the new term costs simply pays nothing.
+- **Only a paid, running term earns a credit.** An overdue term was never paid
+  for; its unpaid invoice is voided instead, and the new term is billed in
+  full.
+- **An operator who types an explicit end date** overrides the derived term,
+  and no credit is applied to it.
+
+The enforcement clock follows the signed agreement, and the constants live
+beside the rules in `convex/subscriptionTerm.ts`:
+
+| Step | When |
+|---|---|
+| Invoice raised | 3 days before the term begins |
+| Payment due | 14 days after it is raised |
+| Marked past due, with notice | the day after it is due |
+| Access may be suspended | 21 days past due (14 overdue plus 7 days' notice) |
+
+The reconciliation cron applies this only while
+`RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`. Recording a payment never moves
+a gym's paid-through date backwards.
+
+### Decisions needed
+
+- **[decide]** the three public prices and whether Enterprise is quoted
+- **[decide]** branch, staff and member limits per tier, and what happens
+  when a gym exceeds them (the Terms say RIVET offers the next plan)
+- **[decide]** whether message costs are included per tier (section 1)
+- **[decide]** onboarding fee: the agreement says onboarding is included
+- **[decide]** annual discount (20% today) and whether monthly billing needs
+  a minimum term (the agreement's initial term is 12 or 24 months)
+
+### Sign-off
+
+| Item | Decision | Signed by | Date |
+|---|---|---|---|
+| Public prices (Starter / Growth / Pro) | | | |
+| Tier limits | | | |
+| Message costs per tier | | | |
+| Onboarding fee | | | |
+| Annual discount and minimum term | | | |
+
+When the table is signed, remove the provisional notice from the platform
+pricing page (`src/app/platform/subscriptions/page.tsx`) and record the
+decision in docs/09.

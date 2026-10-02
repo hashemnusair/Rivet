@@ -163,3 +163,115 @@ The JOD 25.000 refund-review threshold is an explicit MVP assumption, not a fina
 Entry and membership rules are now tenant settings enforced by Convex, not presentation-only preferences. Until a gym explicitly changes them, RIVET warns (but does not block) for outstanding balances, warns seven days before expiry, suppresses duplicate scans for two minutes, opens the renewal queue fourteen days before expiry, requires at least a one-day freeze, caps manual extensions at 365 days, and prevents overlapping membership terms. Operating-hour enforcement is off by default so an unconfigured branch cannot accidentally lock out every member.
 
 When hours are enabled, each active branch receives a seven-day local-time schedule and outside-hours entry is blocked unless an authorized manager records an override. Membership branch transfers require the date-override permission and a reason, update both the membership and the member's home branch, and append timeline plus audit events. These defaults are pilot assumptions; each gym owner should confirm balance policy, hours, freeze minimum, renewal cadence, overlap handling, and extension authority during onboarding.
+
+## Management-ledger audit policies — 2026-08-31
+
+The forensic statements audit (docs/18) fixed defects and made three policy
+decisions explicit:
+
+- **Voids are dependency-gated.** A void source posts only when the original
+  payment source is already posted; otherwise it is `excluded` because there
+  is no ledger effect to reverse. Refunds deliberately remain standalone
+  (their cash-out is a real event even when the collection is still pending).
+- **Cash-flow classification is `cashflow-classification.v2`.** Cash = cash
+  on hand plus card/bank-transfer clearing. Classification is by non-cash
+  counterparts with investing → financing → operating priority; all-cash
+  entries are internal transfers excluded from the sections; mixed-activity
+  compound entries warn and should be posted as split journals.
+- **The balance sheet reports `cumulativeEarnings`** (revenue − costs from
+  ledger inception; there is no period close). `currentEarnings` remains a
+  deprecated equal-valued alias for one release. A retained-earnings close, a
+  supplier-payment source type, and refund-shortens-service semantics remain
+  open owner/accountant decisions recorded in docs/18 §4.
+
+## Legal, e-signature, email and messaging go-live — 2026-09-03
+
+- **Legal documents are published in the app**, not on a separate site:
+  `/privacy` and `/terms` (with the data processing addendum), version
+  1.0 · 3 September 2026, written for review by a Jordanian lawyer before the
+  first real signature. RIVET's contact details (Instagram @rivet.jo, phone
+  077 837 8608, WhatsApp) live in one constant and appear in every footer.
+- **The subscription agreement is signed inside RIVET with RIVET's own
+  e-signature, in a modal the owner cannot close.** The text is code-owned
+  and versioned (1.1 · 3 September 2026; 1.0 was never signed for real); the
+  server publishes its SHA-256 and the browser hashes what it displayed, with
+  a mismatch flagged for review, never silently rejected. The flow is read
+  (agree unlocks only at the end of the text), details, sign. **Decided:**
+  ask only what a binding agreement needs: registered gym name, address,
+  owner's name, national ID or passport number, contract start date, then a
+  drawn or typed signature and two declarations; the plan comes from the
+  account RIVET set up and the signer's copy goes to the account email.
+  Trade name, registration number, branches, role, phone, quote, term and
+  place of signing stay optional in the record and are not asked for.
+  **Decided:** every signing is copied to elias@rivetjo.com and
+  hashem@rivetjo.com as well as to the signer, through the operational email
+  boundary, with the ID masked, and each copy carries the agreement as a PDF.
+  **Decided:** the PDF is produced by RIVET's own dependency-free writer
+  rather than a service or an npm library, so the server and the browser
+  build the same bytes and nothing about a contract leaves the platform to be
+  rendered. It draws Latin text only; Arabic in a typed field appears as
+  question marks in the PDF and correctly everywhere else. **Decided:** the ID number is stored in the
+  agreement row on Convex (encrypted at rest), masked everywhere, never in
+  audit payloads or emails, and revealed only by a platform admin with a
+  reason and an audit event. **Open:** field-level encryption of the ID
+  number and capturing the signer's IP address both need a trusted server
+  hop (a Next.js route or Convex HTTP action); neither is in this release and
+  the privacy policy wording reflects what is actually recorded.
+- **Operational email has one go-live flag**, `RIVET_EMAIL_MODE`
+  (off/sandbox/allowlist/live). Off is the default and the fallback for
+  anything unrecognised. The legacy boolean is honoured as `live` only while
+  the new variable is unset. **Open [decide]:** the sending domain and DMARC
+  policy, and the date to move Production from `allowlist` to `live`.
+- **WhatsApp/SMS use Twilio as the single provider** behind
+  `RIVET_MESSAGING_MODE` plus a per-gym "External delivery" switch; both must
+  be on. Quiet hours defer instead of dropping. The reviewed utility template
+  catalogue is code-owned and bilingual. **Open [decide]:** Twilio versus the
+  Meta Cloud API for WhatsApp, the Meta business verification and template
+  approval timeline, the STOP/إيقاف inbound handling (Twilio Advanced Opt-Out
+  for SMS; WhatsApp needs an inbound webhook), and who pays message costs
+  per tier.
+- **Pricing tiers stay provisional.** Starter, Growth and Pro are live in the
+  product with their limits and prices; the platform pricing page says so and
+  docs/19 carries the sign-off sheet. Nothing is quoted as final until signed.
+
+## Membership revenue posts in full at sale — 2026-09-01
+
+The owner reviewed the deferred model live and retired it for new sales:
+`membership-sale.v2` / `membership-renewal.v2` post the full net price as
+immediate revenue (1200 → 4100). No service-day split, no monthly recognition
+clicks, no fils from allocation on new sales. Accepted trade-offs: revenue is
+front-loaded to the sale month, and a mid-term cancellation does not claw
+back revenue automatically (refunds reverse cash only; further adjustment is
+an owner manual journal). Already-posted deferred v1 terms keep their
+recognition schedules until run-off or an owner reversal-and-repost; queue
+rows projected under v1 stay pinned to v1. In the same session the owner
+approved audited **review exclusions** (`accounting.source.exclude` /
+`.reconsider`, owner/manager with reason) so never-postable facts stop
+counting toward statement completeness warnings, and warnings stopped
+counting `excluded` rows or not-yet-due current-month schedules. Details in
+docs/18 §7.
+
+## Supplier payments settle accounts payable — 2026-09-02
+
+Accepted policy: a supplier payment is an operational fact recorded by an
+owner or manager (`operations.manage`) against one supplier's received
+purchase orders, oldest first, never exceeding what is outstanding and never
+leaving a credit balance. Cash comes out of the branch's open cash drawer
+and is part of shift and reconciliation truth; bank transfers and CliQ are
+recorded with the reference staff typed and are never claimed as verified.
+The ledger settles 2100 against 1100 (cash) or 1120 (bank transfer, CliQ)
+under stable per-method policy codes; a reversal is the opposite entry and
+only posts after the original did. Recording and posting remain separate
+steps, and every screen says which one has happened.
+
+Decisions taken in the same change: payables read access reuses
+`reports.financial.read` or `operations.manage` rather than a new permission
+(no catalog migration); reversing a cash payment after its shift closed
+puts the cash into the shift open at reversal time rather than rewriting the
+closed shift; due dates are shown only when a supplier recorded one.
+
+Still open for the owner/accountant: how to attribute costs that have no
+supplier account (equipment, repairs, facility supplies, private purchases)
+so they can be settled without a manual journal; whether supplier credit
+notes should exist; whether partial receipts should create partial payables
+before an order is fully received.

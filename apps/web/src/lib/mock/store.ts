@@ -3,7 +3,11 @@ import type {
   AutomationRule,
   AuditEvent,
   Branch,
+  BrandKit,
   CashShift,
+  SupplierPayment,
+  SubscriptionAgreement,
+  AgreementIdType,
   Charge,
   CheckInSummary,
   FreezePeriod,
@@ -14,19 +18,36 @@ import type {
   MessageTemplate,
   Money,
   NotificationSettings,
+  OrganizationEntitlements,
   OperationalPolicies,
   Offer,
   Organization,
   Payment,
   PaymentMethod,
   Receipt,
+  RetailSale,
   RoleDefinition,
   RoleKey,
   StaffUser,
   Task,
   TimelineEvent,
   UUID,
+  WorkspaceModulePreferences,
+  Zone,
+  EquipmentAsset,
+  EquipmentIssue,
+  EquipmentWorkOrder,
+  FacilityTask,
+  InventoryBalance,
+  InventoryTransfer,
+  LowStockAlert,
+  Product,
+  ProductTombstone,
+  PurchaseOrder,
+  StockMovement,
+  Supplier,
 } from "@/lib/domain/types";
+import { effectiveRolePermissions } from "@/lib/domain/permissions";
 
 
 // ---------------------------------------------------------------------------
@@ -35,6 +56,8 @@ import type {
 // ---------------------------------------------------------------------------
 
 export interface MemberRecord {
+  referredByMemberId?: string;
+  referredByName?: string;
   id: UUID;
   memberNumber: string;
   fullName: string;
@@ -61,6 +84,12 @@ export interface MemberRecord {
   notes?: string;
   sensitiveNotes?: string;
   archivedAt?: string;
+  updatedAt?: string;
+  mergedIntoMemberId?: UUID;
+  mergedMemberIds?: UUID[];
+  importBatchId?: UUID;
+  importRowNumber?: number;
+  migrationCutoffDate?: string;
   createdAt: string;
 }
 
@@ -86,6 +115,13 @@ export interface MembershipRecord {
   adjustments: MembershipAdjustment[];
   cancelledAt?: string;
   cancellationReason?: string;
+  migration?: {
+    importBatchId: UUID;
+    sourceRowNumber: number;
+    sourcePlanName?: string;
+    cutoffDate: string;
+    financialPostingEligible: false;
+  };
   createdAt: string;
 }
 
@@ -95,19 +131,40 @@ export interface LeadRecord extends Lead {
 
 export interface MockDb {
   organization: Organization;
+  brand: BrandKit;
   branches: Branch[];
+  zones: Zone[];
+  products: Product[];
+  productTombstones: ProductTombstone[];
+  suppliers: Supplier[];
+  inventoryBalances: InventoryBalance[];
+  stockMovements: StockMovement[];
+  inventoryTransfers: InventoryTransfer[];
+  lowStockAlerts: LowStockAlert[];
+  purchaseOrders: PurchaseOrder[];
+  facilityTasks: FacilityTask[];
+  equipmentAssets: EquipmentAsset[];
+  equipmentIssues: EquipmentIssue[];
+  equipmentWorkOrders: EquipmentWorkOrder[];
   users: StaffUser[];
   roles: RoleDefinition[];
   paymentMethods: PaymentMethod[];
   notificationSettings: NotificationSettings;
   operationalPolicies: OperationalPolicies;
+  /** Mock persistence mirrors the separate server entitlement/preference records. */
+  organizationEntitlements: OrganizationEntitlements;
+  workspaceModulePreferences: WorkspaceModulePreferences;
   members: MemberRecord[];
   memberships: MembershipRecord[];
   plans: MembershipPlan[];
   charges: Charge[];
   payments: Payment[];
   receipts: Receipt[];
+  retailSales: RetailSale[];
   shifts: CashShift[];
+  supplierPayments: SupplierPayment[];
+  /** Signed subscription agreements; the stored row keeps the unmasked ID number. */
+  subscriptionAgreements: Array<Omit<SubscriptionAgreement, "signatory"> & { signatory: { name: string; title?: string; idType: AgreementIdType; idNumber: string; phone?: string; email: string } }>;
   checkIns: CheckInSummary[];
   leads: LeadRecord[];
   offers: Offer[];
@@ -154,5 +211,6 @@ export function currentRole(db: MockDb): RoleKey {
 }
 
 export function permissionsFor(db: MockDb, role: RoleKey): string[] {
-  return db.roles.find((r) => r.key === role)?.permissions ?? [];
+  const definition = db.roles.find((r) => r.key === role);
+  return effectiveRolePermissions(role, definition?.permissions, definition?.catalogVersion);
 }

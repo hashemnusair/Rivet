@@ -1,3 +1,5 @@
+import { canonicalPhoneKey } from "../src/lib/utils/contact";
+
 export type ServerMembershipStatus = "active" | "expiring" | "frozen" | "expired" | "cancelled" | "depleted" | "scheduled";
 
 function dayNumber(value: string): number {
@@ -46,8 +48,8 @@ export interface DuplicateMemberMatch {
   matchedOn: "phone" | "email";
 }
 
-function normalizeContact(value: unknown): string {
-  return typeof value === "string" ? value.replace(/[\s+()-]/g, "").toLowerCase() : "";
+function normalizeEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
 /**
@@ -57,19 +59,20 @@ function normalizeContact(value: unknown): string {
 export function duplicateMemberMatches(
   members: readonly DuplicateMemberCandidate[],
   input: { phone?: unknown; email?: unknown },
+  defaultCountryCallingCode?: string,
 ): DuplicateMemberMatch[] {
-  const phone = normalizeContact(input.phone);
-  const email = normalizeContact(input.email);
+  const phone = typeof input.phone === "string" ? canonicalPhoneKey(input.phone, defaultCountryCallingCode) : "";
+  const email = normalizeEmail(input.email);
   if (!phone && !email) return [];
 
   return members.flatMap<DuplicateMemberMatch>((member) => {
     if (member.status === "archived") return [];
     const memberId = typeof member.id === "string" ? member.id : "";
     if (!memberId) return [];
-    if (phone && normalizeContact(member.phone) === phone) {
+    if (phone && typeof member.phone === "string" && canonicalPhoneKey(member.phone, defaultCountryCallingCode) === phone) {
       return [{ memberId, fullName: typeof member.fullName === "string" ? member.fullName : "", memberNumber: typeof member.memberNumber === "string" ? member.memberNumber : "", matchedOn: "phone" }];
     }
-    if (email && normalizeContact(member.email) === email) {
+    if (email && normalizeEmail(member.email) === email) {
       return [{ memberId, fullName: typeof member.fullName === "string" ? member.fullName : "", memberNumber: typeof member.memberNumber === "string" ? member.memberNumber : "", matchedOn: "email" }];
     }
     return [];
@@ -196,15 +199,16 @@ export function dashboardRevenueSummary(
     .map(({ payment }) => payment);
   const currentMonth = input.today.slice(0, 7);
   const previousMonth = addCalendarDays(`${currentMonth}-01`, -1).slice(0, 7);
+  const isCollection = (type: string) => type === "payment" || type === "retail_sale";
   const totalForMonth = (month: string) => dated
-    .filter(({ date, payment }) => date.slice(0, 7) === month && payment.type === "payment")
+    .filter(({ date, payment }) => date.slice(0, 7) === month && isCollection(payment.type))
     .reduce((sum, { payment }) => sum + payment.amount, 0);
   const totalOn = (date: string, type: "payment" | "refund") => dated
-    .filter(({ date: paymentDate, payment }) => paymentDate === date && payment.type === type)
+    .filter(({ date: paymentDate, payment }) => paymentDate === date && (type === "payment" ? isCollection(payment.type) : payment.type === type))
     .reduce((sum, { payment }) => sum + (type === "refund" ? Math.abs(payment.amount) : payment.amount), 0);
   const rangeDated = rangePayments.map((payment) => ({ payment, date: businessDate(payment.occurredAt, input.timezone) }));
   const rangeTotalOn = (date: string, type: "payment" | "refund") => rangeDated
-    .filter(({ date: paymentDate, payment }) => paymentDate === date && payment.type === type)
+    .filter(({ date: paymentDate, payment }) => paymentDate === date && (type === "payment" ? isCollection(payment.type) : payment.type === type))
     .reduce((sum, { payment }) => sum + (type === "refund" ? Math.abs(payment.amount) : payment.amount), 0);
 
   return {

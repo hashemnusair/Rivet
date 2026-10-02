@@ -2,13 +2,10 @@ import { plural } from "../../dictionary";
 import type { common as EnCommon } from "../en/common";
 
 /**
- * Modern Standard Arabic, weighted towards how a gym front desk in Amman
- * actually speaks. Where MSA and the operational reality diverge, the
- * operational word wins — the cash drawer is "الكاش" and a shift is "شيفت",
- * which is what staff say, not the MSA words for them.
- *
- * Flagged for native review: the finance and accountability vocabulary
- * (التسوية، فرق الكاش، التجاوز) is the part most worth a second pair of eyes.
+ * Modern Standard Arabic drafts (see docs/arabic/GLOSSARY.md). The action
+ * words, time words and plural groups come from origin/arabic-localisation and
+ * are re-checked against current English; dialect words from that branch
+ * (شيفت, كاش) are replaced by MSA.
  */
 export const common: typeof EnCommon = {
   action: {
@@ -17,7 +14,7 @@ export const common: typeof EnCommon = {
     cancel: "إلغاء",
     close: "إغلاق",
     confirm: "تأكيد",
-    continue: "متابعة",
+    continue: "مواصلة",
     back: "رجوع",
     next: "التالي",
     done: "تم",
@@ -29,68 +26,76 @@ export const common: typeof EnCommon = {
     search: "بحث",
     filter: "تصفية",
     clear: "مسح",
-    clearFilters: "مسح عوامل التصفية",
-    apply: "تطبيق",
+    clearFilters: "مسح التصفية",
     retry: "إعادة المحاولة",
     refresh: "تحديث",
-    reset: "إعادة تعيين",
-    export: "تصدير",
-    import: "استيراد",
-    print: "طباعة",
     download: "تنزيل",
+    print: "طباعة",
     copy: "نسخ",
     copied: "تم النسخ",
     viewAll: "عرض الكل",
     viewDetails: "عرض التفاصيل",
     signIn: "تسجيل الدخول",
     signOut: "تسجيل الخروج",
-    submit: "إرسال",
     send: "إرسال",
+    openMenu: "فتح القائمة",
+    closeMenu: "إغلاق القائمة",
+    apply: "تطبيق",
+    reset: "إعادة تعيين",
+    export: "تصدير",
+    import: "استيراد",
+    submit: "إرسال",
     select: "اختيار",
     selectAll: "تحديد الكل",
     more: "المزيد",
     less: "أقل",
     showMore: "عرض المزيد",
     showLess: "عرض أقل",
-    openMenu: "فتح القائمة",
-    closeMenu: "إغلاق القائمة",
     goBack: "العودة",
   },
-
   state: {
     loading: "جارٍ التحميل…",
     saving: "جارٍ الحفظ…",
-    sending: "جارٍ الإرسال…",
     searching: "جارٍ البحث…",
     empty: "لا يوجد شيء هنا بعد",
     error: "حدث خطأ ما",
+    noResults: "لا توجد نتائج",
+    required: "مطلوب",
+    optional: "اختياري",
+    notSet: "غير محدد",
+    sending: "جارٍ الإرسال…",
     errorDetail: "تعذّر إتمام الطلب. أعد المحاولة أو حدّث الصفحة.",
     offline: "يبدو أنك غير متصل بالإنترنت",
     notFound: "غير موجود",
-    noResults: "لا توجد نتائج",
     noResultsDetail: "لم يطابق هذا البحث أي شيء. جرّب كلمة أخرى أو امسح عوامل التصفية.",
-    required: "مطلوب",
-    optional: "اختياري",
   },
-
   states: {
     errorTitle: "حدث خطأ ما",
-    errorDescription: "تعذّر إتمام الطلب. بياناتك المحمّلة سابقًا محفوظة؛ أعد المحاولة.",
-    forbiddenTitle: "غير مسموح لهذا الدور",
-    forbiddenDescription: "دور حسابك لا يملك صلاحية عرض هذا القسم.",
+    errorDescription: "يرجى إعادة المحاولة. إذا استمرت المشكلة، تحققوا من اتصال الإنترنت.",
+    forbiddenTitle: "لا تملكون صلاحية الوصول",
+    forbiddenDescription: "لا يمكن لدوركم فتح هذه الصفحة. اطلبوا ذلك من المالك أو المدير عند الحاجة.",
     notFoundTitle: "غير موجود",
-    notFoundDescription: "السجل الذي تبحث عنه غير موجود — ربما حُذف، أو أن الرابط غير صحيح.",
+    notFoundDescription: "لم نعثر على هذا العنصر. ربما أُزيل، أو أن الرابط غير صحيح.",
     backToDashboard: "العودة إلى لوحة التحكم",
     previousPage: "الصفحة السابقة",
     pageRange: "{range} من {total}",
     nextPage: "الصفحة التالية",
   },
-
+  pagination: {
+    showing: "عرض {from} إلى {to} من {total}",
+    page: "الصفحة {page} من {total}",
+    previous: "الصفحة السابقة",
+    next: "الصفحة التالية",
+  },
+  a11y: {
+    closeDialog: "إغلاق النافذة",
+    loading: "جارٍ التحميل",
+  },
   label: {
     name: "الاسم",
     fullName: "الاسم الكامل",
     email: "البريد الإلكتروني",
-    phone: "رقم الهاتف",
+    phone: "الهاتف",
     password: "كلمة المرور",
     date: "التاريخ",
     time: "الوقت",
@@ -105,66 +110,29 @@ export const common: typeof EnCommon = {
     reason: "السبب",
     type: "النوع",
     role: "الدور",
-    actions: "الإجراءات",
     details: "التفاصيل",
+    language: "اللغة",
+    actions: "الإجراءات",
     createdAt: "تاريخ الإنشاء",
     updatedAt: "آخر تحديث",
-    language: "اللغة",
   },
-
   time: {
     today: "اليوم",
     yesterday: "أمس",
     tomorrow: "غدًا",
     now: "الآن",
+    days: plural({ zero: "لا أيام", one: "يوم واحد", two: "يومان", few: "{count} أيام", many: "{count} يومًا", other: "{count} يوم" }),
+    hours: plural({ zero: "لا ساعات", one: "ساعة واحدة", two: "ساعتان", few: "{count} ساعات", many: "{count} ساعة", other: "{count} ساعة" }),
+    minutes: plural({ zero: "لا دقائق", one: "دقيقة واحدة", two: "دقيقتان", few: "{count} دقائق", many: "{count} دقيقة", other: "{count} دقيقة" }),
     thisWeek: "هذا الأسبوع",
     thisMonth: "هذا الشهر",
     lastMonth: "الشهر الماضي",
     last7Days: "آخر ٧ أيام",
     last30Days: "آخر ٣٠ يومًا",
-    days: plural({
-      zero: "لا أيام",
-      one: "يوم واحد",
-      two: "يومان",
-      few: "{count} أيام",
-      many: "{count} يومًا",
-      other: "{count} يوم",
-    }),
-    hours: plural({
-      zero: "لا ساعات",
-      one: "ساعة واحدة",
-      two: "ساعتان",
-      few: "{count} ساعات",
-      many: "{count} ساعة",
-      other: "{count} ساعة",
-    }),
-    minutes: plural({
-      zero: "لا دقائق",
-      one: "دقيقة واحدة",
-      two: "دقيقتان",
-      few: "{count} دقائق",
-      many: "{count} دقيقة",
-      other: "{count} دقيقة",
-    }),
   },
-
   count: {
-    members: plural({
-      zero: "لا أعضاء",
-      one: "عضو واحد",
-      two: "عضوان",
-      few: "{count} أعضاء",
-      many: "{count} عضوًا",
-      other: "{count} عضو",
-    }),
-    results: plural({
-      zero: "لا نتائج",
-      one: "نتيجة واحدة",
-      two: "نتيجتان",
-      few: "{count} نتائج",
-      many: "{count} نتيجة",
-      other: "{count} نتيجة",
-    }),
+    members: plural({ zero: "لا أعضاء", one: "عضو واحد", two: "عضوان", few: "{count} أعضاء", many: "{count} عضوًا", other: "{count} عضو" }),
+    results: plural({ zero: "لا نتائج", one: "نتيجة واحدة", two: "نتيجتان", few: "{count} نتائج", many: "{count} نتيجة", other: "{count} نتيجة" }),
     selected: plural({
       zero: "لم يتم تحديد شيء",
       one: "تم تحديد واحد",
@@ -174,14 +142,12 @@ export const common: typeof EnCommon = {
       other: "تم تحديد {count}",
     }),
   },
-
   language: {
     switchTo: "التبديل إلى {language}",
     label: "اللغة",
     english: "English",
     arabic: "العربية",
   },
-
   brand: {
     name: "RIVET",
     tagline: "كل عضو. كل دينار. كل شيفت.",

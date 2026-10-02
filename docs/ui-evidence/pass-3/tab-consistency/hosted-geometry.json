@@ -1,0 +1,72 @@
+{
+  "source": "fd46c0c",
+  "target": "protected mock Preview",
+  "checks": [
+    {
+      "width": 360,
+      "footerInline": true,
+      "cancelOnLeft": true,
+      "validation": true,
+      "keyboardTabs": true,
+      "singleRow": true,
+      "matchingControlHeights": true,
+      "tabsBeforeControls": true,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "footerInline": true,
+      "cancelOnLeft": true,
+      "validation": true,
+      "keyboardTabs": true,
+      "singleRow": true,
+      "matchingControlHeights": true,
+      "tabsBeforeControls": true,
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "footerInline": true,
+      "cancelOnLeft": true,
+      "validation": true,
+      "keyboardTabs": true,
+      "singleRow": true,
+      "matchingControlHeights": true,
+      "tabsBeforeControls": true,
+      "overflow": false
+    },
+    {
+      "width": 820,
+      "footerInline": true,
+      "cancelOnLeft": true,
+      "validation": true,
+      "keyboardTabs": true,
+      "singleRow": true,
+      "matchingControlHeights": true,
+      "tabsBeforeControls": true,
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "footerInline": true,
+      "cancelOnLeft": true,
+      "validation": true,
+      "keyboardTabs": true,
+      "singleRow": true,
+      "matchingControlHeights": true,
+      "tabsBeforeControls": true,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "footerInline": true,
+      "cancelOnLeft": true,
+      "validation": true,
+      "keyboardTabs": true,
+      "singleRow": true,
+      "matchingControlHeights": true,
+      "tabsBeforeControls": true,
+      "overflow": false
+    }
+  ]
+}

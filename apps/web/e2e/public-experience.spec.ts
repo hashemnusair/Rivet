@@ -46,23 +46,17 @@ test.describe("RIVET member experience", () => {
     expect(page.context().pages()).toHaveLength(pageCount);
   });
 
-  test("creates a member account and restores it after reload", async ({ page }) => {
+  test("routes preview signup to the seeded member entry point instead of faking an account", async ({ page }) => {
+    // Member signup always runs through Clerk in real deployments. The
+    // preview deliberately refuses to imitate account creation or collect a
+    // password, and points at the seeded member personas instead.
     await page.goto("/customer/signup");
 
-    await page.getByLabel("Full name").fill("Nour QA");
-    await page.getByLabel("Email").fill("nour.qa@example.com");
-    await page.getByLabel("Mobile number").fill("+962 79 321 4455");
-    await page.locator("#signup-password").fill("preview-pass");
-    await page.locator("#signup-confirm").fill("preview-pass");
-    const createAccount = page.getByRole("button", { name: /create account/i });
-    await expect(createAccount).toBeEnabled();
-    await createAccount.click();
-
-    await expect(page).toHaveURL(/\/customer\/discover/, { timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "Account menu" })).toContainText("Nour QA");
-
-    await page.reload();
-    await expect(page.getByRole("button", { name: "Account menu" })).toContainText("Nour QA");
+    await expect(page.getByRole("heading", { name: /You cannot create an account in this demo/i })).toBeVisible();
+    await expect(page.getByText(/does not create accounts or save passwords/i)).toBeVisible();
+    await page.getByRole("link", { name: /Open member preview/i }).click();
+    await expect(page).toHaveURL(/\/login\/member/);
+    await expect(page.getByRole("radio", { name: /Yousef Nasser/i })).toBeVisible();
   });
 
   test("sends a member trial request into the selected gym CRM", async ({ page }) => {
@@ -71,15 +65,21 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("button", { name: /Continue as Yousef/i }).click();
     await expect(page).toHaveURL(/\/customer\/discover/);
 
-    await page.getByRole("link", { name: /View & book/i }).first().click();
+    await page.getByRole("link", { name: /View gym/i }).first().click();
     await expect(page).toHaveURL(/\/customer\/gyms\/forge-fitness/);
-    await page.getByRole("button", { name: /Send trial request/i }).click();
+    // Trial requests are scheduled: choosing a branch unlocks that branch's
+    // bookable window and pre-fills the opening time.
+    await page.getByLabel("Branch").selectOption({ label: "Forge — Abdoun" });
+    await expect(page.getByLabel("Time")).toBeEnabled();
+    const sendAuthenticatedTrial = page.getByRole("button", { name: /Send trial request/i });
+    await expect(sendAuthenticatedTrial).toBeEnabled();
+    await sendAuthenticatedTrial.click();
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
-    await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
+    await expect(page.getByText(/The gym will review it/i)).toBeVisible();
 
-    await page.getByRole("link", { name: /Open My Gyms/i }).click();
-    await expect(page.getByRole("region", { name: "Subscribed gyms" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Subscribed gyms" })).toBeVisible();
+    await page.getByRole("link", { name: /Open your gyms/i }).click();
+    await expect(page.getByRole("region", { name: "Your gyms" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your gyms" })).toBeVisible();
     await expect(page.getByText("0 gyms")).toBeVisible();
     await expect(page.getByRole("region", { name: "Free trials" })).toHaveCount(0);
 
@@ -93,10 +93,10 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("link", { name: /Gym team/i }).click();
     await expect(page).toHaveURL(/\/login\/gym$/);
     // The label uses a typographic apostrophe, so match either form.
-    await page.getByRole("button", { name: /Open Omar.s workspace/i }).click();
+    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
     await expect(page).toHaveURL(/\/dashboard/);
     await page.getByRole("link", { name: /^(Follow-ups|Leads)$/ }).first().click();
-    await expect(page.getByRole("link", { name: /Yousef Nasser, Trial/i })).toBeVisible();
+    await expect(page.getByRole("article", { name: /Yousef Nasser, Trial/i })).toBeVisible();
   });
 
   test("does not promise My Gyms persistence for an unauthenticated trial request", async ({ page }) => {
@@ -106,13 +106,17 @@ test.describe("RIVET member experience", () => {
     await page.getByLabel("Full name").fill("Unauthenticated QA");
     await page.getByLabel("Phone").fill("+962 79 321 4456");
     await page.getByLabel("Email").fill("unauthenticated.qa@example.com");
+    await page.getByLabel("Branch").selectOption({ label: "Forge — Abdoun" });
+    await expect(page.getByLabel("Time")).toBeEnabled();
     await page.getByLabel("What are you looking for?").fill("Test the public request confirmation");
-    await page.getByRole("button", { name: /Send trial request/i }).click();
+    const sendPublicTrial = page.getByRole("button", { name: /Send trial request/i });
+    await expect(sendPublicTrial).toBeEnabled();
+    await sendPublicTrial.click();
 
     await expect(page.getByRole("heading", { name: /Your free trial request is recorded/i })).toBeVisible();
-    await expect(page.getByText(/request is now in the gym/i)).toBeVisible();
+    await expect(page.getByText(/The gym will review it/i)).toBeVisible();
     await expect(page.getByText(/Sign in or create a member account to keep future bookings under your name/i)).toBeVisible();
-    await expect(page.getByRole("link", { name: /Sign in to RIVET/i })).toHaveAttribute("href", "/login");
+    await expect(page.locator("main").getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/login/member");
   });
 
   test("keeps entry QR hidden until requested and closes the short-lived pass", async ({ page }) => {
@@ -121,10 +125,10 @@ test.describe("RIVET member experience", () => {
     await page.getByRole("button", { name: /Continue as Lina/i }).click();
     await page.goto("/customer/my-gyms/membership-lina-forge");
 
-    await expect(page.getByRole("button", { name: "Show entry QR" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show entry code" })).toBeVisible();
     await expect(page.locator("svg[aria-label*='QR']")).toHaveCount(0);
-    await page.getByRole("button", { name: "Show entry QR" }).click();
-    const dialog = page.getByRole("dialog", { name: /entry QR/i });
+    await page.getByRole("button", { name: "Show entry code" }).click();
+    const dialog = page.getByRole("dialog", { name: /entry code/i });
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("svg[aria-label*='QR']")).toBeVisible();
     await expect(dialog.getByText(/Expires /)).toBeVisible();
@@ -132,9 +136,102 @@ test.describe("RIVET member experience", () => {
     await expect(dialog).toBeHidden();
     await expect(page.locator("svg[aria-label*='QR']")).toHaveCount(0);
   });
+
+  test("lets a member create a private referral link and see reward progress", async ({ page }) => {
+    await page.goto("/login/member");
+    await page.getByRole("radio", { name: /Lina Haddad/i }).click();
+    await page.getByRole("button", { name: /Continue as Lina/i }).click();
+    await page.goto("/customer/my-gyms/membership-lina-forge");
+
+    const referrals = page.getByRole("region", { name: /Bring a friend\. Earn 7 free days\./i });
+    await expect(referrals).toBeVisible();
+    await expect(referrals.getByText("0 of 30 days")).toBeVisible();
+    await referrals.getByRole("button", { name: "Create my link" }).click();
+    await expect(referrals.getByRole("button", { name: "Share link" })).toBeVisible();
+    await expect(referrals.getByRole("button", { name: "Copy" })).toBeVisible();
+  });
+
+  test("lets a member book and cancel a dated class from My Gyms", async ({ page }) => {
+    // Keep Lina's dated membership valid and the first Saturday class ahead.
+    await page.clock.setFixedTime(new Date("2026-08-01T03:00:00+03:00"));
+    await page.goto("/login/member");
+    await page.getByRole("radio", { name: /Lina Haddad/i }).click();
+    await page.getByRole("button", { name: /Continue as Lina/i }).click();
+    await expect(page).toHaveURL(/\/customer\/my-gyms$/);
+    await page.goto("/customer/my-gyms/membership-lina-forge");
+
+    await page.getByRole("tab", { name: "Classes" }).click();
+    await expect(page.getByRole("tablist", { name: "Classes views" })).toBeVisible();
+    const card = page.getByRole("tabpanel", { name: "Classes", exact: true }).getByRole("article").first();
+    const book = card.getByRole("button", { name: "Book class", exact: true });
+    await expect(book).toBeEnabled();
+    await book.click();
+    await expect(page.getByText("Class booked.", { exact: true })).toBeVisible();
+    await expect(card.getByText("Booked", { exact: true })).toBeVisible();
+
+    await card.getByRole("button", { name: "Cancel", exact: true }).click();
+    // The fixed clock keeps this cancellation before the cutoff.
+    const confirmation = page.getByRole("dialog", { name: /^Cancel .+\?$/ });
+    await expect(confirmation.getByRole("status")).toBeVisible();
+    await confirmation.getByRole("button", { name: "Cancel booking" }).click();
+    await expect(page.getByText("Class booking cancelled.", { exact: true })).toBeVisible();
+    await expect(book).toBeEnabled();
+  });
 });
 
 test.describe("RIVET gym applications", () => {
+  test("recovers the public network after a preview live-subscription failure", async ({ page }) => {
+    await page.goto("/login/gym");
+    await page.getByRole("radio", { name: /Omar Al-Khatib/i }).click();
+    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    await page.getByRole("button", { name: "Demo controls" }).click();
+    await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening)/i })).toBeVisible();
+    await page.waitForTimeout(300);
+    await page.getByRole("switch", { name: "Fail next public subscription" }).click();
+
+    // Preview behavior is intentionally session-scoped, so this cold public
+    // navigation exercises the same first-snapshot failure path a visitor can
+    // hit after a deployment refresh. The landing is never shown to a
+    // signed-in account, so the owner signs out first.
+    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByRole("menuitem", { name: "Sign out of demo" }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByText(/Could not connect. Showing your last saved information/i)).toBeVisible();
+
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("link", { name: /Forge Fitness Club/i }).first()).toBeVisible();
+    await expect(page.getByText(/Could not connect. Showing your last saved information/i)).toHaveCount(0);
+  });
+
+  test("shows four tiers, annual savings, and carries pricing selection into the application", async ({ page }) => {
+    await page.goto("/#pricing");
+    const pricing = page.locator("#pricing");
+    await pricing.scrollIntoViewIfNeeded();
+
+    await expect(pricing.getByText("Enterprise", { exact: true })).toBeVisible();
+    await expect(pricing.getByText("JD 500.000", { exact: true })).toBeVisible();
+    await expect(pricing.getByRole("tab", { name: "Monthly" })).toHaveAttribute("aria-selected", "true");
+
+    await pricing.getByRole("tab", { name: /Annual/ }).click();
+    await expect(pricing.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
+    await expect(pricing.getByText("Save 20%", { exact: true }).first()).toBeVisible();
+    await expect(pricing.getByText("JD 63.200", { exact: true })).toBeVisible();
+    await expect(pricing.getByText("JD 758.400 billed annually", { exact: false }).first()).toBeVisible();
+
+    // The carrying contract lives in the link itself: the Starter card must
+    // encode the selected plan and billing interval before any navigation.
+    const starterApplication = pricing.getByRole("link", { name: "Send gym application" }).first();
+    await expect(starterApplication).toHaveAttribute("href", "/signup?plan=Starter&interval=annual");
+    await starterApplication.click();
+    await expect(page).toHaveURL(/\/signup\?plan=Starter&interval=annual$/);
+    await expect(page.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("radio", { name: /Starter/ })).toHaveAttribute("aria-checked", "true");
+  });
+
   test("stores a gym application and shows the receipt", async ({ page }) => {
     await page.goto("/signup");
 
@@ -142,6 +239,7 @@ test.describe("RIVET gym applications", () => {
     await page.getByLabel("Email address").fill("omar.qa@example.com");
     await page.getByLabel("Contact number").fill("+962 79 555 0101");
     await page.getByLabel("Gym name").fill("Northstar QA Fitness");
+    await page.getByLabel("Gym address").fill("12 Airport Road, Amman");
     await page.getByRole("button", { name: /Send gym application/i }).click();
 
     await expect(page.getByRole("heading", { name: /We’ll be in touch soon/i })).toBeVisible();
@@ -187,8 +285,8 @@ test.describe("RIVET platform administration", () => {
     await page.getByRole("button", { name: /Open platform console/i }).click();
     await page.goto("/platform/gyms/forge-fitness");
 
-    await expect(page.getByRole("heading", { name: "Forge Fitness Club" })).toBeVisible();
-    await expect(page.getByText("Omar Al-Khatib")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Omar Al-Khatib", exact: true })).toBeVisible();
     await expect(page.getByText("Not configured").first()).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Dana Al-Khatib");
     await expect(page.locator("body")).not.toContainText("Visa");
@@ -197,22 +295,84 @@ test.describe("RIVET platform administration", () => {
     await expect(page.locator("body")).not.toContainText("Last active today");
   });
 
-  test("keeps subscription shortcuts as an unsaved draft until an audited save", async ({ page }) => {
+  test("never suspends without a reasoned confirmation and leaves gym pages informational", async ({ page }) => {
     await page.goto("/login/admin");
     await page.getByRole("button", { name: /Open platform console/i }).click();
+
+    // The gym page is informational: no subscription editing controls exist,
+    // only the deep link into the billing subscription home.
     await page.goto("/platform/gyms/forge-fitness");
+    await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Suspend", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Save controls/i })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Manage subscription", exact: true })).toHaveAttribute("href", "/platform/billing?bill=forge-fitness");
 
-    const suspend = page.getByRole("button", { name: "Suspend", exact: true });
-    await expect(suspend).toBeVisible();
-    await suspend.click();
+    // On billing, suspension demands a reason and dismissing the dialog
+    // writes nothing.
+    await page.goto("/platform/billing");
+    const forgeRow = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: /Forge Fitness Club/ });
+    await forgeRow.getByRole("button", { name: "Suspend", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: /Suspend Forge Fitness Club\?/ });
+    await expect(dialog.getByRole("button", { name: "Suspend gym", exact: true })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Keep as is", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(forgeRow).toContainText(/active/i);
+  });
 
-    await expect(page.getByRole("status")).toContainText("Unsaved changes");
-    await expect(page.getByLabel("Subscription status")).toContainText("Suspended");
-    await expect(suspend).toBeVisible();
-    await expect(page.getByRole("button", { name: /Save controls/i })).toBeDisabled();
+  test("suppresses a suspended gym from public surfaces while retaining the authorized platform record", async ({ page }) => {
+    await page.goto("/login/admin");
+    await page.getByRole("button", { name: /Open platform console/i }).click();
+    // Subscription actions live on the billing page; gym pages stay
+    // informational.
+    await page.goto("/platform/billing");
 
-    await page.getByRole("button", { name: /Cancel changes/i }).click();
-    await expect(page.getByRole("status")).toHaveCount(0);
-    await expect(page.getByLabel("Subscription status")).toContainText("Active");
+    const forgeRow = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: /Forge Fitness Club/ });
+    await forgeRow.getByRole("button", { name: "Suspend", exact: true }).click();
+    const suspendDialog = page.getByRole("dialog", { name: /Suspend Forge Fitness Club\?/ });
+    await suspendDialog.getByLabel("Reason for this change").fill("Temporarily suspended for marketplace visibility regression coverage.");
+    await suspendDialog.getByRole("button", { name: "Suspend gym", exact: true }).click();
+
+    await expect(page.getByText("Subscription status saved and audited.", { exact: true }).last()).toBeVisible();
+    await expect(forgeRow.getByRole("button", { name: /Reactivate & bill/ })).toBeVisible();
+
+    // The gym's informational record reflects the audited mutation live in
+    // the same session: the timeline gains the audit entry and the facts card
+    // flips to suspended.
+    await forgeRow.getByRole("link", { name: "Forge Fitness Club", exact: true }).click();
+    await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
+    await expect(page.getByText(/Updated Forge Fitness Club subscription: active → suspended/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Manage subscription", exact: true })).toBeVisible();
+
+    // The authorized platform directory retains the tenant for audit and
+    // restoration, even though its public listing is now suppressed.
+    // Keep this as an in-app navigation: the mock adapter intentionally holds
+    // the audited mutation in its browser session, just like the realtime
+    // Convex client holds it in its live query cache.
+    await page.getByRole("link", { name: "All gyms", exact: true }).click();
+    await expect(page).toHaveURL(/\/platform\/gyms$/);
+    // The directory intentionally defaults to active tenants. Select the
+    // suspended view explicitly so this audit-retained record remains
+    // observable after the subscription mutation.
+    await page.getByRole("button", { name: /^Suspended \d+$/ }).click();
+    const suspendedCard = page.locator("article").filter({ hasText: "Forge Fitness Club" });
+    await expect(suspendedCard).toBeVisible();
+    await expect(suspendedCard.getByLabel("Subscription status: Suspended")).toBeVisible();
+
+    // Public discovery and the landing-page network section must both consume
+    // the filtered marketplace projection, never the platform tenant array.
+    // The landing is never shown to a signed-in account, so the administrator
+    // signs out and reaches the site from the sign-in page's brand link.
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await page.getByRole("link", { name: "RIVET home" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole("link", { name: "Find a gym", exact: true }).first().click();
+    await expect(page).toHaveURL(/\/customer\/discover$/);
+    await expect(page.getByRole("heading", { name: "Find a gym", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Forge Fitness Club/i })).toHaveCount(0);
+
+    await page.locator('a[href="/"]').first().click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("link", { name: /Forge Fitness Club/i })).toHaveCount(0);
   });
 });

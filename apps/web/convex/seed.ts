@@ -2,7 +2,17 @@ import { v } from "convex/values";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { organizationRole } from "./schema";
-import { DEFAULT_ROLE_DEFINITIONS } from "./permissions";
+import { DEFAULT_ROLE_DEFINITIONS, PERMISSION_CATALOG_VERSION, rolePermissions } from "./permissions";
+import { planCatalogueWithTone } from "./planCatalogue";
+import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
+
+function addCalendarMonths(timestamp: number, months: number): number {
+  const source = new Date(timestamp);
+  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(source.getUTCDate(), lastDay));
+  return target.getTime();
+}
 
 /**
  * Seeds the Forge Fitness demo tenant as real Convex records: the organization,
@@ -24,6 +34,8 @@ export const seedDemoTenant = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
+    const seedSubscriptionStartedAt = now - 12 * 86_400_000;
+    const seedCurrentPeriodEndsAt = addCalendarMonths(seedSubscriptionStartedAt, 1);
 
     // --- organization -------------------------------------------------------
     const slug = "forge-fitness";
@@ -35,7 +47,26 @@ export const seedDemoTenant = internalMutation({
     let organizationId: Id<"organizations">;
     if (organization) {
       organizationId = organization._id;
-      await ctx.db.patch(organizationId, { publicId: "10000000-0000-4a00-8a00-000000000001", locale: "en-JO", defaultLanguage: "en", taxRatePercent: 0, receiptPrefix: "RV", nextReceiptNumber: organization.nextReceiptNumber ?? 1001, receiptFooter: "Thank you for training with RIVET.", updatedAt: now });
+      await ctx.db.patch(organizationId, {
+        publicId: "10000000-0000-4a00-8a00-000000000001",
+        locale: "en-JO",
+        phoneCountryCallingCode: "962",
+        defaultLanguage: "en",
+        taxRatePercent: 0,
+        receiptPrefix: "RV",
+        nextReceiptNumber: organization.nextReceiptNumber ?? 1001,
+        receiptFooter: "Thank you for training with RIVET.",
+        // Billing facts are tenant-owned. Repair only fields that are absent
+        // on an existing demo record so a real lifecycle is never reset by a
+        // subsequent seed run.
+        ...(organization.subscriptionPlan === undefined ? { subscriptionPlan: "Pro" as const } : {}),
+        ...(organization.billingInterval === undefined ? { billingInterval: "monthly" as const } : {}),
+        ...(organization.status === "active" && organization.subscriptionStartedAt === undefined ? { subscriptionStartedAt: seedSubscriptionStartedAt } : {}),
+        ...(organization.status === "active" && organization.currentPeriodEndsAt === undefined
+          ? { currentPeriodEndsAt: addCalendarMonths(organization.subscriptionStartedAt ?? seedSubscriptionStartedAt, organization.billingInterval === "annual" ? 12 : 1) }
+          : {}),
+        updatedAt: now,
+      });
     } else {
       organizationId = await ctx.db.insert("organizations", {
         publicId: "10000000-0000-4a00-8a00-000000000001",
@@ -45,7 +76,12 @@ export const seedDemoTenant = internalMutation({
         timezone: "Asia/Amman",
         currency: "JOD",
         locale: "en-JO",
+        phoneCountryCallingCode: "962",
         defaultLanguage: "en",
+        subscriptionPlan: "Pro",
+        billingInterval: "monthly",
+        subscriptionStartedAt: seedSubscriptionStartedAt,
+        currentPeriodEndsAt: seedCurrentPeriodEndsAt,
         taxRatePercent: 0,
         receiptPrefix: "RV",
         nextReceiptNumber: 1001,
@@ -112,13 +148,23 @@ export const seedDemoTenant = internalMutation({
         .withIndex("by_email", (q) => q.eq("email", email))
         .unique();
       if (existing) {
-        await ctx.db.patch(existing._id, { publicId: existing.publicId ?? seedPublicId(email), fullName, status: existing.status ?? "active", updatedAt: now });
+        await ctx.db.patch(existing._id, {
+          publicId: existing.publicId ?? seedPublicId(email),
+          // Migrate the old demo placeholder prefix without touching a real
+          // Clerk subject that may already have claimed this row.
+          authSubject: existing.authSubject.startsWith("invite:") ? `seed:${email}` : existing.authSubject,
+          fullName,
+          status: existing.status ?? "active",
+          updatedAt: now,
+        });
         return existing._id;
       }
       return await ctx.db.insert("users", {
         publicId: seedPublicId(email),
-        // Claimed by whoever signs in with this email; never a real Clerk subject.
-        authSubject: `invite:${email}`,
+        // Development fixture identity. Real invitation placeholders use the
+        // distinct invite: prefix and can only be promoted by the verified
+        // Clerk ticket claim action.
+        authSubject: `seed:${email}`,
         email,
         fullName,
         platformAdmin: false,
@@ -155,11 +201,27 @@ export const seedDemoTenant = internalMutation({
     for (const person of customers) await upsertUser(person.email, person.fullName);
 
     // --- reference data and a compact, deterministic operating scenario ----
-    for (const [role, definition] of Object.entries(DEFAULT_ROLE_DEFINITIONS) as Array<["owner" | "manager" | "sales" | "receptionist" | "trainer" | "auditor", (typeof DEFAULT_ROLE_DEFINITIONS)["owner"]]>) {
+    for (const [role, definition] of Object.entries(DEFAULT_ROLE_DEFINITIONS) as Array<["owner" | "manager" | "sales" | "receptionist" | "trainer", (typeof DEFAULT_ROLE_DEFINITIONS)["owner"]]>) {
       const existing = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", organizationId).eq("role", role)).unique();
-      const value = { label: definition.label, description: definition.description, permissions: definition.permissions, discountLimitMinor: definition.discountLimitMinor, isSystem: true, updatedAt: now };
-      if (existing) await ctx.db.patch(existing._id, value);
+      const value = { label: definition.label, description: definition.description, permissions: definition.permissions, catalogVersion: PERMISSION_CATALOG_VERSION, discountLimitMinor: definition.discountLimitMinor, isSystem: true, updatedAt: now };
+      if (existing) await ctx.db.patch(existing._id, { ...value, permissions: rolePermissions(role, existing.permissions, existing.catalogVersion), discountLimitMinor: existing.discountLimitMinor });
       else await ctx.db.insert("roleDefinitions", { organizationId, role, ...value, createdAt: now });
+    }
+
+    // Preserve the legacy Forge tenant while making the new server-owned
+    // entitlement/preference records explicit and idempotent.
+    const ownerMembership = (await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect()).find((membership) => membership.active && membership.role === "owner");
+    if (ownerMembership) {
+      const entitledModules = entitledModulesForPlan();
+      const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+      if (entitlement) await ctx.db.patch(entitlement._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: undefined, entitledModules, source: "legacy_default", updatedAt: now });
+      else await ctx.db.insert("organizationEntitlements", { organizationId, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, entitledModules, source: "legacy_default", createdAt: now, updatedAt: now });
+      const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+      const storedModules = preferences?.enabledModules.filter((module): module is typeof entitledModules[number] => entitledModules.includes(module as typeof entitledModules[number])) ?? [];
+      let enabledModules = storedModules;
+      try { enabledModules = validateWorkspaceModuleSelection(storedModules, entitledModules); } catch { enabledModules = defaultWorkspacePreferences(entitledModules); }
+      if (preferences) await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: ownerMembership.userId, updatedAt: now });
+      else await ctx.db.insert("workspaceModulePreferences", { organizationId, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: ownerMembership.userId, createdAt: now, updatedAt: now });
     }
 
     const upsertDomain = async (entityType: string, publicId: string, value: Record<string, unknown>, branchId?: Id<"branches">, memberPublicId?: string, leadPublicId?: string) => {
@@ -224,23 +286,19 @@ export const seedDemoTenant = internalMutation({
     await upsertDomain("trialBooking", "trial-1001", { gymId: "pulse-lab", branchId: "pulse-dabouq", fullName: "Maya Odeh", email: "maya@example.com", phone: "+962 79 882 1402", preferredDate: "2026-08-02", preferredTime: "18:30", goal: "Build strength with coaching", status: "confirmed", createdAt: "2026-07-31T10:12:00+03:00" });
     await upsertDomain("trialBooking", "trial-1002", { gymId: "forge-fitness", branchId: "forge-abdoun", fullName: "Rami Tahboub", email: "rami@example.com", phone: "+962 78 510 8831", preferredDate: "2026-08-01", preferredTime: "19:00", goal: "Return to training after a long break", status: "requested", createdAt: "2026-07-31T12:35:00+03:00" }, abdoun);
     for (const invoice of [
-      { id: "RV-1048", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
-      { id: "RV-1047", gym: "Her House Fitness", amount: "JD 249.000", date: "28 Jul 2026", status: "paid" },
-      { id: "RV-1046", gym: "Forge Fitness Club", amount: "JD 249.000", date: "18 Jul 2026", status: "paid" },
-      { id: "RV-1045", gym: "District Strength", amount: "JD 0.000", date: "5 Jul 2026", status: "trial" },
-      { id: "RV-1044", gym: "Pulse Lab", amount: "JD 149.000", date: "30 Jun 2026", status: "paid" },
+      { id: "RV-1048", gymId: "pulse-lab", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
+      { id: "RV-1047", gymId: "her-house", gym: "Her House Fitness", amount: "JD 249.000", date: "28 Jul 2026", status: "paid" },
+      { id: "RV-1046", gymId: "forge-fitness", gym: "Forge Fitness Club", amount: "JD 249.000", date: "18 Jul 2026", status: "paid" },
+      { id: "RV-1045", gymId: "district-strength", gym: "District Strength", amount: "JD 0.000", date: "5 Jul 2026", status: "trial" },
+      { id: "RV-1044", gymId: "pulse-lab", gym: "Pulse Lab", amount: "JD 149.000", date: "30 Jun 2026", status: "paid" },
     ]) await upsertDomain("platformInvoice", invoice.id, invoice);
     for (const supportCase of [
-      { id: "SUP-218", gym: "Pulse Lab", subject: "Payment retry failed", age: "18m", priority: "urgent", status: "open" },
-      { id: "SUP-217", gym: "Forge Fitness", subject: "New staff permission question", age: "1h", priority: "normal", status: "open" },
-      { id: "SUP-216", gym: "District Strength", subject: "Member import formatting", age: "3h", priority: "normal", status: "waiting" },
-      { id: "SUP-214", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
+      { id: "SUP-218", gymId: "pulse-lab", gym: "Pulse Lab", subject: "Payment retry failed", age: "18m", priority: "urgent", status: "open" },
+      { id: "SUP-217", gymId: "forge-fitness", gym: "Forge Fitness", subject: "New staff permission question", age: "1h", priority: "normal", status: "open" },
+      { id: "SUP-216", gymId: "district-strength", gym: "District Strength", subject: "Member import formatting", age: "3h", priority: "normal", status: "waiting" },
+      { id: "SUP-214", gymId: "her-house", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
     ]) await upsertDomain("supportCase", supportCase.id, supportCase);
-    for (const plan of [
-      { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-      { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-      { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-    ]) await upsertDomain("platformPlan", plan.name, plan);
+    for (const plan of planCatalogueWithTone()) await upsertDomain("platformPlan", plan.name, { ...plan });
     for (const [key, nextValue] of [["member:ABD", 2300], ["member:SWF", 1900]] as const) {
       const existing = await ctx.db.query("sequenceCounters").withIndex("by_organization_key", (q) => q.eq("organizationId", organizationId).eq("key", key)).unique();
       if (existing) await ctx.db.patch(existing._id, { nextValue: Math.max(existing.nextValue, nextValue), updatedAt: now });

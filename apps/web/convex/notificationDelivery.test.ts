@@ -15,8 +15,8 @@ describe("operational notification triggers", () => {
       await ctx.db.insert("users", { publicId: "platform-disabled", authSubject: "clerk-platform-disabled", email: "disabled@example.com", fullName: "Disabled Admin", platformAdmin: true, status: "deactivated", createdAt: now, updatedAt: now });
     });
 
-    const created = await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
-    await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
+    const created = await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
+    await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
     const notifications = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());
     expect(notifications).toEqual([expect.objectContaining({ kind: "application_awaiting_review", dedupeKey: `gym-application:${created.applicationId}`, href: expect.stringContaining("/platform/applications") })]);
   });
@@ -29,7 +29,8 @@ describe("operational notification triggers", () => {
       await ctx.db.insert("gymApplications", { publicId: "application-1", applicationKey: "owner@example.com::failure-gym", gymName: "Failure Gym", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Starter", status: "approved", notificationStatus: "sent", submittedAt: now, updatedAt: now });
     });
     const platform = t.withIdentity({ subject: "clerk-platform" });
-    await platform.mutation(internal.platformProvisioning.fail, { applicationId: "application-1", message: "Deterministic Clerk fault", correlationId: "cor-provisioning-fault" });
+    const claim = await platform.mutation(internal.platformProvisioning.begin, { applicationId: "application-1", correlationId: "cor-provisioning-fault" }) as { correlationId: string; leaseId: string };
+    await platform.mutation(internal.platformProvisioning.fail, { applicationId: "application-1", message: "Deterministic Clerk fault", correlationId: claim.correlationId, leaseId: claim.leaseId });
     const state = await t.run(async (ctx) => ({
       notifications: await ctx.db.query("operationalNotifications").collect(),
       application: await ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", "application-1")).unique(),

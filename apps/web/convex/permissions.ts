@@ -1,4 +1,4 @@
-import type { OrganizationRole } from "./security";
+import type { OrganizationRole, StoredOrganizationRole } from "./security";
 
 /**
  * Server-owned permission catalogue. The UI imports the same conceptual list,
@@ -24,6 +24,8 @@ export const PERMISSIONS = [
   "crm.write",
   "crm.assign",
   "reports.financial.read",
+  "operations.manage",
+  "accounting.post",
   "audit.read",
   "users.manage",
   "settings.manage",
@@ -39,6 +41,13 @@ export const PERMISSIONS = [
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
+
+/**
+ * Increment when a permission is added to the server-owned catalogue. Stored
+ * role definitions may omit this field because they predate the catalogue
+ * versioning boundary; those rows are handled by effectiveRolePermissions.
+ */
+export const PERMISSION_CATALOG_VERSION = 2;
 
 const ALL = [...PERMISSIONS] as Permission[];
 const MANAGER = ALL.filter((permission) => permission !== "users.manage" && permission !== "settings.manage");
@@ -62,7 +71,6 @@ const RECEPTIONIST: Permission[] = [
   "pt.book_for_member",
 ];
 const TRAINER: Permission[] = ["members.read", "pt.schedule.self", "pt.outcome.self"];
-const AUDITOR: Permission[] = ["members.read", "crm.read", "reports.financial.read", "audit.read", "reconciliation.read"];
 
 export const DEFAULT_ROLE_DEFINITIONS: Record<OrganizationRole, { label: string; description: string; permissions: Permission[]; discountLimitMinor: number }> = {
   owner: {
@@ -95,23 +103,44 @@ export const DEFAULT_ROLE_DEFINITIONS: Record<OrganizationRole, { label: string;
     permissions: TRAINER,
     discountLimitMinor: 0,
   },
-  auditor: {
-    label: "Read-only auditor",
-    description: "Inspect records, finances and the audit trail.",
-    permissions: AUDITOR,
-    discountLimitMinor: 0,
-  },
 };
 
-export function rolePermissions(role: OrganizationRole, configured?: string[]): string[] {
-  if (configured) return configured.filter((permission): permission is Permission => PERMISSIONS.includes(permission as Permission));
-  return DEFAULT_ROLE_DEFINITIONS[role].permissions;
+const LEGACY_COMPATIBILITY_PERMISSIONS: Partial<Record<OrganizationRole, Permission[]>> = {
+  // Before catalog versioning, stored definitions could not express the
+  // operations/accounting or PT capabilities introduced later. Restore only
+  // those product-owned additions for legacy rows; once an owner saves the
+  // current catalog version, deliberate omissions remain authoritative.
+  manager: ["operations.manage", "accounting.post", "pt.manage", "pt.book_for_member", "pt.schedule.self", "pt.outcome.self", "pt.refund", "pt.reports.read"],
+  sales: ["pt.book_for_member"],
+  receptionist: ["pt.book_for_member"],
+  trainer: ["pt.schedule.self", "pt.outcome.self"],
+};
+
+export function effectiveRolePermissions(role: StoredOrganizationRole, configured?: string[], catalogVersion?: number): string[] {
+  // The retired auditor role keeps no capabilities; its rows only exist as history.
+  if (role === "auditor") return [];
+  // Owners are never allowed to lock themselves out of a tenant. This also
+  // makes the owner guarantee explicit instead of depending on stored data.
+  if (role === "owner") return [...ALL];
+  const base = configured
+    ? configured.filter((permission): permission is Permission => PERMISSIONS.includes(permission as Permission))
+    : DEFAULT_ROLE_DEFINITIONS[role].permissions;
+  if (configured && (catalogVersion ?? 0) < PERMISSION_CATALOG_VERSION) {
+    return [...new Set([...base, ...(LEGACY_COMPATIBILITY_PERMISSIONS[role] ?? [])])];
+  }
+  return base;
 }
 
-export function roleDiscountLimit(role: OrganizationRole, configured?: number): number {
+/** Backwards-compatible name used by existing server callers and tests. */
+export function rolePermissions(role: StoredOrganizationRole, configured?: string[], catalogVersion?: number): string[] {
+  return effectiveRolePermissions(role, configured, catalogVersion);
+}
+
+export function roleDiscountLimit(role: StoredOrganizationRole, configured?: number): number {
+  if (role === "auditor") return 0;
   return configured ?? DEFAULT_ROLE_DEFINITIONS[role].discountLimitMinor;
 }
 
-export function toFrontendRole(role: OrganizationRole): string {
+export function toFrontendRole(role: StoredOrganizationRole): string {
   return role === "sales" ? "salesperson" : role;
 }

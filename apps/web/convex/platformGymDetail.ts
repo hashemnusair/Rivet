@@ -6,6 +6,7 @@ export type PlatformField<T> =
 type SubscriptionStatus = "trial" | "active" | "overdue" | "suspended" | "cancelled";
 type OrganizationStatus = "trial" | "active" | "past_due" | "suspended" | "cancelled";
 type PlatformPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+type BillingInterval = "monthly" | "annual";
 
 export interface PlatformGymDetailSource {
   gym: {
@@ -16,7 +17,12 @@ export interface PlatformGymDetailSource {
     subscriptionStatus: SubscriptionStatus;
     rivetPlan: PlatformPlan;
     isPublic: boolean;
+    isArchived?: boolean;
+    archivedAt?: number;
+    archiveReason?: string;
   };
+  /** Resolved only from an active, public, same-tenant gym logo asset. */
+  logoUrl?: string;
   organization?: {
     id: string;
     name: string;
@@ -25,11 +31,14 @@ export interface PlatformGymDetailSource {
     timezone: string;
     createdAt?: number;
     subscriptionPlan?: PlatformPlan;
+    billingInterval?: BillingInterval;
     subscriptionStartedAt?: number;
     trialEndsAt?: number;
     currentPeriodEndsAt?: number;
     cancelledAt?: number;
     subscriptionStatusReason?: string;
+    archivedAt?: number;
+    archiveReason?: string;
   };
   branches: Array<{
     id: string;
@@ -39,11 +48,42 @@ export interface PlatformGymDetailSource {
     phone?: string;
     status: "active" | "inactive";
   }>;
+  /** Safe operational member directory rows. Contact and payment details stay
+   * on tenant-only surfaces; platform operators need the record identity,
+   * status, branch, and current membership context to supervise a gym. */
+  members?: Array<{
+    id: string;
+    memberNumber: string;
+    name: string;
+    status: "active" | "inactive" | "archived";
+    branchId?: string;
+    branchName?: string;
+    membershipStatus?: string;
+    planName?: string;
+    membershipEndDate?: string;
+    joinedAt?: string;
+  }>;
+  /** Staff access rows, including invited and deactivated team members. */
+  staff?: Array<{
+    id: string;
+    name: string;
+    /** The sign-in identifier lets operators distinguish same-name invitees. */
+    email: string;
+    role: string;
+    status: "active" | "invited" | "deactivated";
+    branchScope: "all" | "selected";
+    branchIds: string[];
+    branchNames: string[];
+    invitationStatus?: "pending" | "accepted" | "revoked";
+    joinedAt?: string;
+  }>;
   owner?: {
     name: string;
     email: string;
     phone?: string;
   };
+  /** Active subscription agreement summary; absent when the owner has not signed yet. */
+  agreement?: Record<string, unknown> & { id: string; reference: string; status: string };
   usage: {
     memberCount: number;
     activeStaffCount: number;
@@ -51,6 +91,13 @@ export interface PlatformGymDetailSource {
     automationRuleCount: number;
     paymentTransactionCount: number;
   };
+  /** Derived from the live plan catalog and the tenant's billing interval. */
+  recurringAmountMinor?: number;
+  /** Platform invoices already scoped to this tenant, snapshot-view shaped. */
+  invoices?: Array<Record<string, unknown> & { id: string }>;
+  /** Public-page review facts: the live version plus any draft awaiting the
+   * platform team's publish after the tenant's first self-serve publish. */
+  publicPage?: { publishedVersion: number; draftVersion?: number; draftStatus?: string; draftUpdatedAt?: string };
   activity: Array<{
     id: string;
     action: string;
@@ -95,6 +142,8 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
         status: organization.status,
         currency: organization.currency,
         timezone: organization.timezone,
+        archivedAt: iso(organization.archivedAt),
+        archiveReason: organization.archiveReason,
       })
     : notAvailable();
   const tenantAvailable = Boolean(organization);
@@ -106,21 +155,35 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
   const status = organization ? subscriptionStatus(organization.status) : undefined;
   const controlStatus = status ?? source.gym.subscriptionStatus;
   const controlPlan = organization?.subscriptionPlan ?? source.gym.rivetPlan;
+  // A directory projection cannot publish a tenant that is suspended,
+  // cancelled, overdue, or not provisioned. Keep the admin control truthful
+  // even when an older marketplace row still says public.
+  const controlIsPublic = Boolean(organization && (organization.status === "active" || organization.status === "trial") && source.gym.isPublic);
+  const archivedAt = organization?.archivedAt ?? source.gym.archivedAt;
+  const archiveReason = organization?.archiveReason ?? source.gym.archiveReason;
 
   return {
     id: source.gym.id,
     name: source.gym.name,
     shortName: source.gym.shortName,
     accent: source.gym.accent,
+    logoUrl: organization ? (source.logoUrl ? available(source.logoUrl) : notConfigured()) : notAvailable(),
     controls: {
       status: controlStatus,
       plan: controlPlan,
-      isPublic: source.gym.isPublic,
+      isPublic: controlIsPublic,
+      isArchived: Boolean(archivedAt || source.gym.isArchived),
+      archivedAt: iso(archivedAt),
+      archiveReason,
     },
     organization: organizationData,
+    publicPage: tenantAvailable && source.publicPage ? available(source.publicPage) : notAvailable(),
     joinedAt: joinedAt ? available(joinedAt) : notAvailable(),
     branches: tenantAvailable ? available(source.branches) : notAvailable(),
+    members: tenantAvailable ? available(source.members ?? []) : notAvailable(),
+    staff: tenantAvailable ? available(source.staff ?? []) : notAvailable(),
     owner: source.owner ? available(source.owner) : notAvailable(),
+    agreement: tenantAvailable ? (source.agreement ? available(source.agreement) : notConfigured()) : notAvailable(),
     usage: {
       memberCount: tenantAvailable ? available(source.usage.memberCount) : notAvailable(),
       activeStaffCount: tenantAvailable ? available(source.usage.activeStaffCount) : notAvailable(),
@@ -131,16 +194,19 @@ export function buildPlatformGymDetail(source: PlatformGymDetailSource) {
     },
     subscription: {
       plan: organization?.subscriptionPlan ? available(organization.subscriptionPlan) : organization ? notConfigured() : notAvailable(),
+      billingInterval: organization ? available(organization.billingInterval ?? "monthly") : notAvailable(),
       status: status ? available(status) : notAvailable(),
       startedAt: startedAt ? available(startedAt) : notAvailable(),
       trialEndsAt: trialEndsAt ? available(trialEndsAt) : organization ? notConfigured() : notAvailable(),
       currentPeriodEndsAt: currentPeriodEndsAt ? available(currentPeriodEndsAt) : organization ? notConfigured() : notAvailable(),
       cancelledAt: cancelledAt ? available(cancelledAt) : organization ? notConfigured() : notAvailable(),
       statusReason: organization?.subscriptionStatusReason ? available(organization.subscriptionStatusReason) : organization ? notConfigured() : notAvailable(),
-      recurringAmount: tenantAvailable ? notConfigured() : notAvailable(),
+      recurringAmount: tenantAvailable && source.recurringAmountMinor !== undefined && organization
+        ? available({ amount: source.recurringAmountMinor, currency: organization.currency })
+        : tenantAvailable ? notConfigured() : notAvailable(),
       renewalDate: currentPeriodEndsAt ? available(currentPeriodEndsAt) : tenantAvailable ? notConfigured() : notAvailable(),
       paymentMethod: tenantAvailable ? notConfigured() : notAvailable(),
-      invoices: tenantAvailable ? notConfigured() : notAvailable(),
+      invoices: tenantAvailable && source.invoices ? available(source.invoices) : tenantAvailable ? notConfigured() : notAvailable(),
     },
     activity: tenantAvailable ? available(source.activity) : notAvailable(),
   };

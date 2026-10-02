@@ -14,31 +14,32 @@ test.describe("staged member portal", () => {
 
     try {
       await member.goto("/customer/my-gyms", { waitUntil: "domcontentloaded" });
-      await expect(member.getByRole("heading", { name: "Member home" })).toBeVisible();
-      await expect(member.getByRole("heading", { name: "Entry QR" })).toHaveCount(0);
+      await expect(member.getByRole("heading", { name: /^Hi,/ })).toBeVisible();
+      await expect(member.getByRole("heading", { name: "Entry code" })).toHaveCount(0);
 
-      const marketing = member.getByRole("switch", { name: "Receive marketing updates" });
-      const marketingBefore = await marketing.isChecked();
       await member.getByRole("link", { name: /Forge Fitness Club/ }).first().click();
       await expect(member).toHaveURL(/\/customer\/my-gyms\//);
-      const showQr = member.getByRole("button", { name: "Show entry QR" });
+      const showQr = member.getByRole("button", { name: "Show entry code" });
       await expect(showQr).toBeVisible();
       await showQr.click();
-      const qrDialog = member.getByRole("dialog", { name: "Entry QR" });
+      const qrDialog = member.getByRole("dialog", { name: "Entry code" });
       await expect(qrDialog).toBeVisible();
       await expect(qrDialog.locator("[aria-label='Membership entry QR code']")).toBeVisible();
       await expect(qrDialog.getByText(/Expires /)).toBeVisible();
       await qrDialog.getByRole("button", { name: "Close" }).click();
       await expect(qrDialog).toBeHidden();
 
-      await member.getByRole("link", { name: "Dashboard", exact: true }).click();
-      await member.getByRole("link", { name: "Profile", exact: true }).click();
+      await member.getByRole("link", { name: "Home", exact: true }).first().click();
+      await member.getByRole("button", { name: "Open account menu" }).first().click();
+      await member.getByRole("menuitem", { name: "Profile" }).click();
       await expect(member).toHaveURL(/\/customer\/profile$/);
+      const marketing = member.getByRole("switch", { name: "Send me offers and news" });
+      const marketingBefore = await marketing.isChecked();
       await member.locator("#emergency-name").fill(emergencyName);
       await member.locator("#emergency-relationship").fill("Sibling");
       await member.locator("#emergency-phone").fill("+962790000000");
       await member.getByRole("button", { name: "Save profile", exact: true }).click();
-      await expect(member.getByRole("status")).toContainText("Saved and shared with linked gyms");
+      await expect(member.getByRole("status")).toContainText("Saved. Your gyms can see the changes.");
       await expect(marketing).toBeChecked({ checked: marketingBefore });
       cleanupEntry = cleanup.plan({ targetType: "member_profile", action: "preserve", reason: "Member-owned profile remains on the disposable staging account for auditability" });
       cleanup.complete(cleanupEntry);

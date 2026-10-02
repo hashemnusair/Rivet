@@ -1,6 +1,9 @@
+import { isCalendarDate } from "@/lib/utils/dates";
+import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
 import type {
   AuditQuery,
   DashboardQuery,
+  OperatingBriefQuery,
   ExecutionQuery,
   GymOSApi,
   LeadListQuery,
@@ -16,6 +19,7 @@ import type {
   UserListQuery,
   PlatformBillingInvoice,
   PlatformGymDetail,
+  PlatformGymActivity,
   PlatformData,
   PlatformGymApplication,
   PlatformSnapshot,
@@ -28,6 +32,7 @@ import type {
   SaveGymApplicationReviewNoteInput,
   ProvisionGymInput,
   GymProvisioningResult,
+  ArchivePlatformGymInput,
   UpdatePlatformGymInput,
   UpdatePlatformPlanInput,
   CreatePlatformInvoiceInput,
@@ -37,27 +42,61 @@ import type {
   MemberImportCommitInput,
   MemberImportCommitResult,
   MemberImportPreview,
+  MemberImportPreviewInput,
   MemberImportRow,
+  MemberImportSummary,
+  MemberImportUndoInput,
+  MemberImportUndoResult,
   CustomerExperience,
 } from "@/lib/api/GymOSApi";
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
-import { discountNeedsApproval, type Permission } from "@/lib/domain/permissions";
+import { discountNeedsApproval, effectiveRolePermissions, PERMISSION_CATALOG_VERSION, PERMISSIONS, type Permission } from "@/lib/domain/permissions";
+import { BRAND_PALETTE_PRESETS, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex } from "@/lib/domain/brand";
+import { classUtilizationReport, collectionsReport, controlTrendsReport, crmFunnelReport, peakHoursReport, renewalForecastReport, retentionReport } from "@/lib/analytics/operational-reports";
+import {
+  buildWorkspaceAccess,
+  defaultWorkspacePreferences,
+  allWorkspaceModuleKeys,
+  entitledModulesForPlanSelection,
+  validateWorkspaceModuleSelection,
+  WORKSPACE_MODULE_CATALOG_VERSION,
+} from "@/lib/domain/workspace-modules";
+import { DEFAULT_PUBLIC_PRICING_PLANS } from "@/lib/public/pricing";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
+import { classCancellationOutcome, occurrenceCancellationBlock } from "@/lib/domain/class-booking";
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
+import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "@/lib/members/lookup";
+import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
+import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, resolveFollowUpTasks, shouldClearLeadFollowUp } from "@/lib/crm/contact-outcomes";
+import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
-import { addDays, daysFromToday, diffDays, nowISO, todayISODate } from "@/lib/utils/dates";
-import { money, zeroMoney } from "@/lib/utils/money";
+import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
+import { resolveMessagingMode } from "../../../convex/messagingMode";
+import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
+import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
+import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
+import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
+import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
+import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
+import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
+import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
+import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
+import { deriveRetentionRisks } from "@/lib/retention/at-risk";
+import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits, type CsvValue } from "@/lib/exports/csv";
+import { exponentFor, money, toMajorString, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
+import { manualJournalRequestFingerprint, reversalRequestFingerprint } from "../../../convex/accountingLedger";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
   INITIAL_TRIAL_BOOKINGS,
   MARKETPLACE_GYMS,
 } from "@/lib/public/experience-data";
-import type { CustomerMarketingPreference, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMarketingPreference, CustomerMembership, CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
 import {
   currentRole,
@@ -70,8 +109,351 @@ import {
 } from "./store";
 
 const TZ = "Asia/Amman";
+const PREVIEW_BEHAVIOR_STORAGE_KEY = "rivet.demo.behavior";
 const MARKETING_WORDING_VERSION = "2026-08-default-opt-in-v1";
+const MOCK_EQUIPMENT_ASSET_STATUSES: readonly T.EquipmentAssetStatus[] = ["active", "maintenance", "retired", "replaced"];
+const MOCK_EQUIPMENT_ISSUE_SEVERITIES: readonly T.EquipmentIssueSeverity[] = ["low", "medium", "high", "critical"];
+const MOCK_EQUIPMENT_ISSUE_STATUSES: readonly T.EquipmentIssueStatus[] = ["open", "in_progress", "resolved", "cancelled"];
+const MOCK_EQUIPMENT_SAFETY_STATUSES: readonly T.EquipmentIssue["safetyStatus"][] = ["unknown", "safe_to_operate", "out_of_service"];
+const MOCK_EQUIPMENT_WORK_ORDER_STATUSES: readonly T.EquipmentWorkOrder["status"][] = ["draft", "approved", "in_progress", "completed", "cancelled"];
 type MockOperationalNotification = OperationalNotification & { recipientId: string };
+
+function previewBehaviorStorage(): Storage | undefined {
+  if (typeof window === "undefined" || process.env.VITEST === "true" || Boolean(process.env.VITEST_WORKER_ID)) return undefined;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function readPreviewBehavior(): MockBehavior {
+  const storage = previewBehaviorStorage();
+  if (!storage) return { ...DEFAULT_BEHAVIOR };
+  try {
+    const raw = storage.getItem(PREVIEW_BEHAVIOR_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_BEHAVIOR };
+    const parsed = JSON.parse(raw) as Partial<MockBehavior>;
+    return {
+      latencyMs: typeof parsed.latencyMs === "number" && Number.isFinite(parsed.latencyMs) ? Math.max(0, parsed.latencyMs) : DEFAULT_BEHAVIOR.latencyMs,
+      failNextRequest: parsed.failNextRequest === true,
+      failNextPublicSubscription: parsed.failNextPublicSubscription === true,
+      forceEmptyLists: parsed.forceEmptyLists === true,
+    };
+  } catch {
+    return { ...DEFAULT_BEHAVIOR };
+  }
+}
+
+function persistPreviewBehavior(behavior: MockBehavior): void {
+  const storage = previewBehaviorStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(PREVIEW_BEHAVIOR_STORAGE_KEY, JSON.stringify(behavior));
+  } catch {
+    // Preview diagnostics must never make the actual adapter fail.
+  }
+}
+
+function exactCostTotal(unitCost: T.Money | undefined, quantity: number): T.Money | undefined {
+  if (!unitCost || !Number.isSafeInteger(unitCost.amount) || unitCost.amount < 0 || !Number.isSafeInteger(quantity) || quantity < 0) return undefined;
+  const amount = unitCost.amount * quantity;
+  return Number.isSafeInteger(amount) ? { amount, currency: unitCost.currency } : undefined;
+}
+
+function allocateExactCost(totalMinor: number | undefined, quantityOnHand: number, quantity: number): number | undefined {
+  if (typeof totalMinor !== "number" || !Number.isSafeInteger(totalMinor) || totalMinor < 0 || !Number.isSafeInteger(quantityOnHand) || quantityOnHand <= 0 || !Number.isSafeInteger(quantity) || quantity < 0 || quantity > quantityOnHand) return undefined;
+  const exactTotal = totalMinor as number;
+  if (quantity === quantityOnHand) return exactTotal;
+  const numerator = exactTotal * quantity;
+  return Number.isSafeInteger(numerator) ? Math.floor(numerator / quantityOnHand) : undefined;
+}
+
+/**
+ * Retail refunds are payment facts, but a guest has no member id. Keep the
+ * customer and sale links on the mock payment projection so receipt and
+ * transaction views can represent the same shape as Convex without inventing
+ * a member record. The public Payment type remains the legacy membership
+ * payment contract, so callers only see these extra fields when the payment
+ * is a retail adjustment.
+ */
+type MockRetailAdjustmentPayment = T.Payment & {
+  customer: T.RetailSaleCustomer;
+  retailSaleId: T.UUID;
+};
+
+function managementLocalDate(value: string | number, timezone: string): string {
+  return todayISODate(timezone, new Date(value));
+}
+
+/**
+ * Mirror of the Convex tenant-date anchoring: a monthly or date-only
+ * accounting fact's timestamp must land on the same tenant-local calendar
+ * date it names, in every timezone.
+ */
+function tenantDateIso(date: string, timezone: string): string {
+  let timestamp = Date.parse(`${date}T12:00:00.000Z`);
+  for (let step = 0; step < 15 && managementLocalDate(timestamp, timezone) > date; step += 1) timestamp -= 3_600_000;
+  for (let step = 0; step < 15 && managementLocalDate(timestamp, timezone) < date; step += 1) timestamp += 3_600_000;
+  return new Date(timestamp).toISOString();
+}
+
+function publicApplicationKey(email: string, gymName: string): string {
+  const normalizedGym = gymName.trim().toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "gym";
+  return `${email.trim().toLowerCase()}::${normalizedGym}`;
+}
+
+function publicRequestSignature(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function enforceMockRateLimit(
+  limits: Map<string, { windowStartedAt: number; requestCount: number }>,
+  key: string,
+  maxRequests: number,
+  windowMs: number,
+): void {
+  const now = Date.now();
+  const existing = limits.get(key);
+  if (existing && now - existing.windowStartedAt < windowMs) {
+    if (existing.requestCount >= maxRequests) throw ApiError.of(ERR.RATE_LIMITED, "Too many requests. Please wait and try again.");
+    existing.requestCount += 1;
+    return;
+  }
+  limits.set(key, { windowStartedAt: now, requestCount: 1 });
+}
+
+function ledgerDate(value: string | undefined, fallback: string): string {
+  const candidate = value?.trim() || fallback;
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? new Date(`${candidate}T00:00:00.000Z`) : undefined;
+  if (!parsed || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== candidate) {
+    throw ApiError.of(ERR.VALIDATION, "Posting date must use a real YYYY-MM-DD calendar date.");
+  }
+  return candidate;
+}
+
+const MOCK_ACCOUNT_DEFINITIONS: Array<Pick<T.AccountingAccount, "code" | "name" | "accountType" | "statementGroup" | "cashflowGroup" | "normalBalance">> = [
+  { code: "1100", name: "Cash on hand", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1110", name: "Card clearing", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1120", name: "Bank transfer clearing", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1200", name: "Accounts receivable", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1300", name: "Inventory", accountType: "asset", statementGroup: "asset_current", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "1500", name: "Gym equipment", accountType: "asset", statementGroup: "asset_noncurrent", cashflowGroup: "investing", normalBalance: "debit" },
+  { code: "1550", name: "Accumulated depreciation — equipment", accountType: "asset", statementGroup: "asset_noncurrent", cashflowGroup: "non_cash", normalBalance: "credit" },
+  { code: "2100", name: "Supplier payables", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "2200", name: "Deferred membership revenue", accountType: "liability", statementGroup: "liability_current", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "3000", name: "Owner equity", accountType: "equity", statementGroup: "equity", cashflowGroup: "financing", normalBalance: "credit" },
+  { code: "4100", name: "Membership revenue", accountType: "revenue", statementGroup: "revenue", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "4200", name: "Retail sales revenue", accountType: "revenue", statementGroup: "revenue", cashflowGroup: "operating", normalBalance: "credit" },
+  { code: "5100", name: "Cost of supplies and inventory", accountType: "expense", statementGroup: "cost_of_sales", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "5200", name: "Repairs and maintenance", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "5300", name: "Facility supplies", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
+  { code: "5600", name: "Depreciation expense", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "non_cash", normalBalance: "debit" },
+  { code: "5900", name: "Other operating expense", accountType: "expense", statementGroup: "operating_expense", cashflowGroup: "operating", normalBalance: "debit" },
+];
+
+function mockAccount(orgId: string, definition: (typeof MOCK_ACCOUNT_DEFINITIONS)[number]): T.AccountingAccount {
+  const timestamp = "2026-08-19T00:00:00.000Z";
+  return { id: `acct-${definition.code}`, organizationId: orgId, ...definition, active: true, isSystem: true, createdAt: timestamp, updatedAt: timestamp };
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+type MockAccountingSourceDecisionStatus = Extract<T.AccountingSourceStatus, "unconfigured" | "excluded">;
+interface MockAccountingSourceAttempt {
+  id: T.UUID;
+  sourceType: T.AccountingSourceType;
+  sourceId: T.UUID;
+  sourcePostingId?: T.UUID;
+  branchId?: T.UUID;
+  idempotencyKey: string;
+  requestFingerprint: string;
+  status: MockAccountingSourceDecisionStatus;
+  amount?: T.Money;
+  currency: string;
+  policyCode?: string;
+  policyVersion?: number;
+  reason?: string;
+  details?: Record<string, unknown>;
+  occurredAt: T.ISODateTime;
+  createdAt: T.ISODateTime;
+  updatedAt: T.ISODateTime;
+}
+
+function accountingSourceKey(sourceType: T.AccountingSourceType, sourceId: T.UUID): string {
+  return `${sourceType}:${sourceId}`;
+}
+
+function accountingSourceAttemptKey(sourceType: T.AccountingSourceType, sourceId: T.UUID, idempotencyKey: string): string {
+  return `${accountingSourceKey(sourceType, sourceId)}:${idempotencyKey}`;
+}
+
+function accountingSourceRequestFingerprint(input: { sourceType: T.AccountingSourceType; sourceId: T.UUID; idempotencyKey: string; reason?: string }): string {
+  return stableJson({ sourceType: input.sourceType, sourceId: input.sourceId, idempotencyKey: input.idempotencyKey, reason: input.reason?.trim() ?? "" });
+}
+
+function mockPurchaseOrderLabel(order: T.PurchaseOrder): string {
+  const lines = order.lines.map((line) => `${line.productName} × ${line.receivedQuantity || line.orderedQuantity}`).join(", ");
+  const label = `Purchase order · ${lines || "no lines"}`;
+  return label.length > 96 ? `${label.slice(0, 95)}…` : label;
+}
+
+function accountingPolicyVersion(policyCode?: string): number | undefined {
+  const match = policyCode?.match(/\.v(\d+)$/);
+  if (!match?.[1]) return undefined;
+  const version = Number(match[1]);
+  return Number.isSafeInteger(version) && version > 0 ? version : undefined;
+}
+
+type MockMonthlyAllocation = { month: string; serviceStart: string; serviceEnd: string; days: number; amount: number };
+const MOCK_MAX_MEMBERSHIP_SERVICE_MONTHS = 120;
+const MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS = 600;
+
+function validAccountingDate(value: string | undefined): string | undefined {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : undefined;
+}
+
+function accountingMonthEnd(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year!, monthNumber!, 0)).toISOString().slice(0, 10);
+}
+
+function accountingAddMonths(month: string, count: number): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(Date.UTC(year!, monthNumber! - 1 + count, 1)).toISOString().slice(0, 7);
+}
+
+export function mockMembershipAllocations(amount: number, start: string | undefined, end: string | undefined, options?: { cancellationDate?: string; freezes?: readonly T.FreezePeriod[] }): MockMonthlyAllocation[] {
+  if (!start || !end || start > end || !Number.isSafeInteger(amount) || amount < 0) return [];
+  const monthSpan = (Number(end.slice(0, 4)) - Number(start.slice(0, 4))) * 12 + Number(end.slice(5, 7)) - Number(start.slice(5, 7)) + 1;
+  if (monthSpan > MOCK_MAX_MEMBERSHIP_SERVICE_MONTHS) return [];
+  const excluded = new Set<string>();
+  for (const freeze of options?.freezes ?? []) {
+    if (freeze.status !== "active" && freeze.status !== "completed") continue;
+    let date = freeze.startDate < start ? start : freeze.startDate;
+    const freezeEnd = freeze.endDate > end ? end : freeze.endDate;
+    while (date <= freezeEnd) {
+      excluded.add(date);
+      date = new Date(Date.parse(`${date}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10);
+    }
+  }
+  const serviceDates: string[] = [];
+  for (let date = start; date <= end; date = new Date(Date.parse(`${date}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10)) if (!excluded.has(date)) serviceDates.push(date);
+  if (serviceDates.length === 0) return [];
+  const quotient = Math.floor(amount / serviceDates.length);
+  const residual = amount - quotient * serviceDates.length;
+  const earnedThrough = options?.cancellationDate && options.cancellationDate < end ? options.cancellationDate : end;
+  const rows = new Map<string, MockMonthlyAllocation>();
+  for (let index = 0; index < serviceDates.length; index += 1) {
+    const date = serviceDates[index]!;
+    if (date > earnedThrough) continue;
+    const dailyAmount = quotient + (index < residual ? 1 : 0);
+    if (dailyAmount <= 0) continue;
+    const month = date.slice(0, 7);
+    const row = rows.get(month) ?? { month, serviceStart: date, serviceEnd: date, days: 0, amount: 0 };
+    row.serviceEnd = date;
+    row.days += 1;
+    row.amount += dailyAmount;
+    rows.set(month, row);
+  }
+  return [...rows.values()].filter((row) => row.amount > 0);
+}
+
+/**
+ * Recognition must exclude every freeze the membership has ever had, not just
+ * the one currently active — completed historical freezes still removed
+ * service days. Mirrors the Convex fact, which reads `freezes` plus
+ * `activeFreeze`.
+ */
+export function mockMembershipFreezeWindows(membership: { freezes?: readonly T.FreezePeriod[]; activeFreeze?: T.FreezePeriod }): T.FreezePeriod[] {
+  const rows = [...(membership.freezes ?? [])];
+  if (membership.activeFreeze && !rows.some((row) => row.id === membership.activeFreeze!.id)) rows.push(membership.activeFreeze);
+  return rows;
+}
+
+function mockMonthlyDepreciationAmount(cost: number | undefined, usefulLife: number | undefined, monthIndex: number): number | undefined {
+  if (cost === undefined || usefulLife === undefined || !Number.isSafeInteger(cost) || cost <= 0 || !Number.isSafeInteger(usefulLife) || usefulLife < 1 || usefulLife > MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS || monthIndex < 0 || monthIndex >= usefulLife) return undefined;
+  const base = Math.floor(cost / usefulLife);
+  return base + (monthIndex < cost - base * usefulLife ? 1 : 0);
+}
+
+type MockSourceCandidateDateRange = { fromDate?: string; toDate?: string };
+
+function mockTimestampInDateRange(value: string | number, timezone: string, range?: MockSourceCandidateDateRange): boolean {
+  if (!range?.fromDate && !range?.toDate) return true;
+  const date = managementLocalDate(value, timezone);
+  return (!range.fromDate || date >= range.fromDate) && (!range.toDate || date <= range.toDate);
+}
+
+function mockMonthInDateRange(month: string, range?: MockSourceCandidateDateRange): boolean {
+  if (!range?.fromDate && !range?.toDate) return true;
+  const monthStart = `${month}-01`;
+  const monthEnd = accountingMonthEnd(month);
+  return (!range.toDate || monthStart <= range.toDate) && (!range.fromDate || monthEnd >= range.fromDate);
+}
+
+function mockServiceDateRangeThroughToday(range?: MockSourceCandidateDateRange): MockSourceCandidateDateRange {
+  const today = managementLocalDate(Date.now(), TZ);
+  return { fromDate: range?.fromDate, toDate: !range?.toDate || range.toDate > today ? today : range.toDate };
+}
+
+function mockSourceProjectionFingerprint(fact: { sourceType: T.AccountingSourceType; sourceId: T.UUID; branchId?: T.UUID; amount?: number; currency?: string; occurredAt: string; debitCode?: string; creditCode?: string; policyCode?: string; status?: T.AccountingSourceStatus; reason?: string; details?: Record<string, unknown> }, status: T.AccountingSourceStatus): string {
+  return stableJson({ sourceType: fact.sourceType, sourceId: fact.sourceId, branchId: fact.branchId, amount: fact.amount, currency: fact.currency, occurredAt: fact.occurredAt, debitCode: fact.debitCode, creditCode: fact.creditCode, policyCode: fact.policyCode, status, reason: fact.reason, details: fact.details ?? null });
+}
+
+function mockSourceTypesDigest(sourceTypes: readonly T.AccountingSourceType[]): string {
+  return [...new Set(sourceTypes)].sort().join(",");
+}
+
+const MOCK_ACCOUNTING_SOURCE_TYPES: readonly T.AccountingSourceType[] = ["payment", "refund", "void", "membership_sale", "membership_renewal", "membership_revenue_recognition", "purchase_order_receipt", "stock_movement", "facility_supplies", "equipment_acquisition", "equipment_depreciation", "equipment_repair", "supplier_payment", "supplier_payment_reversal"];
+
+type MockAccountingFact = {
+  amount?: number;
+  currency?: string;
+  branchId?: T.UUID;
+  occurredAt: string;
+  debitCode?: string;
+  creditCode?: string;
+  policyCode?: string;
+  reason?: string;
+  status?: T.AccountingSourceStatus;
+  details?: Record<string, unknown>;
+};
+
+/**
+ * Pending source rows are historical decisions, not disposable cache rows.
+ * If a source was queued under a prior policy version, refresh/post must keep
+ * that version until an operator explicitly creates a new source fact. This
+ * mirrors Convex's code-owned policy preservation and prevents a queue
+ * refresh from silently changing the accounting meaning of an old item.
+ */
+function preserveMockSourcePolicy<TFact extends { policyCode?: string; debitCode?: string; creditCode?: string }>(fact: TFact, existing?: { status: T.AccountingSourceStatus; policyCode?: string }): TFact {
+  if (!existing || existing.status === "posted" || existing.status === "reversed" || !existing.policyCode || existing.policyCode === fact.policyCode) return fact;
+  const policyCode = existing.policyCode;
+  if (/^membership-(sale|renewal)\.v1$/.test(policyCode)) return { ...fact, policyCode, creditCode: "2200" };
+  if (/^retail-sale-(cash|card|cliq)\.v1$/.test(policyCode)) return { ...fact, policyCode, creditCode: "4100" };
+  if (/^retail-(refund|void)-(cash|card|cliq)\.v1$/.test(policyCode)) return { ...fact, policyCode, debitCode: "1200" };
+  // Other policy families have remained stable. Preserve the source's
+  // historical code even when the current fact happens to use a newer code.
+  return { ...fact, policyCode };
+}
+
+/**
+ * Recognition schedules exist only for membership terms posted under the
+ * deferred v1 policy. A posted row without a policy code predates
+ * versioning and was deferred. Mirrors the Convex rule.
+ */
+function mockMembershipPolicyRecognition(policyCode?: string): "deferred" | "immediate" {
+  return !policyCode || /^membership-(sale|renewal)\.v1$/.test(policyCode) ? "deferred" : "immediate";
+}
 
 function createMockMediaUrl(file: Blob, fallbackId: string): string {
   return typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : `mock-media://${fallbackId}`;
@@ -82,34 +464,39 @@ function revokeMockMediaUrl(url?: string): void {
 }
 
 const MOCK_INVOICES: PlatformBillingInvoice[] = [
-  { id: "RV-1048", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
-  { id: "RV-1047", gym: "Her House Fitness", amount: "JD 249.000", date: "28 Jul 2026", status: "paid" },
-  { id: "RV-1046", gym: "Forge Fitness Club", amount: "JD 249.000", date: "18 Jul 2026", status: "paid" },
-  { id: "RV-1045", gym: "District Strength", amount: "JD 0.000", date: "5 Jul 2026", status: "trial" },
-  { id: "RV-1044", gym: "Pulse Lab", amount: "JD 149.000", date: "30 Jun 2026", status: "paid" },
+  { id: "RV-1048", gymId: "pulse-lab", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
+  { id: "RV-1047", gymId: "her-house", gym: "Her House Fitness", amount: "JD 249.000", date: "28 Jul 2026", status: "paid" },
+  { id: "RV-1046", gymId: "forge-fitness", gym: "Forge Fitness Club", amount: "JD 249.000", date: "18 Jul 2026", status: "paid" },
+  { id: "RV-1045", gymId: "district-strength", gym: "District Strength", amount: "JD 0.000", date: "5 Jul 2026", status: "trial" },
+  { id: "RV-1044", gymId: "pulse-lab", gym: "Pulse Lab", amount: "JD 149.000", date: "30 Jun 2026", status: "paid" },
 ];
 
 const MOCK_SUPPORT_CASES: PlatformSupportCase[] = [
-  { id: "SUP-218", gym: "Pulse Lab", subject: "Payment retry failed", age: "18m", priority: "urgent", status: "open" },
-  { id: "SUP-217", gym: "Forge Fitness", subject: "New staff permission question", age: "1h", priority: "normal", status: "open" },
-  { id: "SUP-216", gym: "District Strength", subject: "Member import formatting", age: "3h", priority: "normal", status: "waiting" },
-  { id: "SUP-214", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
+  { id: "SUP-218", gymId: "pulse-lab", gym: "Pulse Lab", subject: "Payment retry failed", age: "18m", priority: "urgent", status: "open" },
+  { id: "SUP-217", gymId: "forge-fitness", gym: "Forge Fitness", subject: "New staff permission question", age: "1h", priority: "normal", status: "open" },
+  { id: "SUP-216", gymId: "district-strength", gym: "District Strength", subject: "Member import formatting", age: "3h", priority: "normal", status: "waiting" },
+  { id: "SUP-214", gymId: "her-house", gym: "Her House", subject: "Add a Shmeisani kiosk", age: "1d", priority: "normal", status: "open" },
 ];
 
-const MOCK_SAAS_PLANS: PlatformSaasPlan[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-];
+/**
+ * The published plans. This file sits inside an import cycle with the public
+ * data modules, so the list is built on first use rather than while the module
+ * is still evaluating.
+ */
+function mockSaasPlans(): PlatformSaasPlan[] {
+  return DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => ({ ...plan }));
+}
 
 const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
   {
     id: "20000000-0000-4a00-8a00-000000000001",
     gymName: "Northline Strength",
+    gymAddress: "12 Wasfi Al-Tal Street, Amman",
     ownerName: "Karim Haddad",
     email: "karim@northline.example",
     contactNumber: "+962 79 555 0144",
     plan: "Growth",
+    billingInterval: "monthly",
     status: "pending",
     notificationStatus: "sent",
     reviewNotificationStatus: "not_configured",
@@ -119,10 +506,12 @@ const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
   {
     id: "20000000-0000-4a00-8a00-000000000002",
     gymName: "Mosaic Women’s Fitness",
+    gymAddress: "8 Queen Rania Street, Amman",
     ownerName: "Dina Al-Saleh",
     email: "dina@mosaic.example",
     contactNumber: "+962 78 222 0908",
     plan: "Pro",
+    billingInterval: "monthly",
     status: "under_review",
     notificationStatus: "sent",
     reviewNotificationStatus: "not_configured",
@@ -134,6 +523,112 @@ const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
 ];
 
 type PageParams = { page?: number; pageSize?: number; sort?: string; search?: string };
+
+/** Stored agreement row: the view plus the unmasked ID number that only platform admins may reveal. */
+type MockSubscriptionAgreement = Omit<T.SubscriptionAgreement, "signatory"> & { signatory: { name: string; title?: string; idType: T.AgreementIdType; idNumber: string; phone?: string; email: string } };
+
+type MockPlatformAuditEvent = PlatformGymActivity & {
+  entityType: "platform_gym" | "platform_plan" | "subscription_agreement";
+  entityPublicId: string;
+  entityLabel: string;
+  reason: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+};
+
+/**
+ * A provisioned application gets its own tenant-shaped projection in the
+ * mock. The rest of the demo database still represents the signed-in Forge
+ * workspace, so keeping these facts separately prevents a second provisioning
+ * run from overwriting the active demo tenant while still exercising the
+ * platform/public projection contracts.
+ */
+type MockProvisionedTenant = {
+  organization: T.Organization;
+  branch: T.Branch;
+  owner: T.StaffUser;
+  membershipStatus: "pending" | "accepted";
+  clerkInvitationId: string;
+  listingId: string;
+};
+
+const PUBLIC_SUBSCRIPTION_STATUSES: ReadonlySet<MarketplaceGym["subscriptionStatus"]> = new Set(["active", "trial"]);
+const PROVISIONED_MOCK_GYM_ID = "forge-fitness";
+const UNPROVISIONED_GYM_REASON = "Organization is not provisioned.";
+
+function organizationStatusForPlatform(status: MarketplaceGym["subscriptionStatus"]): T.Organization["status"] {
+  return status === "overdue" ? "past_due" : status;
+}
+
+function platformStatusForOrganization(status: T.Organization["status"]): MarketplaceGym["subscriptionStatus"] {
+  return status === "past_due" ? "overdue" : status;
+}
+
+
+function validSubscriptionTimestamp(value: unknown): number | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const normalized = value.trim();
+  const datePrefix = normalized.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePrefix)) {
+    const dateOnlyTimestamp = Date.parse(`${datePrefix}T00:00:00.000Z`);
+    if (!Number.isFinite(dateOnlyTimestamp) || new Date(dateOnlyTimestamp).toISOString().slice(0, 10) !== datePrefix) return undefined;
+  }
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function sameCalendarDate(left: number | undefined, right: number | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return new Date(left).toISOString().slice(0, 10) === new Date(right).toISOString().slice(0, 10);
+}
+
+function cloneMarketplaceGym(gym: MarketplaceGym): MarketplaceGym {
+  return {
+    ...gym,
+    areas: [...gym.areas],
+    amenities: [...gym.amenities],
+    branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots], trialSchedule: branch.trialSchedule ? { ...branch.trialSchedule } : undefined })),
+  };
+}
+
+function safeMockLogoUrl(logo: T.MediaAsset | undefined, organizationId: string): string | undefined {
+  if (!logo || logo.organizationId !== organizationId || logo.ownerType !== "gym_logo" || logo.ownerId !== organizationId || logo.visibility !== "public" || logo.status !== "active") return undefined;
+  return logo.url;
+}
+
+function safeMockGymLogoUrl(gym: MarketplaceGym, organizationId: string): string | undefined {
+  return safeMockLogoUrl(gym.logo, organizationId);
+}
+
+function initialPlatformGyms(organization: MockDb["organization"]): MarketplaceGym[] {
+  return MARKETPLACE_GYMS.map((gym) => {
+    const cloned = cloneMarketplaceGym(gym);
+    if (cloned.id === PROVISIONED_MOCK_GYM_ID) {
+      // The organization is authoritative for lifecycle facts. Keeping the
+      // platform projection derived from it prevents the demo directory from
+      // drifting back to "Not configured" after a reset.
+      return {
+        ...cloned,
+        billingInterval: organization.billingInterval ?? cloned.billingInterval ?? "monthly",
+        subscriptionStartedAt: organization.subscriptionStartedAt,
+        currentPeriodEndsAt: organization.currentPeriodEndsAt,
+        trialEndsAt: organization.trialEndsAt,
+        cancelledAt: organization.cancelledAt,
+        subscriptionStatusReason: organization.subscriptionStatusReason,
+      };
+    }
+    return {
+      ...cloned,
+      subscriptionStatus: "suspended",
+      isPublic: false,
+      trialEndsAt: undefined,
+      subscriptionStartedAt: undefined,
+      currentPeriodEndsAt: undefined,
+      cancelledAt: undefined,
+      subscriptionStatusReason: UNPROVISIONED_GYM_REASON,
+    };
+  });
+}
 
 function paginate<I>(items: I[], q: PageParams): T.Page<I> {
   const page = Math.max(1, q.page ?? 1);
@@ -169,6 +664,35 @@ function parseImportCsv(csv: string): string[][] {
   return rows;
 }
 
+function validImportDate(value: string | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function normalizedImportNumber(value: string): string {
+  const digits = "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹";
+  return value.replace(/[٠-٩۰-۹]/g, (character) => String(digits.indexOf(character) % 10)).replace(/٬/g, ",").replace(/٫/g, ".").trim();
+}
+
+function normalizedImportGender(value: string | undefined): "male" | "female" | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (["male", "m", "man", "men", "ذكر"].includes(normalized ?? "")) return "male";
+  if (["female", "f", "woman", "women", "أنثى", "انثى"].includes(normalized ?? "")) return "female";
+  return undefined;
+}
+
+function importedMoneyMinor(value: string | undefined, currency: string): { amount?: number; error?: string } {
+  if (!value?.trim()) return {};
+  const normalized = normalizedImportNumber(value).replace(/\s/g, "").replace(/,/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return { error: `Enter ${currency} amounts as positive numbers` };
+  const digits = exponentFor(currency);
+  const [whole, fraction = ""] = normalized.split(".");
+  if (fraction.length > digits) return { error: `${currency} amounts can have at most ${digits} decimal place${digits === 1 ? "" : "s"}` };
+  const amount = Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, "0") || 0);
+  return Number.isSafeInteger(amount) && amount >= 0 ? { amount } : { error: `Enter a valid ${currency} amount` };
+}
+
 function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, key: string) => string | number | undefined): I[] {
   if (!sort) return items;
   const desc = sort.startsWith("-");
@@ -187,19 +711,45 @@ function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, ke
 
 export class MockGymOSApi implements GymOSApi {
   private db: MockDb;
-  private behavior: MockBehavior = { ...DEFAULT_BEHAVIOR };
+  private behavior: MockBehavior = readPreviewBehavior();
   private gymApplications: PlatformGymApplication[];
   private platformGyms: MarketplaceGym[];
+  private archivedGymIds = new Set<string>();
+  private provisionedMockGymIds = new Set<string>([PROVISIONED_MOCK_GYM_ID]);
+  private provisionedTenants = new Map<string, MockProvisionedTenant>();
+  private platformAuditEvents: MockPlatformAuditEvent[] = [];
+  private readonly marketplaceSubscribers = new Map<(gyms: MarketplaceGym[]) => void, ((error: unknown) => void) | undefined>();
+  private readonly publicPlanSubscribers = new Map<(plans: PlatformSaasPlan[]) => void, ((error: unknown) => void) | undefined>();
+  private readonly platformSnapshotSubscribers = new Map<(snapshot: PlatformSnapshot) => void, ((error: unknown) => void) | undefined>();
+  private readonly platformGymDetailSubscribers = new Map<(detail: PlatformGymDetail) => void, { gymId: string; onError?: (error: unknown) => void }>();
+  private readonly workspaceAccessSubscribers = new Map<(access: T.WorkspaceAccess) => void, ((error: unknown) => void) | undefined>();
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
+  private classSessions: T.ClassSession[] = [];
+  private classCoaches: T.ClassCoach[] = [];
+  private classOccurrences: T.ClassOccurrence[] = [];
+  private retentionStates: Array<{ memberId: string; snoozedUntil?: string; reason?: string }> = [];
+  private referralRewards: Array<{ referrerId: string; referredMemberId: string; days: number; status: string; createdAt: string }> = [];
+  private checklistTemplates: T.ChecklistTemplate[] = [];
+  private checklistRuns: Array<T.ChecklistRun & { id: string }> = [];
+  private referralLinks = new Map<string, { token: string; memberId: string; membershipId: string; gymId: string }>();
+  private freezeRequests: T.MembershipFreezeRequest[] = [];
+  private customerMemberLinks = new Map<string, string>();
   private platformSupportCases: PlatformSupportCase[];
+  private readonly provisioningInFlight = new Set<string>();
   private operationalNotifications: MockOperationalNotification[] = [];
   private trialBookings: TrialBooking[];
   private customerPreferenceHistory = new Map<string, CustomerMarketingPreference[]>();
   private registeredCustomers = new Map<string, CustomerPersona>();
   private memberImports = new Map<string, MemberImportPreview>();
+  private memberImportPaymentEvidence: Array<{ id: string; memberId: string; membershipId: string; amount: T.Money; lastPaymentDate: string; sourceReference?: string; importBatchId: string; sourceRowNumber: number }> = [];
   private memberImportIdempotency = new Map<string, { signature: string; result: MemberImportCommitResult }>();
+  private publicApplicationIdempotency = new Map<string, { signature: string; result: SubmitGymApplicationResult }>();
+  private publicApplicationRateLimits = new Map<string, { windowStartedAt: number; requestCount: number }>();
+  private trialIdempotency = new Map<string, { signature: string; result: TrialBooking }>();
+  private trialRateLimits = new Map<string, { windowStartedAt: number; requestCount: number }>();
   private membershipSaleIdempotency = new Map<string, { signature: string; result: T.MembershipSaleResult }>();
+  private memberSaleFlowIdempotency = new Map<string, { signature: string; result: T.CreateMemberMembershipSaleResult }>();
   private membershipTransferIdempotency = new Map<string, { signature: string; result: T.MembershipDetail }>();
   private ptCancellationIdempotency = new Map<string, { signature: string; result: T.PtPackageOrder }>();
   private activeCustomerId = CUSTOMER_PERSONAS[0]?.id ?? "customer-lina";
@@ -210,22 +760,47 @@ export class MockGymOSApi implements GymOSApi {
   private ptEntitlements: T.PtEntitlement[] = [];
   private ptBookings: T.PtBooking[] = [];
   private ptOrders: T.PtPackageOrder[] = [];
+  private operationsIdempotency = new Map<string, { signature: string; result: unknown; expiresAt?: number }>();
+  private accountingAccounts: T.AccountingAccount[];
+  private accountingPeriods: T.AccountingPeriod[] = [];
+  private accountingEntries: T.AccountingJournalEntryDetail[] = [];
+  private accountingSources: T.AccountingSourcePosting[] = [];
+  private accountingSourceAttempts = new Map<string, MockAccountingSourceAttempt>();
+  private accountingSourceQueueRuns: Array<{ branchId?: T.UUID; fromDate?: T.ISODate; toDate?: T.ISODate; sourceTypes: T.AccountingSourceType[]; candidateDigest: string; candidateCount: number; scannedAt: T.ISODateTime }> = [];
+  private accountingEntryFingerprints = new Map<string, string>();
   private gymPublicProfile!: T.GymPublicProfile;
   private gymProfileVersions: T.GymProfileVersion[] = [];
   private mediaAssets = new Map<string, T.MediaAsset>();
+  /** Internal linkage kept out of the public trainer DTO, matching Convex's photoAssetId field. */
+  private ptTrainerPhotoAssetIds = new Map<string, string>();
   private operationalEmailKinds: string[] = [];
+  private agreementResendCounts = new Map<string, number>();
   private operationalEmailUpdate?: Pick<T.OperationalEmailActivationSettings, "ownerConfirmed" | "ownerConfirmedAt" | "ownerConfirmedBy" | "updatedAt" | "updatedBy" | "reason">;
+  private savedViews: import("@/lib/domain/qol").SavedView[] = [];
+  private bulkJobs: import("@/lib/domain/qol").BulkOperationJob[] = [];
+  private bulkIdempotency = new Map<string, { signature: string; job: import("@/lib/domain/qol").BulkOperationJob }>();
+  private duplicateResolutions = new Map<string, { status: import("@/lib/domain/qol").DuplicateCaseStatus; reason: string; survivingMemberId?: string; updatedAt: string }>();
+  private onboardingProgress = new Map<import("@/lib/domain/qol").OnboardingAudience, import("@/lib/domain/qol").OnboardingProgress>();
+  private pushSubscriptions: import("@/lib/domain/qol").PushSubscriptionSummary[] = [];
+  private exportJobs: import("@/lib/domain/qol").ExportJob[] = [];
+  private recentWorkspaceItems: import("@/lib/domain/qol").RecentWorkspaceItem[] = [];
+  private pinnedWorkspaceItems: import("@/lib/domain/qol").PinnedWorkspaceItem[] = [];
 
   constructor(db?: MockDb) {
     this.db = db ?? buildSeed();
+    this.accountingAccounts = MOCK_ACCOUNT_DEFINITIONS.map((definition) => mockAccount(this.db.organization.id, definition));
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
-    this.platformGyms = MARKETPLACE_GYMS.map((gym) => ({
-      ...gym,
-      areas: [...gym.areas],
-      amenities: [...gym.amenities],
-      branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
-    }));
-    this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.platformGyms = initialPlatformGyms(this.db.organization);
+    this.platformPlans = mockSaasPlans();
+    this.classCoaches = this.seedClassCoaches();
+    this.classSessions = this.seedClassSessions();
+    this.classOccurrences = [];
+    this.retentionStates = [];
+    this.referralRewards = [];
+    this.referralLinks.clear();
+    this.seedChecklists();
+    this.freezeRequests = [];
+    this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
@@ -242,20 +817,136 @@ export class MockGymOSApi implements GymOSApi {
       [30, 400_000, 180],
     ] as const).map(([sessionCount, amount, validityDays]) => ({ id: mockUuid(), organizationId: this.db.organization.id, name: `${sessionCount} PT sessions`, sessionCount, totalPrice: money(amount), validityDays, branchAccess: "all", branchIds: [], status: "active", createdAt: nowISO(), updatedAt: nowISO() }));
     const listing = this.platformGyms[0];
-    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
+    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", publishLocked: false, shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
+    this.seedOperationalNotifications();
+  }
+
+  /**
+   * Notifications for the owner persona so the preview's bell has something
+   * to group: two updates about one PT booking, two member follow-ups, one
+   * support reply, one maintenance escalation and one access denial that
+   * must always stay visible on its own.
+   */
+  private seedOperationalNotifications(): void {
+    const owner = this.db.users.find((user) => user.role === "owner" && user.status !== "deactivated");
+    if (!owner) return;
+    const branch = this.db.branches[0];
+    const members = this.db.members.filter((member) => member.status === "active").slice(0, 2);
+    const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+    const base = { organizationId: this.db.organization.id, branchId: branch?.id, recipientId: owner.id };
+    const seeded: MockOperationalNotification[] = [
+      { ...base, id: "NOT-demo-pt-1", kind: "pt_booking", title: "New PT booking", body: `${members[0]?.fullName ?? "Member"} · ${at(-30)}`, href: "/pt?booking=demo-booking-1", dedupeKey: "pt-booking:demo-booking-1", createdAt: at(26) },
+      { ...base, id: "NOT-demo-pt-2", kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: at(-54), href: "/pt?booking=demo-booking-1", dedupeKey: "pt-reschedule:demo-booking-1:1", createdAt: at(5) },
+      { ...base, id: "NOT-demo-renewal-1", kind: "renewal", title: "Renewal due this week", body: `${members[0]?.fullName ?? "Member"} · membership ends in 5 days`, href: `/members/${members[0]?.id ?? "member"}?action=renew`, dedupeKey: "renewal:demo-1", createdAt: at(20) },
+      { ...base, id: "NOT-demo-risk-1", kind: "at_risk", title: "Member at risk", body: `${members[1]?.fullName ?? "Member"} · no visit for 21 days`, href: `/members/${members[1]?.id ?? "member"}`, dedupeKey: "at-risk:demo-2", createdAt: at(18) },
+      { ...base, id: "NOT-demo-support-1", kind: "support_reply", title: "RIVET replied to your support case", body: "Charged twice for July and our billing date", href: "/support?case=SUP-219", dedupeKey: "support-reply:SUP-219:seed", readAt: at(3), createdAt: at(4) },
+      { ...base, id: "NOT-demo-task-1", kind: "facility_task", title: "Checklist item escalated", body: "Check changing rooms are clean · Main floor", href: `/maintenance?branch=${branch?.id ?? ""}`, dedupeKey: "facility-task:demo-1", createdAt: at(9) },
+      { ...base, id: "NOT-demo-access-1", kind: "access_denial", title: "Entry denied at the door", body: "Expired membership scanned at the Abdoun turnstile", href: "/reception", dedupeKey: "access-denial:demo-1", createdAt: at(1) },
+    ];
+    this.operationalNotifications = [...seeded.filter((entry) => !this.operationalNotifications.some((existing) => existing.id === entry.id)), ...this.operationalNotifications];
+  }
+
+  /** The seeded Forge row is the only mock directory record linked to the tenant database. */
+  private isProvisionedGym(gym: MarketplaceGym): boolean {
+    return this.provisionedMockGymIds.has(gym.id);
+  }
+
+  private ptTrainerView(trainer: T.PtTrainerProfile): T.PtTrainerProfile {
+    const assetId = this.ptTrainerPhotoAssetIds.get(trainer.id);
+    const asset = assetId ? this.mediaAssets.get(assetId) : undefined;
+    const photoUrl = asset
+      && asset.organizationId === this.db.organization.id
+      && asset.ownerType === "trainer_photo"
+      && asset.ownerId === trainer.id
+      && asset.visibility === "public"
+      && asset.status === "active"
+      ? asset.url
+      : undefined;
+    return { ...trainer, photoUrl };
+  }
+
+  private tenantForGym(gym: MarketplaceGym): MockProvisionedTenant | undefined {
+    return [...this.provisionedTenants.values()].find((tenant) => tenant.listingId === gym.id);
+  }
+
+  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; billingInterval?: "monthly" | "annual"; provisioned: boolean }> {
+    return [
+      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, billingInterval: this.db.organization.billingInterval ?? "monthly", provisioned: !this.db.organization.archivedAt },
+      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, billingInterval: organization.billingInterval ?? "monthly", provisioned: !organization.archivedAt })),
+    ];
+  }
+
+  private platformGymLogoUrl(gym: MarketplaceGym): string | undefined {
+    const organizationId = this.db.organization.id;
+    return safeMockGymLogoUrl(gym, organizationId)
+      ?? (this.db.brand.logoAssetId ? safeMockLogoUrl(this.mediaAssets.get(this.db.brand.logoAssetId), organizationId) : undefined);
+  }
+
+  private readMarketplaceGyms(): MarketplaceGym[] {
+    return publicMarketplaceGyms(this.platformGyms
+      .filter((gym) => this.isProvisionedGym(gym) && !this.archivedGymIds.has(gym.id))
+      .map((gym) => {
+        const cloned = cloneMarketplaceGym(gym);
+        delete cloned.logoUrl;
+        delete cloned.isProvisioned;
+        delete cloned.isArchived;
+        delete cloned.archivedAt;
+        delete cloned.archiveReason;
+        return cloned;
+      }));
   }
 
   listMarketplaceGyms(): Promise<MarketplaceGym[]> {
-    return this.respond(() => this.platformGyms.filter((gym) => (gym.isPublic ?? true) && (gym.subscriptionStatus === "active" || gym.subscriptionStatus === "trial")));
+    return this.respond(() => this.readMarketplaceGyms());
   }
 
-  subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
-    return this.subscribeOnce(() => this.listMarketplaceGyms(), onValue, onError);
+  getPublicOffer(token: string): Promise<T.PublicOffer> {
+    return this.respond(() => {
+      const offer = this.db.offers.find((item) => item.publicToken === token);
+      const lead = offer?.leadId ? this.db.leads.find((item) => item.id === offer.leadId) : undefined;
+      if (!offer || !lead || this.db.organization.archivedAt) throw ApiError.of(ERR.NOT_FOUND, "This offer link is not available.");
+      const current = this.projectOffer(offer);
+      const status: T.PublicOffer["status"] = current.status === "draft" ? "preparing" : current.status === "sent" ? "available" : current.status;
+      return { token, recipientName: lead.fullName, organizationName: this.db.organization.name, planName: current.planName, price: current.price, expiresAt: current.expiresAt, status, respondedAt: current.respondedAt, responseReason: current.responseReason, brand: this.db.brand };
+    }, "public");
+  }
+
+  respondToPublicOffer(token: string, input: { outcome: T.OfferOutcome; reason?: string }): Promise<T.PublicOffer> {
+    return this.respond(() => {
+      const offer = this.db.offers.find((item) => item.publicToken === token);
+      const lead = offer?.leadId ? this.db.leads.find((item) => item.id === offer.leadId) : undefined;
+      if (!offer || !lead) throw ApiError.of(ERR.NOT_FOUND, "This offer link is not available.");
+      const current = this.projectOffer(offer);
+      if (current.status === input.outcome) return this.publicOfferView(offer, lead);
+      if (current.status === "expired") throw ApiError.of(ERR.CONFLICT, "This offer has expired.");
+      if (current.status !== "sent") throw ApiError.of(ERR.CONFLICT, "This offer is not ready for a response.");
+      const respondedAt = nowISO();
+      Object.assign(offer, { status: input.outcome, respondedAt, responseReason: input.reason?.trim().slice(0, 240) || (input.outcome === "declined" ? "Declined by recipient" : undefined) });
+      if (input.outcome === "declined") Object.assign(lead, { stage: "contacted", nextFollowUpAt: new Date(Date.now() + 86_400_000).toISOString(), updatedAt: respondedAt });
+      this.activity({ leadId: lead.id, type: input.outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${input.outcome} — ${offer.planName}`, body: input.reason?.trim() || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.id, outcome: input.outcome, source: "public_link" } });
+      return this.publicOfferView(offer, lead);
+    }, "public");
+  }
+
+  private publicOfferView(offer: T.Offer, lead: T.Lead): T.PublicOffer {
+    const current = this.projectOffer(offer);
+    const status: T.PublicOffer["status"] = current.status === "draft" ? "preparing" : current.status === "sent" ? "available" : current.status;
+    return { token: current.publicToken!, recipientName: lead.fullName, organizationName: this.db.organization.name, planName: current.planName, price: current.price, expiresAt: current.expiresAt, status, respondedAt: current.respondedAt, responseReason: current.responseReason, brand: this.db.brand };
+  }
+
+  async subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.respond(() => this.readMarketplaceGyms(), "public"));
+      this.marketplaceSubscribers.set(onValue, onError);
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => { this.marketplaceSubscribers.delete(onValue); };
   }
 
   getGymPublicProfile(): Promise<T.GymPublicProfile> {
-    return this.respond(() => ({ ...this.gymPublicProfile, amenities: [...this.gymPublicProfile.amenities], gallery: [...this.gymPublicProfile.gallery], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active") }));
+    return this.respond(() => ({ ...this.gymPublicProfile, publishLocked: this.gymProfileVersions.length > 0, amenities: [...this.gymPublicProfile.amenities], gallery: [...this.gymPublicProfile.gallery], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active") }));
   }
 
   subscribeGymPublicProfile(onValue: (profile: T.GymPublicProfile) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -273,49 +964,69 @@ export class MockGymOSApi implements GymOSApi {
       if (!/^#[0-9a-f]{6}$/i.test(input.accentColor)) throw ApiError.of(ERR.VALIDATION, "Accent color must be a six-digit hex color.");
       const nextVersion = this.gymPublicProfile.status === "published" ? this.gymPublicProfile.version + 1 : this.gymPublicProfile.version;
       const referenced = (id: string | undefined) => id ? this.mediaAssets.get(id) : undefined;
-      const logo = referenced(input.logoAssetId);
-      const cover = referenced(input.coverAssetId);
-      const gallery = input.galleryAssetIds.map((id) => referenced(id)).filter((asset): asset is T.MediaAsset => Boolean(asset));
-      for (const asset of [logo, cover, ...gallery].filter((asset): asset is T.MediaAsset => Boolean(asset))) this.mediaAssets.set(asset.id, { ...asset, status: "active", updatedAt: nowISO() });
-      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, logo, cover, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery, trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: nowISO() };
+      const now = nowISO();
+      const activate = (asset: T.MediaAsset | undefined): T.MediaAsset | undefined => {
+        if (!asset) return undefined;
+        const { deleteAfter: _deleteAfter, ...withoutDeletion } = asset;
+        const active: T.MediaAsset = { ...withoutDeletion, status: "active", updatedAt: now };
+        this.mediaAssets.set(active.id, active);
+        return active;
+      };
+      const logo = activate(referenced(input.logoAssetId));
+      const cover = activate(referenced(input.coverAssetId));
+      const gallery = input.galleryAssetIds.map((id) => activate(referenced(id))).filter((asset): asset is T.MediaAsset => Boolean(asset));
+      this.gymPublicProfile = { ...this.gymPublicProfile, ...input, logo, cover, version: nextVersion, status: "draft", amenities: [...input.amenities], gallery, trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: undefined, updatedAt: now };
       return { ...this.gymPublicProfile };
     });
   }
 
-  publishGymPublicProfile(): Promise<T.GymPublicProfile> {
-    return this.respond(() => {
+  async publishGymPublicProfile(): Promise<T.GymPublicProfile> {
+    const result = await this.respond(() => {
       this.require("profiles.manage");
+      // Parity with Convex: only the first publish is self-serve; later
+      // drafts are reviewed and published by the platform team.
+      if (this.gymProfileVersions.length > 0) throw ApiError.of(ERR.VALIDATION, "The public page locks after its first publish. Save your draft, then ask RIVET support to review and publish it.");
       const now = nowISO();
       this.gymProfileVersions = this.gymProfileVersions.map((item) => item.status === "published" ? { ...item, status: "unpublished", unpublishedAt: now } : item);
-      this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now };
+      this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now, trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)) };
       this.gymProfileVersions.unshift({ id: mockUuid(), organizationId: this.db.organization.id, version: this.gymPublicProfile.version, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: now, updatedAt: now });
       const listing = this.platformGyms[0];
       if (listing) Object.assign(listing, { shortName: this.gymPublicProfile.shortName, tagline: this.gymPublicProfile.taglineEn, description: this.gymPublicProfile.descriptionEn, category: this.gymPublicProfile.category, audience: this.gymPublicProfile.audience, amenities: [...this.gymPublicProfile.amenities], accent: this.gymPublicProfile.accentColor, profileVersion: this.gymPublicProfile.version, logo: this.gymPublicProfile.logo, cover: this.gymPublicProfile.cover, gallery: [...this.gymPublicProfile.gallery] });
       return { ...this.gymPublicProfile };
     });
+    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitPlatformGymDetailSubscribers()]);
+    return result;
   }
 
   unpublishGymPublicProfile(reason: string): Promise<T.GymPublicProfile> {
     return this.respond(() => {
       this.require("profiles.manage");
-      if (!reason.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to unpublish the gym profile.");
-      this.gymPublicProfile = { ...this.gymPublicProfile, status: "unpublished", updatedAt: nowISO() };
-      return { ...this.gymPublicProfile };
+      void reason;
+      throw ApiError.of(ERR.VALIDATION, "Ask RIVET support to take the public page down; the platform team removes it from discovery for you.");
     });
   }
 
   uploadMediaAsset(input: { ownerType: T.MediaAssetOwnerType; ownerId: string; altText?: string; file: Blob }): Promise<T.MediaAsset> {
     return this.respond(() => {
+      if (input.ownerType === "member_photo") {
+        this.require("members.write");
+        const member = this.db.members.find((candidate) => candidate.id === input.ownerId);
+        const branch = member ? this.db.branches.find((candidate) => candidate.id === member.homeBranchId) : undefined;
+        if (!member || !branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+        if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+      }
+      if (input.ownerType === "class_image") this.require("operations.manage");
       if (!( ["image/jpeg", "image/png", "image/webp"] as string[]).includes(input.file.type) || input.file.size > 5 * 1024 * 1024) throw ApiError.of(ERR.VALIDATION, "Use a JPEG, PNG, or WebP image up to 5 MB.");
       const now = nowISO();
       const assetId = mockUuid();
-      const asset = { id: assetId, organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: input.ownerType.startsWith("gym_") ? "pending" : "active", url: createMockMediaUrl(input.file, assetId), createdAt: now, updatedAt: now } satisfies T.MediaAsset;
+      const isProfileDraft = input.ownerType.startsWith("gym_") || input.ownerType === "trainer_photo";
+      const asset = { id: assetId, organizationId: this.db.organization.id, ownerType: input.ownerType, ownerId: input.ownerId, storageId: `mock-storage-${mockUuid()}`, contentType: input.file.type as T.MediaAsset["contentType"], sizeBytes: input.file.size, altText: input.altText, visibility: input.ownerType === "member_photo" ? "private" : "public", status: isProfileDraft ? "pending" : "active", deleteAfter: isProfileDraft ? new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString() : undefined, url: createMockMediaUrl(input.file, assetId), createdAt: now, updatedAt: now } satisfies T.MediaAsset;
       this.mediaAssets.set(asset.id, asset);
       return asset;
     });
   }
 
-  discardDraftMediaAsset(assetId: T.UUID): Promise<void> { return this.respond(() => { const asset = this.mediaAssets.get(assetId); if (asset?.status === "pending") { revokeMockMediaUrl(asset.url); this.mediaAssets.delete(assetId); } }); }
+  discardDraftMediaAsset(assetId: T.UUID): Promise<void> { return this.respond(() => { const asset = this.mediaAssets.get(assetId); if (asset && (asset.ownerType.startsWith("gym_") || asset.ownerType === "trainer_photo") && asset.status === "pending") { revokeMockMediaUrl(asset.url); this.mediaAssets.delete(assetId); } }); }
 
   private customerWithPreference(persona: CustomerPersona): CustomerPersona {
     const history = this.customerPreferenceHistory.get(persona.id) ?? [];
@@ -324,12 +1035,744 @@ export class MockGymOSApi implements GymOSApi {
     return { ...persona, marketingPreference: preference, marketingPreferenceHistory: history.length > 0 ? history.map((item) => ({ ...item })) : [fallback] };
   }
 
+  private customerReferralProgram(membership: CustomerMembership): CustomerReferralProgram {
+    const policy = this.db.operationalPolicies.referrals;
+    const { member } = this.customerOperationalMembership(membership.id);
+    const windowStart = Date.now() - policy.windowDays * 86_400_000;
+    const rewards = this.referralRewards.filter((reward) => reward.referrerId === member.id);
+    const currentRewards = rewards.filter((reward) => Date.parse(reward.createdAt) >= windowStart);
+    const earnedDays = currentRewards.reduce((sum, reward) => sum + reward.days, 0);
+    const link = this.referralLinks.get(membership.id);
+    // Parity with Convex: dated history without the referred person's identity.
+    const rewardedReferredIds = new Set(rewards.map((reward) => reward.referredMemberId));
+    const pending = this.db.members
+      .filter((candidate) => (candidate as MemberRecord & { referredByMemberId?: string }).referredByMemberId === member.id && candidate.status !== "archived" && !rewardedReferredIds.has(candidate.id))
+      .map((candidate) => ({ occurredAt: candidate.createdAt, days: 0, status: "pending" as const }));
+    const history = [
+      ...rewards.map((reward) => ({
+        occurredAt: reward.createdAt,
+        days: reward.days,
+        status: reward.status === "applied" ? ("applied" as const) : reward.status === "cap_reached" ? ("capped" as const) : ("ineligible" as const),
+      })),
+      ...pending,
+    ]
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+      .slice(0, 24)
+      // Parity with Convex: synthetic ids so nothing keys back to the referred member.
+      .map((event, index) => ({ id: `referral-event-${index}`, ...event }));
+    return { membershipId: membership.id, enabled: policy.enabled, rewardDays: policy.rewardDays, maxRewardDaysPerWindow: policy.maxRewardDaysPerWindow, windowDays: policy.windowDays, earnedDays, remainingDays: Math.max(0, policy.maxRewardDaysPerWindow - earnedDays), successfulReferrals: rewards.filter((reward) => reward.status === "applied").length, recordedReferrals: rewards.length, sharePath: link ? `/customer/gyms/${encodeURIComponent(membership.gymId)}?ref=${encodeURIComponent(link.token)}` : undefined, history };
+  }
+
   getCustomerExperience(): Promise<CustomerExperience> {
     return this.respond(() => {
       const persona = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
-      return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS, bookings: this.trialBookings.map((booking) => ({ ...booking })) };
+      return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS.map((membership) => ({ ...membership, referral: this.customerReferralProgram(membership) })), bookings: this.trialBookings.map((booking) => ({ ...booking })) };
     });
   }
+
+  ensureCustomerReferralLink(membershipId: T.UUID): Promise<CustomerReferralProgram> {
+    return this.respond(() => {
+      const membership = INITIAL_CUSTOMER_MEMBERSHIPS.find((candidate) => candidate.id === membershipId && candidate.customerId === this.activeCustomerId);
+      if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      if (!this.db.operationalPolicies.referrals.enabled) throw ApiError.of(ERR.CONFLICT, "This gym has not enabled member referral rewards.");
+      const { member, membership: operationalMembership } = this.customerOperationalMembership(membershipId);
+      if (!this.referralLinks.has(membershipId)) this.referralLinks.set(membershipId, { token: mockUuid(), memberId: member.id, membershipId: operationalMembership.id, gymId: membership.gymId });
+      return this.customerReferralProgram(membership);
+    });
+  }
+
+  // --- Daily branch checklists (parity with convex/branchChecklists) ---
+
+  private static readonly CHECKLIST_ROLES: readonly T.ChecklistRole[] = ["owner", "manager", "sales", "receptionist", "trainer"];
+
+  private seedChecklists(): void {
+    const branch = this.db.branches[0];
+    if (!branch) { this.checklistTemplates = []; this.checklistRuns = []; return; }
+    const item = (id: string, label: string, extra: Partial<T.ChecklistTemplateItem> = {}, order = 0): T.ChecklistTemplateItem => ({ id, label, required: true, order, ...extra });
+    this.checklistTemplates = [
+      {
+        id: "checklist-opening-abdoun", branchId: branch.id, type: "opening", name: "Opening walkthrough", active: true, dueTime: "07:30", assignedRole: "receptionist",
+        items: [
+          item("open-1", "Unlock doors and turn on lights", {}, 0),
+          item("open-2", "Check changing rooms are clean", { zoneId: this.db.zones.find((zone) => zone.branchId === branch.id)?.id, offerMaintenance: true }, 1),
+          item("open-3", "Test the entry scanner", {}, 2),
+          item("open-4", "Put out fresh towels", { required: false }, 3),
+        ],
+        createdAt: nowISO(), updatedAt: nowISO(),
+      },
+      {
+        id: "checklist-closing-abdoun", branchId: branch.id, type: "closing", name: "Closing walkthrough", active: true, dueTime: "23:30", assignedRole: "receptionist",
+        items: [
+          item("close-1", "Rack all weights", { offerMaintenance: true }, 0),
+          item("close-2", "Switch off cardio machines", {}, 1),
+          item("close-3", "Lock the back door", {}, 2),
+        ],
+        createdAt: nowISO(), updatedAt: nowISO(),
+      },
+    ];
+    this.checklistRuns = [];
+  }
+
+  private checklistLocalTimeNow(): string {
+    const timezone = this.db.organization.timezone || "Asia/Amman";
+    const value = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false }).format(Date.now());
+    return value === "24:00" ? "00:00" : value;
+  }
+
+  private checklistProgress(items: T.ChecklistRunItem[]): T.ChecklistRun["progress"] {
+    return {
+      done: items.filter((item) => item.status !== "pending").length,
+      total: items.length,
+      requiredPending: items.filter((item) => item.required && item.status === "pending").length,
+      failedRequired: items.filter((item) => item.required && item.status === "failed").length,
+    };
+  }
+
+  private checklistRunView(run: T.ChecklistRun & { id?: string }): T.ChecklistRun {
+    const progress = this.checklistProgress(run.items);
+    const today = todayISODate(this.db.organization.timezone);
+    const pastDue = run.localDate < today || (run.localDate === today && this.checklistLocalTimeNow() > run.dueTime);
+    return { ...run, items: [...run.items].sort((a, b) => a.order - b.order).map((item) => ({ ...item })), progress, complete: progress.requiredPending === 0, overdue: pastDue && progress.requiredPending > 0 };
+  }
+
+  private checklistTemplateOrThrow(templateId: string): T.ChecklistTemplate {
+    const template = this.checklistTemplates.find((candidate) => candidate.id === templateId);
+    if (!template) throw ApiError.of(ERR.NOT_FOUND, "Checklist not found.");
+    if (!this.branchIsVisible(template.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    return template;
+  }
+
+  private ensureChecklistRun(template: T.ChecklistTemplate, date: string): T.ChecklistRun & { id: string } {
+    const existing = this.checklistRuns.find((run) => run.templateId === template.id && run.localDate === date);
+    if (existing) return existing;
+    const run: T.ChecklistRun & { id: string } = {
+      id: mockUuid(),
+      templateId: template.id,
+      branchId: template.branchId,
+      type: template.type,
+      localDate: date,
+      name: template.name,
+      dueTime: template.dueTime,
+      assignedRole: template.assignedRole,
+      assignedUserId: template.assignedUserId,
+      assignedUserName: template.assignedUserName,
+      items: [...template.items].sort((a, b) => a.order - b.order).map((item) => ({ itemId: item.id, label: item.label, instructions: item.instructions, required: item.required, order: item.order, zoneId: item.zoneId, offerMaintenance: item.offerMaintenance, status: "pending" as const })),
+      progress: { done: 0, total: template.items.length, requiredPending: template.items.filter((item) => item.required).length, failedRequired: 0 },
+      complete: template.items.every((item) => !item.required),
+      overdue: false,
+    };
+    this.checklistRuns.push(run);
+    return run;
+  }
+
+  private checklistAssignees(branchId: string): Array<{ id: string; name: string }> {
+    if (!this.branchIsVisible(branchId) || !this.db.branches.some(branch => branch.id === branchId && branch.status === "active")) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    return this.db.users.filter(user => user.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branchId))).map(user => ({ id: user.id, name: user.name }));
+  }
+
+  private checklistAssignment(branchId: string, assignedUserId?: string): { assignedUserId?: string; assignedUserName?: string } {
+    const assignee = this.checklistAssignees(branchId).find(user => user.id === assignedUserId);
+    if (assignedUserId && !assignee) throw ApiError.of(ERR.VALIDATION, "Choose active staff with access to this branch.");
+    return { assignedUserId: assignee?.id, assignedUserName: assignee?.name };
+  }
+
+  listChecklistAssignees(branchId: T.UUID): Promise<Array<{ id: T.UUID; name: string }>> {
+    return this.respond(() => { this.require("operations.manage"); return this.checklistAssignees(branchId); });
+  }
+
+  assignChecklistRun(input: { templateId: T.UUID; date?: string; assignedUserId?: T.UUID }): Promise<T.ChecklistRun> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      const template = this.checklistTemplateOrThrow(input.templateId);
+      const assigned = this.checklistAssignment(template.branchId, input.assignedUserId);
+      const date = input.date ?? this.today();
+      if (!isCalendarDate(date)) throw ApiError.of(ERR.VALIDATION, "Choose a valid checklist date.");
+      const run = this.ensureChecklistRun(template, date);
+      if (run.assignedUserId !== assigned.assignedUserId) {
+        const before = { assignedUserId: run.assignedUserId ?? null };
+        Object.assign(run, assigned);
+        this.audit({ category: "operations", action: "checklists.run.assign", entityType: "checklist_run", entityId: run.id, entityLabel: run.name, summary: "Checklist responsibility updated", branchId: run.branchId, before, after: { assignedUserId: assigned.assignedUserId ?? null } });
+      }
+      return this.checklistRunView(run);
+    });
+  }
+
+  listChecklistTemplates(input: { branchId?: T.UUID } = {}): Promise<T.ChecklistTemplate[]> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      if (input.branchId && !this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+      return this.checklistTemplates
+        .filter((template) => (input.branchId ? template.branchId === input.branchId : this.branchIsVisible(template.branchId)))
+        .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "opening" ? -1 : 1))
+        .map((template) => ({ ...template, items: template.items.map((item) => ({ ...item })) }));
+    });
+  }
+
+  upsertChecklistTemplate(input: T.UpsertChecklistTemplateInput): Promise<T.ChecklistTemplate> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      if (!this.branchIsVisible(input.branchId) || !this.db.branches.some((branch) => branch.id === input.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (input.type !== "opening" && input.type !== "closing") throw ApiError.of(ERR.VALIDATION, "type must be opening or closing.");
+      const name = input.name?.trim();
+      if (!name) throw ApiError.of(ERR.VALIDATION, "Name is required.");
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.dueTime ?? "")) throw ApiError.of(ERR.VALIDATION, "Due time must be HH:MM.");
+      if (!MockGymOSApi.CHECKLIST_ROLES.includes(input.assignedRole)) throw ApiError.of(ERR.VALIDATION, "Choose a valid gym role.");
+      if (!Array.isArray(input.items) || input.items.length === 0) throw ApiError.of(ERR.VALIDATION, "A checklist needs at least one item.");
+      if (input.items.length > 50) throw ApiError.of(ERR.VALIDATION, "A checklist holds at most 50 items.");
+      const items: T.ChecklistTemplateItem[] = input.items.map((raw, index) => {
+        const label = raw.label?.trim();
+        if (!label) throw ApiError.of(ERR.VALIDATION, `Item ${index + 1} label is required.`);
+        if (raw.zoneId && !this.db.zones.some((zone) => zone.id === raw.zoneId && zone.branchId === input.branchId && zone.status === "active")) {
+          throw ApiError.of(ERR.VALIDATION, "A linked gym space must belong to this branch.");
+        }
+        return { id: raw.id ?? mockUuid(), label: label.slice(0, 120), instructions: raw.instructions?.trim() ? raw.instructions.trim().slice(0, 400) : undefined, required: raw.required !== false, order: index, zoneId: raw.zoneId, offerMaintenance: raw.offerMaintenance === true ? true : undefined };
+      });
+      const assigned = this.checklistAssignment(input.branchId, input.assignedUserId);
+      const active = input.active !== false;
+      if (input.templateId) {
+        const existing = this.checklistTemplateOrThrow(input.templateId);
+        if (existing.branchId !== input.branchId) throw ApiError.of(ERR.VALIDATION, "A checklist cannot move between branches.");
+        const beforeName = existing.name;
+        const beforeAssignee = existing.assignedUserId ?? null;
+        Object.assign(existing, { type: input.type, name: name.slice(0, 80), dueTime: input.dueTime, assignedRole: input.assignedRole, ...assigned, items, active, updatedAt: nowISO() });
+        this.audit({ category: "operations", action: "checklists.template.update", entityType: "checklist_template", entityId: existing.id, entityLabel: existing.name, summary: `Checklist "${existing.name}" updated`, before: { name: beforeName, assignedUserId: beforeAssignee }, after: { name: existing.name, assignedUserId: existing.assignedUserId ?? null }, branchId: existing.branchId });
+        return { ...existing, items: existing.items.map((item) => ({ ...item })) };
+      }
+      const created: T.ChecklistTemplate = { id: mockUuid(), branchId: input.branchId, type: input.type, name: name.slice(0, 80), active, dueTime: input.dueTime, assignedRole: input.assignedRole, ...assigned, items, createdAt: nowISO(), updatedAt: nowISO() };
+      this.checklistTemplates.push(created);
+      this.audit({ category: "operations", action: "checklists.template.create", entityType: "checklist_template", entityId: created.id, entityLabel: created.name, summary: `Checklist "${created.name}" created`, branchId: created.branchId });
+      return { ...created, items: created.items.map((item) => ({ ...item })) };
+    });
+  }
+
+  getChecklistDay(input: { branchId: T.UUID; date?: string }): Promise<T.ChecklistDay> {
+    return this.respond(() => {
+      if (!this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+      const date = input.date ?? todayISODate(this.db.organization.timezone);
+      if (!isCalendarDate(date)) throw ApiError.of(ERR.VALIDATION, "date must be a calendar date.");
+      const runs = this.checklistTemplates
+        .filter((template) => template.active && template.branchId === input.branchId)
+        .map((template) => {
+          const existing = this.checklistRuns.find((run) => run.templateId === template.id && run.localDate === date);
+          if (existing) return this.checklistRunView(existing);
+          return this.checklistRunView({
+            templateId: template.id, branchId: template.branchId, type: template.type, localDate: date, name: template.name, dueTime: template.dueTime, assignedRole: template.assignedRole, assignedUserId: template.assignedUserId, assignedUserName: template.assignedUserName,
+            items: template.items.map((item) => ({ itemId: item.id, label: item.label, instructions: item.instructions, required: item.required, order: item.order, zoneId: item.zoneId, offerMaintenance: item.offerMaintenance, status: "pending" as const })),
+            progress: { done: 0, total: 0, requiredPending: 0, failedRequired: 0 }, complete: false, overdue: false,
+          });
+        })
+        .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "opening" ? -1 : 1));
+      const carryover = this.checklistRuns.filter(run => run.branchId === input.branchId && run.localDate >= addDays(date, -7) && run.localDate < date && this.checklistTemplates.some(template => template.id === run.templateId && template.active) && run.items.some(item => item.status === "failed" || (item.required && item.status === "pending")))
+        .sort((a, b) => a.localDate.localeCompare(b.localDate)).map(run => this.checklistRunView(run));
+      return { branchId: input.branchId, date, runs, carryover };
+    });
+  }
+
+  setChecklistItem(input: T.SetChecklistItemInput): Promise<T.ChecklistRun> {
+    return this.respond(() => {
+      const template = this.checklistTemplateOrThrow(input.templateId);
+      if (!template.active) throw ApiError.of(ERR.VALIDATION, "This checklist is disabled.");
+      if (!["pending", "completed", "failed", "skipped"].includes(input.status)) throw ApiError.of(ERR.VALIDATION, "Unknown item status.");
+      const date = input.date ?? todayISODate(this.db.organization.timezone);
+      const run = this.ensureChecklistRun(template, date);
+      const item = run.items.find((candidate) => candidate.itemId === input.itemId);
+      if (!item) throw ApiError.of(ERR.NOT_FOUND, "Checklist item not found.");
+      const reason = input.reason?.trim() || undefined;
+      const isCorrection = item.status !== "pending";
+      if (isCorrection && !reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.");
+      if ((input.status === "failed" || input.status === "skipped") && item.required && !reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.");
+      const actorUser = currentUser(this.db);
+      const previous = { status: item.status, actorName: item.actorName, at: item.at };
+      Object.assign(item, {
+        status: input.status,
+        actorId: input.status === "pending" ? undefined : actorUser.id,
+        actorName: input.status === "pending" ? undefined : actorUser.name,
+        at: input.status === "pending" ? undefined : nowISO(),
+        note: input.note?.trim() || undefined,
+        reason,
+      });
+      if (isCorrection) {
+        this.audit({ category: "operations", action: "checklists.item.correct", entityType: "checklist_run", entityId: run.id, entityLabel: `${run.name} · ${item.label}`, summary: `Corrected "${item.label}" to ${input.status}`, reason, before: { status: previous.status, actorName: previous.actorName ?? null, at: previous.at ?? null }, after: { status: input.status }, branchId: run.branchId });
+      } else if (input.status === "failed" || input.status === "skipped") {
+        this.audit({ category: "operations", action: `checklists.item.${input.status === "failed" ? "fail" : "skip"}`, entityType: "checklist_run", entityId: run.id, entityLabel: `${run.name} · ${item.label}`, summary: `${input.status === "failed" ? "Failed" : "Skipped"} "${item.label}"`, reason, branchId: run.branchId });
+      }
+      return this.checklistRunView(run);
+    });
+  }
+
+  createChecklistMaintenanceTask(input: T.CreateChecklistTaskInput): Promise<T.ChecklistRun> {
+    return this.respond(async () => {
+      const template = this.checklistTemplateOrThrow(input.templateId);
+      const date = input.date ?? todayISODate(this.db.organization.timezone);
+      const run = this.ensureChecklistRun(template, date);
+      const item = run.items.find((candidate) => candidate.itemId === input.itemId);
+      if (!item) throw ApiError.of(ERR.NOT_FOUND, "Checklist item not found.");
+      if (item.facilityTaskId) throw ApiError.of(ERR.CONFLICT, "A maintenance task is already linked to this item.");
+      const zoneId = input.zoneId ?? item.zoneId;
+      if (!zoneId) throw ApiError.of(ERR.VALIDATION, "Choose the gym space this task belongs to.");
+      const task = await this.upsertFacilityTask({
+        branchId: run.branchId,
+        zoneId,
+        kind: "incident",
+        severity: item.required ? "high" : "medium",
+        title: input.title?.trim() || `${item.label} — ${run.name}`,
+        notes: input.notes?.trim() || (item.reason ? `From the daily checklist: ${item.reason}` : `From the daily checklist run of ${run.localDate}.`),
+      });
+      item.facilityTaskId = task.id;
+      this.audit({ category: "operations", action: "checklists.maintenance_escalated", entityType: "checklist_run", entityId: run.id, entityLabel: `${run.name} · ${item.label}`, summary: `Maintenance task created for "${item.label}"`, branchId: run.branchId });
+      return this.checklistRunView(run);
+    });
+  }
+
+  // --- Read-only operational analytics (parity: same shared math as Convex) ---
+
+  private analyticsBranchFilter(requested?: string): (branchId?: string) => boolean {
+    if (requested && !this.branchIsVisible(requested)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    return (branchId?: string) => {
+      if (requested) return branchId === requested;
+      return branchId ? this.branchIsVisible(branchId) : true;
+    };
+  }
+
+  private analyticsTimezone(): string {
+    return this.db.organization.timezone || "Asia/Amman";
+  }
+
+  getPeakHoursReport(input: T.AnalyticsReportInput): Promise<T.PeakHoursReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const checkIns = this.db.checkIns.filter((checkIn) => visible(checkIn.branchId)).map((checkIn) => ({ occurredAt: checkIn.occurredAt, decision: checkIn.decision }));
+      return peakHoursReport(checkIns, { from: input.from, to: input.to }, this.analyticsTimezone());
+    });
+  }
+
+  getClassUtilizationReport(input: T.AnalyticsReportInput): Promise<T.ClassUtilizationReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const occurrences = this.classOccurrences.filter((occurrence) => visible(occurrence.branchId));
+      const projected = occurrences.map((occurrence) => ({
+        id: occurrence.id,
+        templateId: occurrence.templateId,
+        name: occurrence.name,
+        startsAt: occurrence.startsAt,
+        capacity: occurrence.capacity,
+        status: occurrence.status,
+      }));
+      const persistedKeys = new Set(occurrences.map((occurrence) => `${occurrence.templateId}:${occurrence.date}`));
+      for (let date = input.from; date <= input.to; date = addDays(date, 1)) {
+        const weekday = new Date(`${date}T12:00:00.000Z`).getUTCDay();
+        for (const template of this.classSessions.filter((session) => visible(session.branchId))) {
+          if (template.dayOfWeek !== weekday || persistedKeys.has(`${template.id}:${date}`)) continue;
+          projected.push({
+            id: `virtual:${template.id}:${date}`,
+            templateId: template.id,
+            name: template.name,
+            startsAt: this.mockClassInstant(date, template.startMinute),
+            capacity: template.capacity,
+            status: "scheduled",
+          });
+        }
+      }
+      return classUtilizationReport(
+        projected,
+        occurrences.flatMap((occurrence) => occurrence.roster.map((booking) => ({
+          occurrenceId: occurrence.id,
+          status: booking.status,
+          fromWaitlist: booking.fromWaitlist,
+        }))),
+        { from: input.from, to: input.to },
+        this.analyticsTimezone(),
+      );
+    });
+  }
+
+  getRetentionReport(input: T.AnalyticsBranchInput): Promise<T.RetentionReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
+      const memberships = this.db.memberships
+        .filter((membership) => visible(branchByMember.get(membership.memberId)))
+        .map((membership) => ({ memberId: membership.memberId, startDate: membership.startDate, endDate: membership.endDate }));
+      return retentionReport(memberships, todayISODate());
+    });
+  }
+
+  getRenewalForecastReport(input: T.AnalyticsBranchInput): Promise<T.RenewalForecastReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
+      const names = new Map(this.db.members.map((member) => [member.id, member.fullName]));
+      const plans = new Map(this.db.plans.map((plan) => [plan.id, { name: plan.name, priceMinor: plan.basePrice.amount }]));
+      const memberships = this.db.memberships
+        .filter((membership) => visible(branchByMember.get(membership.memberId)))
+        .map((membership) => ({ id: membership.id, memberId: membership.memberId, planId: membership.planId, startDate: membership.startDate, endDate: membership.endDate }));
+      return renewalForecastReport(memberships, names, plans, todayISODate());
+    });
+  }
+
+  getCollectionsReport(input: T.AnalyticsReportInput): Promise<T.CollectionsReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
+      const charges = this.db.charges
+        .filter((charge) => visible(branchByMember.get(charge.memberId)))
+        .map((charge) => ({ createdAt: charge.createdAt, issueDate: charge.issueDate, totalMinor: charge.total.amount, outstandingMinor: charge.outstandingAmount.amount }));
+      const payments = this.db.payments
+        .filter((payment) => visible(payment.branchId))
+        .map((payment) => ({ occurredAt: payment.occurredAt, type: payment.type, status: payment.status, amountMinor: payment.amount.amount }));
+      return collectionsReport(charges, payments, { from: input.from, to: input.to }, this.analyticsTimezone());
+    });
+  }
+
+  getCrmFunnelReport(input: T.AnalyticsReportInput): Promise<T.CrmFunnelReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const leads = this.db.leads
+        .filter((lead) => visible(lead.branchId))
+        .map((lead) => ({ id: lead.id, createdAt: lead.createdAt, convertedMemberId: lead.convertedMemberId }));
+      const leadIds = new Set(leads.map((lead) => lead.id));
+      const activities = this.db.activities
+        .filter((activity) => activity.leadId && leadIds.has(activity.leadId))
+        .map((activity) => ({ leadId: activity.leadId, type: activity.type, occurredAt: activity.occurredAt, outcome: typeof activity.meta?.outcome === "string" ? activity.meta.outcome : undefined }));
+      const trials = this.trialBookings
+        .filter((booking) => !booking.leadId || leadIds.has(booking.leadId))
+        .map((booking) => ({ leadId: booking.leadId, createdAt: booking.createdAt, status: booking.status }));
+      return crmFunnelReport(leads, activities, trials, { from: input.from, to: input.to }, this.analyticsTimezone());
+    });
+  }
+
+  getControlTrendsReport(input: T.AnalyticsReportInput): Promise<T.ControlTrendsReport> {
+    return this.respond(() => {
+      this.require("reports.financial.read");
+      const visible = this.analyticsBranchFilter(input.branchId);
+      const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
+      const audits = this.db.audits
+        .filter((audit) => !audit.branchId || visible(audit.branchId))
+        .map((audit) => ({ id: audit.id, action: audit.action, occurredAt: audit.occurredAt, summary: audit.summary, actorName: audit.actorName, reason: audit.reason, entityPublicId: audit.entityId }));
+      const payments = this.db.payments
+        .filter((payment) => visible(payment.branchId))
+        .map((payment) => ({ occurredAt: payment.occurredAt, type: payment.type, status: payment.status, amountMinor: payment.amount.amount }));
+      const discounts = this.db.charges
+        .filter((charge) => visible(branchByMember.get(charge.memberId)))
+        .map((charge) => ({ createdAt: charge.createdAt, issueDate: charge.issueDate, discountMinor: charge.discount.amount }));
+      const priceOverrides = this.db.audits
+        .filter((audit) => audit.action === "membership.price_override")
+        .map((audit) => ({ occurredAt: audit.occurredAt, amountMinor: typeof audit.after?.price === "number" ? audit.after.price : 0 }));
+      return controlTrendsReport(audits, payments, discounts, priceOverrides, { from: input.from, to: input.to }, this.analyticsTimezone(), 50);
+    });
+  }
+
+  private customerMemberIds(): Set<string> {
+    const memberships = INITIAL_CUSTOMER_MEMBERSHIPS.filter((membership) => membership.customerId === this.activeCustomerId);
+    const memberNumbers = new Set(memberships.map((membership) => membership.memberNumber));
+    return new Set(this.db.members.filter((member) => memberNumbers.has(member.memberNumber)).map((member) => member.id));
+  }
+
+  private customerTransactionsSync(): import("@/lib/domain/qol").CustomerTransaction[] {
+    const memberIds = this.customerMemberIds();
+    const membershipByMember = new Map(
+      INITIAL_CUSTOMER_MEMBERSHIPS
+        .filter((membership) => membership.customerId === this.activeCustomerId)
+        .map((membership) => [this.db.members.find((member) => member.memberNumber === membership.memberNumber)?.id, membership] as const)
+        .filter((entry): entry is [string, CustomerMembership] => Boolean(entry[0])),
+    );
+    const payments = this.db.payments
+      .filter((payment) => memberIds.has(payment.memberId))
+      .map((payment): import("@/lib/domain/qol").CustomerTransaction => ({
+        id: payment.id,
+        gymId: this.db.organization.id,
+        gymName: this.db.organization.name,
+        branchName: this.db.branches.find((branch) => branch.id === payment.branchId)?.name ?? "Gym branch",
+        membershipId: membershipByMember.get(payment.memberId)?.id,
+        receiptId: payment.receiptId,
+        receiptNumber: payment.receiptNumber,
+        type: payment.type,
+        status: payment.status,
+        amount: payment.amount,
+        method: payment.method,
+        occurredAt: payment.occurredAt,
+        explanation: payment.status === "voided" || payment.type === "void"
+          ? "This payment was voided and remains in the history for audit."
+          : payment.status === "refunded" || payment.type === "refund"
+            ? "This amount was returned and is linked to the original payment."
+            : payment.status === "partially_refunded"
+              ? "Part of this payment has been returned."
+              : "Payment received by the gym.",
+      }));
+    const retail = this.db.retailSales
+      .filter((sale) => sale.customer.memberId && memberIds.has(sale.customer.memberId))
+      .map((sale): import("@/lib/domain/qol").CustomerTransaction => ({
+        id: `retail-payment-${sale.id}`,
+        gymId: this.db.organization.id,
+        gymName: this.db.organization.name,
+        branchName: this.db.branches.find((branch) => branch.id === sale.branchId)?.name ?? "Gym branch",
+        membershipId: sale.customer.memberId ? membershipByMember.get(sale.customer.memberId)?.id : undefined,
+        receiptId: sale.receiptId,
+        receiptNumber: sale.receiptNumber,
+        type: "retail_sale",
+        status: sale.status,
+        amount: sale.total,
+        method: sale.method,
+        occurredAt: sale.createdAt,
+        explanation: "Retail purchase recorded by the gym.",
+      }));
+    return [...payments, ...retail].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+  }
+
+  getCustomerFinancialSummary(): Promise<import("@/lib/domain/qol").CustomerFinancialSummary> {
+    return this.respond(() => {
+      const memberIds = this.customerMemberIds();
+      const transactions = this.customerTransactionsSync();
+      const outstanding = this.db.charges.filter((charge) => memberIds.has(charge.memberId)).reduce((sum, charge) => sum + Math.max(0, charge.outstandingAmount.amount), 0);
+      const paidLifetime = transactions.reduce((sum, transaction) => sum + (transaction.type === "refund" ? -Math.abs(transaction.amount.amount) : transaction.status === "voided" ? 0 : transaction.amount.amount), 0);
+      return {
+        outstanding: money(outstanding, this.db.organization.currency),
+        paidLifetime: money(paidLifetime, this.db.organization.currency),
+        receiptCount: new Set(transactions.map((transaction) => transaction.receiptId).filter(Boolean)).size,
+        lastPaymentAt: transactions[0]?.occurredAt,
+        gyms: [{ id: this.db.organization.id, name: this.db.organization.name }],
+      };
+    });
+  }
+
+  listCustomerTransactions(query: import("@/lib/domain/qol").CustomerTransactionQuery): Promise<T.Page<import("@/lib/domain/qol").CustomerTransaction>> {
+    return this.respond(() => {
+      let items = this.customerTransactionsSync();
+      if (query.gymId) items = items.filter((item) => item.gymId === query.gymId);
+      if (query.status) items = items.filter((item) => item.status === query.status);
+      if (query.type) items = items.filter((item) => item.type === query.type);
+      if (query.from) items = items.filter((item) => item.occurredAt.slice(0, 10) >= query.from!);
+      if (query.to) items = items.filter((item) => item.occurredAt.slice(0, 10) <= query.to!);
+      if (query.search) {
+        const search = query.search.trim().toLowerCase();
+        items = items.filter((item) => [item.gymName, item.branchName, item.receiptNumber, item.method].some((value) => value.toLowerCase().includes(search)));
+      }
+      items = applySort(items, query.sort ?? "-occurredAt", (item, key) => key === "amount" ? item.amount.amount : typeof item[key as keyof typeof item] === "string" ? item[key as keyof typeof item] as string : undefined);
+      return paginate(items, query);
+    });
+  }
+
+  getCustomerReceipt(receiptId: T.UUID): Promise<import("@/lib/domain/qol").CustomerReceipt> {
+    return this.respond(() => {
+      const detail = this.getReceiptSync(receiptId);
+      const memberIds = this.customerMemberIds();
+      const memberId = "memberId" in detail.payment ? detail.payment.memberId : detail.payment.customer.memberId;
+      if (!memberId || !memberIds.has(memberId)) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
+      return { ...detail, gymId: this.db.organization.id };
+    });
+  }
+
+  listSavedViews(surface: import("@/lib/domain/qol").SavedViewSurface): Promise<import("@/lib/domain/qol").SavedView[]> {
+    return this.respond(() => this.savedViews.filter((view) => view.surface === surface).sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name)).map((view) => ({ ...view, state: { ...view.state } })));
+  }
+
+  saveSavedView(input: { id?: T.UUID; surface: import("@/lib/domain/qol").SavedViewSurface; name: string; state: Record<string, unknown>; isDefault?: boolean }): Promise<import("@/lib/domain/qol").SavedView> {
+    return this.respond(() => {
+      const name = input.name.trim();
+      if (!name || name.length > 60) throw ApiError.of(ERR.VALIDATION, "Saved-view names must be between 1 and 60 characters.");
+      if (this.savedViews.some((view) => view.surface === input.surface && view.name.toLowerCase() === name.toLowerCase() && view.id !== input.id)) throw ApiError.of(ERR.CONFLICT, "You already have a saved view with this name.");
+      if (input.isDefault) this.savedViews.forEach((view) => { if (view.surface === input.surface) view.isDefault = false; });
+      const existing = input.id ? this.savedViews.find((view) => view.id === input.id && view.surface === input.surface) : undefined;
+      if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Saved view not found.");
+      const timestamp = nowISO();
+      if (existing) {
+        Object.assign(existing, { name, state: { ...input.state }, isDefault: Boolean(input.isDefault), updatedAt: timestamp });
+        return { ...existing, state: { ...existing.state } };
+      }
+      const view: import("@/lib/domain/qol").SavedView = { id: mockUuid(), surface: input.surface, name, state: { ...input.state }, isDefault: Boolean(input.isDefault), createdAt: timestamp, updatedAt: timestamp };
+      this.savedViews.push(view);
+      return { ...view, state: { ...view.state } };
+    });
+  }
+
+  deleteSavedView(viewId: T.UUID): Promise<void> {
+    return this.respond(() => {
+      const index = this.savedViews.findIndex((view) => view.id === viewId);
+      if (index < 0) throw ApiError.of(ERR.NOT_FOUND, "Saved view not found.");
+      this.savedViews.splice(index, 1);
+    });
+  }
+
+  runBulkOperation(input: import("@/lib/domain/qol").BulkOperationInput): Promise<import("@/lib/domain/qol").BulkOperationJob> {
+    return this.respond(() => {
+      const ids = [...new Set(input.recordIds)];
+      if (!ids.length || ids.length > 100) throw ApiError.of(ERR.VALIDATION, "Select between 1 and 100 records.");
+      const signature = JSON.stringify({ ...input, recordIds: ids });
+      const replay = this.bulkIdempotency.get(input.idempotencyKey);
+      if (replay) {
+        if (replay.signature !== signature) throw ApiError.of(ERR.VALIDATION, "This bulk-operation key was already used for different work.");
+        return { ...replay.job, failures: replay.job.failures.map((failure) => ({ ...failure })) };
+      }
+      const failures: import("@/lib/domain/qol").JobFailure[] = [];
+      let succeededCount = 0;
+      let skippedCount = 0;
+      for (const id of ids) {
+        try {
+          if (input.kind.startsWith("members_")) {
+            const member = this.db.members.find((item) => item.id === id);
+            if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+            if (input.kind === "members_add_tags") {
+              const next = [...new Set([...member.tags, ...(input.tags ?? [])])];
+              if (next.length === member.tags.length) { skippedCount += 1; continue; }
+              member.tags = next;
+            } else if (input.kind === "members_remove_tags") {
+              const next = member.tags.filter((tag) => !(input.tags ?? []).includes(tag));
+              if (next.length === member.tags.length) { skippedCount += 1; continue; }
+              member.tags = next;
+            } else if (input.kind === "members_assign_branch") {
+              const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
+              if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Destination branch not found.");
+              if (member.homeBranchId === branch.id) { skippedCount += 1; continue; }
+              member.homeBranchId = branch.id;
+            } else if (input.kind === "members_create_follow_up") {
+              this.db.tasks.push({ id: mockUuid(), organizationId: this.db.organization.id, type: "follow_up", title: `Follow up — ${member.fullName}`, ownerId: this.actor().id, ownerName: this.actor().name, dueAt: input.dueAt!, priority: "normal", status: "open", memberId: member.id, subjectName: member.fullName, createdById: this.actor().id, createdAt: nowISO() });
+            } else if (input.kind === "members_archive") {
+              if (member.status === "archived") { skippedCount += 1; continue; }
+              member.status = "archived";
+              member.archivedAt = nowISO();
+            }
+          } else {
+            const lead = this.db.leads.find((item) => item.id === id);
+            if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+            if (input.kind === "leads_assign_owner") {
+              if (!this.db.users.some((user) => user.id === input.ownerId && user.status === "active")) throw ApiError.of(ERR.NOT_FOUND, "Lead owner not found.");
+              if (lead.ownerId === input.ownerId) { skippedCount += 1; continue; }
+              lead.ownerId = input.ownerId;
+            } else if (input.kind === "leads_create_follow_up") {
+              const ownerId = lead.ownerId ?? this.actor().id;
+              this.db.tasks.push({ id: mockUuid(), organizationId: this.db.organization.id, type: "follow_up", title: `Follow up — ${lead.fullName}`, ownerId, ownerName: this.db.users.find((user) => user.id === ownerId)?.name ?? this.actor().name, dueAt: input.dueAt!, priority: "normal", status: "open", leadId: lead.id, subjectName: lead.fullName, createdById: this.actor().id, createdAt: nowISO() });
+            } else if (input.kind === "leads_close_lost") {
+              if (lead.stage === "lost") { skippedCount += 1; continue; }
+              lead.stage = "lost";
+              lead.lostReason = input.reason;
+              lead.nextFollowUpAt = undefined;
+            }
+            lead.updatedAt = nowISO();
+          }
+          succeededCount += 1;
+        } catch (error) {
+          failures.push({ recordId: id, message: error instanceof Error ? error.message : "This record could not be updated." });
+        }
+      }
+      const timestamp = nowISO();
+      const job: import("@/lib/domain/qol").BulkOperationJob = { id: mockUuid(), kind: input.kind, status: failures.length === ids.length ? "failed" : failures.length ? "partially_completed" : "completed", requestedCount: ids.length, succeededCount, skippedCount, failedCount: failures.length, failures, correlationId: mockUuid(), createdAt: timestamp, completedAt: timestamp };
+      this.bulkJobs.unshift(job);
+      this.bulkIdempotency.set(input.idempotencyKey, { signature, job });
+      return job;
+    });
+  }
+
+  listBulkOperationJobs(): Promise<import("@/lib/domain/qol").BulkOperationJob[]> {
+    return this.respond(() => this.bulkJobs.slice(0, 25).map((job) => ({ ...job, failures: job.failures.map((failure) => ({ ...failure })) })));
+  }
+
+  private duplicateCasesSync(): import("@/lib/domain/qol").DuplicateCase[] {
+    const members = this.db.members.filter((member) => !member.mergedIntoMemberId);
+    const byId = new Map(members.map((member) => [member.id, member]));
+    const cases: import("@/lib/domain/qol").DuplicateCase[] = [];
+    for (const candidate of buildDuplicateCandidatePairs(members.map((member) => ({
+      ...member,
+      createdAt: Date.parse(member.createdAt),
+      updatedAt: Date.parse(member.updatedAt ?? member.createdAt),
+    })), this.db.organization.phoneCountryCallingCode)) {
+      const left = byId.get(candidate.primaryId)!;
+      const right = byId.get(candidate.candidateId)!;
+      const id = candidate.id;
+      const resolution = this.duplicateResolutions.get(id);
+      const summary = (member: MemberRecord): import("@/lib/domain/qol").DuplicateMemberSummary => ({ id: member.id, memberNumber: member.memberNumber, fullName: member.fullName, phone: member.phone, email: member.email, homeBranchId: member.homeBranchId, status: member.mergedIntoMemberId ? "merged" : member.status, balance: money(this.db.charges.filter((charge) => charge.memberId === member.id).reduce((sum, charge) => sum + charge.outstandingAmount.amount, 0)), membershipCount: this.db.memberships.filter((membership) => membership.memberId === member.id).length, visitCount: this.db.checkIns.filter((visit) => visit.memberId === member.id && visit.decision !== "blocked").length, timelineCount: this.db.activities.filter((activity) => activity.memberId === member.id).length, mergedIntoMemberId: member.mergedIntoMemberId, version: member.updatedAt ?? member.createdAt });
+      cases.push({ id, status: resolution?.status ?? "open", reasons: candidate.reasons, confidence: candidate.confidence, primary: summary(left), candidate: summary(right), createdAt: new Date(candidate.createdAt).toISOString(), updatedAt: resolution?.updatedAt ?? new Date(candidate.updatedAt).toISOString(), resolutionReason: resolution?.reason, survivingMemberId: resolution?.survivingMemberId });
+    }
+    return cases;
+  }
+
+  listDuplicateCases(query: import("@/lib/domain/qol").DuplicateCaseQuery = {}): Promise<T.Page<import("@/lib/domain/qol").DuplicateCase>> { return this.respond(() => paginate(this.duplicateCasesSync().filter((item) => !query.status || item.status === query.status), query)); }
+  getDuplicateCase(caseId: T.UUID): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.respond(() => { const item = this.duplicateCasesSync().find((candidate) => candidate.id === caseId); if (!item) throw ApiError.of(ERR.NOT_FOUND, "Duplicate case not found."); return item; }); }
+  ignoreDuplicateCase(caseId: T.UUID, reason: string): Promise<import("@/lib/domain/qol").DuplicateCase> {
+    return this.respond(() => { const item = this.duplicateCasesSync().find((candidate) => candidate.id === caseId); if (!item) throw ApiError.of(ERR.NOT_FOUND, "Duplicate case not found."); this.duplicateResolutions.set(caseId, { status: "ignored", reason, updatedAt: nowISO() }); return { ...item, status: "ignored", resolutionReason: reason, updatedAt: nowISO() }; });
+  }
+  mergeDuplicateMembers(input: import("@/lib/domain/qol").MergeMemberInput): Promise<import("@/lib/domain/qol").DuplicateCase> {
+    return this.respond(() => {
+      const item = this.duplicateCasesSync().find((candidate) => candidate.id === input.caseId);
+      if (!item) throw ApiError.of(ERR.NOT_FOUND, "Duplicate case not found.");
+      if (item.primary.version !== input.primaryVersion || item.candidate.version !== input.candidateVersion) throw ApiError.of(ERR.CONFLICT, "One of these member records changed.");
+      const survivor = this.db.members.find((member) => member.id === input.survivingMemberId);
+      const merged = this.db.members.find((member) => member.id === input.mergedMemberId);
+      if (!survivor || !merged || survivor.id === merged.id) throw ApiError.of(ERR.VALIDATION, "Choose valid member records.");
+      if (survivor.customerProfileId || merged.customerProfileId) throw ApiError.of(ERR.CONFLICT, "These records are linked to a member account. Resolve the member identity before merging.");
+      const sources = input.fieldSourceMemberIds ?? {};
+      for (const [field, sourceId] of Object.entries(sources)) {
+        if (sourceId === merged.id) (survivor as unknown as Record<string, unknown>)[field] = (merged as unknown as Record<string, unknown>)[field];
+      }
+      survivor.tags = [...new Set([...survivor.tags, ...merged.tags])];
+      survivor.mergedMemberIds = [...new Set([...(survivor.mergedMemberIds ?? []), merged.id, ...(merged.mergedMemberIds ?? [])])];
+      survivor.updatedAt = nowISO();
+      merged.status = "archived";
+      merged.archivedAt = nowISO();
+      merged.mergedIntoMemberId = survivor.id;
+      this.duplicateResolutions.set(input.caseId, { status: "merged", reason: input.reason, survivingMemberId: survivor.id, updatedAt: nowISO() });
+      return { ...item, status: "merged", resolutionReason: input.reason, survivingMemberId: survivor.id, updatedAt: nowISO() };
+    });
+  }
+
+  getOnboardingExperience(audience: import("@/lib/domain/qol").OnboardingAudience): Promise<import("@/lib/domain/qol").OnboardingExperience> {
+    return this.respond(() => {
+      const timestamp = nowISO();
+      const progress = this.onboardingProgress.get(audience) ?? { audience, version: 1, completedStepKeys: [], updatedAt: timestamp };
+      const complete = (key: string) => progress.completedStepKeys.includes(key);
+      const completionMode = "state" as const;
+      const manualTask = (key: string, title: string, description: string, href: string, category: import("@/lib/domain/qol").OnboardingTaskState["category"] = "recommended"): import("@/lib/domain/qol").OnboardingTaskState => ({ key, title, description, href, category, complete: complete(key), completionMode: "manual" });
+      const tasks: import("@/lib/domain/qol").OnboardingTaskState[] = audience === "owner" ? [
+        { key: "owner_identity", title: "Confirm organization identity", description: "Review the gym name, timezone, currency, and receipt identity.", href: "/settings?section=organization", category: "required", complete: true, completionMode },
+        { key: "owner_branch", title: "Configure your first branch", description: "Set the branch address and operating hours used by reception.", href: "/settings?section=branches", category: "required", complete: this.db.branches.length > 0, completionMode },
+        { key: "owner_payments", title: "Configure payments and receipts", description: "Enable accepted methods and review receipt numbering.", href: "/settings?section=payments", category: "required", complete: this.db.paymentMethods.some((method) => method.enabled), completionMode },
+        { key: "owner_plan", title: "Create a membership plan", description: "Publish at least one plan the sales team can sell.", href: "/plans", category: "required", complete: this.db.plans.length > 0, completionMode },
+        { key: "owner_staff", title: "Invite your team", description: "Add staff with the right scope.", href: "/settings?section=users", category: "required", complete: this.db.users.length > 1, completionMode },
+        { key: "owner_members", title: "Add or import members", description: "Create the first live member.", href: "/members/import", category: "required", complete: this.db.members.length > 0, completionMode },
+        { key: "owner_reception", title: "Prepare reception", description: "Open a first shift and verify the front desk.", href: "/reception", category: "required", complete: this.db.shifts.length > 0, completionMode },
+        { key: "owner_public_profile", title: "Publish the gym profile", description: "Review member discovery.", href: "/settings?section=profile", category: "recommended", complete: this.gymPublicProfile.status === "published", completionMode },
+      ] : audience === "member" ? [
+        { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details.", href: "/customer/profile", category: "required", complete: true, completionMode },
+        { key: "member_memberships", title: "Open My Gyms", description: "Review your membership and balance.", href: "/customer/my-gyms", category: "required", complete: INITIAL_CUSTOMER_MEMBERSHIPS.length > 0, completionMode },
+        manualTask("member_entry", "Learn the entry QR", "Create a short-lived entry pass.", "/customer/my-gyms"),
+        manualTask("member_finance", "Find payments and receipts", "Know where your financial history lives.", "/customer/finance"),
+        manualTask("member_install", "Install RIVET", "Add the app to your home screen.", "/customer/getting-started#install", "optional"),
+      ] : [
+        manualTask("staff_role", "Understand your role", "Review what your role can see and change.", "/getting-started#role", "required"),
+        manualTask("staff_navigation", "Learn navigation and search", "Use the sidebar and command search.", "/getting-started#navigation"),
+        permissionsFor(this.db, currentRole(this.db)).includes("members.read") ? manualTask("staff_member", "Open a member record", "Find the member timeline and actions.", "/members", "required") : null,
+        permissionsFor(this.db, currentRole(this.db)).includes("crm.read") ? manualTask("staff_tasks", "Find your follow-up queue", "Review assigned work.", "/crm/queues", "required") : null,
+        currentRole(this.db) === "receptionist" ? manualTask("staff_reception", "Practice the front desk", "Learn check-in and cash-shift rules for your branch.", "/reception", "required") : null,
+        currentRole(this.db) === "trainer" ? manualTask("staff_training", "Learn your PT workspace", "Review your schedule and member bookings.", "/pt", "required") : null,
+        currentRole(this.db) === "manager" ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records.", "/audit", "required") : null,
+        manualTask("staff_security", "Review safe handling", "Understand audited actions.", "/getting-started#security"),
+      ].filter((task): task is import("@/lib/domain/qol").OnboardingTaskState => Boolean(task));
+      return { progress, tasks, role: audience === "member" ? "member" : currentRole(this.db), organizationName: audience === "member" ? undefined : this.db.organization.name };
+    });
+  }
+
+  updateOnboardingProgress(input: { audience: import("@/lib/domain/qol").OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<import("@/lib/domain/qol").OnboardingExperience> {
+    return this.respond(async () => {
+      const current = this.onboardingProgress.get(input.audience) ?? { audience: input.audience, version: 1, completedStepKeys: [], updatedAt: nowISO() };
+      if (input.completedStepKey) {
+        const experience = await this.getOnboardingExperience(input.audience);
+        const task = experience.tasks.find((item) => item.key === input.completedStepKey);
+        if (!task) throw ApiError.of(ERR.VALIDATION, "Unknown onboarding step.");
+        if (task.completionMode !== "manual") throw ApiError.of(ERR.CONFLICT, "This setup step completes only when its underlying work is finished.");
+      }
+      const completedStepKeys = input.restart ? [] : [...new Set([...current.completedStepKeys, ...(input.completedStepKey ? [input.completedStepKey] : [])])];
+      this.onboardingProgress.set(input.audience, { ...current, completedStepKeys, dismissedAt: input.restart ? undefined : input.dismissed ? nowISO() : current.dismissedAt, updatedAt: nowISO() });
+      return await this.getOnboardingExperience(input.audience);
+    });
+  }
+  listPushSubscriptions(): Promise<import("@/lib/domain/qol").PushSubscriptionSummary[]> { return this.respond(() => this.pushSubscriptions.map((item) => ({ ...item }))); }
+  savePushSubscription(input: import("@/lib/domain/qol").PushSubscriptionInput): Promise<import("@/lib/domain/qol").PushSubscriptionSummary> { return this.respond(() => { const now = nowISO(); const existing = this.pushSubscriptions.find((item) => item.label === (input.label ?? "This device")); if (existing) { existing.updatedAt = now; return { ...existing }; } const item = { id: mockUuid(), label: input.label ?? "This device", createdAt: now, updatedAt: now }; this.pushSubscriptions.push(item); return { ...item }; }); }
+  revokePushSubscription(subscriptionId: T.UUID): Promise<void> { return this.respond(() => { const index = this.pushSubscriptions.findIndex((item) => item.id === subscriptionId); if (index < 0) throw ApiError.of(ERR.NOT_FOUND, "Push subscription not found."); this.pushSubscriptions.splice(index, 1); }); }
 
   async subscribeCustomerExperience(onValue: (experience: CustomerExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try {
@@ -344,6 +1787,7 @@ export class MockGymOSApi implements GymOSApi {
 
   registerCustomer(input: CustomerProfileInput & { fullName: string; email: string }): Promise<CustomerPersona> {
     return this.respond(() => {
+      if (input.gender !== "female" && input.gender !== "male") throw ApiError.of(ERR.VALIDATION, "Choose female or male before creating your profile.");
       const persona = {
         id: `customer-${Date.now()}`,
         name: input.fullName,
@@ -369,6 +1813,7 @@ export class MockGymOSApi implements GymOSApi {
 
   updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona> {
     return this.respond(() => {
+      if (input.gender !== "female" && input.gender !== "male") throw ApiError.of(ERR.VALIDATION, "Choose female or male before saving your profile.");
       const current = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
       const next: CustomerPersona = {
         ...current,
@@ -415,23 +1860,38 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking> {
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking> {
     return this.respond(() => {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       const directoryBranch = gym?.branches.find((item) => item.id === input.branchId);
-      if (!gym || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
+      if (!gym || !this.isProvisionedGym(gym) || !publicMarketplaceGyms([gym]).length || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
       if (!isTimeInTrialWindow(directoryBranch, input.preferredDate, input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is outside this branch's trial-request hours.");
+      const referralLink = input.referralToken ? [...this.referralLinks.values()].find((link) => link.token === input.referralToken && link.gymId === input.gymId) : undefined;
+      if (input.referralToken && !referralLink) throw ApiError.of(ERR.NOT_FOUND, "This referral link is no longer available.");
+      const idempotencyKey = input.idempotencyKey?.trim();
+      const signature = publicRequestSignature({ gymId: input.gymId, branchId: input.branchId, fullName: input.fullName.trim(), email: input.email.trim().toLowerCase(), phone: input.phone.trim(), preferredDate: input.preferredDate, preferredTime: input.preferredTime, goal: input.goal.trim(), customerId: input.customerId, referralToken: input.referralToken });
+      const idempotencyScope = input.customerId ?? `anonymous:${input.email.trim().toLowerCase()}`;
+      const idempotencyMapKey = idempotencyKey ? `${idempotencyScope}:${idempotencyKey}` : undefined;
+      if (idempotencyMapKey) {
+        if (idempotencyKey!.length < 8 || idempotencyKey!.length > 200) throw ApiError.of(ERR.VALIDATION, "The trial request could not be processed.");
+        const existingRequest = this.trialIdempotency.get(idempotencyMapKey);
+        if (existingRequest) {
+          if (existingRequest.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This trial request has already been used.");
+          return { ...existingRequest.result };
+        }
+      }
       // The browser experience owns whether a member is signed in. Falling
       // back to the mock adapter's last persona would silently attach a guest
       // request to an unrelated seeded member after navigation or test reuse.
       const customerId = input.customerId;
       if (customerId && this.trialBookings.some((booking) => booking.customerId === customerId && booking.gymId === input.gymId && (booking.status === "requested" || booking.status === "confirmed"))) throw ApiError.of(ERR.CONFLICT, "You already have an open trial request with this gym.");
+      enforceMockRateLimit(this.trialRateLimits, `${customerId ?? input.email.trim().toLowerCase()}|${input.phone.trim()}`, 10, 24 * 60 * 60 * 1000);
       const internalBranchId = directoryBranch?.internalBranchId;
       let leadId: string | undefined;
       if (gym && internalBranchId) {
         leadId = mockUuid();
         const followUp = new Date(`${input.preferredDate}T${input.preferredTime}:00+03:00`).toISOString();
-        const lead: T.Lead = {
+        const lead: T.Lead & { referredByMemberId?: string; notes?: string } = {
           id: leadId,
           organizationId: this.db.organization.id,
           branchId: internalBranchId,
@@ -439,19 +1899,22 @@ export class MockGymOSApi implements GymOSApi {
           phone: input.phone.trim(),
           email: input.email.trim().toLowerCase(),
           stage: "trial_booked",
-          source: "other",
+          source: referralLink ? "referral" : "other",
+          referredByMemberId: referralLink?.memberId,
           ownerId: this.actor().id,
           expectedValue: { amount: gym.fromPriceMinor, currency: "JOD" },
           nextFollowUpAt: followUp,
           createdAt: nowISO(),
           updatedAt: nowISO(),
         };
-        (lead as T.Lead & { notes?: string }).notes = `Free trial requested through RIVET Member for ${directoryBranch.name}. Goal: ${input.goal}`;
+        lead.notes = `Free trial requested through RIVET Member${referralLink ? " via a member referral link" : ""} for ${directoryBranch.name}. Goal: ${input.goal}`;
         this.db.leads.push(lead);
         this.activity({ leadId, type: "member_created", title: "Free trial requested", body: input.goal, actorName: "RIVET Member" });
       }
-      const booking: TrialBooking = { ...input, customerId, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
+      const { referralToken: _referralToken, ...bookingInput } = input;
+      const booking: TrialBooking = { ...bookingInput, customerId, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
       this.trialBookings.unshift(booking);
+      if (idempotencyMapKey) this.trialIdempotency.set(idempotencyMapKey, { signature, result: { ...booking } });
       return { ...booking };
     });
   }
@@ -464,27 +1927,226 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  previewMemberImport(input: { csv: string; branchId: T.UUID }): Promise<MemberImportPreview> {
+  private customerOperationalMembership(customerMembershipId: string): { member: MemberRecord; membership: MembershipRecord } {
+    const projection = INITIAL_CUSTOMER_MEMBERSHIPS.find((item) => item.id === customerMembershipId && item.customerId === this.activeCustomerId);
+    if (!projection) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+    const today = this.today();
+    const activeTerms = (memberId?: string) => this.db.memberships
+      .filter((candidate) => (!memberId || candidate.memberId === memberId)
+        && !candidate.cancelledAt
+        && candidate.startDate <= today
+        && candidate.endDate >= today
+        && !(candidate.totalVisits !== undefined && (candidate.remainingVisits ?? 0) <= 0))
+      .sort((left, right) => right.endDate.localeCompare(left.endDate));
+    // Demo members are generated, so the bundled customer projections may not
+    // share a member number with the seed; keep a stable per-projection link
+    // to a real active membership so the request flow stays demoable.
+    let member = this.db.members.find((candidate) => candidate.memberNumber === projection.memberNumber);
+    let membership = member ? activeTerms(member.id)[0] : undefined;
+    if (!member || !membership) {
+      const linkedId = this.customerMemberLinks.get(customerMembershipId);
+      const fallbackMembership = activeTerms(linkedId)[0];
+      const fallbackMember = fallbackMembership ? this.db.members.find((candidate) => candidate.id === fallbackMembership.memberId && candidate.status !== "archived") : undefined;
+      if (!fallbackMembership || !fallbackMember) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+      this.customerMemberLinks.set(customerMembershipId, fallbackMember.id);
+      member = fallbackMember;
+      membership = fallbackMembership;
+    }
+    return { member, membership };
+  }
+
+  private freezeFeeFor(memberId: string): number {
+    const policy = this.db.operationalPolicies.memberFreezes;
+    const windowStart = Date.now() - policy.windowDays * 86_400_000;
+    const approved = this.freezeRequests.filter((candidate) => candidate.memberId === memberId && candidate.status === "approved" && Date.parse(candidate.decidedAt ?? candidate.requestedAt) >= windowStart).length;
+    return approved < policy.freeFreezesPerWindow ? 0 : policy.extraFreezeFeeMinor;
+  }
+
+  requestMembershipFreeze(input: T.RequestMembershipFreezeInput): Promise<T.MembershipFreezeRequest> {
+    return this.respond(() => {
+      const policy = this.db.operationalPolicies.memberFreezes;
+      if (!policy.requestsEnabled) throw ApiError.of(ERR.VALIDATION, "This gym does not accept freeze requests from the app. Ask at the front desk.");
+      const { member, membership } = this.customerOperationalMembership(input.membershipId);
+      const today = this.today();
+      const reason = input.reason.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate) || input.startDate < today) throw ApiError.of(ERR.VALIDATION, "Choose a start date from today onward.");
+      if (membership.endDate < input.startDate) throw ApiError.of(ERR.VALIDATION, "The freeze must start before the membership ends.");
+      const minimum = this.db.operationalPolicies.membership.minimumFreezeDays;
+      if (!Number.isSafeInteger(input.days) || input.days < minimum || input.days > policy.maxDaysPerFreeze) throw ApiError.of(ERR.VALIDATION, `A freeze must be between ${minimum} and ${policy.maxDaysPerFreeze} days.`);
+      if (!reason) throw ApiError.of(ERR.VALIDATION, "Tell the gym why you need the freeze.");
+      if (this.freezeRequests.some((candidate) => candidate.membershipId === membership.id && candidate.status === "pending")) throw ApiError.of(ERR.CONFLICT, "You already have a freeze request waiting for the gym.");
+      if (membership.activeFreeze && membership.activeFreeze.status === "active" && membership.activeFreeze.endDate >= today) throw ApiError.of(ERR.CONFLICT, "This membership already has an active or scheduled freeze.");
+      const record: T.MembershipFreezeRequest = {
+        id: mockUuid(),
+        membershipId: membership.id,
+        memberId: member.id,
+        memberName: member.fullName,
+        startDate: input.startDate,
+        days: input.days,
+        reason,
+        status: "pending",
+        expectedFeeMinor: this.freezeFeeFor(member.id),
+        requestedAt: nowISO(),
+      };
+      this.freezeRequests.unshift(record);
+      return { ...record };
+    });
+  }
+
+  getCustomerFreezePolicy(customerMembershipId: T.UUID): Promise<T.CustomerFreezePolicy> {
+    return this.respond(() => {
+      const { member } = this.customerOperationalMembership(customerMembershipId);
+      const policy = this.db.operationalPolicies.memberFreezes;
+      const windowStart = Date.now() - policy.windowDays * 86_400_000;
+      const approved = this.freezeRequests.filter((candidate) => candidate.memberId === member.id && candidate.status === "approved" && Date.parse(candidate.decidedAt ?? candidate.requestedAt) >= windowStart).length;
+      return {
+        requestsEnabled: policy.requestsEnabled,
+        minimumDays: this.db.operationalPolicies.membership.minimumFreezeDays,
+        maximumDays: policy.maxDaysPerFreeze,
+        expectedFeeMinor: approved < policy.freeFreezesPerWindow ? 0 : policy.extraFreezeFeeMinor,
+        currency: this.db.organization.currency,
+        freeRequestsRemaining: Math.max(0, policy.freeFreezesPerWindow - approved),
+      };
+    });
+  }
+
+  listCustomerFreezeRequests(customerMembershipId: T.UUID): Promise<T.MembershipFreezeRequest[]> {
+    return this.respond(() => {
+      const { membership } = this.customerOperationalMembership(customerMembershipId);
+      return this.freezeRequests.filter((candidate) => candidate.membershipId === membership.id).map((candidate) => ({ ...candidate }));
+    });
+  }
+
+  listFreezeRequests(query: { status?: T.FreezeRequestStatus } = {}): Promise<T.MembershipFreezeRequest[]> {
+    return this.respond(() => {
+      this.require("memberships.freeze");
+      return this.freezeRequests
+        .filter((candidate) => {
+          const membership = this.db.memberships.find((item) => item.id === candidate.membershipId);
+          const member = membership ? this.db.members.find((item) => item.id === membership.memberId) : undefined;
+          return Boolean(member && this.branchIsVisible(member.homeBranchId));
+        })
+        .filter((candidate) => !query.status || candidate.status === query.status)
+        .map((candidate) => ({ ...candidate }));
+    });
+  }
+
+  async decideFreezeRequest(input: T.DecideFreezeRequestInput): Promise<T.MembershipFreezeRequest> {
+    const pending = await this.respond(() => {
+      this.require("memberships.freeze");
+      if (input.decision === "denied" && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "A reason is required to deny a freeze request.");
+      const record = this.freezeRequests.find((candidate) => candidate.id === input.requestId);
+      if (!record) throw ApiError.of(ERR.NOT_FOUND, "Freeze request not found.");
+      const membership = this.db.memberships.find((candidate) => candidate.id === record.membershipId);
+      const member = membership ? this.db.members.find((candidate) => candidate.id === membership.memberId) : undefined;
+      if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Freeze request not found.");
+      if (record.status !== "pending") throw ApiError.of(ERR.CONFLICT, "This freeze request was already decided.");
+      return record;
+    });
+    if (input.decision === "approved") {
+      // The policy is re-evaluated at approval; the existing audited freeze
+      // machinery applies the dates.
+      const feeMinor = this.freezeFeeFor(pending.memberId);
+      if (feeMinor > 0) {
+        this.db.charges.push({ id: mockUuid(), memberId: pending.memberId, membershipId: pending.membershipId, description: "Membership freeze fee", subtotal: { amount: feeMinor, currency: "JOD" }, discount: { amount: 0, currency: "JOD" }, tax: { amount: 0, currency: "JOD" }, total: { amount: feeMinor, currency: "JOD" }, paidAmount: { amount: 0, currency: "JOD" }, outstandingAmount: { amount: feeMinor, currency: "JOD" }, status: "unpaid", issueDate: this.today(), dueDate: pending.startDate, createdAt: nowISO() } as never);
+      }
+      await this.freezeMembership(pending.membershipId, { startDate: pending.startDate, endDate: addDays(pending.startDate, Math.max(0, pending.days - 1)), reason: `Member request approved: ${pending.reason}` });
+      pending.feeMinor = feeMinor;
+    }
+    return await this.respond(() => {
+      pending.status = input.decision;
+      pending.decisionNote = input.note?.trim() || undefined;
+      pending.decidedAt = nowISO();
+      pending.decidedBy = this.actor().name;
+      this.audit({ category: "memberships", action: `membership.freeze_request.${input.decision}`, entityType: "membership", entityId: pending.membershipId, entityLabel: pending.memberName, summary: input.decision === "approved" ? `Approved a ${pending.days}-day freeze request` : "Denied a member freeze request", reason: input.note?.trim() || pending.reason });
+      return { ...pending };
+    });
+  }
+
+  previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview> {
     return this.respond(() => {
       this.require("members.write");
+      const branch = this.db.branches.find((item) => item.id === input.branchId && item.status === "active");
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (!input.csv.trim()) throw ApiError.of(ERR.VALIDATION, "CSV content is required.");
+      if (new TextEncoder().encode(input.csv).byteLength > 5_000_000) throw ApiError.of(ERR.VALIDATION, "Member import files must be 5 MB or smaller.", { fieldErrors: { csv: ["Choose a member file no larger than 5 MB"] } });
       const rows = parseImportCsv(input.csv);
       const header = (rows.shift() ?? []).map((item) => item.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
       const nameIndex = header.findIndex((item) => ["full_name", "name", "member_name"].includes(item));
       const phoneIndex = header.findIndex((item) => ["phone", "mobile", "mobile_number"].includes(item));
+      const genderIndex = header.findIndex((item) => ["gender", "sex", "member_gender"].includes(item));
       const emailIndex = header.findIndex((item) => item === "email" || item === "email_address");
+      const planIndex = header.findIndex((item) => ["source_plan_name", "plan", "plan_name", "membership_plan"].includes(item));
+      const membershipStartIndex = header.findIndex((item) => ["membership_start_date", "membership_start", "start_date"].includes(item));
+      const membershipEndIndex = header.findIndex((item) => ["membership_end_date", "membership_end", "end_date", "expiry_date"].includes(item));
+      const remainingVisitsIndex = header.findIndex((item) => ["remaining_visits", "visits_left"].includes(item));
+      const freezeStartIndex = header.findIndex((item) => ["freeze_start_date", "freeze_start"].includes(item));
+      const freezeEndIndex = header.findIndex((item) => ["freeze_end_date", "freeze_end"].includes(item));
+      const openingBalanceIndex = header.findIndex((item) => ["opening_balance", "outstanding_balance"].includes(item));
+      const historicalPaidIndex = header.findIndex((item) => ["historical_paid_total", "total_paid"].includes(item));
+      const historicalPaymentDateIndex = header.findIndex((item) => ["historical_payment_date", "last_payment_date"].includes(item));
+      const historicalPaymentReferenceIndex = header.findIndex((item) => ["historical_payment_reference", "payment_reference"].includes(item));
+      if (nameIndex < 0 || phoneIndex < 0 || genderIndex < 0) throw ApiError.of(ERR.VALIDATION, "CSV headers must include full name, phone, and gender columns.", { fieldErrors: { csv: ["Required headers: full_name, phone, gender"] } });
+      if (rows.length > 10_000) throw ApiError.of(ERR.VALIDATION, "A single import can contain at most 10,000 members.", { fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
+      const migrationCutoffDate = input.migrationCutoffDate ?? this.today();
+      if (!validImportDate(migrationCutoffDate)) throw ApiError.of(ERR.VALIDATION, "Choose a valid migration cutoff date.", { fieldErrors: { migrationCutoffDate: ["Use YYYY-MM-DD"] } });
+      const planMappings = new Map(Object.entries(input.planMappings ?? {}).map(([sourceName, planId]) => [sourceName.trim().toLowerCase(), planId]));
+      const seenPhones = new Set<string>();
+      const seenEmails = new Set<string>();
       const previewRows: MemberImportRow[] = rows.map((values, index) => {
-        const fullName = nameIndex >= 0 ? values[nameIndex] ?? "" : "";
-        const phone = phoneIndex >= 0 ? values[phoneIndex] ?? "" : "";
-        const email = emailIndex >= 0 ? values[emailIndex] || undefined : undefined;
+        const fullName = values[nameIndex]?.trim() ?? "";
+        const phone = normalizePhoneForStorage(values[phoneIndex] ?? "", this.db.organization.phoneCountryCallingCode);
+        const gender = normalizedImportGender(values[genderIndex]);
+        const email = emailIndex >= 0 ? normalizeOptionalEmail(values[emailIndex]) : undefined;
+        const sourcePlanName = planIndex >= 0 ? values[planIndex]?.trim() || undefined : undefined;
+        const planId = sourcePlanName ? planMappings.get(sourcePlanName.toLowerCase()) : undefined;
+        const plan = planId ? this.db.plans.find((candidate) => candidate.id === planId) : undefined;
+        const membershipStartDate = membershipStartIndex >= 0 ? values[membershipStartIndex]?.trim() || undefined : undefined;
+        const membershipEndDate = membershipEndIndex >= 0 ? values[membershipEndIndex]?.trim() || undefined : undefined;
+        const remainingVisitsRaw = remainingVisitsIndex >= 0 ? values[remainingVisitsIndex]?.trim() || undefined : undefined;
+        const remainingVisits = remainingVisitsRaw && /^\d+$/.test(normalizedImportNumber(remainingVisitsRaw)) ? Number(normalizedImportNumber(remainingVisitsRaw)) : undefined;
+        const freezeStartDate = freezeStartIndex >= 0 ? values[freezeStartIndex]?.trim() || undefined : undefined;
+        const freezeEndDate = freezeEndIndex >= 0 ? values[freezeEndIndex]?.trim() || undefined : undefined;
+        const openingBalance = importedMoneyMinor(openingBalanceIndex >= 0 ? values[openingBalanceIndex] : undefined, this.db.organization.currency);
+        const historicalPaid = importedMoneyMinor(historicalPaidIndex >= 0 ? values[historicalPaidIndex] : undefined, this.db.organization.currency);
+        const historicalPaymentDate = historicalPaymentDateIndex >= 0 ? values[historicalPaymentDateIndex]?.trim() || undefined : undefined;
+        const historicalPaymentReference = historicalPaymentReferenceIndex >= 0 ? values[historicalPaymentReferenceIndex]?.trim().slice(0, 160) || undefined : undefined;
+        const hasMembershipData = Boolean(sourcePlanName || membershipStartDate || membershipEndDate || remainingVisitsRaw || freezeStartDate || freezeEndDate || openingBalance.amount || historicalPaid.amount || historicalPaymentDate || historicalPaymentReference);
+        const phoneKey = canonicalPhoneKey(phone, this.db.organization.phoneCountryCallingCode);
+        const emailKey = email?.toLowerCase() ?? "";
         const duplicateIds = this.findDuplicates({ phone, email }).map((match) => match.memberId);
+        if ((phoneKey && seenPhones.has(phoneKey)) || (emailKey && seenEmails.has(emailKey))) duplicateIds.push(`csv-row-${index + 2}`);
+        if (phoneKey) seenPhones.add(phoneKey);
+        if (emailKey) seenEmails.add(emailKey);
         const errors = [
-          ...(fullName ? [] : ["Full name is required"]),
-          ...(phone ? [] : ["Phone is required"]),
+          ...(fullName.length >= 3 && fullName.length <= 120 ? [] : ["Full name must be between 3 and 120 characters"]),
+          ...(isValidLeadPhone(phone, this.db.organization.phoneCountryCallingCode) ? [] : ["Enter a valid phone number"]),
+          ...(gender ? [] : ["Gender must be male or female"]),
+          ...(isValidOptionalEmail(email) ? [] : ["Enter a valid email address"]),
+          ...(hasMembershipData && !sourcePlanName ? ["Choose the source plan column for membership data"] : []),
+          ...(sourcePlanName && !planId ? [`Map source plan “${sourcePlanName}” to a RIVET plan`] : []),
+          ...(planId && (!plan || plan.status === "archived") ? ["The mapped RIVET plan is unavailable"] : []),
+          ...(plan && plan.branchAccess === "selected" && !plan.branchIds.includes(input.branchId) ? ["The mapped plan is not available at this branch"] : []),
+          ...(sourcePlanName && !validImportDate(membershipStartDate) ? ["Enter a valid membership start date"] : []),
+          ...(sourcePlanName && !validImportDate(membershipEndDate) ? ["Enter a valid membership end date"] : []),
+          ...(validImportDate(membershipStartDate) && validImportDate(membershipEndDate) && membershipEndDate < membershipStartDate ? ["Membership end date must be on or after its start date"] : []),
+          ...(validImportDate(membershipEndDate) && membershipEndDate < migrationCutoffDate ? ["Only active or scheduled membership terms can be imported"] : []),
+          ...(plan?.kind === "visits" && (remainingVisits == null || remainingVisits < 0 || remainingVisits > (plan.visitAllowance ?? 0)) ? [`Enter visits remaining between 0 and ${plan.visitAllowance ?? 0}`] : []),
+          ...(remainingVisitsRaw && remainingVisits == null ? ["Visits remaining must be a whole number"] : []),
+          ...((freezeStartDate || freezeEndDate) && (!validImportDate(freezeStartDate) || !validImportDate(freezeEndDate)) ? ["Enter both current-freeze dates"] : []),
+          ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && freezeEndDate < freezeStartDate ? ["Freeze end date must be on or after its start date"] : []),
+          ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && (migrationCutoffDate < freezeStartDate || migrationCutoffDate > freezeEndDate) ? ["A current freeze must include the migration cutoff date"] : []),
+          ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && validImportDate(membershipStartDate) && validImportDate(membershipEndDate) && (freezeStartDate < membershipStartDate || freezeEndDate > membershipEndDate) ? ["Freeze dates must sit inside the membership term"] : []),
+          ...(openingBalance.error ? [openingBalance.error] : []),
+          ...(historicalPaid.error ? [historicalPaid.error] : []),
+          ...((openingBalance.amount || historicalPaid.amount || historicalPaymentDate || historicalPaymentReference) && !sourcePlanName ? ["Financial migration evidence requires a membership term"] : []),
+          ...(historicalPaid.amount && !validImportDate(historicalPaymentDate) ? ["Historical amount paid requires its last payment date"] : []),
+          ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
           ...(duplicateIds.length ? ["A member with this phone or email already exists"] : []),
         ];
-        return { rowNumber: index + 2, fullName, phone, email, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
+        return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: plan?.name, membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds: duplicateIds };
       });
-      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, createdAt: nowISO() };
+      const preview: MemberImportPreview = { id: mockUuid(), branchId: input.branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, status: "preview", cursor: 0, committedCount: 0, skippedCount: 0, sourceFileName: input.sourceFileName, sourceKind: input.sourceKind ?? "csv", sourceHeaders: input.sourceHeaders, columnMapping: input.columnMapping, migrationCutoffDate, planMappings: input.planMappings, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => (row.openingBalanceMinor ?? 0) > 0).length, historicalEvidenceRows: previewRows.filter((row) => (row.historicalPaidMinor ?? 0) > 0).length, currency: this.db.organization.currency, createdAt: nowISO() };
       this.memberImports.set(preview.id, preview);
       return preview;
     });
@@ -503,6 +2165,9 @@ export class MockGymOSApi implements GymOSApi {
       }
       const preview = this.memberImports.get(input.importId);
       if (!preview) throw ApiError.of(ERR.NOT_FOUND, "Import preview not found.");
+      const previewBranch = this.db.branches.find((item) => item.id === preview.branchId && item.status === "active");
+      if (!previewBranch || !this.branchIsVisible(previewBranch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (cursor !== (preview.cursor ?? 0)) throw ApiError.of(ERR.CONFLICT, "Import cursor is stale. Resume from the latest cursor.");
       const end = Math.min(preview.rows.length, cursor + chunkSize);
       const createdMemberIds: string[] = [];
       const errors: Array<{ rowNumber: number; message: string }> = [];
@@ -510,42 +2175,179 @@ export class MockGymOSApi implements GymOSApi {
       for (let index = cursor; index < end; index += 1) {
         const row = preview.rows[index]!;
         if (row.status !== "valid") { skippedCount += 1; row.status = "skipped"; continue; }
-        const branch = this.db.branches.find((item) => item.id === preview.branchId);
-        if (!branch) { row.status = "invalid"; row.errors = ["Branch not found"]; errors.push({ rowNumber: row.rowNumber, message: "Branch not found" }); continue; }
+        const branch = previewBranch;
         this.db.counters.memberNumber += 1;
-        const member: MemberRecord = { id: mockUuid(), memberNumber: `${branch.code}-${this.db.counters.memberNumber}`, fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: branch.id, status: "active", tags: [], preferredLanguage: "en", marketingOptIn: true, createdAt: nowISO() };
+        const member: MemberRecord = {
+          id: mockUuid(),
+          memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
+          fullName: row.fullName,
+          phone: row.phone,
+          gender: row.gender,
+          email: row.email,
+          homeBranchId: branch.id,
+          status: "active",
+          tags: [],
+          preferredLanguage: "en",
+          marketingOptIn: true,
+          marketingPreference: { optedIn: true, status: "unknown", source: "imported" },
+          importBatchId: preview.id,
+          importRowNumber: row.rowNumber,
+          migrationCutoffDate: preview.migrationCutoffDate,
+          createdAt: nowISO(),
+        };
         this.db.members.push(member);
         this.activity({ memberId: member.id, type: "member_created", title: "Member imported", actorId: this.actor().id, actorName: this.actor().name });
         this.audit({ category: "members", action: "member.imported", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Imported from CSV row ${row.rowNumber}` });
+        if (row.planId) {
+          const plan = this.db.plans.find((candidate) => candidate.id === row.planId && candidate.status === "active");
+          if (!plan) throw ApiError.of(ERR.CONFLICT, "A mapped plan changed after preview. Run the preview again.");
+          const membershipId = mockUuid();
+          const activeFreeze: T.FreezePeriod | undefined = row.freezeStartDate && row.freezeEndDate ? { id: mockUuid(), membershipId, startDate: row.freezeStartDate, endDate: row.freezeEndDate, status: "active", reason: "Current freeze imported from the previous system", createdById: this.actor().id, createdAt: nowISO() } : undefined;
+          const membership: MembershipRecord = {
+            id: membershipId,
+            organizationId: this.db.organization.id,
+            memberId: member.id,
+            planId: plan.id,
+            homeBranchId: branch.id,
+            startDate: row.membershipStartDate!,
+            endDate: row.membershipEndDate!,
+            ...(plan.kind === "visits" ? { totalVisits: plan.visitAllowance, remainingVisits: row.remainingVisits } : {}),
+            salePrice: money(0, this.db.organization.currency),
+            discount: money(0, this.db.organization.currency),
+            discountApprovalStatus: "none",
+            soldById: this.actor().id,
+            frozenDaysUsed: 0,
+            activeFreeze,
+            freezes: activeFreeze ? [activeFreeze] : [],
+            adjustments: [],
+            migration: { importBatchId: preview.id, sourceRowNumber: row.rowNumber, sourcePlanName: row.sourcePlanName, cutoffDate: preview.migrationCutoffDate ?? this.today(), financialPostingEligible: false },
+            createdAt: nowISO(),
+          };
+          this.db.memberships.push(membership);
+          if ((row.openingBalanceMinor ?? 0) > 0) {
+            const amount = row.openingBalanceMinor!;
+            const chargeId = mockUuid();
+            this.db.charges.push({ id: chargeId, organizationId: this.db.organization.id, memberId: member.id, membershipId, description: `Opening balance at ${preview.migrationCutoffDate}`, subtotal: money(amount, this.db.organization.currency), discount: money(0, this.db.organization.currency), tax: money(0, this.db.organization.currency), total: money(amount, this.db.organization.currency), paidAmount: money(0, this.db.organization.currency), outstandingAmount: money(amount, this.db.organization.currency), status: "unpaid", issueDate: preview.migrationCutoffDate, dueDate: preview.migrationCutoffDate, migration: { importBatchId: preview.id, sourceRowNumber: row.rowNumber, kind: "opening_receivable", accountingPostingEligible: false }, createdAt: nowISO() });
+            this.activity({ memberId: member.id, type: "note", title: `Opening balance imported — ${this.db.organization.currency} ${(amount / 10 ** exponentFor(this.db.organization.currency)).toFixed(exponentFor(this.db.organization.currency))}`, body: `Outstanding as of ${preview.migrationCutoffDate}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: preview.id, chargeId, sourceRowNumber: row.rowNumber } });
+          }
+          if ((row.historicalPaidMinor ?? 0) > 0) {
+            const amount = row.historicalPaidMinor!;
+            const evidenceId = mockUuid();
+            this.memberImportPaymentEvidence.push({ id: evidenceId, memberId: member.id, membershipId, amount: money(amount, this.db.organization.currency), lastPaymentDate: row.historicalPaymentDate!, sourceReference: row.historicalPaymentReference, importBatchId: preview.id, sourceRowNumber: row.rowNumber });
+            this.activity({ memberId: member.id, type: "note", title: `Historical payment evidence imported — ${this.db.organization.currency} ${(amount / 10 ** exponentFor(this.db.organization.currency)).toFixed(exponentFor(this.db.organization.currency))}`, body: `Read-only evidence through ${row.historicalPaymentDate}${row.historicalPaymentReference ? ` · ${row.historicalPaymentReference}` : ""}. No RIVET payment or receipt was created.`, meta: { importBatchId: preview.id, evidenceId, sourceRowNumber: row.rowNumber } });
+          }
+          this.activity({ memberId: member.id, type: "note", title: `${plan.name} membership history imported`, body: `${row.membershipStartDate} → ${row.membershipEndDate} · source cutoff ${preview.migrationCutoffDate}`, meta: { importBatchId: preview.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
+          this.audit({ category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${member.fullName} · ${plan.name}`, summary: `Imported active or scheduled membership history from row ${row.rowNumber}`, after: { startDate: row.membershipStartDate ?? null, endDate: row.membershipEndDate ?? null, activeFreeze: activeFreeze ? "yes" : "no", openingBalanceMinor: row.openingBalanceMinor ?? 0, historicalPaidMinor: row.historicalPaidMinor ?? 0, importBatchId: preview.id, financialPostingEligible: "no" } });
+        }
         row.status = "committed";
         row.memberId = member.id;
         createdMemberIds.push(member.id);
       }
       const nextCursor = end;
-      const result: MemberImportCommitResult = { importId: preview.id, status: nextCursor >= preview.rows.length ? "completed" : "processing", cursor: nextCursor, totalRows: preview.rows.length, committedCount: createdMemberIds.length, skippedCount, failedCount: errors.length, createdMemberIds, errors };
+      const status = nextCursor >= preview.rows.length ? "completed" : "processing";
+      preview.cursor = nextCursor;
+      preview.status = status;
+      preview.committedCount = (preview.committedCount ?? 0) + createdMemberIds.length;
+      preview.skippedCount = (preview.skippedCount ?? 0) + skippedCount;
+      if (status === "completed") {
+        preview.completedAt = nowISO();
+        preview.undoExpiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+      }
+      const result: MemberImportCommitResult = { importId: preview.id, status, cursor: nextCursor, totalRows: preview.rows.length, committedCount: preview.committedCount, skippedCount: preview.skippedCount, failedCount: errors.length, createdMemberIds, errors };
       this.memberImports.set(preview.id, preview);
       this.memberImportIdempotency.set(input.idempotencyKey, { signature, result });
       return result;
     });
   }
 
+  listMemberImports(): Promise<MemberImportSummary[]> {
+    return this.respond(() => [...this.memberImports.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).map((item) => ({ id: item.id, branchId: item.branchId, totalRows: item.totalRows, validRows: item.validRows, duplicateRows: item.duplicateRows, errorRows: item.errorRows, status: item.status, cursor: item.cursor, committedCount: item.committedCount, skippedCount: item.skippedCount, sourceFileName: item.sourceFileName, sourceKind: item.sourceKind, sourceHeaders: item.sourceHeaders, columnMapping: item.columnMapping, migrationCutoffDate: item.migrationCutoffDate, planMappings: item.planMappings, membershipRows: item.membershipRows, openingBalanceRows: item.openingBalanceRows, historicalEvidenceRows: item.historicalEvidenceRows, currency: item.currency, undoExpiresAt: item.undoExpiresAt, createdAt: item.createdAt, completedAt: item.completedAt, undoneAt: item.undoneAt, undoCursor: item.undoCursor, undoArchivedCount: item.undoArchivedCount, undoSkippedCount: item.undoSkippedCount })));
+  }
+
+  getMemberImport(importId: T.UUID): Promise<MemberImportPreview> {
+    return this.respond(() => {
+      const item = this.memberImports.get(importId);
+      if (!item) throw ApiError.of(ERR.NOT_FOUND, "Import not found.");
+      return { ...item, rows: item.rows.map((row) => ({ ...row, errors: [...row.errors], duplicateMemberIds: [...row.duplicateMemberIds] })) };
+    });
+  }
+
+  undoMemberImport(input: MemberImportUndoInput): Promise<MemberImportUndoResult> {
+    return this.respond(() => {
+      this.require("members.archive");
+      if (input.reason.trim().length < 3) throw ApiError.of(ERR.VALIDATION, "A reason is required.");
+      const item = this.memberImports.get(input.importId);
+      if (!item || !["completed", "undoing"].includes(item.status ?? "")) throw ApiError.of(ERR.CONFLICT, "Only a completed import can be undone.");
+      if (!item.undoExpiresAt || Date.parse(item.undoExpiresAt) < Date.now()) throw ApiError.of(ERR.CONFLICT, "The seven-day undo window for this import has expired.");
+      const createdRows = item.rows.filter((row) => row.memberId);
+      const cursor = input.cursor ?? item.undoCursor ?? 0;
+      if (cursor !== (item.undoCursor ?? 0)) throw ApiError.of(ERR.CONFLICT, "Undo cursor is stale. Resume from the latest cursor.");
+      const end = Math.min(createdRows.length, cursor + Math.min(100, Math.max(1, input.chunkSize ?? 25)));
+      let archivedCount = 0;
+      let skippedCount = 0;
+      for (const row of createdRows.slice(cursor, end)) {
+        const member = this.db.members.find((candidate) => candidate.id === row.memberId);
+        const memberships = this.db.memberships.filter((membership) => membership.memberId === row.memberId);
+        const charges = this.db.charges.filter((charge) => charge.memberId === row.memberId);
+        const importedMemberships = memberships.filter((membership) => membership.migration?.importBatchId === item.id && membership.adjustments.length === 0 && !membership.cancelledAt);
+        const importedCharges = charges.filter((charge) => charge.migration?.importBatchId === item.id && charge.paidAmount.amount === 0 && charge.status === "unpaid");
+        const used = memberships.length !== importedMemberships.length || charges.length !== importedCharges.length || this.db.payments.some((payment) => payment.memberId === row.memberId) || this.db.checkIns.some((checkIn) => checkIn.memberId === row.memberId) || member?.updatedAt != null;
+        if (!member || member.status !== "active" || used) { skippedCount += 1; continue; }
+        this.db.memberships = this.db.memberships.filter((membership) => !importedMemberships.some((candidate) => candidate.id === membership.id));
+        this.db.charges = this.db.charges.filter((charge) => !importedCharges.some((candidate) => candidate.id === charge.id));
+        this.memberImportPaymentEvidence = this.memberImportPaymentEvidence.filter((evidence) => !(evidence.memberId === member.id && evidence.importBatchId === item.id));
+        member.status = "archived";
+        member.archivedAt = nowISO();
+        archivedCount += 1;
+      }
+      const status = end >= createdRows.length ? "undone" : "undoing";
+      item.status = status;
+      item.undoCursor = end;
+      item.undoArchivedCount = (item.undoArchivedCount ?? 0) + archivedCount;
+      item.undoSkippedCount = (item.undoSkippedCount ?? 0) + skippedCount;
+      if (status === "undone") item.undoneAt = nowISO();
+      return { importId: item.id, status, cursor: end, totalCreated: createdRows.length, archivedCount: item.undoArchivedCount, skippedCount: item.undoSkippedCount };
+    });
+  }
+
   getPlatformSnapshot(): Promise<PlatformSnapshot> {
     return this.respond(() => ({
-      gyms: this.platformGyms,
-      bookings: this.trialBookings,
-      invoices: this.platformInvoices,
-      supportCases: this.platformSupportCases,
+      // This flag belongs to the platform projection only. Public directory
+      // reads continue through listMarketplaceGyms(), which filters and
+      // returns only provisioned rows.
+      // Platform snapshots retain archived rows for audit/history. The admin
+      // directory decides whether to hide rows using isArchived; public
+      // marketplace reads remain filtered by listMarketplaceGyms().
+      gyms: this.platformGyms.map((gym) => {
+        const cloned = cloneMarketplaceGym(gym);
+        delete cloned.logoUrl;
+        const tenant = this.tenantForGym(gym);
+        const logoUrl = this.isProvisionedGym(gym) ? (tenant ? safeMockGymLogoUrl(gym, tenant.organization.id) : this.platformGymLogoUrl(gym)) : undefined;
+        return { ...cloned, ...(logoUrl ? { logoUrl } : {}), isProvisioned: this.isProvisionedGym(gym) };
+      }),
+      bookings: this.trialBookings.map((booking) => ({ ...booking })),
+      invoices: this.platformInvoices.map((invoice) => ({ ...invoice })),
+      supportCases: this.platformSupportCases.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) })),
       applications: this.gymApplications.map((application) => ({ ...application })),
-      auditEvents: [],
-      plans: this.platformPlans,
+      auditEvents: this.platformAuditEvents.map((event) => ({ ...event })),
+      plans: this.platformPlans.map((plan) => ({ ...plan })),
       overview: buildPlatformOverview({
-        gyms: this.platformGyms.map((gym) => ({ id: gym.id, subscriptionStatus: gym.subscriptionStatus, trialEndsAt: gym.trialEndsAt })),
-        organizations: [{ status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan }],
+        gyms: this.platformGyms.map((gym) => {
+          const tenant = this.tenantForGym(gym);
+          return { id: gym.id, organizationId: tenant?.organization.id ?? (this.isProvisionedGym(gym) ? this.db.organization.id : undefined), subscriptionStatus: gym.subscriptionStatus, trialEndsAt: gym.trialEndsAt, provisioned: this.isProvisionedGym(gym) && !gym.isArchived && !tenant?.organization.archivedAt };
+        }),
+        organizations: this.provisionedOrganizationsForOverview(),
         plans: this.platformPlans.map((plan) => ({ name: plan.name, priceMinor: plan.priceMinor })),
-        branches: this.db.branches.map((branch) => ({ active: branch.status === "active", status: branch.status })),
-        members: this.db.members.map((member) => ({ status: member.status })),
-        staffMemberships: this.db.users.map((user) => ({ active: user.status === "active" })),
-        bookings: this.trialBookings.map((booking) => ({ status: booking.status })),
+        branches: [
+          ...this.db.branches.map((branch) => ({ organizationId: this.db.organization.id, active: branch.status === "active", status: branch.status })),
+          ...[...this.provisionedTenants.values()].map(({ organization, branch }) => ({ organizationId: organization.id, active: branch.status === "active", status: branch.status })),
+        ],
+        members: this.db.members.map((member) => ({ organizationId: this.db.organization.id, status: member.status })),
+        staffMemberships: [
+          ...this.db.users.map((user) => ({ organizationId: user.organizationId, active: user.status === "active" })),
+          ...[...this.provisionedTenants.values()].map(({ organization, owner }) => ({ organizationId: organization.id, active: owner.status === "active" })),
+        ],
+        bookings: this.trialBookings.map((booking) => ({ gymId: booking.gymId, status: booking.status })),
         applications: this.gymApplications.map((application) => ({
           id: application.id,
           gymName: application.gymName,
@@ -553,12 +2355,79 @@ export class MockGymOSApi implements GymOSApi {
           status: application.status,
           updatedAt: application.updatedAt,
           provisioningStatus: application.provisioningStatus,
+          provisioningOutcome: application.provisioningOutcome,
           provisioningError: application.provisioningError,
         })),
         invoices: this.platformInvoices,
         supportCases: this.platformSupportCases,
       }),
     }));
+  }
+
+  /** Deterministic preview equivalent of the Convex subscription cron. */
+  async reconcilePlatformSubscriptions(now = Date.now()): Promise<{ processed: number; invoicesCreated: number; markedPastDue: number; suspended: number }> {
+    const organization = this.db.organization;
+    const gym = this.platformGyms.find((item) => this.isProvisionedGym(item));
+    if (!gym || !["trial", "active", "past_due"].includes(organization.status)) return { processed: 0, invoicesCreated: 0, markedPastDue: 0, suspended: 0 };
+    const boundaryValue = organization.trialEndsAt ?? organization.currentPeriodEndsAt;
+    if (!boundaryValue) return { processed: 1, invoicesCreated: 0, markedPastDue: 0, suspended: 0 };
+    const boundary = Date.parse(boundaryValue);
+    if (!Number.isFinite(boundary)) return { processed: 1, invoicesCreated: 0, markedPastDue: 0, suspended: 0 };
+    const billingInterval = organization.billingInterval ?? gym.billingInterval ?? "monthly";
+    const periodEnd = termEnd(boundary, billingInterval);
+    const cycleKey = `subscription:${organization.id}:${billingInterval}:${boundary}`;
+    let invoice = this.platformInvoices.find((item) => item.cycleKey === cycleKey);
+    let invoicesCreated = 0;
+    if (now >= boundary - INVOICE_LEAD_DAYS * DAY_MS && !invoice) {
+      const plan = this.platformPlans.find((item) => item.name === organization.subscriptionPlan)?.priceMinor ?? 0;
+      const amountMinor = termPriceMinor(plan, billingInterval);
+      invoice = {
+        id: `INV-${crypto.randomUUID()}`,
+        gymId: gym.id,
+        gym: gym.name,
+        amountMinor,
+        amount: `JOD ${(amountMinor / 1_000).toFixed(3)}`,
+        currency: "JOD",
+        date: new Date(now).toISOString(),
+        issuedAt: new Date(now).toISOString(),
+        dueAt: new Date(now + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
+        periodStart: new Date(boundary).toISOString(),
+        periodEnd: new Date(periodEnd).toISOString(),
+        cycleKey,
+        billingInterval,
+        status: "open",
+      };
+      this.platformInvoices.unshift(invoice);
+      this.operationalEmailKinds.push("platform_invoice_reminder");
+      invoicesCreated = 1;
+    }
+    if (!invoice) return { processed: 1, invoicesCreated, markedPastDue: 0, suspended: 0 };
+    if (invoice.status === "void") return { processed: 1, invoicesCreated, markedPastDue: 0, suspended: 0 };
+    // Parity with Convex: the agreement's payment term, not the term
+    // boundary, is what decides when an invoice falls past due.
+    const dueAt = Date.parse(invoice.dueAt ?? "") || boundary;
+    let markedPastDue = 0;
+    if (now >= dueAt && ["draft", "open"].includes(invoice.status)) {
+      invoice.status = "past_due";
+      invoice.pastDueAt = new Date(now).toISOString();
+      organization.status = "past_due";
+      organization.subscriptionStatusReason = `Subscription invoice ${invoice.id} is due.`;
+      gym.subscriptionStatus = "overdue";
+      gym.subscriptionStatusReason = organization.subscriptionStatusReason;
+      this.operationalEmailKinds.push("platform_invoice_past_due");
+      markedPastDue = 1;
+    }
+    if (now < dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS || ["paid", "void"].includes(invoice.status)) return { processed: 1, invoicesCreated, markedPastDue, suspended: 0 };
+    organization.status = "suspended";
+    organization.subscriptionStatusReason = `Subscription invoice ${invoice.id} remained unpaid ${SUSPENSION_AFTER_DUE_DAYS} days past its due date, after written notice.`;
+    gym.subscriptionStatus = "suspended";
+    gym.isPublic = false;
+    gym.subscriptionStatusReason = organization.subscriptionStatusReason;
+    this.operationalEmailKinds.push("platform_subscription_suspended");
+    await this.emitPlatformSnapshotSubscribers();
+    await this.emitMarketplaceSubscribers();
+    await this.emitWorkspaceAccessSubscribers();
+    return { processed: 1, invoicesCreated, markedPastDue, suspended: 1 };
   }
 
   async previewMarketingPreferenceMigration(): Promise<import("@/lib/api/GymOSApi").MarketingPreferenceMigrationPreview> {
@@ -572,10 +2441,31 @@ export class MockGymOSApi implements GymOSApi {
   async subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try {
       onValue(await this.getPlatformSnapshot());
+      this.platformSnapshotSubscribers.set(onValue, onError);
     } catch (error) {
       onError?.(error);
     }
-    return () => undefined;
+    return () => { this.platformSnapshotSubscribers.delete(onValue); };
+  }
+
+  async subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.respond(() => this.platformPlans.map((plan) => ({ ...plan })), "public"));
+      this.publicPlanSubscribers.set(onValue, onError);
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => { this.publicPlanSubscribers.delete(onValue); };
+  }
+
+  async subscribeWorkspaceAccess(onValue: (access: T.WorkspaceAccess) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.getWorkspaceAccess());
+      this.workspaceAccessSubscribers.set(onValue, onError);
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => { this.workspaceAccessSubscribers.delete(onValue); };
   }
 
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail> {
@@ -586,73 +2476,185 @@ export class MockGymOSApi implements GymOSApi {
       const available = <T,>(value: T): PlatformData<T> => ({ state: "available", value });
       const notAvailable = <T,>(): PlatformData<T> => ({ state: "not_available" });
       const notConfigured = <T,>(): PlatformData<T> => ({ state: "not_configured" });
-      // The mock has one authoritative tenant. Other directory rows are
-      // intentionally detail-incomplete rather than borrowing Forge facts.
-      const isSeedTenant = gym.id === "forge-fitness";
-      const organization = isSeedTenant ? this.db.organization : undefined;
-      const branches = isSeedTenant
-        ? this.db.branches.map((branch) => ({ id: branch.id, name: branch.name, code: branch.code, address: branch.address || undefined, phone: branch.phone || undefined, status: branch.status }))
-        : [];
-      const owner = organization ? this.db.users.find((user) => user.role === "owner" && user.status !== "deactivated") : undefined;
+      // Forge is backed by the signed-in demo database. Newly provisioned
+      // applications use a tenant-shaped mock projection so their listing,
+      // branch, owner invitation, and subscription facts are not borrowed
+      // from Forge.
+      const tenant = this.tenantForGym(gym);
+      const isSeedTenant = this.isProvisionedGym(gym);
+      const organization = tenant?.organization ?? (isSeedTenant ? this.db.organization : undefined);
+      const branches = tenant
+        ? [{ id: tenant.branch.id, name: tenant.branch.name, code: tenant.branch.code, address: tenant.branch.address || undefined, phone: tenant.branch.phone || undefined, status: tenant.branch.status }]
+        : isSeedTenant
+          ? this.db.branches.map((branch) => ({ id: branch.id, name: branch.name, code: branch.code, address: branch.address || undefined, phone: branch.phone || undefined, status: branch.status }))
+          : [];
+      const owner = tenant?.owner ?? (organization ? this.db.users.find((user) => user.role === "owner" && user.status !== "deactivated") : undefined);
+      const effectiveStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
+      const effectivePlan = organization?.subscriptionPlan ?? gym.rivetPlan;
+      const isArchived = Boolean(gym.isArchived || organization?.archivedAt);
       const plan = organization?.subscriptionPlan ? this.platformPlans.find((item) => item.name === organization.subscriptionPlan) : undefined;
-      const activeMemberCount = organization ? this.db.members.filter((member) => member.status === "active").length : 0;
-      const activeStaffCount = organization ? this.db.users.filter((user) => user.status === "active").length : 0;
+      const activeMemberCount = tenant ? 0 : organization ? this.db.members.filter((member) => member.status === "active").length : 0;
+      const activeStaffCount = tenant ? (tenant.owner.status === "active" ? 1 : 0) : organization ? this.db.users.filter((user) => user.status === "active").length : 0;
       const field = <T,>(value: T | undefined, missing: "not_available" | "not_configured" = "not_available"): PlatformData<T> => value === undefined ? (missing === "not_available" ? notAvailable<T>() : notConfigured<T>()) : available(value);
+      const logoUrl = organization ? (tenant ? safeMockGymLogoUrl(gym, organization.id) : this.platformGymLogoUrl(gym)) : undefined;
+      const detailBranches = organization
+        ? (tenant
+          ? [{ id: tenant.branch.id, name: tenant.branch.name, code: tenant.branch.code, address: tenant.branch.address || undefined, phone: tenant.branch.phone || undefined, status: tenant.branch.status }]
+          : branches)
+        : [];
+      const branchById = new Map(detailBranches.map((branch) => [branch.id, branch]));
+      const memberRows = organization && isSeedTenant
+        ? this.db.members
+          .filter((member) => !member.mergedIntoMemberId)
+          .map((member) => {
+            const current = this.currentMembership(member.id);
+            const plan = current ? this.db.plans.find((item) => item.id === current.planId) : undefined;
+            const branch = branchById.get(member.homeBranchId);
+            return {
+              id: member.id,
+              memberNumber: member.memberNumber,
+              name: member.fullName,
+              status: member.status,
+              ...(branch ? { branchId: branch.id, branchName: branch.name } : {}),
+              ...(current ? { membershipStatus: this.membershipStatusOf(current), planName: plan?.name, membershipEndDate: current.endDate } : {}),
+              joinedAt: member.createdAt,
+            };
+          })
+        : [];
+      const staffRows = organization
+        ? (tenant ? [tenant.owner] : this.db.users)
+          .filter((user) => user.organizationId === organization.id)
+          .map((user) => {
+            const tenantInvitation = tenant?.owner.id === user.id ? tenant.membershipStatus : undefined;
+            const assignedBranches = user.branchScope === "all" ? detailBranches : user.branchIds.map((id) => branchById.get(id)).filter((branch): branch is typeof detailBranches[number] => Boolean(branch));
+            return {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              status: user.status,
+              branchScope: user.branchScope,
+              branchIds: assignedBranches.map((branch) => branch.id),
+              branchNames: assignedBranches.map((branch) => branch.name),
+              ...(tenantInvitation ? { invitationStatus: tenantInvitation } : user.status === "invited" ? { invitationStatus: "pending" as const } : user.status === "active" ? { invitationStatus: "accepted" as const } : {}),
+              ...(user.invitedAt ? { joinedAt: user.invitedAt } : {}),
+            };
+          })
+        : [];
 
       return {
         id: gym.id,
         name: gym.name,
         shortName: gym.shortName,
         accent: gym.accent,
-        controls: { status: gym.subscriptionStatus, plan: gym.rivetPlan, isPublic: gym.isPublic ?? true },
+        logoUrl: organization ? field(logoUrl, "not_configured") : notAvailable(),
+        controls: { status: effectiveStatus, plan: effectivePlan, isPublic: Boolean(organization && PUBLIC_SUBSCRIPTION_STATUSES.has(effectiveStatus) && gym.isPublic), isArchived, archivedAt: gym.archivedAt ?? (organization?.archivedAt ? new Date(organization.archivedAt).toISOString() : undefined), archiveReason: gym.archiveReason ?? organization?.archiveReason },
         organization: organization
           ? available({ id: organization.id, name: organization.name, status: organization.status, currency: organization.currency, timezone: organization.timezone })
           : notAvailable(),
+        publicPage: organization
+          ? available({
+              publishedVersion: gym.profileVersion ?? (tenant ? 1 : this.gymProfileVersions.some((item) => item.status === "published") ? this.gymProfileVersions.find((item) => item.status === "published")!.version : 0),
+              ...(!tenant && this.gymPublicProfile.status === "draft" ? { draftVersion: this.gymPublicProfile.version, draftStatus: "draft", draftUpdatedAt: this.gymPublicProfile.updatedAt } : {}),
+            })
+          : notAvailable(),
         joinedAt: notAvailable(),
-        branches: organization ? available(branches) : notAvailable(),
+        branches: organization ? available(detailBranches) : notAvailable(),
+        members: organization ? available(memberRows) : notAvailable(),
+        staff: organization ? available(staffRows) : notAvailable(),
         owner: owner ? available({ name: owner.name, email: owner.email, phone: owner.phone || undefined }) : notAvailable(),
+        agreement: organization ? (() => { const current = this.activeSubscriptionAgreement(organization.id); return current ? available(this.agreementSummary(current)) : notConfigured<T.PlatformAgreementSummary>(); })() : notAvailable(),
         usage: {
           memberCount: organization ? available(activeMemberCount) : notAvailable(),
           activeStaffCount: organization ? available(activeStaffCount) : notAvailable(),
           staffLimit: organization ? field(plan?.staff, "not_configured") : notAvailable(),
-          automationRuleCount: organization ? available(this.db.rules.length) : notAvailable(),
-          paymentTransactionCount: organization ? available(this.db.payments.length) : notAvailable(),
+          automationRuleCount: organization ? available(tenant ? 0 : this.db.rules.length) : notAvailable(),
+          paymentTransactionCount: organization ? available(tenant ? 0 : this.db.payments.length) : notAvailable(),
           storage: notConfigured(),
         },
         subscription: {
           plan: organization ? field(organization.subscriptionPlan, "not_configured") : notAvailable(),
-          status: organization ? available(organization.status === "active" ? "active" : "suspended") : notAvailable(),
-          startedAt: organization ? field(gym.subscriptionStartedAt, "not_configured") : notAvailable(),
-          trialEndsAt: organization ? field(gym.trialEndsAt, "not_configured") : notAvailable(),
-          currentPeriodEndsAt: organization ? field(gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
-          cancelledAt: organization ? field(gym.cancelledAt, "not_configured") : notAvailable(),
-          statusReason: organization ? field(gym.subscriptionStatusReason, "not_configured") : notAvailable(),
-          recurringAmount: notConfigured(),
-          renewalDate: notConfigured(),
+          billingInterval: organization ? field(organization.billingInterval ?? gym.billingInterval ?? "monthly", "not_configured") : notAvailable(),
+          status: organization ? available(effectiveStatus) : notAvailable(),
+          startedAt: organization ? field(organization.subscriptionStartedAt ?? gym.subscriptionStartedAt, "not_configured") : notAvailable(),
+          trialEndsAt: organization ? field(organization.trialEndsAt ?? gym.trialEndsAt, "not_configured") : notAvailable(),
+          currentPeriodEndsAt: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
+          cancelledAt: organization ? field(organization.cancelledAt ?? gym.cancelledAt, "not_configured") : notAvailable(),
+          statusReason: organization ? field(organization.subscriptionStatusReason ?? gym.subscriptionStatusReason, "not_configured") : notAvailable(),
+          // Mirror the Convex derivation: the catalog price with the shared
+          // annual formula, and the platform invoices scoped to this gym.
+          recurringAmount: organization && plan
+            ? available({ amount: termPriceMinor(plan.priceMinor, organization.billingInterval ?? gym.billingInterval ?? "monthly"), currency: organization.currency ?? "JOD" })
+            : organization ? notConfigured() : notAvailable(),
+          renewalDate: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
           paymentMethod: notConfigured(),
-          invoices: notConfigured(),
+          invoices: organization ? available(this.platformInvoices.filter((invoice) => invoice.gymId === gym.id).map((invoice) => ({ ...invoice }))) : notAvailable(),
         },
-        activity: notConfigured(),
+        activity: organization
+          ? available(this.platformAuditEvents.filter((event) => event.entityType === "platform_gym" && event.entityPublicId === gym.id).map(({ entityType: _entityType, entityPublicId: _entityPublicId, entityLabel: _entityLabel, reason: _reason, ...event }) => ({ ...event })))
+          : notAvailable(),
       };
     });
   }
 
   subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void> {
-    return this.subscribeOnce(() => this.getPlatformGymDetail(gymId), onValue, onError);
+    return (async () => {
+      try {
+        onValue(await this.getPlatformGymDetail(gymId));
+        this.platformGymDetailSubscribers.set(onValue, { gymId, onError });
+      } catch (error) {
+        onError?.(error);
+      }
+      return () => { this.platformGymDetailSubscribers.delete(onValue); };
+    })();
   }
 
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> {
     return this.respond(() => this.platformPlans);
   }
 
-  submitGymApplication(_input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
-    return this.respond(() => ({
-      applicationId: `application-${Date.now()}`,
-      status: "pending" as const,
-      notificationStatus: "sent" as const,
-      submittedAt: new Date().toISOString(),
-      duplicate: false,
-    }));
+  submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
+    return this.respond(() => {
+      if (input.website?.trim()) {
+        return { applicationId: mockUuid(), status: "pending" as const, notificationStatus: "pending" as const, submittedAt: nowISO(), duplicate: false };
+      }
+      if (input.gymAddress.trim().length < 5) throw ApiError.of(ERR.VALIDATION, "Enter the gym's physical address.");
+      const normalizedEmail = input.email.trim().toLowerCase();
+      const applicationKey = publicApplicationKey(normalizedEmail, input.gymName);
+      const signature = publicRequestSignature({ gymName: input.gymName.trim(), gymAddress: input.gymAddress.trim(), ownerName: input.ownerName.trim(), email: normalizedEmail, contactNumber: input.contactNumber.trim(), plan: input.plan, billingInterval: input.billingInterval ?? "monthly" });
+      const idempotencyKey = input.idempotencyKey?.trim();
+      if (idempotencyKey) {
+        if (idempotencyKey.length > 200) throw ApiError.of(ERR.VALIDATION, "The application request could not be processed.");
+        const existingRequest = this.publicApplicationIdempotency.get(idempotencyKey);
+        if (existingRequest) {
+          if (existingRequest.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This application request has already been used.");
+          return { ...existingRequest.result, duplicate: true };
+        }
+      }
+      const existing = this.gymApplications.find((application) => application.status !== "rejected" && publicApplicationKey(application.email, application.gymName) === applicationKey);
+      if (existing) return { applicationId: existing.id, status: existing.status, notificationStatus: existing.notificationStatus, submittedAt: existing.submittedAt, duplicate: true };
+      enforceMockRateLimit(this.publicApplicationRateLimits, `${normalizedEmail}|${input.contactNumber.trim()}`, 5, 60 * 60 * 1000);
+      const submittedAt = nowISO();
+      const applicationId = `application-${Date.now()}`;
+      const result = { applicationId, status: "pending" as const, notificationStatus: "sent" as const, submittedAt, duplicate: false };
+      this.gymApplications.unshift({
+        id: applicationId,
+        gymName: input.gymName.trim(),
+        gymAddress: input.gymAddress.trim(),
+        ownerName: input.ownerName.trim(),
+        email: normalizedEmail,
+        contactNumber: input.contactNumber.trim(),
+        plan: input.plan,
+        billingInterval: input.billingInterval ?? "monthly",
+        status: "pending",
+        notificationStatus: "sent",
+        reviewNotificationStatus: "not_configured",
+        submittedAt,
+        updatedAt: submittedAt,
+      });
+      if (idempotencyKey) this.publicApplicationIdempotency.set(idempotencyKey, { signature, result });
+      return result;
+    });
   }
 
   listGymApplications(query: { status?: PlatformGymApplication["status"]; search?: string } = {}): Promise<PlatformGymApplication[]> {
@@ -660,7 +2662,7 @@ export class MockGymOSApi implements GymOSApi {
       const search = query.search?.trim().toLowerCase();
       return this.gymApplications
         .filter((application) => !query.status || application.status === query.status)
-        .filter((application) => !search || [application.gymName, application.ownerName, application.email, application.contactNumber, application.plan, application.status].some((value) => value.toLowerCase().includes(search)))
+        .filter((application) => !search || [application.gymName, application.gymAddress ?? "", application.ownerName, application.email, application.contactNumber, application.plan, application.status].some((value) => value.toLowerCase().includes(search)))
         .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
         .map((application) => ({ ...application }));
     });
@@ -679,10 +2681,20 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const application = this.gymApplications.find((item) => item.id === input.applicationId);
       if (!application) throw ApiError.of(ERR.NOT_FOUND, "Gym application not found.");
-      if (application.status === "approved" || application.status === "rejected") throw ApiError.of(ERR.VALIDATION, "This gym application has already been finalized.");
+      // Parity with Convex: a permanently failed, never-provisioned approval
+      // may still be rejected to clear the operator queue.
+      const provisioningDeadEnd = application.status === "approved" && input.decision === "rejected" && application.provisioningStatus === "failed" && !application.provisionedOrganizationId;
+      if ((application.status === "approved" && !provisioningDeadEnd) || application.status === "rejected") throw ApiError.of(ERR.VALIDATION, "This gym application has already been finalized.");
       if (input.decision === "rejected" && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "Add a reason before rejecting an application.", { fieldErrors: { note: ["Required when rejecting an application"] } });
       const now = nowISO();
       application.status = input.decision;
+      if (provisioningDeadEnd) {
+        application.provisioningStatus = undefined;
+        application.provisioningCheckpoint = undefined;
+        application.provisioningOutcome = undefined;
+        application.provisioningError = undefined;
+        application.provisioningStartedAt = undefined;
+      }
       application.updatedAt = now;
       application.reviewedBy = this.actor().name;
       application.reviewNotes = input.note?.trim() || undefined;
@@ -726,10 +2738,17 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult> {
+    if (this.provisioningInFlight.has(input.applicationId)) {
+      return Promise.reject(ApiError.of(ERR.CONFLICT, "Gym provisioning is already in progress. Refresh the application before retrying."));
+    }
+    this.provisioningInFlight.add(input.applicationId);
     return this.respond(() => {
       const application = this.gymApplications.find((item) => item.id === input.applicationId);
       if (!application) throw ApiError.of(ERR.NOT_FOUND, "Gym application not found.");
       if (application.status !== "approved") throw ApiError.of(ERR.VALIDATION, "Only approved applications can be provisioned.");
+      if (application.provisioningStatus === "failed" && application.provisioningOutcome === "permanent") {
+        throw ApiError.of(ERR.CONFLICT, application.provisioningError ?? "Provisioning requires manual correction before it can be retried.");
+      }
       if (application.provisioningStatus === "completed" && application.provisionedOrganizationId && application.provisionedBranchId) {
         return {
           applicationId: application.id,
@@ -739,6 +2758,7 @@ export class MockGymOSApi implements GymOSApi {
           branchId: application.provisionedBranchId,
           branchName: `${application.gymName} — Main branch`,
           plan: application.plan,
+          billingInterval: application.billingInterval ?? "monthly",
           ownerName: application.ownerName,
           ownerEmail: application.email,
           clerkOrganizationId: application.clerkOrganizationId ?? `clerk-org-${application.id.slice(0, 8)}`,
@@ -746,14 +2766,120 @@ export class MockGymOSApi implements GymOSApi {
         };
       }
       const now = nowISO();
-      application.provisioningStatus = "completed";
-      application.provisionedAt = now;
-      application.provisionedOrganizationId = `org-${application.id}`;
-      application.provisionedBranchId = `branch-${application.id}`;
-      application.clerkOrganizationId = `clerk-org-${application.id.slice(0, 8)}`;
-      application.clerkInvitationId = `clerk-inv-${application.id.slice(0, 8)}`;
+      application.provisioningStatus = "in_progress";
+      application.provisioningCheckpoint = "claimed";
+      application.provisioningOutcome = "partial";
+      application.provisioningAttemptCount = (application.provisioningAttemptCount ?? 0) + 1;
+      application.provisioningLastCorrelationId = `mock-provision:${application.id}:${application.provisioningAttemptCount}`;
       application.provisioningError = undefined;
       application.updatedAt = now;
+
+      // Keep the mock's signed-in Forge database intact while creating the
+      // same durable tenant-shaped facts that the live provisioning action
+      // projects: organization, first branch, owner invitation state, and a
+      // marketplace listing. The application id makes retries converge on the
+      // same tenant instead of appending duplicate directory rows.
+      const organizationId = mockUuid();
+      const branchId = mockUuid();
+      const ownerId = mockUuid();
+      const clerkOrganizationId = `clerk-org-${application.id.slice(0, 8)}`;
+      const clerkInvitationId = `clerk-inv-${application.id.slice(0, 8)}`;
+      const listingId = `gym-${application.id}`;
+      const startedAt = now;
+      const trialEndsAt = new Date(addCalendarMonths(Date.parse(now), 1)).toISOString();
+      const template = this.platformGyms.find((item) => item.id === PROVISIONED_MOCK_GYM_ID) ?? MARKETPLACE_GYMS[0]!;
+      const existingOwner = this.db.users.find((user) => user.email.trim().toLowerCase() === application.email.trim().toLowerCase() && user.status !== "deactivated");
+      const owner = existingOwner ?? {
+        id: ownerId,
+        organizationId,
+        name: application.ownerName,
+        email: application.email,
+        phone: application.contactNumber,
+        role: "owner" as const,
+        branchScope: "all" as const,
+        branchIds: [branchId],
+        status: "invited" as const,
+        invitedAt: now,
+      } satisfies T.StaffUser;
+      const membershipStatus = existingOwner?.status === "active" ? "accepted" as const : "pending" as const;
+      const organization: T.Organization = {
+        ...this.db.organization,
+        id: organizationId,
+        name: application.gymName,
+        slug: `${application.gymName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "gym"}-${application.id.slice(0, 8)}`,
+        subscriptionPlan: application.plan,
+        billingInterval: application.billingInterval ?? "monthly",
+        status: "trial",
+        subscriptionStartedAt: startedAt,
+        trialEndsAt,
+        currentPeriodEndsAt: undefined,
+        cancelledAt: undefined,
+        archivedAt: undefined,
+        archiveReason: undefined,
+        subscriptionStatusReason: "Provisioned from approved application.",
+        updatedAt: now,
+      };
+      const branch: T.Branch = {
+        id: branchId,
+        organizationId,
+        name: `${application.gymName} — Main branch`,
+        code: "MAIN",
+        address: "Amman",
+        phone: application.contactNumber,
+        capacity: 0,
+        status: "active",
+      };
+      const listing = cloneMarketplaceGym(template);
+      listing.id = listingId;
+      listing.name = application.gymName;
+      listing.shortName = application.gymName.slice(0, 32);
+      listing.tagline = `${application.plan} workspace on RIVET`;
+      listing.description = `The ${application.gymName} workspace is ready for its owner onboarding.`;
+      listing.city = "Amman";
+      listing.areas = ["Amman"];
+      listing.memberCount = 0;
+      listing.branchCount = 1;
+      listing.rating = 0;
+      listing.reviewCount = 0;
+      listing.fromPriceMinor = 0;
+      listing.amenities = [];
+      listing.featured = false;
+      listing.subscriptionStatus = "trial";
+      listing.rivetPlan = application.plan;
+      listing.billingInterval = application.billingInterval ?? "monthly";
+      listing.joinedAt = startedAt;
+      listing.lastActiveAt = startedAt;
+      listing.monthlyRevenueMinor = 0;
+      listing.isPublic = true;
+      listing.isProvisioned = true;
+      listing.trialEndsAt = trialEndsAt;
+      listing.subscriptionStartedAt = startedAt;
+      listing.currentPeriodEndsAt = undefined;
+      listing.subscriptionStatusReason = organization.subscriptionStatusReason;
+      listing.branches = [{ id: branchId, name: branch.name, area: "Amman", address: branch.address, trialSlots: [], internalBranchId: branchId }];
+      this.provisionedTenants.set(application.id, { organization, branch, owner, membershipStatus, clerkInvitationId, listingId });
+      this.provisionedMockGymIds.add(listing.id);
+      this.platformGyms = [...this.platformGyms.filter((item) => item.id !== listing.id), listing];
+      application.provisioningStatus = "completed";
+      application.provisioningCheckpoint = "completed";
+      application.provisioningOutcome = "complete";
+      application.provisionedAt = now;
+      application.provisionedOrganizationId = organizationId;
+      application.provisionedBranchId = branchId;
+      application.clerkOrganizationId = clerkOrganizationId;
+      application.clerkInvitationId = clerkInvitationId;
+      application.clerkInvitationStatus = membershipStatus === "accepted" ? "accepted" : "pending";
+      application.provisioningError = undefined;
+      application.updatedAt = now;
+      this.recordPlatformAudit({
+        action: "gym.provisioned",
+        entityType: "platform_gym",
+        entityPublicId: listing.id,
+        entityLabel: listing.name,
+        summary: `Provisioned ${listing.name} with a ${application.plan} trial`,
+        reason: "Approved gym application provisioned",
+        after: { organizationId, branchId, ownerMembershipStatus: membershipStatus, clerkInvitationStatus: application.clerkInvitationStatus },
+      });
       return {
         applicationId: application.id,
         status: "completed" as const,
@@ -762,73 +2888,391 @@ export class MockGymOSApi implements GymOSApi {
         branchId: application.provisionedBranchId,
         branchName: `${application.gymName} — Main branch`,
         plan: application.plan,
+        billingInterval: application.billingInterval ?? "monthly",
         ownerName: application.ownerName,
         ownerEmail: application.email,
         clerkOrganizationId: application.clerkOrganizationId,
         clerkInvitationId: application.clerkInvitationId,
       };
+    }).then(async (result) => {
+      await Promise.all([
+        this.emitPlatformSnapshotSubscribers(),
+        this.emitMarketplaceSubscribers(),
+        this.emitPlatformGymDetailSubscribers(),
+      ]);
+      return result;
+    }).finally(() => {
+      this.provisioningInFlight.delete(input.applicationId);
     });
   }
 
-  updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> {
-    return this.respond(() => {
+  async updatePlatformGym(input: UpdatePlatformGymInput): Promise<MarketplaceGym> {
+    const result = await this.respond(() => {
+      this.requireReason(input.reason);
+      const rawInput = input as UpdatePlatformGymInput & Record<string, unknown>;
+      if (["trialEndsAt", "subscriptionStartedAt", "cancelledAt"].some((field) => rawInput[field] !== undefined)) {
+        throw ApiError.of(ERR.VALIDATION, "Trial, subscription start, and cancellation dates are derived automatically.");
+      }
+      const gym = this.platformGyms.find((item) => item.id === input.gymId);
+      if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
+      const tenant = this.tenantForGym(gym);
+      const organization = tenant?.organization ?? (this.isProvisionedGym(gym) ? this.db.organization : undefined);
+      if (gym.isArchived || organization?.archivedAt) throw ApiError.of(ERR.CONFLICT, "Archived gyms cannot be changed through the subscription controls.");
+      const nextStatus = input.status ?? (organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus);
+      const persistedStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
+      if (nextStatus === "trial" && persistedStatus !== "trial") throw ApiError.of(ERR.VALIDATION, "A provisioned gym cannot be moved back into trial; trials start automatically during onboarding.");
+      const nextPlan = input.plan ?? organization?.subscriptionPlan ?? this.db.organizationEntitlements.subscriptionPlan ?? gym.rivetPlan;
+      if (input.billingInterval !== undefined && input.billingInterval !== "monthly" && input.billingInterval !== "annual") throw ApiError.of(ERR.VALIDATION, "Billing cadence is invalid.");
+      const requestedPeriodEndsAtInput = input.currentPeriodEndsAt;
+      const requestedPeriodEndsAt = requestedPeriodEndsAtInput === undefined ? undefined : validSubscriptionTimestamp(requestedPeriodEndsAtInput);
+      if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) throw ApiError.of(ERR.VALIDATION, "The membership end date must be a valid calendar date.");
+      const hasControlChange = input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || input.isPublic !== undefined;
+      if (!hasControlChange) throw ApiError.of(ERR.VALIDATION, "Choose a status, plan, listing, or lifecycle change.");
+      if (!organization) {
+        if (input.isPublic !== false || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined) {
+          throw ApiError.of(ERR.CONFIGURATION, "This directory row is not linked to a provisioned organization; only hiding it is supported.");
+        }
+        gym.isPublic = false;
+        gym.subscriptionStatus = "suspended";
+        gym.trialEndsAt = undefined;
+        gym.subscriptionStartedAt = undefined;
+        gym.currentPeriodEndsAt = undefined;
+        gym.cancelledAt = undefined;
+        gym.subscriptionStatusReason = input.reason.trim();
+        this.recordPlatformAudit({
+          action: "gym.subscription.update",
+          entityType: "platform_gym",
+          entityPublicId: gym.id,
+          entityLabel: gym.name,
+          summary: `Hid unprovisioned directory row ${gym.name}`,
+          reason: input.reason.trim(),
+        });
+        return cloneMarketplaceGym(gym);
+      }
+      if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") throw ApiError.of(ERR.VALIDATION, "Public listing must be a boolean.");
+
+      const nowTimestamp = Date.now();
+      const existingBillingInterval = organization?.billingInterval ?? gym.billingInterval ?? "monthly";
+      const billingInterval = input.billingInterval ?? existingBillingInterval;
+      const storedSubscriptionStartedAt = organization?.subscriptionStartedAt ? Date.parse(organization.subscriptionStartedAt) : undefined;
+      const storedTrialEndsAt = organization?.trialEndsAt ? Date.parse(organization.trialEndsAt) : undefined;
+      const storedCurrentPeriodEndsAt = organization?.currentPeriodEndsAt ? Date.parse(organization.currentPeriodEndsAt) : undefined;
+      const currentStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
+      const currentPlan = organization?.subscriptionPlan ?? this.db.organizationEntitlements.subscriptionPlan ?? gym.rivetPlan;
+      const materialMembershipChange = (input.status !== undefined && nextStatus !== currentStatus)
+        || (input.plan !== undefined && input.plan !== currentPlan)
+        || (input.billingInterval !== undefined && billingInterval !== existingBillingInterval);
+      const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined);
+      if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) throw ApiError.of(ERR.VALIDATION, "Trial end is fixed automatically from onboarding; do not provide a paid period end date.");
+      // Parity with Convex: a material change landing on an active
+      // subscription starts a new server-derived paid term today, rolls the
+      // unused paid days forward, and issues the term invoice below.
+      const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
+      const outgoingMonthlyPrice = this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0;
+      const change = startsNewPaidTerm
+        ? termChange({
+            now: nowTimestamp,
+            interval: billingInterval,
+            monthlyPriceMinor: this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0,
+            // Only a paid, running term is worth anything back; an overdue
+            // term was never paid for, so its invoice is voided instead.
+            ...(currentStatus === "active" && Number.isFinite(storedCurrentPeriodEndsAt) && outgoingMonthlyPrice > 0
+              ? { outgoing: { periodEndsAt: storedCurrentPeriodEndsAt!, monthlyPriceMinor: outgoingMonthlyPrice, interval: existingBillingInterval } }
+              : {}),
+          })
+        : undefined;
+      const computedPeriodEndsAt = change?.periodEndsAt;
+      const nextSubscriptionStartedAt = Number.isFinite(storedSubscriptionStartedAt) ? storedSubscriptionStartedAt : PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? nowTimestamp : undefined;
+      const nextTrialEndsAt = nextStatus === "trial" ? (Number.isFinite(storedTrialEndsAt) ? storedTrialEndsAt : nextSubscriptionStartedAt === undefined ? undefined : addCalendarMonths(nextSubscriptionStartedAt, 1)) : storedTrialEndsAt;
+      if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "A trial must end in the future; its end date is derived from onboarding.");
+      const selectedPeriodEndsAt = periodBoundaryChanged ? requestedPeriodEndsAt : computedPeriodEndsAt ?? (Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined);
+      if ((materialMembershipChange || periodBoundaryChanged) && selectedPeriodEndsAt !== undefined && Number.isFinite(storedSubscriptionStartedAt) && selectedPeriodEndsAt < storedSubscriptionStartedAt!) throw ApiError.of(ERR.VALIDATION, "The membership end date must be on or after the subscription start date.");
+      if ((materialMembershipChange || periodBoundaryChanged) && nextStatus === "active" && selectedPeriodEndsAt !== undefined && selectedPeriodEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "An active subscription must end in the future.");
+      const nextCurrentPeriodEndsAt = nextStatus === "trial" ? undefined : selectedPeriodEndsAt;
+      const nextCancelledAt = nextStatus === "cancelled" ? nowTimestamp : undefined;
+      if (nextStatus === "trial" && nextTrialEndsAt === undefined) throw ApiError.of(ERR.CONFIGURATION, "A trial cannot start until its onboarding date is established.");
+
+      const previousStatus = gym.subscriptionStatus;
+      const previousPlan = gym.rivetPlan;
+      const previousIsPublic = gym.isPublic === true;
+      const beforeAudit = { subscriptionStatus: previousStatus, rivetPlan: previousPlan, billingInterval: existingBillingInterval, isPublic: previousIsPublic };
+      gym.subscriptionStatus = nextStatus;
+      gym.rivetPlan = nextPlan;
+      gym.isPublic = PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? input.isPublic ?? previousIsPublic : false;
+      gym.trialEndsAt = nextTrialEndsAt === undefined ? undefined : new Date(nextTrialEndsAt).toISOString();
+      gym.subscriptionStartedAt = nextSubscriptionStartedAt === undefined ? undefined : new Date(nextSubscriptionStartedAt).toISOString();
+      gym.currentPeriodEndsAt = nextCurrentPeriodEndsAt === undefined ? undefined : new Date(nextCurrentPeriodEndsAt).toISOString();
+      gym.cancelledAt = nextCancelledAt === undefined ? undefined : new Date(nextCancelledAt).toISOString();
+      gym.billingInterval = billingInterval;
+      gym.subscriptionStatusReason = input.reason.trim();
+      if (PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus)) gym.lastActiveAt = nowISO();
+
+      if (organization) {
+        const previousModulePlan = organization.subscriptionPlan;
+        organization.status = organizationStatusForPlatform(nextStatus);
+        organization.subscriptionPlan = nextPlan as T.Organization["subscriptionPlan"];
+        organization.billingInterval = billingInterval;
+        organization.subscriptionStartedAt = gym.subscriptionStartedAt;
+        organization.trialEndsAt = gym.trialEndsAt;
+        organization.currentPeriodEndsAt = gym.currentPeriodEndsAt;
+        organization.cancelledAt = gym.cancelledAt;
+        organization.subscriptionStatusReason = gym.subscriptionStatusReason;
+        organization.updatedAt = nowISO();
+        const modulePlan = nextPlan as T.WorkspaceModulePlan;
+        const catalogPlan = this.platformPlans.find((candidate) => candidate.name === modulePlan);
+        const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
+        if (!tenant) {
+          this.db.organizationEntitlements = {
+            ...this.db.organizationEntitlements,
+            organizationId: organization.id,
+            catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+            subscriptionPlan: modulePlan,
+            entitledModules,
+            source: "subscription_plan",
+            updatedAt: organization.updatedAt,
+          };
+        }
+        // A newly purchased tier is immediately usable. Keep hidden modules
+        // in the stored preference row on downgrades so a later upgrade can
+        // restore prior operator choices while read-time filtering locks them
+        // for the lower tier.
+        if (!tenant && input.plan !== undefined && previousModulePlan !== modulePlan) {
+          const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, this.platformPlans.find((candidate) => candidate.name === previousModulePlan)?.entitledModules) : [];
+          const nextEntitled = entitledModules;
+          const newlyEntitled = nextEntitled.filter((module) => !previousEntitled.includes(module));
+          if (newlyEntitled.length > 0) {
+            let enabledModules: T.WorkspaceModuleKey[];
+            try {
+              enabledModules = validateWorkspaceModuleSelection([...this.db.workspaceModulePreferences.enabledModules, ...newlyEntitled], nextEntitled);
+            } catch {
+              enabledModules = defaultWorkspacePreferences(nextEntitled);
+            }
+            this.db.workspaceModulePreferences = { ...this.db.workspaceModulePreferences, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: organization.updatedAt };
+          }
+        }
+      }
+
+      let issuedTermInvoiceId: string | undefined;
+      if (startsNewPaidTerm && nextCurrentPeriodEndsAt !== undefined) {
+        // Parity with Convex: unpaid subscription-cycle invoices are
+        // superseded by the new term; manual invoices (no cycle key) stay.
+        const nowIso = new Date(nowTimestamp).toISOString();
+        for (const invoice of this.platformInvoices) {
+          if (invoice.gymId === gym.id && invoice.cycleKey && ["draft", "open", "past_due", "failed"].includes(invoice.status)) {
+            invoice.status = "void";
+            invoice.voidedAt = nowIso;
+          }
+        }
+        const priceMinor = this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0;
+        // An admin-chosen end date replaces the derived term, so the credit
+        // that belongs to the derived term is not applied to it.
+        const termInvoice = periodBoundaryChanged || !change
+          ? { subtotalMinor: termPriceMinor(priceMinor, billingInterval), creditMinor: 0, creditDays: 0, amountMinor: termPriceMinor(priceMinor, billingInterval) }
+          : change;
+        const amountMinor = termInvoice.amountMinor;
+        issuedTermInvoiceId = `INV-${crypto.randomUUID()}`;
+        this.platformInvoices.unshift({
+          id: issuedTermInvoiceId,
+          gymId: gym.id,
+          gym: gym.name,
+          amountMinor,
+          amount: `JOD ${(amountMinor / 1_000).toFixed(3)}`,
+          currency: "JOD",
+          date: nowIso,
+          issuedAt: nowIso,
+          dueAt: new Date(nowTimestamp + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
+          periodStart: nowIso,
+          periodEnd: new Date(nextCurrentPeriodEndsAt).toISOString(),
+          cycleKey: `change:${organization.id}:${nowTimestamp}`,
+          billingInterval,
+          ...(termInvoice.creditMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
+          // Parity with Convex: a credit that covers the term settles it.
+          ...(amountMinor === 0
+            ? { status: "paid" as const, paidAt: nowIso, paymentReference: "Settled by the credit from the previous term" }
+            : { status: "open" as const }),
+        });
+      }
+
+      this.recordPlatformAudit({
+        action: "gym.subscription.update",
+        entityType: "platform_gym",
+        entityPublicId: gym.id,
+        entityLabel: gym.name,
+        summary: `Updated ${gym.name} subscription: ${previousStatus} → ${nextStatus}${previousPlan === nextPlan ? "" : ` · ${previousPlan} → ${nextPlan}`}${previousIsPublic === gym.isPublic ? "" : ` · public listing ${gym.isPublic ? "enabled" : "suppressed"}`}${issuedTermInvoiceId ? ` · issued ${issuedTermInvoiceId}` : ""}`,
+        reason: input.reason.trim(),
+        before: beforeAudit,
+        after: { subscriptionStatus: gym.subscriptionStatus, rivetPlan: gym.rivetPlan, billingInterval: gym.billingInterval, isPublic: gym.isPublic },
+      });
+      return cloneMarketplaceGym(gym);
+    });
+    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitWorkspaceAccessSubscribers()]);
+    return result;
+  }
+
+  async archivePlatformGym(input: ArchivePlatformGymInput): Promise<void> {
+    await this.respond(() => {
       this.requireReason(input.reason);
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
-      if (input.status) gym.subscriptionStatus = input.status;
-      if (input.plan) gym.rivetPlan = input.plan;
-      if (input.isPublic !== undefined) gym.isPublic = input.isPublic;
-      const applyDate = (key: "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt", value?: string) => {
-        if (value === undefined) return;
-        const timestamp = Date.parse(value);
-        if (!Number.isFinite(timestamp)) throw ApiError.of(ERR.VALIDATION, "Subscription lifecycle dates are invalid.");
-        gym[key] = new Date(timestamp).toISOString();
-      };
-      applyDate("trialEndsAt", input.trialEndsAt);
-      applyDate("subscriptionStartedAt", input.subscriptionStartedAt);
-      applyDate("currentPeriodEndsAt", input.currentPeriodEndsAt);
-      applyDate("cancelledAt", input.cancelledAt);
-      if (input.status === "cancelled" && !input.cancelledAt) gym.cancelledAt = nowISO();
-      if (input.status && input.status !== "cancelled") gym.cancelledAt = undefined;
+      if (input.confirmation !== gym.name) throw ApiError.of(ERR.VALIDATION, "Type the gym name exactly to confirm archiving.", { fieldErrors: { confirmation: ["Must match the gym name exactly"] } });
+      const tenant = this.tenantForGym(gym);
+      const organization = tenant?.organization ?? (this.isProvisionedGym(gym) ? this.db.organization : undefined);
+      if (gym.isArchived || organization?.archivedAt) throw ApiError.of(ERR.CONFLICT, "This gym is already archived and cannot be changed through the subscription controls.");
+
+      // Archive removes access and public discovery but deliberately leaves
+      // the directory row, subscription facts, and audit/financial records in
+      // memory so the platform history remains reviewable by the lifecycle
+      // worker when it is introduced.
+      gym.subscriptionStatus = "suspended";
+      gym.isPublic = false;
       gym.subscriptionStatusReason = input.reason.trim();
-      gym.lastActiveAt = nowISO();
-      return { ...gym, areas: [...gym.areas], amenities: [...gym.amenities], branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })) };
+      gym.isArchived = true;
+      gym.archivedAt = nowISO();
+      gym.archiveReason = input.reason.trim();
+      if (organization) {
+        organization.status = "suspended";
+        organization.archivedAt = gym.archivedAt;
+        organization.archiveReason = input.reason.trim();
+        organization.subscriptionStatusReason = input.reason.trim();
+        organization.updatedAt = gym.archivedAt;
+      }
+      this.archivedGymIds.add(gym.id);
+      this.recordPlatformAudit({
+        action: "gym.archive",
+        entityType: "platform_gym",
+        entityPublicId: gym.id,
+        entityLabel: gym.name,
+        summary: `Archived ${gym.name} and removed platform access`,
+        reason: input.reason.trim(),
+      });
     });
+    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitWorkspaceAccessSubscribers()]);
   }
 
-  updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> {
-    return this.respond(() => {
+  async publishPlatformGymProfile(input: { gymId: string; reason: string }): Promise<{ id: string; publishedVersion: number }> {
+    const result = await this.respond(() => {
+      this.requireReason(input.reason);
+      const gym = this.platformGyms.find((item) => item.id === input.gymId);
+      if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
+      if (!this.isProvisionedGym(gym) || this.tenantForGym(gym)) throw ApiError.of(ERR.VALIDATION, "This gym has not saved a public-page draft yet.");
+      if (this.gymPublicProfile.status !== "draft") throw ApiError.of(ERR.VALIDATION, "This gym has not saved a public-page draft yet.");
+      const now = nowISO();
+      this.gymProfileVersions = this.gymProfileVersions.map((item) => item.status === "published" ? { ...item, status: "unpublished", unpublishedAt: now } : item);
+      this.gymPublicProfile = { ...this.gymPublicProfile, status: "published", publishedAt: now, updatedAt: now };
+      this.gymProfileVersions.unshift({ id: mockUuid(), organizationId: this.db.organization.id, version: this.gymPublicProfile.version, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: now, updatedAt: now });
+      Object.assign(gym, { shortName: this.gymPublicProfile.shortName, tagline: this.gymPublicProfile.taglineEn, description: this.gymPublicProfile.descriptionEn, category: this.gymPublicProfile.category, audience: this.gymPublicProfile.audience, amenities: [...this.gymPublicProfile.amenities], accent: this.gymPublicProfile.accentColor, profileVersion: this.gymPublicProfile.version, logo: this.gymPublicProfile.logo, cover: this.gymPublicProfile.cover, gallery: [...this.gymPublicProfile.gallery] });
+      this.recordPlatformAudit({
+        action: "gym.profile.publish",
+        entityType: "platform_gym",
+        entityPublicId: gym.id,
+        entityLabel: gym.name,
+        summary: `Reviewed and published the public page draft v${this.gymPublicProfile.version}`,
+        reason: input.reason.trim(),
+      });
+      return { id: gym.id, publishedVersion: this.gymPublicProfile.version };
+    });
+    await Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitPlatformGymDetailSubscribers()]);
+    return result;
+  }
+
+  async updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan> {
+    const result = await this.respond(() => {
+      this.requireReason(input.reason);
       const plan = this.platformPlans.find((item) => item.name === input.name);
       if (!plan) throw ApiError.of(ERR.NOT_FOUND, "Plan not found.");
+      const previousEntitled = entitledModulesForPlanSelection(plan.name, plan.entitledModules);
+      let entitledModules = entitledModulesForPlanSelection(plan.name, plan.entitledModules);
+      if (input.entitledModules !== undefined) {
+        try {
+          entitledModules = validateWorkspaceModuleSelection(input.entitledModules, allWorkspaceModuleKeys());
+        } catch (error) {
+          throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace capabilities are invalid.");
+        }
+      }
       if (input.priceMinor !== undefined) plan.priceMinor = Math.max(0, Math.round(input.priceMinor));
       if (input.branches !== undefined) plan.branches = Math.max(1, Math.round(input.branches));
       if (input.staff !== undefined) plan.staff = Math.max(1, Math.round(input.staff));
       if (input.members !== undefined) plan.members = Math.max(1, Math.round(input.members));
+      plan.entitledModules = entitledModules;
+      if (this.db.organization.subscriptionPlan === plan.name) {
+        const previousOrganizationEntitled = this.db.organizationEntitlements.entitledModules;
+        this.db.organizationEntitlements = {
+          ...this.db.organizationEntitlements,
+          catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+          subscriptionPlan: plan.name,
+          entitledModules,
+          source: "subscription_plan",
+          updatedAt: nowISO(),
+        };
+        const newlyEntitled = entitledModules.filter((module) => !previousOrganizationEntitled.includes(module));
+        const candidate = [...this.db.workspaceModulePreferences.enabledModules.filter((module) => entitledModules.includes(module)), ...newlyEntitled];
+        try {
+          this.db.workspaceModulePreferences = {
+            ...this.db.workspaceModulePreferences,
+            catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+            enabledModules: validateWorkspaceModuleSelection(candidate, entitledModules),
+            updatedAt: nowISO(),
+          };
+        } catch {
+          this.db.workspaceModulePreferences = {
+            ...this.db.workspaceModulePreferences,
+            catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+            enabledModules: defaultWorkspacePreferences(entitledModules),
+            updatedAt: nowISO(),
+          };
+        }
+      }
+      this.recordPlatformAudit({
+        action: "plan.catalog_update",
+        entityType: "platform_plan",
+        entityPublicId: plan.name,
+        entityLabel: plan.name,
+        summary: `Updated ${plan.name} plan catalog limits and capabilities`,
+        reason: input.reason.trim(),
+        before: { entitledModules: previousEntitled.join(",") },
+        after: { entitledModules: entitledModules.join(",") },
+      });
       return { ...plan };
     });
+    await Promise.all([this.emitPlatformSnapshotSubscribers(), this.emitPublicPlanSubscribers(), this.emitWorkspaceAccessSubscribers()]);
+    return result;
   }
 
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice> {
     return this.respond(() => {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       if (!gym) throw ApiError.of(ERR.NOT_FOUND, "Gym not found.");
+      if (!this.isProvisionedGym(gym)) throw ApiError.of(ERR.CONFIGURATION, "This gym is not linked to a provisioned organization.");
       if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) throw ApiError.of(ERR.VALIDATION, "Invoice amount must be a positive integer.");
       const periodStart = Date.parse(input.periodStart);
       const periodEnd = Date.parse(input.periodEnd);
       const dueAt = Date.parse(input.dueAt);
       if (![periodStart, periodEnd, dueAt].every(Number.isFinite) || periodEnd < periodStart) throw ApiError.of(ERR.VALIDATION, "Invoice dates are invalid.");
-      const currency = input.currency ?? "JOD";
+      const currency = input.currency === undefined
+        ? "JOD"
+        : typeof input.currency === "string"
+          ? input.currency.trim().toUpperCase()
+          : "";
+      if (currency !== "JOD") throw ApiError.of(ERR.VALIDATION, "Platform invoices must use JOD in the MVP.", { fieldErrors: { currency: ["Only JOD is supported"] } });
+      const exponent = exponentFor(currency);
+      const billingInterval = input.billingInterval ?? this.db.organization.billingInterval ?? gym.billingInterval ?? "monthly";
+      if (input.cycleKey) {
+        const existing = this.platformInvoices.find((item) => item.gymId === gym.id && item.cycleKey === input.cycleKey && item.status !== "void");
+        if (existing) return { ...existing };
+      }
       const invoice: PlatformBillingInvoice = {
         id: `INV-${crypto.randomUUID()}`,
         gymId: gym.id,
         gym: gym.name,
         amountMinor: input.amountMinor,
-        amount: `${currency} ${(input.amountMinor / 1_000).toFixed(3)}`,
+        amount: `${currency} ${(input.amountMinor / 10 ** exponent).toFixed(exponent)}`,
         currency,
         date: "Not issued",
         dueAt: new Date(dueAt).toISOString(),
         periodStart: new Date(periodStart).toISOString(),
         periodEnd: new Date(periodEnd).toISOString(),
+        billingInterval,
+        cycleKey: input.cycleKey,
         status: "draft",
       };
       this.platformInvoices.unshift(invoice);
@@ -866,9 +3310,36 @@ export class MockGymOSApi implements GymOSApi {
       const invoice = this.platformInvoices.find((item) => item.id === input.invoiceId);
       if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
       if (!["open", "past_due", "failed"].includes(invoice.status)) throw ApiError.of(ERR.VALIDATION, "Only an outstanding invoice can be marked paid.");
+      const gym = invoice.gymId ? this.platformGyms.find((item) => item.id === invoice.gymId) : undefined;
+      if (gym && this.isProvisionedGym(gym) && this.db.organization.archivedAt) throw ApiError.of(ERR.CONFLICT, "Archived gyms cannot be reactivated by recording a subscription payment.");
       invoice.status = "paid";
       invoice.paidAt = input.paidAt ? new Date(input.paidAt).toISOString() : nowISO();
       invoice.paymentReference = input.reference.trim();
+      if (gym && this.isProvisionedGym(gym) && invoice.periodEnd) {
+        const periodEnd = Date.parse(invoice.periodEnd);
+        if (Number.isFinite(periodEnd) && this.db.organization.status !== "cancelled") {
+          const startedAt = this.db.organization.subscriptionStartedAt ?? invoice.periodStart ?? nowISO();
+          // Parity with Convex: paying a late or superseded invoice never
+          // shortens a term the gym has already paid past.
+          const stored = Date.parse(this.db.organization.currentPeriodEndsAt ?? "");
+          const nextBoundary = Math.max(periodEnd, Number.isFinite(stored) ? stored : 0);
+          this.db.organization.status = "active";
+          this.db.organization.billingInterval = invoice.billingInterval ?? this.db.organization.billingInterval ?? "monthly";
+          this.db.organization.subscriptionStartedAt = startedAt;
+          this.db.organization.trialEndsAt = undefined;
+          this.db.organization.currentPeriodEndsAt = new Date(nextBoundary).toISOString();
+          this.db.organization.cancelledAt = undefined;
+          this.db.organization.subscriptionStatusReason = input.reason.trim();
+          gym.subscriptionStatus = "active";
+          gym.billingInterval = this.db.organization.billingInterval;
+          gym.isPublic = true;
+          gym.trialEndsAt = undefined;
+          gym.currentPeriodEndsAt = this.db.organization.currentPeriodEndsAt;
+          gym.cancelledAt = undefined;
+          gym.subscriptionStatusReason = input.reason.trim();
+          gym.lastActiveAt = invoice.paidAt;
+        }
+      }
       return { ...invoice };
     });
   }
@@ -900,10 +3371,13 @@ export class MockGymOSApi implements GymOSApi {
     return () => undefined;
   }
 
-  createSupportCase(input: CreateSupportCaseInput): Promise<PlatformSupportCase> {
-    return this.respond(() => {
+  async createSupportCase(input: CreateSupportCaseInput): Promise<PlatformSupportCase> {
+    const result = await this.respond(() => {
       if (!input.email.trim() || !input.subject.trim() || !input.body.trim()) throw ApiError.of(ERR.VALIDATION, "Email, subject, and message are required.");
       if (!["normal", "urgent"].includes(input.priority)) throw ApiError.of(ERR.VALIDATION, "Support priority is invalid.");
+      if (input.requestType && !["general", "plan_upgrade"].includes(input.requestType)) throw ApiError.of(ERR.VALIDATION, "Support request type is invalid.");
+      if (input.requestType === "plan_upgrade" && !["Starter", "Growth", "Pro", "Enterprise"].includes(input.requestedPlan ?? "")) throw ApiError.of(ERR.VALIDATION, "A requested plan is required for upgrade requests.");
+      if (input.billingInterval && !["monthly", "annual"].includes(input.billingInterval)) throw ApiError.of(ERR.VALIDATION, "Billing cadence is invalid.");
       const actor = this.actor();
       const createdAt = nowISO();
       const caseId = `SUP-${crypto.randomUUID()}`;
@@ -919,6 +3393,9 @@ export class MockGymOSApi implements GymOSApi {
         subject: input.subject.trim(),
         body: input.body.trim(),
         priority: input.priority,
+        requestType: input.requestType ?? "general",
+        requestedPlan: input.requestType === "plan_upgrade" ? input.requestedPlan : undefined,
+        billingInterval: input.requestType === "plan_upgrade" ? input.billingInterval : undefined,
         status: "open",
         createdAt,
         updatedAt: createdAt,
@@ -927,6 +3404,8 @@ export class MockGymOSApi implements GymOSApi {
       this.platformSupportCases.unshift(supportCase);
       return { ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) };
     });
+    await this.emitPlatformSnapshotSubscribers();
+    return result;
   }
 
   replyToSupportCase(caseId: string, body: string): Promise<PlatformSupportCase> {
@@ -1035,6 +3514,7 @@ export class MockGymOSApi implements GymOSApi {
 
   setBehavior(behavior: Partial<MockBehavior>): void {
     this.behavior = { ...this.behavior, ...behavior };
+    persistPreviewBehavior(this.behavior);
   }
 
   getBehavior(): MockBehavior {
@@ -1047,19 +3527,36 @@ export class MockGymOSApi implements GymOSApi {
     this.db = buildSeed();
     this.memberImports.clear();
     this.memberImportIdempotency.clear();
+    this.publicApplicationIdempotency.clear();
+    this.publicApplicationRateLimits.clear();
+    this.trialIdempotency.clear();
+    this.trialRateLimits.clear();
+    this.operationsIdempotency.clear();
+    this.mediaAssets.clear();
+    this.ptTrainerPhotoAssetIds.clear();
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
-    this.platformGyms = MARKETPLACE_GYMS.map((gym) => ({
-      ...gym,
-      areas: [...gym.areas],
-      amenities: [...gym.amenities],
-      branches: gym.branches.map((branch) => ({ ...branch, trialSlots: [...branch.trialSlots] })),
-    }));
-    this.platformPlans = MOCK_SAAS_PLANS.map((plan) => ({ ...plan }));
+    this.platformGyms = initialPlatformGyms(this.db.organization);
+    this.provisionedMockGymIds = new Set([PROVISIONED_MOCK_GYM_ID]);
+    this.provisionedTenants.clear();
+    this.archivedGymIds.clear();
+    this.platformAuditEvents = [];
+    this.platformPlans = mockSaasPlans();
+    this.classCoaches = this.seedClassCoaches();
+    this.classSessions = this.seedClassSessions();
+    this.classOccurrences = [];
+    this.retentionStates = [];
+    this.referralRewards = [];
+    this.referralLinks.clear();
+    this.seedChecklists();
+    this.freezeRequests = [];
+    this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.operationalNotifications = [];
+    this.seedOperationalNotifications();
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
     this.membershipSaleIdempotency.clear();
+    this.memberSaleFlowIdempotency.clear();
     this.membershipTransferIdempotency.clear();
     this.ptTrainers = [];
     this.ptPackages = [];
@@ -1070,6 +3567,7 @@ export class MockGymOSApi implements GymOSApi {
     this.ptOrders = [];
     this.operationalEmailKinds = [];
     this.operationalEmailUpdate = undefined;
+    this.agreementResendCounts.clear();
     const trainer = this.db.users.find((user) => user.role === "trainer" && user.status === "active");
     if (trainer) {
       const createdAt = nowISO();
@@ -1083,20 +3581,26 @@ export class MockGymOSApi implements GymOSApi {
       [30, 400_000, 180],
     ] as const).map(([sessionCount, amount, validityDays]) => ({ id: mockUuid(), organizationId: this.db.organization.id, name: `${sessionCount} PT sessions`, sessionCount, totalPrice: money(amount), validityDays, branchAccess: "all", branchIds: [], status: "active", createdAt: nowISO(), updatedAt: nowISO() }));
     const listing = this.platformGyms[0];
-    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
+    this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", publishLocked: false, shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
     // keep the persona the reviewer is using
     const userForRole = this.db.users.find((u) => u.role === role && u.status === "active");
     if (userForRole) this.db.session.userId = userForRole.id;
     this.db.session.activeBranchId = branch;
-    return Promise.resolve();
+    return Promise.all([this.emitMarketplaceSubscribers(), this.emitPlatformSnapshotSubscribers(), this.emitWorkspaceAccessSubscribers()]).then(() => undefined);
   }
 
-  private async respond<R>(fn: () => R | Promise<R>): Promise<R> {
+  private async respond<R>(fn: () => R | Promise<R>, scope: "general" | "public" = "general"): Promise<R> {
     const latency = this.behavior.latencyMs;
     if (latency > 0) await new Promise((r) => setTimeout(r, latency));
-    if (this.behavior.failNextRequest) {
+    const shouldFail = this.behavior.failNextRequest || (scope === "public" && this.behavior.failNextPublicSubscription);
+    if (shouldFail) {
       this.behavior.failNextRequest = false;
+      // Keep the public stream degraded until the visitor presses Retry (or
+      // disables the preview control). React Strict Mode mounts effects twice
+      // in development, and a one-shot failure would otherwise disappear
+      // before the public UI can exercise its recovery state.
+      persistPreviewBehavior(this.behavior);
       throw ApiError.of(ERR.FORCED_FAILURE, "Simulated failure (demo controls). Disable “Fail next request” and retry.");
     }
     return await fn();
@@ -1105,6 +3609,65 @@ export class MockGymOSApi implements GymOSApi {
   private async subscribeOnce<R>(load: () => Promise<R>, onValue: (value: R) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try { onValue(await load()); } catch (error) { onError?.(error); }
     return () => undefined;
+  }
+
+  private async emitMarketplaceSubscribers(): Promise<void> {
+    if (this.marketplaceSubscribers.size === 0) return;
+    try {
+      const gyms = await this.respond(() => this.readMarketplaceGyms(), "public");
+      for (const onValue of this.marketplaceSubscribers.keys()) onValue(gyms);
+    } catch (error) {
+      for (const onError of this.marketplaceSubscribers.values()) onError?.(error);
+    }
+  }
+
+  private async emitPlatformSnapshotSubscribers(): Promise<void> {
+    if (this.platformSnapshotSubscribers.size === 0) return;
+    try {
+      const snapshot = await this.getPlatformSnapshot();
+      for (const onValue of this.platformSnapshotSubscribers.keys()) onValue(snapshot);
+    } catch (error) {
+      for (const onError of this.platformSnapshotSubscribers.values()) onError?.(error);
+    }
+  }
+
+  private async emitPlatformGymDetailSubscribers(): Promise<void> {
+    await Promise.all([...this.platformGymDetailSubscribers.entries()].map(async ([onValue, subscription]) => {
+      try {
+        onValue(await this.getPlatformGymDetail(subscription.gymId));
+      } catch (error) {
+        subscription.onError?.(error);
+      }
+    }));
+  }
+
+  private async emitPublicPlanSubscribers(): Promise<void> {
+    if (this.publicPlanSubscribers.size === 0) return;
+    try {
+      const plans = await this.respond(() => this.platformPlans.map((plan) => ({ ...plan })), "public");
+      for (const onValue of this.publicPlanSubscribers.keys()) onValue(plans);
+    } catch (error) {
+      for (const onError of this.publicPlanSubscribers.values()) onError?.(error);
+    }
+  }
+
+  private async emitWorkspaceAccessSubscribers(): Promise<void> {
+    if (this.workspaceAccessSubscribers.size === 0) return;
+    try {
+      const access = await this.getWorkspaceAccess();
+      for (const onValue of this.workspaceAccessSubscribers.keys()) onValue(access);
+    } catch (error) {
+      for (const onError of this.workspaceAccessSubscribers.values()) onError?.(error);
+    }
+  }
+
+  private recordPlatformAudit(input: Omit<MockPlatformAuditEvent, "id" | "actorName" | "occurredAt">): void {
+    this.platformAuditEvents.unshift({
+      ...input,
+      id: mockUuid(),
+      actorName: this.actor().name,
+      occurredAt: nowISO(),
+    });
   }
 
   private today(): string {
@@ -1123,6 +3686,14 @@ export class MockGymOSApi implements GymOSApi {
     }
   }
 
+  private requireRosterPermission(): void {
+    const role = currentRole(this.db);
+    const perms = permissionsFor(this.db, role);
+    if (!perms.includes("members.write") && !perms.includes("pt.book_for_member")) {
+      throw ApiError.of(ERR.FORBIDDEN, "Your role cannot manage class rosters.");
+    }
+  }
+
   private require(permission: Permission) {
     const role = currentRole(this.db);
     const perms = permissionsFor(this.db, role);
@@ -1131,33 +3702,264 @@ export class MockGymOSApi implements GymOSApi {
     }
   }
 
+  private requireOwner() {
+    if (currentRole(this.db) !== "owner") {
+      throw ApiError.of(ERR.FORBIDDEN, "Only an organization owner can change workspace module preferences.");
+    }
+  }
+
+  private requireOwnerOrManager() {
+    const role = currentRole(this.db);
+    if (role !== "owner" && role !== "manager") throw ApiError.of(ERR.FORBIDDEN, "Only an organization owner or manager can manage zones.");
+  }
+
+  private requireOperations() {
+    const status = this.workspaceAccess().modules.find((module) => module.key === "operations");
+    if (!status?.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "The operations workspace module is not enabled for this organization.");
+  }
+
+  private requireOperationsRead() {
+    this.requireOperations();
+    this.require("members.read");
+  }
+
+  private requireOperationsWrite() {
+    // Writes are governed by the dedicated write permission. Do not make a
+    // manager's unrelated member-directory read permission an accidental
+    // prerequisite for operations mutations.
+    this.requireOperations();
+    this.require("operations.manage");
+    this.requireOwnerOrManager();
+  }
+
+  private requireFinanceModule() {
+    const status = this.workspaceAccess().modules.find((module) => module.key === "finance");
+    if (!status?.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "The finance workspace module is not enabled for this organization.");
+  }
+
+  private requireFinanceRead() {
+    this.requireFinanceModule();
+    this.require("reports.financial.read");
+  }
+
+  private requireReportingRead() {
+    const status = this.workspaceAccess().modules.find((module) => module.key === "reporting");
+    if (!status?.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "The reporting workspace module is not enabled for this organization.");
+    this.require("reports.financial.read");
+  }
+
+  private requireAccountingPosting() {
+    // Posting is a write boundary, not a financial-report read. Keep it
+    // aligned with Convex so a deliberately scoped posting role need not also
+    // hold the unrelated reports.financial.read permission.
+    this.requireFinanceModule();
+    this.require("accounting.post");
+    this.requireOwnerOrManager();
+  }
+
+  private requireAccountingOwner() {
+    this.requireFinanceModule();
+    this.requireOwner();
+  }
+
+  private accountingPeriodFor(date = this.today()): T.AccountingPeriod {
+    const id = date.slice(0, 7);
+    const existing = this.accountingPeriods.find((period) => period.id === id);
+    if (existing) {
+      if (existing.status === "closed") throw ApiError.of(ERR.CONFLICT, "The accounting period is closed.");
+      return existing;
+    }
+    const start = `${id}-01`;
+    const [year = 0, month = 0] = id.split("-").map(Number);
+    const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    const period: T.AccountingPeriod = { id, organizationId: this.db.organization.id, periodStart: start, periodEnd: end, status: "open", createdAt: nowISO(), updatedAt: nowISO() };
+    this.accountingPeriods.push(period);
+    return period;
+  }
+
+  private accountingBranch(branchId?: T.UUID): T.Branch | undefined {
+    if (!branchId) return undefined;
+    const branch = this.db.branches.find((candidate) => candidate.id === branchId && candidate.status === "active");
+    if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    return branch;
+  }
+
+  private immutableAccountingStatus(sourceType: T.AccountingSourceType, sourceId: T.UUID): Extract<T.AccountingSourceStatus, "posted" | "reversed"> | undefined {
+    const source = this.accountingSources.find((row) => row.sourceType === sourceType && row.sourceId === sourceId);
+    return source?.status === "posted" || source?.status === "reversed" ? source.status : undefined;
+  }
+
+  private rejectImmutableAccountingMutation(entityLabel: string, status: Extract<T.AccountingSourceStatus, "posted" | "reversed">): never {
+    throw ApiError.of(ERR.CONFLICT, `${entityLabel} is ${status} in accounting and its source facts are immutable. Reverse the posting and create a new version before changing source fields.`);
+  }
+
+  private accountingAccount(accountId: T.UUID): T.AccountingAccount {
+    const account = this.accountingAccounts.find((candidate) => candidate.id === accountId || candidate.code === accountId);
+    if (!account || !account.active) throw ApiError.of(ERR.NOT_FOUND, "Accounting account not found.");
+    return account;
+  }
+
+  private accountingEntry(entryId: T.UUID): T.AccountingJournalEntryDetail {
+    const entry = this.accountingEntries.find((candidate) => candidate.id === entryId);
+    if (!entry || !this.accountingBranchIsVisible(entry.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Journal entry not found.");
+    return entry;
+  }
+
+  private operationsBranch(id: T.UUID): T.Branch {
+    const branch = this.db.branches.find((candidate) => candidate.id === id && candidate.status === "active");
+    if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    return branch;
+  }
+
+  private operationsTransferBranch(id: T.UUID): T.Branch {
+    const branch = this.db.branches.find((candidate) => candidate.id === id);
+    if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    return branch;
+  }
+
+  private operationsZone(branchId: T.UUID, zoneId: T.UUID): T.Zone {
+    const zone = this.db.zones.find((candidate) => candidate.id === zoneId && candidate.branchId === branchId && candidate.status === "active");
+    if (!zone || !this.branchIsVisible(branchId)) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
+    return zone;
+  }
+
+  private operationsIdempotent(operation: string, key: string, signature: string): unknown | undefined {
+    const existing = this.operationsIdempotency.get(`${operation}:${key}`);
+    if (!existing) return undefined;
+    if (existing.expiresAt !== undefined && existing.expiresAt <= Date.now()) {
+      this.operationsIdempotency.delete(`${operation}:${key}`);
+      return undefined;
+    }
+    if (existing.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This idempotency key was already used for a different request.");
+    return existing.result;
+  }
+
   private actor() {
     return currentUser(this.db);
   }
 
+  /**
+   * "USD 40.00" / "JOD 40.000" for audit, timeline and notification text. A
+   * bare minor amount is read in the gym's currency; a Money value keeps its
+   * own, so a record's text always matches the amount stored beside it.
+   */
+  private amountText(value: number | T.Money): string {
+    const amount = typeof value === "number" ? money(value, this.db.organization.currency) : value;
+    return `${amount.currency} ${toMajorString(amount)}`;
+  }
+
+  private validateLeadOwner(ownerId: T.UUID): void {
+    const owner = this.db.users.find((user) => user.id === ownerId && user.organizationId === this.db.organization.id);
+    if (!owner) throw ApiError.of(ERR.NOT_FOUND, "Lead owner not found.");
+    if (owner.status !== "active" || !["owner", "manager", "salesperson"].includes(owner.role)) {
+      throw ApiError.of(ERR.VALIDATION, "Leads can only be assigned to active owner, manager, or sales staff.");
+    }
+  }
+
+  /**
+   * Resolve PT order ownership and branch scope before idempotent replays.
+   * Mock mode mirrors Convex: a known key is not an authorization token, but
+   * an already-created order may still be replayed after its branch is
+   * deactivated. New mutations request the active-branch variant below.
+   */
+  private ptMembershipScope(membershipId: T.UUID, memberId?: T.UUID, requireActive = false) {
+    const membership = this.db.memberships.find((candidate) => candidate.id === membershipId && candidate.organizationId === this.db.organization.id);
+    if (!membership || (memberId && membership.memberId !== memberId)) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+    const branch = this.db.branches.find((candidate) => candidate.id === membership.homeBranchId && candidate.organizationId === this.db.organization.id);
+    if (!branch) throw ApiError.of(ERR.NOT_FOUND, "PT package order branch not found.");
+    if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    if (requireActive && branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "PT package order branch not found.");
+    return { membership, branch };
+  }
+
+  private ptOrderScope(order: T.PtPackageOrder, requireActive = false) {
+    if (order.organizationId !== this.db.organization.id) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+    const charge = this.db.charges.find((candidate) => candidate.id === order.chargeId && candidate.organizationId === this.db.organization.id && candidate.memberId === order.memberId);
+    if (!charge?.membershipId) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+    const scope = this.ptMembershipScope(charge.membershipId, order.memberId, requireActive);
+    if (charge.membershipId !== scope.membership.id) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+    return { ...scope, charge };
+  }
+
   private marketingPreferenceFor(input: { marketingOptIn?: boolean; marketingPreferenceSource?: T.MarketingPreferenceSource }, fallbackOptedIn = true): T.MarketingPreference {
     const optedIn = input.marketingOptIn === undefined ? fallbackOptedIn : input.marketingOptIn !== false;
-    const source = input.marketingPreferenceSource ?? (input.marketingOptIn === undefined ? "system_default" : "staff_selected");
+    const source = input.marketingPreferenceSource ?? "system_default";
+    const explicit = (source === "staff_selected" || source === "member_selected") && typeof input.marketingOptIn === "boolean";
     return {
       optedIn,
+      status: explicit ? (optedIn ? "explicit_opt_in" : "explicit_opt_out") : "unknown",
       source,
-      changedAt: nowISO(),
-      changedById: source === "system_default" ? undefined : this.actor().id,
-      wordingVersion: MARKETING_WORDING_VERSION,
+      changedAt: explicit ? nowISO() : undefined,
+      changedById: explicit ? this.actor().id : undefined,
+      wordingVersion: explicit ? MARKETING_WORDING_VERSION : undefined,
     };
   }
 
   private branchScopedBranchId(requested?: T.UUID): T.UUID | undefined {
-    // Managers/reception scoped to branches can only see their own.
+    // Resolve a read scope without silently moving a request to the first
+    // branch. Organization-wide actors intentionally get `undefined` when no
+    // branch is requested: that is the explicit All branches read-only view.
+    // Selected-branch actors may use their existing active selection, or the
+    // only branch they can access. Multiple accessible branches require an
+    // explicit choice.
     const user = this.actor();
-    if (user.branchScope === "all") return requested;
-    if (requested && user.branchIds.includes(requested)) return requested;
-    return user.branchIds[0];
+    const requestedBranch = requested?.trim();
+    if (requestedBranch) {
+      const branch = this.db.branches.find((candidate) => candidate.id === requestedBranch);
+      if (!branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (!this.branchIsVisible(requestedBranch)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+      return requestedBranch;
+    }
+    if (user.branchScope === "all") return undefined;
+
+    const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && user.branchIds.includes(branch.id));
+    const activeSelection = this.db.session.activeBranchId;
+    if (activeSelection) {
+      if (!visibleBranches.some((branch) => branch.id === activeSelection)) throw ApiError.of(ERR.NOT_FOUND, "The selected branch is no longer available.");
+      return activeSelection;
+    }
+    if (visibleBranches.length === 1) return visibleBranches[0]!.id;
+    if (visibleBranches.length > 1) throw ApiError.of(ERR.ORGANIZATION_SELECTION_REQUIRED, "Select a branch before continuing.");
+    throw ApiError.of(ERR.NOT_FOUND, "No active branch is available.");
   }
 
   private branchIsVisible(branchId?: T.UUID): boolean {
     const user = this.actor();
     return user.branchScope === "all" || !branchId || user.branchIds.includes(branchId);
+  }
+
+  /**
+   * Ledger/report rows use stricter visibility than ordinary branch-scoped
+   * records: a missing branch means consolidated or unattributed financial
+   * data, which is organization-wide and must not be exposed to a selected
+   * branch actor.
+   */
+  private accountingBranchIsVisible(branchId?: T.UUID): boolean {
+    const user = this.actor();
+    return user.branchScope === "all" || Boolean(branchId && user.branchIds.includes(branchId));
+  }
+
+  private accountingSourceAttemptView(attempt: MockAccountingSourceAttempt): T.AccountingSourcePosting {
+    if (!this.accountingBranchIsVisible(attempt.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+    return {
+      id: attempt.sourcePostingId ?? attempt.id,
+      organizationId: this.db.organization.id,
+      sourceType: attempt.sourceType,
+      sourceId: attempt.sourceId,
+      branchId: attempt.branchId,
+      status: attempt.status,
+      amount: attempt.amount ? { ...attempt.amount } : undefined,
+      currency: attempt.currency,
+      policyCode: attempt.policyCode,
+      policyVersion: attempt.policyVersion,
+      journalEntryId: undefined,
+      idempotencyKey: attempt.idempotencyKey,
+      reason: attempt.reason,
+      details: attempt.details ? { ...attempt.details } : undefined,
+      occurredAt: attempt.occurredAt,
+      createdAt: attempt.createdAt,
+      updatedAt: attempt.updatedAt,
+    };
   }
 
   private audit(input: Omit<T.AuditEvent, "id" | "organizationId" | "correlationId" | "occurredAt" | "actorId" | "actorName" | "actorRole">) {
@@ -1281,7 +4083,7 @@ export class MockGymOSApi implements GymOSApi {
       source: m.source,
       assignedSalespersonId: m.assignedSalespersonId,
       marketingOptIn: m.marketingOptIn,
-      marketingPreference: m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default", wordingVersion: "legacy-boolean" },
+      marketingPreference: m.marketingPreference ?? { optedIn: m.marketingOptIn, status: "unknown", source: "system_default" },
       notes: m.notes,
       sensitiveNotes: perms.includes("members.sensitive_notes.read") ? m.sensitiveNotes : undefined,
       archivedAt: m.archivedAt,
@@ -1368,6 +4170,27 @@ export class MockGymOSApi implements GymOSApi {
     return entitlement;
   }
 
+  /**
+   * Convex activates a pending package order in the same transaction that
+   * fully pays its charge: a dated entitlement is granted and the order
+   * becomes active. Partial payment grants nothing. The preview mirrors that
+   * here so purchased credits can actually be booked.
+   */
+  private activatePtOrderForCharge(chargeId: T.UUID): void {
+    const order = this.ptOrders.find((item) => item.chargeId === chargeId && item.status === "pending_payment");
+    if (!order) return;
+    const ptPackage = this.ptPackages.find((item) => item.id === order.packageId);
+    const sessions = order.sessionCountSnapshot ?? ptPackage?.sessionCount ?? 0;
+    const validityDays = order.validityDaysSnapshot ?? ptPackage?.validityDays ?? 90;
+    if (sessions <= 0) return;
+    const now = nowISO();
+    const entitlement: T.PtEntitlement = { id: mockUuid(), organizationId: this.db.organization.id, memberId: order.memberId, source: "package", packageOrderId: order.id, granted: sessions, reserved: 0, consumed: 0, revoked: 0, available: sessions, startsAt: now, expiresAt: `${addDays(this.today(), validityDays)}T23:59:59.999Z`, status: "active", createdAt: now, updatedAt: now };
+    this.ptEntitlements.push(entitlement);
+    order.status = "active"; order.entitlementId = entitlement.id; order.paidAt = now; order.updatedAt = now;
+    this.activity({ memberId: order.memberId, type: "pt_credit_granted", title: `${sessions} PT session${sessions === 1 ? "" : "s"} activated`, meta: { orderId: order.id, entitlementId: entitlement.id } });
+    this.audit({ category: "memberships", action: "pt.package.activate", entityType: "pt_package_order", entityId: order.id, entityLabel: order.packageNameSnapshot ?? ptPackage?.name ?? "PT package", summary: `Activated ${sessions} PT session${sessions === 1 ? "" : "s"} after full payment` });
+  }
+
   private ptBookingView(booking: T.PtBooking): T.PtBooking {
     return { ...booking };
   }
@@ -1377,7 +4200,8 @@ export class MockGymOSApi implements GymOSApi {
     const branch = this.db.branches.find((b) => b.id === lead.branchId);
     const attempts = this.db.activities.filter((a) => a.leadId === lead.id && a.type === "call_attempt");
     const last = attempts[0];
-    const open = lead.stage !== "won" && lead.stage !== "lost";
+    const progressFacts = this.leadProgressFacts(lead);
+    const open = !progressFacts.hasConversion && !progressFacts.hasLoss;
     return {
       ...lead,
       ownerName: owner?.name,
@@ -1385,12 +4209,97 @@ export class MockGymOSApi implements GymOSApi {
       lastContactOutcome: last?.meta?.outcome ? String(last.meta.outcome) : undefined,
       lastContactAt: last?.occurredAt,
       overdue: open && Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < nowISO()),
+      progressFacts,
     };
   }
 
-  private toTransaction(p: T.Payment): T.TransactionSummary {
-    const member = this.db.members.find((m) => m.id === p.memberId);
+  private leadProgressFacts(lead: T.Lead) {
+    return deriveLeadProgressFacts({
+      stage: lead.stage,
+      lostReason: lead.lostReason,
+      convertedMemberId: lead.convertedMemberId,
+      activities: this.db.activities.filter((activity) => activity.leadId === lead.id),
+      offers: this.db.offers.filter((offer) => offer.leadId === lead.id).map((offer) => this.projectOffer(offer)),
+      trialBooking: this.trialBookings.find((booking) => booking.leadId === lead.id),
+    });
+  }
+
+  private retailPaymentProjection(sale: T.RetailSale): T.RetailPayment {
+    return {
+      id: `retail-payment-${sale.id}`,
+      organizationId: sale.organizationId,
+      branchId: sale.branchId,
+      type: "retail_sale",
+      customer: sale.customer,
+      amount: { ...sale.total },
+      method: sale.method,
+      status: sale.status,
+      refundedAmount: sale.refundedAmount ? { ...sale.refundedAmount } : undefined,
+      refundReason: sale.refundReason,
+      voidReason: sale.voidReason,
+      receiptId: sale.receiptId,
+      receiptNumber: sale.receiptNumber,
+      collectedById: sale.createdById,
+      collectedByName: sale.createdByName,
+      shiftId: sale.shiftId,
+      externalReference: sale.externalReference,
+      idempotencyKey: sale.idempotencyKey,
+      occurredAt: sale.createdAt,
+    };
+  }
+
+  /**
+   * Derive a conservative moving-average cost from branch movement facts.
+   * Product master data intentionally contains only the customer-facing
+   * selling price; purchase receipt movements are the cost source. Unknown
+   * units keep checkout/accounting truthful by leaving the cost snapshot
+   * unset instead of inventing a supplier cost.
+   */
+  private retailInventoryCostBasis(branchId: T.UUID, productId: T.UUID): T.Money | undefined {
+    const movements = this.db.stockMovements
+      .filter((movement) => movement.branchId === branchId && movement.productId === productId)
+      .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+    let quantity = 0;
+    let unpricedQuantity = 0;
+    let knownCostMinor = 0;
+    for (const movement of movements) {
+      const delta = movement.quantityDelta;
+      if (!Number.isSafeInteger(delta) || delta === 0) continue;
+      if (delta > 0) {
+        const unitCost = movement.unitCost;
+        const exactCost = movement.totalCost;
+        const exactPriced = exactCost && exactCost.currency === this.db.organization.currency && Number.isSafeInteger(exactCost.amount) && exactCost.amount >= 0;
+        const priced = unitCost && unitCost.currency === this.db.organization.currency && Number.isSafeInteger(unitCost.amount) && unitCost.amount >= 0;
+        if (exactPriced && Number.isSafeInteger(knownCostMinor + exactCost.amount)) knownCostMinor += exactCost.amount;
+        else if (priced && Number.isSafeInteger(delta * unitCost.amount)) knownCostMinor += delta * unitCost.amount;
+        else unpricedQuantity += delta;
+        quantity += delta;
+        continue;
+      }
+      const outgoing = Math.min(quantity, Math.abs(delta));
+      const pricedQuantityBefore = quantity - unpricedQuantity;
+      const unpricedUsed = Math.min(unpricedQuantity, outgoing);
+      unpricedQuantity -= unpricedUsed;
+      const pricedUsed = outgoing - unpricedUsed;
+      const exactOutgoing = movement.totalCost && movement.totalCost.currency === this.db.organization.currency && Number.isSafeInteger(movement.totalCost.amount) && movement.totalCost.amount >= 0;
+      if (exactOutgoing && pricedUsed === outgoing) knownCostMinor = Math.max(0, knownCostMinor - movement.totalCost!.amount);
+      else if (pricedUsed > 0 && pricedQuantityBefore > 0) {
+        knownCostMinor = Math.max(0, knownCostMinor - Math.round((knownCostMinor / pricedQuantityBefore) * pricedUsed));
+      }
+      quantity = Math.max(0, quantity - outgoing);
+    }
+    if (quantity <= 0 || unpricedQuantity > 0 || !Number.isSafeInteger(knownCostMinor) || knownCostMinor < 0) return undefined;
+    const amount = Math.round(knownCostMinor / quantity);
+    return Number.isSafeInteger(amount) && amount >= 0 ? money(amount, this.db.organization.currency) : undefined;
+  }
+
+  private toTransaction(p: T.Payment | T.RetailPayment): T.TransactionSummary {
+    const memberId = "memberId" in p ? p.memberId : p.customer.kind === "member" ? p.customer.memberId : undefined;
+    const member = memberId ? this.db.members.find((m) => m.id === memberId) : undefined;
     const branch = this.db.branches.find((b) => b.id === p.branchId);
+    if ("customer" in p) {
+      return { ...p, memberName: p.customer.fullName, memberNumber: p.customer.memberNumber ?? (p.customer.kind === "guest" ? "Guest" : p.customer.kind === "walk_in" ? "Walk-in" : "—"), branchName: branch?.name ?? "—" };
+    }
     return { ...p, memberName: member?.fullName ?? "—", memberNumber: member?.memberNumber ?? "—", branchName: branch?.name ?? "—" };
   }
 
@@ -1402,7 +4311,7 @@ export class MockGymOSApi implements GymOSApi {
     return haystack.some((h) => {
       if (!h) return false;
       const s = h.toLowerCase();
-      return s.includes(q) || s.replace(/[\s-]/g, "").includes(normalized);
+      return s.includes(q) || s.replace(/[\s-]/g, "").includes(normalized) || phoneSearchMatches(h, q);
     });
   }
 
@@ -1414,8 +4323,42 @@ export class MockGymOSApi implements GymOSApi {
   // session
   // -------------------------------------------------------------------------
 
+  getMyProfile(): Promise<T.UserProfile> {
+    return this.respond(() => {
+      const user = this.actor();
+      return { id: user.id, name: user.name, email: user.email, phone: user.phone };
+    });
+  }
+
+  updateMyProfile(input: T.UpdateUserProfileInput): Promise<T.UserProfile> {
+    return this.respond(() => {
+      const user = this.actor();
+      const name = input.name.trim().replace(/\s+/g, " ");
+      if (name.length < 2 || name.length > 160) throw ApiError.of(ERR.VALIDATION, "Display name must be between 2 and 160 characters.", { fieldErrors: { name: ["Enter a display name between 2 and 160 characters."] } });
+      const phone = input.phone === undefined ? user.phone : input.phone.trim();
+      if (phone.length > 40) throw ApiError.of(ERR.VALIDATION, "Phone number must be 40 characters or fewer.", { fieldErrors: { phone: ["Use 40 characters or fewer."] } });
+      const before = { name: user.name, phone: user.phone };
+      user.name = name;
+      user.phone = phone;
+      this.audit({
+        category: "users",
+        action: "user.profile_update",
+        entityType: "user",
+        entityId: user.id,
+        entityLabel: user.name,
+        summary: "Personal account profile updated",
+        before,
+        after: { name: user.name, phone: user.phone },
+      });
+      return { id: user.id, name: user.name, email: user.email, phone: user.phone };
+    });
+  }
+
   getSession(): Promise<T.Session> {
-    return this.respond(() => this.buildSession());
+    return this.respond(() => {
+      if (this.db.organization.archivedAt) throw ApiError.of(ERR.FORBIDDEN, "This organization is archived.");
+      return this.buildSession();
+    });
   }
 
   selectOrganization(_organizationId: T.UUID): Promise<T.Session> {
@@ -1425,13 +4368,38 @@ export class MockGymOSApi implements GymOSApi {
   private buildSession(): T.Session {
     const user = this.actor();
     const org = this.db.organization;
+    const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
+    const activeBranchId = this.db.session.activeBranchId;
+    if (activeBranchId && !visibleBranches.some((branch) => branch.id === activeBranchId)) {
+      throw ApiError.of(ERR.NOT_FOUND, "The selected branch is no longer available.");
+    }
+    if (user.branchScope === "selected" && !activeBranchId && visibleBranches.length > 1) {
+      throw ApiError.of(ERR.ORGANIZATION_SELECTION_REQUIRED, "Select a branch before continuing.");
+    }
     return {
       user: { id: user.id, name: user.name, email: user.email },
-      organization: { id: org.id, name: org.name, currency: org.currency, timezone: org.timezone, locale: org.locale },
-      branches: this.db.branches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
-      activeBranchId: this.db.session.activeBranchId,
+      organization: {
+        id: org.id,
+        name: org.name,
+        currency: org.currency,
+        timezone: org.timezone,
+        locale: org.locale,
+        phoneCountryCallingCode: org.phoneCountryCallingCode,
+        brand: this.db.brand,
+        subscription: {
+          plan: org.subscriptionPlan,
+          status: org.status,
+          billingInterval: org.billingInterval ?? "monthly",
+          currentPeriodEndsAt: org.currentPeriodEndsAt,
+          trialEndsAt: org.trialEndsAt,
+        },
+      },
+      branches: visibleBranches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
+      activeBranchId: activeBranchId ?? (user.branchScope === "selected" && visibleBranches.length === 1 ? visibleBranches[0]!.id : undefined),
       roles: [user.role],
       permissions: permissionsFor(this.db, user.role),
+      workspace: this.workspaceAccess(),
+      legal: this.sessionLegalState(user.role),
     };
   }
 
@@ -1443,6 +4411,18 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const user = this.db.users.find((u) => u.role === role && u.status === "active");
       if (!user) throw ApiError.of(ERR.NOT_FOUND, `No active demo user for role ${role}.`);
+      const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
+      let nextActiveBranchId: T.UUID | undefined;
+      if (branchId) {
+        const branch = this.db.branches.find((candidate) => candidate.id === branchId);
+        if (!branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+        if (user.branchScope !== "all" && !user.branchIds.includes(branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+        nextActiveBranchId = branchId;
+      } else if (user.branchScope === "selected" && visibleBranches.length > 1) {
+        throw ApiError.of(ERR.ORGANIZATION_SELECTION_REQUIRED, "Select a branch before continuing.");
+      } else {
+        nextActiveBranchId = user.branchScope === "selected" ? visibleBranches[0]?.id : undefined;
+      }
       // Convex supplies the real role while the operating data is still mocked.
       // Rebind the seeded actor to the authenticated profile so current-user UI
       // and newly created audit events never impersonate the seed persona.
@@ -1451,15 +4431,24 @@ export class MockGymOSApi implements GymOSApi {
         user.email = identity.email;
       }
       this.db.session.userId = user.id;
-      this.db.session.activeBranchId =
-        branchId ?? (user.branchScope === "selected" ? user.branchIds[0] : undefined);
+      this.db.session.activeBranchId = nextActiveBranchId;
       return this.buildSession();
     });
   }
 
   setActiveBranch(branchId: T.UUID | undefined): Promise<T.Session> {
     return this.respond(() => {
-      this.db.session.activeBranchId = branchId;
+      const user = this.actor();
+      if (branchId) {
+        const branch = this.db.branches.find((candidate) => candidate.id === branchId);
+        if (!branch || branch.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+        if (user.branchScope !== "all" && !user.branchIds.includes(branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+        this.db.session.activeBranchId = branchId;
+      } else {
+        const visibleBranches = this.db.branches.filter((branch) => branch.status === "active" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
+        if (user.branchScope === "selected" && visibleBranches.length > 1) throw ApiError.of(ERR.ORGANIZATION_SELECTION_REQUIRED, "Select a branch before continuing.");
+        this.db.session.activeBranchId = user.branchScope === "selected" ? visibleBranches[0]?.id : undefined;
+      }
       return this.buildSession();
     });
   }
@@ -1473,13 +4462,23 @@ export class MockGymOSApi implements GymOSApi {
   // -------------------------------------------------------------------------
 
   getDashboard(query: DashboardQuery): Promise<T.DashboardData> {
-    return this.respond(() => {
+    return this.respond(() => this.dashboardSync(query));
+  }
+
+  /**
+   * The dashboard projection. `options.complete` is internal to the operating
+   * brief: it lifts the Today queue's page limit, the at-risk sample and the
+   * due-today filter on maintenance tasks, with every permission and branch
+   * rule unchanged.
+   */
+  private dashboardSync(query: DashboardQuery, options: { complete?: boolean } = {}): T.DashboardData {
+    {
       const today = this.today();
       const branchId = this.branchScopedBranchId(query.branchId);
       const inBranch = <X extends { branchId?: T.UUID; homeBranchId?: T.UUID }>(x: X) =>
         !branchId || x.branchId === branchId || x.homeBranchId === branchId;
 
-      const validPayments = this.db.payments.filter((p) => p.status !== "voided" && inBranch(p));
+      const validPayments: Array<T.Payment | T.RetailPayment> = [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))].filter((p) => p.status !== "voided" && inBranch(p));
       const dayOf = (isoStr: string) => todayISODate(TZ, new Date(isoStr));
       const revenueOn = (date: string) =>
         validPayments.filter((p) => dayOf(p.occurredAt) === date).reduce((s, p) => s + p.amount.amount, 0);
@@ -1505,8 +4504,10 @@ export class MockGymOSApi implements GymOSApi {
         .reduce((s, c) => s + c.outstandingAmount.amount, 0);
 
       const statuses = this.db.memberships.map((m) => ({ m, s: this.membershipStatusOf(m) }));
+      // A membership that already has a renewal is not "ending" work any more; the Today list skips it too.
+      const renewedMembershipIds = new Set(this.db.memberships.map((membership) => membership.previousMembershipId).filter(Boolean));
       const renewalsDue = statuses.filter(
-        ({ m, s }) => (s === "active" || s === "expiring") && inBranch(m) && diffDays(today, m.endDate) >= 0 && diffDays(today, m.endDate) <= 7,
+        ({ m, s }) => (s === "active" || s === "expiring") && inBranch(m) && diffDays(today, m.endDate) >= 0 && diffDays(today, m.endDate) <= 7 && !renewedMembershipIds.has(m.id),
       ).length;
       const expiredUnactioned = statuses.filter(({ m, s }) => {
         if (s !== "expired" || !inBranch(m)) return false;
@@ -1518,14 +4519,18 @@ export class MockGymOSApi implements GymOSApi {
       const overdueTasks = openTasks.filter((t) => t.dueAt < nowISO());
 
       const leads = this.db.leads.filter((l) => inBranch(l));
-      const activeLeads = leads.filter((l) => l.stage !== "won" && l.stage !== "lost").length;
+      const progressFactsByLead = new Map(leads.map((lead) => [lead.id, this.leadProgressFacts(lead)] as const));
+      const activeLeads = leads.filter((lead) => {
+        const facts = progressFactsByLead.get(lead.id);
+        return facts && !facts.hasConversion && !facts.hasLoss;
+      }).length;
 
       const checkInsToday = this.db.checkIns.filter((c) => inBranch(c) && dayOf(c.occurredAt) === today && c.decision !== "blocked").length;
 
       const revenueSeries: T.RevenuePoint[] = [];
       for (let d = 29; d >= 0; d--) {
         const date = addDays(today, -d);
-        const collected = validPayments.filter((p) => p.type === "payment" && dayOf(p.occurredAt) === date).reduce((s, p) => s + p.amount.amount, 0);
+        const collected = validPayments.filter((p) => (p.type === "payment" || p.type === "retail_sale") && dayOf(p.occurredAt) === date).reduce((s, p) => s + p.amount.amount, 0);
         const refunds = validPayments.filter((p) => p.type === "refund" && dayOf(p.occurredAt) === date).reduce((s, p) => s + Math.abs(p.amount.amount), 0);
         revenueSeries.push({ date, collected, refunds });
       }
@@ -1558,14 +4563,17 @@ export class MockGymOSApi implements GymOSApi {
       const funnel: T.FunnelStage[] = funnelOrder.map((stage) => ({
         stage,
         label: funnelLabels[stage],
-        count: leads.filter((l) => l.stage === stage).length,
+        count: leads.filter((lead) => {
+          const facts = progressFactsByLead.get(lead.id);
+          return facts ? leadProgressStageCompleted(facts, stage) : false;
+        }).length,
       }));
 
       const leaderboard: T.SalespersonStat[] = this.db.users
         .filter((u) => u.role === "salesperson" && u.status === "active")
         .map((u) => {
           const collected = validPayments
-            .filter((p) => p.collectedById === u.id && p.type === "payment" && dayOf(p.occurredAt) >= monthStart)
+            .filter((p) => p.collectedById === u.id && (p.type === "payment" || p.type === "retail_sale") && dayOf(p.occurredAt) >= monthStart)
             .reduce((s, p) => s + p.amount.amount, 0);
           const sold = this.db.memberships.filter((m) => m.soldById === u.id && dayOf(m.createdAt) >= monthStart);
           return {
@@ -1574,7 +4582,7 @@ export class MockGymOSApi implements GymOSApi {
             revenueCollected: money(collected),
             newSales: sold.filter((m) => !m.previousMembershipId).length,
             renewals: sold.filter((m) => m.previousMembershipId).length,
-            leadsConverted: this.db.leads.filter((l) => l.ownerId === u.id && l.stage === "won").length,
+            leadsConverted: leads.filter((lead) => lead.ownerId === u.id && progressFactsByLead.get(lead.id)?.hasConversion).length,
             followUpsCompleted: this.db.tasks.filter((t) => t.ownerId === u.id && t.status === "completed" && dayOf(t.completedAt ?? t.createdAt) >= monthStart).length,
             overdueFollowUps: overdueTasks.filter((t) => t.ownerId === u.id).length,
           };
@@ -1582,6 +4590,278 @@ export class MockGymOSApi implements GymOSApi {
         .sort((a, b) => b.revenueCollected.amount - a.revenueCollected.amount);
 
       const alerts = this.buildAlerts(branchId);
+
+      const actor = this.actor();
+      const role = currentRole(this.db);
+      const permissions = permissionsFor(this.db, role);
+      const canManageTeam = role === "owner" || role === "manager";
+      const branchNameById = new Map(this.db.branches.map((branch) => [branch.id, branch.name]));
+      const memberById = new Map(this.db.members.map((member) => [member.id, member]));
+      const leadById = new Map(this.db.leads.map((lead) => [lead.id, lead]));
+      const queueBranchVisible = (candidateBranchId?: T.UUID) => !branchId || !candidateBranchId || candidateBranchId === branchId;
+      const queueItems: T.TodayQueueItem[] = [];
+
+      if (permissions.includes("crm.read")) {
+        for (const task of openTasks) {
+          const taskBranchId = task.memberId
+            ? memberById.get(task.memberId)?.homeBranchId
+            : task.leadId
+              ? leadById.get(task.leadId)?.branchId
+              : undefined;
+          if (!queueBranchVisible(taskBranchId)) continue;
+          if (!canManageTeam && task.ownerId !== actor.id) continue;
+          const dueDate = todayISODate(TZ, new Date(task.dueAt));
+          if (dueDate > today) continue;
+          const overdue = task.dueAt < nowISO();
+          const href = task.leadId ? `/crm/leads/${task.leadId}` : task.memberId ? `/members/${task.memberId}` : "/crm/queues";
+          const canComplete = permissions.includes("crm.write") && (canManageTeam || task.ownerId === actor.id);
+          queueItems.push({
+            id: `task:${task.id}`,
+            kind: "follow_up",
+            priority: overdue && task.priority === "high" ? "urgent" : overdue ? "high" : task.priority === "high" ? "high" : "normal",
+            title: task.title,
+            detail: `${task.subjectName} · ${task.ownerName}`,
+            subjectName: task.subjectName,
+            subject: task.leadId ? { kind: "lead", id: task.leadId } : task.memberId ? { kind: "member", id: task.memberId } : undefined,
+            branchName: taskBranchId ? branchNameById.get(taskBranchId) : undefined,
+            dueAt: task.dueAt,
+            overdue,
+            href,
+            action: canComplete
+              ? { kind: "complete_task", label: "Done", taskId: task.id }
+              : { kind: "navigate", label: "Open" },
+          });
+        }
+
+        // A lead's own next-follow-up date is work too. It only appears here
+        // when no open task already represents it, so nothing shows twice.
+        const leadsWithOpenTasks = new Set(openTasks.map((task) => task.leadId).filter(Boolean));
+        for (const lead of leads) {
+          if (!lead.nextFollowUpAt || leadsWithOpenTasks.has(lead.id)) continue;
+          const facts = progressFactsByLead.get(lead.id);
+          if (!facts || facts.hasConversion || facts.hasLoss) continue;
+          if (!canManageTeam && lead.ownerId !== actor.id) continue;
+          if (todayISODate(TZ, new Date(lead.nextFollowUpAt)) > today) continue;
+          const overdue = lead.nextFollowUpAt < nowISO();
+          const lastContact = this.db.activities.find((activity) => activity.leadId === lead.id && activity.type === "call_attempt");
+          const lastLabel = describeContactOutcome(lastContact?.meta?.outcome ? String(lastContact.meta.outcome) : undefined);
+          queueItems.push({
+            id: `lead-follow-up:${lead.id}`,
+            kind: "follow_up",
+            priority: overdue ? "high" : "normal",
+            title: `Follow up — ${lead.fullName}`,
+            detail: lastLabel ? `Lead · last contact: ${lastLabel}` : "Lead · not contacted yet",
+            subjectName: lead.fullName,
+            subject: { kind: "lead", id: lead.id },
+            branchName: branchNameById.get(lead.branchId),
+            dueAt: lead.nextFollowUpAt,
+            overdue,
+            href: `/crm/leads/${lead.id}?action=contact`,
+            action: { kind: "navigate", label: permissions.includes("crm.write") ? "Log contact" : "Open" },
+          });
+        }
+
+        const renewedIds = new Set(this.db.memberships.map((membership) => membership.previousMembershipId).filter(Boolean));
+        for (const membership of this.db.memberships) {
+          if (renewedIds.has(membership.id) || !queueBranchVisible(membership.homeBranchId)) continue;
+          const member = memberById.get(membership.memberId);
+          if (!member || member.status !== "active") continue;
+          if (role === "salesperson" && member.assignedSalespersonId !== actor.id) continue;
+          const daysUntilExpiry = diffDays(today, membership.endDate);
+          const status = this.membershipStatusOf(membership);
+          if (daysUntilExpiry < 0 || daysUntilExpiry > 7 || !["active", "expiring"].includes(status)) continue;
+          const planName = this.db.plans.find((plan) => plan.id === membership.planId)?.name ?? "Membership";
+          queueItems.push({
+            id: `renewal:${membership.id}`,
+            kind: "renewal",
+            priority: daysUntilExpiry <= 2 ? "high" : "normal",
+            title: `Renew ${member.fullName}`,
+            detail: `${planName} · ${daysUntilExpiry === 0 ? "ends today" : `${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"} left`}`,
+            subjectName: member.fullName,
+            subject: { kind: "member", id: member.id },
+            branchName: branchNameById.get(membership.homeBranchId),
+            dueAt: `${membership.endDate}T20:59:59.999Z`,
+            href: `/members/${member.id}?action=renew`,
+            action: { kind: "navigate", label: permissions.includes("memberships.sell") ? "Renew" : "Open" },
+          });
+        }
+
+        const retentionRisks = deriveRetentionRisks({
+          today,
+          inactivityDays: this.db.operationalPolicies.retention.inactivityDays,
+          renewalWindowDays: this.db.operationalPolicies.membership.renewalWindowDays,
+          expiredWinBackDays: this.db.operationalPolicies.retention.expiredWinBackDays,
+          members: this.db.members,
+          memberships: this.db.memberships,
+          checkIns: this.db.checkIns,
+          snoozes: this.retentionStates,
+        }).filter((risk) => queueBranchVisible(risk.branchId))
+          .filter((risk) => role !== "salesperson" || risk.assignedSalespersonId === actor.id)
+          .filter((risk) => risk.reasons.some((reason) => reason.kind !== "expiring"))
+          .slice(0, options.complete ? BRIEF_QUEUE_LIMIT : 6);
+        for (const risk of retentionRisks) {
+          const member = memberById.get(risk.memberId);
+          const membership = this.db.memberships.find((candidate) => candidate.id === risk.membershipId);
+          if (!member || !membership) continue;
+          const plan = this.db.plans.find((candidate) => candidate.id === membership.planId);
+          queueItems.push({
+            id: `at-risk:${risk.memberId}`,
+            kind: "at_risk",
+            priority: risk.priority,
+            title: `Contact ${member.fullName}`,
+            detail: `${risk.reasons.map((reason) => reason.label).join(" · ")}${plan ? ` · ${plan.name}` : ""}`,
+            subjectName: member.fullName,
+            subject: { kind: "member", id: member.id },
+            branchName: branchNameById.get(risk.branchId),
+            occurredAt: risk.lastVisitAt,
+            href: `/crm/queues?view=at-risk&member=${encodeURIComponent(risk.memberId)}`,
+            action: { kind: "navigate", label: "Follow up" },
+          });
+        }
+      }
+
+      if (permissions.includes("payments.collect") || permissions.includes("reports.financial.read")) {
+        for (const member of this.db.members) {
+          if (member.status !== "active" || !queueBranchVisible(member.homeBranchId)) continue;
+          if (role === "salesperson" && member.assignedSalespersonId !== actor.id) continue;
+          const amount = this.db.charges
+            .filter((charge) => charge.memberId === member.id)
+            .reduce((total, charge) => total + collectibleOutstandingMinor(charge, today), 0);
+          if (amount <= 0) continue;
+          queueItems.push({
+            id: `balance:${member.id}`,
+            kind: "outstanding_balance",
+            priority: "high",
+            title: `Collect from ${member.fullName}`,
+            detail: "Owes money",
+            subjectName: member.fullName,
+            subject: { kind: "member", id: member.id },
+            branchName: branchNameById.get(member.homeBranchId),
+            amount: money(amount, this.db.organization.currency),
+            href: `/members/${member.id}?action=collect`,
+            action: { kind: "navigate", label: permissions.includes("payments.collect") ? "Collect" : "Open" },
+          });
+        }
+      }
+
+      if (["owner", "manager", "receptionist"].includes(role)) {
+        const latestBlockedByMember = new Map<T.UUID, T.CheckInSummary>();
+        for (const checkIn of this.db.checkIns) {
+          if (checkIn.decision !== "blocked" || !queueBranchVisible(checkIn.branchId) || dayOf(checkIn.occurredAt) !== today) continue;
+          const existing = latestBlockedByMember.get(checkIn.memberId);
+          if (!existing || existing.occurredAt < checkIn.occurredAt) latestBlockedByMember.set(checkIn.memberId, checkIn);
+        }
+        for (const checkIn of latestBlockedByMember.values()) {
+          queueItems.push({
+            id: `access:${checkIn.memberId}`,
+            kind: "access_denial",
+            priority: "urgent",
+            title: `${checkIn.memberName} was refused entry`,
+            detail: checkIn.reasonCodes.map((reason) => reason.toLowerCase().replaceAll("_", " ")).join(" · ") || "Entry refused",
+            subjectName: checkIn.memberName,
+            branchName: branchNameById.get(checkIn.branchId),
+            occurredAt: checkIn.occurredAt,
+            href: `/members/${checkIn.memberId}`,
+            action: { kind: "navigate", label: "Review" },
+          });
+        }
+      }
+
+      if (permissions.includes("audit.read")) {
+        for (const event of this.db.audits.filter((audit) => audit.approvalStatus === "pending" && queueBranchVisible(audit.branchId))) {
+          if (event.action === "shift.close_variance") continue;
+          queueItems.push({
+            id: `approval:${event.id}`,
+            kind: "approval",
+            priority: "high",
+            title: event.summary,
+            detail: `${event.entityLabel} · ${event.actorName}`,
+            branchName: event.branchId ? branchNameById.get(event.branchId) : undefined,
+            occurredAt: event.occurredAt,
+            href: "/audit?approval=pending",
+            action: { kind: "navigate", label: "Review" },
+          });
+        }
+      }
+
+      if (permissions.includes("reconciliation.read")) {
+        for (const shift of this.db.shifts) {
+          if (!queueBranchVisible(shift.branchId) || shift.status !== "closed" || shift.varianceApprovalStatus !== "pending" || !shift.variance || shift.variance.amount === 0) continue;
+          queueItems.push({
+            id: `variance:${shift.id}`,
+            kind: "cash_variance",
+            priority: "urgent",
+            title: `Check the cash difference at ${branchNameById.get(shift.branchId) ?? "the branch"}`,
+            detail: `Shift closed by ${shift.closedById ? this.db.users.find((user) => user.id === shift.closedById)?.name ?? shift.openedByName : shift.openedByName}`,
+            branchName: branchNameById.get(shift.branchId),
+            occurredAt: shift.closedAt,
+            amount: shift.variance,
+            href: "/payments/shifts",
+            action: { kind: "navigate", label: "Review" },
+          });
+        }
+      }
+
+      const operationsEnabled = this.workspaceAccess().modules.some((module) => module.key === "operations" && module.entitled && module.enabled);
+      if (operationsEnabled && permissions.includes("operations.manage")) {
+        for (const task of this.db.facilityTasks) {
+          if (!queueBranchVisible(task.branchId) || !["open", "in_progress", "blocked"].includes(task.status)) continue;
+          const dueToday = task.dueAt ? todayISODate(TZ, new Date(task.dueAt)) <= today : false;
+          if (!options.complete && !dueToday && !["high", "critical"].includes(task.severity)) continue;
+          queueItems.push({
+            id: `facility:${task.id}`,
+            kind: "facility_task",
+            priority: task.severity === "critical" || task.status === "blocked" ? "urgent" : task.severity === "high" ? "high" : "normal",
+            title: task.title,
+            detail: `${task.zoneName} · ${task.status.replaceAll("_", " ")}`,
+            branchName: branchNameById.get(task.branchId),
+            dueAt: task.dueAt,
+            href: "/operations",
+            action: { kind: "navigate", label: "Open" },
+          });
+        }
+      }
+
+      const checklistRole = currentRole(this.db) === "salesperson" ? "sales" : currentRole(this.db);
+      for (const template of this.checklistTemplates) {
+        if (!template.active || !queueBranchVisible(template.branchId)) continue;
+
+        const run = this.checklistRuns.find((candidate) => candidate.templateId === template.id && candidate.localDate === today);
+        const assignedUserId = run ? run.assignedUserId : template.assignedUserId;
+        if (checklistRole !== "owner" && checklistRole !== "manager" && (assignedUserId ? assignedUserId !== this.actor().id : checklistRole !== template.assignedRole)) continue;
+        const items = run ? run.items : template.items.map((item) => ({ required: item.required, status: "pending" as const }));
+        const requiredPending = items.filter((item) => item.required && item.status === "pending").length;
+        const failedRequired = items.filter((item) => item.required && item.status === "failed").length;
+        const done = items.filter((item) => item.status !== "pending").length;
+        const pastDue = this.checklistLocalTimeNow() > template.dueTime;
+        if (failedRequired > 0) {
+          queueItems.push({
+            id: `checklist-failed:${template.id}:${today}`,
+            kind: "branch_checklist",
+            priority: "urgent",
+            title: `Fix ${failedRequired} failed ${template.name} item${failedRequired === 1 ? "" : "s"}`,
+            detail: `${branchNameById.get(template.branchId) ?? "Branch"} · ${template.type} checklist`,
+            branchName: branchNameById.get(template.branchId),
+            href: `/checklists?branch=${encodeURIComponent(template.branchId)}`,
+            action: { kind: "navigate", label: "Review" },
+          });
+        }
+        if (requiredPending > 0) {
+          queueItems.push({
+            id: `checklist-due:${template.id}:${today}`,
+            kind: "branch_checklist",
+            priority: pastDue ? "high" : "normal",
+            title: `${pastDue ? "Late" : "Due"}: ${template.name}`,
+            detail: `${branchNameById.get(template.branchId) ?? "Branch"} · ${done}/${items.length} done · due ${template.dueTime}`,
+            branchName: branchNameById.get(template.branchId),
+            overdue: pastDue,
+            href: `/checklists?branch=${encodeURIComponent(template.branchId)}`,
+            action: { kind: "navigate", label: "Open" },
+          });
+        }
+      }
+
+      const todayQueue = finalizeTodayQueue(queueItems, nowISO(), options.complete ? BRIEF_QUEUE_LIMIT : undefined);
 
       const recentActivity = this.db.activities
         .filter((a) => !a.leadId)
@@ -1605,8 +4885,155 @@ export class MockGymOSApi implements GymOSApi {
         funnel,
         leaderboard,
         alerts,
+        todayQueue,
         recentActivity,
       };
+    }
+  }
+
+  getOperatingBrief(query: OperatingBriefQuery = {}): Promise<T.OperatingBrief> {
+    return this.respond(() => this.operatingBriefSync(query));
+  }
+
+  /**
+   * The daily operating brief from the seeded records: the complete Today
+   * queue plus lapsed terms, machine reports, low stock and open RIVET cases,
+   * each read separately so a module that is off or a role that may not see
+   * a source reads as partial coverage. Every figure is computed by the
+   * shared module.
+   */
+  private operatingBriefSync(query: OperatingBriefQuery): T.OperatingBrief {
+    this.require("members.read");
+    const today = this.today();
+    const generatedAt = nowISO();
+    const requestedBranchId = query.branchId?.trim() || undefined;
+    const branchId = this.branchScopedBranchId(requestedBranchId);
+    const dashboard = this.dashboardSync({ branchId, from: addDays(today, -29), to: today }, { complete: true });
+    const actor = this.actor();
+    const role = currentRole(this.db);
+    const permissions = permissionsFor(this.db, role);
+    const branches = this.db.branches.filter((branch) => branch.status === "active" && this.branchIsVisible(branch.id));
+    const branchNameById = new Map(this.db.branches.map((branch) => [branch.id, branch.name]));
+    const visible = (candidate?: T.UUID) => !candidate || (this.branchIsVisible(candidate) && (!branchId || candidate === branchId));
+    const scope: T.BriefScope = { ...(requestedBranchId ? { branchId: requestedBranchId } : {}), branches: branches.map((branch) => ({ id: branch.id, name: branch.name })), branchScope: actor.branchScope, role, userId: actor.id };
+    const sources: BriefSourceInput[] = [];
+    const read = (key: BriefSourceKey, permitted: boolean, load: () => BriefQueueItem[]) => {
+      if (!permitted) {
+        sources.push({ key, status: "no_permission", message: "Not included for your role." });
+        return;
+      }
+      try {
+        sources.push({ key, status: "ok", items: load() });
+      } catch (error) {
+        const code = error instanceof ApiError ? error.code : undefined;
+        sources.push({
+          key,
+          status: code === ERR.FEATURE_NOT_AVAILABLE ? "not_enabled" : code === ERR.FORBIDDEN ? "no_permission" : "unavailable",
+          message: code === ERR.FEATURE_NOT_AVAILABLE ? "The operations module is off for this gym." : code === ERR.FORBIDDEN ? "Not included for your role." : "This source could not be read just now; the rest of the brief is current.",
+        });
+      }
+    };
+
+    read("expired", permissions.includes("crm.read"), () => {
+      const renewedIds = new Set(this.db.memberships.map((membership) => membership.previousMembershipId).filter(Boolean));
+      const items: BriefQueueItem[] = [];
+      for (const membership of this.db.memberships) {
+        if (renewedIds.has(membership.id) || this.membershipStatusOf(membership) !== "expired" || !visible(membership.homeBranchId)) continue;
+        const member = this.db.members.find((candidate) => candidate.id === membership.memberId);
+        if (!member || member.status === "archived") continue;
+        if (role === "salesperson" && member.assignedSalespersonId !== actor.id) continue;
+        const daysSince = diffDays(membership.endDate, today);
+        if (daysSince < 0 || daysSince > 30) continue;
+        const planName = this.db.plans.find((plan) => plan.id === membership.planId)?.name ?? "Membership";
+        const branchName = branchNameById.get(membership.homeBranchId);
+        items.push({
+          id: `expired:${membership.id}`,
+          kind: "renewal",
+          priority: "normal",
+          title: `Win back ${member.fullName}`,
+          detail: `${planName} · expired ${daysSince === 0 ? "today" : `${daysSince} day${daysSince === 1 ? "" : "s"} ago`}, not renewed`,
+          subjectName: member.fullName,
+          subject: { kind: "member", id: member.id },
+          ...(branchName ? { branchName } : {}),
+          dueAt: `${membership.endDate}T20:59:59.999Z`,
+          overdue: true,
+          href: `/members/${member.id}?action=renew`,
+          action: { kind: "navigate", label: permissions.includes("memberships.sell") ? "Renew" : "Open" },
+        });
+      }
+      return items;
+    });
+
+    const operationsPermitted = permissions.includes("operations.manage");
+    read("equipment", operationsPermitted, () => {
+      this.requireOperationsRead();
+      return this.db.equipmentIssues
+        .filter((issue) => ["open", "in_progress"].includes(issue.status) && this.branchIsVisible(issue.branchId) && visible(issue.branchId))
+        .map((issue): BriefQueueItem => {
+          const asset = this.db.equipmentAssets.find((candidate) => candidate.id === issue.assetId);
+          const branchName = branchNameById.get(issue.branchId);
+          return {
+            id: `equipment:${issue.id}`,
+            kind: "equipment_issue",
+            priority: issue.safetyStatus === "out_of_service" || issue.severity === "critical" ? "urgent" : issue.severity === "high" ? "high" : "normal",
+            title: issue.title,
+            detail: `${asset ? `${asset.code} ${asset.name}` : "Machine"} · ${issue.status.replaceAll("_", " ")} · safety: ${issue.safetyStatus.replaceAll("_", " ")}`,
+            ...(issue.description ? { description: issue.description } : {}),
+            ...(branchName ? { branchName } : {}),
+            occurredAt: issue.reportedAt,
+            href: `/operations?tab=equipment&branch=${encodeURIComponent(issue.branchId)}`,
+            action: { kind: "navigate", label: "Open" },
+            safetyStatus: issue.safetyStatus,
+          };
+        });
+    });
+
+    read("stock", operationsPermitted, () => {
+      this.requireOperationsRead();
+      return this.lowStockSnapshot(branchId ? { branchId } : {}).filter((alert) => alert.status === "open").map((alert): BriefQueueItem => {
+        const product = this.db.products.find((candidate) => candidate.id === alert.productId);
+        const branchName = branchNameById.get(alert.branchId);
+        return {
+          id: `stock:${alert.branchId}:${alert.productId}`,
+          kind: "low_stock",
+          priority: alert.availableQuantity <= 0 ? "high" : "normal",
+          title: `Reorder ${product?.name ?? "product"}`,
+          detail: `${alert.availableQuantity} available · reorder at ${alert.reorderPoint}`,
+          ...(branchName ? { branchName } : {}),
+          occurredAt: alert.updatedAt,
+          href: `/operations?tab=inventory&stock=attention&branch=${encodeURIComponent(alert.branchId)}`,
+          action: { kind: "navigate", label: "Open" },
+        };
+      });
+    });
+
+    read("support", role === "owner" || role === "manager", () => this.platformSupportCases
+      .filter((supportCase) => supportCase.status !== "resolved" && visible(supportCase.branchId))
+      .map((supportCase): BriefQueueItem => {
+        const branchName = supportCase.branchId ? branchNameById.get(supportCase.branchId) : undefined;
+        return {
+          id: `support:${supportCase.id}`,
+          kind: "support_case",
+          priority: supportCase.priority === "urgent" ? "urgent" : "normal",
+          title: supportCase.subject,
+          detail: `${supportCase.status === "waiting" ? "Waiting" : "Open"} · ${supportCase.creatorName ?? "your gym"}`,
+          ...(supportCase.body ? { description: supportCase.body.slice(0, 300) } : {}),
+          ...(branchName ? { branchName } : {}),
+          occurredAt: supportCase.updatedAt ?? supportCase.createdAt ?? generatedAt,
+          href: `/support?case=${encodeURIComponent(supportCase.id)}`,
+          action: { kind: "navigate", label: "Open case" },
+        };
+      }));
+
+    return buildOperatingBrief({
+      generatedAt,
+      today,
+      timezone: TZ,
+      currency: this.db.organization.currency,
+      scope,
+      queue: dashboard.todayQueue.items as BriefQueueItem[],
+      queueTotal: dashboard.todayQueue.totalItems,
+      sources,
     });
   }
 
@@ -1615,7 +5042,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   private branchRevenue(branchId: T.UUID, from: string, to: string): number {
-    return this.db.payments
+    return [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))]
       .filter((p) => {
         if (p.branchId !== branchId || p.status === "voided") return false;
         const d = todayISODate(TZ, new Date(p.occurredAt));
@@ -1742,13 +5169,15 @@ export class MockGymOSApi implements GymOSApi {
 
   /** Phone/email match ignoring formatting. Shared by the check and by create. */
   private findDuplicates(input: { phone?: string; email?: string }): T.DuplicateMatch[] {
-    const norm = (s?: string) => (s ?? "").replace(/[\s+()-]/g, "").toLowerCase();
+    const normalizedEmail = (value?: string) => value?.trim().toLowerCase() ?? "";
+    const phone = canonicalPhoneKey(input.phone, this.db.organization.phoneCountryCallingCode);
+    const email = normalizedEmail(input.email);
     const matches: T.DuplicateMatch[] = [];
     for (const m of this.db.members) {
       if (m.status === "archived") continue;
-      if (input.phone && norm(m.phone) === norm(input.phone)) {
+      if (phone && canonicalPhoneKey(m.phone, this.db.organization.phoneCountryCallingCode) === phone) {
         matches.push({ memberId: m.id, fullName: m.fullName, memberNumber: m.memberNumber, matchedOn: "phone" });
-      } else if (input.email && m.email && norm(m.email) === norm(input.email)) {
+      } else if (email && m.email && normalizedEmail(m.email) === email) {
         matches.push({ memberId: m.id, fullName: m.fullName, memberNumber: m.memberNumber, matchedOn: "email" });
       }
     }
@@ -1758,22 +5187,32 @@ export class MockGymOSApi implements GymOSApi {
   createMember(input: T.CreateMemberInput): Promise<T.CreateMemberResult> {
     return this.respond(() => {
       this.require("members.write");
-      if (!input.fullName.trim() || !input.phone.trim()) {
-        throw ApiError.of(ERR.VALIDATION, "Name and phone are required.", {
+      if (!input.fullName.trim() || !input.phone.trim() || !["male", "female"].includes(input.gender)) {
+        throw ApiError.of(ERR.VALIDATION, "Name, phone, and gender are required.", {
           fieldErrors: {
             ...(input.fullName.trim() ? {} : { fullName: ["Full name is required"] }),
             ...(input.phone.trim() ? {} : { phone: ["Phone is required"] }),
+            ...(["male", "female"].includes(input.gender) ? {} : { gender: ["Choose male or female"] }),
           },
         });
       }
+      const branch = this.db.branches.find((b) => b.id === input.homeBranchId);
+      if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      let referredByName: string | undefined;
+      if (input.referredByMemberId) {
+        const referrer = this.db.members.find((candidate) => candidate.id === input.referredByMemberId && candidate.status !== "archived" && this.branchIsVisible(candidate.homeBranchId));
+        if (!referrer) throw ApiError.of(ERR.NOT_FOUND, "The referring member was not found.");
+        referredByName = referrer.fullName;
+      }
       this.db.counters.memberNumber += 1;
-      const branch = this.db.branches.find((b) => b.id === input.homeBranchId) ?? this.db.branches[0]!;
       const record: MemberRecord = {
         id: mockUuid(),
         memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
         fullName: input.fullName.trim(),
         fullNameAr: input.fullNameAr,
-        phone: input.phone.trim(),
+        referredByMemberId: input.referredByMemberId,
+        referredByName,
+        phone: normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
         email: input.email?.trim().toLowerCase() || undefined,
         gender: input.gender,
         dateOfBirth: input.dateOfBirth,
@@ -1813,6 +5252,58 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  createMemberMembershipSale(input: T.CreateMemberMembershipSaleInput): Promise<T.CreateMemberMembershipSaleResult> {
+    return this.respond(async () => {
+      this.require("members.write");
+      this.require("memberships.sell");
+      const idempotencyKey = input.idempotencyKey.trim();
+      if (idempotencyKey.length < 8 || idempotencyKey.length > 120) throw ApiError.of(ERR.VALIDATION, "A valid sale request key is required.");
+      const confirmedDuplicateMemberIds = [...(input.confirmedDuplicateMemberIds ?? [])].sort();
+      const signature = JSON.stringify({ member: input.member, sale: input.sale, confirmedDuplicateMemberIds });
+      const prior = this.memberSaleFlowIdempotency.get(idempotencyKey);
+      if (prior) {
+        if (prior.signature !== signature) throw ApiError.of(ERR.VALIDATION, "This request key was already used for a different member sale.");
+        return prior.result;
+      }
+      const duplicates = this.findDuplicates({ phone: input.member.phone, email: input.member.email });
+      const confirmed = new Set(confirmedDuplicateMemberIds);
+      const unconfirmedDuplicates = duplicates.filter((duplicate) => !confirmed.has(duplicate.memberId));
+      if (unconfirmedDuplicates.length > 0) throw ApiError.of(ERR.DUPLICATE_MEMBER, "This person matches an existing member. Open that member instead of creating a duplicate.", { details: { matches: unconfirmedDuplicates } });
+
+      const snapshot = {
+        members: this.db.members.length,
+        memberships: this.db.memberships.length,
+        charges: this.db.charges.length,
+        payments: this.db.payments.length,
+        receipts: this.db.receipts.length,
+        activities: this.db.activities.length,
+        audits: this.db.audits.length,
+        memberNumber: this.db.counters.memberNumber,
+        receiptNumber: this.db.counters.receiptNumber,
+      };
+      try {
+        const created = await this.createMember(input.member);
+        if (duplicates.length > 0) this.audit({ category: "members", action: "member.duplicate_identity_override", entityType: "member", entityId: created.member.id, entityLabel: `${created.member.fullName} · ${created.member.memberNumber}`, summary: "Created a distinct member after reviewing contact matches", reason: "Front desk confirmed this is a different person.", after: { matchedMemberIds: duplicates.map((duplicate) => duplicate.memberId).join(",") }, branchId: created.member.homeBranchId });
+        const sale = await this.createMembershipSale({ ...input.sale, memberId: created.member.id });
+        const memberRecord = this.db.members.find((member) => member.id === created.member.id)!;
+        const result = { member: this.toMemberDetail(memberRecord), sale };
+        this.memberSaleFlowIdempotency.set(idempotencyKey, { signature, result });
+        return result;
+      } catch (error) {
+        this.db.members.splice(snapshot.members);
+        this.db.memberships.splice(snapshot.memberships);
+        this.db.charges.splice(snapshot.charges);
+        this.db.payments.splice(snapshot.payments);
+        this.db.receipts.splice(snapshot.receipts);
+        this.db.activities.splice(0, this.db.activities.length - snapshot.activities);
+        this.db.audits.splice(0, this.db.audits.length - snapshot.audits);
+        this.db.counters.memberNumber = snapshot.memberNumber;
+        this.db.counters.receiptNumber = snapshot.receiptNumber;
+        throw error;
+      }
+    });
+  }
+
   updateMember(memberId: T.UUID, input: T.UpdateMemberInput): Promise<T.MemberDetail> {
     return this.respond(() => {
       this.require("members.write");
@@ -1822,7 +5313,8 @@ export class MockGymOSApi implements GymOSApi {
       const beforePreference = m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default" as const };
       Object.assign(m, {
         ...input,
-        email: input.email === undefined ? m.email : input.email || undefined,
+        phone: input.phone === undefined ? m.phone : normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
+        email: input.email === undefined ? m.email : normalizeOptionalEmail(input.email),
       });
       delete (m as MemberRecord & { marketingPreferenceSource?: unknown }).marketingPreferenceSource;
       if (marketingChanged) {
@@ -1919,37 +5411,68 @@ export class MockGymOSApi implements GymOSApi {
 
   logMemberContactAttempt(memberId: T.UUID, input: T.ContactAttemptInput): Promise<T.TimelineEvent> {
     return this.respond(() => {
-      this.require("crm.write");
+      // Same permission as the Convex `members.contact` operation.
+      this.require("members.write");
       const m = this.db.members.find((x) => x.id === memberId);
       if (!m) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
-      if (input.nextFollowUpAt) {
-        // surface as an open renewal/follow-up task owned by the actor
-        this.db.tasks.push({
-          id: mockUuid(),
-          organizationId: this.db.organization.id,
-          type: "follow_up",
-          title: `Follow up — ${m.fullName}`,
-          ownerId: this.actor().id,
-          ownerName: this.actor().name,
-          dueAt: input.nextFollowUpAt,
-          priority: "normal",
-          status: "open",
-          memberId: m.id,
-          subjectName: m.fullName,
-          createdById: this.actor().id,
-          createdAt: nowISO(),
-        });
-      }
+      this.resolveFollowUpTasksForContact({ memberId: m.id }, m.fullName, input);
       return this.activity({
         memberId,
         type: "call_attempt",
-        title: `Call — ${input.outcome.replace(/_/g, " ")}`,
+        title: input.outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${input.outcome.replace(/_/g, " ")}`,
         body: input.notes,
         actorId: this.actor().id,
         actorName: this.actor().name,
         meta: { outcome: input.outcome },
       });
     });
+  }
+
+  /**
+   * A logged contact is the follow-up happening. Move the actor's open
+   * follow-up task to the next date (or close it with the outcome) instead of
+   * stacking one more task per call; create a task only when none exists.
+   */
+  private resolveFollowUpTasksForContact(subject: { memberId?: T.UUID; leadId?: T.UUID }, subjectName: string, input: T.ContactAttemptInput, options: { createWhenMissing?: boolean } = {}): void {
+    const role = currentRole(this.db);
+    const today = this.today();
+    const resolution = resolveFollowUpTasks({
+      tasks: this.db.tasks,
+      subject,
+      actorId: this.actor().id,
+      canManageTeam: role === "owner" || role === "manager",
+      nextFollowUpAt: input.nextFollowUpAt,
+      outcome: input.outcome,
+      isDue: (dueAt) => todayISODate(TZ, new Date(dueAt)) <= today,
+    });
+    const outcome = completedByContactOutcome(input.outcome);
+    for (const task of resolution.complete) {
+      task.status = "completed";
+      task.outcome = outcome;
+      task.completedAt = nowISO();
+      if (task.memberId) this.activity({ memberId: task.memberId, type: "task_completed", title: `Task completed: ${task.title}`, body: outcome, actorId: this.actor().id, actorName: this.actor().name });
+    }
+    if (resolution.reschedule && input.nextFollowUpAt) {
+      resolution.reschedule.dueAt = input.nextFollowUpAt;
+      if (resolution.reschedule.type === "follow_up") resolution.reschedule.title = followUpTaskTitle(subjectName, input.outcome);
+    } else if (resolution.createFollowUp && input.nextFollowUpAt && (options.createWhenMissing ?? true)) {
+      this.db.tasks.push({
+        id: mockUuid(),
+        organizationId: this.db.organization.id,
+        type: "follow_up",
+        title: followUpTaskTitle(subjectName, input.outcome),
+        ownerId: this.actor().id,
+        ownerName: this.actor().name,
+        dueAt: input.nextFollowUpAt,
+        priority: "normal",
+        status: "open",
+        memberId: subject.memberId,
+        leadId: subject.leadId,
+        subjectName,
+        createdById: this.actor().id,
+        createdAt: nowISO(),
+      });
+    }
   }
 
   addMemberNote(memberId: T.UUID, input: { body: string }): Promise<T.TimelineEvent> {
@@ -2000,7 +5523,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "plan",
         entityId: plan.id,
         entityLabel: plan.name,
-        summary: `Plan created — JOD ${(plan.basePrice.amount / 1000).toFixed(3)}`,
+        summary: `Plan created — ${this.amountText(plan.basePrice)}`,
       });
       return this.toPlan(plan);
     });
@@ -2031,23 +5554,35 @@ export class MockGymOSApi implements GymOSApi {
   // personal training
   getPtWorkspace(): Promise<T.PtWorkspace> {
     return this.respond(() => {
-      this.require("pt.reports.read");
+      // Same contract as Convex `pt.workspace`: a reports reader sees the whole
+      // gym, while a trainer with only their own-schedule permission sees their
+      // own profile and sessions, no packages, no orders and no revenue.
+      const canReadReports = permissionsFor(this.db, currentRole(this.db)).includes("pt.reports.read");
+      if (!canReadReports) this.require("pt.schedule.self");
+      const actor = this.actor();
+      const ownTrainer = this.ptTrainers.find((item) => item.userId === actor.id);
+      const visibleTrainers = canReadReports ? this.ptTrainers : ownTrainer ? [ownTrainer] : [];
+      const visibleTrainerIds = new Set(visibleTrainers.map((item) => item.id));
+      const visibleBookings = this.ptBookings.filter((item) => visibleTrainerIds.has(item.trainerProfileId) && (actor.branchScope === "all" || actor.branchIds.includes(item.branchId)));
+      const visibleEntitlementIds = new Set(visibleBookings.map((item) => item.entitlementId));
+      const visibleEntitlements = canReadReports ? this.ptEntitlements : this.ptEntitlements.filter((item) => visibleEntitlementIds.has(item.id));
       const paidOrderIds = new Set(this.ptOrders.filter((order) => order.status !== "pending_payment" && order.status !== "cancelled").map((order) => order.id));
-      const packageRevenue = this.ptOrders.reduce((total, order) => {
+      const packageRevenue = canReadReports ? this.ptOrders.reduce((total, order) => {
         if (!paidOrderIds.has(order.id)) return total;
         return total + (order.totalPriceSnapshot?.amount ?? this.ptPackages.find((item) => item.id === order.packageId)?.totalPrice.amount ?? 0);
-      }, 0);
+      }, 0) : 0;
       return {
-        trainers: this.ptTrainers.map((item) => ({ ...item, availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
-        packages: this.ptPackages.map((item) => ({ ...item })),
-        bookings: [...this.ptBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
-        pendingOrders: this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member", packageName: item.packageNameSnapshot ?? this.ptPackages.find((pkg) => pkg.id === item.packageId)?.name ?? "PT package", paymentReference: `PT order ${item.id.slice(-6).toUpperCase()}` })),
+        cancellationCutoffHours: this.db.operationalPolicies.personalTraining.cancellationCutoffHours,
+        trainers: visibleTrainers.map((item) => ({ ...this.ptTrainerView(item), availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === item.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === item.id).map((exception) => ({ ...exception })) })),
+        packages: canReadReports ? this.ptPackages.map((item) => ({ ...item })) : [],
+        bookings: [...visibleBookings].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((item) => this.ptBookingView(item)),
+        pendingOrders: canReadReports ? this.ptOrders.filter((order) => order.status === "pending_payment").map((item) => ({ ...item, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member", packageName: item.packageNameSnapshot ?? this.ptPackages.find((pkg) => pkg.id === item.packageId)?.name ?? "PT package", paymentReference: `PT order ${item.id.slice(-6).toUpperCase()}` })) : [],
         metrics: {
           packageRevenue: money(packageRevenue),
-          sessionsUsed: this.ptEntitlements.reduce((total, item) => total + item.consumed, 0),
-          sessionsReserved: this.ptEntitlements.reduce((total, item) => total + item.reserved, 0),
-          upcomingBookings: this.ptBookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && Date.parse(item.startsAt) > Date.now()).length,
-          noShows: this.ptBookings.filter((item) => item.status === "no_show").length,
+          sessionsUsed: visibleEntitlements.reduce((total, item) => total + item.consumed, 0),
+          sessionsReserved: visibleEntitlements.reduce((total, item) => total + item.reserved, 0),
+          upcomingBookings: visibleBookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && Date.parse(item.startsAt) > Date.now()).length,
+          noShows: visibleBookings.filter((item) => item.status === "no_show").length,
         },
       };
     });
@@ -2069,10 +5604,11 @@ export class MockGymOSApi implements GymOSApi {
         membershipId,
         availableSessions: entitlements.reduce((total, item) => total + item.available, 0),
         reservedSessions: entitlements.reduce((total, item) => total + item.reserved, 0),
+        cancellationCutoffHours: this.db.operationalPolicies.personalTraining.cancellationCutoffHours,
         entitlements,
-        upcomingBookings: this.ptBookings.filter((item) => item.memberId === membership.memberId && ["reserved", "confirmed"].includes(item.status)).map((item) => this.ptBookingView(item)),
+        upcomingBookings: this.ptBookings.filter((item) => item.memberId === membership.memberId && ["reserved", "confirmed"].includes(item.status)).sort((left, right) => left.startsAt.localeCompare(right.startsAt)).map((item) => this.ptBookingView(item)),
         orders: this.ptOrders.filter((item) => item.memberId === membership.memberId).map((item) => ({ ...item })),
-        trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => ({ ...item })),
+        trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)),
         packages: this.ptPackages.filter((item) => item.status === "active").map((item) => ({ ...item })),
       };
     });
@@ -2085,7 +5621,7 @@ export class MockGymOSApi implements GymOSApi {
   getCustomerPtExperience(membershipId: T.UUID): Promise<T.PtMemberExperience> {
     const internal = this.db.memberships.find((item) => item.id === membershipId);
     if (internal) return this.getPtMemberExperience(membershipId);
-    return this.respond(() => ({ organizationId: this.db.organization.id, membershipId, availableSessions: 0, reservedSessions: 0, entitlements: [], upcomingBookings: [], orders: [], trainers: this.ptTrainers.filter((item) => item.status === "published"), packages: this.ptPackages.filter((item) => item.status === "active") }));
+    return this.respond(() => ({ organizationId: this.db.organization.id, membershipId, availableSessions: 0, reservedSessions: 0, cancellationCutoffHours: this.db.operationalPolicies.personalTraining.cancellationCutoffHours, entitlements: [], upcomingBookings: [], orders: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), packages: this.ptPackages.filter((item) => item.status === "active") }));
   }
 
   subscribeCustomerPtExperience(membershipId: T.UUID, onValue: (experience: T.PtMemberExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -2099,17 +5635,26 @@ export class MockGymOSApi implements GymOSApi {
       if (!staff) throw ApiError.of(ERR.VALIDATION, "Trainer profiles must link to an active trainer account.");
       if (input.status === "published" && input.photoAssetId && !input.photoAlt?.trim()) throw ApiError.of(ERR.VALIDATION, "Published trainer photos require alt text.");
       const existing = input.id ? this.ptTrainers.find((item) => item.id === input.id) : undefined;
+      const photoAssetId = input.photoAssetId ?? (existing ? this.ptTrainerPhotoAssetIds.get(existing.id) : undefined);
+      const photoAsset = photoAssetId ? this.mediaAssets.get(photoAssetId) : undefined;
+      if (photoAssetId && (!photoAsset || photoAsset.ownerType !== "trainer_photo" || photoAsset.ownerId !== (existing?.id ?? input.id) || photoAsset.visibility !== "public" || !["pending", "active"].includes(photoAsset.status))) throw ApiError.of(ERR.NOT_FOUND, "Trainer photo not found.");
       const now = nowISO();
       const value: T.PtTrainerProfile = { id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, userId: input.userId, displayName: input.displayName.trim(), bioEn: input.bioEn?.trim() || undefined, bioAr: input.bioAr?.trim() || undefined, specialties: [...input.specialties], languages: [...input.languages], branchIds: [...input.branchIds], photoAlt: input.photoAlt?.trim() || undefined, status: input.status, createdAt: existing?.createdAt ?? now, updatedAt: now };
       if (existing) this.ptTrainers.splice(this.ptTrainers.indexOf(existing), 1, value); else this.ptTrainers.push(value);
+      if (photoAssetId) {
+        this.ptTrainerPhotoAssetIds.set(value.id, photoAssetId);
+        if (photoAsset?.status === "pending") { photoAsset.status = "active"; delete photoAsset.deleteAfter; photoAsset.updatedAt = now; }
+      }
       this.audit({ category: "users", action: existing ? "pt.trainer.update" : "pt.trainer.create", entityType: "pt_trainer", entityId: value.id, entityLabel: value.displayName, summary: existing ? "Updated trainer profile" : "Created trainer profile" });
-      return { ...value };
+      return this.ptTrainerView(value);
     });
   }
 
   upsertPtPackage(input: T.UpsertPtPackageInput): Promise<T.PtPackage> {
     return this.respond(() => {
       this.require("pt.manage");
+      // Convex refuses a package priced in a currency other than the gym's.
+      if (input.totalPrice.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Package currency does not match the organization.");
       if (!Number.isSafeInteger(input.sessionCount) || input.sessionCount < 1 || input.sessionCount > 1_000 || !Number.isSafeInteger(input.totalPrice.amount) || input.totalPrice.amount <= 0 || input.validityDays < 1) throw ApiError.of(ERR.VALIDATION, "Package sessions, price, and validity must be positive.");
       const existing = input.id ? this.ptPackages.find((item) => item.id === input.id) : undefined;
       const now = nowISO();
@@ -2148,6 +5693,10 @@ export class MockGymOSApi implements GymOSApi {
       if (!profile) throw ApiError.of(ERR.NOT_FOUND, "Trainer profile not found.");
       const actor = this.actor();
       if (profile.userId !== actor.id) this.require("pt.manage"); else this.require("pt.schedule.self");
+      // Convex: hours and time off can only be set at a branch the trainer works at.
+      for (const entry of [...input.rules, ...input.exceptions]) {
+        if (!profile.branchIds.includes(entry.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Trainer branch not found.");
+      }
       for (const rule of input.rules) {
         if (rule.startMinute < 0 || rule.endMinute > 1440 || rule.endMinute - rule.startMinute < 60) throw ApiError.of(ERR.VALIDATION, "Availability windows must contain at least one 60-minute session.");
         if (input.rules.some((other) => other !== rule && other.branchId === rule.branchId && other.weekday === rule.weekday && rule.startMinute < other.endMinute && other.startMinute < rule.endMinute)) throw ApiError.of(ERR.CONFLICT, "Availability windows cannot overlap.");
@@ -2155,7 +5704,9 @@ export class MockGymOSApi implements GymOSApi {
       this.ptRules = this.ptRules.filter((item) => item.trainerProfileId !== profile.id).concat(input.rules.map((rule) => ({ ...rule, id: mockUuid(), trainerProfileId: profile.id })));
       this.ptExceptions = this.ptExceptions.filter((item) => item.trainerProfileId !== profile.id).concat(input.exceptions.map((exception) => ({ ...exception, id: mockUuid(), trainerProfileId: profile.id })));
       this.audit({ category: "settings", action: "pt.availability.replace", entityType: "pt_trainer", entityId: profile.id, entityLabel: profile.displayName, summary: "Updated trainer availability" });
-      return { ...profile };
+      // Convex returns the saved schedule with the profile, so the caller can
+      // render it without a second workspace read.
+      return { ...this.ptTrainerView(profile), availabilityRules: this.ptRules.filter((rule) => rule.trainerProfileId === profile.id).map((rule) => ({ ...rule })), availabilityExceptions: this.ptExceptions.filter((exception) => exception.trainerProfileId === profile.id).map((exception) => ({ ...exception })) };
     });
   }
 
@@ -2163,24 +5714,7 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const profile = this.ptTrainers.find((item) => item.id === input.trainerProfileId && item.status === "published");
       if (!profile || !profile.branchIds.includes(input.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Trainer is not available at this branch.");
-      const slots: T.PtAvailableSlot[] = [];
-      for (let date = input.from; date <= input.to; date = addDays(date, 1)) {
-        const weekday = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as T.WeekdayKey[])[new Date(`${date}T12:00:00Z`).getUTCDay()]!;
-        const blocked = this.ptExceptions.filter((item) => item.trainerProfileId === profile.id && item.branchId === input.branchId && item.date === date);
-        for (const rule of this.ptRules.filter((item) => item.trainerProfileId === profile.id && item.branchId === input.branchId && item.weekday === weekday && item.active)) {
-          for (let minute = rule.startMinute; minute + 60 <= rule.endMinute; minute += 60) {
-            if (blocked.some((item) => item.startMinute === undefined || (minute < (item.endMinute ?? 1440) && (item.startMinute ?? 0) < minute + 60))) continue;
-            const hour = String(Math.floor(minute / 60)).padStart(2, "0");
-            const min = String(minute % 60).padStart(2, "0");
-            const startsAt = new Date(`${date}T${hour}:${min}:00+03:00`).toISOString();
-            const endsAt = new Date(Date.parse(startsAt) + 3_600_000).toISOString();
-            if (Date.parse(startsAt) <= Date.now()) continue;
-            if (this.ptBookings.some((item) => item.trainerProfileId === profile.id && ["reserved", "confirmed"].includes(item.status) && item.startsAt < endsAt && startsAt < item.endsAt)) continue;
-            slots.push({ trainerProfileId: profile.id, branchId: input.branchId, startsAt, endsAt });
-          }
-        }
-      }
-      return slots;
+      return this.ptOpenSlots(profile, input.branchId, input.from, input.to);
     });
   }
 
@@ -2191,6 +5725,18 @@ export class MockGymOSApi implements GymOSApi {
   createPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> {
     return this.respond(async () => {
       this.require("pt.book_for_member");
+      return await this.reservePtBooking(input);
+    });
+  }
+
+  // The member portal reserves against its own membership; staff booking on a
+  // member's behalf is the same reservation behind an extra permission.
+  createCustomerPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> {
+    return this.respond(async () => await this.reservePtBooking(input));
+  }
+
+  private async reservePtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> {
+    {
       const existing = this.ptBookings.find((item) => item.id === input.idempotencyKey);
       if (existing) return { ...existing };
       const membership = this.db.memberships.find((item) => item.id === input.membershipId);
@@ -2212,16 +5758,36 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({ memberId: member.id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, meta: { bookingId: booking.id } });
       this.audit({ category: "memberships", action: "pt.booking.create", entityType: "pt_booking", entityId: booking.id, entityLabel: `${member.fullName} · ${trainer.displayName}`, summary: "Reserved one PT credit", branchId: branch.id });
       return { ...booking };
-    });
+    }
   }
-
-  createCustomerPtBooking(input: T.CreatePtBookingInput): Promise<T.PtBooking> { return this.createPtBooking(input); }
 
   cancelPtBooking(bookingId: T.UUID, input: { reason: string; cancelledByGym?: boolean }): Promise<T.PtBooking> {
     return this.respond(() => {
       this.requireReason(input.reason);
       const booking = this.ptBookings.find((item) => item.id === bookingId);
       if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      // Convex: a trainer may cancel their own session; anyone else needs the
+      // member-booking permission, and only inside their branch scope.
+      const actor = this.actor();
+      if (actor.branchScope !== "all" && !actor.branchIds.includes(booking.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      const trainer = this.ptTrainers.find((item) => item.id === booking.trainerProfileId);
+      if (trainer?.userId === actor.id) this.require("pt.outcome.self"); else this.require("pt.book_for_member");
+      return this.releasePtBooking(booking, input);
+    });
+  }
+
+  cancelCustomerPtBooking(bookingId: T.UUID, reason: string): Promise<T.PtBooking> {
+    return this.respond(() => {
+      this.requireReason(reason);
+      const booking = this.ptBookings.find((item) => item.id === bookingId);
+      if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      return this.releasePtBooking(booking, { reason });
+    });
+  }
+
+  private releasePtBooking(booking: T.PtBooking, input: { reason: string; cancelledByGym?: boolean }): T.PtBooking {
+    {
+      const bookingId = booking.id;
       const policy = this.db.operationalPolicies.personalTraining;
       const result = ptCancellationResult({ startsAt: Date.parse(booking.startsAt), cancelledAt: Date.now(), cutoffHours: policy.cancellationCutoffHours, cancelledByGym: Boolean(input.cancelledByGym) });
       const entitlement = this.ptEntitlements.find((item) => item.id === booking.entitlementId)!;
@@ -2231,13 +5797,23 @@ export class MockGymOSApi implements GymOSApi {
       booking.status = result.status; booking.cancellationReason = input.reason.trim(); booking.updatedAt = nowISO();
       this.activity({ memberId: booking.memberId, type: "pt_booking_cancelled", title: result.restoreCredit ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: input.reason, meta: { bookingId } });
       return { ...booking };
-    });
+    }
   }
-
-  cancelCustomerPtBooking(bookingId: T.UUID, reason: string): Promise<T.PtBooking> { return this.cancelPtBooking(bookingId, { reason }); }
 
   reschedulePtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> {
     return this.respond(async () => {
+      // Convex: rescheduling is a staff booking action, never a trainer-only one.
+      this.require("pt.book_for_member");
+      return await this.movePtBooking(input);
+    });
+  }
+
+  rescheduleCustomerPtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> {
+    return this.respond(async () => await this.movePtBooking(input));
+  }
+
+  private async movePtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> {
+    {
       this.requireReason(input.reason);
       const booking = this.ptBookings.find((item) => item.id === input.bookingId);
       if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
@@ -2257,10 +5833,8 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({ memberId: booking.memberId, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: input.reason, meta: { bookingId: booking.id, startsAt: booking.startsAt } });
       this.audit({ category: "memberships", action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.id, entityLabel: booking.memberName, summary: "Rescheduled PT booking without changing credit balance", reason: input.reason, branchId: branch.id });
       return { ...booking };
-    });
+    }
   }
-
-  rescheduleCustomerPtBooking(input: T.ReschedulePtBookingInput): Promise<T.PtBooking> { return this.reschedulePtBooking(input); }
 
   completePtBooking(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.finishPtBooking(bookingId, "completed", input.reason); }
   markPtBookingNoShow(bookingId: T.UUID, input: { reason?: string } = {}): Promise<T.PtBooking> { return this.finishPtBooking(bookingId, "no_show", input.reason); }
@@ -2269,6 +5843,9 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const booking = this.ptBookings.find((item) => item.id === bookingId);
       if (!booking || !["reserved", "confirmed"].includes(booking.status)) throw ApiError.of(ERR.NOT_FOUND, "Active PT booking not found.");
+      // An outcome is a fact about a session that happened; Convex refuses it
+      // before the start, and so does the mock.
+      if (Date.parse(booking.startsAt) > Date.now()) throw ApiError.of(ERR.VALIDATION, "PT outcomes can only be recorded after the session begins.");
       const trainer = this.ptTrainers.find((item) => item.id === booking.trainerProfileId);
       if (trainer?.userId !== this.actor().id) this.require("pt.manage"); else this.require("pt.outcome.self");
       if (status === "no_show") this.requireReason(reason);
@@ -2282,11 +5859,17 @@ export class MockGymOSApi implements GymOSApi {
 
   requestPtPackage(input: T.RequestPtPackageInput): Promise<T.PtPackageOrder> {
     return this.respond(() => {
+      const membershipScope = this.ptMembershipScope(input.membershipId);
       const prior = this.ptOrders.find((item) => item.id === input.idempotencyKey);
-      if (prior) return { ...prior };
-      const membership = this.db.memberships.find((item) => item.id === input.membershipId);
+      if (prior) {
+        if (prior.memberId !== membershipScope.membership.memberId || prior.packageId !== input.packageId) throw ApiError.of(ERR.CONFLICT, "This idempotency key was already used for a different package request.");
+        this.ptOrderScope(prior);
+        return { ...prior };
+      }
+      const membership = membershipScope.membership;
       const ptPackage = this.ptPackages.find((item) => item.id === input.packageId && item.status === "active");
       if (!membership || !ptPackage) throw ApiError.of(ERR.NOT_FOUND, "Membership or PT package not found.");
+      this.ptMembershipScope(membership.id, membership.memberId, true);
       const charge: T.Charge = { id: mockUuid(), organizationId: this.db.organization.id, memberId: membership.memberId, membershipId: membership.id, description: ptPackage.name, subtotal: { ...ptPackage.totalPrice }, discount: money(0), tax: money(0), total: { ...ptPackage.totalPrice }, paidAmount: money(0), outstandingAmount: { ...ptPackage.totalPrice }, status: "unpaid", createdAt: nowISO() };
       this.db.charges.push(charge);
       const now = nowISO();
@@ -2306,16 +5889,19 @@ export class MockGymOSApi implements GymOSApi {
       const idempotencyKey = input.idempotencyKey.trim();
       if (!idempotencyKey) throw ApiError.of(ERR.VALIDATION, "An idempotency key is required.");
       const signature = JSON.stringify({ orderId, reason: input.reason.trim() });
+      const order = this.ptOrders.find((item) => item.id === orderId);
+      if (!order) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+      const orderScope = this.ptOrderScope(order);
       const prior = this.ptCancellationIdempotency.get(idempotencyKey);
       if (prior) {
         if (prior.signature !== signature) throw ApiError.of(ERR.CONFLICT, "This cancellation key was already used for a different request.");
+        if (prior.result.id !== order.id) throw ApiError.of(ERR.CONFLICT, "The cancellation idempotency record does not match the requested order.");
+        this.ptOrderScope(prior.result);
         return { ...prior.result };
       }
-      const order = this.ptOrders.find((item) => item.id === orderId);
-      if (!order) throw ApiError.of(ERR.NOT_FOUND, "PT package order not found.");
+      this.ptOrderScope(order, true);
       if (order.status !== "pending_payment") throw ApiError.of(ERR.VALIDATION, "Only a pending PT package order can be cancelled. Use the PT refund flow after activation.");
-      const charge = this.db.charges.find((item) => item.id === order.chargeId);
-      if (!charge) throw ApiError.of(ERR.NOT_FOUND, "PT package charge not found.");
+      const charge = orderScope.charge;
       if (charge.paidAmount.amount > 0) throw ApiError.of(ERR.VALIDATION, "Refund or void the collected payment before cancelling this PT order.");
       charge.status = "void";
       charge.outstandingAmount = money(0);
@@ -2429,7 +6015,7 @@ export class MockGymOSApi implements GymOSApi {
     overrideReason?: string;
     discount?: T.Money;
     discountReason?: string;
-    payment?: { amount: T.Money; method: T.PaymentMethodKey; externalReference?: string };
+    payment?: { amount: T.Money; method: T.PaymentMethodKey; externalReference?: string; branchId?: T.UUID };
     previousMembershipId?: T.UUID;
     operation?: "sale" | "renewal" | "plan_change";
     previousPlanId?: T.UUID;
@@ -2483,6 +6069,8 @@ export class MockGymOSApi implements GymOSApi {
       if (overlap) throw ApiError.of(ERR.CONFLICT, "This member already has a membership covering part of the selected term.");
     }
     const recordId = mockUuid();
+    // New sale amounts are denominated in the gym's currency, never a fixed one.
+    const saleCurrency = this.db.organization.currency;
     const record: MembershipRecord = {
       id: recordId,
       organizationId: this.db.organization.id,
@@ -2493,8 +6081,8 @@ export class MockGymOSApi implements GymOSApi {
       endDate,
       totalVisits: plan.kind === "visits" ? plan.visitAllowance : undefined,
       remainingVisits: plan.kind === "visits" ? plan.visitAllowance : undefined,
-      salePrice: money(priceMinor),
-      discount: money(discountMinor),
+      salePrice: money(priceMinor, saleCurrency),
+      discount: money(discountMinor, saleCurrency),
       discountReason: args.discountReason,
       discountApprovalStatus: discountMinor > 0 ? (approvalPending ? "pending" : "approved") : "none",
       soldById: args.soldBy,
@@ -2523,12 +6111,12 @@ export class MockGymOSApi implements GymOSApi {
       memberId: member.id,
       membershipId: record.id,
       description: `${plan.name} membership`,
-      subtotal: money(priceMinor),
-      discount: money(discountMinor),
-      tax: money(0),
-      total: money(totalMinor),
-      paidAmount: money(0),
-      outstandingAmount: money(totalMinor),
+      subtotal: money(priceMinor, saleCurrency),
+      discount: money(discountMinor, saleCurrency),
+      tax: money(0, saleCurrency),
+      total: money(totalMinor, saleCurrency),
+      paidAmount: money(0, saleCurrency),
+      outstandingAmount: money(totalMinor, saleCurrency),
       status: totalMinor === 0 ? "paid" : "unpaid",
       issueDate: this.today(),
       dueDate: args.startDate > this.today() ? args.startDate : this.today(),
@@ -2559,8 +6147,8 @@ export class MockGymOSApi implements GymOSApi {
         entityId: record.id,
         entityLabel: `${member.fullName} · ${member.memberNumber}`,
         summary: approvalPending
-          ? `Discount of JOD ${(discountMinor / 1000).toFixed(3)} exceeds limit — approval requested`
-          : `Discount of JOD ${(discountMinor / 1000).toFixed(3)} applied`,
+          ? `Discount of ${this.amountText(discountMinor)} exceeds limit — approval requested`
+          : `Discount of ${this.amountText(discountMinor)} applied`,
         reason: args.discountReason,
         before: { price: priceMinor, discount: 0, approvalStatus: "none" },
         after: { price: priceMinor, discount: discountMinor, approvalStatus: approvalPending ? "pending" : "approved" },
@@ -2576,7 +6164,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "membership",
         entityId: record.id,
         entityLabel: `${member.fullName} · ${member.memberNumber}`,
-        summary: `Price override: JOD ${(priceMinor / 1000).toFixed(3)}`,
+        summary: `Price override: ${this.amountText(priceMinor)}`,
         reason: args.overrideReason,
         before: { price: plan.basePrice.amount },
         after: { price: priceMinor },
@@ -2604,6 +6192,7 @@ export class MockGymOSApi implements GymOSApi {
       const result = this.recordPayment({
         memberId: member.id,
         chargeId: charge.id,
+        branchId: args.payment.branchId,
         amount: args.payment.amount,
         method: args.payment.method,
         externalReference: args.payment.externalReference,
@@ -2620,14 +6209,52 @@ export class MockGymOSApi implements GymOSApi {
       entityType: "membership",
       entityId: record.id,
       entityLabel: `${member.fullName} · ${member.memberNumber}`,
-      summary: `${plan.name} — JOD ${(totalMinor / 1000).toFixed(3)}`,
+      summary: `${plan.name} — ${this.amountText(totalMinor)}`,
       after: { startDate: record.startDate, endDate: record.endDate, total: totalMinor },
       branchId: member.homeBranchId,
     });
 
     const result = { membership: this.toMembership(record), charge, payment, receipt, timelineEventIds: timelineIds };
     if (idempotencyMapKey && idempotencySignature) this.membershipSaleIdempotency.set(idempotencyMapKey, { signature: idempotencySignature, result });
+    if (operation === "sale") this.applyReferralReward(member);
     return result;
+  }
+
+  /** Parity with Convex: first-sale referral reward, capped inside its window. */
+  private applyReferralReward(referredMember: MemberRecord): void {
+    const referrerId = (referredMember as MemberRecord & { referredByMemberId?: string }).referredByMemberId;
+    if (!referrerId || referrerId === referredMember.id) return;
+    const policy = this.db.operationalPolicies.referrals;
+    if (!policy?.enabled) return;
+    if (this.referralRewards.some((reward) => reward.referredMemberId === referredMember.id)) return;
+    const referrer = this.db.members.find((candidate) => candidate.id === referrerId && candidate.status !== "archived");
+    if (!referrer) return;
+    const windowStart = Date.now() - policy.windowDays * 86_400_000;
+    const used = this.referralRewards.filter((reward) => reward.referrerId === referrerId && Date.parse(reward.createdAt) >= windowStart).reduce((sum, reward) => sum + reward.days, 0);
+    const grant = Math.max(0, Math.min(policy.rewardDays, policy.maxRewardDaysPerWindow - used));
+    const active = this.db.memberships
+      .filter((membership) => membership.memberId === referrerId && ["active", "expiring", "frozen"].includes(this.membershipStatusOf(membership)))
+      .sort((left, right) => right.endDate.localeCompare(left.endDate))[0];
+    let status = "applied";
+    if (grant === 0) status = "cap_reached";
+    else if (!active) status = "no_active_membership";
+    else {
+      const before = active.endDate;
+      active.endDate = addDays(active.endDate, grant);
+      active.adjustments = [...active.adjustments, { id: mockUuid(), membershipId: active.id, type: "referral_bonus" as never, reason: `Referred ${referredMember.fullName} — ${grant} free day${grant === 1 ? "" : "s"}`, actorId: this.actor().id, before: { endDate: before }, after: { endDate: active.endDate }, approvalStatus: "not_required", createdAt: nowISO() }];
+    }
+    this.referralRewards.push({ referrerId, referredMemberId: referredMember.id, days: status === "applied" ? grant : 0, status, createdAt: nowISO() });
+    this.audit({
+      category: "memberships",
+      action: "membership.referral_reward",
+      entityType: "member",
+      entityId: referrerId,
+      entityLabel: referrer.fullName,
+      summary: status === "applied"
+        ? `Referral reward: ${grant} free day${grant === 1 ? "" : "s"} for referring ${referredMember.fullName}`
+        : `Referral reward for ${referredMember.fullName} not applied (${status === "cap_reached" ? "cap reached" : "no active membership"})`,
+      branchId: referrer.homeBranchId,
+    });
   }
 
   createMembershipSale(input: T.CreateMembershipSaleInput): Promise<T.MembershipSaleResult> {
@@ -3109,22 +6736,28 @@ export class MockGymOSApi implements GymOSApi {
   createLead(input: T.CreateLeadInput): Promise<T.LeadDetail> {
     return this.respond(() => {
       this.require("crm.write");
+      const fullName = normalizeLeadName(input.fullName);
+      const phone = normalizeLeadPhone(input.phone, this.db.organization.phoneCountryCallingCode);
+      const email = normalizeOptionalEmail(input.email);
+      if (fullName.length < 3) throw ApiError.of(ERR.VALIDATION, "Full name must be at least 3 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
+      if (!isValidLeadPhone(phone)) throw ApiError.of(ERR.VALIDATION, "Enter a valid phone number.", { fieldErrors: { phone: ["Enter a valid phone"] } });
+      if (!isValidOptionalEmail(input.email)) throw ApiError.of(ERR.VALIDATION, "Enter a valid email address.", { fieldErrors: { email: ["Enter a valid email"] } });
       const requestedOwnerId = input.ownerId;
-      if (requestedOwnerId && requestedOwnerId !== "unassigned" && requestedOwnerId !== this.actor().id) {
-        this.require("crm.assign");
-        const owner = this.db.users.find((user) => user.id === requestedOwnerId && user.status === "active");
-        if (!owner || !["owner", "manager", "salesperson"].includes(owner.role)) throw ApiError.of(ERR.NOT_FOUND, "Lead owner not found.");
+      const ownerId = requestedOwnerId === "unassigned" ? undefined : requestedOwnerId ?? this.actor().id;
+      if (ownerId) {
+        if (ownerId !== this.actor().id) this.require("crm.assign");
+        this.validateLeadOwner(ownerId);
       }
       const lead: T.Lead = {
         id: mockUuid(),
         organizationId: this.db.organization.id,
         branchId: input.branchId,
-        fullName: input.fullName.trim(),
-        phone: input.phone.trim(),
-        email: input.email?.trim().toLowerCase() || undefined,
+        fullName,
+        phone,
+        email,
         stage: "new",
         source: input.source,
-        ownerId: input.ownerId === "unassigned" ? undefined : input.ownerId ?? this.actor().id,
+        ownerId,
         expectedValue: input.expectedValue,
         nextFollowUpAt: input.nextFollowUpAt,
         createdAt: nowISO(),
@@ -3162,8 +6795,48 @@ export class MockGymOSApi implements GymOSApi {
       this.require("crm.write");
       const lead = this.db.leads.find((l) => l.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
-      if (input.ownerId && input.ownerId !== lead.ownerId) this.require("crm.assign");
-      Object.assign(lead, input, { updatedAt: nowISO() });
+      const closingAsLost = input.stage === "lost" && lead.stage !== "lost";
+      const lostReason = input.lostReason?.trim();
+      if (closingAsLost && (!lostReason || lostReason.length < 5)) throw ApiError.of(ERR.VALIDATION, "A specific reason is required before closing a lead.");
+      const before = { stage: lead.stage, lostReason: lead.lostReason ?? null };
+      if (input.ownerId !== undefined) {
+        const ownerId = input.ownerId === "unassigned" ? undefined : input.ownerId;
+        if (ownerId && ownerId !== lead.ownerId) this.require("crm.assign");
+        if (ownerId) this.validateLeadOwner(ownerId);
+        Object.assign(lead, { ...input, ownerId }, { updatedAt: nowISO() });
+      } else {
+        Object.assign(lead, input, { updatedAt: nowISO() });
+      }
+      if (closingAsLost) {
+        // Closing from the lead record must leave the same audit trail as
+        // closing from the pipeline, and nothing about a lost lead is due.
+        lead.lostReason = lostReason;
+        lead.nextFollowUpAt = undefined;
+        for (const task of this.db.tasks) if (task.leadId === lead.id && task.status === "open") { task.status = "cancelled"; task.outcome = `Lead marked not sold: ${lostReason}`; task.completedAt = nowISO(); }
+        this.audit({ category: "crm", action: "lead.lost", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: "Lead marked as not sold", reason: lostReason, before, after: { stage: "lost", lostReason: lostReason ?? null }, branchId: lead.branchId });
+      }
+      return this.getLeadSync(leadId);
+    });
+  }
+
+  updateLeadContact(leadId: T.UUID, input: T.UpdateLeadContactInput): Promise<T.LeadDetail> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const lead = this.db.leads.find((item) => item.id === leadId);
+      if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      const fullName = normalizeLeadName(input.fullName);
+      const phone = normalizeLeadPhone(input.phone, this.db.organization.phoneCountryCallingCode);
+      const email = normalizeOptionalEmail(input.email);
+      if (fullName.length < 3) throw ApiError.of(ERR.VALIDATION, "Full name must be at least 3 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
+      if (!isValidLeadPhone(phone)) throw ApiError.of(ERR.VALIDATION, "Enter a valid phone number.", { fieldErrors: { phone: ["Enter a valid phone"] } });
+      if (!isValidOptionalEmail(input.email)) throw ApiError.of(ERR.VALIDATION, "Enter a valid email address.", { fieldErrors: { email: ["Enter a valid email"] } });
+      const before = { fullName: lead.fullName, phone: lead.phone, email: lead.email ?? null };
+      const after = { fullName, phone, email: email ?? null };
+      const changedFields = Object.entries(after).filter(([field, value]) => before[field as keyof typeof before] !== value).map(([field]) => field);
+      if (changedFields.length === 0) return this.getLeadSync(leadId);
+      Object.assign(lead, { fullName, phone, email, updatedAt: nowISO() });
+      this.audit({ category: "crm", action: "lead.contact.update", entityType: "lead", entityId: lead.id, entityLabel: fullName, summary: "Lead contact details corrected", before, after });
+      this.activity({ leadId, type: "lead_contact_updated", title: "Lead contact details corrected", body: "Contact details were updated; pipeline status was unchanged.", actorId: this.actor().id, actorName: this.actor().name, meta: { fields: changedFields.join(",") } });
       return this.getLeadSync(leadId);
     });
   }
@@ -3173,10 +6846,26 @@ export class MockGymOSApi implements GymOSApi {
       this.require("crm.write");
       const lead = this.db.leads.find((l) => l.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      const lossReason = input.stage === "lost" ? input.notes?.trim() : undefined;
+      if (input.stage === "lost" && (!lossReason || lossReason.length < 5)) {
+        throw ApiError.of(ERR.VALIDATION, "A specific reason is required before closing a lead.");
+      }
+      const before = { stage: lead.stage, lostReason: lead.lostReason ?? null };
       if (input.stage) lead.stage = input.stage;
       else if (lead.stage === "new") lead.stage = "attempted";
-      if (input.nextFollowUpAt !== undefined) lead.nextFollowUpAt = input.nextFollowUpAt || undefined;
+      if (input.stage === "lost") {
+        lead.lostReason = lossReason;
+        lead.nextFollowUpAt = undefined;
+      } else if (input.nextFollowUpAt !== undefined) lead.nextFollowUpAt = input.nextFollowUpAt || undefined;
+      else if (shouldClearLeadFollowUp({ outcome: input.outcome, currentNextFollowUpAt: lead.nextFollowUpAt, isDue: (dueAt) => todayISODate(TZ, new Date(dueAt)) <= this.today() })) {
+        // This contact was the due follow-up (or ended the thread): an
+        // overdue date must not send the lead straight back to Today.
+        lead.nextFollowUpAt = undefined;
+      }
       lead.updatedAt = nowISO();
+      // The lead keeps its own next-follow-up date; open tasks about the lead
+      // are the same work and must not survive as duplicates on Today.
+      this.resolveFollowUpTasksForContact({ leadId: lead.id }, lead.fullName, { ...input, nextFollowUpAt: input.stage === "lost" ? undefined : input.nextFollowUpAt }, { createWhenMissing: false });
       const outcomeLabels: Record<T.ContactOutcome, string> = {
         no_answer: "No answer",
         answered_interested: "Answered — interested",
@@ -3184,18 +6873,33 @@ export class MockGymOSApi implements GymOSApi {
         answered_call_back: "Asked for a callback",
         wrong_number: "Wrong number",
         whatsapp_sent: "WhatsApp sent",
+        whatsapp_opened: "WhatsApp handoff opened — delivery not confirmed",
         trial_booked: "Trial booked",
         trial_completed: "Trial completed",
       };
       this.activity({
         leadId,
         type: "call_attempt",
-        title: `Call — ${outcomeLabels[input.outcome].toLowerCase()}`,
+        title: input.outcome === "whatsapp_opened" ? outcomeLabels[input.outcome] : `Call — ${outcomeLabels[input.outcome].toLowerCase()}`,
         body: input.notes,
         actorId: this.actor().id,
         actorName: this.actor().name,
         meta: { outcome: input.outcome },
       });
+      if (input.stage === "lost") {
+        this.audit({
+          category: "crm",
+          action: "lead.lost",
+          entityType: "lead",
+          entityId: lead.id,
+          entityLabel: lead.fullName,
+          summary: "Lead marked as not sold",
+          reason: lossReason,
+          before,
+          after: { stage: "lost", lostReason: lossReason ?? null },
+          branchId: lead.branchId,
+        });
+      }
       return this.getLeadSync(leadId);
     });
   }
@@ -3283,6 +6987,7 @@ export class MockGymOSApi implements GymOSApi {
         price: input.price,
         expiresAt: input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86_400_000).toISOString() : undefined,
         status: "draft",
+        publicToken: `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`,
         createdById: this.actor().id,
         createdAt: nowISO(),
       };
@@ -3290,7 +6995,7 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({
         leadId: lead.id,
         type: "offer_drafted",
-        title: `Offer drafted — ${plan.name} at JOD ${(input.price.amount / 1000).toFixed(3)}`,
+        title: `Offer drafted — ${plan.name} at ${this.amountText(input.price)}`,
         actorId: this.actor().id,
         actorName: this.actor().name,
         meta: { offerId: offer.id },
@@ -3422,6 +7127,8 @@ export class MockGymOSApi implements GymOSApi {
       });
       if (query.status) items = items.filter((t) => t.status === query.status);
       if (query.ownerId) items = items.filter((t) => t.ownerId === query.ownerId);
+      if (query.memberId) items = items.filter((t) => t.memberId === query.memberId);
+      if (query.leadId) items = items.filter((t) => t.leadId === query.leadId);
       if (query.overdueOnly) items = items.filter((t) => t.status === "open" && t.dueAt < nowISO());
       const dueBefore = query.dueBefore;
       if (dueBefore) items = items.filter((t) => t.dueAt <= dueBefore);
@@ -3437,6 +7144,13 @@ export class MockGymOSApi implements GymOSApi {
   createFollowUp(input: T.CreateTaskInput): Promise<T.Task> {
     return this.respond(() => {
       this.require("crm.write");
+      const related = input.relatedTaskId ? this.db.tasks.find((candidate) => candidate.id === input.relatedTaskId) : undefined;
+      if (input.relatedTaskId) {
+        if (!related) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+        const sameSubject = (input.memberId && related.memberId === input.memberId) || (input.leadId && related.leadId === input.leadId);
+        if (!sameSubject) throw ApiError.of(ERR.VALIDATION, "The related task is about someone else.");
+        if (related.status !== "open") throw ApiError.of(ERR.VALIDATION, "The related task is no longer open. Review the suggestion again.");
+      }
       const subject = input.leadId
         ? this.db.leads.find((l) => l.id === input.leadId)?.fullName
         : this.db.members.find((m) => m.id === input.memberId)?.fullName;
@@ -3455,6 +7169,8 @@ export class MockGymOSApi implements GymOSApi {
         subjectName: subject ?? "—",
         createdById: this.actor().id,
         createdAt: nowISO(),
+        relatedTaskId: related?.id,
+        relatedTaskTitle: related?.title,
       };
       this.db.tasks.push(task);
       if (input.memberId) {
@@ -3462,6 +7178,7 @@ export class MockGymOSApi implements GymOSApi {
           memberId: input.memberId,
           type: "task_created",
           title: `Task: ${input.title}`,
+          body: related ? `Follow-on to: ${related.title}` : undefined,
           actorId: this.actor().id,
           actorName: this.actor().name,
         });
@@ -3497,6 +7214,8 @@ export class MockGymOSApi implements GymOSApi {
       this.require("crm.write");
       this.require("members.write");
       this.require("memberships.sell");
+      const saleBranch = this.db.branches.find((branch) => branch.id === input.homeBranchId && branch.status === "active");
+      if (!saleBranch || !this.branchIsVisible(saleBranch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       const lead = this.db.leads.find((item) => item.id === leadId);
       if (!lead) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
       if (lead.stage === "won" && lead.convertedMemberId) throw ApiError.of(ERR.VALIDATION, "Lead was already converted.");
@@ -3545,12 +7264,14 @@ export class MockGymOSApi implements GymOSApi {
         fullName: lead.fullName,
         phone: lead.phone,
         email: lead.email,
+        gender: input.gender,
         homeBranchId: input.homeBranchId,
         preferredLanguage: input.preferredLanguage,
         marketingOptIn: input.marketingOptIn,
         marketingPreferenceSource: input.marketingPreferenceSource,
         source: lead.source,
         assignedSalespersonId: lead.ownerId,
+        referredByMemberId: (lead as T.Lead & { referredByMemberId?: string }).referredByMemberId,
       });
       const sale = this.buildSale({ memberId: member.id, planId: plan.id, startDate: input.startDate, idempotencyKey: `lead-sale:${input.idempotencyKey}`, standardStartDate: this.today(), soldBy: this.actor().id });
       lead.stage = "won";
@@ -3570,15 +7291,22 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   private createMemberSync(input: T.CreateMemberInput): MemberRecord {
+    const branch = this.db.branches.find((b) => b.id === input.homeBranchId);
+    if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    const referrer = input.referredByMemberId
+      ? this.db.members.find((candidate) => candidate.id === input.referredByMemberId && candidate.status !== "archived" && this.branchIsVisible(candidate.homeBranchId))
+      : undefined;
+    if (input.referredByMemberId && !referrer) throw ApiError.of(ERR.NOT_FOUND, "The referring member was not found.");
     this.db.counters.memberNumber += 1;
-    const branch = this.db.branches.find((b) => b.id === input.homeBranchId) ?? this.db.branches[0]!;
     const record: MemberRecord = {
       id: mockUuid(),
       memberNumber: `${branch.code}-${this.db.counters.memberNumber}`,
       fullName: input.fullName.trim(),
       fullNameAr: input.fullNameAr,
-      phone: input.phone.trim(),
-      email: input.email?.trim() || undefined,
+      referredByMemberId: input.referredByMemberId,
+      referredByName: referrer?.fullName,
+      phone: normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
+      email: normalizeOptionalEmail(input.email),
       gender: input.gender,
       dateOfBirth: input.dateOfBirth,
       homeBranchId: branch.id,
@@ -3607,6 +7335,83 @@ export class MockGymOSApi implements GymOSApi {
     });
     return record;
   }
+
+  /** The person's open tasks in the shape the follow-up surfaces share with Convex. */
+  private followUpRelatedTasks(subject: { memberId?: string; leadId?: string }): FollowUpRelatedTask[] {
+    const me = this.actor().id;
+    return this.db.tasks
+      .filter((task) => task.status === "open" && (subject.memberId ? task.memberId === subject.memberId : subject.leadId ? task.leadId === subject.leadId : false))
+      .map((task) => ({ id: task.id, type: task.type, title: task.title, ownerId: task.ownerId, ownerName: task.ownerName, dueAt: task.dueAt, priority: task.priority, status: task.status, mine: !task.ownerId || task.ownerId === me, createdById: task.createdById, relatedTaskId: task.relatedTaskId, relatedTaskTitle: task.relatedTaskTitle }))
+      .sort((left, right) => left.dueAt.localeCompare(right.dueAt));
+  }
+
+  /** The preview's equivalent of `members.followup_context`: the same builder over the seeded records; no reminder deliveries exist in the preview. */
+  private memberFollowUpContextSync(memberId: string): T.MemberFollowUpContext {
+    this.require("members.read");
+    const member = this.db.members.find((item) => item.id === memberId);
+    if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+    const today = this.today();
+    const memberships: FollowUpMembershipLike[] = this.db.memberships
+      .filter((term) => term.memberId === member.id)
+      .map((term) => ({
+        id: term.id,
+        planName: this.db.plans.find((plan) => plan.id === term.planId)?.name,
+        branchName: this.db.branches.find((branch) => branch.id === term.homeBranchId)?.name,
+        startDate: term.startDate,
+        endDate: term.endDate,
+        status: this.membershipStatusOf(term),
+        cancelledAt: term.cancelledAt,
+        previousMembershipId: term.previousMembershipId,
+        remainingVisits: term.remainingVisits,
+        activeFreeze: term.activeFreeze ? { status: term.activeFreeze.status, startDate: term.activeFreeze.startDate, endDate: term.activeFreeze.endDate } : undefined,
+        outstandingMinor: this.db.charges.filter((charge) => charge.membershipId === term.id).reduce((sum, charge) => sum + collectibleOutstandingMinor(charge, today), 0),
+      }));
+    const timeline: FollowUpTimelineLike[] = this.db.activities
+      .filter((event) => event.memberId === member.id)
+      .map((event) => ({ id: event.id, type: event.type, title: event.title, body: event.body, occurredAt: event.occurredAt, actorName: event.actorName, meta: event.meta }));
+    const tasks = permissionsFor(this.db, currentRole(this.db)).includes("crm.read") ? this.followUpRelatedTasks({ memberId: member.id }) : [];
+    const notifications = this.db.notificationSettings;
+    return buildMemberFollowUpContext({
+      member: { id: member.id, fullName: member.fullName, phone: member.phone, preferredLanguage: member.preferredLanguage, status: member.status, consent: { marketingOptIn: member.marketingOptIn, marketingPreference: member.marketingPreference } },
+      memberships,
+      timeline,
+      tasks,
+      deliveries: [],
+      quietHours: { start: notifications.quietHoursStart ?? "22:00", end: notifications.quietHoursEnd ?? "08:00" },
+      deliveryMode: notifications.automationDeliveryMode,
+      currency: this.db.organization.currency,
+      timezone: this.db.organization.timezone || TZ,
+      today,
+      now: Date.now(),
+    });
+  }
+
+  /** Open 60-minute slots for one trainer at one branch, exactly as `listPtAvailableSlots` computes them. */
+  private ptOpenSlots(profile: T.PtTrainerProfile, branchId: T.UUID, from: T.ISODate, to: T.ISODate): T.PtAvailableSlot[] {
+    const slots: T.PtAvailableSlot[] = [];
+    for (let date = from; date <= to; date = addDays(date, 1)) {
+      const weekday = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as T.WeekdayKey[])[new Date(`${date}T12:00:00Z`).getUTCDay()]!;
+      const blocked = this.ptExceptions.filter((item) => item.trainerProfileId === profile.id && item.branchId === branchId && item.date === date);
+      for (const rule of this.ptRules.filter((item) => item.trainerProfileId === profile.id && item.branchId === branchId && item.weekday === weekday && item.active)) {
+        for (let minute = rule.startMinute; minute + 60 <= rule.endMinute; minute += 60) {
+          if (blocked.some((item) => item.startMinute === undefined || (minute < (item.endMinute ?? 1440) && (item.startMinute ?? 0) < minute + 60))) continue;
+          const hour = String(Math.floor(minute / 60)).padStart(2, "0");
+          const min = String(minute % 60).padStart(2, "0");
+          const startsAt = new Date(`${date}T${hour}:${min}:00+03:00`).toISOString();
+          const endsAt = new Date(Date.parse(startsAt) + 3_600_000).toISOString();
+          if (Date.parse(startsAt) <= Date.now()) continue;
+          if (this.ptBookings.some((item) => item.trainerProfileId === profile.id && ["reserved", "confirmed"].includes(item.status) && item.startsAt < endsAt && startsAt < item.endsAt)) continue;
+          slots.push({ trainerProfileId: profile.id, branchId, startsAt, endsAt });
+        }
+      }
+    }
+    return slots;
+  }
+
+  getMemberFollowUpContext(memberId: T.UUID): Promise<T.MemberFollowUpContext> {
+    return this.respond(() => this.memberFollowUpContextSync(memberId));
+  }
+
 
   listRenewalQueue(query: RenewalQueueQuery): Promise<T.Page<T.RenewalQueueItem>> {
     return this.respond(() => {
@@ -3661,6 +7466,57 @@ export class MockGymOSApi implements GymOSApi {
     return this.subscribeOnce(() => this.listRenewalQueue(query), onValue, onError);
   }
 
+  listAtRiskMembers(query: T.AtRiskMemberQuery): Promise<T.Page<T.AtRiskMemberItem>> {
+    return this.respond(() => {
+      this.require("crm.read");
+      const branchId = this.branchScopedBranchId(query.branchId);
+      const risks = deriveRetentionRisks({
+        today: this.today(),
+        inactivityDays: this.db.operationalPolicies.retention.inactivityDays,
+        renewalWindowDays: this.db.operationalPolicies.membership.renewalWindowDays,
+        expiredWinBackDays: this.db.operationalPolicies.retention.expiredWinBackDays,
+        members: this.db.members,
+        memberships: this.db.memberships,
+        checkIns: this.db.checkIns,
+        snoozes: this.retentionStates,
+        includeSnoozed: query.includeSnoozed,
+      }).filter((risk) => !branchId || risk.branchId === branchId)
+        .filter((risk) => currentRole(this.db) !== "salesperson" || risk.assignedSalespersonId === this.actor().id)
+        .filter((risk) => !query.reason || query.reason === "all" || risk.reasons.some((reason) => reason.kind === query.reason));
+      const search = query.search?.trim().toLowerCase();
+      const items = risks.flatMap((risk): T.AtRiskMemberItem[] => {
+        const member = this.db.members.find((candidate) => candidate.id === risk.memberId);
+        const membership = this.db.memberships.find((candidate) => candidate.id === risk.membershipId);
+        if (!member || !membership) return [];
+        const memberSummary = this.toMemberSummary(member);
+        const membershipSummary = this.toMembershipSummary(membership);
+        if (search && ![memberSummary.fullName, memberSummary.memberNumber, memberSummary.phone, membershipSummary.planName].some((value) => value.toLowerCase().includes(search))) return [];
+        const contact = this.db.activities.filter((activity) => activity.memberId === member.id && activity.type === "call_attempt").sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0];
+        return [{ ...risk, member: memberSummary, membership: membershipSummary, lastContactAt: contact?.occurredAt, lastContactOutcome: contact?.meta?.outcome ? String(contact.meta.outcome) : undefined, recommendedSnoozeDays: this.db.operationalPolicies.retention.defaultSnoozeDays }];
+      });
+      return paginate(this.maybeEmpty(items), query);
+    });
+  }
+
+  subscribeAtRiskMembers(query: T.AtRiskMemberQuery, onValue: (page: T.Page<T.AtRiskMemberItem>) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.listAtRiskMembers(query), onValue, onError);
+  }
+
+  snoozeAtRiskMember(input: T.SnoozeAtRiskMemberInput): Promise<void> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
+      if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      const today = this.today();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.until) || input.until <= today || input.until > addDays(today, 90)) throw ApiError.of(ERR.VALIDATION, "Choose a snooze date within the next 90 days.");
+      const existing = this.retentionStates.find((state) => state.memberId === member.id);
+      if (existing) Object.assign(existing, { snoozedUntil: input.until, reason: input.reason?.trim() });
+      else this.retentionStates.push({ memberId: member.id, snoozedUntil: input.until, reason: input.reason?.trim() });
+      this.activity({ memberId: member.id, type: "note", title: `Retention follow-up snoozed until ${input.until}`, body: input.reason?.trim(), actorId: this.actor().id, actorName: this.actor().name, meta: { kind: "retention_snooze", until: input.until } });
+      this.audit({ category: "crm", action: "retention.snooze", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `At-risk follow-up snoozed until ${input.until}`, reason: input.reason?.trim(), after: { until: input.until }, branchId: member.homeBranchId });
+    });
+  }
+
   private evaluateForMember(member: MemberRecord, branchId: T.UUID): {
     decision: T.CheckInDecision;
     reasonCodes: T.CheckInReasonCode[];
@@ -3684,6 +7540,7 @@ export class MockGymOSApi implements GymOSApi {
             planBranchAccess: plan?.branchAccess ?? "all",
             planBranchIds: plan?.branchIds ?? [],
             remainingVisits: current.remainingVisits,
+            startDate: current.startDate,
             endDate: current.endDate,
           }
         : undefined,
@@ -3704,10 +7561,20 @@ export class MockGymOSApi implements GymOSApi {
       if (q.length < 3) {
         return { found: false, decision: "blocked", reasonCodes: [], message: "Keep typing — at least 3 characters." };
       }
-      const member = this.db.members.find((m) =>
-        this.matchesSearch([m.fullName, m.fullNameAr, m.phone, m.memberNumber, m.email], q),
-      );
+      const lookup = resolveMemberLookup(this.db.members, q, this.db.organization.phoneCountryCallingCode);
+      const member = lookup.member;
       if (!member) {
+        if (lookup.candidates.length > 1) {
+          // Never decide for the first of several people who share a name or
+          // number fragment: the desk picks, then the exact number resolves.
+          return {
+            found: false,
+            decision: "blocked",
+            reasonCodes: [],
+            message: `${lookup.candidates.length} members match “${q}”. Choose the right person to continue.`,
+            candidates: lookup.candidates.slice(0, MAX_LOOKUP_CANDIDATES).map((candidate) => this.toMemberSummary(candidate)),
+          };
+        }
         return { found: false, decision: "blocked", reasonCodes: [], message: `No member matches “${q}”.` };
       }
       const evaluation = this.evaluateForMember(member, input.branchId);
@@ -3813,6 +7680,7 @@ export class MockGymOSApi implements GymOSApi {
       memberId: member.id,
       type: "check_in",
       title: `Checked in — ${checkIn.branchName}`,
+      body: overrideReason,
       actorId: this.actor().id,
       actorName: this.actor().name,
       meta: { decision },
@@ -3894,6 +7762,7 @@ export class MockGymOSApi implements GymOSApi {
   private recordPayment(args: {
     memberId: T.UUID;
     chargeId?: T.UUID;
+    branchId?: T.UUID;
     amount: T.Money;
     method: T.PaymentMethodKey;
     idempotencyKey: string;
@@ -3901,6 +7770,12 @@ export class MockGymOSApi implements GymOSApi {
   }): { payment: T.Payment; receipt: T.Receipt; timelineEventId: T.UUID } {
     const member = this.db.members.find((m) => m.id === args.memberId);
     if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+    // The drawer that takes the money is the desk's branch when the caller
+    // names one; a member paying away from home must not credit the home
+    // branch's shift.
+    const branchId = args.branchId ?? member.homeBranchId;
+    if (!this.db.branches.some((b) => b.id === branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    if (!this.branchIsVisible(branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
     const method = this.db.paymentMethods.find((m) => m.key === args.method);
     if (!method?.enabled) throw ApiError.of(ERR.VALIDATION, `Payment method “${args.method}” is disabled.`);
     if (args.amount.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Payment currency does not match the organization.");
@@ -3935,8 +7810,7 @@ export class MockGymOSApi implements GymOSApi {
     if (args.amount.amount > charge.outstandingAmount.amount) throw ApiError.of(ERR.VALIDATION, "Payment cannot exceed the outstanding balance.");
     const amount = args.amount.amount;
 
-    // cash requires an open shift at the member's home branch
-    const branchId = member.homeBranchId;
+    // cash requires an open shift at the branch taking the money
     let shift: T.CashShift | undefined;
     if (method.affectsCashDrawer) {
       shift = this.db.shifts.find((s) => s.branchId === branchId && s.status === "open");
@@ -3952,7 +7826,7 @@ export class MockGymOSApi implements GymOSApi {
       memberId: member.id,
       chargeId: charge.id,
       type: "payment",
-      amount: money(amount),
+      amount: money(amount, charge.total.currency),
       method: args.method,
       status: "completed",
       receiptId: "",
@@ -3971,14 +7845,15 @@ export class MockGymOSApi implements GymOSApi {
     this.db.payments.push(payment);
     this.db.receipts.push(receipt);
 
-    charge.paidAmount = money(charge.paidAmount.amount + amount);
-    charge.outstandingAmount = money(charge.outstandingAmount.amount - amount);
+    charge.paidAmount = money(charge.paidAmount.amount + amount, charge.total.currency);
+    charge.outstandingAmount = money(charge.outstandingAmount.amount - amount, charge.total.currency);
     charge.status = charge.outstandingAmount.amount <= 0 ? "paid" : "partial";
+    if (charge.status === "paid") this.activatePtOrderForCharge(charge.id);
 
     const event = this.activity({
       memberId: member.id,
       type: "payment_collected",
-      title: `Payment collected — JOD ${(amount / 1000).toFixed(3)} ${args.method.replace("_", " ")}`,
+      title: `Payment collected — ${this.amountText(amount)} ${args.method.replace("_", " ")}`,
       actorId: this.actor().id,
       actorName: this.actor().name,
       meta: { receiptNumber, receiptId: receipt.id },
@@ -3986,19 +7861,255 @@ export class MockGymOSApi implements GymOSApi {
     return { payment, receipt, timelineEventId: event.id };
   }
 
+  checkoutRetail(input: T.RetailCheckoutInput): Promise<T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale }> {
+    return this.respond(() => {
+      this.requireOperations();
+      this.require("payments.collect");
+      const branch = this.operationsBranch(input.branchId);
+      const method = input.method;
+      if (!["cash", "cliq", "card"].includes(method)) throw ApiError.of(ERR.VALIDATION, "Retail payment method is invalid.");
+      const configuredMethod = this.db.paymentMethods.find((candidate) => candidate.key === method);
+      if (configuredMethod && !configuredMethod.enabled) throw ApiError.of(ERR.VALIDATION, "This payment method is disabled for the gym.");
+      const idempotencyKey = input.idempotencyKey.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const guest = input.guest ? { fullName: input.guest.fullName.trim(), phone: input.guest.phone.trim() } : undefined;
+      if (input.memberId && guest) throw ApiError.of(ERR.VALIDATION, "Choose an existing member or enter guest details, not both.");
+      const linesInput = [...input.lines].map((line) => ({ productId: line.productId, quantity: line.quantity })).sort((a, b) => a.productId.localeCompare(b.productId));
+      const externalReference = input.externalReference?.trim() || undefined;
+      const signature = JSON.stringify({ branchId: branch.id, memberId: input.memberId, guest, lines: linesInput, method, externalReference });
+      const replay = this.operationsIdempotent("retail_checkout", idempotencyKey, signature) as T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale } | undefined;
+      if (replay) return replay;
+      if (method !== "cash" && !externalReference) throw ApiError.of(ERR.VALIDATION, "An external reference is required for CliQ and Visa/card payments.");
+      if (guest && (!guest.fullName || guest.fullName.length > 120 || !guest.phone || guest.phone.length > 40)) throw ApiError.of(ERR.VALIDATION, "Guest name and phone are required.");
+      if (linesInput.length === 0 || linesInput.length > 100) throw ApiError.of(ERR.VALIDATION, "A checkout must contain 1 to 100 product lines.");
+      const seen = new Set<string>();
+      const lines: Array<{ product: T.Product; quantity: number; balance: T.InventoryBalance; unitPriceMinor: number; lineTotalMinor: number; unitCost?: T.Money }> = [];
+      let totalMinor = 0;
+      for (const lineInput of linesInput) {
+        if (seen.has(lineInput.productId)) throw ApiError.of(ERR.VALIDATION, "A checkout cannot repeat a product line.");
+        seen.add(lineInput.productId);
+        if (!Number.isSafeInteger(lineInput.quantity) || lineInput.quantity <= 0) throw ApiError.of(ERR.VALIDATION, "Product quantities must be positive whole numbers.");
+        const product = this.db.products.find((candidate) => candidate.id === lineInput.productId);
+        if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+        if (product.status !== "active") throw ApiError.of(ERR.CONFLICT, "Archived products cannot be sold.");
+        if (!product.retailPrice || product.retailPrice.amount <= 0 || product.retailPrice.currency !== this.db.organization.currency || !Number.isSafeInteger(product.retailPrice.amount)) throw ApiError.of(ERR.CONFLICT, `Set a retail price for ${product.name} before selling it.`);
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branch.id && candidate.productId === product.id);
+        const available = (balance?.quantityOnHand ?? 0) - (balance?.committedQuantity ?? 0);
+        if (!balance || available < lineInput.quantity) throw ApiError.of(ERR.CONFLICT, `${product.name} has only ${available} available.`);
+        const lineTotalMinor = product.retailPrice.amount * lineInput.quantity;
+        if (!Number.isSafeInteger(lineTotalMinor) || !Number.isSafeInteger(totalMinor + lineTotalMinor)) throw ApiError.of(ERR.VALIDATION, "Checkout total is too large.");
+        totalMinor += lineTotalMinor;
+        lines.push({ product, quantity: lineInput.quantity, balance, unitPriceMinor: product.retailPrice.amount, lineTotalMinor, unitCost: this.retailInventoryCostBasis(branch.id, product.id) });
+      }
+      if (totalMinor <= 0) throw ApiError.of(ERR.VALIDATION, "Checkout total must be greater than zero.");
+      let customer: T.RetailSaleCustomer;
+      let member: MemberRecord | undefined;
+      if (input.memberId) {
+        member = this.db.members.find((candidate) => candidate.id === input.memberId);
+        if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+        if (member.homeBranchId !== branch.id) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+        customer = { kind: "member", fullName: member.fullName, phone: member.phone, memberId: member.id, memberNumber: member.memberNumber };
+      } else if (guest) {
+        customer = { kind: "guest", fullName: guest.fullName, phone: guest.phone };
+      } else {
+        customer = { kind: "walk_in", fullName: "Walk-in customer" };
+      }
+      const shift = method === "cash" ? this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open") : undefined;
+      if (method === "cash" && !shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift before checking out cash sales.");
+      const now = nowISO();
+      const receiptNumber = this.nextReceiptNumber();
+      const sale: T.RetailSale = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, receiptId: mockUuid(), receiptNumber, customer, lines: lines.map(({ product, quantity, unitPriceMinor, lineTotalMinor, unitCost }) => ({ productId: product.id, sku: product.sku, productName: product.name, quantity, unitPrice: money(unitPriceMinor, this.db.organization.currency), lineTotal: money(lineTotalMinor, this.db.organization.currency), unitCost })), subtotal: money(totalMinor, this.db.organization.currency), total: money(totalMinor, this.db.organization.currency), status: "completed", refundedAmount: money(0, this.db.organization.currency), returnedLines: [], method, externalReference, shiftId: shift?.id, idempotencyKey, createdById: this.actor().id, createdByName: this.actor().name, createdAt: now, updatedAt: now };
+      const receipt: T.Receipt = { id: sale.receiptId, receiptNumber, paymentId: `retail-payment-${sale.id}`, retailSaleId: sale.id, issuedAt: now };
+      const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer, amount: money(totalMinor, this.db.organization.currency), method, status: "completed", receiptId: receipt.id, receiptNumber, collectedById: this.actor().id, collectedByName: this.actor().name, shiftId: shift?.id, externalReference, idempotencyKey, occurredAt: now };
+      this.db.retailSales.push(sale);
+      this.db.receipts.push(receipt);
+      for (const line of lines) {
+        // The sold units carry their share of the running valuation out of
+        // the balance, as any outgoing movement does.
+        const knownCost = line.balance.totalCost && line.balance.totalCost.currency === this.db.organization.currency && Number.isSafeInteger(line.balance.totalCost.amount) && line.balance.totalCost.amount >= 0 ? line.balance.totalCost : undefined;
+        const soldCostMinor = knownCost ? allocateExactCost(knownCost.amount, line.balance.quantityOnHand, line.quantity) : undefined;
+        line.balance.totalCost = knownCost && soldCostMinor !== undefined ? { amount: knownCost.amount - soldCostMinor, currency: knownCost.currency } : undefined;
+        line.balance.quantityOnHand -= line.quantity;
+        line.balance.availableQuantity = line.balance.quantityOnHand - line.balance.committedQuantity;
+        line.balance.lastMovementAt = now;
+        line.balance.updatedAt = now;
+        const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.unitCost, totalCost: soldCostMinor === undefined || !knownCost ? undefined : { amount: soldCostMinor, currency: knownCost.currency }, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+        this.db.stockMovements.unshift(movement);
+      }
+      if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.amountText(totalMinor)}`, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
+      this.audit({ category: "operations", action: "operations.retail_sale.create", entityType: "retail_sale", entityId: sale.id, entityLabel: receiptNumber, summary: `Retail sale ${receiptNumber} · ${this.amountText(totalMinor)}`, after: { receiptId: receipt.id, total: totalMinor, method, customer: customer.kind }, branchId: branch.id });
+      const detail: T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale } = { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: member ? { fullName: member.fullName, memberNumber: member.memberNumber } : undefined, customer, payment, retailSale: sale, relatedPayments: [] };
+      this.operationsIdempotency.set(`retail_checkout:${idempotencyKey}`, { signature, result: detail });
+      return detail;
+    });
+  }
+
+  refundRetailSale(saleId: T.UUID, input: T.RefundRetailSaleInput): Promise<T.ReceiptDetail & { retailSale: T.RetailSale }> {
+    return this.respond(() => {
+      this.requireOperations();
+      this.require("payments.refund");
+      const reason = input.reason.trim();
+      if (reason.length < 5) throw ApiError.of(ERR.VALIDATION, "A reason is required for retail refunds.");
+      const sale = this.db.retailSales.find((candidate) => candidate.id === saleId);
+      if (!sale || !this.branchIsVisible(sale.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
+      // Sale/branch authorization must precede idempotent replay. A scoped
+      // actor must not be able to learn a receipt from another branch by
+      // guessing a request key that was already used there.
+      const lines = [...input.lines]
+        .map((line) => ({ productId: line.productId, quantity: line.quantity }))
+        .sort((left, right) => left.productId.localeCompare(right.productId));
+      const signature = JSON.stringify({ saleId, lines, reason });
+      const replay = this.operationsIdempotent("retail_refund", input.idempotencyKey, signature) as T.ReceiptDetail & { retailSale: T.RetailSale } | undefined;
+      if (replay) return replay;
+      if (sale.status === "voided" || sale.status === "refunded") throw ApiError.of(ERR.CONFLICT, "This retail sale can no longer be refunded.");
+      if (!lines.length) throw ApiError.of(ERR.VALIDATION, "Choose at least one sold item to refund.");
+      const returned = new Map((sale.returnedLines ?? []).map((line) => [line.productId, line.quantity]));
+      const seen = new Set<string>();
+      let refundMinor = 0;
+      for (const line of lines) {
+        const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
+        if (!sold || seen.has(line.productId) || !Number.isSafeInteger(line.quantity) || line.quantity <= 0) throw ApiError.of(ERR.VALIDATION, "Refund lines must be unique sold products with positive whole quantities.");
+        seen.add(line.productId);
+        if ((returned.get(line.productId) ?? 0) + line.quantity > sold.quantity) throw ApiError.of(ERR.CONFLICT, `${sold.productName} exceeds the remaining refundable quantity.`);
+        refundMinor += sold.unitPrice.amount * line.quantity;
+      }
+      const refundShift = sale.method === "cash" ? this.db.shifts.find((candidate) => candidate.branchId === sale.branchId && candidate.status === "open") : undefined;
+      if (sale.method === "cash" && !refundShift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift before recording a cash refund.");
+      const now = nowISO();
+      for (const line of lines) {
+        let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
+        const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
+        const tombstone = this.db.productTombstones.find((candidate) => candidate.productId === line.productId);
+        // Resolve the original identity first. If its SKU was reused, a
+        // refund must not put stock into the replacement catalog row.
+        const product = tombstone ? undefined : this.db.products.find((candidate) => candidate.id === line.productId);
+        if (!product && !tombstone) throw ApiError.of(ERR.NOT_FOUND, "Product identity not found for this sale.");
+        const productId = product?.id ?? tombstone?.productId ?? line.productId;
+        if (!balance && (product || tombstone)) {
+          balance = { id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: tombstone ? false : true, updatedAt: now };
+          this.db.inventoryBalances.push(balance);
+        }
+        if (balance) {
+          // Returned units bring their sale-time cost back into the valuation,
+          // matching the outgoing share the sale took out.
+          this.restoreBalanceCost(balance, sold?.unitCost, line.quantity);
+          balance.quantityOnHand += line.quantity;
+          balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+          if (tombstone) balance.sellable = false;
+          balance.lastMovementAt = now;
+          balance.updatedAt = now;
+        }
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? sold?.sku, productName: product?.name ?? tombstone?.name ?? sold?.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: sold?.unitCost, reason, referenceType: "retail_refund", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+        returned.set(line.productId, (returned.get(line.productId) ?? 0) + line.quantity);
+      }
+      sale.returnedLines = [...returned].map(([productId, quantity]) => ({ productId, quantity }));
+      sale.refundedAmount = money((sale.refundedAmount?.amount ?? 0) + refundMinor, sale.total.currency);
+      sale.refundReason = reason;
+      sale.status = sale.refundedAmount.amount >= sale.total.amount ? "refunded" : "partially_refunded";
+      sale.updatedAt = now;
+
+      // Keep the refund as its own immutable payment and receipt fact. The
+      // original retail sale is updated only with its lifecycle projection;
+      // this is what lets transactions, reconciliation, and receipt history
+      // show the negative amount without fabricating a member for guests.
+      const refundPaymentId = mockUuid();
+      const refundReceipt: T.Receipt = { id: mockUuid(), receiptNumber: this.nextReceiptNumber(), paymentId: refundPaymentId, retailSaleId: sale.id, issuedAt: now };
+      const refundPayment: MockRetailAdjustmentPayment = {
+        id: refundPaymentId,
+        organizationId: sale.organizationId,
+        branchId: sale.branchId,
+        memberId: sale.customer.memberId ?? "",
+        type: "refund",
+        customer: sale.customer,
+        retailSaleId: sale.id,
+        amount: money(-refundMinor, sale.total.currency),
+        method: sale.method,
+        status: "completed",
+        receiptId: refundReceipt.id,
+        receiptNumber: refundReceipt.receiptNumber,
+        collectedById: this.actor().id,
+        collectedByName: this.actor().name,
+        shiftId: refundShift?.id,
+        idempotencyKey: input.idempotencyKey,
+        originalPaymentId: `retail-payment-${sale.id}`,
+        refundReason: reason,
+        occurredAt: now,
+      };
+      this.db.payments.push(refundPayment);
+      this.db.receipts.push(refundReceipt);
+      if (sale.customer.kind === "member" && sale.customer.memberId) {
+        this.activity({ memberId: sale.customer.memberId, type: "payment_refunded", title: `Retail sale refunded — ${this.amountText(money(refundMinor, sale.total.currency))}`, body: reason, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber: refundReceipt.receiptNumber, receiptId: refundReceipt.id, retailSaleId: sale.id, saleType: "retail" } });
+      }
+      this.audit({ category: "payments", action: "operations.retail_sale.refund", entityType: "retail_sale", entityId: sale.id, entityLabel: sale.receiptNumber, summary: `Refunded ${this.amountText(money(refundMinor, sale.total.currency))} from retail sale`, reason, before: { status: "completed", refunded: (sale.refundedAmount.amount - refundMinor) }, after: { status: sale.status, refunded: sale.refundedAmount.amount, refundReceiptId: refundReceipt.id, refundPaymentId }, branchId: sale.branchId });
+      const result = this.getReceiptSync(refundReceipt.id) as T.ReceiptDetail & { retailSale: T.RetailSale };
+      this.operationsIdempotency.set(`retail_refund:${input.idempotencyKey}`, { signature, result });
+      return result;
+    });
+  }
+
+  voidRetailSale(saleId: T.UUID, input: T.VoidRetailSaleInput): Promise<T.ReceiptDetail & { retailSale: T.RetailSale }> {
+    return this.respond(() => {
+      this.requireOperations();
+      this.require("payments.void");
+      const reason = input.reason.trim();
+      if (reason.length < 5) throw ApiError.of(ERR.VALIDATION, "A reason is required to void a retail sale.");
+      const sale = this.db.retailSales.find((candidate) => candidate.id === saleId);
+      if (!sale || !this.branchIsVisible(sale.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
+      // Authorize the sale and its branch before exposing any replay result.
+      const signature = JSON.stringify({ saleId, reason });
+      const replay = this.operationsIdempotent("retail_void", input.idempotencyKey, signature) as T.ReceiptDetail & { retailSale: T.RetailSale } | undefined;
+      if (replay) return replay;
+      if (sale.status !== "completed") throw ApiError.of(ERR.CONFLICT, "Only an unadjusted retail sale can be voided.");
+      if (todayISODate(TZ, new Date(sale.createdAt)) !== this.today()) throw ApiError.of(ERR.VOID_WINDOW_EXPIRED, "Retail sales can only be voided on the same business day. Issue a refund instead.");
+      if (sale.method === "cash") {
+        const openShift = sale.shiftId ? this.db.shifts.find((candidate) => candidate.branchId === sale.branchId && candidate.status === "open" && candidate.id === sale.shiftId) : undefined;
+        if (!openShift) throw ApiError.of(ERR.NO_OPEN_SHIFT, "Cash sales can only be voided while their original cash shift is open.");
+      }
+      const now = nowISO();
+      for (const line of sale.lines) {
+        let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sale.branchId && candidate.productId === line.productId);
+        const tombstone = this.db.productTombstones.find((candidate) => candidate.productId === line.productId);
+        const product = tombstone ? undefined : this.db.products.find((candidate) => candidate.id === line.productId);
+        if (!product && !tombstone) throw ApiError.of(ERR.NOT_FOUND, "Product identity not found for this sale.");
+        const productId = product?.id ?? tombstone?.productId ?? line.productId;
+        if (!balance && (product || tombstone)) {
+          balance = { id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: tombstone ? false : true, updatedAt: now };
+          this.db.inventoryBalances.push(balance);
+        }
+        if (balance) {
+          this.restoreBalanceCost(balance, line.unitCost, line.quantity);
+          balance.quantityOnHand += line.quantity;
+          balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+          if (tombstone) balance.sellable = false;
+          balance.lastMovementAt = now;
+          balance.updatedAt = now;
+        }
+        this.db.stockMovements.unshift({ id: mockUuid(), organizationId: sale.organizationId, branchId: sale.branchId, productId, productSku: product?.sku ?? tombstone?.sku ?? line.sku, productName: product?.name ?? tombstone?.name ?? line.productName, productUnit: product?.unit ?? tombstone?.unit, type: "return", quantityDelta: line.quantity, quantity: line.quantity, unitCost: line.unitCost, reason, referenceType: "retail_void", referenceId: sale.id, idempotencyKey: `${input.idempotencyKey}:${productId}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id });
+      }
+      sale.status = "voided";
+      sale.returnedLines = sale.lines.map((line) => ({ productId: line.productId, quantity: line.quantity }));
+      sale.voidReason = reason;
+      sale.voidedAt = now;
+      sale.updatedAt = now;
+      this.audit({ category: "payments", action: "operations.retail_sale.void", entityType: "retail_sale", entityId: sale.id, entityLabel: sale.receiptNumber, summary: `Voided retail sale ${sale.receiptNumber}`, reason, after: { status: "voided" }, branchId: sale.branchId });
+      const result = this.getReceiptSync(sale.receiptId) as T.ReceiptDetail & { retailSale: T.RetailSale };
+      this.operationsIdempotency.set(`retail_void:${input.idempotencyKey}`, { signature, result });
+      return result;
+    });
+  }
+
   listTransactions(query: TransactionListQuery): Promise<T.Page<T.TransactionSummary>> {
     return this.respond(() => {
       this.require("reports.financial.read");
       const branchId = this.branchScopedBranchId(query.branchId);
-      let items = this.db.payments.map((p) => this.toTransaction(p));
+      let items = [...this.db.payments.map((p) => this.toTransaction(p)), ...this.db.retailSales.map((sale) => this.toTransaction(this.retailPaymentProjection(sale)))];
       if (branchId) items = items.filter((p) => p.branchId === branchId);
-      if (query.memberId) items = items.filter((p) => p.memberId === query.memberId);
+      if (query.memberId) items = items.filter((p) => ("memberId" in p ? p.memberId : p.customer?.memberId) === query.memberId);
       if (query.method) items = items.filter((p) => p.method === query.method);
       if (query.type) items = items.filter((p) => p.type === query.type);
       const txFrom = query.from;
       const txTo = query.to;
-      if (txFrom) items = items.filter((p) => p.occurredAt >= txFrom);
-      if (txTo) items = items.filter((p) => p.occurredAt <= `${txTo}T23:59:59.999Z`);
+      if (txFrom || txTo) items = items.filter((p) => instantFallsInTenantDateRange(p.occurredAt, this.db.organization.timezone, txFrom, txTo));
       items = items.filter((p) => this.matchesSearch([p.memberName, p.memberNumber, p.receiptNumber], query.search));
       items = applySort(items, query.sort ?? "-occurredAt", (p, k) => (k === "occurredAt" ? p.occurredAt : p.amount.amount));
       return paginate(this.maybeEmpty(items), query);
@@ -4019,7 +8130,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "payment",
         entityId: payment.id,
         entityLabel: `${payment.receiptNumber} · ${this.db.members.find((m) => m.id === payment.memberId)?.fullName ?? ""}`,
-        summary: `Collected JOD ${(payment.amount.amount / 1000).toFixed(3)} (${payment.method.replace("_", " ")})`,
+        summary: `Collected ${this.amountText(payment.amount)} (${payment.method.replace("_", " ")})`,
         after: { amount: payment.amount.amount, method: payment.method },
         branchId: payment.branchId,
       });
@@ -4035,6 +8146,11 @@ export class MockGymOSApi implements GymOSApi {
       }
       const original = this.db.payments.find((p) => p.id === paymentId);
       if (!original) throw ApiError.of(ERR.NOT_FOUND, "Payment not found.");
+      // Same contract as Convex: an identical retry returns the original
+      // refund receipt; the same key with different figures is refused.
+      const signature = JSON.stringify({ paymentId, amount: input.amount, reason: input.reason });
+      const replay = this.operationsIdempotent("payment.refund", input.idempotencyKey, signature) as T.ReceiptDetail | undefined;
+      if (replay) return replay;
       if (original.type !== "payment") throw ApiError.of(ERR.VALIDATION, "Only payments can be refunded.");
       if (original.status === "voided") throw ApiError.of(ERR.PAYMENT_ALREADY_VOIDED, "Voided payments cannot be refunded.");
       const alreadyRefunded = original.refundedAmount?.amount ?? 0;
@@ -4048,6 +8164,12 @@ export class MockGymOSApi implements GymOSApi {
         throw ApiError.of(ERR.REFUND_EXCEEDS_AMOUNT, "Refund amount exceeds the refundable balance.");
       }
 
+      // Cash leaves the drawer of the branch that took the payment, so that
+      // drawer must be open; otherwise no shift close could account for it.
+      const openShift = this.db.shifts.find((s) => s.branchId === original.branchId && s.status === "open");
+      if (!openShift && this.methodAffectsCashDrawer(original.method)) {
+        throw ApiError.of(ERR.NO_OPEN_SHIFT, "Open a cash shift at the branch that took this payment before refunding it in cash.");
+      }
       const receiptNumber = this.nextReceiptNumber();
       const refund: T.Payment = {
         id: mockUuid(),
@@ -4056,14 +8178,14 @@ export class MockGymOSApi implements GymOSApi {
         memberId: original.memberId,
         chargeId: original.chargeId,
         type: "refund",
-        amount: money(-amount),
+        amount: money(-amount, original.amount.currency),
         method: original.method,
         status: "completed",
         receiptId: "",
         receiptNumber,
         collectedById: this.actor().id,
         collectedByName: this.actor().name,
-        shiftId: this.db.shifts.find((s) => s.branchId === original.branchId && s.status === "open")?.id,
+        shiftId: openShift?.id,
         idempotencyKey: `refund-${original.id}-${mockUuid()}`,
         originalPaymentId: original.id,
         refundReason: input.reason,
@@ -4074,14 +8196,14 @@ export class MockGymOSApi implements GymOSApi {
       this.db.payments.push(refund);
       this.db.receipts.push(receipt);
 
-      original.refundedAmount = money(alreadyRefunded + amount);
+      original.refundedAmount = money(alreadyRefunded + amount, original.amount.currency);
       original.refundReason = input.reason;
       original.status = alreadyRefunded + amount >= original.amount.amount ? "refunded" : "partially_refunded";
 
       const charge = this.db.charges.find((c) => c.id === original.chargeId);
       if (charge) {
-        charge.paidAmount = money(Math.max(0, charge.paidAmount.amount - amount));
-        charge.outstandingAmount = money(charge.total.amount - charge.paidAmount.amount);
+        charge.paidAmount = money(Math.max(0, charge.paidAmount.amount - amount), charge.total.currency);
+        charge.outstandingAmount = money(charge.total.amount - charge.paidAmount.amount, charge.total.currency);
         charge.status = charge.paidAmount.amount <= 0 ? "refunded" : "partial";
       }
 
@@ -4093,7 +8215,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "payment",
         entityId: original.id,
         entityLabel: `${original.receiptNumber} · ${member.fullName}`,
-        summary: `Refunded JOD ${(amount / 1000).toFixed(3)} (${original.method.replace("_", " ")})`,
+        summary: `Refunded ${this.amountText(money(amount, original.amount.currency))} (${original.method.replace("_", " ")})`,
         reason: input.reason,
         before: { paymentStatus: "completed", chargePaid: original.amount.amount },
         after: { paymentStatus: original.status, refunded: alreadyRefunded + amount },
@@ -4103,12 +8225,14 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({
         memberId: original.memberId,
         type: "payment_refunded",
-        title: `Payment refunded — JOD ${(amount / 1000).toFixed(3)}`,
+        title: `Payment refunded — ${this.amountText(money(amount, original.amount.currency))}`,
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
       });
-      return this.getReceiptSync(receipt.id);
+      const detail = this.getReceiptSync(receipt.id);
+      this.operationsIdempotency.set(`payment.refund:${input.idempotencyKey}`, { signature, result: detail });
+      return detail;
     });
   }
 
@@ -4120,6 +8244,9 @@ export class MockGymOSApi implements GymOSApi {
       }
       const original = this.db.payments.find((p) => p.id === paymentId);
       if (!original) throw ApiError.of(ERR.NOT_FOUND, "Payment not found.");
+      const signature = JSON.stringify({ paymentId, reason: input.reason });
+      const replay = this.operationsIdempotent("payment.void", input.idempotencyKey, signature) as T.ReceiptDetail | undefined;
+      if (replay) return replay;
       if (original.type !== "payment") throw ApiError.of(ERR.VALIDATION, "Only payments can be voided.");
       if (original.status === "voided") throw ApiError.of(ERR.PAYMENT_ALREADY_VOIDED, "Payment is already voided.");
       if (original.status === "refunded" || original.status === "partially_refunded") {
@@ -4129,12 +8256,20 @@ export class MockGymOSApi implements GymOSApi {
       if (paymentDay !== this.today()) {
         throw ApiError.of(ERR.VOID_WINDOW_EXPIRED, "Payments can only be voided on the same business day. Issue a refund instead.");
       }
+      // Cash counted into a closed drawer is part of a reconciled total; a
+      // void would rewrite that shift. Retail sales already follow this rule.
+      if (this.methodAffectsCashDrawer(original.method)) {
+        const openShift = this.db.shifts.find((s) => s.branchId === original.branchId && s.status === "open");
+        if (!openShift || !original.shiftId || openShift.id !== original.shiftId) {
+          throw ApiError.of(ERR.NO_OPEN_SHIFT, "Cash payments can only be voided while their original cash shift is open. Issue a refund instead.");
+        }
+      }
       original.status = "voided";
       original.voidReason = input.reason;
       const charge = this.db.charges.find((c) => c.id === original.chargeId);
       if (charge) {
-        charge.paidAmount = money(Math.max(0, charge.paidAmount.amount - original.amount.amount));
-        charge.outstandingAmount = money(charge.total.amount - charge.paidAmount.amount);
+        charge.paidAmount = money(Math.max(0, charge.paidAmount.amount - original.amount.amount), charge.total.currency);
+        charge.outstandingAmount = money(charge.total.amount - charge.paidAmount.amount, charge.total.currency);
         charge.status = charge.paidAmount.amount <= 0 ? "unpaid" : "partial";
       }
       const member = this.db.members.find((m) => m.id === original.memberId)!;
@@ -4144,7 +8279,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "payment",
         entityId: original.id,
         entityLabel: `${original.receiptNumber} · ${member.fullName}`,
-        summary: `Voided JOD ${(original.amount.amount / 1000).toFixed(3)} (${original.method.replace("_", " ")})`,
+        summary: `Voided ${this.amountText(original.amount)} (${original.method.replace("_", " ")})`,
         reason: input.reason,
         before: { status: "completed" },
         after: { status: "voided" },
@@ -4158,7 +8293,9 @@ export class MockGymOSApi implements GymOSApi {
         actorId: this.actor().id,
         actorName: this.actor().name,
       });
-      return this.getReceiptSync(original.receiptId);
+      const detail = this.getReceiptSync(original.receiptId);
+      this.operationsIdempotency.set(`payment.void:${input.idempotencyKey}`, { signature, result: detail });
+      return detail;
     });
   }
 
@@ -4172,6 +8309,27 @@ export class MockGymOSApi implements GymOSApi {
   private getReceiptSync(receiptId: T.UUID): T.ReceiptDetail {
     const receipt = this.db.receipts.find((r) => r.id === receiptId);
     if (!receipt) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
+    if (receipt.retailSaleId) {
+      const sale = this.db.retailSales.find((candidate) => candidate.id === receipt.retailSaleId);
+      if (!sale) throw ApiError.of(ERR.NOT_FOUND, "Retail sale not found.");
+      const branch = this.db.branches.find((b) => b.id === sale.branchId);
+      if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (!this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Receipt not found.");
+      const receiptPayment = this.db.payments.find((candidate) => candidate.id === receipt.paymentId);
+      const retailAdjustment = receiptPayment && receiptPayment.type === "refund" && "retailSaleId" in receiptPayment
+        ? receiptPayment as MockRetailAdjustmentPayment
+        : undefined;
+      if (retailAdjustment?.retailSaleId === sale.id) {
+        // A refund receipt points back to the sale so the printed document can
+        // retain the item lines, while its payment is the negative adjustment
+        // fact. The original retail payment remains linked for audit history.
+        const originalPayment = this.retailPaymentProjection(sale) as unknown as T.Payment;
+        return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment: retailAdjustment, retailSale: sale, relatedPayments: [originalPayment] };
+      }
+      const payment: T.RetailPayment = { id: receipt.paymentId, organizationId: this.db.organization.id, branchId: branch.id, type: "retail_sale", customer: sale.customer, amount: { ...sale.total }, method: sale.method, status: sale.status, refundedAmount: sale.refundedAmount ? { ...sale.refundedAmount } : undefined, refundReason: sale.refundReason, voidReason: sale.voidReason, receiptId: receipt.id, receiptNumber: receipt.receiptNumber, collectedById: sale.createdById, collectedByName: sale.createdByName, shiftId: sale.shiftId, externalReference: sale.externalReference, idempotencyKey: sale.idempotencyKey, occurredAt: sale.createdAt };
+      const relatedRefunds = this.db.payments.filter((candidate) => candidate.type === "refund" && candidate.originalPaymentId === payment.id);
+      return { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: sale.customer.kind === "member" ? { fullName: sale.customer.fullName, memberNumber: sale.customer.memberNumber ?? "Member" } : undefined, customer: sale.customer, payment, retailSale: sale, relatedPayments: relatedRefunds };
+    }
     const payment = this.db.payments.find((p) => p.id === receipt.paymentId)!;
     const branch = this.db.branches.find((b) => b.id === payment.branchId)!;
     const member = this.db.members.find((m) => m.id === payment.memberId)!;
@@ -4186,6 +8344,7 @@ export class MockGymOSApi implements GymOSApi {
       },
       branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },
       member: { fullName: member.fullName, memberNumber: member.memberNumber },
+      customer: { kind: "member", fullName: member.fullName, phone: member.phone, memberId: member.id, memberNumber: member.memberNumber },
       payment,
       charge,
       relatedPayments: related,
@@ -4236,22 +8395,49 @@ export class MockGymOSApi implements GymOSApi {
     return this.subscribeOnce(() => this.getCurrentShiftTotals(branchId), onValue, onError);
   }
 
+  /** Add the cost of incoming units to a balance whose valuation is known. */
+  private restoreBalanceCost(balance: T.InventoryBalance, unitCost: T.Money | undefined, quantity: number): void {
+    const incoming = exactCostTotal(unitCost, quantity);
+    const current = balance.quantityOnHand === 0
+      ? { amount: 0, currency: this.db.organization.currency }
+      : balance.totalCost && balance.totalCost.currency === this.db.organization.currency && Number.isSafeInteger(balance.totalCost.amount) && balance.totalCost.amount >= 0 ? balance.totalCost : undefined;
+    if (current && incoming && incoming.currency === this.db.organization.currency && Number.isSafeInteger(current.amount + incoming.amount)) {
+      balance.totalCost = { amount: current.amount + incoming.amount, currency: incoming.currency };
+    } else if (incoming && balance.quantityOnHand === 0) {
+      balance.totalCost = { ...incoming };
+    } else {
+      balance.totalCost = undefined;
+    }
+  }
+
+  /** "cash" always moves drawer money; a configured method can opt in. */
+  private methodAffectsCashDrawer(method: string): boolean {
+    if (method === "cash") return true;
+    return Boolean(this.db.paymentMethods.find((item) => item.key === method)?.affectsCashDrawer);
+  }
+
   private shiftTotals(shift: T.CashShift): T.ShiftTotals {
-    const inShift = this.db.payments.filter((p) => p.shiftId === shift.id && p.status !== "voided");
-    const sum = (fn: (p: T.Payment) => boolean) => inShift.filter(fn).reduce((s, p) => s + Math.abs(p.amount.amount), 0);
+    const inShift: Array<T.Payment | T.RetailPayment> = [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))].filter((p) => p.shiftId === shift.id && p.status !== "voided");
+    const isCollection = (p: T.Payment | T.RetailPayment) => p.type === "payment" || p.type === "retail_sale";
+    const sum = (fn: (p: T.Payment | T.RetailPayment) => boolean) => inShift.filter(fn).reduce((s, p) => s + Math.abs(p.amount.amount), 0);
     return {
-      cashPayments: money(sum((p) => p.method === "cash" && p.type === "payment")),
-      cashRefunds: money(sum((p) => p.method === "cash" && p.type === "refund")),
-      cardPayments: money(sum((p) => p.method === "card" && p.type === "payment")),
-      transferPayments: money(sum((p) => (p.method === "bank_transfer" || p.method === "cliq") && p.type === "payment")),
-      otherPayments: money(sum((p) => p.method === "other" && p.type === "payment")),
-      paymentCount: inShift.filter((p) => p.type === "payment").length,
+      cashPayments: money(sum((p) => p.method === "cash" && isCollection(p)), this.db.organization.currency),
+      cashRefunds: money(sum((p) => p.method === "cash" && p.type === "refund"), this.db.organization.currency),
+      cardPayments: money(sum((p) => p.method === "card" && isCollection(p)), this.db.organization.currency),
+      transferPayments: money(sum((p) => (p.method === "bank_transfer" || p.method === "cliq") && isCollection(p)), this.db.organization.currency),
+      otherPayments: money(sum((p) => p.method === "other" && isCollection(p)), this.db.organization.currency),
+      paymentCount: inShift.filter(isCollection).length,
       refundCount: inShift.filter((p) => p.type === "refund").length,
       discountsTotal: money(
         inShift
-          .map((p) => this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0)
+          .map((p) => ("chargeId" in p ? this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0 : 0))
           .reduce((s, d) => s + d, 0),
       ),
+      // Supplier cash leaves the drawer during the shift that funded it and
+      // comes back during the shift that recorded the reversal, so both sides
+      // stay truthful even when they happen in different shifts.
+      supplierCashPayments: money(this.db.supplierPayments.filter((payment) => payment.method === "cash" && payment.shiftId === shift.id).reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency),
+      supplierCashReversals: money(this.db.supplierPayments.filter((payment) => payment.method === "cash" && payment.status === "reversed" && payment.reversal?.shiftId === shift.id).reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency),
     };
   }
 
@@ -4262,7 +8448,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!shift) throw ApiError.of(ERR.NOT_FOUND, "Shift not found.");
       if (shift.status === "closed") throw ApiError.of(ERR.VALIDATION, "Shift is already closed.");
       const totals = this.shiftTotals(shift);
-      const expected = shift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount;
+      const expected = shift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount - totals.supplierCashPayments.amount + totals.supplierCashReversals.amount;
       const variance = input.countedCash.amount - expected;
       if (variance !== 0 && !input.varianceExplanation?.trim()) {
         throw ApiError.of(ERR.VALIDATION, "Explain the cash variance before closing.", {
@@ -4272,9 +8458,9 @@ export class MockGymOSApi implements GymOSApi {
       shift.status = "closed";
       shift.closedAt = nowISO();
       shift.closedById = this.actor().id;
-      shift.expectedCash = money(expected);
+      shift.expectedCash = money(expected, this.db.organization.currency);
       shift.countedCash = input.countedCash;
-      shift.variance = money(variance);
+      shift.variance = money(variance, this.db.organization.currency);
       shift.varianceExplanation = input.varianceExplanation;
       shift.varianceApprovalStatus = variance === 0 ? "none" : "pending";
       if (variance !== 0) {
@@ -4285,7 +8471,7 @@ export class MockGymOSApi implements GymOSApi {
           entityType: "cash_shift",
           entityId: shift.id,
           entityLabel: `${branch.name} · shift ${todayISODate(TZ, new Date(shift.openedAt))}`,
-          summary: `Shift closed with ${variance < 0 ? "shortage" : "surplus"} of JOD ${(Math.abs(variance) / 1000).toFixed(3)}`,
+          summary: `Shift closed with ${variance < 0 ? "shortage" : "surplus"} of ${this.amountText(Math.abs(variance))}`,
           reason: input.varianceExplanation,
           before: { expectedCash: expected },
           after: { countedCash: input.countedCash.amount },
@@ -4326,27 +8512,28 @@ export class MockGymOSApi implements GymOSApi {
   getDailyReconciliation(query: { branchId: T.UUID; date: T.ISODate }): Promise<T.ReconciliationReport> {
     return this.respond(() => {
       this.require("reports.financial.read");
-      const dayPayments = this.db.payments.filter(
+      const dayPayments: Array<T.Payment | T.RetailPayment> = [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))].filter(
         (p) => p.branchId === query.branchId && p.status !== "voided" && todayISODate(TZ, new Date(p.occurredAt)) === query.date,
       );
+      const isCollection = (p: T.Payment | T.RetailPayment) => p.type === "payment" || p.type === "retail_sale";
       const methods: T.PaymentMethodKey[] = ["cash", "card", "bank_transfer", "cliq", "other"];
       const totalsByMethod = methods
         .map((method) => {
           const ofMethod = dayPayments.filter((p) => p.method === method);
-          const paymentsSum = ofMethod.filter((p) => p.type === "payment").reduce((s, p) => s + p.amount.amount, 0);
+          const paymentsSum = ofMethod.filter(isCollection).reduce((s, p) => s + p.amount.amount, 0);
           const refundsSum = ofMethod.filter((p) => p.type === "refund").reduce((s, p) => s + Math.abs(p.amount.amount), 0);
           return {
             method,
-            payments: money(paymentsSum),
-            refunds: money(refundsSum),
-            net: money(paymentsSum - refundsSum),
+            payments: money(paymentsSum, this.db.organization.currency),
+            refunds: money(refundsSum, this.db.organization.currency),
+            net: money(paymentsSum - refundsSum, this.db.organization.currency),
             count: ofMethod.length,
           };
         })
         .filter((row) => row.count > 0);
       const discountsTotal = dayPayments
-        .filter((p) => p.type === "payment")
-        .map((p) => this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0)
+        .filter(isCollection)
+        .map((p) => ("chargeId" in p ? this.db.charges.find((c) => c.id === p.chargeId)?.discount.amount ?? 0 : 0))
         .reduce((s, d) => s + d, 0);
       const shifts = this.db.shifts.filter(
         (s) => s.branchId === query.branchId && todayISODate(TZ, new Date(s.openedAt)) === query.date,
@@ -4355,18 +8542,888 @@ export class MockGymOSApi implements GymOSApi {
         branchId: query.branchId,
         date: query.date,
         totalsByMethod,
-        totalCollected: money(dayPayments.filter((p) => p.type === "payment").reduce((s, p) => s + p.amount.amount, 0)),
-        totalRefunded: money(dayPayments.filter((p) => p.type === "refund").reduce((s, p) => s + Math.abs(p.amount.amount), 0)),
-        discountsTotal: money(discountsTotal),
+        supplierPayments: (() => {
+          const paidToday = this.db.supplierPayments.filter((payment) => payment.branchId === query.branchId && todayISODate(TZ, new Date(payment.occurredAt)) === query.date);
+          const returnedToday = this.db.supplierPayments.filter((payment) => payment.branchId === query.branchId && payment.method === "cash" && payment.status === "reversed" && payment.reversal && todayISODate(TZ, new Date(payment.reversal.reversedAt)) === query.date);
+          return { cashPaid: money(paidToday.filter((payment) => payment.method === "cash").reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency), cashReturned: money(returnedToday.reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency), totalPaid: money(paidToday.reduce((s, payment) => s + payment.amount.amount, 0), this.db.organization.currency), count: paidToday.length };
+        })(),
+        totalCollected: money(dayPayments.filter(isCollection).reduce((s, p) => s + p.amount.amount, 0), this.db.organization.currency),
+        totalRefunded: money(dayPayments.filter((p) => p.type === "refund").reduce((s, p) => s + Math.abs(p.amount.amount), 0), this.db.organization.currency),
+        discountsTotal: money(discountsTotal, this.db.organization.currency),
         shifts,
         totalVariance: money(shifts.reduce((s, sh) => s + (sh.variance?.amount ?? 0), 0)),
       };
     });
   }
 
+  private managementReportInput(input: T.ManagementReportInput): { fromDate: string; toDate: string; branchId?: T.UUID } {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(input.toDate)) throw ApiError.of(ERR.VALIDATION, "Report dates must use YYYY-MM-DD.");
+    const from = new Date(`${input.fromDate}T00:00:00.000Z`);
+    const to = new Date(`${input.toDate}T00:00:00.000Z`);
+    if (!Number.isFinite(from.getTime()) || from.toISOString().slice(0, 10) !== input.fromDate || !Number.isFinite(to.getTime()) || to.toISOString().slice(0, 10) !== input.toDate) throw ApiError.of(ERR.VALIDATION, "Report dates must use YYYY-MM-DD.");
+    if (input.fromDate > input.toDate) throw ApiError.of(ERR.VALIDATION, "Report fromDate must be on or before toDate.");
+    const branchId = input.branchId ? this.accountingBranch(input.branchId)?.id : undefined;
+    return { fromDate: input.fromDate, toDate: input.toDate, branchId };
+  }
+
+  private managementBranchVisible(branchId: T.UUID | undefined, requestedBranchId?: T.UUID): boolean {
+    if (requestedBranchId) return branchId === requestedBranchId;
+    return branchId ? this.branchIsVisible(branchId) : this.actor().branchScope === "all";
+  }
+
+  private managementReportEntries(range: { fromDate: string; toDate: string; branchId?: T.UUID }, throughOnly = false): T.AccountingJournalEntryDetail[] {
+    return this.accountingEntries.filter((entry) => {
+      if (entry.status !== "posted" && entry.status !== "reversed") return false;
+      if (!this.managementBranchVisible(entry.branchId, range.branchId)) return false;
+      return throughOnly ? entry.postingDate <= range.toDate : entry.postingDate >= range.fromDate && entry.postingDate <= range.toDate;
+    });
+  }
+
+  private managementStatementSection(entries: T.AccountingJournalEntryDetail[], groups: T.AccountingStatementGroup[], sign: "debit" | "credit", branchId?: T.UUID): T.ManagementStatementSection {
+    const rows = new Map<string, { account: T.AccountingAccount; amount: number; ids: Set<string> }>();
+    const groupSet = new Set(groups);
+    for (const entry of entries) for (const line of entry.lines.filter((candidate) => groupSet.has(candidate.statementGroup) && this.managementBranchVisible(candidate.branchId, branchId))) {
+      const account = this.accountingAccounts.find((candidate) => candidate.code === line.accountCode) ?? this.accountingAccount(line.accountId);
+      const amount = sign === "credit" ? line.credit.amount - line.debit.amount : line.debit.amount - line.credit.amount;
+      if (amount === 0) continue;
+      const current = rows.get(account.code) ?? { account, amount: 0, ids: new Set<string>() };
+      current.amount += amount;
+      current.ids.add(entry.id);
+      rows.set(account.code, current);
+    }
+    const lines = [...rows.values()].filter((row) => row.amount !== 0).sort((a, b) => a.account.code.localeCompare(b.account.code)).map((row) => ({ accountId: row.account.id, accountCode: row.account.code, accountName: row.account.name, amount: money(row.amount), entryIds: [...row.ids].sort() }));
+    return { lines, total: money(lines.reduce((sum, row) => sum + row.amount.amount, 0)) };
+  }
+
+  private mockSourceQueueCoverage(range: { fromDate: string; toDate: string; branchId?: T.UUID }): { status: "proven" | "refresh_required"; candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; status: T.AccountingSourceStatus; current: boolean; row?: T.AccountingSourcePosting; fact: MockAccountingFact }>; lastQueueProjectionAt?: string; postedDriftCount: number } {
+    const allCandidates = this.mockAccountingSourceCandidates(MOCK_ACCOUNTING_SOURCE_TYPES, range.branchId, { fromDate: range.fromDate, toDate: range.toDate });
+    const candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; status: T.AccountingSourceStatus; current: boolean; row?: T.AccountingSourcePosting; fact: MockAccountingFact }> = [];
+    for (const candidate of allCandidates) {
+      const existing = this.accountingSources.find((row) => row.sourceType === candidate.sourceType && row.sourceId === candidate.sourceId);
+      const fact = preserveMockSourcePolicy(this.mockAccountingFact(candidate.sourceType, candidate.sourceId), existing);
+      const occurredDate = managementLocalDate(fact.occurredAt, this.db.organization.timezone);
+      if (occurredDate < range.fromDate || occurredDate > range.toDate) continue;
+      const currency = fact.currency ?? this.db.organization.currency;
+      const status: T.AccountingSourceStatus = fact.status ?? (!fact.branchId || !fact.policyCode || !fact.debitCode || !fact.creditCode || fact.amount === undefined || fact.amount <= 0 || currency !== this.db.organization.currency ? "unconfigured" : "pending");
+      const projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: candidate.sourceType, sourceId: candidate.sourceId }, status);
+      const settled = existing?.status === "posted" || existing?.status === "reversed" || existing?.reviewExcludedAt !== undefined;
+      candidates.push({ sourceType: candidate.sourceType, sourceId: candidate.sourceId, status, current: settled ? Boolean(existing!.projectionFingerprint) : existing?.projectionFingerprint === projectionFingerprint, row: existing, fact });
+    }
+    const digestRows = candidates.map((item) => ({ key: `${item.sourceType}:${item.sourceId}`, fingerprint: item.row && (item.row.status === "posted" || item.row.status === "reversed" || item.row.reviewExcludedAt !== undefined) ? item.row.projectionFingerprint ?? mockSourceProjectionFingerprint({ ...item.fact, sourceType: item.sourceType, sourceId: item.sourceId }, item.status) : mockSourceProjectionFingerprint({ ...item.fact, sourceType: item.sourceType, sourceId: item.sourceId }, item.status) })).sort((left, right) => left.key.localeCompare(right.key));
+    const candidateDigest = stableJson(digestRows);
+    const runs = this.accountingSourceQueueRuns;
+    const reportRun = runs.find((run) => mockSourceTypesDigest(run.sourceTypes) === mockSourceTypesDigest(MOCK_ACCOUNTING_SOURCE_TYPES) && (range.branchId ? run.branchId === undefined || run.branchId === range.branchId : run.branchId === undefined) && ((!run.fromDate && !run.toDate) || (run.fromDate === range.fromDate && run.toDate === range.toDate)));
+    const fullScan = reportRun !== undefined && !reportRun.fromDate && !reportRun.toDate;
+    const runMatches = Boolean(reportRun && (fullScan || (reportRun.candidateDigest === candidateDigest && reportRun.candidateCount === candidates.length)));
+    const current = candidates.every((candidate) => candidate.current);
+    const latest = runs.map((run) => run.scannedAt).sort().at(-1);
+    // Posted rows are immutable, but a materially changed operational record
+    // (amount, currency, branch) must not leave the posted amount looking
+    // current — mirrored from the Convex coverage helper.
+    const postedDriftCount = candidates.filter((candidate) => candidate.row?.status === "posted" && (
+      candidate.row.amount?.amount !== candidate.fact.amount ||
+      candidate.row.currency !== (candidate.fact.currency ?? this.db.organization.currency) ||
+      candidate.row.branchId !== candidate.fact.branchId
+    )).length;
+    return { status: runMatches && current ? "proven" : "refresh_required", candidates, lastQueueProjectionAt: latest, postedDriftCount };
+  }
+
+  private managementReportMetadata(range: { fromDate: string; toDate: string; branchId?: T.UUID }): T.ManagementReportCompleteness & { membershipRevenueRecognition: T.ManagementMetricStatus; depreciationCoverage: T.ManagementMetricStatus } {
+    const sourceRows = this.accountingSources.filter((row) => managementLocalDate(row.occurredAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.occurredAt, this.db.organization.timezone) <= range.toDate && this.managementBranchVisible(row.branchId, range.branchId));
+    const sourcePostingCounts: Record<T.AccountingSourceStatus, number> = { pending: 0, posted: 0, unconfigured: 0, excluded: 0, failed: 0, reversed: 0 };
+    for (const row of sourceRows) sourcePostingCounts[row.status] += 1;
+    const queueCoverage = this.mockSourceQueueCoverage(range);
+    const statusFor = (sourceType: T.AccountingSourceType): T.ManagementMetricStatus => {
+      const candidates = queueCoverage.candidates.filter((candidate) => candidate.sourceType === sourceType);
+      if (candidates.length === 0) return "not_available";
+      // A monthly fact is only due once its tenant-anchored month end has
+      // passed; excluded rows are resolved decisions. Mirrors Convex.
+      const now = Date.now();
+      return candidates.every((candidate) => Date.parse(candidate.fact.occurredAt) > now || (candidate.current && (candidate.row?.status === "posted" || candidate.row?.status === "reversed" || candidate.row?.status === "excluded"))) ? "available" : "not_configured";
+    };
+    const membershipRevenueRecognition = statusFor("membership_revenue_recognition");
+    const depreciationCoverage = statusFor("equipment_depreciation");
+    const warnings = new Set<string>();
+    if (queueCoverage.status !== "proven") warnings.add("Accounting source queue coverage is not proven for this report. Refresh the source queue before relying on completeness.");
+    if (sourceRows.some((row) => ["pending", "unconfigured", "failed"].includes(row.status))) warnings.add("Some authoritative accounting sources are not posted; pending or failed facts are omitted from the statements.");
+    if (queueCoverage.postedDriftCount > 0) warnings.add(`${queueCoverage.postedDriftCount} posted accounting ${queueCoverage.postedDriftCount === 1 ? "source posting no longer matches" : "source postings no longer match"} the current operational record (amount, currency, or branch changed after posting). Review the source queue and use an owner reversal plus a corrected posting where needed.`);
+    if (membershipRevenueRecognition === "not_configured") warnings.add("Membership revenue recognition coverage is incomplete; deferred amounts remain unearned until the validated service schedule is posted.");
+    if (depreciationCoverage === "not_configured") warnings.add("Fixed assets have incomplete depreciation coverage; affected assets remain gross until acquisition, date, cost, useful life, and lifecycle requirements are posted.");
+    const policyVersions = [...new Map(this.accountingEntries
+      .filter((entry) => (entry.status === "posted" || entry.status === "reversed") && entry.postingDate >= range.fromDate && entry.postingDate <= range.toDate && this.managementBranchVisible(entry.branchId, range.branchId) && entry.policyCode && entry.policyVersion)
+      .map((entry) => [`${entry.policyCode}:${entry.policyVersion}`, { code: entry.policyCode!, version: entry.policyVersion! }])).values()];
+    return { organizationId: this.db.organization.id, branchId: range.branchId, fromDate: range.fromDate, toDate: range.toDate, timezone: this.db.organization.timezone, currency: this.db.organization.currency, generatedAt: nowISO(), policyVersions, sourcePostingCounts, queueCoverage: queueCoverage.status, lastQueueProjectionAt: queueCoverage.lastQueueProjectionAt, warnings: [...warnings], membershipRevenueRecognition, depreciationCoverage, disclaimer: "Management accounting projection for operational decision support. This is not statutory, tax, audit, or jurisdiction-specific financial reporting." };
+  }
+
+  getIncomeStatement(input: T.ManagementReportInput): Promise<T.IncomeStatement> {
+    return this.respond(() => {
+      this.requireReportingRead();
+      const range = this.managementReportInput(input);
+      const entries = this.managementReportEntries(range);
+      const revenue = this.managementStatementSection(entries, ["revenue"], "credit");
+      const costOfSales = this.managementStatementSection(entries, ["cost_of_sales"], "debit");
+      const operatingExpenses = this.managementStatementSection(entries, ["operating_expense"], "debit");
+      const otherIncome = this.managementStatementSection(entries, ["other_income"], "credit");
+      const otherExpenses = this.managementStatementSection(entries, ["other_expense"], "debit");
+      const totalRevenue = revenue.total.amount + otherIncome.total.amount;
+      const totalCosts = costOfSales.total.amount + operatingExpenses.total.amount + otherExpenses.total.amount;
+      const metadata = this.managementReportMetadata(range);
+      return { ...metadata, revenue, costOfSales, operatingExpenses, otherIncome, otherExpenses, totalRevenue: money(totalRevenue), totalCosts: money(totalCosts), netIncome: money(totalRevenue - totalCosts), membershipRevenueRecognition: metadata.membershipRevenueRecognition };
+    });
+  }
+
+  getBalanceSheet(input: T.ManagementReportInput): Promise<T.BalanceSheet> {
+    return this.respond(() => {
+      this.requireReportingRead();
+      const range = this.managementReportInput(input);
+      const entries = this.managementReportEntries(range, true);
+      const currentAssets = this.managementStatementSection(entries, ["asset_current"], "debit");
+      const noncurrentAssets = this.managementStatementSection(entries, ["asset_noncurrent"], "debit");
+      const currentLiabilities = this.managementStatementSection(entries, ["liability_current"], "credit");
+      const noncurrentLiabilities = this.managementStatementSection(entries, ["liability_noncurrent"], "credit");
+      const equity = this.managementStatementSection(entries, ["equity"], "credit");
+      // Cumulative unclosed earnings through the as-of date; there is no
+      // period-close roll-up. `currentEarnings` is a deploy-skew alias.
+      const recognizedRevenue = this.managementStatementSection(entries, ["revenue", "other_income"], "credit").total.amount;
+      const recognizedCosts = this.managementStatementSection(entries, ["cost_of_sales", "operating_expense", "other_expense"], "debit").total.amount;
+      const cumulativeEarnings = recognizedRevenue - recognizedCosts;
+      const totalAssets = currentAssets.total.amount + noncurrentAssets.total.amount;
+      const totalLiabilities = currentLiabilities.total.amount + noncurrentLiabilities.total.amount;
+      const totalEquity = equity.total.amount + cumulativeEarnings;
+      const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
+      return { ...this.managementReportMetadata(range), asOfDate: range.toDate, assets: { current: currentAssets, noncurrent: noncurrentAssets }, liabilities: { current: currentLiabilities, noncurrent: noncurrentLiabilities }, equity, cumulativeEarnings: money(cumulativeEarnings), currentEarnings: money(cumulativeEarnings), totalAssets: money(totalAssets), totalLiabilities: money(totalLiabilities), totalEquity: money(totalEquity), totalLiabilitiesAndEquity: money(totalLiabilitiesAndEquity), difference: money(totalAssets - totalLiabilitiesAndEquity), balanced: totalAssets === totalLiabilitiesAndEquity };
+    });
+  }
+
+  getCashflowStatement(input: T.ManagementReportInput): Promise<T.CashflowStatement> {
+    return this.respond(() => {
+      this.requireReportingRead();
+      const range = this.managementReportInput(input);
+      const entries = this.managementReportEntries(range);
+      const allEntries = this.managementReportEntries({ ...range, fromDate: "0000-01-01" });
+      const openingCash = allEntries.filter((entry) => entry.postingDate < range.fromDate).flatMap((entry) => entry.lines).filter((line) => ["1100", "1110", "1120"].includes(line.accountCode)).reduce((sum, line) => sum + line.debit.amount - line.credit.amount, 0);
+      const throughCash = allEntries.filter((entry) => entry.postingDate <= range.toDate).flatMap((entry) => entry.lines).filter((line) => ["1100", "1110", "1120"].includes(line.accountCode)).reduce((sum, line) => sum + line.debit.amount - line.credit.amount, 0);
+      const rows = new Map<string, { category: T.ManagementCashflowCategory; account: T.AccountingAccount; amount: number; ids: Set<string> }>();
+      const sectionFor = (category: T.ManagementCashflowCategory): T.CashflowSection => {
+        const lines = [...rows.values()].filter((row) => row.category === category).sort((a, b) => a.account.code.localeCompare(b.account.code)).map((row) => ({ accountId: row.account.id, accountCode: row.account.code, accountName: row.account.name, amount: money(row.amount), entryIds: [...row.ids].sort() }));
+        return { category, lines, netChange: money(lines.reduce((sum, line) => sum + line.amount.amount, 0)) };
+      };
+      const mixedEntryIds: string[] = [];
+      for (const entry of entries) {
+        const cashLines = entry.lines.filter((line) => ["1100", "1110", "1120"].includes(line.accountCode));
+        if (cashLines.length === 0) continue;
+        const counterparts = entry.lines.filter((line) => !["1100", "1110", "1120"].includes(line.accountCode));
+        // Cash-only entries are internal transfers: net cash change is zero,
+        // so excluding them keeps the reconciliation intact while the
+        // classified sections stop reporting money that never moved
+        // externally. Mirrors cashflow-classification.v2 in Convex.
+        if (counterparts.length === 0) continue;
+        const categories = new Set<T.ManagementCashflowCategory>(counterparts.map((line) => line.accountCode === "1500" || line.statementGroup === "asset_noncurrent" ? "investing" : line.accountCode === "3000" || line.statementGroup === "equity" || line.statementGroup === "liability_noncurrent" ? "financing" : "operating"));
+        const category: T.ManagementCashflowCategory = categories.has("investing") ? "investing" : categories.has("financing") ? "financing" : "operating";
+        if (categories.size > 1) mixedEntryIds.push(entry.id);
+        for (const cashLine of cashLines) {
+          const account = this.accountingAccounts.find((candidate) => candidate.code === cashLine.accountCode) ?? this.accountingAccount(cashLine.accountId);
+          const key = `${category}:${account.code}`;
+          const current = rows.get(key) ?? { category, account, amount: 0, ids: new Set<string>() };
+          current.amount += cashLine.debit.amount - cashLine.credit.amount;
+          current.ids.add(entry.id);
+          rows.set(key, current);
+        }
+      }
+      const operating = sectionFor("operating");
+      const investing = sectionFor("investing");
+      const financing = sectionFor("financing");
+      const netChange = operating.netChange.amount + investing.netChange.amount + financing.netChange.amount;
+      // Keep the two sides independent: expected closing cash comes from
+      // opening cash plus classified movements, while as-of cash comes from
+      // the cash-account position through the report end date. A zero
+      // difference is not a completeness assertion while queue coverage is
+      // still awaiting refresh.
+      const expectedClosingCash = openingCash + netChange;
+      const asOfCash = throughCash;
+      const metadata = this.managementReportMetadata(range);
+      if (mixedEntryIds.length > 0) metadata.warnings.push(`${mixedEntryIds.length} journal ${mixedEntryIds.length === 1 ? "entry pairs" : "entries pair"} one cash movement with counterparts from more than one activity; the whole movement is classified by priority (investing, then financing, then operating) under cashflow-classification.v2. Post separate journals to split such movements precisely.`);
+      const reconciliationStatus: T.ManagementReconciliationStatus = metadata.queueCoverage === "proven"
+        ? expectedClosingCash === asOfCash ? "proven" : "not_available"
+        : "unproven";
+      const reconciliationNote = reconciliationStatus === "unproven"
+        ? "Cash arithmetic agrees with the current ledger projection, but source queue coverage is not proven. Refresh the source queue before treating this reconciliation as complete."
+        : reconciliationStatus === "not_available"
+          ? "The classified cash movement does not agree with the independent cash-account position through the as-of date."
+          : undefined;
+      return {
+        ...metadata,
+        openingCash: money(openingCash),
+        operating,
+        investing,
+        financing,
+        netChange: money(netChange),
+        closingCash: money(asOfCash),
+        reconciliationDifference: money(expectedClosingCash - asOfCash),
+        reconciliationStatus,
+        reconciliation: {
+          status: reconciliationStatus,
+          expectedClosingCash: money(expectedClosingCash),
+          asOfCash: money(asOfCash),
+          difference: money(expectedClosingCash - asOfCash),
+          note: reconciliationNote,
+        },
+        balanced: reconciliationStatus === "proven" && expectedClosingCash === asOfCash,
+        classificationPolicy: { code: "cashflow-classification.v2", version: 2, description: "Cash on hand and card/bank-transfer clearing accounts are treated as cash. Each posted entry's cash movement is classified by its non-cash counterpart lines: investing when any counterpart is a non-current asset, otherwise financing when any counterpart is equity or a non-current liability, otherwise operating. Entries that only move money between cash accounts are internal transfers and are excluded from the classified sections." },
+      };
+    });
+  }
+
+  getGeneralManagerAnalysis(input: T.ManagementReportInput): Promise<T.GeneralManagerAnalysis> {
+    return this.respond(() => {
+      this.requireReportingRead();
+      const range = this.managementReportInput(input);
+      const metadata = this.managementReportMetadata(range);
+      const currentSnapshot = range.toDate === todayISODate(this.db.organization.timezone, new Date());
+      const sourceRows = this.accountingSources.filter((row) => managementLocalDate(row.occurredAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.occurredAt, this.db.organization.timezone) <= range.toDate && row.status === "posted" && this.managementBranchVisible(row.branchId, range.branchId));
+      const moneyMetric = (key: string, label: string, amount: number, ids: string[], note?: string, statusOverride?: T.ManagementMetricStatus): T.ManagementAnalysisMetric => ({ key, label, status: statusOverride ?? (ids.length > 0 ? "available" : "not_available"), value: statusOverride === "not_available" || statusOverride === "not_configured" || (!statusOverride && ids.length === 0) ? undefined : money(amount), unit: "money", sourceCount: ids.length, drilldownIds: ids.slice(0, 100), note });
+      const collectionRows = sourceRows.filter((row) => ["payment", "refund", "void"].includes(row.sourceType));
+      const membershipRows = sourceRows.filter((row) => ["membership_sale", "membership_renewal"].includes(row.sourceType));
+      const metrics: T.ManagementAnalysisMetric[] = [moneyMetric("collections", "Recorded collections", collectionRows.reduce((sum, row) => sum + (row.sourceType === "payment" ? row.amount?.amount ?? 0 : -(row.amount?.amount ?? 0)), 0), collectionRows.map((row) => row.id)), moneyMetric("deferred_membership_sales", "Recorded membership sales", membershipRows.reduce((sum, row) => sum + (row.amount?.amount ?? 0), 0), membershipRows.map((row) => row.id), "Membership sales post as revenue at sale under the current policy; legacy deferred terms recognize by service day until they run off.")];
+      metrics.push({ key: "renewal_deliveries", label: "Renewal recovery deliveries", status: "not_available", value: undefined, unit: "count", sourceCount: 0, drilldownIds: [], note: "The mock adapter has no provider-neutral renewal delivery ledger." });
+      const visibleCharge = (charge: T.Charge): boolean => {
+        const membership = charge.membershipId ? this.db.memberships.find((candidate) => candidate.id === charge.membershipId) : undefined;
+        const member = this.db.members.find((candidate) => candidate.id === charge.memberId);
+        return this.managementBranchVisible(membership?.homeBranchId ?? member?.homeBranchId, range.branchId);
+      };
+      const outstanding = this.db.charges.filter((charge) => visibleCharge(charge) && (charge.dueDate ?? charge.createdAt.slice(0, 10)) <= range.toDate && !["void", "refunded"].includes(charge.status) && charge.outstandingAmount.amount > 0);
+      metrics.push(currentSnapshot
+        ? { key: "outstanding_balances", label: "Outstanding collectible balances", status: outstanding.length > 0 ? "available" : "not_available", value: outstanding.length > 0 ? money(outstanding.reduce((sum, charge) => sum + charge.outstandingAmount.amount, 0)) : undefined, unit: "money", sourceCount: outstanding.length, drilldownIds: outstanding.map((charge) => charge.id), note: "Current snapshot from charge records." }
+        : { key: "outstanding_balances", label: "Outstanding collectible balances", status: "not_available", value: undefined, unit: "money", sourceCount: 0, drilldownIds: [], note: "Historical outstanding balances are unavailable because the mock charge model has no immutable balance-transition history." });
+      const openAlerts = this.db.lowStockAlerts.filter((row) => row.status === "open" && this.managementBranchVisible(row.branchId, range.branchId));
+      metrics.push(currentSnapshot
+        ? { key: "low_stock", label: "Open low-stock alerts", status: "available", value: openAlerts.length, unit: "count", sourceCount: openAlerts.length, drilldownIds: openAlerts.map((row) => row.id), note: "Current snapshot from inventory alerts." }
+        : { key: "low_stock", label: "Open low-stock alerts", status: "not_available", value: undefined, unit: "count", sourceCount: 0, drilldownIds: [], note: "Historical low-stock state is unavailable because inventory alerts are mutable projections without transition history." });
+      const openOrders = this.db.purchaseOrders.filter((row) => ["approved", "partially_received"].includes(row.status) && this.managementBranchVisible(row.branchId, range.branchId));
+      metrics.push(currentSnapshot
+        ? moneyMetric("supplier_commitments", "Open supplier commitments", openOrders.reduce((sum, row) => sum + row.lines.reduce((lineSum, line) => lineSum + Math.max(0, line.orderedQuantity - line.receivedQuantity) * line.unitCost.amount, 0), 0), openOrders.map((row) => row.id), "Current snapshot from purchase order projections.", "available")
+        : { key: "supplier_commitments", label: "Open supplier commitments", status: "not_available", value: undefined, unit: "money", sourceCount: 0, drilldownIds: [], note: "Historical supplier commitments are unavailable because purchase-order status is mutable without transition history." });
+      const openIssues = this.db.equipmentIssues.filter((row) => ["open", "in_progress"].includes(row.status) && this.managementBranchVisible(row.branchId, range.branchId));
+      metrics.push(currentSnapshot
+        ? { key: "equipment_downtime", label: "Open equipment issues", status: "available", value: openIssues.reduce((sum, row) => sum + (row.downtimeDays ?? 0), 0), unit: "days", sourceCount: openIssues.length, drilldownIds: openIssues.map((row) => row.id), note: "Current snapshot from equipment issue projections." }
+        : { key: "equipment_downtime", label: "Open equipment issues", status: "not_available", value: undefined, unit: "days", sourceCount: 0, drilldownIds: [], note: "Historical equipment issue state is unavailable because issue status is mutable without transition history." });
+      const completedFacilities = this.db.facilityTasks.filter((row) => row.status === "completed" && managementLocalDate(row.updatedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.updatedAt, this.db.organization.timezone) <= range.toDate && this.managementBranchVisible(row.branchId, range.branchId));
+      const facilityCostRows = completedFacilities.filter((row) => row.suppliesCost !== undefined);
+      metrics.push({ key: "facility_supplies_cost", label: "Recorded facility supplies cost", status: facilityCostRows.length > 0 ? "available" : "not_configured", value: facilityCostRows.length > 0 ? money(facilityCostRows.reduce((sum, row) => sum + (row.suppliesCost?.amount ?? 0), 0)) : undefined, unit: "money", sourceCount: facilityCostRows.length, drilldownIds: facilityCostRows.map((row) => row.id), note: facilityCostRows.length > 0 ? undefined : "No completed facility tasks with configured supplies costs are recorded in this period." });
+      const completedRepairs = this.db.equipmentWorkOrders.filter((row) => row.status === "completed" && managementLocalDate(row.updatedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(row.updatedAt, this.db.organization.timezone) <= range.toDate && this.managementBranchVisible(row.branchId, range.branchId));
+      const repairCostRows = completedRepairs.filter((row) => row.totalCost !== undefined || row.partsCost !== undefined || row.laborCost !== undefined);
+      metrics.push({ key: "equipment_repair_cost", label: "Recorded equipment repair cost", status: repairCostRows.length > 0 ? "available" : "not_configured", value: repairCostRows.length > 0 ? money(repairCostRows.reduce((sum, row) => sum + (row.totalCost?.amount ?? (row.partsCost?.amount ?? 0) + (row.laborCost?.amount ?? 0)), 0)) : undefined, unit: "money", sourceCount: repairCostRows.length, drilldownIds: repairCostRows.map((row) => row.id), note: repairCostRows.length > 0 ? undefined : "No completed repair work orders with configured costs are recorded in this period." });
+      const varianceShifts = this.db.shifts.filter((shift) => this.managementBranchVisible(shift.branchId, range.branchId) && shift.closedAt && managementLocalDate(shift.closedAt, this.db.organization.timezone) >= range.fromDate && managementLocalDate(shift.closedAt, this.db.organization.timezone) <= range.toDate && shift.variance);
+      metrics.push({ key: "cash_variance", label: "Recorded cash shift variance", status: varianceShifts.length > 0 ? "available" : "not_available", value: varianceShifts.length > 0 ? money(varianceShifts.reduce((sum, shift) => sum + (shift.variance?.amount ?? 0), 0)) : undefined, unit: "money", sourceCount: varianceShifts.length, drilldownIds: varianceShifts.map((shift) => shift.id).slice(0, 100) });
+      return { ...metadata, metrics };
+    });
+  }
+
+  listAccountingAccounts(query: { search?: string } = {}): Promise<T.AccountingAccount[]> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const search = query.search?.trim().toLowerCase();
+      return this.accountingAccounts.filter((account) => !search || `${account.code} ${account.name}`.toLowerCase().includes(search)).map((account) => ({ ...account }));
+    });
+  }
+
+  listAccountingPeriods(query: { status?: T.AccountingPeriodStatus } = {}): Promise<T.AccountingPeriod[]> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      return [...this.accountingPeriods].filter((period) => !query.status || period.status === query.status).sort((a, b) => b.periodStart.localeCompare(a.periodStart)).map((period) => ({ ...period }));
+    });
+  }
+
+  listAccountingJournalEntries(query: T.AccountingJournalQuery = {}): Promise<T.Page<T.AccountingJournalEntrySummary>> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const branchId = query.branchId ? this.accountingBranch(query.branchId)?.id : undefined;
+      let rows = this.accountingEntries.filter((entry) => (!branchId || entry.branchId === branchId) && (!query.periodId || entry.periodId === query.periodId) && (!query.status || entry.status === query.status) && (!query.from || entry.postingDate >= query.from) && (!query.to || entry.postingDate <= query.to));
+      rows = rows.filter((entry) => this.accountingBranchIsVisible(entry.branchId));
+      const items = rows.sort((a, b) => b.postingDate.localeCompare(a.postingDate)).map(({ lines: _lines, reason: _reason, idempotencyKey: _idempotencyKey, reversalOfEntryId: _reversalOfEntryId, reversedByEntryId: _reversedByEntryId, createdById: _createdById, ...summary }) => ({ ...summary }));
+      return paginate(items, query);
+    });
+  }
+
+  getAccountingJournalEntry(entryId: T.UUID): Promise<T.AccountingJournalEntryDetail> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const entry = this.accountingEntry(entryId);
+      return { ...entry, lines: entry.lines.map((line) => ({ ...line, debit: { ...line.debit }, credit: { ...line.credit } })) };
+    });
+  }
+
+  getAccountingTrialBalance(query: { branchId?: T.UUID; periodId?: T.UUID } = {}): Promise<T.AccountingTrialBalance> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const branchId = query.branchId ? this.accountingBranch(query.branchId)?.id : undefined;
+      const balances = new Map(this.accountingAccounts.map((account) => [account.code, { account, debit: 0, credit: 0 }]));
+      for (const entry of this.accountingEntries.filter((candidate) => (candidate.status === "posted" || candidate.status === "reversed") && (!query.periodId || candidate.periodId === query.periodId) && (!branchId || candidate.branchId === branchId) && this.accountingBranchIsVisible(candidate.branchId))) {
+        for (const line of entry.lines.filter((candidate) => !branchId || candidate.branchId === branchId)) {
+          const current = balances.get(line.accountCode);
+          if (current) { current.debit += line.debit.amount; current.credit += line.credit.amount; }
+        }
+      }
+      const rows = [...balances.values()].map((row) => ({ ...row, net: row.debit - row.credit })).filter((row) => row.net !== 0).sort((a, b) => a.account.code.localeCompare(b.account.code)).map((row) => ({ accountId: row.account.id, accountCode: row.account.code, accountName: row.account.name, accountType: row.account.accountType, statementGroup: row.account.statementGroup, debit: money(Math.max(row.net, 0)), credit: money(Math.max(-row.net, 0)), balance: money(row.net) }));
+      return { organizationId: this.db.organization.id, branchId, periodId: query.periodId, currency: this.db.organization.currency, rows, totalDebit: money(rows.reduce((sum, row) => sum + row.debit.amount, 0)), totalCredit: money(rows.reduce((sum, row) => sum + row.credit.amount, 0)) };
+    });
+  }
+
+  postManualJournal(input: T.PostManualJournalInput): Promise<T.AccountingJournalEntryDetail> {
+    return this.respond(() => {
+      this.requireAccountingOwner();
+      this.requireReason(input.reason);
+      const key = `manual:${input.idempotencyKey}`;
+      if (!input.idempotencyKey.trim()) throw ApiError.of(ERR.VALIDATION, "An idempotency key is required.");
+      const scope = input.scope ?? "branch";
+      if (scope !== "branch" && scope !== "consolidated") throw ApiError.of(ERR.VALIDATION, "Journal scope must be branch or consolidated.");
+      if (scope === "consolidated" && this.actor().branchScope !== "all") throw ApiError.of(ERR.FORBIDDEN, "Consolidated journals require organization-wide branch scope.");
+      const branch = this.accountingBranch(input.branchId);
+      if (scope === "consolidated" && input.branchId) throw ApiError.of(ERR.VALIDATION, "A consolidated journal cannot specify a branch.");
+      if (scope === "branch" && !branch) throw ApiError.of(ERR.VALIDATION, "A branch is required for a branch journal.");
+      const lines: T.AccountingJournalLine[] = [];
+      let debitTotal = 0;
+      let creditTotal = 0;
+      for (const lineInput of input.lines) {
+        const debit = lineInput.debit.amount;
+        const credit = lineInput.credit.amount;
+        if (lineInput.debit.currency !== this.db.organization.currency || lineInput.credit.currency !== this.db.organization.currency || !Number.isSafeInteger(debit) || !Number.isSafeInteger(credit) || debit < 0 || credit < 0 || (debit === 0 && credit === 0) || (debit > 0 && credit > 0)) throw ApiError.of(ERR.VALIDATION, "Each journal line needs one positive integer debit or credit in the organization currency.");
+        const account = this.accountingAccount(lineInput.accountId);
+        const nextDebitTotal = debitTotal + debit;
+        const nextCreditTotal = creditTotal + credit;
+        if (!Number.isSafeInteger(nextDebitTotal) || !Number.isSafeInteger(nextCreditTotal)) throw ApiError.of(ERR.VALIDATION, "Journal totals must remain safe integer minor-unit amounts.");
+        debitTotal = nextDebitTotal;
+        creditTotal = nextCreditTotal;
+        lines.push({ id: mockUuid(), journalEntryId: "pending", branchId: branch?.id, accountId: account.id, accountCode: account.code, accountName: account.name, debit: money(debit), credit: money(credit), description: lineInput.description, statementGroup: account.statementGroup, cashflowGroup: account.cashflowGroup });
+      }
+      if (lines.length < 2 || debitTotal <= 0 || debitTotal !== creditTotal) throw ApiError.of(ERR.VALIDATION, "Journal debits and credits must be equal and non-zero.");
+      const now = nowISO();
+      const memo = input.memo.trim() || "Manual journal";
+      const postingDate = ledgerDate(input.postingDate, this.today());
+      const fingerprint = manualJournalRequestFingerprint({ scope, branchId: branch?.id, postingDate, memo, reason: input.reason.trim(), lines: lines.map((line) => ({ accountId: line.accountId, debitMinor: line.debit.amount, creditMinor: line.credit.amount, description: line.description })) });
+      const replay = this.accountingEntries.find((entry) => entry.idempotencyKey === key);
+      if (replay) {
+        const replayFingerprint = this.accountingEntryFingerprints.get(replay.id) ?? manualJournalRequestFingerprint({ scope: replay.scope, branchId: replay.branchId, postingDate: replay.postingDate, memo: replay.memo, reason: replay.reason ?? "", lines: replay.lines.map((line) => ({ accountId: line.accountId, debitMinor: line.debit.amount, creditMinor: line.credit.amount, description: line.description })) });
+        if (replayFingerprint !== fingerprint) throw ApiError.of(ERR.CONFLICT, "This manual journal idempotency key was already used for a different request.");
+        return replay;
+      }
+      const period = this.accountingPeriodFor(postingDate);
+      const entryId = mockUuid();
+      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope, currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo, reason: input.reason.trim(), idempotencyKey: key, totalDebit: money(debitTotal), totalCredit: money(creditTotal), lineCount: lines.length, createdAt: now, postedAt: now, createdById: this.actor().id, lines: lines.map((line) => ({ ...line, journalEntryId: entryId })) };
+      this.accountingEntries.unshift(entry);
+      this.accountingEntryFingerprints.set(entry.id, fingerprint);
+      this.audit({ category: "accounting", action: "accounting.manual_post", entityType: "accounting_journal_entry", entityId: entry.id, entityLabel: entry.memo, summary: `Posted manual journal ${entry.id}`, reason: input.reason, branchId: branch?.id });
+      return entry;
+    });
+  }
+
+  listAccountingSourcePostings(query: T.AccountingSourcePostingQuery = {}): Promise<T.Page<T.AccountingSourcePosting>> {
+    return this.respond(() => {
+      this.requireFinanceRead();
+      const branchId = query.branchId ? this.accountingBranch(query.branchId)?.id : undefined;
+      const rows = this.accountingSources.filter((row) => (!branchId || row.branchId === branchId) && (!query.status || row.status === query.status) && (!query.sourceType || row.sourceType === query.sourceType) && this.accountingBranchIsVisible(row.branchId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+      return paginate(rows.map((row) => ({ ...row, amount: row.amount ? { ...row.amount } : undefined })), query);
+    });
+  }
+
+  private mockAccountingSourceCandidates(sourceTypes: readonly T.AccountingSourceType[], requestedBranchId?: T.UUID, dateRange?: MockSourceCandidateDateRange): Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; branchId?: T.UUID }> {
+    const allowed = new Set(sourceTypes);
+    const candidates: Array<{ sourceType: T.AccountingSourceType; sourceId: T.UUID; branchId?: T.UUID }> = [];
+    const seen = new Set<string>();
+    const add = (sourceType: T.AccountingSourceType, sourceId: T.UUID, branchId?: T.UUID) => {
+      if (!allowed.has(sourceType) || (requestedBranchId && branchId !== requestedBranchId) || !this.accountingBranchIsVisible(branchId)) return;
+      const key = `${sourceType}:${sourceId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      candidates.push({ sourceType, sourceId, branchId });
+    };
+
+    for (const payment of this.db.payments) {
+      const sourceType = payment.type === "refund" ? "refund" : payment.status === "voided" ? "void" : "payment";
+      if (mockTimestampInDateRange(payment.occurredAt, this.db.organization.timezone, dateRange)) add(sourceType, payment.id, payment.branchId);
+    }
+    for (const sale of this.db.retailSales) if (mockTimestampInDateRange(sale.createdAt, this.db.organization.timezone, dateRange)) add(sale.status === "voided" ? "void" : "payment", `retail-payment-${sale.id}`, sale.branchId);
+    for (const membership of this.db.memberships) if (mockTimestampInDateRange(membership.createdAt, this.db.organization.timezone, dateRange)) add(membership.previousMembershipId ? "membership_renewal" : "membership_sale", membership.id, membership.homeBranchId);
+    if (allowed.has("membership_revenue_recognition")) {
+      const serviceRange = mockServiceDateRangeThroughToday(dateRange);
+      for (const membership of this.db.memberships) {
+        const netAmount = membership.salePrice.amount - membership.discount.amount;
+        const originalType: T.AccountingSourceType = membership.previousMembershipId ? "membership_renewal" : "membership_sale";
+        const original = this.accountingSources.find((row) => row.sourceType === originalType && row.sourceId === membership.id && row.status === "posted");
+        // Unposted sales have nothing to earn yet; immediate-revenue sales never will.
+        if (!original || mockMembershipPolicyRecognition(original.policyCode) !== "deferred") continue;
+        const recognitionBase = original.amount?.amount !== undefined ? Math.min(netAmount, original.amount.amount) : netAmount;
+        const cancellationDate = membership.cancelledAt ? managementLocalDate(membership.cancelledAt, this.db.organization.timezone) : undefined;
+        const planChangeCutoff = cancellationDate && membership.cancellationReason?.startsWith("Superseded by plan change") ? new Date(Date.parse(`${cancellationDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10) : cancellationDate;
+        const freezes = mockMembershipFreezeWindows(membership);
+        const allocations = mockMembershipAllocations(recognitionBase, validAccountingDate(membership.startDate), validAccountingDate(membership.endDate), { cancellationDate: planChangeCutoff, freezes });
+        if (allocations.length === 0) {
+          if (mockTimestampInDateRange(membership.createdAt, this.db.organization.timezone, dateRange)) add("membership_revenue_recognition", `membership-revenue:${membership.id}:unconfigured`, membership.homeBranchId);
+        } else for (const allocation of allocations) if (mockMonthInDateRange(allocation.month, serviceRange)) add("membership_revenue_recognition", `membership-revenue:${membership.id}:${allocation.month}`, membership.homeBranchId);
+      }
+    }
+    for (const order of this.db.purchaseOrders) if (mockTimestampInDateRange(order.receivedAt ?? order.updatedAt, this.db.organization.timezone, dateRange)) add("purchase_order_receipt", order.id, order.branchId);
+    for (const movement of this.db.stockMovements) if (mockTimestampInDateRange(movement.occurredAt, this.db.organization.timezone, dateRange)) add("stock_movement", movement.id, movement.branchId);
+    for (const task of this.db.facilityTasks) if (mockTimestampInDateRange(task.completedAt ?? task.updatedAt, this.db.organization.timezone, dateRange)) add("facility_supplies", task.id, task.branchId);
+    for (const asset of this.db.equipmentAssets) if (mockTimestampInDateRange(asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, this.db.organization.timezone, dateRange)) add("equipment_acquisition", asset.id, asset.branchId);
+    if (allowed.has("equipment_depreciation")) {
+      const serviceRange = mockServiceDateRangeThroughToday(dateRange);
+      for (const asset of this.db.equipmentAssets) {
+        const serviceDate = validAccountingDate(asset.installationDate) ?? validAccountingDate(asset.purchaseDate);
+        const usefulLife = asset.expectedUsefulLifeMonths;
+        if (!serviceDate || usefulLife === undefined || !Number.isSafeInteger(usefulLife) || usefulLife < 1 || usefulLife > MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS || asset.status === "retired" || asset.status === "replaced") {
+          if (mockTimestampInDateRange(asset.createdAt, this.db.organization.timezone, dateRange)) add("equipment_depreciation", `equipment-depreciation:${asset.id}:unconfigured`, asset.branchId);
+          continue;
+        }
+        const startMonth = serviceDate.slice(0, 7);
+        for (let monthIndex = 0; monthIndex < usefulLife; monthIndex += 1) {
+          const month = accountingAddMonths(startMonth, monthIndex);
+          const amount = mockMonthlyDepreciationAmount(asset.purchaseCost?.amount, usefulLife, monthIndex);
+          if (amount !== undefined && amount > 0 && mockMonthInDateRange(month, serviceRange)) add("equipment_depreciation", `equipment-depreciation:${asset.id}:${month}`, asset.branchId);
+        }
+      }
+    }
+    for (const workOrder of this.db.equipmentWorkOrders) if (mockTimestampInDateRange(workOrder.completedAt ?? workOrder.updatedAt, this.db.organization.timezone, dateRange)) add("equipment_repair", workOrder.id, workOrder.branchId);
+    for (const payment of this.db.supplierPayments) {
+      if (mockTimestampInDateRange(payment.occurredAt, this.db.organization.timezone, dateRange)) add("supplier_payment", payment.id, payment.branchId);
+      if (payment.status === "reversed" && mockTimestampInDateRange(payment.reversal?.reversedAt ?? payment.updatedAt, this.db.organization.timezone, dateRange)) add("supplier_payment_reversal", payment.id, payment.branchId);
+    }
+    return candidates;
+  }
+
+  refreshAccountingSourceQueue(input: T.RefreshAccountingSourceQueueInput = {}): Promise<T.RefreshAccountingSourceQueueResult> {
+    return this.respond(() => {
+      this.requireAccountingPosting();
+      const supported = [...MOCK_ACCOUNTING_SOURCE_TYPES];
+      const sourceTypes = input.sourceTypes ?? supported;
+      if (sourceTypes.some((sourceType) => !supported.includes(sourceType))) throw ApiError.of(ERR.VALIDATION, "Source queue refresh contains an unsupported source type.");
+      const fromDate = input.fromDate === undefined ? undefined : validAccountingDate(input.fromDate);
+      const toDate = input.toDate === undefined ? undefined : validAccountingDate(input.toDate);
+      if (input.fromDate !== undefined && !fromDate || input.toDate !== undefined && !toDate) throw ApiError.of(ERR.VALIDATION, "Source queue dates must use real YYYY-MM-DD calendar dates.");
+      if (fromDate && toDate && fromDate > toDate) throw ApiError.of(ERR.VALIDATION, "Source queue fromDate must be on or before toDate.");
+      const requestedBranchId = input.branchId ? this.accountingBranch(input.branchId)?.id : undefined;
+      const candidates = this.mockAccountingSourceCandidates(sourceTypes, requestedBranchId, { fromDate, toDate: toDate ?? managementLocalDate(Date.now(), this.db.organization.timezone) });
+
+      let created = 0;
+      let updated = 0;
+      let skippedPosted = 0;
+      let pending = 0;
+      let unconfigured = 0;
+      let excluded = 0;
+      let coverageProven = sourceTypes.length === supported.length && supported.every((sourceType) => sourceTypes.includes(sourceType));
+      const items: T.AccountingSourcePosting[] = [];
+      const digestRows: Array<{ key: string; fingerprint?: string }> = [];
+      for (const candidate of candidates) {
+        const existing = this.accountingSources.find((row) => row.sourceType === candidate.sourceType && row.sourceId === candidate.sourceId);
+        const fact = preserveMockSourcePolicy(this.mockAccountingFact(candidate.sourceType, candidate.sourceId), existing);
+        const currency = fact.currency ?? this.db.organization.currency;
+        const status: T.AccountingSourceStatus = fact.status ?? (!fact.branchId || !fact.policyCode || !fact.debitCode || !fact.creditCode || fact.amount === undefined || fact.amount <= 0 || currency !== this.db.organization.currency ? "unconfigured" : "pending");
+        const projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: candidate.sourceType, sourceId: candidate.sourceId }, status);
+        const inRange = (!fromDate || managementLocalDate(fact.occurredAt, this.db.organization.timezone) >= fromDate) && (!toDate || managementLocalDate(fact.occurredAt, this.db.organization.timezone) <= toDate);
+        if (!inRange) continue;
+        if (existing?.status === "posted" || existing?.status === "reversed" || existing?.reviewExcludedAt !== undefined) {
+          skippedPosted += 1;
+          if (!existing.projectionFingerprint) {
+            existing.projectionFingerprint = projectionFingerprint;
+            existing.updatedAt = nowISO();
+            updated += 1;
+          }
+          digestRows.push({ key: `${candidate.sourceType}:${candidate.sourceId}`, fingerprint: existing.projectionFingerprint });
+          if (!existing.projectionFingerprint) coverageProven = false;
+          continue;
+        }
+        const now = nowISO();
+        const policyVersion = accountingPolicyVersion(fact.policyCode);
+        const next = { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount, currency), currency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, journalEntryId: undefined, idempotencyKey: undefined, updatedAt: now };
+        let row: T.AccountingSourcePosting;
+        if (existing) {
+          const changed = existing.branchId !== next.branchId || existing.status !== next.status || existing.amount?.amount !== next.amount?.amount || existing.currency !== next.currency || existing.policyCode !== next.policyCode || existing.policyVersion !== next.policyVersion || existing.journalEntryId !== next.journalEntryId || existing.idempotencyKey !== next.idempotencyKey || existing.reason !== next.reason || existing.occurredAt !== next.occurredAt || existing.projectionFingerprint !== next.projectionFingerprint || stableJson(existing.details ?? null) !== stableJson(next.details ?? null);
+          if (changed) { Object.assign(existing, next); updated += 1; }
+          row = existing;
+        } else {
+          row = { id: mockUuid(), organizationId: this.db.organization.id, sourceType: candidate.sourceType, sourceId: candidate.sourceId, ...next, createdAt: now };
+          this.accountingSources.unshift(row);
+          created += 1;
+        }
+        if (row.status === "pending") pending += 1;
+        if (row.status === "unconfigured") unconfigured += 1;
+        if (row.status === "excluded") excluded += 1;
+        digestRows.push({ key: `${candidate.sourceType}:${candidate.sourceId}`, fingerprint: row.projectionFingerprint });
+        if (!row.projectionFingerprint) coverageProven = false;
+        items.push({ ...row, amount: row.amount ? { ...row.amount } : undefined });
+      }
+      const scannedAt = nowISO();
+      const sortedDigestRows = digestRows.sort((left, right) => left.key.localeCompare(right.key));
+      this.accountingSourceQueueRuns.unshift({ branchId: requestedBranchId, fromDate, toDate, sourceTypes: [...new Set(sourceTypes)], candidateDigest: stableJson(sortedDigestRows), candidateCount: sortedDigestRows.length, scannedAt });
+      this.audit({ category: "accounting", action: "accounting.source_queue.refresh", entityType: "accounting_source_queue_run", entityId: requestedBranchId ?? this.db.organization.id, entityLabel: "Source queue", summary: `Refreshed accounting source queue (${created} created, ${updated} updated)`, branchId: requestedBranchId });
+      return { organizationId: this.db.organization.id, branchId: requestedBranchId, scanned: candidates.length, created, updated, skippedPosted, pending, unconfigured, excluded, queueCoverage: coverageProven ? "proven" : "refresh_required", scannedFromDate: fromDate, scannedToDate: toDate, items };
+    });
+  }
+
+  private mockAccountingFact(sourceType: T.AccountingSourceType, sourceId: T.UUID): MockAccountingFact {
+    const accountForMethod = (method: T.PaymentMethodKey) => method === "card" ? "1110" : method === "bank_transfer" || method === "cliq" ? "1120" : "1100";
+    if (sourceType === "supplier_payment" || sourceType === "supplier_payment_reversal") {
+      const payment = this.db.supplierPayments.find((candidate) => candidate.id === sourceId);
+      if (!payment) throw ApiError.of(ERR.NOT_FOUND, "Supplier payment source not found.");
+      const reversal = sourceType === "supplier_payment_reversal";
+      const settlementAccount = payment.method === "cash" ? "1100" : "1120";
+      const currencyMismatch = payment.amount.currency !== this.db.organization.currency;
+      const invalidAmount = !Number.isSafeInteger(payment.amount.amount) || payment.amount.amount <= 0;
+      const reversed = payment.status === "reversed";
+      // Mirrors Convex: a reversal only reverses money that reached the
+      // ledger, and a payment reversed before posting has nothing to post.
+      const originalStatus = this.accountingSources.find((row) => row.sourceType === "supplier_payment" && row.sourceId === sourceId)?.status;
+      const reversalWithoutPostedOriginal = reversal && originalStatus !== "posted";
+      const reversedBeforePosting = !reversal && reversed && originalStatus !== "posted";
+      return {
+        amount: payment.amount.amount,
+        currency: payment.amount.currency,
+        branchId: payment.branchId,
+        occurredAt: reversal ? payment.reversal?.reversedAt ?? payment.updatedAt : payment.occurredAt,
+        debitCode: reversal ? settlementAccount : "2100",
+        creditCode: reversal ? "2100" : settlementAccount,
+        policyCode: `${reversal ? "supplier-payment-reversal" : "supplier-payment"}-${payment.method.replace("_", "-")}.v1`,
+        details: { method: payment.method, supplierId: payment.supplierId, supplierName: payment.supplierName, reference: payment.reference, paymentStatus: payment.status, allocationCount: payment.allocations.length, ...(reversal ? { originalPaymentPostingStatus: originalStatus ?? "never_posted" } : {}) },
+        status: currencyMismatch ? "excluded" : invalidAmount ? "unconfigured" : reversal ? (!reversed || reversalWithoutPostedOriginal ? "excluded" : undefined) : reversedBeforePosting ? "excluded" : undefined,
+        reason: currencyMismatch
+          ? "Supplier payment currency does not match organization currency."
+          : invalidAmount
+            ? "Supplier payment amount is not a positive safe integer minor-unit amount."
+            : reversal && !reversed
+              ? "This supplier payment has not been reversed, so there is no reversal to post."
+              : reversalWithoutPostedOriginal
+                ? "The reversed supplier payment was never posted to the ledger, so the reversal has no ledger effect."
+                : reversedBeforePosting
+                  ? "This supplier payment was reversed before it reached the ledger, so nothing is posted."
+                  : undefined,
+      };
+    }
+    if (["payment", "refund", "void"].includes(sourceType)) {
+      const retailSale = this.db.retailSales.find((sale) => `retail-payment-${sale.id}` === sourceId);
+      const payment: T.Payment | T.RetailPayment | undefined = this.db.payments.find((candidate) => candidate.id === sourceId) ?? (retailSale ? this.retailPaymentProjection(retailSale) : undefined);
+      if (!payment) throw ApiError.of(ERR.NOT_FOUND, "Payment source not found.");
+      const isRetail = payment.type === "retail_sale" || ("retailSaleId" in payment && Boolean(payment.retailSaleId));
+      const valid = sourceType === "payment" ? (payment.type === "payment" || isRetail) && payment.status !== "voided" : sourceType === "refund" ? payment.type === "refund" : (payment.type === "payment" || isRetail) && payment.status === "voided";
+      // Mirrors Convex: a void only reverses a collection that actually
+      // reached the ledger. Without a posted original there is nothing to
+      // reverse, and posting the void would fabricate a cash outflow.
+      const voidOriginalStatus = sourceType === "void" && valid ? this.accountingSources.find((row) => row.sourceType === "payment" && row.sourceId === sourceId)?.status : undefined;
+      const voidWithoutPostedOriginal = sourceType === "void" && valid && voidOriginalStatus !== "posted";
+      const debitCode = sourceType === "payment" ? accountForMethod(payment.method) : isRetail ? "4200" : "1200";
+      const creditCode = sourceType === "payment" ? (isRetail ? "4200" : "1200") : accountForMethod(payment.method);
+      const normalizedAmount = sourceType === "refund" ? Math.abs(payment.amount.amount) : payment.amount.amount;
+      const currencyMismatch = payment.amount.currency !== this.db.organization.currency;
+      const policyPrefix = isRetail ? (sourceType === "payment" ? "retail-sale" : sourceType === "refund" ? "retail-refund" : "retail-void") : sourceType;
+      const policyVersion = isRetail ? 2 : 1;
+      return { amount: normalizedAmount, currency: payment.amount.currency, branchId: payment.branchId, occurredAt: payment.occurredAt, debitCode, creditCode, policyCode: `${policyPrefix}-${payment.method}.v${policyVersion}`, status: currencyMismatch ? "excluded" : !valid || normalizedAmount <= 0 ? "unconfigured" : voidWithoutPostedOriginal ? "excluded" : undefined, reason: currencyMismatch ? "Payment currency does not match organization currency." : !valid ? "Payment lifecycle does not match the requested accounting source type." : normalizedAmount <= 0 ? "Payment source has no positive amount." : voidWithoutPostedOriginal ? "The voided payment was never posted to the ledger, so the void has no ledger effect to reverse." : undefined, details: { method: payment.method, saleType: isRetail ? "retail" : "membership", ...(sourceType === "void" ? { originalPaymentPostingStatus: voidOriginalStatus ?? "never_posted" } : {}) } };
+    }
+    if (sourceType === "membership_sale" || sourceType === "membership_renewal") {
+      const membership = this.db.memberships.find((candidate) => candidate.id === sourceId);
+      if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership source not found.");
+      const renewal = Boolean(membership.previousMembershipId);
+      const netAmount = membership.salePrice.amount - membership.discount.amount;
+      const validLifecycle = !membership.cancelledAt && ((sourceType === "membership_renewal" && renewal) || (sourceType === "membership_sale" && !renewal));
+      const validDiscount = membership.discount.currency === this.db.organization.currency && Number.isSafeInteger(membership.discount.amount) && membership.discount.amount >= 0 && membership.discount.amount <= membership.salePrice.amount && membership.discountApprovalStatus !== "pending" && membership.discountApprovalStatus !== "rejected";
+      const validAmount = Number.isSafeInteger(netAmount) && netAmount >= 0;
+      const currencyMismatch = membership.salePrice.currency !== this.db.organization.currency || membership.discount.currency !== this.db.organization.currency;
+      return { amount: netAmount, currency: membership.salePrice.currency, branchId: membership.homeBranchId, occurredAt: membership.createdAt, debitCode: "1200", creditCode: "4100", policyCode: `${sourceType === "membership_sale" ? "membership-sale" : "membership-renewal"}.v2`, status: currencyMismatch ? "excluded" : validLifecycle && validDiscount && validAmount ? undefined : "unconfigured", reason: currencyMismatch ? "Membership currency does not match organization currency." : !validLifecycle ? "Membership lifecycle does not match the requested sale or renewal source type." : !validDiscount ? "Membership discount approval or currency is not configured." : !validAmount ? "Membership sale net amount is not a safe non-negative integer." : undefined, details: { previousMembershipId: membership.previousMembershipId, salePriceMinor: membership.salePrice.amount, discountMinor: membership.discount.amount, netAmountMinor: netAmount, discountApprovalStatus: membership.discountApprovalStatus } };
+    }
+    if (sourceType === "membership_revenue_recognition") {
+      const prefix = "membership-revenue:";
+      if (!sourceId.startsWith(prefix)) throw ApiError.of(ERR.VALIDATION, "Membership recognition source id is invalid.");
+      const remainder = sourceId.slice(prefix.length);
+      const separator = remainder.lastIndexOf(":");
+      const membershipId = separator > 0 ? remainder.slice(0, separator) : "";
+      const serviceMonth = separator > 0 ? remainder.slice(separator + 1) : "";
+      if (!membershipId || !serviceMonth) throw ApiError.of(ERR.VALIDATION, "Membership recognition source id is invalid.");
+      const membership = this.db.memberships.find((candidate) => candidate.id === membershipId);
+      if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Membership recognition source not found.");
+      const sourceCurrency = membership.salePrice.currency;
+      const netAmount = membership.salePrice.amount - membership.discount.amount;
+      const originalType: T.AccountingSourceType = membership.previousMembershipId ? "membership_renewal" : "membership_sale";
+      const original = this.accountingSources.find((row) => row.sourceType === originalType && row.sourceId === membership.id);
+      const immediateOriginal = original?.status === "posted" && mockMembershipPolicyRecognition(original.policyCode) !== "deferred";
+      const dependencyValid = original?.status === "posted" && !immediateOriginal && original.branchId === membership.homeBranchId && original.currency === this.db.organization.currency && original.amount !== undefined && Number.isSafeInteger(original.amount.amount) && original.amount.amount > 0;
+      const recognitionBase = dependencyValid ? Math.min(netAmount, original.amount!.amount) : netAmount;
+      const cancellationDate = membership.cancelledAt ? managementLocalDate(membership.cancelledAt, this.db.organization.timezone) : undefined;
+      const planChangeCutoff = cancellationDate && membership.cancellationReason?.startsWith("Superseded by plan change") ? new Date(Date.parse(`${cancellationDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10) : cancellationDate;
+      const allocations = mockMembershipAllocations(recognitionBase, validAccountingDate(membership.startDate), validAccountingDate(membership.endDate), { cancellationDate: planChangeCutoff, freezes: mockMembershipFreezeWindows(membership) });
+      const selected = allocations.find((allocation) => allocation.month === serviceMonth);
+      const occurredAt = selected ? tenantDateIso(accountingMonthEnd(selected.month), this.db.organization.timezone) : membership.createdAt;
+      const currencyMismatch = sourceCurrency !== this.db.organization.currency || membership.discount.currency !== this.db.organization.currency;
+      const futureMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(serviceMonth) && serviceMonth > managementLocalDate(Date.now(), this.db.organization.timezone).slice(0, 7);
+      const valid = dependencyValid && !futureMonth && selected !== undefined && selected.amount > 0 && Number.isSafeInteger(netAmount) && netAmount >= 0 && membership.discount.amount >= 0 && membership.discount.amount <= membership.salePrice.amount && membership.discountApprovalStatus !== "pending" && membership.discountApprovalStatus !== "rejected";
+      return { amount: selected?.amount, currency: sourceCurrency, branchId: original?.branchId ?? membership.homeBranchId, occurredAt, debitCode: "2200", creditCode: "4100", policyCode: "membership-revenue-recognition.v1", status: currencyMismatch ? "excluded" : valid ? undefined : "unconfigured", reason: currencyMismatch ? "Membership currency does not match organization currency." : valid ? undefined : immediateOriginal ? "This membership was posted as immediate revenue; no recognition schedule exists." : !dependencyValid ? "The original membership sale or renewal must be posted in the same branch and currency before revenue can be recognized." : futureMonth ? "Future membership service months cannot be recognized." : !validAccountingDate(membership.startDate) || !validAccountingDate(membership.endDate) || membership.startDate > membership.endDate ? "Membership service start and end dates must be valid calendar dates." : !Number.isSafeInteger(netAmount) || netAmount < 0 || membership.discount.amount > membership.salePrice.amount ? "Membership net amount is not a safe non-negative integer minor-unit amount." : !selected ? `No positive earned amount exists for ${serviceMonth}.` : selected.amount <= 0 ? "This service month has no positive amount to recognize." : membership.discountApprovalStatus === "pending" || membership.discountApprovalStatus === "rejected" ? "Membership discount approval is not complete." : "Membership recognition source is not configured.", details: { membershipId, serviceMonth, serviceStart: selected?.serviceStart, serviceEnd: selected?.serviceEnd, serviceDays: selected?.days, netAmountMinor: netAmount, postedDeferredAmountMinor: original?.amount?.amount, recognitionBaseMinor: recognitionBase, cancellationDate: planChangeCutoff, allocatedAmountMinor: selected?.amount, allocationPolicy: "daily-weighted-largest-remainder.v1" } };
+    }
+    if (sourceType === "equipment_depreciation") {
+      const prefix = "equipment-depreciation:";
+      if (!sourceId.startsWith(prefix)) throw ApiError.of(ERR.VALIDATION, "Equipment depreciation source id is invalid.");
+      const remainder = sourceId.slice(prefix.length);
+      const separator = remainder.lastIndexOf(":");
+      const assetId = separator > 0 ? remainder.slice(0, separator) : "";
+      const serviceMonth = separator > 0 ? remainder.slice(separator + 1) : "";
+      if (!assetId || !serviceMonth) throw ApiError.of(ERR.VALIDATION, "Equipment depreciation source id is invalid.");
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === assetId);
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment depreciation source not found.");
+      const acquisition = this.accountingSources.find((row) => row.sourceType === "equipment_acquisition" && row.sourceId === asset.id);
+      const serviceDate = validAccountingDate(asset.installationDate) ?? validAccountingDate(asset.purchaseDate);
+      const serviceMonthStart = serviceDate?.slice(0, 7);
+      const monthIndex = serviceMonthStart && /^\d{4}-\d{2}$/.test(serviceMonth) ? (Number(serviceMonth.slice(0, 4)) - Number(serviceMonthStart.slice(0, 4))) * 12 + Number(serviceMonth.slice(5, 7)) - Number(serviceMonthStart.slice(5, 7)) : -1;
+      const cost = asset.purchaseCost?.amount;
+      const usefulLife = asset.expectedUsefulLifeMonths;
+      const dependencyValid = acquisition?.status === "posted" && acquisition.branchId === asset.branchId && acquisition.currency === this.db.organization.currency && acquisition.amount !== undefined && Number.isSafeInteger(acquisition.amount.amount) && acquisition.amount.amount > 0;
+      const depreciationBase = dependencyValid && cost !== undefined ? Math.min(cost, acquisition.amount!.amount) : cost;
+      const amount = mockMonthlyDepreciationAmount(depreciationBase, usefulLife, monthIndex);
+      const sourceCurrency = asset.purchaseCost?.currency ?? this.db.organization.currency;
+      const currencyMismatch = sourceCurrency !== this.db.organization.currency;
+      const futureMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(serviceMonth) && serviceMonth > managementLocalDate(Date.now(), this.db.organization.timezone).slice(0, 7);
+      const retiredWithoutEffectiveDate = asset.status === "retired" || asset.status === "replaced";
+      const valid = dependencyValid && !futureMonth && !retiredWithoutEffectiveDate && serviceDate !== undefined && cost !== undefined && Number.isSafeInteger(cost) && cost > 0 && usefulLife !== undefined && Number.isSafeInteger(usefulLife) && usefulLife > 0 && usefulLife <= MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS && amount !== undefined && amount > 0;
+      const occurredAt = /^\d{4}-\d{2}$/.test(serviceMonth) ? tenantDateIso(accountingMonthEnd(serviceMonth), this.db.organization.timezone) : asset.createdAt;
+      return { amount, currency: sourceCurrency, branchId: asset.branchId, occurredAt, debitCode: "5600", creditCode: "1550", policyCode: "equipment-depreciation.v1", status: currencyMismatch ? "excluded" : valid ? undefined : "unconfigured", reason: currencyMismatch ? "Equipment cost currency does not match organization currency." : valid ? undefined : !dependencyValid ? "The equipment acquisition must be posted in the same branch and currency before depreciation can be recorded." : retiredWithoutEffectiveDate ? "Retired or replaced equipment needs an audited effective retirement date before its depreciation schedule can continue." : futureMonth ? "Future equipment service months cannot be depreciated." : serviceDate === undefined ? "Equipment needs a valid placed-in-service date or purchase date before depreciation can be configured." : cost === undefined || !Number.isSafeInteger(cost) || cost <= 0 ? "Equipment purchase cost must be a positive integer minor-unit amount before depreciation can be configured." : usefulLife === undefined || !Number.isSafeInteger(usefulLife) || usefulLife <= 0 || usefulLife > MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS ? `Equipment expected useful life must be between 1 and ${MOCK_MAX_EQUIPMENT_USEFUL_LIFE_MONTHS} months.` : serviceMonth === "unconfigured" ? "Equipment depreciation service month is not configured." : monthIndex < 0 || monthIndex >= usefulLife ? "Equipment depreciation service month falls outside the useful-life schedule." : amount === undefined || amount <= 0 ? "Equipment depreciation amount is not a positive integer minor-unit amount." : "Equipment depreciation source is not configured.", details: { assetId, assetCode: asset.code, serviceMonth, depreciationStartDate: serviceDate, depreciationDateSource: asset.installationDate && validAccountingDate(asset.installationDate) ? "installation" : "purchase", purchaseCostMinor: cost, postedAcquisitionAmountMinor: acquisition?.amount?.amount, depreciationBaseMinor: depreciationBase, usefulLifeMonths: usefulLife, residualValueMinor: 0, monthIndex: monthIndex >= 0 ? monthIndex : undefined, allocatedAmountMinor: amount, allocationPolicy: "straight-line-monthly-remainder.v1" } };
+    }
+    if (sourceType === "stock_movement") {
+      const movement = this.db.stockMovements.find((candidate) => candidate.id === sourceId);
+      if (!movement) throw ApiError.of(ERR.NOT_FOUND, "Stock movement source not found.");
+      const receive = movement.type === "receive";
+      const consumptive = ["sale", "consumption", "waste"].includes(movement.type);
+      const internalTransfer = ["transfer_in", "transfer_out"].includes(movement.type);
+      const amount = movement.totalCost?.amount ?? (movement.unitCost ? Math.abs(movement.quantity) * movement.unitCost.amount : undefined);
+      const purchaseOrderLinked = movement.referenceType?.toLowerCase() === "purchase_order";
+      const retailReturn = movement.type === "return" && ["retail_refund", "retail_void"].includes(movement.referenceType?.toLowerCase() ?? "");
+      const currencyMismatch = movement.unitCost?.currency !== undefined && movement.unitCost.currency !== this.db.organization.currency;
+      return { amount, currency: movement.unitCost?.currency ?? movement.totalCost?.currency ?? this.db.organization.currency, branchId: movement.branchId, occurredAt: movement.occurredAt, debitCode: receive ? "1300" : consumptive ? "5100" : retailReturn ? "1300" : undefined, creditCode: receive ? "2100" : consumptive ? "1300" : retailReturn ? "5100" : undefined, policyCode: receive ? "stock-receive.v1" : consumptive ? "stock-consume.v1" : retailReturn ? "stock-return.v1" : undefined, status: currencyMismatch ? "excluded" : purchaseOrderLinked || internalTransfer ? "excluded" : !receive && !consumptive && !retailReturn || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: currencyMismatch ? "Stock movement currency does not match organization currency." : purchaseOrderLinked ? "Purchase-order-linked stock movements are excluded to prevent duplicate inventory and AP posting." : internalTransfer ? "Internal branch transfers move stock within the organization and do not create a journal entry." : !receive && !consumptive && !retailReturn ? `No accounting policy exists for stock movement type ${movement.type}.` : movement.unitCost ? undefined : "Stock movement unit cost is not configured.", details: { type: movement.type, referenceType: movement.referenceType } };
+    }
+    if (sourceType === "purchase_order_receipt") {
+      const order = this.db.purchaseOrders.find((candidate) => candidate.id === sourceId);
+      if (!order) throw ApiError.of(ERR.NOT_FOUND, "Purchase order source not found.");
+      let amount = 0;
+      let invalidCost = false;
+      let currencyMismatch = order.currency !== this.db.organization.currency;
+      for (const line of order.lines) {
+        if (line.unitCost.currency !== this.db.organization.currency) currencyMismatch = true;
+        const lineTotal = line.receivedQuantity * line.unitCost.amount;
+        if (!Number.isSafeInteger(lineTotal) || lineTotal < 0 || !Number.isSafeInteger(amount + lineTotal)) invalidCost = true;
+        else amount += lineTotal;
+      }
+      const fullyReceived = order.status === "received" && order.lines.length > 0 && order.lines.every((line) => line.receivedQuantity >= line.orderedQuantity);
+      return { amount: invalidCost ? undefined : amount, currency: order.currency, branchId: order.branchId, occurredAt: order.receivedAt ?? order.updatedAt, debitCode: "1300", creditCode: "2100", policyCode: "purchase-order-receipt.v1", status: currencyMismatch ? "excluded" : invalidCost || order.status === "cancelled" || !fullyReceived || !amount ? "unconfigured" : undefined, reason: currencyMismatch ? "Purchase order currency does not match organization currency." : invalidCost ? "Purchase order receipt cost is not a safe integer minor-unit amount." : order.status === "cancelled" ? "Cancelled purchase orders are excluded." : !fullyReceived ? "Purchase order inventory must be fully received before posting." : !amount ? "No receiving cost is recorded." : undefined };
+    }
+    if (sourceType === "facility_supplies") {
+      const task = this.db.facilityTasks.find((candidate) => candidate.id === sourceId);
+      if (!task) throw ApiError.of(ERR.NOT_FOUND, "Facility task source not found.");
+      const amount = task.suppliesCost?.amount;
+      return { amount, currency: task.suppliesCost?.currency ?? this.db.organization.currency, branchId: task.branchId, occurredAt: task.completedAt ?? task.updatedAt, debitCode: "5300", creditCode: "2100", policyCode: "facility-supplies.v1", status: task.suppliesCost?.currency !== undefined && task.suppliesCost.currency !== this.db.organization.currency ? "excluded" : task.status !== "completed" || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: task.suppliesCost?.currency !== undefined && task.suppliesCost.currency !== this.db.organization.currency ? "Facility supplies currency does not match organization currency." : task.status !== "completed" ? "Facility supplies post only after completion." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Facility supplies cost is not a configured safe integer minor-unit amount." : undefined };
+    }
+    if (sourceType === "equipment_acquisition") {
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === sourceId);
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset source not found.");
+      const amount = asset.purchaseCost?.amount;
+      return { amount, currency: asset.purchaseCost?.currency ?? this.db.organization.currency, branchId: asset.branchId, occurredAt: asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, debitCode: "1500", creditCode: "2100", policyCode: "equipment-acquisition.v1", status: asset.purchaseCost?.currency !== undefined && asset.purchaseCost.currency !== this.db.organization.currency ? "excluded" : !asset.purchaseDate || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: asset.purchaseCost?.currency !== undefined && asset.purchaseCost.currency !== this.db.organization.currency ? "Equipment acquisition currency does not match organization currency." : !asset.purchaseDate ? "Equipment purchase date is not configured." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Equipment purchase cost is not a configured safe integer minor-unit amount." : undefined };
+    }
+    const workOrder = this.db.equipmentWorkOrders.find((candidate) => candidate.id === sourceId);
+    if (!workOrder) throw ApiError.of(ERR.NOT_FOUND, "Equipment work-order source not found.");
+    const amount = workOrder.totalCost?.amount ?? (workOrder.partsCost?.amount ?? 0) + (workOrder.laborCost?.amount ?? 0);
+    const repairCurrency = workOrder.totalCost?.currency ?? workOrder.partsCost?.currency ?? workOrder.laborCost?.currency ?? this.db.organization.currency;
+    return { amount, currency: repairCurrency, branchId: workOrder.branchId, occurredAt: workOrder.completedAt ?? workOrder.updatedAt, debitCode: "5200", creditCode: "2100", policyCode: "equipment-repair.v1", status: repairCurrency !== this.db.organization.currency ? "excluded" : workOrder.status !== "completed" || amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "unconfigured" : undefined, reason: repairCurrency !== this.db.organization.currency ? "Equipment repair currency does not match organization currency." : workOrder.status !== "completed" ? "Equipment repairs post only after completion." : amount === undefined || !Number.isSafeInteger(amount) || amount <= 0 ? "Equipment repair cost is not a configured safe integer minor-unit amount." : undefined };
+  }
+
+  postAccountingSource(input: T.PostAccountingSourceInput): Promise<T.AccountingSourcePosting> {
+    return this.respond(() => {
+      this.requireAccountingPosting();
+      if (!input.idempotencyKey.trim()) throw ApiError.of(ERR.VALIDATION, "An idempotency key is required.");
+      const sourceRows = this.accountingSources.filter((row) => row.sourceType === input.sourceType && row.sourceId === input.sourceId);
+      const replay = sourceRows.find((row) => row.status === "posted" || row.status === "reversed") ?? sourceRows[0];
+      for (const row of sourceRows) {
+        if (!this.accountingBranchIsVisible(row.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      }
+      const requestFingerprint = accountingSourceRequestFingerprint({ sourceType: input.sourceType, sourceId: input.sourceId, idempotencyKey: input.idempotencyKey, reason: input.reason });
+      const attemptsWithKey = [...this.accountingSourceAttempts.values()].filter((attempt) => attempt.idempotencyKey === input.idempotencyKey);
+      for (const attempt of attemptsWithKey) {
+        if (!this.accountingBranchIsVisible(attempt.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      }
+      if (attemptsWithKey.some((attempt) => attempt.sourceType !== input.sourceType || attempt.sourceId !== input.sourceId)) throw ApiError.of(ERR.CONFLICT, "This accounting idempotency key belongs to another source.");
+      const attempt = this.accountingSourceAttempts.get(accountingSourceAttemptKey(input.sourceType, input.sourceId, input.idempotencyKey));
+      if (attempt) {
+        if (attempt.requestFingerprint !== requestFingerprint) throw ApiError.of(ERR.CONFLICT, "This accounting idempotency key was already used for a different source-posting request.");
+        return this.accountingSourceAttemptView(attempt);
+      }
+      const existingKeyRows = this.accountingSources.filter((row) => row.idempotencyKey === input.idempotencyKey);
+      for (const row of existingKeyRows) {
+        if (!this.accountingBranchIsVisible(row.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      }
+      if (existingKeyRows.some((row) => row.sourceType !== input.sourceType || row.sourceId !== input.sourceId)) throw ApiError.of(ERR.CONFLICT, "This accounting idempotency key belongs to another source.");
+      const existingKey = existingKeyRows.find((row) => row.sourceType === input.sourceType && row.sourceId === input.sourceId);
+      if (existingKey?.status === "posted" || existingKey?.status === "reversed") return existingKey;
+      if (replay?.status === "posted" || replay?.status === "reversed") return replay;
+      const historicalSource = sourceRows.find((row) => row.status !== "posted" && row.status !== "reversed");
+      const fact = preserveMockSourcePolicy(this.mockAccountingFact(input.sourceType, input.sourceId), historicalSource);
+      if (!this.accountingBranchIsVisible(fact.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      if (!fact.branchId && !fact.status) {
+        fact.status = "unconfigured";
+        fact.reason = "Source fact is missing an active branch.";
+      }
+      const branch = this.accountingBranch(fact.branchId);
+      if (fact.status) {
+        const now = nowISO();
+        const factCurrency = fact.currency ?? this.db.organization.currency;
+        const factMoney = fact.amount === undefined ? undefined : money(fact.amount, factCurrency);
+        const policyVersion = accountingPolicyVersion(fact.policyCode);
+        const projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: input.sourceType, sourceId: input.sourceId }, fact.status);
+        const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        if (replay) Object.assign(replay, { branchId: branch?.id, status: fact.status, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+        const attempt: MockAccountingSourceAttempt = { id: mockUuid(), sourceType: input.sourceType, sourceId: input.sourceId, sourcePostingId: row.id, branchId: branch?.id, idempotencyKey: input.idempotencyKey, requestFingerprint, status: fact.status as MockAccountingSourceDecisionStatus, amount: factMoney, currency: factCurrency, policyCode: fact.policyCode, policyVersion, reason: fact.reason, details: fact.details, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+        this.accountingSourceAttempts.set(accountingSourceAttemptKey(input.sourceType, input.sourceId, input.idempotencyKey), attempt);
+        return this.accountingSourceAttemptView(attempt);
+      }
+      if (!fact.amount || !Number.isSafeInteger(fact.amount) || !fact.debitCode || !fact.creditCode || fact.amount <= 0) throw ApiError.of(ERR.VALIDATION, "Source has no configured positive accounting amount.");
+      const postingDate = managementLocalDate(fact.occurredAt, this.db.organization.timezone);
+      const period = this.accountingPeriodFor(postingDate);
+      const debit = this.accountingAccount(`acct-${fact.debitCode}`);
+      const credit = this.accountingAccount(`acct-${fact.creditCode}`);
+      const now = nowISO();
+      const entryId = mockUuid();
+      const policyCode = fact.policyCode ?? `${input.sourceType}.v1`;
+      const policyVersion = accountingPolicyVersion(policyCode) ?? 1;
+      const entry: T.AccountingJournalEntryDetail = { id: entryId, organizationId: this.db.organization.id, branchId: branch?.id, scope: "branch", currency: this.db.organization.currency, postingDate, periodId: period.id, status: "posted", memo: `${input.sourceType} ${input.sourceId}`, sourceType: input.sourceType, sourceId: input.sourceId, policyCode, policyVersion, idempotencyKey: `source:${input.sourceType}:${input.sourceId}:v${policyVersion}:${input.idempotencyKey}`, totalDebit: money(fact.amount, this.db.organization.currency), totalCredit: money(fact.amount, this.db.organization.currency), lineCount: 2, createdAt: now, postedAt: now, createdById: this.actor().id, lines: [{ id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: debit.id, accountCode: debit.code, accountName: debit.name, debit: money(fact.amount, this.db.organization.currency), credit: money(0, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: debit.statementGroup, cashflowGroup: debit.cashflowGroup }, { id: mockUuid(), journalEntryId: entryId, branchId: branch?.id, accountId: credit.id, accountCode: credit.code, accountName: credit.name, debit: money(0, this.db.organization.currency), credit: money(fact.amount, this.db.organization.currency), description: `${input.sourceType} ${input.sourceId}`, statementGroup: credit.statementGroup, cashflowGroup: credit.cashflowGroup }] };
+      this.accountingEntries.unshift(entry);
+      const projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: input.sourceType, sourceId: input.sourceId }, "pending");
+      const row: T.AccountingSourcePosting = replay ?? { id: mockUuid(), organizationId: this.db.organization.id, sourceType: input.sourceType, sourceId: input.sourceId, branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, policyCode: entry.policyCode, policyVersion, journalEntryId: entry.id, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, createdAt: now, updatedAt: now };
+      if (replay) Object.assign(replay, { branchId: branch?.id, status: "posted", amount: money(fact.amount, this.db.organization.currency), currency: this.db.organization.currency, journalEntryId: entry.id, policyCode: entry.policyCode, policyVersion, idempotencyKey: input.idempotencyKey, reason: input.reason, details: fact.details, projectionFingerprint, occurredAt: fact.occurredAt, updatedAt: now }); else this.accountingSources.unshift(row);
+      this.audit({ category: "accounting", action: "accounting.source.post", entityType: "accounting_source_posting", entityId: row.id, entityLabel: row.id, summary: `Posted ${input.sourceType} source`, reason: input.reason, branchId: branch?.id });
+      return row;
+    });
+  }
+
+  excludeAccountingSource(input: T.ReviewAccountingSourceInput): Promise<T.AccountingSourcePosting> {
+    return this.respond(() => {
+      this.requireAccountingPosting();
+      this.requireReason(input.reason);
+      const row = this.accountingSources.find((candidate) => candidate.sourceType === input.sourceType && candidate.sourceId === input.sourceId);
+      if (!row || !this.accountingBranchIsVisible(row.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      if (row.status === "posted" || row.status === "reversed") throw ApiError.of(ERR.CONFLICT, "A posted or reversed source is already in the books; use an owner reversal instead of an exclusion.");
+      if (row.reviewExcludedAt) return { ...row, amount: row.amount ? { ...row.amount } : undefined };
+      const now = nowISO();
+      const fact = preserveMockSourcePolicy(this.mockAccountingFact(input.sourceType, input.sourceId), row);
+      row.status = "excluded";
+      row.reason = input.reason.trim();
+      row.reviewExcludedAt = now;
+      row.projectionFingerprint = mockSourceProjectionFingerprint({ ...fact, sourceType: input.sourceType, sourceId: input.sourceId }, "excluded");
+      row.updatedAt = now;
+      this.audit({ category: "accounting", action: "accounting.source.exclude", entityType: "accounting_source_posting", entityId: row.id, entityLabel: row.id, summary: `Excluded ${input.sourceType} source from the books after review`, reason: input.reason, branchId: row.branchId });
+      return { ...row, amount: row.amount ? { ...row.amount } : undefined };
+    });
+  }
+
+  reconsiderAccountingSource(input: T.ReviewAccountingSourceInput): Promise<T.AccountingSourcePosting> {
+    return this.respond(() => {
+      this.requireAccountingPosting();
+      this.requireReason(input.reason);
+      const row = this.accountingSources.find((candidate) => candidate.sourceType === input.sourceType && candidate.sourceId === input.sourceId);
+      if (!row || !this.accountingBranchIsVisible(row.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Accounting source posting not found.");
+      if (!row.reviewExcludedAt) throw ApiError.of(ERR.CONFLICT, "This source has no standing review exclusion to reconsider.");
+      row.reviewExcludedAt = undefined;
+      const fact = preserveMockSourcePolicy(this.mockAccountingFact(input.sourceType, input.sourceId), row);
+      const currency = fact.currency ?? this.db.organization.currency;
+      const status: T.AccountingSourceStatus = fact.status ?? (!fact.branchId || !fact.policyCode || !fact.debitCode || !fact.creditCode || fact.amount === undefined || fact.amount <= 0 || currency !== this.db.organization.currency ? "unconfigured" : "pending");
+      const now = nowISO();
+      Object.assign(row, { branchId: fact.branchId, status, amount: fact.amount === undefined ? undefined : money(fact.amount, currency), currency, policyCode: fact.policyCode, policyVersion: accountingPolicyVersion(fact.policyCode), reason: fact.reason, details: fact.details, projectionFingerprint: mockSourceProjectionFingerprint({ ...fact, sourceType: input.sourceType, sourceId: input.sourceId }, status), occurredAt: fact.occurredAt, updatedAt: now });
+      this.audit({ category: "accounting", action: "accounting.source.reconsider", entityType: "accounting_source_posting", entityId: row.id, entityLabel: row.id, summary: `Reopened ${input.sourceType} source for review`, reason: input.reason, branchId: row.branchId });
+      return { ...row, amount: row.amount ? { ...row.amount } : undefined };
+    });
+  }
+
+  reverseAccountingEntry(entryId: T.UUID, input: { reason: string; idempotencyKey: string }): Promise<T.AccountingJournalEntryDetail> {
+    return this.respond(() => {
+      this.requireAccountingOwner();
+      this.requireReason(input.reason);
+      const replay = this.accountingEntries.find((entry) => entry.idempotencyKey === `reverse:${entryId}:${input.idempotencyKey}`);
+      const fingerprint = reversalRequestFingerprint({ entryId, reason: input.reason.trim() });
+      if (replay) {
+        const replayFingerprint = this.accountingEntryFingerprints.get(replay.id) ?? reversalRequestFingerprint({ entryId: replay.reversalOfEntryId ?? entryId, reason: replay.reason ?? "" });
+        if (replayFingerprint !== fingerprint) throw ApiError.of(ERR.CONFLICT, "This reversal idempotency key was already used for a different request.");
+        return replay;
+      }
+      const original = this.accountingEntry(entryId);
+      if (original.status !== "posted") throw ApiError.of(ERR.CONFLICT, "Only a posted journal entry can be reversed once.");
+      const period = this.accountingPeriodFor(this.today());
+      const now = nowISO();
+      const reversalId = mockUuid();
+      const reversal: T.AccountingJournalEntryDetail = { ...original, id: reversalId, periodId: period.id, postingDate: this.today(), status: "posted", memo: `Reversal of ${original.id}`, reason: input.reason, idempotencyKey: `reverse:${entryId}:${input.idempotencyKey}`, reversalOfEntryId: original.id, reversedByEntryId: undefined, createdAt: now, postedAt: now, createdById: this.actor().id, lines: original.lines.map((line) => ({ ...line, id: mockUuid(), journalEntryId: reversalId, debit: line.credit, credit: line.debit, description: `Reversal of ${original.id}` })) };
+      this.accountingEntries.unshift(reversal);
+      this.accountingEntryFingerprints.set(reversal.id, fingerprint);
+      original.status = "reversed";
+      original.reversedByEntryId = reversal.id;
+      const source = this.accountingSources.find((row) => row.journalEntryId === original.id);
+      if (source) source.status = "reversed";
+      this.audit({ category: "accounting", action: "accounting.entry.reverse", entityType: "accounting_journal_entry", entityId: original.id, entityLabel: original.memo, summary: `Reversed journal entry ${original.id}`, reason: input.reason, branchId: original.branchId });
+      return reversal;
+    });
+  }
+
+  closeAccountingPeriod(periodId: T.UUID, reason: string): Promise<T.AccountingPeriod> {
+    return this.respond(() => {
+      this.requireAccountingOwner();
+      this.requireReason(reason);
+      const period = this.accountingPeriods.find((candidate) => candidate.id === periodId);
+      if (!period) throw ApiError.of(ERR.NOT_FOUND, "Accounting period not found.");
+      if (period.status !== "open") throw ApiError.of(ERR.CONFLICT, "Accounting period is already closed.");
+      const pending = this.accountingSources.some((source) => source.status === "pending" && managementLocalDate(source.occurredAt, this.db.organization.timezone).slice(0, 7) === period.id);
+      if (pending) throw ApiError.of(ERR.CONFLICT, "Resolve pending source postings before closing the period.");
+      period.status = "closed";
+      period.closedAt = nowISO();
+      period.closedById = this.actor().id;
+      period.closeReason = reason;
+      period.updatedAt = nowISO();
+      this.audit({ category: "accounting", action: "accounting.period.close", entityType: "accounting_period", entityId: period.id, entityLabel: period.id, summary: `Closed accounting period ${period.id}`, reason });
+      return { ...period };
+    });
+  }
+
+  reopenAccountingPeriod(periodId: T.UUID, reason: string): Promise<T.AccountingPeriod> {
+    return this.respond(() => {
+      this.requireAccountingOwner();
+      this.requireReason(reason);
+      const period = this.accountingPeriods.find((candidate) => candidate.id === periodId);
+      if (!period) throw ApiError.of(ERR.NOT_FOUND, "Accounting period not found.");
+      if (period.status !== "closed") throw ApiError.of(ERR.CONFLICT, "Only a closed accounting period can be reopened.");
+      if (this.accountingPeriods.some((candidate) => candidate.status === "closed" && candidate.periodStart > period.periodStart)) throw ApiError.of(ERR.CONFLICT, "Reopen later accounting periods first.");
+      period.status = "open";
+      period.reopenedAt = nowISO();
+      period.reopenedById = this.actor().id;
+      period.reopenReason = reason;
+      period.updatedAt = nowISO();
+      this.audit({ category: "accounting", action: "accounting.period.reopen", entityType: "accounting_period", entityId: period.id, entityLabel: period.id, summary: `Reopened accounting period ${period.id}`, reason });
+      return { ...period };
+    });
+  }
+
   // -------------------------------------------------------------------------
   // automations
   // -------------------------------------------------------------------------
+
+  getAutomationMonitoringSummary(): Promise<import("@/lib/domain/qol").AutomationMonitoringSummary> {
+    return this.respond(() => {
+      this.require("automations.manage");
+      const statuses = this.db.executions.map((execution) => execution.status);
+      return {
+        globallyPaused: true,
+        pauseReason: "Automated delivery remains paused until providers, consent policy, and production verification are approved.",
+        ruleCount: this.db.rules.length,
+        persistedEnabledCount: this.db.rules.filter((rule) => rule.enabled).length,
+        executionsLast30Days: this.db.executions.length,
+        successCount: statuses.filter((status) => ["success", "completed"].includes(status)).length,
+        suppressedCount: statuses.filter((status) => ["suppressed", "skipped_duplicate"].includes(status)).length,
+        retryCount: statuses.filter((status) => status === "retrying").length,
+        failureCount: statuses.filter((status) => status === "failed").length,
+        providers: [
+          { key: "internal_tasks", label: "Internal tasks and manager alerts", configured: true, live: false, detail: "Configured, but held by the global pause." },
+          { key: "email", label: "Operational email", configured: false, live: false, detail: "Provider credentials are not configured in preview mode." },
+          { key: "sms_whatsapp", label: "WhatsApp", configured: false, live: false, detail: "No WhatsApp provider is connected in preview mode." },
+        ],
+      };
+    });
+  }
 
   listAutomationRules(): Promise<T.AutomationRule[]> {
     return this.respond(() => {
@@ -4540,6 +9597,208 @@ export class MockGymOSApi implements GymOSApi {
     return this.subscribeOnce(() => this.listOperationalEmailDeliveries(query), onValue, onError);
   }
 
+  requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> {
+    return this.respond(() => {
+      const now = nowISO();
+      const existing = this.exportJobs.find((job) => job.id === input.idempotencyKey);
+      if (existing) return { ...existing };
+      const filters = input.filters ?? {};
+      const requestedBranchId = typeof filters.branchId === "string" ? filters.branchId : undefined;
+      const search = typeof filters.search === "string" ? filters.search.trim().toLocaleLowerCase() : "";
+      const from = typeof filters.from === "string" && filters.from ? filters.from : undefined;
+      const to = typeof filters.to === "string" && filters.to ? filters.to : undefined;
+      // Date filters are gym-calendar days, exactly as the transaction list
+      // and the Convex export apply them.
+      const inRange = (instant: string | undefined) => !instant || (!from && !to) || instantFallsInTenantDateRange(instant, TZ, from, to);
+      const branches = new Map(this.db.branches.map((branch) => [branch.id, branch.name]));
+      const members = new Map(this.db.members.map((member) => [member.id, member]));
+      const plans = new Map(this.db.plans.map((plan) => [plan.id, plan]));
+      const users = new Map(this.db.users.map((user) => [user.id, user.name]));
+      const matches = (values: Array<string | undefined>) => !search || values.some((value) => value?.toLocaleLowerCase().includes(search));
+      let title = "RIVET data export";
+      let headers: string[] = [];
+      let rows: CsvValue[][] = [];
+      if (input.kind === "members") {
+        title = "Member directory";
+        headers = ["Member number", "Full name", "Arabic name", "Phone", "Email", "Gender", "Status", "Current plan", "Membership ends", "Outstanding amount", "Currency", "Home branch", "Preferred language", "Marketing consent", "Tags", "Created"];
+        rows = this.db.members.filter((member) => (!requestedBranchId || member.homeBranchId === requestedBranchId) && inRange(member.createdAt) && matches([member.fullName, member.fullNameAr, member.phone, member.email, member.memberNumber])).map((member) => {
+          const membership = this.currentMembership(member.id);
+          const plan = membership ? plans.get(membership.planId) : undefined;
+          return [member.memberNumber, member.fullName, member.fullNameAr, member.phone, member.email, exportStatusLabel(member.gender), exportStatusLabel(member.status), plan?.name, membership?.endDate, formatMinorUnits(this.outstandingForMember(member.id).amount, this.db.organization.currency), this.db.organization.currency, branches.get(member.homeBranchId), exportStatusLabel(member.preferredLanguage), exportStatusLabel(member.marketingPreference?.status ?? (member.marketingOptIn ? "explicit_opt_in" : "explicit_opt_out")), exportList(member.tags), formatExportDateTime(member.createdAt, TZ)];
+        });
+      } else if (input.kind === "leads") {
+        title = "CRM leads";
+        headers = ["Full name", "Phone", "Email", "Branch", "Stage", "Source", "Owner", "Expected value", "Currency", "Next follow-up", "Lost reason", "Created", "Updated"];
+        rows = this.db.leads.filter((lead) => (!requestedBranchId || lead.branchId === requestedBranchId) && inRange(lead.createdAt) && matches([lead.fullName, lead.phone, lead.email])).map((lead) => [lead.fullName, lead.phone, lead.email, branches.get(lead.branchId), exportStatusLabel(lead.stage), exportStatusLabel(lead.source), lead.ownerId ? users.get(lead.ownerId) : "Unassigned", lead.expectedValue ? formatMinorUnits(lead.expectedValue.amount, lead.expectedValue.currency) : "", lead.expectedValue?.currency, formatExportDateTime(lead.nextFollowUpAt, TZ), lead.lostReason, formatExportDateTime(lead.createdAt, TZ), formatExportDateTime(lead.updatedAt, TZ)]);
+      } else if (input.kind === "payments") {
+        title = "Payment ledger";
+        headers = ["When", "Member", "Member number", "Branch", "Receipt number", "Transaction type", "Payment method", "Amount", "Currency", "Status", "Refunded amount", "Recorded by", "External reference", "Refund reason", "Void reason"];
+        rows = this.db.payments.filter((payment) => (!requestedBranchId || payment.branchId === requestedBranchId) && inRange(payment.occurredAt) && matches([payment.receiptNumber, payment.externalReference, members.get(payment.memberId)?.fullName])).map((payment) => [formatExportDateTime(payment.occurredAt, TZ), members.get(payment.memberId)?.fullName, members.get(payment.memberId)?.memberNumber, branches.get(payment.branchId), payment.receiptNumber, exportStatusLabel(payment.type), exportStatusLabel(payment.method), formatMinorUnits(payment.amount.amount, payment.amount.currency), payment.amount.currency, exportStatusLabel(payment.status), payment.refundedAmount ? formatMinorUnits(payment.refundedAmount.amount, payment.refundedAmount.currency) : "", payment.collectedByName, payment.externalReference, payment.refundReason, payment.voidReason]);
+      } else if (input.kind === "membership_liabilities") {
+        title = "Outstanding member balances";
+        headers = ["Member", "Member number", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status"];
+        rows = this.db.charges.filter((charge) => charge.outstandingAmount.amount > 0 && (!requestedBranchId || members.get(charge.memberId)?.homeBranchId === requestedBranchId) && matches([charge.description, members.get(charge.memberId)?.fullName])).map((charge) => [members.get(charge.memberId)?.fullName, members.get(charge.memberId)?.memberNumber, charge.description, charge.issueDate, charge.dueDate, formatMinorUnits(charge.total.amount, charge.total.currency), formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency), formatMinorUnits(charge.outstandingAmount.amount, charge.outstandingAmount.currency), charge.total.currency, exportStatusLabel(charge.status)]);
+      } else if (input.kind === "audit") {
+        title = "Activity log";
+        headers = ["When", "Branch", "Recorded by", "Role", "Category", "Action", "Record type", "Record", "Summary", "Reason", "Approval status"];
+        rows = this.db.audits.filter((event) => (!requestedBranchId || !event.branchId || event.branchId === requestedBranchId) && matches([event.actorName, event.action, event.entityLabel, event.summary])).map((event) => [formatExportDateTime(event.occurredAt, TZ), event.branchId ? branches.get(event.branchId) : "Organization-wide", event.actorName, exportStatusLabel(event.actorRole), exportStatusLabel(event.category), exportStatusLabel(event.action), exportStatusLabel(event.entityType), event.entityLabel, event.summary, event.reason, exportStatusLabel(event.approvalStatus)]);
+      } else if (input.kind === "personal_training") {
+        title = "Personal training package orders";
+        headers = ["Member", "Member number", "Package", "Sessions purchased", "Total price", "Currency", "Status", "Paid", "Refunded sessions", "Refunded amount", "Created", "Updated"];
+        rows = this.ptOrders.filter((order) => (!requestedBranchId || members.get(order.memberId)?.homeBranchId === requestedBranchId) && matches([order.memberName, order.packageName, order.packageNameSnapshot])).map((order) => {
+          const member = members.get(order.memberId);
+          const total = order.totalPriceSnapshot ?? money(0, this.db.organization.currency);
+          const refunded = order.refundedAmount ?? money(0, total.currency);
+          return [member?.fullName ?? order.memberName, member?.memberNumber, order.packageNameSnapshot ?? order.packageName, order.sessionCountSnapshot, formatMinorUnits(total.amount, total.currency), total.currency, exportStatusLabel(order.status), formatExportDateTime(order.paidAt, TZ), order.refundedSessions ?? 0, formatMinorUnits(refunded.amount, refunded.currency), formatExportDateTime(order.createdAt, TZ), formatExportDateTime(order.updatedAt, TZ)];
+        });
+      } else if (input.kind === "operations") {
+        title = "Products, suppliers, and inventory activity";
+        headers = ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "When"];
+        const productById = new Map(this.db.products.map((product) => [product.id, product]));
+        rows = [
+          ...this.db.products.filter((product) => matches([product.sku, product.name])).map((product): CsvValue[] => ["Product", "Organization-wide", product.sku, product.name, exportStatusLabel(product.unit), exportStatusLabel(product.status), product.reorderPoint, "", "", "", "", product.retailPrice ? formatMinorUnits(product.retailPrice.amount, product.retailPrice.currency) : "", product.retailPrice?.currency, "", "", "", "", formatExportDateTime(product.createdAt, TZ)]),
+          ...this.db.suppliers.filter((supplier) => matches([supplier.name, supplier.contactName, supplier.email, supplier.phone])).map((supplier): CsvValue[] => ["Supplier", "Organization-wide", "", supplier.name, "", exportStatusLabel(supplier.status), "", "", "", "", "", "", "", supplier.contactName, supplier.phone, supplier.email, "", formatExportDateTime(supplier.createdAt, TZ)]),
+          ...this.db.inventoryBalances.filter((balance) => (!requestedBranchId || balance.branchId === requestedBranchId) && matches([productById.get(balance.productId)?.sku, productById.get(balance.productId)?.name])).map((balance): CsvValue[] => ["Inventory balance", branches.get(balance.branchId), productById.get(balance.productId)?.sku, productById.get(balance.productId)?.name, exportStatusLabel(productById.get(balance.productId)?.unit), "", "", balance.quantityOnHand, balance.committedQuantity, "", "", balance.totalCost ? formatMinorUnits(balance.totalCost.amount, balance.totalCost.currency) : "", balance.totalCost?.currency, "", "", "", "", formatExportDateTime(balance.updatedAt, TZ)]),
+          ...this.db.stockMovements.filter((movement) => (!requestedBranchId || movement.branchId === requestedBranchId) && matches([movement.productSku, movement.productName, movement.reason])).map((movement): CsvValue[] => ["Stock movement", branches.get(movement.branchId), movement.productSku ?? productById.get(movement.productId)?.sku, movement.productName ?? productById.get(movement.productId)?.name, exportStatusLabel(movement.productUnit ?? productById.get(movement.productId)?.unit), "", "", "", "", exportStatusLabel(movement.type), movement.quantityDelta, movement.totalCost ? formatMinorUnits(movement.totalCost.amount, movement.totalCost.currency) : "", movement.totalCost?.currency, "", "", "", movement.reason, formatExportDateTime(movement.occurredAt, TZ)]),
+        ];
+      }
+      const content = buildCsvDocument({
+        title,
+        metadata: [
+          { label: "Generated at", value: formatExportDateTime(now, this.db.organization.timezone) },
+          { label: "Timezone", value: this.db.organization.timezone },
+          { label: "Branch scope", value: requestedBranchId ? branches.get(requestedBranchId) ?? requestedBranchId : "All accessible branches" },
+          { label: "Applied search", value: search || "None" },
+        ],
+        headers,
+        rows,
+      });
+      const job: import("@/lib/domain/qol").ExportJob = { id: input.idempotencyKey, kind: input.kind, status: "completed", fileName: `rivet-${input.kind}-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: rows.length, totalRows: rows.length, content, timezone: this.db.organization.timezone, branchScope: requestedBranchId ? `branch:${requestedBranchId}` : "all branches", filters: input.filters, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      this.exportJobs.unshift(job);
+      return { ...job };
+    });
+  }
+
+  listExportJobs(): Promise<import("@/lib/domain/qol").ExportJob[]> {
+    return this.respond(() => this.exportJobs.map((job) => ({ ...job })));
+  }
+
+  requestMemberPersonalDataExport(idempotencyKey: string): Promise<import("@/lib/domain/qol").ExportJob> {
+    return this.respond(() => {
+      const now = nowISO();
+      const profile = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId);
+      const memberships = INITIAL_CUSTOMER_MEMBERSHIPS.filter((item) => item.customerId === this.activeCustomerId);
+      const memberIds = this.customerMemberIds();
+      const transactions = this.customerTransactionsSync();
+      const charges = this.db.charges.filter((charge) => memberIds.has(charge.memberId));
+      const visits = memberships.flatMap((membership) => membership.visitHistory.map((visit) => ({ gym: membership.gymName ?? this.db.organization.name, ...visit })));
+      const activity = memberships.flatMap((membership) => (membership.activity ?? []).map((event) => ({ gym: membership.gymName ?? this.db.organization.name, ...event })));
+      const trials = this.trialBookings.filter((booking) => booking.customerId === this.activeCustomerId);
+      const preferenceHistory = this.customerPreferenceHistory.get(this.activeCustomerId) ?? (profile?.marketingPreference ? [profile.marketingPreference] : []);
+      const details = (...values: Array<string | undefined>) => values.filter((value): value is string => Boolean(value?.trim())).join(" · ");
+      const rows: CsvValue[][] = [];
+      const profileFields: Array<[string, string | undefined]> = [
+        ["Full name", profile?.name],
+        ["Arabic name", profile?.nameAr],
+        ["Email", profile?.email],
+        ["Phone", profile?.phone],
+        ["Date of birth", profile?.dateOfBirth],
+        ["Gender", exportStatusLabel(profile?.gender)],
+        ["Preferred language", exportStatusLabel(profile?.preferredLanguage)],
+        ["Address", profile?.addressLine1],
+        ["City", profile?.city],
+        ["Emergency contact", profile?.emergencyContactName],
+        ["Emergency relationship", profile?.emergencyContactRelationship],
+        ["Emergency phone", profile?.emergencyContactPhone],
+      ];
+      rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => ["Profile", "", "", "", label, value, "", "", ""]));
+      rows.push(...memberships.map((membership): CsvValue[] => [
+        "Membership",
+        membership.gymName ?? this.db.organization.name,
+        membership.branchName,
+        membership.startDate,
+        membership.planName,
+        details(`Member ${membership.memberNumber}`, `Ends ${membership.endDate}`, membership.lastCheckInAt ? `Last check-in ${formatExportDateTime(membership.lastCheckInAt, TZ)}` : undefined),
+        formatMinorUnits(membership.balanceMinor, this.db.organization.currency),
+        this.db.organization.currency,
+        exportStatusLabel(membership.status),
+      ]));
+      rows.push(...charges.map((charge): CsvValue[] => [
+        "Charge",
+        this.db.organization.name,
+        "",
+        charge.issueDate,
+        charge.description,
+        details(charge.dueDate ? `Due ${charge.dueDate}` : undefined, `Total ${formatMinorUnits(charge.total.amount, charge.total.currency)} ${charge.total.currency}`, `Paid ${formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency)} ${charge.paidAmount.currency}`),
+        formatMinorUnits(charge.outstandingAmount.amount, charge.outstandingAmount.currency),
+        charge.outstandingAmount.currency,
+        exportStatusLabel(charge.status),
+      ]));
+      rows.push(...transactions.map((transaction): CsvValue[] => [
+        "Payment",
+        transaction.gymName,
+        transaction.branchName,
+        formatExportDateTime(transaction.occurredAt, TZ),
+        `${exportStatusLabel(transaction.type)} · Receipt ${transaction.receiptNumber}`,
+        details(exportStatusLabel(transaction.method), transaction.explanation),
+        formatMinorUnits(transaction.amount.amount, transaction.amount.currency),
+        transaction.amount.currency,
+        exportStatusLabel(transaction.status),
+      ]));
+      rows.push(...visits.map((visit): CsvValue[] => ["Check-in", visit.gym, visit.branchName, formatExportDateTime(visit.occurredAt, TZ), "Gym visit", "", "", "", exportStatusLabel(visit.decision)]));
+      rows.push(...activity.map((event): CsvValue[] => ["Account activity", event.gym, "", formatExportDateTime(event.occurredAt, TZ), event.title ?? exportStatusLabel(event.type), event.detail, "", "", ""]));
+      rows.push(...trials.map((booking): CsvValue[] => {
+        const relatedMembership = memberships.find((membership) => membership.gymId === booking.gymId);
+        const branchName = this.db.branches.find((branch) => branch.id === booking.branchId)?.name ?? relatedMembership?.branchName ?? "Unknown branch";
+        return ["Trial booking", relatedMembership?.gymName ?? this.db.organization.name, branchName, details(booking.preferredDate, booking.preferredTime), booking.goal || "Gym trial", "", "", "", exportStatusLabel(booking.status)];
+      }));
+      rows.push(...preferenceHistory.map((preference): CsvValue[] => [
+        "Marketing preference",
+        "",
+        "",
+        formatExportDateTime(preference.changedAt, TZ),
+        "Marketing messages",
+        `Recorded through ${exportStatusLabel(preference.source)}`,
+        "",
+        "",
+        `${preference.optedIn ? "Allowed" : "Not allowed"} · ${exportStatusLabel(preference.status)}`,
+      ]));
+      const content = buildCsvDocument({
+        title: "My RIVET data",
+        metadata: [
+          { label: "Generated at", value: formatExportDateTime(now, this.db.organization.timezone) },
+          { label: "Account", value: profile?.email ?? "No email recorded" },
+          { label: "Included gyms", value: [...new Set(memberships.map((membership) => membership.gymName ?? this.db.organization.name))].join("; ") || "None" },
+        ],
+        headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"],
+        rows,
+        emptyMessage: "No personal data was available for export.",
+      });
+      const totalRows = rows.length;
+      return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+    });
+  }
+
+  searchWorkspace(search: string): Promise<import("@/lib/domain/qol").WorkspaceSearchResult[]> {
+    return this.respond(() => {
+      const query = search.trim().toLocaleLowerCase();
+      if (query.length < 2) return [];
+      const permissions = permissionsFor(this.db, currentRole(this.db));
+      const results: import("@/lib/domain/qol").WorkspaceSearchResult[] = [];
+      if (permissions.includes("members.read")) results.push(...this.db.members.filter((item) => [item.fullName, item.memberNumber, item.phone].some((value) => value.toLocaleLowerCase().includes(query))).slice(0, 6).map((item) => ({ kind: "member" as const, id: item.id, title: item.fullName, subtitle: `${item.memberNumber} · ${item.phone}`, href: `/members/${item.id}` })));
+      if (permissions.includes("crm.read")) results.push(...this.db.leads.filter((item) => [item.fullName, item.phone, item.email].some((value) => value?.toLocaleLowerCase().includes(query))).slice(0, 5).map((item) => ({ kind: "lead" as const, id: item.id, title: item.fullName, subtitle: `${item.stage} · ${item.phone}`, href: `/crm/leads/${item.id}` })));
+      if (permissions.includes("reports.financial.read")) results.push(...this.db.payments.filter((item) => [item.receiptNumber, item.externalReference].some((value) => value?.toLocaleLowerCase().includes(query))).slice(0, 5).map((item) => ({ kind: "receipt" as const, id: item.receiptId, title: item.receiptNumber, subtitle: `${this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member"} · ${item.status}`, href: `/payments/receipts/${item.receiptId}` })));
+      return results;
+    });
+  }
+
+  listRecentWorkspaceItems(): Promise<import("@/lib/domain/qol").RecentWorkspaceItem[]> { return this.respond(() => this.recentWorkspaceItems.map((item) => ({ ...item }))); }
+  recordRecentWorkspaceItem(item: Omit<import("@/lib/domain/qol").RecentWorkspaceItem, "viewedAt">): Promise<void> { return this.respond(() => { this.recentWorkspaceItems = [{ ...item, viewedAt: nowISO() }, ...this.recentWorkspaceItems.filter((candidate) => !(candidate.kind === item.kind && candidate.id === item.id))].slice(0, 12); }); }
+  clearRecentWorkspaceItems(): Promise<void> { return this.respond(() => { this.recentWorkspaceItems = []; }); }
+  listPinnedWorkspaceItems(): Promise<import("@/lib/domain/qol").PinnedWorkspaceItem[]> { return this.respond(() => this.pinnedWorkspaceItems.map((item) => ({ ...item }))); }
+  pinWorkspaceItem(item: Omit<import("@/lib/domain/qol").PinnedWorkspaceItem, "id" | "position" | "createdAt"> & { position?: number }): Promise<import("@/lib/domain/qol").PinnedWorkspaceItem> { return this.respond(() => { const existing = this.pinnedWorkspaceItems.find((candidate) => candidate.targetKey === item.targetKey); if (existing) { Object.assign(existing, item); return { ...existing }; } const created = { ...item, id: mockUuid(), position: item.position ?? this.pinnedWorkspaceItems.length, createdAt: nowISO() }; this.pinnedWorkspaceItems.push(created); return { ...created }; }); }
+  unpinWorkspaceItem(id: T.UUID): Promise<void> { return this.respond(() => { this.pinnedWorkspaceItems = this.pinnedWorkspaceItems.filter((item) => item.id !== id); }); }
+
   // -------------------------------------------------------------------------
   // audit
   // -------------------------------------------------------------------------
@@ -4549,14 +9808,14 @@ export class MockGymOSApi implements GymOSApi {
       this.require("audit.read");
       const branchId = this.branchScopedBranchId(query.branchId);
       let items = [...this.db.audits];
-      if (branchId) items = items.filter((a) => !a.branchId || a.branchId === branchId);
+      if (branchId) items = items.filter((a) => (!a.branchId && !a.destinationBranchId) || a.branchId === branchId || a.destinationBranchId === branchId);
       if (query.category) items = items.filter((a) => a.category === query.category);
+      if (query.approvalStatus) items = items.filter((a) => a.approvalStatus === query.approvalStatus);
       if (query.actorId) items = items.filter((a) => a.actorId === query.actorId);
       if (query.entityId) items = items.filter((a) => a.entityId === query.entityId);
       const auditFrom = query.from;
       const auditTo = query.to;
-      if (auditFrom) items = items.filter((a) => a.occurredAt >= auditFrom);
-      if (auditTo) items = items.filter((a) => a.occurredAt <= `${auditTo}T23:59:59.999Z`);
+      if (auditFrom || auditTo) items = items.filter((a) => instantFallsInTenantDateRange(a.occurredAt, this.db.organization.timezone, auditFrom, auditTo));
       items = items.filter((a) => this.matchesSearch([a.summary, a.entityLabel, a.actorName, a.action], query.search));
       return paginate(this.maybeEmpty(items), query);
     });
@@ -4565,7 +9824,14 @@ export class MockGymOSApi implements GymOSApi {
   listPendingApprovals(): Promise<T.AuditEvent[]> {
     return this.respond(() => {
       this.require("audit.read");
-      return this.db.audits.filter((a) => a.approvalStatus === "pending" && this.branchIsVisible(a.branchId));
+      return this.db.audits.filter((a) => {
+        if (a.approvalStatus !== "pending") return false;
+        if (!a.branchId && !a.destinationBranchId) return true;
+        return Boolean(
+          (a.branchId && this.branchIsVisible(a.branchId))
+          || (a.destinationBranchId && this.branchIsVisible(a.destinationBranchId)),
+        );
+      });
     });
   }
 
@@ -4615,20 +9881,156 @@ export class MockGymOSApi implements GymOSApi {
 
   getOrganizationSettings(): Promise<T.OrganizationSettings> {
     return this.respond(() => ({
-      organization: this.db.organization,
+      organization: { ...this.db.organization, brand: this.db.brand },
+      brand: this.db.brand,
       branches: this.db.branches,
       paymentMethods: this.db.paymentMethods,
       roles: this.db.roles,
       notifications: this.db.notificationSettings,
       operationalPolicies: this.db.operationalPolicies,
+      workspace: this.workspaceAccess(),
     }));
+  }
+
+  getBrandKit(): Promise<T.BrandKit> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      return { ...this.db.brand, tokens: { ...this.db.brand.tokens } };
+    });
+  }
+
+  async updateBrandKit(input: T.UpdateBrandKitInput): Promise<T.BrandKit> {
+    const result = await this.respond(() => {
+      this.requireOwner();
+      if (!isBrandPaletteKey(input.paletteKey)) throw ApiError.of(ERR.VALIDATION, "Choose a supported Brand Kit palette.");
+      const primaryColor = input.primaryColor === undefined || input.primaryColor === "" ? BRAND_PALETTE_PRESETS[input.paletteKey] : normalizeBrandHex(input.primaryColor);
+      if (!primaryColor) throw ApiError.of(ERR.VALIDATION, "Primary color must be a six-digit hex color.");
+      const requestedLogoId = input.logoAssetId ?? undefined;
+      const logo = requestedLogoId ? this.mediaAssets.get(requestedLogoId) : undefined;
+      if (requestedLogoId && (!logo || logo.ownerType !== "gym_logo" || logo.ownerId !== this.db.organization.id || logo.visibility !== "public" || !["pending", "active"].includes(logo.status))) throw ApiError.of(ERR.NOT_FOUND, "Brand logo was not found in this organization.");
+      const previousLogoId = this.db.brand.logoAssetId;
+      const now = nowISO();
+      if (logo?.status === "pending") this.mediaAssets.set(logo.id, { ...logo, status: "active", deleteAfter: undefined, updatedAt: now });
+      if (previousLogoId && previousLogoId !== requestedLogoId) {
+        const previous = this.mediaAssets.get(previousLogoId);
+        if (previous?.status === "active") this.mediaAssets.set(previousLogoId, { ...previous, status: "scheduled_for_deletion", deleteAfter: new Date(Date.parse(now) + 30 * 86_400_000).toISOString(), updatedAt: now });
+      }
+      const before = this.db.brand;
+      const next: T.BrandKit = { organizationId: this.db.organization.id, paletteKey: input.paletteKey, primaryColor, tokens: deriveBrandTokens(primaryColor), logoAssetId: requestedLogoId, logoUrl: logo?.url, logoAltText: logo?.altText, version: before.version + 1, updatedAt: now, updatedById: this.actor().id };
+      this.db.brand = next;
+      this.db.organization.brand = next;
+      this.audit({ category: "settings", action: "settings.brand.update", entityType: "organization_brand", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: "Tenant Brand Kit updated", before: { paletteKey: before.paletteKey, primaryColor: before.primaryColor, logoAssetId: before.logoAssetId ?? null, version: before.version }, after: { paletteKey: next.paletteKey, primaryColor: next.primaryColor, logoAssetId: next.logoAssetId ?? null, version: next.version } });
+      return { ...next, tokens: { ...next.tokens } };
+    });
+    await Promise.all([this.emitPlatformSnapshotSubscribers(), this.emitPlatformGymDetailSubscribers()]);
+    return result;
+  }
+
+  getWorkspaceAccess(): Promise<T.WorkspaceAccess> {
+    return this.respond(() => {
+      if (this.db.organization.archivedAt) throw ApiError.of(ERR.FORBIDDEN, "This organization is archived.");
+      return this.workspaceAccess();
+    });
+  }
+
+  getOrganizationEntitlements(): Promise<T.OrganizationEntitlements> {
+    return this.respond(() => this.workspaceEntitlements());
+  }
+
+  getWorkspaceModulePreferences(): Promise<T.WorkspaceModulePreferences> {
+    return this.respond(() => this.workspacePreferences(this.workspaceEntitlements().entitledModules));
+  }
+
+  getWorkspaceModuleStatus(moduleKey: T.WorkspaceModuleKey): Promise<T.WorkspaceModuleStatus> {
+    return this.respond(() => {
+      const status = this.workspaceAccess().modules.find((module) => module.key === moduleKey);
+      if (!status) throw ApiError.of(ERR.VALIDATION, `Unknown workspace module: ${moduleKey}`);
+      if (!status.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, `The ${moduleKey} workspace module is not enabled for this organization.`);
+      return status;
+    });
+  }
+
+  async updateWorkspaceModulePreferences(input: T.UpdateWorkspaceModulePreferencesInput): Promise<T.WorkspaceAccess> {
+    const result = await this.respond(() => {
+      this.requireOwner();
+      const entitled = this.workspaceAccess().entitlements.entitledModules;
+      let enabledModules: T.WorkspaceModuleKey[];
+      try {
+        enabledModules = validateWorkspaceModuleSelection(Array.isArray(input.enabledModules) ? input.enabledModules : [], entitled);
+      } catch (error) {
+        throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace module preferences are invalid.");
+      }
+      const before = [...this.workspaceAccess().preferences.enabledModules];
+      this.db.workspaceModulePreferences = {
+        ...this.db.workspaceModulePreferences,
+        catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+        enabledModules,
+        updatedAt: nowISO(),
+        updatedById: this.actor().id,
+      };
+      if (JSON.stringify(before) !== JSON.stringify(enabledModules)) {
+        this.audit({
+          category: "settings",
+          action: "workspace.module_preferences.update",
+          entityType: "workspace_module_preferences",
+          entityId: this.db.organization.id,
+          entityLabel: this.db.organization.name,
+          summary: "Workspace module preferences updated",
+          before: { enabledModules: before.join(",") },
+          after: { enabledModules: enabledModules.join(",") },
+        });
+      }
+      return this.workspaceAccess();
+    });
+    await this.emitWorkspaceAccessSubscribers();
+    return result;
+  }
+
+  private workspaceEntitlements(): T.OrganizationEntitlements {
+    const plan = this.db.organization.subscriptionPlan;
+    const stored = this.db.organizationEntitlements;
+    return {
+      ...stored,
+      organizationId: this.db.organization.id,
+      catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+      subscriptionPlan: plan,
+      entitledModules: plan ? entitledModulesForPlanSelection(plan, stored.subscriptionPlan === plan ? stored.entitledModules : this.platformPlans.find((candidate) => candidate.name === plan)?.entitledModules) : stored.entitledModules,
+      source: plan ? "subscription_plan" : "legacy_default",
+    };
+  }
+
+  private workspacePreferences(entitledModules: readonly T.WorkspaceModuleKey[]): T.WorkspaceModulePreferences {
+    const stored = this.db.workspaceModulePreferences;
+    const filtered = stored.enabledModules.filter((module): module is T.WorkspaceModuleKey => entitledModules.includes(module as T.WorkspaceModuleKey));
+    let enabledModules: T.WorkspaceModuleKey[];
+    try {
+      enabledModules = validateWorkspaceModuleSelection(filtered, entitledModules);
+    } catch {
+      enabledModules = defaultWorkspacePreferences(entitledModules);
+    }
+    return {
+      ...stored,
+      organizationId: this.db.organization.id,
+      catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+      enabledModules,
+    };
+  }
+
+  private workspaceAccess(): T.WorkspaceAccess {
+    const entitlements = this.workspaceEntitlements();
+    const preferences = this.workspacePreferences(entitlements.entitledModules);
+    return buildWorkspaceAccess(entitlements, preferences);
   }
 
   updateOrganizationSettings(input: T.UpdateOrganizationSettingsInput): Promise<T.OrganizationSettings> {
     return this.respond(() => {
       this.require("settings.manage");
       const before = { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent };
-      Object.assign(this.db.organization, input);
+      const phoneCountryCallingCode = input.phoneCountryCallingCode?.replace(/\D/g, "");
+      if (input.phoneCountryCallingCode !== undefined && !/^\d{1,3}$/.test(phoneCountryCallingCode ?? "")) {
+        throw ApiError.of(ERR.VALIDATION, "Enter a valid country calling code.", { fieldErrors: { phoneCountryCallingCode: ["Use 1 to 3 digits, for example +962"] } });
+      }
+      Object.assign(this.db.organization, input, phoneCountryCallingCode ? { phoneCountryCallingCode } : {});
       this.audit({
         category: "settings",
         action: "settings.organization_update",
@@ -4645,12 +10047,14 @@ export class MockGymOSApi implements GymOSApi {
 
   private getOrganizationSettingsSync(): T.OrganizationSettings {
     return {
-      organization: this.db.organization,
+      organization: { ...this.db.organization, brand: this.db.brand },
+      brand: this.db.brand,
       branches: this.db.branches,
       paymentMethods: this.db.paymentMethods,
       roles: this.db.roles,
       notifications: this.db.notificationSettings,
       operationalPolicies: this.db.operationalPolicies,
+      workspace: this.workspaceAccess(),
     };
   }
 
@@ -4681,6 +10085,10 @@ export class MockGymOSApi implements GymOSApi {
   updateOperationalPolicies(input: T.OperationalPolicies): Promise<T.OrganizationSettings> {
     return this.respond(() => {
       this.require("settings.manage");
+      const calendar = input.classBooking ?? {};
+      if (calendar.calendarStartHour !== undefined && (!Number.isSafeInteger(calendar.calendarStartHour) || calendar.calendarStartHour < 0 || calendar.calendarStartHour > 23)) throw ApiError.of(ERR.VALIDATION, "Calendar start hour must be between 00 and 23.");
+      if (calendar.calendarEndHour !== undefined && (!Number.isSafeInteger(calendar.calendarEndHour) || calendar.calendarEndHour < 1 || calendar.calendarEndHour > 24)) throw ApiError.of(ERR.VALIDATION, "Calendar end hour must be between 01 and 24.");
+      if (calendar.calendarStartHour !== undefined && calendar.calendarEndHour !== undefined && calendar.calendarEndHour <= calendar.calendarStartHour) throw ApiError.of(ERR.VALIDATION, "The calendar must end after it starts.");
       this.db.operationalPolicies = structuredClone(input);
       this.audit({
         category: "settings",
@@ -4695,7 +10103,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   getOperationalEmailSettings(): Promise<T.OperationalEmailActivationSettings> {
-    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], configurableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, ownerConfirmed: false, ...this.operationalEmailUpdate }));
+    return this.respond(() => ({ enabledKinds: [...this.operationalEmailKinds], availableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], configurableKinds: ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"], mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, deliveryMode: "off", deliveryModeSource: "default", providerConfigured: false, webhookConfigured: false, ownerConfirmed: false, ...this.operationalEmailUpdate }));
   }
 
   updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<T.OperationalEmailActivationSettings> {
@@ -4710,7 +10118,7 @@ export class MockGymOSApi implements GymOSApi {
       const confirmedAt = nowISO();
       this.operationalEmailUpdate = { ownerConfirmed: true, ownerConfirmedAt: confirmedAt, ownerConfirmedBy: this.actor().name, updatedAt: confirmedAt, updatedBy: this.actor().name, reason: input.reason || undefined };
       this.audit({ category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: this.db.organization.id, entityLabel: this.db.organization.name, summary: `Enabled ${this.operationalEmailKinds.length} gym-controlled service email types`, reason: input.reason || undefined });
-      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: allowed, configurableKinds: allowed, mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, providerConfigured: false, webhookConfigured: false, ...this.operationalEmailUpdate! };
+      return { enabledKinds: [...this.operationalEmailKinds], availableKinds: allowed, configurableKinds: allowed, mandatoryPlatformKinds: ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"], liveWorkerEnabled: false, deliveryMode: "off", deliveryModeSource: "default", providerConfigured: false, webhookConfigured: false, ...this.operationalEmailUpdate! };
     });
   }
 
@@ -4758,6 +10166,1942 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  listZones(input: { branchId?: T.UUID; includeArchived?: boolean } = {}): Promise<T.Zone[]> {
+    return this.respond(() => {
+      const branchIds = input.branchId ? [input.branchId] : this.db.branches.filter((branch) => this.branchIsVisible(branch.id)).map((branch) => branch.id);
+      if (input.branchId && !this.branchIsVisible(input.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      return this.db.zones.filter((zone) => branchIds.includes(zone.branchId) && (input.includeArchived || zone.status === "active")).sort((left, right) => left.code.localeCompare(right.code));
+    });
+  }
+
+  upsertZone(input: T.UpsertZoneInput): Promise<T.Zone> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      this.requireOwnerOrManager();
+      const branch = this.db.branches.find((candidate) => candidate.id === input.branchId);
+      if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      const code = input.code.trim().toUpperCase();
+      const name = input.name.trim();
+      const nameAr = input.nameAr?.trim() || undefined;
+      const kinds: T.ZoneKind[] = ["floor", "studio", "weights", "cardio", "functional", "locker_room", "bathroom", "reception", "storage", "other"];
+      if (!/^[A-Z0-9][A-Z0-9_-]{0,15}$/.test(code)) throw ApiError.of(ERR.VALIDATION, "Zone code must be 1–16 uppercase letters, numbers, underscores, or hyphens.");
+      if (!name || name.length > 80 || (nameAr?.length ?? 0) > 80) throw ApiError.of(ERR.VALIDATION, "Zone names must be between 1 and 80 characters.");
+      if (!kinds.includes(input.kind)) throw ApiError.of(ERR.VALIDATION, "Zone kind is not supported.");
+      if (input.capacity !== undefined && (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 100_000)) throw ApiError.of(ERR.VALIDATION, "Zone capacity must be a positive whole number.");
+      const existing = input.id ? this.db.zones.find((zone) => zone.id === input.id) : undefined;
+      if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
+      if (existing && existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A zone cannot be moved between branches.");
+      if (existing && !this.branchIsVisible(existing.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
+      // Archived zones remain in history, but their code can be reused by a
+      // new active zone. Only a live zone reserves the branch code.
+      const duplicate = this.db.zones.find((zone) => zone.branchId === branch.id && zone.code === code && zone.status === "active" && zone.id !== existing?.id);
+      if (duplicate) throw ApiError.of("CONFLICT", "That zone code is already used in this branch.");
+      const now = nowISO();
+      if (existing) {
+        const before = { ...existing };
+        Object.assign(existing, { code, name, nameAr, kind: input.kind, capacity: input.capacity, status: input.status === "archived" ? "archived" : "active", updatedAt: now });
+        this.audit({ category: "settings", action: "zone.update", entityType: "zone", entityId: existing.id, entityLabel: existing.name, summary: "Zone updated", before, after: { ...existing }, branchId: branch.id });
+        return { ...existing };
+      }
+      const zone: T.Zone = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, code, name, nameAr, kind: input.kind, capacity: input.capacity, status: input.status === "archived" ? "archived" : "active", createdAt: now, updatedAt: now };
+      this.db.zones.push(zone);
+      this.audit({ category: "settings", action: "zone.create", entityType: "zone", entityId: zone.id, entityLabel: zone.name, summary: "Zone created", after: { ...zone }, branchId: branch.id });
+      return { ...zone };
+    });
+  }
+
+  archiveZone(zoneId: T.UUID): Promise<T.Zone> {
+    return this.respond(() => {
+      this.require("settings.manage");
+      this.requireOwnerOrManager();
+      const zone = this.db.zones.find((candidate) => candidate.id === zoneId);
+      if (!zone || !this.branchIsVisible(zone.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Zone not found.");
+      if (zone.status === "archived") return { ...zone };
+      const before = { ...zone };
+      zone.status = "archived";
+      zone.updatedAt = nowISO();
+      this.audit({ category: "settings", action: "zone.archive", entityType: "zone", entityId: zone.id, entityLabel: zone.name, summary: "Zone archived", before, after: { ...zone }, branchId: zone.branchId });
+      return { ...zone };
+    });
+  }
+
+  listProducts(query: { search?: string; includeArchived?: boolean } = {}): Promise<T.Product[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const search = query.search?.trim().toLowerCase();
+      return this.db.products.filter((product) => (query.includeArchived || product.status === "active") && (!search || `${product.sku} ${product.name}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((product) => ({ ...product, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined }));
+    });
+  }
+
+  upsertProduct(input: T.UpsertProductInput): Promise<T.Product> {
+    return this.respond(async () => {
+      this.requireOperationsWrite();
+      const sku = input.sku.trim().toUpperCase();
+      const name = input.name.trim();
+      if (!/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(sku) || !name || name.length > 120) throw ApiError.of(ERR.VALIDATION, "Product SKU and name are invalid.");
+      if (!Number.isSafeInteger(input.reorderPoint) || input.reorderPoint < 0) throw ApiError.of(ERR.VALIDATION, "The reorder point must be a non-negative whole number.");
+      if (input.availableQuantity !== undefined && (!Number.isSafeInteger(input.availableQuantity) || input.availableQuantity < 0)) throw ApiError.of(ERR.VALIDATION, "Available stock must be a non-negative whole number.");
+      if (input.availableQuantity !== undefined && !input.branchId) throw ApiError.of(ERR.VALIDATION, "Select a branch when setting available stock.");
+      if (input.retailPrice && (input.retailPrice.amount < 0 || !Number.isSafeInteger(input.retailPrice.amount) || input.retailPrice.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Product retail price is invalid.");
+      const duplicate = this.db.products.find((product) => product.status !== "archived" && product.sku === sku && product.id !== input.id);
+      if (duplicate) throw ApiError.of(ERR.CONFLICT, "That SKU is already used by another product.");
+      if (input.preferredSupplierId && !this.db.suppliers.some((supplier) => supplier.id === input.preferredSupplierId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      const now = nowISO();
+      const existing = input.id ? this.db.products.find((product) => product.id === input.id) : undefined;
+      if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      const product: T.Product = existing ? Object.assign(existing, { id: existing.id, organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, unit: input.unit, reorderPoint: input.reorderPoint, preferredSupplierId: input.preferredSupplierId, retailPrice: input.retailPrice, status: input.status ?? existing.status, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, sku, name, description: input.description?.trim() || undefined, unit: input.unit, reorderPoint: input.reorderPoint, preferredSupplierId: input.preferredSupplierId, retailPrice: input.retailPrice, status: input.status ?? "active", createdAt: now, updatedAt: now };
+      if (!existing) this.db.products.push(product);
+      this.audit({ category: "operations", action: existing ? "operations.product.update" : "operations.product.create", entityType: "product", entityId: product.id, entityLabel: product.name, summary: existing ? "Product updated" : "Product created" });
+      if (input.availableQuantity !== undefined && input.branchId) {
+        if (product.status !== "active") throw ApiError.of(ERR.CONFLICT, "Archived products cannot have their stock changed.");
+        const branch = this.operationsBranch(input.branchId);
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branch.id && candidate.productId === product.id);
+        const currentAvailable = balance ? balance.quantityOnHand - balance.committedQuantity : 0;
+        const delta = input.availableQuantity - currentAvailable;
+        if (delta !== 0) {
+          // Bind the idempotency key to the pre-change balance. This permits a
+          // later legitimate return to the same quantity after stock changed,
+          // while an immediate retry remains a no-op because its delta is 0.
+          const balanceVersion = balance
+            ? `${balance.quantityOnHand}:${balance.committedQuantity}:${balance.updatedAt}:${balance.lastMovementAt ?? ""}`
+            : "empty";
+          await this.recordStockMovement({ branchId: branch.id, productId: product.id, type: "adjustment", quantity: delta, reason: "Product stock availability updated", referenceType: "product_stock_edit", referenceId: product.id, idempotencyKey: `product-stock-edit:${product.id}:${branch.id}:${balanceVersion}:${input.availableQuantity}` });
+        }
+      }
+      return { ...product, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined };
+    });
+  }
+
+  archiveProduct(productId: T.UUID, reason: string): Promise<T.Product> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(reason);
+      const product = this.db.products.find((candidate) => candidate.id === productId);
+      if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      product.status = "archived";
+      product.updatedAt = nowISO();
+      this.audit({ category: "operations", action: "operations.product.archive", entityType: "product", entityId: product.id, entityLabel: product.name, summary: "Product archived", reason });
+      return { ...product };
+    });
+  }
+
+  deleteProduct(input: T.DeleteProductInput): Promise<T.DeleteProductResult> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(input.reason);
+      const confirmation = input.confirmation.trim().toLowerCase();
+      if (!confirmation) throw ApiError.of(ERR.VALIDATION, "Type the exact SKU or product name to confirm permanent deletion.");
+      const existingTombstone = this.db.productTombstones.find((candidate) => candidate.productId === input.productId);
+      if (existingTombstone) {
+        if (confirmation !== existingTombstone.sku.toLowerCase() && confirmation !== existingTombstone.name.toLowerCase()) throw ApiError.of(ERR.VALIDATION, "Type the exact SKU or product name to confirm permanent deletion.");
+        return { deleted: true, productId: existingTombstone.productId, sku: existingTombstone.sku, name: existingTombstone.name, deletedAt: existingTombstone.deletedAt };
+      }
+      const product = this.db.products.find((candidate) => candidate.id === input.productId);
+      if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      if (confirmation !== product.sku.toLowerCase() && confirmation !== product.name.toLowerCase()) throw ApiError.of(ERR.VALIDATION, "Type the exact SKU or product name to confirm permanent deletion.");
+      const balances = this.db.inventoryBalances.filter((candidate) => candidate.productId === product.id);
+      if (this.actor().branchScope !== "all" && balances.some((balance) => !this.branchIsVisible(balance.branchId))) throw ApiError.of(ERR.FORBIDDEN, "This product has inventory in a branch outside your access.");
+      if (balances.some((balance) => balance.quantityOnHand > 0)) throw ApiError.of(ERR.CONFLICT, "This product still has stock on hand. Sell, return, or adjust it to zero before permanently deleting the item.");
+      const dependentOrders = this.db.purchaseOrders.filter((order) => order.lines.some((line) => line.productId === product.id && line.receivedQuantity < line.orderedQuantity));
+      if (this.actor().branchScope !== "all" && dependentOrders.some((order) => !this.branchIsVisible(order.branchId))) throw ApiError.of(ERR.FORBIDDEN, "This product is used by a purchase order in a branch outside your access.");
+      const openOrder = dependentOrders.find((order) => order.status === "draft" || order.status === "approved" || order.status === "partially_received");
+      if (openOrder) throw ApiError.of(ERR.CONFLICT, "This product is on an open purchase order. Receive or cancel that order before deleting the item.");
+      const deletedAt = nowISO();
+      const tombstone: T.ProductTombstone = { id: mockUuid(), organizationId: this.db.organization.id, productId: product.id, sku: product.sku, name: product.name, description: product.description, unit: product.unit, retailPrice: product.retailPrice ? { ...product.retailPrice } : undefined, deletedAt, deletedById: this.actor().id, reason: input.reason.trim() };
+      this.db.productTombstones.push(tombstone);
+      this.db.inventoryBalances = this.db.inventoryBalances.filter((balance) => balance.productId !== product.id);
+      this.db.lowStockAlerts = this.db.lowStockAlerts.filter((alert) => alert.productId !== product.id);
+      this.db.suppliers.forEach((supplier) => { supplier.preferredProductIds = supplier.preferredProductIds.filter((id) => id !== product.id); });
+      this.db.products = this.db.products.filter((candidate) => candidate.id !== product.id);
+      this.db.stockMovements = this.db.stockMovements.map((movement) => movement.productId === product.id ? { ...movement, productSku: product.sku, productName: product.name, productUnit: product.unit } : movement);
+      this.audit({ category: "operations", action: "operations.product.delete", entityType: "product", entityId: product.id, entityLabel: product.name, summary: "Product permanently deleted; historical records retained", reason: input.reason.trim(), before: { sku: product.sku, name: product.name, status: product.status }, after: { deleted: "true", sku: product.sku, name: product.name, historicalRecordsRetained: "true" } });
+      return { deleted: true, productId: tombstone.productId, sku: tombstone.sku, name: tombstone.name, deletedAt: tombstone.deletedAt };
+    });
+  }
+
+  listSuppliers(query: { search?: string; includeArchived?: boolean } = {}): Promise<T.Supplier[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const search = query.search?.trim().toLowerCase();
+      return this.db.suppliers.filter((supplier) => (query.includeArchived || supplier.status === "active") && (this.actor().branchScope === "all" || supplier.branchIds.some((branchId) => this.branchIsVisible(branchId))) && (!search || `${supplier.name} ${supplier.contactName ?? ""} ${supplier.email ?? ""}`.toLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name)).map((supplier) => ({ ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] }));
+    });
+  }
+
+  upsertSupplier(input: T.UpsertSupplierInput): Promise<T.Supplier> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const name = input.name.trim();
+      if (!name || name.length > 120 || input.branchIds.length === 0) throw ApiError.of(ERR.VALIDATION, "Supplier name and at least one branch are required.");
+      input.branchIds.forEach((branchId) => this.operationsBranch(branchId));
+      input.preferredProductIds?.forEach((productId) => { if (!this.db.products.some((product) => product.id === productId)) throw ApiError.of(ERR.NOT_FOUND, "Preferred product not found."); });
+      const existing = input.id ? this.db.suppliers.find((supplier) => supplier.id === input.id) : undefined;
+      if (input.id && !existing) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      const now = nowISO();
+      const supplier: T.Supplier = existing ? Object.assign(existing, { id: existing.id, organizationId: this.db.organization.id, name, contactName: input.contactName?.trim() || undefined, email: input.email?.trim().toLowerCase() || undefined, phone: input.phone?.trim() || undefined, terms: input.terms?.trim() || undefined, branchIds: [...input.branchIds], preferredProductIds: [...new Set(input.preferredProductIds ?? [])], status: input.status ?? "active", updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, name, contactName: input.contactName?.trim() || undefined, email: input.email?.trim().toLowerCase() || undefined, phone: input.phone?.trim() || undefined, terms: input.terms?.trim() || undefined, branchIds: [...input.branchIds], preferredProductIds: [...new Set(input.preferredProductIds ?? [])], status: input.status ?? "active", createdAt: now, updatedAt: now };
+      if (!existing) this.db.suppliers.push(supplier);
+      this.audit({ category: "operations", action: existing ? "operations.supplier.update" : "operations.supplier.create", entityType: "supplier", entityId: supplier.id, entityLabel: supplier.name, summary: existing ? "Supplier updated" : "Supplier created" });
+      return { ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] };
+    });
+  }
+
+  archiveSupplier(supplierId: T.UUID, reason: string): Promise<T.Supplier> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(reason);
+      const supplier = this.db.suppliers.find((candidate) => candidate.id === supplierId);
+      if (!supplier) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      supplier.status = "archived";
+      supplier.updatedAt = nowISO();
+      this.audit({ category: "operations", action: "operations.supplier.archive", entityType: "supplier", entityId: supplier.id, entityLabel: supplier.name, summary: "Supplier archived", reason });
+      return { ...supplier, branchIds: [...supplier.branchIds], preferredProductIds: [...supplier.preferredProductIds] };
+    });
+  }
+
+  listInventory(input: { branchId?: T.UUID; productId?: T.UUID } = {}): Promise<T.InventoryBalance[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const branchIds = input.branchId ? [this.operationsBranch(input.branchId).id] : this.db.branches.filter((branch) => branch.status === "active" && this.branchIsVisible(branch.id)).map((branch) => branch.id);
+      if (input.productId && !this.db.products.some((product) => product.id === input.productId) && !this.db.productTombstones.some((product) => product.productId === input.productId)) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      return this.db.inventoryBalances.filter((balance) => balance.sellable !== false && branchIds.includes(balance.branchId) && (!input.productId || balance.productId === input.productId)).map((balance) => ({ ...balance, availableQuantity: balance.quantityOnHand - balance.committedQuantity, lastMovementAt: balance.lastMovementAt }));
+    });
+  }
+
+  recordStockMovement(input: { branchId: T.UUID; productId: T.UUID; type: T.StockMovementType; quantity: number; unitCost?: T.Money; reason?: string; referenceType?: string; referenceId?: T.UUID; idempotencyKey: string }): Promise<T.StockMovement> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const product = this.db.products.find((candidate) => candidate.id === input.productId && candidate.status === "active");
+      if (!product) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      if (!Number.isSafeInteger(input.quantity) || input.quantity === 0 || (input.type !== "adjustment" && input.quantity < 0)) throw ApiError.of(ERR.VALIDATION, "Stock movement quantity is invalid.");
+      if (input.unitCost && (input.unitCost.amount < 0 || input.unitCost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Unit cost is invalid.");
+      const reason = input.reason?.trim() || undefined;
+      if (input.type === "adjustment" && !reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.");
+      const signature = JSON.stringify({ branchId: branch.id, productId: product.id, type: input.type, quantity: input.quantity, unitCost: input.unitCost, reason, referenceType: input.referenceType, referenceId: input.referenceId });
+      const existing = this.operationsIdempotent("stock_movement", input.idempotencyKey, signature) as T.StockMovement | undefined;
+      if (existing) return { ...existing, unitCost: existing.unitCost ? { ...existing.unitCost } : undefined };
+      const delta = ["receive", "return", "transfer_in"].includes(input.type) ? input.quantity : input.type === "adjustment" ? input.quantity : -input.quantity;
+      let balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branch.id && candidate.productId === product.id);
+      if (!balance) { balance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: true, updatedAt: nowISO() }; this.db.inventoryBalances.push(balance); }
+      if (balance.quantityOnHand + delta < 0) throw ApiError.of(ERR.CONFLICT, "Stock movement would make inventory negative.");
+      const basis = this.retailInventoryCostBasis(branch.id, product.id);
+      const currentTotalCost = balance.quantityOnHand === 0
+        ? { amount: 0, currency: this.db.organization.currency }
+        : balance.totalCost && balance.totalCost.currency === this.db.organization.currency && Number.isSafeInteger(balance.totalCost.amount) && balance.totalCost.amount >= 0
+          ? { ...balance.totalCost }
+          : basis && Number.isSafeInteger(basis.amount * balance.quantityOnHand)
+            ? { amount: basis.amount * balance.quantityOnHand, currency: basis.currency }
+            : undefined;
+      let movementTotalCost: T.Money | undefined;
+      let nextTotalCost: T.Money | undefined;
+      if (delta < 0) {
+        const amount = allocateExactCost(currentTotalCost?.amount, balance.quantityOnHand, Math.abs(delta));
+        if (amount !== undefined && currentTotalCost) {
+          movementTotalCost = { amount, currency: currentTotalCost.currency };
+          nextTotalCost = { amount: currentTotalCost.amount - amount, currency: currentTotalCost.currency };
+        }
+      } else if (delta > 0) {
+        const incoming = exactCostTotal(input.unitCost, delta);
+        if (currentTotalCost && incoming && incoming.currency === this.db.organization.currency && Number.isSafeInteger(currentTotalCost.amount + incoming.amount)) {
+          movementTotalCost = incoming;
+          nextTotalCost = { amount: currentTotalCost.amount + incoming.amount, currency: incoming.currency };
+        } else if (incoming && balance.quantityOnHand === 0) {
+          movementTotalCost = incoming;
+          nextTotalCost = { ...incoming };
+        }
+      }
+      balance.quantityOnHand += delta;
+      balance.totalCost = nextTotalCost;
+      balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity;
+      balance.lastMovementAt = nowISO();
+      balance.updatedAt = nowISO();
+      const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: product.id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: input.type, quantityDelta: delta, quantity: Math.abs(delta), unitCost: input.unitCost, totalCost: movementTotalCost, reason, referenceType: input.referenceType, referenceId: input.referenceId, idempotencyKey: input.idempotencyKey, financialPostingStatus: "not_posted", occurredAt: nowISO(), createdAt: nowISO(), createdById: this.actor().id };
+      this.db.stockMovements.unshift(movement);
+      this.operationsIdempotency.set(`stock_movement:${input.idempotencyKey}`, { signature, result: movement });
+      this.audit({ category: "operations", action: "operations.stock_movement.create", entityType: "stock_movement", entityId: movement.id, entityLabel: `${product.sku} · ${input.type}`, summary: `Recorded ${input.type} stock movement`, reason, branchId: branch.id });
+      return { ...movement };
+    });
+  }
+
+  transferInventory(input: T.InventoryTransferInput): Promise<T.InventoryTransferResult> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) throw ApiError.of(ERR.VALIDATION, "Transfer quantity must be a positive whole number.");
+      const reason = input.reason.trim();
+      if (reason.length < 3) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.");
+      const idempotencyKey = input.idempotencyKey.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const sourceScope = this.operationsTransferBranch(input.sourceBranchId);
+      const destinationScope = this.operationsTransferBranch(input.destinationBranchId);
+      if (sourceScope.id === destinationScope.id) throw ApiError.of(ERR.VALIDATION, "Choose a different destination branch.");
+      const productScope = this.db.products.find((candidate) => candidate.id === input.productId);
+      if (!productScope) throw ApiError.of(ERR.NOT_FOUND, "Product not found.");
+      const signature = JSON.stringify({ sourceBranchId: sourceScope.id, destinationBranchId: destinationScope.id, productId: productScope.id, quantity: input.quantity, reason });
+      const existing = this.operationsIdempotent("inventory_transfer", idempotencyKey, signature) as T.InventoryTransferResult | undefined;
+      if (existing) return existing;
+      const sourceBranch = this.operationsBranch(sourceScope.id);
+      const destinationBranch = this.operationsBranch(destinationScope.id);
+      const product = this.db.products.find((candidate) => candidate.id === productScope.id && candidate.status === "active");
+      if (!product) throw ApiError.of(ERR.CONFLICT, "Archived products cannot be transferred.");
+      const sourceBalance = this.db.inventoryBalances.find((candidate) => candidate.branchId === sourceBranch.id && candidate.productId === product.id);
+      const sourceAvailableQuantity = (sourceBalance?.quantityOnHand ?? 0) - (sourceBalance?.committedQuantity ?? 0);
+      if (sourceAvailableQuantity < input.quantity) throw ApiError.of(ERR.CONFLICT, "The source branch does not have enough available stock for this transfer.");
+      let destinationBalance = this.db.inventoryBalances.find((candidate) => candidate.branchId === destinationBranch.id && candidate.productId === product.id);
+      if (!destinationBalance) {
+        destinationBalance = { id: mockUuid(), organizationId: this.db.organization.id, branchId: destinationBranch.id, productId: product.id, quantityOnHand: 0, committedQuantity: 0, availableQuantity: 0, sellable: true, updatedAt: nowISO() };
+        this.db.inventoryBalances.push(destinationBalance);
+      }
+      const destinationAvailableQuantity = destinationBalance.quantityOnHand - destinationBalance.committedQuantity;
+      const now = nowISO();
+      const transferId = mockUuid();
+      const sourceMovementKey = `${idempotencyKey}:out`;
+      const destinationMovementKey = `${idempotencyKey}:in`;
+      const sourceBasis = this.retailInventoryCostBasis(sourceBranch.id, product.id);
+      const sourceTotalCost = sourceBalance && sourceBalance.totalCost && sourceBalance.totalCost.currency === this.db.organization.currency
+        ? sourceBalance.totalCost.amount
+        : sourceBasis && sourceBalance && Number.isSafeInteger(sourceBasis.amount * sourceBalance.quantityOnHand)
+          ? sourceBasis.amount * sourceBalance.quantityOnHand
+          : undefined;
+      const movedTotalCost = sourceBalance ? allocateExactCost(sourceTotalCost, sourceBalance.quantityOnHand, input.quantity) : undefined;
+      const sourceRemainingCost = sourceTotalCost !== undefined && movedTotalCost !== undefined ? sourceTotalCost - movedTotalCost : undefined;
+      const destinationTotalCost = destinationBalance.quantityOnHand === 0
+        ? 0
+        : destinationBalance.totalCost && destinationBalance.totalCost.currency === this.db.organization.currency
+          ? destinationBalance.totalCost.amount
+          : undefined;
+      const destinationNextCost = destinationTotalCost !== undefined && movedTotalCost !== undefined && Number.isSafeInteger(destinationTotalCost + movedTotalCost) ? destinationTotalCost + movedTotalCost : undefined;
+      const unitCost = sourceBasis ?? (movedTotalCost !== undefined ? money(Math.round(movedTotalCost / input.quantity), this.db.organization.currency) : undefined);
+      const movementTotalCost = movedTotalCost === undefined ? undefined : money(movedTotalCost, this.db.organization.currency);
+      const sourceMovement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: sourceBranch.id, productId: product.id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_out", quantityDelta: -input.quantity, quantity: input.quantity, unitCost, totalCost: movementTotalCost, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: sourceMovementKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+      const destinationMovement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: destinationBranch.id, productId: product.id, productSku: product.sku, productName: product.name, productUnit: product.unit, type: "transfer_in", quantityDelta: input.quantity, quantity: input.quantity, unitCost, totalCost: movementTotalCost, reason, referenceType: "inventory_transfer", referenceId: transferId, idempotencyKey: destinationMovementKey, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
+      if (!sourceBalance) throw ApiError.of(ERR.CONFLICT, "The source branch inventory balance could not be loaded.");
+      sourceBalance.quantityOnHand -= input.quantity;
+      sourceBalance.totalCost = sourceRemainingCost === undefined ? undefined : money(sourceRemainingCost, this.db.organization.currency);
+      sourceBalance.availableQuantity = sourceBalance.quantityOnHand - sourceBalance.committedQuantity;
+      sourceBalance.lastMovementAt = now;
+      sourceBalance.updatedAt = now;
+      destinationBalance.quantityOnHand += input.quantity;
+      destinationBalance.totalCost = destinationNextCost === undefined ? undefined : money(destinationNextCost, this.db.organization.currency);
+      destinationBalance.availableQuantity = destinationBalance.quantityOnHand - destinationBalance.committedQuantity;
+      destinationBalance.lastMovementAt = now;
+      destinationBalance.updatedAt = now;
+      this.db.stockMovements.unshift(destinationMovement, sourceMovement);
+      const result: T.InventoryTransferResult = { id: transferId, organizationId: this.db.organization.id, sourceBranchId: sourceBranch.id, destinationBranchId: destinationBranch.id, productId: product.id, quantity: input.quantity, reason, idempotencyKey, status: "completed", totalCost: movementTotalCost, sourceMovementId: sourceMovement.id, destinationMovementId: destinationMovement.id, sourceMovement, destinationMovement, sourceAvailableQuantity: sourceAvailableQuantity - input.quantity, destinationAvailableQuantity: destinationAvailableQuantity + input.quantity, createdById: this.actor().id, occurredAt: now };
+      const transfer: T.InventoryTransfer = { id: transferId, organizationId: this.db.organization.id, sourceBranchId: sourceBranch.id, destinationBranchId: destinationBranch.id, productId: product.id, quantity: input.quantity, reason, status: "completed", sourceMovementId: sourceMovement.id, destinationMovementId: destinationMovement.id, totalCost: movementTotalCost, sourceAvailableBefore: sourceAvailableQuantity, destinationAvailableBefore: destinationAvailableQuantity, sourceAvailableAfter: sourceAvailableQuantity - input.quantity, destinationAvailableAfter: destinationAvailableQuantity + input.quantity, idempotencyKey, createdById: this.actor().id, occurredAt: now };
+      this.db.inventoryTransfers.unshift(transfer);
+      this.operationsIdempotency.set(`inventory_transfer:${idempotencyKey}`, { signature, result, expiresAt: Date.now() + 90 * 86_400_000 });
+      this.audit({ category: "operations", action: "operations.inventory.transfer", entityType: "inventory_transfer", entityId: transferId, entityLabel: `${product.sku} · ${sourceBranch.name} → ${destinationBranch.name}`, summary: "Inventory transferred between branches", reason, branchId: sourceBranch.id, destinationBranchId: destinationBranch.id });
+      return result;
+    });
+  }
+
+  listStockMovements(query: { branchId?: T.UUID; productId?: T.UUID; page?: number; pageSize?: number } = {}): Promise<T.Page<T.StockMovement>> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
+      const rows = this.db.stockMovements.filter((movement) => (!branchId || movement.branchId === branchId) && (!query.productId || movement.productId === query.productId) && this.branchIsVisible(movement.branchId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+      return paginate(rows.map((row) => {
+        const product = this.db.products.find((candidate) => candidate.id === row.productId);
+        const tombstone = this.db.productTombstones.find((candidate) => candidate.productId === row.productId);
+        return { ...row, productSku: row.productSku ?? product?.sku ?? tombstone?.sku, productName: row.productName ?? product?.name ?? tombstone?.name, productUnit: row.productUnit ?? product?.unit ?? tombstone?.unit, unitCost: row.unitCost ? { ...row.unitCost } : undefined };
+      }), { page: query.page, pageSize: query.pageSize });
+    });
+  }
+
+  private lowStockSnapshot(input: { branchId?: T.UUID; includeDismissed?: boolean } = {}): T.LowStockAlert[] {
+    const branchIds = input.branchId ? [this.operationsBranch(input.branchId).id] : this.db.branches.filter((branch) => branch.status === "active" && this.branchIsVisible(branch.id)).map((branch) => branch.id);
+    const alerts: T.LowStockAlert[] = [];
+    for (const branchId of branchIds) {
+      for (const product of this.db.products.filter((candidate) => candidate.status === "active")) {
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === branchId && candidate.productId === product.id);
+        const quantityOnHand = balance?.quantityOnHand ?? 0;
+        const committedQuantity = balance?.committedQuantity ?? 0;
+        const availableQuantity = quantityOnHand - committedQuantity;
+        if (availableQuantity > product.reorderPoint) continue;
+        const existing = this.db.lowStockAlerts.find((alert) => alert.branchId === branchId && alert.productId === product.id);
+        if (!input.includeDismissed && existing?.status === "dismissed") continue;
+        alerts.push({ id: existing?.id ?? mockUuid(), organizationId: this.db.organization.id, branchId, productId: product.id, quantityOnHand, committedQuantity, availableQuantity, reorderPoint: product.reorderPoint, status: existing?.status ?? "open", dismissedAt: existing?.dismissedAt, dismissedReason: existing?.dismissedReason, updatedAt: existing?.updatedAt ?? nowISO() });
+      }
+    }
+    return alerts;
+  }
+
+  listLowStockAlerts(input: { branchId?: T.UUID; includeDismissed?: boolean } = {}): Promise<T.LowStockAlert[]> {
+    return this.respond(() => { this.requireOperationsRead(); return this.lowStockSnapshot(input).map((alert) => ({ ...alert })); });
+  }
+
+  refreshLowStockAlerts(input: { branchId?: T.UUID } = {}): Promise<T.LowStockAlert[]> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      for (const snapshot of this.lowStockSnapshot({ ...input, includeDismissed: true })) {
+        if (!this.db.lowStockAlerts.some((alert) => alert.branchId === snapshot.branchId && alert.productId === snapshot.productId)) this.db.lowStockAlerts.push({ ...snapshot, status: "open" });
+      }
+      return this.lowStockSnapshot({ ...input, includeDismissed: true });
+    });
+  }
+
+  dismissLowStockAlert(input: { alertId: T.UUID; reason: string }): Promise<T.LowStockAlert> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(input.reason);
+      const alert = this.db.lowStockAlerts.find((candidate) => candidate.id === input.alertId);
+      if (!alert || !this.branchIsVisible(alert.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Low-stock alert not found.");
+      alert.status = "dismissed";
+      alert.dismissedAt = nowISO();
+      alert.dismissedReason = input.reason;
+      alert.updatedAt = nowISO();
+      this.audit({ category: "operations", action: "operations.inventory_alert.dismiss", entityType: "inventory_alert", entityId: alert.id, entityLabel: alert.id, summary: "Low-stock alert dismissed", reason: input.reason, branchId: alert.branchId });
+      return { ...alert };
+    });
+  }
+
+  createPurchaseOrder(input: T.CreatePurchaseOrderInput): Promise<T.PurchaseOrder> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      if (!validExpectedDeliveryDate(input.expectedDeliveryDate)) throw ApiError.of(ERR.VALIDATION, "Expected delivery must be a valid calendar date.");
+      const branch = this.operationsBranch(input.branchId);
+      const sourceType = input.sourceType ?? (input.supplierId ? "supplier" : "private");
+      if (sourceType !== "supplier" && sourceType !== "private") throw ApiError.of(ERR.VALIDATION, "Purchase source is invalid.");
+      const supplier = sourceType === "supplier" ? this.db.suppliers.find((candidate) => candidate.id === input.supplierId && candidate.status === "active") : undefined;
+      if (sourceType === "supplier" && (!supplier || (supplier.branchIds.length > 0 && !supplier.branchIds.includes(branch.id)))) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found for this branch.");
+      if (!input.lines.length) throw ApiError.of(ERR.VALIDATION, "A purchase order must contain at least one line.");
+      const seen = new Set<T.UUID>();
+      const lines: T.PurchaseOrderLine[] = input.lines.map((raw) => {
+        const product = this.db.products.find((candidate) => candidate.id === raw.productId && candidate.status === "active");
+        if (!product || seen.has(raw.productId)) throw ApiError.of(ERR.VALIDATION, "Purchase product is invalid or repeated.");
+        seen.add(raw.productId);
+        if (!Number.isSafeInteger(raw.quantity) || raw.quantity <= 0 || raw.unitCost.currency !== this.db.organization.currency || raw.unitCost.amount < 0) throw ApiError.of(ERR.VALIDATION, "Purchase line is invalid.");
+        return { productId: product.id, sku: product.sku, productName: product.name, orderedQuantity: raw.quantity, receivedQuantity: 0, unitCost: { ...raw.unitCost }, lineTotal: { amount: raw.quantity * raw.unitCost.amount, currency: raw.unitCost.currency } };
+      });
+      const supplierName = supplier?.name ?? "Private purchase";
+      const order: T.PurchaseOrder = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, sourceType, supplierId: supplier?.id, supplierName, lines, status: "draft", currency: this.db.organization.currency, total: { amount: lines.reduce((sum, line) => sum + line.lineTotal.amount, 0), currency: this.db.organization.currency }, supplierInvoiceReference: input.supplierInvoiceReference, expectedDeliveryDate: input.expectedDeliveryDate || undefined, notes: input.notes, createdAt: nowISO(), updatedAt: nowISO() };
+      this.db.purchaseOrders.unshift(order);
+      this.audit({ category: "operations", action: "operations.purchase_order.create", entityType: "purchase_order", entityId: order.id, entityLabel: supplierName, summary: sourceType === "private" ? "Private purchase order created" : "Purchase order created", branchId: branch.id });
+      return { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
+    });
+  }
+
+  updatePurchaseOrderDeliveryDate(input: { purchaseOrderId: T.UUID; expectedDeliveryDate?: string }): Promise<T.PurchaseOrder> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      if (!validExpectedDeliveryDate(input.expectedDeliveryDate)) throw ApiError.of(ERR.VALIDATION, "Expected delivery must be a valid calendar date.");
+      const order = this.db.purchaseOrders.find(candidate => candidate.id === input.purchaseOrderId && this.branchIsVisible(candidate.branchId));
+      if (!order) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
+      if (!["draft", "approved", "partially_received"].includes(order.status)) throw ApiError.of(ERR.CONFLICT, "Only an open order can change its expected delivery date.");
+      const expectedDeliveryDate = input.expectedDeliveryDate || undefined;
+      if (order.expectedDeliveryDate !== expectedDeliveryDate) {
+        const before = { expectedDeliveryDate: order.expectedDeliveryDate ?? null };
+        order.expectedDeliveryDate = expectedDeliveryDate;
+        order.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "operations.purchase_order.delivery_date", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Expected delivery date updated", branchId: order.branchId, before, after: { expectedDeliveryDate: expectedDeliveryDate ?? null } });
+      }
+      return structuredClone({ ...order, overdue: purchaseOrderIsOverdue(order, this.today()) });
+    });
+  }
+
+  approvePurchaseOrder(purchaseOrderId: T.UUID, reason?: string): Promise<T.PurchaseOrder> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const order = this.db.purchaseOrders.find((candidate) => candidate.id === purchaseOrderId);
+      if (!order || !this.branchIsVisible(order.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
+      if (order.status !== "draft") throw ApiError.of(ERR.CONFLICT, "Only draft purchase orders can be approved.");
+      order.status = "approved";
+      order.approvedAt = nowISO();
+      order.approvedById = this.actor().id;
+      order.updatedAt = nowISO();
+      // Stock on order is not stock on the shelf and reserves nothing: the
+      // open order itself is what blocks product deletion. Counting it as
+      // committed used to hide sellable units from checkout and transfers.
+      this.audit({ category: "operations", action: "operations.purchase_order.approve", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Purchase order approved", reason, branchId: order.branchId });
+      return { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
+    });
+  }
+
+  listPurchaseOrders(query: { branchId?: T.UUID; status?: T.PurchaseOrderStatus } = {}): Promise<T.PurchaseOrder[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      return this.db.purchaseOrders.filter((order) => (!query.branchId || order.branchId === query.branchId) && (!query.status || order.status === query.status) && this.branchIsVisible(order.branchId)).map((order) => ({ ...order, overdue: purchaseOrderIsOverdue(order, this.today()), lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } }));
+    });
+  }
+
+  receivePurchaseOrder(input: T.ReceivePurchaseOrderInput): Promise<T.PurchaseOrder> {
+    return this.respond(async () => {
+      this.requireOperationsWrite();
+      const order = this.db.purchaseOrders.find((candidate) => candidate.id === input.purchaseOrderId);
+      if (!order || !this.branchIsVisible(order.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
+      const signature = JSON.stringify(input);
+      const existing = this.operationsIdempotent("purchase_order.receive", input.idempotencyKey, signature) as T.PurchaseOrder | undefined;
+      if (existing) return existing;
+      if (order.status !== "approved" && order.status !== "partially_received") throw ApiError.of(ERR.CONFLICT, "Only approved purchase orders can be received.");
+      const requested: Array<{ productId: T.UUID; quantity: number; unitCost?: T.Money }> = input.lines?.length ? input.lines : order.lines.filter((line) => line.receivedQuantity < line.orderedQuantity).map((line) => ({ productId: line.productId, quantity: line.orderedQuantity - line.receivedQuantity }));
+      if (!requested?.length) throw ApiError.of(ERR.CONFLICT, "This purchase order has no remaining quantity to receive.");
+      for (const raw of requested) {
+        const line = order.lines.find((candidate) => candidate.productId === raw.productId);
+        if (!line || !Number.isSafeInteger(raw.quantity) || raw.quantity <= 0 || line.receivedQuantity + raw.quantity > line.orderedQuantity) throw ApiError.of(ERR.VALIDATION, "Received quantity exceeds the remaining purchase order quantity.");
+        const product = this.db.products.find((candidate) => candidate.id === raw.productId)!;
+        const unitCost = raw.unitCost ?? line.unitCost;
+        await this.recordStockMovement({ branchId: order.branchId, productId: product.id, type: "receive", quantity: raw.quantity, unitCost, reason: `Purchase order ${order.id} receiving`, referenceType: "purchase_order", referenceId: order.id, idempotencyKey: `${input.idempotencyKey}:${product.id}` });
+        line.receivedQuantity += raw.quantity;
+        const balance = this.db.inventoryBalances.find((candidate) => candidate.branchId === order.branchId && candidate.productId === product.id);
+        if (balance) { balance.committedQuantity = Math.max(0, balance.committedQuantity - raw.quantity); balance.availableQuantity = balance.quantityOnHand - balance.committedQuantity; }
+      }
+      order.status = order.lines.every((line) => line.receivedQuantity === line.orderedQuantity) ? "received" : "partially_received";
+      order.receivedAt = order.status === "received" ? nowISO() : order.receivedAt;
+      order.updatedAt = nowISO();
+      const result = { ...order, lines: order.lines.map((line) => ({ ...line, unitCost: { ...line.unitCost }, lineTotal: { ...line.lineTotal } })), total: { ...order.total } };
+      this.operationsIdempotency.set(`purchase_order.receive:${input.idempotencyKey}`, { signature, result });
+      this.audit({ category: "operations", action: "operations.purchase_order.receive", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: `Purchase order ${order.status}`, branchId: order.branchId });
+      return result;
+    });
+  }
+
+  notifyPurchaseOrderSupplier(input: { purchaseOrderId: T.UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<T.SupplierNotificationResult> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(input.reason);
+      const order = this.db.purchaseOrders.find((candidate) => candidate.id === input.purchaseOrderId);
+      if (!order || !this.branchIsVisible(order.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Purchase order not found.");
+      const result: T.SupplierNotificationResult = { purchaseOrderId: order.id, status: "not_configured", channel: input.channel ?? "supplier_email", detail: order.sourceType === "private" || !order.supplierId ? "This is a private purchase, so no supplier contact is recorded or notified." : "No supplier provider is configured; no external notification was sent.", attemptedAt: nowISO() };
+      this.audit({ category: "operations", action: "operations.supplier_notification.preview", entityType: "purchase_order", entityId: order.id, entityLabel: order.supplierName, summary: "Supplier notification held in sandbox", reason: input.reason, branchId: order.branchId });
+      return result;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Supplier payables and supplier payments
+  // -------------------------------------------------------------------------
+
+  private requirePayablesRead() {
+    this.requireOperations();
+    const permissions = permissionsFor(this.db, currentRole(this.db));
+    if (!permissions.includes("operations.manage") && !permissions.includes("reports.financial.read")) throw ApiError.of(ERR.FORBIDDEN, "Supplier payables are limited to purchasing managers and finance readers.");
+  }
+
+  /** Supplier-attributed 2100 balances: fully received orders from a saved supplier. */
+  private mockPayables(scopeBranchId?: T.UUID): T.Payable[] {
+    const currency = this.db.organization.currency;
+    const today = managementLocalDate(nowISO(), this.db.organization.timezone);
+    const paid = new Map<string, number>();
+    for (const payment of this.db.supplierPayments) {
+      if (payment.status !== "recorded") continue;
+      for (const allocation of payment.allocations) paid.set(allocation.payableId, (paid.get(allocation.payableId) ?? 0) + allocation.amount.amount);
+    }
+    const payables: T.Payable[] = [];
+    for (const order of this.db.purchaseOrders) {
+      if (order.status !== "received" || !order.supplierId || order.sourceType === "private") continue;
+      if (!this.branchIsVisible(order.branchId) || (scopeBranchId && order.branchId !== scopeBranchId) || order.currency !== currency) continue;
+      const branch = this.db.branches.find((candidate) => candidate.id === order.branchId);
+      const supplier = this.db.suppliers.find((candidate) => candidate.id === order.supplierId);
+      if (!branch || !supplier) continue;
+      const originalMinor = order.lines.reduce((sum, line) => sum + line.receivedQuantity * line.unitCost.amount, 0);
+      if (!Number.isSafeInteger(originalMinor) || originalMinor <= 0) continue;
+      const id = `purchase_order:${order.id}`;
+      const paidMinor = Math.min(originalMinor, paid.get(id) ?? 0);
+      const remainingMinor = originalMinor - paidMinor;
+      const ledgerPostingStatus = this.immutableAccountingStatus("purchase_order_receipt", order.id) ?? "not_posted";
+      const receivedAt = order.receivedAt ?? order.updatedAt;
+      payables.push({
+        id,
+        sourceType: "purchase_order",
+        sourceId: order.id,
+        sourceLabel: mockPurchaseOrderLabel(order),
+        supplierId: supplier.id,
+        supplierName: order.supplierName,
+        branchId: branch.id,
+        branchName: branch.name,
+        currency,
+        receivedAt,
+        ageDays: calendarDaysBetween(managementLocalDate(receivedAt, this.db.organization.timezone), today),
+        original: money(originalMinor, currency),
+        paid: money(paidMinor, currency),
+        remaining: money(remainingMinor, currency),
+        status: payableStatusFor(ledgerPostingStatus === "reversed", paidMinor, remainingMinor),
+        externalReference: order.supplierInvoiceReference,
+        ledgerPostingStatus,
+        href: `/operations?tab=orders&order=${encodeURIComponent(order.id)}`,
+      });
+    }
+    return payables.sort((left, right) => left.receivedAt.localeCompare(right.receivedAt) || left.id.localeCompare(right.id));
+  }
+
+  /** 2100 balances that no supplier account can own; reconciliation only. */
+  private mockUnattributedPayables(scopeBranchId?: T.UUID): T.UnattributedPayable[] {
+    const currency = this.db.organization.currency;
+    const items: T.UnattributedPayable[] = [];
+    const push = (item: Omit<T.UnattributedPayable, "id" | "branchName">) => {
+      const branch = this.db.branches.find((candidate) => candidate.id === item.branchId);
+      if (!branch || !this.branchIsVisible(item.branchId) || (scopeBranchId && item.branchId !== scopeBranchId)) return;
+      items.push({ ...item, id: `${item.sourceType}:${item.sourceId}`, branchName: branch.name });
+    };
+    for (const order of this.db.purchaseOrders) {
+      if (order.status !== "received") continue;
+      const amountMinor = order.lines.reduce((sum, line) => sum + line.receivedQuantity * line.unitCost.amount, 0);
+      const privateSource = !order.supplierId || order.sourceType === "private";
+      const foreignCurrency = order.currency !== currency;
+      if (amountMinor <= 0 || (!privateSource && !foreignCurrency)) continue;
+      push({ sourceType: "purchase_order", sourceId: order.id, sourceLabel: mockPurchaseOrderLabel(order), vendorHint: privateSource ? undefined : order.supplierName, branchId: order.branchId, recordedAt: order.receivedAt ?? order.updatedAt, amount: money(amountMinor, order.currency), reason: foreignCurrency ? `Recorded in ${order.currency}, not ${currency}; settle it with a manual journal.` : "No supplier was recorded for this purchase. Check this cost in the Management ledger.", ledgerPostingStatus: this.immutableAccountingStatus("purchase_order_receipt", order.id) ?? "not_posted", href: `/operations?tab=orders&order=${encodeURIComponent(order.id)}` });
+    }
+    for (const movement of this.db.stockMovements) {
+      if (movement.type !== "receive" || movement.referenceType === "purchase_order") continue;
+      const amountMinor = movement.totalCost?.amount ?? (movement.unitCost ? movement.unitCost.amount * movement.quantity : undefined);
+      if (amountMinor === undefined || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
+      push({ sourceType: "stock_receive", sourceId: movement.id, sourceLabel: `Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`, branchId: movement.branchId, recordedAt: movement.occurredAt, amount: money(amountMinor, movement.totalCost?.currency ?? movement.unitCost?.currency ?? currency), reason: "Stock was received without an order. No supplier was recorded.", ledgerPostingStatus: this.immutableAccountingStatus("stock_movement", movement.id) ?? movement.financialPostingStatus, href: `/operations?tab=inventory&movement=${encodeURIComponent(movement.id)}` });
+    }
+    for (const task of this.db.facilityTasks) {
+      if (task.status !== "completed" || !task.suppliesCost || task.suppliesCost.amount <= 0) continue;
+      push({ sourceType: "facility_supplies", sourceId: task.id, sourceLabel: `Facility supplies · ${task.title}`, branchId: task.branchId, recordedAt: task.completedAt ?? task.updatedAt, amount: { ...task.suppliesCost }, reason: "This completed maintenance job has a supplies cost. No supplier was recorded.", ledgerPostingStatus: this.immutableAccountingStatus("facility_supplies", task.id) ?? task.financialPostingStatus ?? "not_posted", href: `/maintenance?task=${encodeURIComponent(task.id)}` });
+    }
+    for (const asset of this.db.equipmentAssets) {
+      if (!asset.purchaseCost || asset.purchaseCost.amount <= 0) continue;
+      push({ sourceType: "equipment_acquisition", sourceId: asset.id, sourceLabel: `Equipment purchase · ${asset.code} ${asset.name}`, vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, amount: { ...asset.purchaseCost }, reason: "This machine has a purchase cost. Its maker’s name does not identify the supplier.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_acquisition", asset.id) ?? "not_posted", href: `/operations?tab=equipment&asset=${encodeURIComponent(asset.id)}` });
+    }
+    for (const order of this.db.equipmentWorkOrders) {
+      if (order.status !== "completed") continue;
+      const amountMinor = order.totalCost?.amount ?? (order.partsCost?.amount ?? 0) + (order.laborCost?.amount ?? 0);
+      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
+      push({ sourceType: "equipment_repair", sourceId: order.id, sourceLabel: `Equipment repair · ${order.description}`, vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amount: money(amountMinor, order.totalCost?.currency ?? currency), reason: "This repair cost has no linked supplier bill. The repairer’s name is saved as a note.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_repair", order.id) ?? order.financialPostingStatus ?? "not_posted", href: `/operations?tab=equipment&workOrder=${encodeURIComponent(order.id)}` });
+    }
+    return items.sort((left, right) => right.recordedAt.localeCompare(left.recordedAt) || left.id.localeCompare(right.id));
+  }
+
+  private mockPayableFilters(query: T.PayablesQuery): { branchId?: T.UUID; supplierId?: T.UUID; status: T.PayableStatusFilter; search?: string } {
+    const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
+    if (query.supplierId && !this.db.suppliers.some((candidate) => candidate.id === query.supplierId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+    const status = query.status ?? "open";
+    if (status !== "open" && status !== "all" && !PAYABLE_STATUSES.includes(status)) throw ApiError.of(ERR.VALIDATION, "Payable status filter is invalid.");
+    const search = query.search?.trim() || undefined;
+    if (search && search.length > 120) throw ApiError.of(ERR.VALIDATION, "Search text is too long.");
+    return { branchId, supplierId: query.supplierId, status, search };
+  }
+
+  private supplierPaymentView(payment: T.SupplierPayment): T.SupplierPayment {
+    return {
+      ...payment,
+      amount: { ...payment.amount },
+      allocations: payment.allocations.map((allocation) => ({ ...allocation, amount: { ...allocation.amount } })),
+      ledgerPostingStatus: this.immutableAccountingStatus("supplier_payment", payment.id) ?? "not_posted",
+      reversal: payment.reversal ? { ...payment.reversal, ledgerPostingStatus: this.immutableAccountingStatus("supplier_payment_reversal", payment.id) ?? "not_posted" } : undefined,
+    };
+  }
+
+  private supplierPaymentDetail(payment: T.SupplierPayment): T.SupplierPaymentDetail {
+    const branch = this.db.branches.find((candidate) => candidate.id === payment.branchId);
+    const payables = this.mockPayables();
+    const byId = new Map(payables.map((payable) => [payable.id, payable]));
+    return {
+      ...this.supplierPaymentView(payment),
+      organization: { name: this.db.organization.name },
+      branch: { name: branch?.name ?? "Branch", code: branch?.code ?? "", address: branch?.address ?? "", phone: branch?.phone ?? "" },
+      supplierRemaining: money(payables.filter((payable) => payable.supplierId === payment.supplierId && payable.status !== "reversed").reduce((sum, payable) => sum + payable.remaining.amount, 0), payment.amount.currency),
+      payables: payment.allocations.map((allocation) => {
+        const payable = byId.get(allocation.payableId);
+        return payable
+          ? { payableId: payable.id, sourceLabel: payable.sourceLabel, original: { ...payable.original }, paid: { ...payable.paid }, remaining: { ...payable.remaining }, status: payable.status }
+          : { payableId: allocation.payableId, sourceLabel: allocation.sourceLabel, original: { ...allocation.amount }, paid: { ...allocation.amount }, remaining: money(0, payment.amount.currency), status: "paid" as const };
+      }),
+    };
+  }
+
+  listPayables(query: T.PayablesQuery = {}): Promise<T.PayablesPage> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const filters = this.mockPayableFilters(query);
+      const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 25));
+      const offset = query.cursor === undefined ? 0 : Number.parseInt(query.cursor, 10);
+      if (query.cursor !== undefined && (!Number.isSafeInteger(offset) || offset < 0)) throw ApiError.of(ERR.VALIDATION, "Payables cursor is invalid.");
+      const matched = this.mockPayables(filters.branchId).filter((payable) => matchesPayableFilters(payable, filters));
+      const summary = summarizePayables(matched, this.db.organization.currency);
+      return {
+        currency: this.db.organization.currency,
+        items: this.maybeEmpty(matched.slice(offset, offset + pageSize)),
+        nextCursor: offset + pageSize < matched.length ? String(offset + pageSize) : undefined,
+        matchedCount: matched.length,
+        ...summary,
+      };
+    });
+  }
+
+  exportPayables(query: T.PayablesQuery = {}): Promise<T.PayablesExport> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const filters = this.mockPayableFilters(query);
+      const matched = this.mockPayables(filters.branchId).filter((payable) => matchesPayableFilters(payable, filters));
+      const rows = matched.slice(0, 5_000);
+      return {
+        currency: this.db.organization.currency,
+        generatedAt: nowISO(),
+        truncated: matched.length > rows.length,
+        rows: rows.map((payable) => ({ supplierName: payable.supplierName, sourceLabel: payable.sourceLabel, sourceId: payable.sourceId, branchName: payable.branchName, receivedAt: payable.receivedAt, dueDate: payable.dueDate, ageDays: payable.ageDays, original: { ...payable.original }, paid: { ...payable.paid }, remaining: { ...payable.remaining }, status: payable.status, externalReference: payable.externalReference, ledgerPostingStatus: payable.ledgerPostingStatus })),
+      };
+    });
+  }
+
+  listPayablesReconciliation(query: { branchId?: T.UUID } = {}): Promise<T.PayablesReconciliation> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
+      const currency = this.db.organization.currency;
+      const items = this.mockUnattributedPayables(branchId);
+      const sameCurrency = items.filter((item) => item.amount.currency === currency);
+      return { currency, count: items.length, total: money(sameCurrency.reduce((sum, item) => sum + item.amount.amount, 0), currency), foreignCurrencyCount: items.length - sameCurrency.length, truncated: items.length > 100, items: this.maybeEmpty(items.slice(0, 100)) };
+    });
+  }
+
+  listSupplierPayments(query: T.SupplierPaymentsQuery = {}): Promise<T.Page<T.SupplierPayment>> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const branchId = query.branchId ? this.operationsBranch(query.branchId).id : undefined;
+      if (query.supplierId && !this.db.suppliers.some((candidate) => candidate.id === query.supplierId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      const rows = this.db.supplierPayments
+        .filter((payment) => this.branchIsVisible(payment.branchId) && (!branchId || payment.branchId === branchId) && (!query.supplierId || payment.supplierId === query.supplierId) && (!query.payableId || payment.allocations.some((allocation) => allocation.payableId === query.payableId)))
+        .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.id.localeCompare(left.id))
+        .map((payment) => this.supplierPaymentView(payment));
+      return paginate(this.maybeEmpty(rows), { page: query.page, pageSize: query.pageSize });
+    });
+  }
+
+  getSupplierPayment(paymentId: T.UUID): Promise<T.SupplierPaymentDetail> {
+    return this.respond(() => {
+      this.requirePayablesRead();
+      const payment = this.db.supplierPayments.find((candidate) => candidate.id === paymentId);
+      if (!payment || !this.branchIsVisible(payment.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier payment not found.");
+      return this.supplierPaymentDetail(payment);
+    });
+  }
+
+  recordSupplierPayment(input: T.RecordSupplierPaymentInput): Promise<T.SupplierPaymentDetail> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const currency = this.db.organization.currency;
+      const idempotencyKey = input.idempotencyKey?.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const supplier = this.db.suppliers.find((candidate) => candidate.id === input.supplierId);
+      if (!supplier) throw ApiError.of(ERR.NOT_FOUND, "Supplier not found.");
+      const branch = this.operationsBranch(input.branchId);
+      const method = input.method;
+      if (!SUPPLIER_PAYMENT_METHODS.includes(method)) throw ApiError.of(ERR.VALIDATION, "Supplier payment method must be cash, bank transfer, or CliQ.", { fieldErrors: { method: ["Choose cash, bank transfer, or CliQ"] } });
+      const positiveMinor = (value: T.Money | undefined, field: string) => {
+        if (!value || !Number.isSafeInteger(value.amount) || value.amount <= 0) throw ApiError.of(ERR.VALIDATION, `${field} must be a positive whole amount in ${currency} minor units.`, { fieldErrors: { [field]: ["Enter an amount greater than zero"] } });
+        if (value.currency !== currency) throw ApiError.of(ERR.VALIDATION, `${field} must be in ${currency}.`, { fieldErrors: { [field]: [`Only ${currency} is accepted`] } });
+        return value.amount;
+      };
+      const amountMinor = positiveMinor(input.amount, "amount");
+      const reference = input.reference?.trim() || undefined;
+      if (reference && reference.length > MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH) throw ApiError.of(ERR.VALIDATION, "Payment reference is too long.", { fieldErrors: { reference: [`Keep it under ${MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH} characters`] } });
+      if (method !== "cash" && !reference) throw ApiError.of(ERR.VALIDATION, "A transfer or CliQ reference is required so the payment can be found later.", { fieldErrors: { reference: ["Required for bank transfer and CliQ"] } });
+      const notes = input.notes?.trim() || undefined;
+      if (notes && notes.length > 500) throw ApiError.of(ERR.VALIDATION, "Payment notes are too long.", { fieldErrors: { notes: ["Keep it under 500 characters"] } });
+      const rawAllocations = Array.isArray(input.allocations) ? input.allocations : [];
+      if (rawAllocations.length === 0 || rawAllocations.length > MAX_SUPPLIER_PAYMENT_ALLOCATIONS) throw ApiError.of(ERR.VALIDATION, `Allocate the payment to between 1 and ${MAX_SUPPLIER_PAYMENT_ALLOCATIONS} payables.`, { fieldErrors: { allocations: ["Choose at least one payable"] } });
+      const allocations = rawAllocations.map((raw) => ({ payableId: raw.payableId?.trim() ?? "", amountMinor: positiveMinor(raw.amount, "allocation") })).sort((left, right) => left.payableId.localeCompare(right.payableId));
+      if (allocations.some((allocation) => !allocation.payableId)) throw ApiError.of(ERR.VALIDATION, "Every allocation needs a payable.");
+      if (new Set(allocations.map((allocation) => allocation.payableId)).size !== allocations.length) throw ApiError.of(ERR.VALIDATION, "A payable can appear only once in an allocation.");
+      const allocatedMinor = allocationsTotalMinor(allocations);
+      if (!Number.isSafeInteger(allocatedMinor)) throw ApiError.of(ERR.VALIDATION, "Allocation total is too large.");
+      if (allocatedMinor !== amountMinor) throw ApiError.of(ERR.VALIDATION, "Allocations must add up to the payment amount exactly.", { fieldErrors: { allocations: ["Allocated total does not match the payment amount"] } });
+      const signature = JSON.stringify({ supplierId: supplier.id, branchId: branch.id, method, amountMinor, reference, notes, allocations });
+      const replay = this.operationsIdempotent("supplier_payment.record", idempotencyKey, signature) as T.SupplierPaymentDetail | undefined;
+      if (replay) return replay;
+      if (supplier.status !== "active") throw ApiError.of(ERR.CONFLICT, "This supplier is archived. Restore it before recording a payment.");
+      const payables = this.mockPayables();
+      const byId = new Map(payables.map((payable) => [payable.id, payable]));
+      for (const allocation of allocations) {
+        const payable = byId.get(allocation.payableId);
+        if (!payable) throw ApiError.of(ERR.NOT_FOUND, `Payable ${allocation.payableId} is not an open supplier balance you can see.`);
+        if (payable.supplierId !== supplier.id) throw ApiError.of(ERR.VALIDATION, `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. One payment settles one supplier.`);
+        if (payable.status === "paid" || payable.status === "reversed") throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { details: { payableId: payable.id, status: payable.status } });
+        if (allocation.amountMinor > payable.remaining.amount) throw ApiError.of(ERR.CONFLICT, `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remaining.amount, currency)} outstanding; the allocation would overpay it.`, { details: { payableId: payable.id, remainingMinor: payable.remaining.amount, requestedMinor: allocation.amountMinor } });
+      }
+      let shiftId: T.UUID | undefined;
+      if (method === "cash") {
+        const shift = this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open");
+        if (!shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, `Open a cash shift at ${branch.name} before paying a supplier in cash.`);
+        shiftId = shift.id;
+        if (input.expectedShiftId && input.expectedShiftId !== shift.id) throw ApiError.of(ERR.CONFLICT, "The open cash shift changed since this screen loaded. Refresh and record the payment again.", { details: { reason: "SHIFT_STALE", openShiftId: shift.id } });
+      }
+      const now = nowISO();
+      const payment: T.SupplierPayment = {
+        id: mockUuid(),
+        organizationId: this.db.organization.id,
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        branchId: branch.id,
+        branchName: branch.name,
+        method,
+        amount: money(amountMinor, currency),
+        reference,
+        notes,
+        status: "recorded",
+        shiftId,
+        allocations: allocations.map((allocation) => { const payable = byId.get(allocation.payableId)!; return { payableId: allocation.payableId, sourceType: payable.sourceType, sourceLabel: payable.sourceLabel, amount: money(allocation.amountMinor, currency) }; }),
+        recordedById: this.actor().id,
+        recordedByName: this.actor().name,
+        occurredAt: now,
+        ledgerPostingStatus: "not_posted",
+        idempotencyKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.db.supplierPayments.unshift(payment);
+      this.audit({ category: "operations", action: "operations.supplier_payment.record", entityType: "supplier_payment", entityId: payment.id, entityLabel: supplier.name, summary: `Paid ${supplier.name} ${currency} ${formatMinorUnits(amountMinor, currency)} by ${method.replace("_", " ")}`, after: { amountMinor, currency, method, reference: reference ?? null, shiftId: shiftId ?? null, allocations: allocations.map((allocation) => `${allocation.payableId}=${allocation.amountMinor}`).join(", ") }, branchId: branch.id });
+      const detail = this.supplierPaymentDetail(payment);
+      this.operationsIdempotency.set(`supplier_payment.record:${idempotencyKey}`, { signature, result: detail });
+      return detail;
+    });
+  }
+
+  reverseSupplierPayment(input: T.ReverseSupplierPaymentInput): Promise<T.SupplierPaymentDetail> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      this.requireReason(input.reason);
+      const idempotencyKey = input.idempotencyKey?.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const payment = this.db.supplierPayments.find((candidate) => candidate.id === input.paymentId);
+      if (!payment || !this.branchIsVisible(payment.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Supplier payment not found.");
+      const reason = input.reason.trim();
+      const signature = JSON.stringify({ paymentId: payment.id, reason });
+      const replay = this.operationsIdempotent("supplier_payment.reverse", idempotencyKey, signature) as T.SupplierPaymentDetail | undefined;
+      if (replay) return replay;
+      if (payment.status === "reversed") throw ApiError.of(ERR.CONFLICT, "This supplier payment was already reversed. The original stays on record; nothing else changes.", { details: { reversedAt: payment.reversal?.reversedAt } });
+      let reversalShiftId: T.UUID | undefined;
+      if (payment.method === "cash") {
+        const branch = this.operationsBranch(payment.branchId);
+        const shift = this.db.shifts.find((candidate) => candidate.branchId === branch.id && candidate.status === "open");
+        if (!shift) throw ApiError.of(ERR.NO_OPEN_SHIFT, `Open a cash shift at ${branch.name} so the returned cash has a drawer to go back into.`);
+        reversalShiftId = shift.id;
+      }
+      const now = nowISO();
+      payment.status = "reversed";
+      payment.reversal = { reason, reversedAt: now, reversedById: this.actor().id, reversedByName: this.actor().name, shiftId: reversalShiftId, ledgerPostingStatus: "not_posted" };
+      payment.updatedAt = now;
+      this.audit({ category: "operations", action: "operations.supplier_payment.reverse", entityType: "supplier_payment", entityId: payment.id, entityLabel: payment.supplierName, summary: `Reversed ${payment.supplierName} payment of ${payment.amount.currency} ${formatMinorUnits(payment.amount.amount, payment.amount.currency)} (${payment.method.replace("_", " ")})`, reason, before: { status: "recorded" }, after: { status: "reversed", reversalShiftId: reversalShiftId ?? null, reopenedAllocations: payment.allocations.map((allocation) => `${allocation.payableId}=${allocation.amount.amount}`).join(", ") }, branchId: payment.branchId });
+      const detail = this.supplierPaymentDetail(payment);
+      this.operationsIdempotency.set(`supplier_payment.reverse:${idempotencyKey}`, { signature, result: detail });
+      return detail;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Subscription agreement (e-signature at onboarding)
+  // -------------------------------------------------------------------------
+
+  /** Browser previews can simulate a gym that has not signed yet. */
+  private agreementRequiredOverride(): boolean {
+    if (this.behavior.agreementUnsigned) return true;
+    try {
+      return typeof window !== "undefined" && window.sessionStorage.getItem("rivet.demo.agreement") === "required";
+    } catch {
+      return false;
+    }
+  }
+
+  private activeSubscriptionAgreement(organizationId: T.UUID = this.db.organization.id): MockSubscriptionAgreement | undefined {
+    if (organizationId === this.db.organization.id && this.agreementRequiredOverride()) return undefined;
+    return [...this.db.subscriptionAgreements].filter((row) => row.organizationId === organizationId && row.status !== "void").sort((left, right) => right.signedAt.localeCompare(left.signedAt))[0];
+  }
+
+  private sessionLegalState(role: T.RoleKey): T.SessionLegalState {
+    const current = this.activeSubscriptionAgreement();
+    if (current) return { agreementStatus: current.status === "countersigned" ? "countersigned" : "signed", agreementReference: current.reference };
+    return { agreementStatus: role === "owner" ? "required" : "not_applicable" };
+  }
+
+  private agreementView(row: MockSubscriptionAgreement, options: { revealId?: boolean } = {}): T.SubscriptionAgreement {
+    const { idNumber, ...signatory } = row.signatory;
+    return {
+      ...row,
+      customer: { ...row.customer },
+      signatory: { ...signatory, idNumberMasked: maskIdNumber(idNumber) },
+      subscription: { ...row.subscription },
+      consents: { ...row.consents },
+      signature: { ...row.signature },
+      client: { ...row.client },
+      countersign: row.countersign ? { ...row.countersign } : undefined,
+      ...(options.revealId ? { signatory: { ...signatory, idNumberMasked: maskIdNumber(idNumber), idNumber } } : {}),
+    } as T.SubscriptionAgreement;
+  }
+
+  private agreementSummary(row: MockSubscriptionAgreement): T.PlatformAgreementSummary {
+    return { id: row.id, reference: row.reference, version: row.version, status: row.status, organizationId: row.organizationId, organizationName: row.organizationName, plan: row.subscription.plan, startDate: row.subscription.startDate, termMonths: row.subscription.termMonths, signatoryName: row.signatory.name, signedAt: row.signedAt, countersignedAt: row.countersign?.at, hashMatch: row.hashMatch };
+  }
+
+  listMyPlatformInvoices(): Promise<PlatformBillingInvoice[]> {
+    return this.respond(() => this.platformInvoices.filter((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "draft").map((invoice) => ({ ...invoice })));
+  }
+
+  getSubscriptionAgreementContext(): Promise<T.SubscriptionAgreementContext> {
+    return this.respond(async () => {
+      const user = this.actor();
+      const current = this.activeSubscriptionAgreement();
+      const textBody = canonicalAgreementText();
+      const organization = this.db.organization;
+      const branches = this.db.branches.filter((branch) => branch.status === "active");
+      return {
+        version: SUBSCRIPTION_AGREEMENT_VERSION,
+        sections: SUBSCRIPTION_AGREEMENT_SECTIONS.map((section) => ({ ...section, paragraphs: [...section.paragraphs] })),
+        text: textBody,
+        sha256: await sha256Hex(textBody),
+        status: current ? (current.status === "countersigned" ? "countersigned" : "signed") : user.role === "owner" ? "required" : "not_applicable",
+        canSign: user.role === "owner" && !current,
+        organizationName: organization.name,
+        timezone: organization.timezone,
+        prefill: {
+          legalName: organization.name,
+          address: branches[0]?.address,
+          signatoryName: user.name,
+          email: user.email,
+          plan: organization.subscriptionPlan ?? "Growth",
+          feeLabel: (() => { const plan = findPlan(organization.subscriptionPlan ?? "Growth"); return plan ? feeLabel(plan.priceMinor) : undefined; })(),
+          startDate: organization.subscriptionStartedAt ? managementLocalDate(organization.subscriptionStartedAt, organization.timezone) : this.today(),
+        },
+        agreement: current ? this.agreementView(current) : undefined,
+      };
+    });
+  }
+
+  signSubscriptionAgreement(input: T.SignSubscriptionAgreementInput): Promise<T.SubscriptionAgreement> {
+    return this.respond(async () => {
+      const user = this.actor();
+      if (user.role !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can sign the subscription agreement.");
+      const idempotencyKey = input.idempotencyKey?.trim();
+      if (!idempotencyKey || idempotencyKey.length > 160) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      const replay = this.operationsIdempotent("legal.agreement.sign", idempotencyKey, "agreement") as T.SubscriptionAgreement | undefined;
+      if (replay) return replay;
+      const current = this.activeSubscriptionAgreement();
+      if (current) throw ApiError.of(ERR.CONFLICT, `This gym already signed agreement ${current.reference}. Contact RIVET if it must be replaced.`, { details: { reference: current.reference } });
+      const field = (condition: boolean, name: string, message: string) => { if (!condition) throw ApiError.of(ERR.VALIDATION, message, { fieldErrors: { [name]: [message] } }); };
+      const customer = input.customer;
+      const legalName = customer.legalName?.trim() ?? "";
+      field(legalName.length >= 2 && legalName.length <= 160, "legalName", "Enter the registered name of the gym or company.");
+      const address = customer.address?.trim() ?? "";
+      field(address.length >= 3 && address.length <= 240, "address", "Enter the gym's address, including the city.");
+      const city = customer.city?.trim() || undefined;
+      field(!city || city.length <= 80, "city", "City is too long.");
+      field(customer.branches === undefined || (Number.isSafeInteger(customer.branches) && customer.branches >= 1 && customer.branches <= 100), "branches", "Enter the number of branches (1 to 100).");
+      const signatoryName = input.signatory.name?.trim() ?? "";
+      field(signatoryName.length >= 2 && signatoryName.length <= 120, "signatoryName", "Enter the owner's full name as on their ID.");
+      const signatoryTitle = input.signatory.title?.trim() || undefined;
+      field(!signatoryTitle || signatoryTitle.length <= 80, "signatoryTitle", "Role is too long.");
+      field(input.signatory.idType === "national" || input.signatory.idType === "passport", "idType", "Choose the ID document.");
+      const idNumber = input.signatory.idNumber?.trim() ?? "";
+      field(input.signatory.idType === "national" ? validNationalId(idNumber) : validPassportNumber(idNumber), "idNumber", input.signatory.idType === "national" ? "Enter the ten-digit Jordanian national ID number." : "Enter a valid passport number.");
+      const phone = input.signatory.phone?.trim() || undefined;
+      field(!phone || (/^\+?[\d\s().-]{7,}$/.test(phone) && phone.length <= 40), "phone", "Enter a valid phone number.");
+      const email = (input.signatory.email?.trim() || user.email).toLowerCase();
+      field(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), "email", "Enter the email address for the signed copy.");
+      field((AGREEMENT_PLANS as readonly string[]).includes(input.subscription.plan), "plan", "Choose a plan.");
+      field(validCalendarDate(input.subscription.startDate ?? ""), "startDate", "Enter the contract start date.");
+      const termMonths = input.subscription.termMonths;
+      field(termMonths === undefined || (Number.isSafeInteger(termMonths) && termMonths >= 1 && termMonths <= 60), "termMonths", "Term must be between 1 and 60 months.");
+      for (const key of ["agreement", "authority", "electronic", "accurate"] as const) field(input.consents?.[key] === true, `consent_${key}`, "Every declaration must be accepted before signing.");
+      const method = input.signature.method;
+      field(method === "drawn" || method === "typed", "signature", "Sign, or type your name instead.");
+      const imageDataUrl = input.signature.imageDataUrl?.trim();
+      const typedName = input.signature.typedName?.trim();
+      const printImageDataUrl = input.signature.printImageDataUrl?.trim();
+      if (method === "drawn") {
+        field(Boolean(imageDataUrl) && imageDataUrl!.startsWith("data:image/png;base64,") && imageDataUrl!.length > 200 && imageDataUrl!.length <= MAX_SIGNATURE_IMAGE_LENGTH, "signature", "Draw your signature before signing.");
+        field(!printImageDataUrl || (printImageDataUrl.startsWith("data:image/jpeg;base64,") && printImageDataUrl.length <= MAX_SIGNATURE_PRINT_IMAGE_LENGTH), "signature", "The signature image could not be read. Draw it again.");
+      }
+      else field(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the owner's full name.");
+      const documentSha256 = await sha256Hex(canonicalAgreementText());
+      const clientDocumentSha256 = input.clientDocumentSha256?.trim().toLowerCase() || undefined;
+      const now = nowISO();
+      const row: MockSubscriptionAgreement = {
+        id: mockUuid(),
+        reference: agreementReference(this.today()),
+        version: SUBSCRIPTION_AGREEMENT_VERSION,
+        status: "signed",
+        organizationId: this.db.organization.id,
+        organizationName: this.db.organization.name,
+        customer: { legalName, tradeName: customer.tradeName?.trim() || undefined, registrationNumber: customer.registrationNumber?.trim() || undefined, address, city, branches: customer.branches },
+        signatory: { name: signatoryName, title: signatoryTitle, idType: input.signatory.idType, idNumber, phone, email },
+        subscription: { plan: input.subscription.plan, startDate: input.subscription.startDate, termMonths, quote: input.subscription.quote?.trim() || undefined, feeLabel: (() => { const plan = findPlan(input.subscription.plan); return plan ? feeLabel(plan.priceMinor) : undefined; })() },
+        consents: { agreement: true, authority: true, electronic: true, accurate: true },
+        signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, printImageDataUrl: method === "drawn" ? printImageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
+        client: { userAgent: (input.client?.userAgent ?? "").slice(0, 300), language: (input.client?.language ?? "").slice(0, 20), viewport: (input.client?.viewport ?? "").slice(0, 40) },
+        placeOfSigning: input.placeOfSigning?.trim() || city,
+        signedAt: now,
+        signedAtLocal: new Intl.DateTimeFormat("en-GB", { timeZone: this.db.organization.timezone, day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(now)),
+        timezone: this.db.organization.timezone,
+        signedByName: user.name,
+        documentSha256,
+        clientDocumentSha256,
+        hashMatch: clientDocumentSha256 === documentSha256,
+        idRevealCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.db.subscriptionAgreements.unshift(row);
+      this.behavior.agreementUnsigned = false;
+      try { if (typeof window !== "undefined") window.sessionStorage.removeItem("rivet.demo.agreement"); } catch { /* preview only */ }
+      this.audit({ category: "legal", action: "legal.agreement.sign", entityType: "subscription_agreement", entityId: row.id, entityLabel: row.reference, summary: `Signed subscription agreement ${row.reference} (${row.subscription.plan}, from ${row.subscription.startDate})`, after: { reference: row.reference, plan: row.subscription.plan, signatory: signatoryName, hashMatch: row.hashMatch ? "yes" : "no", method } });
+      const view = this.agreementView(row);
+      this.operationsIdempotency.set(`legal.agreement.sign:${idempotencyKey}`, { signature: "agreement", result: view });
+      return view;
+    });
+  }
+
+  listPlatformAgreements(): Promise<T.PlatformAgreementSummary[]> {
+    return this.respond(() => [...this.db.subscriptionAgreements].sort((left, right) => right.signedAt.localeCompare(left.signedAt)).map((row) => this.agreementSummary(row)));
+  }
+
+  getPlatformAgreement(agreementId: T.UUID): Promise<T.SubscriptionAgreement> {
+    return this.respond(() => {
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      return this.agreementView(row);
+    });
+  }
+
+  revealPlatformAgreementId(input: T.RevealAgreementIdInput): Promise<T.RevealAgreementIdResult> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      row.idRevealCount += 1;
+      row.updatedAt = nowISO();
+      this.recordPlatformAudit({ action: "agreement.id_revealed", summary: `Revealed the signatory ID number on ${row.reference}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: input.reason.trim(), after: { revealCount: row.idRevealCount } });
+      return { idNumber: row.signatory.idNumber, idType: row.signatory.idType, revealCount: row.idRevealCount };
+    });
+  }
+
+  listPlatformEmailDeliveries(): Promise<T.PlatformEmailDelivery[]> {
+    // The preview never sends mail, so its log shows the shape of a
+    // suppressed row and a delivered one rather than real traffic.
+    return this.respond(() => [
+      { id: "EMAIL-demo-2", kind: "subscription_agreement_copy", gym: "Forge Fitness Club", recipientEmail: "elias@rivetjo.com", subject: "Forge Fitness Club signed the RIVET subscription agreement (RVT-20260815-FORGE)", status: "suppressed", suppressionReason: "Operational email mode is off (RIVET_EMAIL_MODE)", attachments: ["RIVET-agreement-RVT-20260815-FORGE.pdf"], attempts: [], createdAt: "2026-08-15T08:20:00.000Z", updatedAt: "2026-08-15T08:20:00.000Z" },
+      { id: "EMAIL-demo-1", kind: "platform_invoice_issued", gym: "Forge Fitness Club", recipientEmail: "omar@forgefitness.jo", subject: "A RIVET invoice was issued", status: "delivered", providerId: "re_demo", attachments: ["RIVET-invoice-RV-1046.pdf"], attempts: [{ attemptedAt: "2026-07-18T09:01:00.000Z", outcome: "accepted", statusCode: 200, mode: "live", deliveredTo: "omar@forgefitness.jo" }], createdAt: "2026-07-18T09:00:00.000Z", updatedAt: "2026-07-18T09:01:00.000Z" },
+    ]);
+  }
+
+  resendPlatformAgreementCopies(input: T.ResendAgreementCopiesInput): Promise<T.ResendAgreementCopiesResult> {
+    return this.respond(() => {
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      if (!input.idempotencyKey?.trim()) throw ApiError.of(ERR.VALIDATION, "A bounded idempotency key is required.");
+      if (input.audience !== "rivet" && input.audience !== "all") throw ApiError.of(ERR.VALIDATION, "Choose who receives the copy.", { fieldErrors: { audience: ["Choose who receives the copy."] } });
+      const replay = this.operationsIdempotent("legal.agreement.resend", input.idempotencyKey.trim(), "resend") as T.ResendAgreementCopiesResult | undefined;
+      if (replay) return replay;
+      const sequence = (this.agreementResendCounts.get(row.id) ?? 0) + 1;
+      this.agreementResendCounts.set(row.id, sequence);
+      const recipients = [...AGREEMENT_COPY_RECIPIENTS, ...(input.audience === "all" ? [row.signatory.email] : [])];
+      // The preview has no mail provider, so every copy is suppressed with the
+      // same reason the server gives when the mode is off.
+      const result: T.ResendAgreementCopiesResult = { sequence, deliveries: recipients.map((recipient) => ({ recipient, status: "suppressed" as const, reason: "Operational email mode is off (RIVET_EMAIL_MODE)" })) };
+      this.recordPlatformAudit({ action: "agreement.copies_resent", summary: `Re-sent the copies of ${row.reference} to ${input.audience === "all" ? "RIVET and the signatory" : "RIVET"}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Resend copies", after: { sequence, recipients: recipients.length } });
+      this.operationsIdempotency.set(`legal.agreement.resend:${input.idempotencyKey.trim()}`, { signature: "resend", result });
+      return result;
+    });
+  }
+
+  countersignPlatformAgreement(input: T.CountersignAgreementInput): Promise<T.SubscriptionAgreement> {
+    return this.respond(() => {
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      const replacing = row.status === "countersigned";
+      if (replacing && input.replace !== true) return this.agreementView(row);
+      const title = input.title?.trim() ?? "";
+      if (title.length < 2 || title.length > 80) throw ApiError.of(ERR.VALIDATION, "Enter your role at RIVET.", { fieldErrors: { title: ["Enter your role at RIVET."] } });
+      const typedName = input.typedName?.trim() ?? "";
+      if (typedName.length < 2 || typedName.toLowerCase() !== this.actor().name.trim().toLowerCase()) throw ApiError.of(ERR.VALIDATION, "Type your full name exactly as on your RIVET account to countersign.", { fieldErrors: { typedName: ["Type your full name exactly as on your RIVET account to countersign."] } });
+      const mark = input.signature?.method ? input.signature : { method: "typed" as const, typedName };
+      if (mark.method === "drawn") {
+        if (!mark.imageDataUrl?.startsWith("data:image/png;base64,") || mark.imageDataUrl.length <= 200 || mark.imageDataUrl.length > MAX_SIGNATURE_IMAGE_LENGTH) throw ApiError.of(ERR.VALIDATION, "Draw the signature before signing.", { fieldErrors: { signature: ["Draw the signature before signing."] } });
+        if (mark.printImageDataUrl && (!mark.printImageDataUrl.startsWith("data:image/jpeg;base64,") || mark.printImageDataUrl.length > MAX_SIGNATURE_PRINT_IMAGE_LENGTH)) throw ApiError.of(ERR.VALIDATION, "The signature image could not be read. Draw it again.", { fieldErrors: { signature: ["The signature image could not be read. Draw it again."] } });
+      } else if ((mark.typedName ?? "").trim().toLowerCase() !== this.actor().name.trim().toLowerCase()) {
+        throw ApiError.of(ERR.VALIDATION, "The typed signature must match the full name exactly.", { fieldErrors: { signature: ["The typed signature must match the full name exactly."] } });
+      }
+      const now = nowISO();
+      row.status = "countersigned";
+      row.countersign = { at: now, byName: this.actor().name, title, typedName, signature: { ...mark } };
+      row.updatedAt = now;
+      this.recordPlatformAudit({ action: replacing ? "agreement.countersign_replaced" : "agreement.countersigned", summary: `${replacing ? "Replaced RIVET's signature on" : "Countersigned"} subscription agreement ${row.reference} for ${row.organizationName}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Countersign", after: { title, hashMatch: row.hashMatch, method: mark.method } });
+      return this.agreementView(row);
+    });
+  }
+
+  voidPlatformAgreement(input: T.VoidAgreementInput): Promise<T.SubscriptionAgreement> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      if (row.status === "void") return this.agreementView(row);
+      const now = nowISO();
+      const previous = row.status;
+      row.status = "void";
+      row.voidedAt = now;
+      row.voidReason = input.reason.trim();
+      row.updatedAt = now;
+      this.recordPlatformAudit({ action: "agreement.voided", summary: `Voided subscription agreement ${row.reference} for ${row.organizationName}; the owner must sign again`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: input.reason.trim(), after: { previousStatus: previous } });
+      this.audit({ category: "legal", action: "legal.agreement.void", entityType: "subscription_agreement", entityId: row.id, entityLabel: row.reference, summary: `RIVET voided subscription agreement ${row.reference}; a new signature is required`, after: { reference: row.reference, reason: input.reason.trim() } });
+      return this.agreementView(row);
+    });
+  }
+
+  attachAgreementPrintSignature(input: T.AttachPrintSignatureInput): Promise<T.SubscriptionAgreement> {
+    return this.respond(() => {
+      const row = this.db.subscriptionAgreements.find((candidate) => candidate.id === input.agreementId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Subscription agreement not found.");
+      if (input.target !== "signatory" && input.target !== "countersign") throw ApiError.of(ERR.VALIDATION, "Choose which signature to complete.", { fieldErrors: { target: ["Choose which signature to complete."] } });
+      const printImageDataUrl = input.printImageDataUrl?.trim() ?? "";
+      if (!printImageDataUrl.startsWith("data:image/jpeg;base64,") || printImageDataUrl.length <= 200 || printImageDataUrl.length > MAX_SIGNATURE_PRINT_IMAGE_LENGTH) throw ApiError.of(ERR.VALIDATION, "The signature image could not be read.", { fieldErrors: { printImageDataUrl: ["The signature image could not be read."] } });
+      const current = input.target === "signatory" ? row.signature : row.countersign?.signature;
+      if (!current || current.method !== "drawn" || !current.imageDataUrl || current.printImageDataUrl) return this.agreementView(row);
+      current.printImageDataUrl = printImageDataUrl;
+      row.updatedAt = nowISO();
+      this.recordPlatformAudit({ action: "agreement.print_signature_attached", summary: `Completed the printable ${input.target === "signatory" ? "signature" : "countersignature"} on ${row.reference}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: "Printable signature", after: { target: input.target } });
+      return this.agreementView(row);
+    });
+  }
+
+  getMessagingStatus(): Promise<T.MessagingStatus> {
+    return this.respond(() => {
+      const resolution = resolveMessagingMode(typeof process === "undefined" ? {} : process.env);
+      const notifications = this.db.notificationSettings;
+      return { mode: resolution.mode, provider: resolution.provider, whatsappReady: resolution.whatsappReady, sandboxConfigured: resolution.sandboxConfigured, allowlistSize: resolution.allowlistSize, warning: resolution.warning, gymDeliveryMode: notifications.automationDeliveryMode, quietHoursStart: notifications.quietHoursStart ?? "22:00", quietHoursEnd: notifications.quietHoursEnd ?? "08:00", catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION };
+    });
+  }
+
+  listMessageTemplateCatalogue(): Promise<T.MessageTemplateCatalogueEntry[]> {
+    return this.respond(() => MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] })));
+  }
+
+  getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }> {
+    return this.respond(() => {
+      const policy = this.db.operationalPolicies.classBooking;
+      return { startHour: policy.calendarStartHour, endHour: policy.calendarEndHour };
+    });
+  }
+
+  private seedClassSessions(): T.ClassSession[] {
+    const branch = this.db.branches[0];
+    if (!branch) return [];
+    const coach = this.classCoaches[0];
+    const members = this.db.members.filter((member) => member.status === "active").slice(0, 3);
+    const roster = (count: number): T.ClassRosterEntry[] => members.slice(0, count).map((member, index) => ({ memberId: member.id, name: member.fullName, bookedAt: nowISO(), attended: index === 0 }));
+    const slot = (id: string, name: string, dayOfWeek: number, startMinute: number, durationMinutes: number, capacity: number, bookings: number, audience: T.ClassAudience = "mixed"): T.ClassSession => ({
+      id,
+      branchId: branch.id,
+      name,
+      coachId: coach?.id,
+      coachName: coach?.name,
+      dayOfWeek,
+      startMinute,
+      durationMinutes,
+      capacity,
+      audience,
+      roster: roster(bookings),
+      attendedCount: roster(bookings).filter((entry) => entry.attended).length,
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+    });
+    return [
+      slot("class-hiit-am", "Morning HIIT", 0, 7 * 60, 60, 12, 2),
+      slot("class-strength", "Ladies Strength", 0, 18 * 60, 60, 10, 3, "women"),
+      slot("class-boxing", "Boxing Fundamentals", 2, 19 * 60, 90, 16, 1),
+      slot("class-mobility", "Mobility & Stretch", 4, 10 * 60, 45, 14, 0),
+      // Friday and Saturday slots keep the member week view populated from
+      // any starting weekday, matching a real gym's seven-day timetable.
+      slot("class-friday-flow", "Friday Flow Yoga", 5, 9 * 60, 60, 15, 1),
+      slot("class-open-gym", "Weekend Open Gym", 6, 10 * 60, 120, 30, 2),
+    ];
+  }
+
+  private seedClassCoaches(): T.ClassCoach[] {
+    return [
+      { id: "coach-omar", name: "Omar Al-Khatib", specialty: "Strength", currency: this.db.organization.currency, createdAt: nowISO() },
+      { id: "coach-dana", name: "Dana Haddad", specialty: "HIIT & mobility", currency: this.db.organization.currency, createdAt: nowISO() },
+    ];
+  }
+
+  private classSessionView(session: T.ClassSession): T.ClassSession {
+    return { ...session, roster: session.roster.map((entry) => ({ ...entry })), attendedCount: session.roster.filter((entry) => entry.attended).length };
+  }
+
+  private classSessionById(sessionId: string): T.ClassSession {
+    const session = this.classSessions.find((candidate) => candidate.id === sessionId);
+    if (!session || !this.branchIsVisible(session.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Class not found.");
+    return session;
+  }
+
+  listClassSessions(query: T.ClassSessionQuery): Promise<T.ClassSession[]> {
+    return this.respond(() => {
+      this.require("members.read");
+      const branch = this.db.branches.find((candidate) => candidate.id === query.branchId);
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      return this.classSessions
+        .filter((session) => session.branchId === branch.id)
+        .sort((left, right) => left.dayOfWeek - right.dayOfWeek || left.startMinute - right.startMinute)
+        .map((session) => this.classSessionView(session));
+    });
+  }
+
+  upsertClassSession(input: T.UpsertClassSessionInput): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      const branch = this.db.branches.find((candidate) => candidate.id === input.branchId);
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      const name = input.name.trim();
+      if (!name || name.length > 80) throw ApiError.of(ERR.VALIDATION, "Class name is required and must be 80 characters or fewer.");
+      if (!Number.isSafeInteger(input.dayOfWeek) || input.dayOfWeek < 0 || input.dayOfWeek > 6) throw ApiError.of(ERR.VALIDATION, "Day must be a weekday index between 0 and 6.");
+      if (!Number.isSafeInteger(input.startMinute) || input.startMinute < 0 || input.startMinute > 1425) throw ApiError.of(ERR.VALIDATION, "Start time is invalid.");
+      if (!Number.isSafeInteger(input.durationMinutes) || input.durationMinutes < 15 || input.durationMinutes > 480) throw ApiError.of(ERR.VALIDATION, "Duration must be a whole number between 15 and 480.");
+      if (input.startMinute + input.durationMinutes > 1440) throw ApiError.of(ERR.VALIDATION, "A class must end by midnight. Start it earlier or shorten the duration.");
+      const clashing = this.classSessions.find((candidate) => candidate.id !== input.sessionId && candidate.branchId === input.branchId && candidate.dayOfWeek === input.dayOfWeek && input.startMinute < candidate.startMinute + candidate.durationMinutes && candidate.startMinute < input.startMinute + input.durationMinutes);
+      if (clashing) throw ApiError.of(ERR.VALIDATION, `This time overlaps “${clashing.name}” at ${String(Math.floor(clashing.startMinute / 60)).padStart(2, "0")}:${String(clashing.startMinute % 60).padStart(2, "0")}. Pick another slot.`);
+      if (!Number.isSafeInteger(input.capacity) || input.capacity < 1 || input.capacity > 200) throw ApiError.of(ERR.VALIDATION, "Capacity must be a whole number between 1 and 200.");
+      if (!["mixed", "women", "men"].includes(input.audience)) throw ApiError.of(ERR.VALIDATION, "Audience must be mixed, women, or men.");
+      let coachName: string | undefined;
+      if (input.coachId) {
+        const coach = this.classCoaches.find((candidate) => candidate.id === input.coachId);
+        if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found.");
+        coachName = coach.name;
+      }
+      const image = input.imageAssetId ? this.mediaAssets.get(input.imageAssetId) : undefined;
+      if (input.imageAssetId && (!image || image.ownerType !== "class_image")) throw ApiError.of(ERR.NOT_FOUND, "Class image was not found.");
+      const now = nowISO();
+      const existing = input.sessionId ? this.classSessions.find((candidate) => candidate.id === input.sessionId) : undefined;
+      if (input.sessionId && existing) {
+        if (!this.branchIsVisible(existing.branchId)) throw ApiError.of(ERR.FORBIDDEN, "Your role cannot manage classes for this branch.");
+        if (existing.branchId !== branch.id) throw ApiError.of(ERR.VALIDATION, "A class cannot move between branches.");
+        if (input.capacity < existing.roster.length) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${existing.roster.length} people already in the class.`);
+        // Upcoming dated classes carry bookings against the old numbers; the
+        // timetable edit flows into them, and nobody loses a confirmed place.
+        const scheduled = this.classOccurrences.filter((occurrence) => occurrence.templateId === existing.id && occurrence.status === "scheduled" && Date.parse(occurrence.startsAt) > Date.now());
+        const overbooked = scheduled.find((occurrence) => input.capacity < this.classSeatedCount(occurrence));
+        if (overbooked) throw ApiError.of(ERR.VALIDATION, `Capacity cannot drop below the ${this.classSeatedCount(overbooked)} people already booked for ${overbooked.date}.`);
+        const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        if (existing.dayOfWeek !== input.dayOfWeek) {
+          // Moving the class to another weekday would strand the dates members already hold.
+          const held = scheduled.filter((occurrence) => occurrence.roster.some((entry) => ["booked", "waitlisted"].includes(entry.status)));
+          if (held.length) throw ApiError.of(ERR.VALIDATION, `Members are booked on ${held.map((occurrence) => occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${dayNames[input.dayOfWeek]}.`);
+        }
+        Object.assign(existing, { name, coachId: input.coachId, coachName, dayOfWeek: input.dayOfWeek, startMinute: input.startMinute, durationMinutes: input.durationMinutes, capacity: input.capacity, audience: input.audience, imageAssetId: input.imageAssetId, imageUrl: image?.url, imageAltText: image?.altText, notes: input.notes?.trim() || undefined, updatedAt: now });
+        for (const occurrence of scheduled) {
+          const sameWeekday = new Date(`${occurrence.date}T12:00:00Z`).getUTCDay() === existing.dayOfWeek;
+          if (!sameWeekday) {
+            // An untouched date disappears; one with only past cancellations stays as a cancelled record.
+            if (!occurrence.roster.length) { this.classOccurrences = this.classOccurrences.filter((candidate) => candidate !== occurrence); continue; }
+            occurrence.status = "cancelled";
+            continue;
+          }
+          const startsAt = this.mockClassInstant(occurrence.date, existing.startMinute);
+          Object.assign(occurrence, {
+            name, capacity: input.capacity, audience: input.audience, imageUrl: image?.url, imageAltText: image?.altText, notes: existing.notes,
+            regularCoachId: existing.coachId, regularCoachName: coachName,
+            ...(occurrence.substituted ? {} : { coachId: existing.coachId, coachName }),
+            startsAt, endsAt: new Date(Date.parse(startsAt) + existing.durationMinutes * 60_000).toISOString(),
+          });
+          this.promoteClassWaitlist(occurrence);
+          this.refreshClassOccurrence(occurrence);
+        }
+        this.audit({ category: "operations", action: "classes.session.update", entityType: "class_session", entityId: existing.id, entityLabel: name, summary: `Updated class ${name}` });
+        return this.classSessionView(existing);
+      }
+      const created: T.ClassSession = {
+        id: input.sessionId ?? mockUuid(),
+        branchId: branch.id,
+        name,
+        coachId: input.coachId,
+        coachName,
+        dayOfWeek: input.dayOfWeek,
+        startMinute: input.startMinute,
+        durationMinutes: input.durationMinutes,
+        capacity: input.capacity,
+        audience: input.audience,
+        imageAssetId: input.imageAssetId,
+        imageUrl: image?.url,
+        imageAltText: image?.altText,
+        notes: input.notes?.trim() || undefined,
+        roster: [],
+        attendedCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.classSessions.unshift(created);
+      this.audit({ category: "operations", action: "classes.session.create", entityType: "class_session", entityId: created.id, entityLabel: name, summary: `Scheduled class ${name}` });
+      return this.classSessionView(created);
+    });
+  }
+
+  deleteClassSession(input: { sessionId: T.UUID; reason: string }): Promise<{ id: T.UUID }> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      this.requireReason(input.reason);
+      const session = this.classSessionById(input.sessionId);
+      this.classSessions = this.classSessions.filter((candidate) => candidate.id !== session.id);
+      this.audit({ category: "operations", action: "classes.session.delete", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `Removed class ${session.name} from the weekly schedule`, reason: input.reason.trim() });
+      return { id: session.id };
+    });
+  }
+
+  listClassCoaches(): Promise<T.ClassCoach[]> {
+    return this.respond(() => {
+      this.require("members.read");
+      return this.classCoaches.map((coach) => ({ ...coach })).sort((left, right) => left.name.localeCompare(right.name));
+    });
+  }
+
+  upsertClassCoach(input: T.UpsertClassCoachInput): Promise<T.ClassCoach> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      const name = input.name.trim();
+      if (!name || name.length > 60) throw ApiError.of(ERR.VALIDATION, "Coach name is required and must be 60 characters or fewer.");
+      const existing = input.coachId ? this.classCoaches.find((candidate) => candidate.id === input.coachId) : undefined;
+      if (input.coachId && existing) {
+        Object.assign(existing, { name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, currency: this.db.organization.currency });
+        for (const session of this.classSessions.filter((candidate) => candidate.coachId === existing.id)) session.coachName = name;
+        return { ...existing };
+      }
+      const created: T.ClassCoach = { id: mockUuid(), name, phone: input.phone?.trim() || undefined, specialty: input.specialty?.trim() || undefined, currency: this.db.organization.currency, createdAt: nowISO() };
+      this.classCoaches.push(created);
+      return { ...created };
+    });
+  }
+
+  removeClassCoach(coachId: T.UUID): Promise<{ id: T.UUID }> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      const coach = this.classCoaches.find((candidate) => candidate.id === coachId);
+      if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found.");
+      this.classCoaches = this.classCoaches.filter((candidate) => candidate.id !== coachId);
+      for (const session of this.classSessions.filter((candidate) => candidate.coachId === coachId)) session.coachId = undefined;
+      return { id: coachId };
+    });
+  }
+
+  addClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const session = this.classSessionById(input.sessionId);
+      const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
+      if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      if (!session.roster.some((entry) => entry.memberId === member.id)) {
+        if (session.roster.length >= session.capacity) throw ApiError.of(ERR.VALIDATION, "This class is full.");
+        session.roster.push({ memberId: member.id, name: member.fullName, bookedAt: nowISO(), attended: false });
+        session.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "classes.roster.add", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `Added ${member.fullName} to ${session.name}` });
+      }
+      return this.classSessionView(session);
+    });
+  }
+
+  removeClassAttendee(input: T.ClassRosterInput): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const session = this.classSessionById(input.sessionId);
+      const entry = session.roster.find((candidate) => candidate.memberId === input.memberId);
+      if (entry) {
+        session.roster = session.roster.filter((candidate) => candidate.memberId !== input.memberId);
+        session.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "classes.roster.remove", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `Removed ${entry.name} from ${session.name}` });
+      }
+      return this.classSessionView(session);
+    });
+  }
+
+  setClassAttendance(input: T.ClassAttendanceInput): Promise<T.ClassSession> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const session = this.classSessionById(input.sessionId);
+      const entry = session.roster.find((candidate) => candidate.memberId === input.memberId);
+      if (!entry) throw ApiError.of(ERR.NOT_FOUND, "This member is not in the class.");
+      if (entry.attended !== input.attended) {
+        entry.attended = input.attended;
+        session.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "classes.attendance.set", entityType: "class_session", entityId: session.id, entityLabel: session.name, summary: `${input.attended ? "Marked" : "Unmarked"} ${entry.name} ${input.attended ? "present in" : "for"} ${session.name}` });
+      }
+      return this.classSessionView(session);
+    });
+  }
+
+  private mockClassInstant(date: string, minute: number): string {
+    const hours = String(Math.floor(minute / 60)).padStart(2, "0");
+    const minutes = String(minute % 60).padStart(2, "0");
+    return new Date(`${date}T${hours}:${minutes}:00+03:00`).toISOString();
+  }
+
+  private materializeClassOccurrence(template: T.ClassSession, date: string): T.ClassOccurrence {
+    const id = `occ:${template.id}:${date}`;
+    const existing = this.classOccurrences.find((candidate) => candidate.id === id);
+    if (existing) return existing;
+    const branch = this.db.branches.find((candidate) => candidate.id === template.branchId)!;
+    const coach = template.coachId ? this.classCoaches.find((candidate) => candidate.id === template.coachId) : undefined;
+    const startsAt = this.mockClassInstant(date, template.startMinute);
+    const occurrence: T.ClassOccurrence = {
+      id,
+      templateId: template.id,
+      branchId: template.branchId,
+      branchName: branch.name,
+      date,
+      startsAt,
+      endsAt: new Date(Date.parse(startsAt) + template.durationMinutes * 60_000).toISOString(),
+      name: template.name,
+      regularCoachId: coach?.id,
+      regularCoachName: coach?.name,
+      coachId: coach?.id,
+      coachName: coach?.name,
+      substituted: false,
+      capacity: template.capacity,
+      audience: template.audience,
+      imageUrl: template.imageUrl,
+      imageAltText: template.imageAltText,
+      notes: template.notes,
+      status: "scheduled",
+      bookedCount: 0,
+      waitlistCount: 0,
+      spotsRemaining: template.capacity,
+      roster: [],
+    };
+    this.classOccurrences.push(occurrence);
+    return occurrence;
+  }
+
+  private refreshClassOccurrence(occurrence: T.ClassOccurrence): T.ClassOccurrence {
+    const noShowsByMember = new Map<string, number>();
+    for (const row of this.classOccurrences) {
+      for (const entry of row.roster) {
+        if (entry.status === "no_show") noShowsByMember.set(entry.memberId, (noShowsByMember.get(entry.memberId) ?? 0) + 1);
+      }
+    }
+    occurrence.bookedCount = occurrence.roster.filter((entry) => ["booked", "attended", "no_show"].includes(entry.status)).length;
+    occurrence.waitlistCount = occurrence.roster.filter((entry) => entry.status === "waitlisted").length;
+    occurrence.spotsRemaining = Math.max(0, occurrence.capacity - occurrence.bookedCount);
+    return { ...occurrence, roster: occurrence.roster.map((entry) => ({ ...entry, noShowCount: noShowsByMember.get(entry.memberId) ?? 0 })) };
+  }
+
+  private classOccurrenceById(occurrenceId: string): T.ClassOccurrence {
+    let occurrence = this.classOccurrences.find((candidate) => candidate.id === occurrenceId);
+    if (!occurrence) {
+      const match = /^occ:(.+):(\d{4}-\d{2}-\d{2})$/.exec(occurrenceId);
+      const template = match ? this.classSessions.find((candidate) => candidate.id === match[1]) : undefined;
+      if (template && match) occurrence = this.materializeClassOccurrence(template, match[2]!);
+    }
+    if (!occurrence || !this.branchIsVisible(occurrence.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Class occurrence not found.");
+    return occurrence;
+  }
+
+  listClassOccurrences(query: T.ClassOccurrenceQuery): Promise<T.ClassOccurrence[]> {
+    return this.respond(() => {
+      this.require("members.read");
+      const branch = this.db.branches.find((candidate) => candidate.id === query.branchId && candidate.status === "active");
+      if (!branch || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(query.fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(query.toDate) || query.fromDate > query.toDate) throw ApiError.of(ERR.VALIDATION, "Choose a valid class date range.");
+      for (let date = query.fromDate; date <= query.toDate; date = addDays(date, 1)) {
+        const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+        for (const template of this.classSessions.filter((candidate) => candidate.branchId === branch.id && candidate.dayOfWeek === day)) this.materializeClassOccurrence(template, date);
+      }
+      return this.classOccurrences
+        .filter((candidate) => candidate.branchId === branch.id && candidate.date >= query.fromDate && candidate.date <= query.toDate && (!query.coachId || candidate.coachId === query.coachId))
+        .sort((left, right) => left.startsAt.localeCompare(right.startsAt))
+        .map((candidate) => this.refreshClassOccurrence(candidate));
+    });
+  }
+
+  private getCustomerClassExperienceSync(membershipId: T.UUID): T.CustomerClassExperience {
+    const projection = INITIAL_CUSTOMER_MEMBERSHIPS.find((candidate) => candidate.id === membershipId && candidate.customerId === this.activeCustomerId);
+    if (!projection) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
+    const { member, membership } = this.customerOperationalMembership(membershipId);
+    const policy = this.db.operationalPolicies.classBooking;
+    const fromDate = this.today();
+    const toDate = addDays(fromDate, policy.bookingHorizonDays);
+    for (let date = fromDate; date <= toDate; date = addDays(date, 1)) {
+      const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+      for (const template of this.classSessions.filter((candidate) => candidate.branchId === membership.homeBranchId && candidate.dayOfWeek === day)) this.materializeClassOccurrence(template, date);
+    }
+    const profileCorrectionRequired = member.gender !== "male" && member.gender !== "female";
+    const planEligible = policy.eligibilityMode === "all_active_memberships" || policy.eligiblePlanIds.includes(membership.planId);
+    const membershipUsable = !membership.cancelledAt && membership.startDate <= fromDate && membership.endDate >= fromDate && !(membership.activeFreeze && membership.activeFreeze.startDate <= fromDate && membership.activeFreeze.endDate >= fromDate);
+    const activeCount = this.classOccurrences.reduce((count, occurrence) => count + occurrence.roster.filter((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status) && occurrence.startsAt >= nowISO()).length, 0);
+    const view = (occurrence: T.ClassOccurrence): T.CustomerClassOccurrence => {
+      const ownBookings = occurrence.roster.filter((entry) => entry.memberId === member.id && ["booked", "waitlisted", "attended", "no_show", "late_cancelled", "cancelled"].includes(entry.status)).sort((left, right) => right.bookedAt.localeCompare(left.bookedAt));
+      const booking = ownBookings[0];
+      const activeBooking = ownBookings.find((entry) => ["booked", "waitlisted"].includes(entry.status));
+      const waitlist = occurrence.roster.filter((entry) => entry.status === "waitlisted");
+      const audienceGender = occurrence.audience === "women" ? "female" : occurrence.audience === "men" ? "male" : undefined;
+      const genderMismatch = audienceGender !== undefined && member.gender !== audienceGender;
+      const now = Date.now();
+      const ended = occurrence.status !== "scheduled" || Date.parse(occurrence.endsAt) <= now;
+      const started = Date.parse(occurrence.startsAt) <= now;
+      const seated = this.classSeatedCount(occurrence);
+      const full = seated >= occurrence.capacity && (!policy.waitlistEnabled || waitlist.length >= policy.waitlistSize);
+      // The reason mirrors what the booking mutation would refuse, so a
+      // disabled button never hides a surprise.
+      const bookingBlockReason = !policy.enabled ? "Online class booking is not enabled for this gym."
+        : occurrence.status === "cancelled" ? "This class was cancelled."
+          : ended ? "This class has ended."
+            : started ? "Booking closed when the class started."
+              : !membershipUsable ? "Your membership is not active for this class."
+                : !planEligible ? "This membership plan does not include classes."
+                  : profileCorrectionRequired ? "Add male or female to your profile before booking."
+                    : genderMismatch ? `This class is for ${occurrence.audience}.`
+                      : !activeBooking && activeCount >= policy.maxActiveBookingsPerMember ? `You already have ${policy.maxActiveBookingsPerMember} active class bookings.`
+                        : !activeBooking && full ? (policy.waitlistEnabled ? "This class and its waitlist are full." : "This class is full.")
+                          : undefined;
+      const canBook = !activeBooking && !bookingBlockReason;
+      const { roster: _roster, ...summary } = this.refreshClassOccurrence(occurrence);
+      return {
+        ...summary,
+        booking: booking ? { id: booking.bookingId, status: booking.status, position: booking.status === "waitlisted" ? waitlist.findIndex((entry) => entry.bookingId === booking.bookingId) + 1 : undefined, fromWaitlist: booking.fromWaitlist } : undefined,
+        canBook,
+        bookingBlockReason,
+      };
+    };
+    const all = this.classOccurrences.filter((candidate) => candidate.branchId === membership.homeBranchId && (candidate.date >= fromDate || candidate.roster.some((entry) => entry.memberId === member.id))).sort((left, right) => left.startsAt.localeCompare(right.startsAt));
+    return {
+      membershipId,
+      gymName: projection.gymName ?? this.db.organization.name,
+      timezone: this.db.organization.timezone,
+      policy: { ...policy, eligiblePlanIds: [...policy.eligiblePlanIds] },
+      upcoming: all.filter((candidate) => candidate.date >= fromDate).map(view),
+      history: all.filter((candidate) => candidate.date < fromDate && candidate.roster.some((entry) => entry.memberId === member.id)).slice(-20).reverse().map(view),
+      noShowCount: all.reduce((count, candidate) => count + candidate.roster.filter((entry) => entry.memberId === member.id && entry.status === "no_show").length, 0),
+      profileCorrectionRequired,
+    };
+  }
+
+  getCustomerClassExperience(membershipId: T.UUID): Promise<T.CustomerClassExperience> {
+    return this.respond(() => this.getCustomerClassExperienceSync(membershipId));
+  }
+
+  bookCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> {
+    return this.respond(() => {
+      const experience = this.getCustomerClassExperienceSync(input.membershipId);
+      const candidate = experience.upcoming.find((occurrence) => occurrence.id === input.occurrenceId);
+      if (!candidate) throw ApiError.of(ERR.NOT_FOUND, "Class not found.");
+      if (!candidate.canBook) throw ApiError.of(ERR.VALIDATION, candidate.bookingBlockReason ?? "This class cannot be booked.");
+      const { member, membership } = this.customerOperationalMembership(input.membershipId);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const full = occurrence.bookedCount >= occurrence.capacity;
+      if (full && (!experience.policy.waitlistEnabled || occurrence.waitlistCount >= experience.policy.waitlistSize)) throw ApiError.of(ERR.CONFLICT, "This class and its waitlist are full.");
+      const status: T.ClassBookingStatus = full ? "waitlisted" : "booked";
+      occurrence.roster.push({ bookingId: mockUuid(), memberId: member.id, membershipId: membership.id, name: member.fullName, status, bookedAt: nowISO(), fromWaitlist: false });
+      return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: status };
+    });
+  }
+
+  private customerOccurrenceFor(membershipId: string, occurrenceId: string): T.CustomerClassOccurrence {
+    const occurrence = this.getCustomerClassExperienceSync(membershipId).upcoming.find((candidate) => candidate.id === occurrenceId);
+    if (!occurrence) throw ApiError.of(ERR.NOT_FOUND, "Class not found.");
+    return occurrence;
+  }
+
+  /** Seats taken on a dated class: confirmed places plus recorded outcomes. */
+  private classSeatedCount(occurrence: T.ClassOccurrence): number {
+    return occurrence.roster.filter((entry) => ["booked", "attended", "no_show"].includes(entry.status)).length;
+  }
+
+  /** Fill open seats from the waitlist in booking order; nothing moves once the class has started. */
+  private promoteClassWaitlist(occurrence: T.ClassOccurrence): T.ClassOccurrenceRosterEntry[] {
+    if (Date.parse(occurrence.startsAt) <= Date.now()) return [];
+    const promoted: T.ClassOccurrenceRosterEntry[] = [];
+    while (this.classSeatedCount(occurrence) < occurrence.capacity) {
+      const next = occurrence.roster.filter((entry) => entry.status === "waitlisted").sort((left, right) => left.bookedAt.localeCompare(right.bookedAt))[0];
+      if (!next) break;
+      next.status = "booked";
+      next.fromWaitlist = true;
+      promoted.push(next);
+      this.activity({ memberId: next.memberId, type: "class_waitlist_promoted", title: `Moved into ${occurrence.name}`, body: `A place opened for ${occurrence.date}.`, meta: { occurrenceId: occurrence.id, bookingId: next.bookingId } });
+    }
+    return promoted;
+  }
+
+  /**
+   * Shared cancellation: a confirmed place given up inside the cutoff is a late
+   * cancellation and its seat goes to the waitlist either way; leaving the
+   * waitlist frees no seat and is a plain cancellation whatever the clock says.
+   */
+  private cancelClassRosterEntry(occurrence: T.ClassOccurrence, booking: T.ClassOccurrenceRosterEntry): { outcome: "cancelled" | "late_cancelled"; promoted: T.ClassOccurrenceRosterEntry[] } {
+    if (Date.parse(occurrence.endsAt) <= Date.now()) throw ApiError.of(ERR.CONFLICT, "This class has ended. Finalize attendance instead.");
+    const { outcome, freesSeat } = classCancellationOutcome({ startsAt: Date.parse(occurrence.startsAt), bookingStatus: booking.status, cutoffHours: this.db.operationalPolicies.classBooking.cancellationCutoffHours });
+    booking.status = outcome;
+    const promoted = freesSeat ? this.promoteClassWaitlist(occurrence) : [];
+    return { outcome, promoted };
+  }
+
+  cancelCustomerClass(input: { membershipId: T.UUID; occurrenceId: T.UUID }): Promise<T.ClassBookingResult> {
+    return this.respond(() => {
+      const { member } = this.customerOperationalMembership(input.membershipId);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const own = occurrence.roster.filter((entry) => entry.memberId === member.id).sort((left, right) => right.bookedAt.localeCompare(left.bookedAt));
+      const booking = own.find((entry) => ["booked", "waitlisted"].includes(entry.status));
+      if (!booking) {
+        // A second tap on Cancel reports the cancellation that already happened.
+        const latest = own[0];
+        if (latest && (latest.status === "cancelled" || latest.status === "late_cancelled")) return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: latest.status };
+        throw ApiError.of(ERR.NOT_FOUND, "Active class booking not found.");
+      }
+      const result = this.cancelClassRosterEntry(occurrence, booking);
+      this.activity({ memberId: member.id, type: result.outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${occurrence.name}`, body: result.outcome === "late_cancelled" ? "Cancelled after the gym's cutoff. No fee or membership penalty was applied." : undefined, meta: { occurrenceId: occurrence.id, bookingId: booking.bookingId, late: result.outcome === "late_cancelled" } });
+      return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: result.outcome, promotedMemberId: result.promoted[0]?.memberId };
+    });
+  }
+
+  addClassOccurrenceAttendee(input: T.ClassOccurrenceRosterInput): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
+      const membership = this.db.memberships.find((candidate) => candidate.id === input.membershipId && candidate.memberId === member?.id);
+      if (!member || !membership) throw ApiError.of(ERR.NOT_FOUND, "Member membership not found.");
+      if (occurrence.status !== "scheduled" || Date.parse(occurrence.endsAt) <= Date.now()) throw ApiError.of(ERR.CONFLICT, "This class is no longer open for booking.");
+      if (occurrence.roster.some((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status))) return this.refreshClassOccurrence(occurrence);
+      const policy = this.db.operationalPolicies.classBooking;
+      const override = input.overrideReason?.trim();
+      const audienceGender = occurrence.audience === "women" ? "female" : occurrence.audience === "men" ? "male" : undefined;
+      if (audienceGender !== undefined && member.gender !== audienceGender && !override) throw ApiError.of(ERR.VALIDATION, "A reason is required to override the class audience rule.");
+      const activeCount = this.classOccurrences.reduce((count, row) => count + row.roster.filter((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status) && row.startsAt >= nowISO()).length, 0);
+      if (activeCount >= policy.maxActiveBookingsPerMember && !override) throw ApiError.of(ERR.VALIDATION, `This member already has ${policy.maxActiveBookingsPerMember} active class bookings. A staff override requires a reason.`);
+      // Capacity is not overridable: a full class takes the member onto the
+      // bounded waitlist, exactly as the server does.
+      const waiting = occurrence.roster.filter((entry) => entry.status === "waitlisted").length;
+      const status: T.ClassBookingStatus = this.classSeatedCount(occurrence) < occurrence.capacity ? "booked" : "waitlisted";
+      if (status === "waitlisted" && (!policy.waitlistEnabled || waiting >= policy.waitlistSize)) throw ApiError.of(ERR.CONFLICT, policy.waitlistEnabled ? "This class and its waitlist are full." : "This class is full.");
+      const entry: T.ClassOccurrenceRosterEntry = { bookingId: mockUuid(), memberId: member.id, membershipId: membership.id, name: member.fullName, status, bookedAt: nowISO(), fromWaitlist: false };
+      occurrence.roster.push(entry);
+      this.activity({ memberId: member.id, type: status === "booked" ? "class_booked" : "class_waitlisted", title: status === "booked" ? `Booked ${occurrence.name}` : `Joined the ${occurrence.name} waitlist`, body: occurrence.date, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, bookedBy: "staff" } });
+      this.audit({ category: "operations", action: status === "booked" ? "classes.booking.create" : "classes.waitlist.join", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `${member.fullName} ${status === "booked" ? "booked" : "joined the waitlist for"} ${occurrence.name}`, reason: override });
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  removeClassOccurrenceAttendee(input: { occurrenceId: T.UUID; bookingId: T.UUID; reason?: string }): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      this.requireReason(input.reason);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const booking = occurrence.roster.find((entry) => entry.bookingId === input.bookingId);
+      if (!booking) throw ApiError.of(ERR.NOT_FOUND, "Class booking not found.");
+      // A repeated removal changes nothing and reports the roster as it is.
+      if (!["booked", "waitlisted"].includes(booking.status)) return this.refreshClassOccurrence(occurrence);
+      const result = this.cancelClassRosterEntry(occurrence, booking);
+      this.activity({ memberId: booking.memberId, type: result.outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${occurrence.name}`, body: input.reason?.trim(), meta: { occurrenceId: occurrence.id, bookingId: booking.bookingId, late: result.outcome === "late_cancelled" } });
+      this.audit({ category: "operations", action: result.outcome === "late_cancelled" ? "classes.booking.cancel_late" : "classes.booking.cancel", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `${booking.name} cancelled ${occurrence.name}`, reason: input.reason?.trim() });
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  setClassOccurrenceAttendance(input: T.ClassOccurrenceAttendanceInput): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.requireRosterPermission();
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      if (occurrence.attendanceFinalizedAt) throw ApiError.of(ERR.CONFLICT, "Attendance is already finalized.");
+      const booking = occurrence.roster.find((entry) => entry.bookingId === input.bookingId && ["booked", "attended"].includes(entry.status));
+      if (!booking) throw ApiError.of(ERR.NOT_FOUND, "Class booking not found.");
+      booking.status = input.attended ? "attended" : "booked";
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  cancelClassOccurrence(input: { occurrenceId: T.UUID; reason: string }): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      this.requireReason(input.reason);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      const block = occurrenceCancellationBlock({ status: occurrence.status, startsAt: Date.parse(occurrence.startsAt), finalized: Boolean(occurrence.attendanceFinalizedAt), hasAttendance: occurrence.roster.some(entry => entry.status === "attended" || entry.status === "no_show") });
+      if (block) throw ApiError.of(ERR.CONFLICT, block);
+      if (occurrence.status === "cancelled") return this.refreshClassOccurrence(occurrence);
+      occurrence.status = "cancelled";
+      occurrence.cancelReason = input.reason.trim();
+      for (const entry of occurrence.roster.filter(entry => ["booked", "waitlisted"].includes(entry.status))) {
+        entry.status = "cancelled";
+        this.activity({ memberId: entry.memberId, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, body: occurrence.cancelReason, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, cancelledByGym: true } });
+      }
+      this.audit({ category: "operations", action: "classes.occurrence.cancel", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `Cancelled ${occurrence.name} on ${occurrence.date}`, reason: occurrence.cancelReason });
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  finalizeClassOccurrenceAttendance(input: { occurrenceId: T.UUID }): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      // A manager or owner decision, matching Convex: it locks the roster and records no-shows.
+      this.require("operations.manage");
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      // Finalization happens once; a repeat returns the recorded roster untouched.
+      if (occurrence.status === "cancelled") throw ApiError.of(ERR.CONFLICT, "A cancelled class has no attendance to finalize.");
+      if (occurrence.attendanceFinalizedAt) return this.refreshClassOccurrence(occurrence);
+      if (Date.parse(occurrence.endsAt) > Date.now()) throw ApiError.of(ERR.VALIDATION, "Attendance can be finalized after the class ends.");
+      occurrence.attendanceFinalizedAt = nowISO();
+      occurrence.status = "completed";
+      if (this.db.operationalPolicies.classBooking.noShowTracking) for (const booking of occurrence.roster) if (booking.status === "booked") booking.status = "no_show";
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  substituteClassOccurrenceCoach(input: T.SubstituteClassCoachInput): Promise<T.ClassOccurrence> {
+    return this.respond(() => {
+      this.require("operations.manage");
+      this.requireReason(input.reason);
+      const occurrence = this.classOccurrenceById(input.occurrenceId);
+      if (occurrence.status !== "scheduled") throw ApiError.of(ERR.CONFLICT, "Only a scheduled class can have a substitute.");
+      const coach = this.classCoaches.find((candidate) => candidate.id === input.coachId);
+      if (!coach) throw ApiError.of(ERR.NOT_FOUND, "Coach not found.");
+      occurrence.coachId = coach.id;
+      occurrence.coachName = coach.name;
+      occurrence.substituted = coach.id !== occurrence.regularCoachId;
+      return this.refreshClassOccurrence(occurrence);
+    });
+  }
+
+  listFacilityTasks(query: { branchId?: T.UUID; zoneId?: T.UUID; status?: T.FacilityTaskStatus; kind?: T.FacilityTaskKind } = {}): Promise<T.FacilityTask[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      if (query.branchId && query.zoneId) this.operationsZone(query.branchId, query.zoneId);
+      return this.db.facilityTasks.filter((task) => (!query.branchId || task.branchId === query.branchId) && (!query.zoneId || task.zoneId === query.zoneId) && (!query.status || task.status === query.status) && (!query.kind || task.kind === query.kind) && this.branchIsVisible(task.branchId)).map((task) => ({ ...task, trafficContext: task.trafficContext ? { ...task.trafficContext } : undefined, suppliesCost: task.suppliesCost ? { ...task.suppliesCost } : undefined }));
+    });
+  }
+
+  upsertFacilityTask(input: T.UpsertFacilityTaskInput): Promise<T.FacilityTask> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const zone = this.operationsZone(branch.id, input.zoneId);
+      const title = input.title.trim();
+      if (!title || title.length > 160 || input.suppliesCost?.currency !== undefined && input.suppliesCost.currency !== this.db.organization.currency) throw ApiError.of(ERR.VALIDATION, "Facility task fields are invalid.");
+      if (input.trafficContext?.occupancyPercent !== undefined && (input.trafficContext.occupancyPercent < 0 || input.trafficContext.occupancyPercent > 100)) throw ApiError.of(ERR.VALIDATION, "Occupancy must be between 0 and 100.");
+      const existing = input.id ? this.db.facilityTasks.find((task) => task.id === input.id) : undefined;
+      if (input.id && (!existing || existing.branchId !== branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Facility task not found.");
+      const status = input.status ?? existing?.status ?? "open";
+      const immutableStatus = existing ? this.immutableAccountingStatus("facility_supplies", existing.id) : undefined;
+      const completedAt = immutableStatus && input.status === undefined
+        ? existing?.completedAt
+        : status === "completed" ? existing?.completedAt ?? nowISO() : undefined;
+      const suppliesCost = immutableStatus && input.suppliesCost === undefined ? existing?.suppliesCost : input.suppliesCost;
+      if (existing && immutableStatus && (
+        zone.id !== existing.zoneId ||
+        status !== existing.status ||
+        completedAt !== existing.completedAt ||
+        suppliesCost?.amount !== existing.suppliesCost?.amount ||
+        suppliesCost?.currency !== existing.suppliesCost?.currency
+      )) {
+        this.rejectImmutableAccountingMutation("This facility task", immutableStatus);
+      }
+      const now = nowISO();
+      const task: T.FacilityTask = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, zoneId: zone.id, zoneName: zone.name, title, status, assigneeId: input.assigneeId, completedAt, suppliesCost, financialPostingStatus: existing.financialPostingStatus ?? "not_posted", financialSourceId: existing.financialSourceId, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, zoneId: zone.id, zoneName: zone.name, kind: input.kind, severity: input.severity, status, title, notes: input.notes?.trim() || undefined, assigneeId: input.assigneeId, dueAt: input.dueAt, trafficContext: input.trafficContext, suppliesCost: input.suppliesCost, financialPostingStatus: "not_posted", createdAt: now, updatedAt: now };
+      if (!existing) this.db.facilityTasks.unshift(task);
+      this.audit({ category: "operations", action: existing ? "operations.facility_task.update" : "operations.facility_task.create", entityType: "facility_task", entityId: task.id, entityLabel: task.title, summary: existing ? "Facility task updated" : "Facility task created", branchId: branch.id });
+      return { ...task, trafficContext: task.trafficContext ? { ...task.trafficContext } : undefined, suppliesCost: task.suppliesCost ? { ...task.suppliesCost } : undefined };
+    });
+  }
+
+
+
+
+  listEquipmentAssets(query: { branchId?: T.UUID; status?: T.EquipmentAssetStatus } = {}): Promise<T.EquipmentAsset[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      return this.db.equipmentAssets.filter((asset) => (!query.branchId || asset.branchId === query.branchId) && (!query.status || asset.status === query.status) && this.branchIsVisible(asset.branchId)).map((asset) => ({ ...asset, purchaseCost: asset.purchaseCost ? { ...asset.purchaseCost } : undefined, issueCount: this.db.equipmentIssues.filter((issue) => issue.assetId === asset.id).length }));
+    });
+  }
+
+  upsertEquipmentAsset(input: T.UpsertEquipmentAssetInput): Promise<T.EquipmentAsset> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      if (input.zoneId) this.operationsZone(branch.id, input.zoneId);
+      const code = input.code.trim().toUpperCase();
+      const name = input.name.trim();
+      const existing = input.id ? this.db.equipmentAssets.find((asset) => asset.id === input.id) : undefined;
+      const status = input.status ?? existing?.status ?? "active";
+      if (!MOCK_EQUIPMENT_ASSET_STATUSES.includes(status) || !/^[A-Z0-9][A-Z0-9_-]{0,31}$/.test(code) || !name || name.length > 120 || (input.purchaseCost && (input.purchaseCost.amount < 0 || !Number.isSafeInteger(input.purchaseCost.amount) || input.purchaseCost.currency !== this.db.organization.currency))) throw ApiError.of(ERR.VALIDATION, "Equipment fields are invalid.");
+      if ((input.expectedServiceIntervalDays !== undefined && (!Number.isSafeInteger(input.expectedServiceIntervalDays) || input.expectedServiceIntervalDays < 1)) || (input.expectedUsefulLifeMonths !== undefined && (!Number.isSafeInteger(input.expectedUsefulLifeMonths) || input.expectedUsefulLifeMonths < 1 || input.expectedUsefulLifeMonths > 600))) throw ApiError.of(ERR.VALIDATION, "Equipment service intervals must be positive whole numbers and useful life must be between 1 and 600 months.");
+      // Retired/replaced assets remain in history, but their code can be
+      // reused by a new live asset. Maintenance assets still reserve it.
+      const duplicate = this.db.equipmentAssets.find((asset) => asset.branchId === branch.id && asset.code === code && (asset.status === "active" || asset.status === "maintenance") && asset.id !== input.id);
+      if (duplicate) throw ApiError.of(ERR.CONFLICT, "That equipment code is already used in this branch.");
+      if (input.id && (!existing || !this.branchIsVisible(existing.branchId))) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      if (existing && existing.branchId !== branch.id) throw ApiError.of(ERR.CONFLICT, "Equipment assets cannot be reassigned between branches; use a future transfer workflow.");
+      if (existing && input.status !== undefined && input.status !== existing.status) {
+        const allowed = existing.status === "active" ? ["maintenance", "retired", "replaced"] : existing.status === "maintenance" ? ["active", "retired", "replaced"] : [];
+        if (!allowed.includes(status)) throw ApiError.of(ERR.CONFLICT, `An equipment asset cannot move from ${existing.status} to ${status}.`);
+      }
+      if (input.status === "active" && existing && this.db.equipmentIssues.some((issue) => issue.assetId === existing.id && !["resolved", "cancelled"].includes(issue.status) && issue.safetyStatus === "out_of_service")) throw ApiError.of(ERR.CONFLICT, "This equipment has an unresolved out-of-service issue. Resolve the issue before marking the asset active.");
+      const immutableStatus = existing ? this.immutableAccountingStatus("equipment_acquisition", existing.id) : undefined;
+      const purchaseDate = immutableStatus && input.purchaseDate === undefined ? existing?.purchaseDate : input.purchaseDate;
+      const purchaseCost = immutableStatus && input.purchaseCost === undefined ? existing?.purchaseCost : input.purchaseCost;
+      if (existing && immutableStatus && (
+        purchaseDate !== existing.purchaseDate ||
+        purchaseCost?.amount !== existing.purchaseCost?.amount ||
+        purchaseCost?.currency !== existing.purchaseCost?.currency
+      )) {
+        this.rejectImmutableAccountingMutation("This equipment acquisition", immutableStatus);
+      }
+      const now = nowISO();
+      const asset: T.EquipmentAsset = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, code, name, purchaseDate, purchaseCost, status, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, zoneId: input.zoneId, code, name, manufacturer: input.manufacturer?.trim() || undefined, model: input.model?.trim() || undefined, serialNumber: input.serialNumber?.trim() || undefined, purchaseDate: input.purchaseDate, installationDate: input.installationDate, purchaseCost: input.purchaseCost, warrantyEndDate: input.warrantyEndDate, status, expectedServiceIntervalDays: input.expectedServiceIntervalDays, expectedUsefulLifeMonths: input.expectedUsefulLifeMonths, createdAt: now, updatedAt: now };
+      if (!existing) this.db.equipmentAssets.unshift(asset);
+      this.audit({ category: "operations", action: existing ? "operations.equipment_asset.update" : "operations.equipment_asset.create", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: existing ? "Equipment asset updated" : "Equipment asset created", branchId: branch.id });
+      return { ...asset, purchaseCost: asset.purchaseCost ? { ...asset.purchaseCost } : undefined, issueCount: this.db.equipmentIssues.filter((issue) => issue.assetId === asset.id).length };
+    });
+  }
+
+  reportEquipmentIssue(input: { branchId: T.UUID; assetId: T.UUID; title: string; description?: string; severity: T.EquipmentIssueSeverity; downtimeDays?: number; safetyStatus?: T.EquipmentIssue["safetyStatus"] }): Promise<T.EquipmentIssue> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === input.assetId && candidate.branchId === branch.id);
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      if (["retired", "replaced"].includes(asset.status)) throw ApiError.of(ERR.CONFLICT, "Retired or replaced equipment cannot receive new issues.");
+      const title = input.title.trim();
+      const safetyStatus = input.safetyStatus ?? "unknown";
+      if (!MOCK_EQUIPMENT_ISSUE_SEVERITIES.includes(input.severity) || !MOCK_EQUIPMENT_SAFETY_STATUSES.includes(safetyStatus) || !title || title.length > 160 || (input.description !== undefined && input.description.trim().length > 2000) || (input.downtimeDays !== undefined && (!Number.isFinite(input.downtimeDays) || input.downtimeDays < 0))) throw ApiError.of(ERR.VALIDATION, "Equipment issue fields are invalid.");
+      const issue: T.EquipmentIssue = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, title, description: input.description?.trim() || undefined, severity: input.severity, status: "open", reportedAt: nowISO(), downtimeDays: input.downtimeDays, safetyStatus, createdById: this.actor().id };
+      this.db.equipmentIssues.unshift(issue);
+      if (safetyStatus === "out_of_service" && asset.status === "active") {
+        const beforeAsset = { ...asset };
+        asset.status = "maintenance";
+        asset.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: "Equipment marked for maintenance after an out-of-service issue", before: { status: beforeAsset.status }, after: { status: asset.status }, branchId: branch.id });
+      }
+      this.audit({ category: "operations", action: "operations.equipment_issue.create", entityType: "equipment_issue", entityId: issue.id, entityLabel: issue.title, summary: "Equipment issue reported", branchId: branch.id });
+      return { ...issue };
+    });
+  }
+
+  updateEquipmentIssue(issueId: T.UUID, input: T.UpdateEquipmentIssueInput): Promise<T.EquipmentIssue> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const issue = this.db.equipmentIssues.find((candidate) => candidate.id === issueId && this.branchIsVisible(candidate.branchId));
+      if (!issue) throw ApiError.of(ERR.NOT_FOUND, "Equipment issue not found.");
+      const status = input.status ?? issue.status;
+      if (!MOCK_EQUIPMENT_ISSUE_STATUSES.includes(status)) throw ApiError.of(ERR.VALIDATION, "Equipment issue status is invalid.");
+      const safetyStatus = input.safetyStatus ?? issue.safetyStatus;
+      if (!MOCK_EQUIPMENT_SAFETY_STATUSES.includes(safetyStatus)) throw ApiError.of(ERR.VALIDATION, "Equipment safety status is invalid.");
+      if (status === "resolved" && safetyStatus !== "safe_to_operate") throw ApiError.of(ERR.VALIDATION, "An issue can only be resolved when the equipment is safe to operate.");
+      if (status !== issue.status) {
+        const allowed = issue.status === "open" ? ["in_progress", "resolved", "cancelled"] : issue.status === "in_progress" ? ["resolved", "cancelled"] : [];
+        if (!allowed.includes(status)) throw ApiError.of(ERR.CONFLICT, `An equipment issue cannot move from ${issue.status} to ${status}.`);
+      }
+      if (input.downtimeDays !== undefined && (!Number.isFinite(input.downtimeDays) || input.downtimeDays < 0)) throw ApiError.of(ERR.VALIDATION, "Downtime days must be non-negative.");
+      const before = { ...issue };
+      issue.status = status;
+      issue.safetyStatus = safetyStatus;
+      issue.downtimeDays = input.downtimeDays ?? issue.downtimeDays;
+      issue.resolvedAt = status === "resolved" ? issue.resolvedAt ?? nowISO() : undefined;
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === issue.assetId);
+      if (asset && safetyStatus === "out_of_service" && asset.status === "active") {
+        const beforeAsset = { ...asset };
+        asset.status = "maintenance";
+        asset.updatedAt = nowISO();
+        this.audit({ category: "operations", action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: "Equipment marked for maintenance after an out-of-service issue", before: { status: beforeAsset.status }, after: { status: asset.status }, branchId: issue.branchId });
+      } else if (asset && status === "resolved" && safetyStatus === "safe_to_operate" && asset.status === "maintenance") {
+        const remainingIssues = this.db.equipmentIssues.filter((candidate) => candidate.assetId === asset.id && candidate.id !== issue.id);
+        if (!remainingIssues.some((candidate) => !["resolved", "cancelled"].includes(candidate.status))) {
+          const beforeAsset = { ...asset };
+          asset.status = "active";
+          asset.updatedAt = nowISO();
+          this.audit({ category: "operations", action: "operations.equipment_asset.update", entityType: "equipment_asset", entityId: asset.id, entityLabel: asset.code, summary: "Equipment returned to active use after all issues were resolved", before: { status: beforeAsset.status }, after: { status: asset.status }, branchId: issue.branchId });
+        }
+      }
+      this.audit({ category: "operations", action: "operations.equipment_issue.update", entityType: "equipment_issue", entityId: issue.id, entityLabel: issue.title, summary: status === "resolved" ? "Equipment issue resolved" : "Equipment issue updated", before, after: { ...issue }, branchId: issue.branchId });
+      return { ...issue };
+    });
+  }
+
+  listEquipmentIssues(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentIssueStatus } = {}): Promise<T.EquipmentIssue[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      return this.db.equipmentIssues.filter((issue) => (!query.branchId || issue.branchId === query.branchId) && (!query.assetId || issue.assetId === query.assetId) && (!query.status || issue.status === query.status) && this.branchIsVisible(issue.branchId)).map((issue) => ({ ...issue }));
+    });
+  }
+
+  upsertEquipmentWorkOrder(input: T.UpsertEquipmentWorkOrderInput): Promise<T.EquipmentWorkOrder> {
+    return this.respond(() => {
+      this.requireOperationsWrite();
+      const branch = this.operationsBranch(input.branchId);
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === input.assetId && candidate.branchId === branch.id);
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      const issue = input.issueId ? this.db.equipmentIssues.find((candidate) => candidate.id === input.issueId && candidate.assetId === asset.id) : undefined;
+      if (input.issueId && !issue) throw ApiError.of(ERR.NOT_FOUND, "Equipment issue not found for this asset.");
+      const assigneeId = input.assigneeId?.trim() || undefined;
+      if (assigneeId) {
+        const assignee = this.db.users.find((user) => user.id === assigneeId && user.status !== "deactivated" && (user.branchScope === "all" || user.branchIds.includes(branch.id)));
+        if (!assignee) throw ApiError.of(ERR.NOT_FOUND, "Assignee not found for this branch.");
+      }
+      const description = input.description.trim();
+      if (!description || description.length > 240) throw ApiError.of(ERR.VALIDATION, "Work-order description must be between 1 and 240 characters.");
+      const costs = [input.partsCost, input.laborCost, input.replacementEstimate].filter(Boolean) as T.Money[];
+      if (!MOCK_EQUIPMENT_WORK_ORDER_STATUSES.includes(input.status ?? "draft") || costs.some((cost) => cost.amount < 0 || !Number.isSafeInteger(cost.amount) || cost.currency !== this.db.organization.currency)) throw ApiError.of(ERR.VALIDATION, "Work-order fields are invalid.");
+      const existing = input.id ? this.db.equipmentWorkOrders.find((order) => order.id === input.id) : undefined;
+      if (input.id && (!existing || existing.assetId !== asset.id)) throw ApiError.of(ERR.NOT_FOUND, "Work order not found.");
+      const status = input.status ?? existing?.status ?? "draft";
+      if (existing && input.status !== undefined && input.status !== existing.status && !(
+        (existing.status === "draft" && ["approved", "cancelled"].includes(input.status)) ||
+        (existing.status === "approved" && ["in_progress", "cancelled"].includes(input.status)) ||
+        (existing.status === "in_progress" && ["completed", "cancelled"].includes(input.status))
+      )) throw ApiError.of(ERR.CONFLICT, `A work order cannot move from ${existing.status} to ${input.status}.`);
+      const immutableStatus = existing ? this.immutableAccountingStatus("equipment_repair", existing.id) : undefined;
+      const issueId = immutableStatus && input.issueId === undefined ? existing?.issueId : issue?.id;
+      const partsCost = immutableStatus && input.partsCost === undefined ? existing?.partsCost : input.partsCost;
+      const laborCost = immutableStatus && input.laborCost === undefined ? existing?.laborCost : input.laborCost;
+      const totalCost = immutableStatus && input.partsCost === undefined && input.laborCost === undefined
+        ? existing?.totalCost
+        : input.partsCost || input.laborCost ? money((partsCost?.amount ?? 0) + (laborCost?.amount ?? 0), this.db.organization.currency) : undefined;
+      const replacementEstimate = immutableStatus && input.replacementEstimate === undefined ? existing?.replacementEstimate : input.replacementEstimate;
+      const completedAt = immutableStatus && input.status === undefined
+        ? existing?.completedAt
+        : status === "completed" ? existing?.completedAt ?? nowISO() : undefined;
+      if (existing && immutableStatus && (
+        branch.id !== existing.branchId ||
+        asset.id !== existing.assetId ||
+        issueId !== existing.issueId ||
+        status !== existing.status ||
+        completedAt !== existing.completedAt ||
+        partsCost?.amount !== existing.partsCost?.amount ||
+        partsCost?.currency !== existing.partsCost?.currency ||
+        laborCost?.amount !== existing.laborCost?.amount ||
+        laborCost?.currency !== existing.laborCost?.currency ||
+        totalCost?.amount !== existing.totalCost?.amount ||
+        totalCost?.currency !== existing.totalCost?.currency ||
+        replacementEstimate?.amount !== existing.replacementEstimate?.amount ||
+        replacementEstimate?.currency !== existing.replacementEstimate?.currency
+      )) {
+        this.rejectImmutableAccountingMutation("This equipment work order", immutableStatus);
+      }
+      const now = nowISO();
+      const order: T.EquipmentWorkOrder = existing ? Object.assign(existing, { ...input, id: existing.id, organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, issueId, status, description, assigneeId, totalCost, partsCost, laborCost, replacementEstimate, financialPostingStatus: existing.financialPostingStatus ?? "not_posted", financialSourceId: existing.financialSourceId, completedAt, updatedAt: now }) : { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, assetId: asset.id, issueId: issue?.id, status, description, assigneeId, vendorName: input.vendorName?.trim() || undefined, partsCost: input.partsCost, laborCost: input.laborCost, totalCost, replacementEstimate, financialPostingStatus: "not_posted", openedAt: now, completedAt: status === "completed" ? now : undefined, updatedAt: now };
+      if (!existing) this.db.equipmentWorkOrders.unshift(order);
+      this.audit({ category: "operations", action: existing ? "operations.equipment_work_order.update" : "operations.equipment_work_order.create", entityType: "equipment_work_order", entityId: order.id, entityLabel: order.description, summary: existing ? "Equipment work order updated" : "Equipment work order created", branchId: branch.id });
+      return { ...order, partsCost: order.partsCost ? { ...order.partsCost } : undefined, laborCost: order.laborCost ? { ...order.laborCost } : undefined, totalCost: order.totalCost ? { ...order.totalCost } : undefined, replacementEstimate: order.replacementEstimate ? { ...order.replacementEstimate } : undefined };
+    });
+  }
+
+  listEquipmentWorkOrders(query: { branchId?: T.UUID; assetId?: T.UUID; status?: T.EquipmentWorkOrder["status"] } = {}): Promise<T.EquipmentWorkOrder[]> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      if (query.branchId) this.operationsBranch(query.branchId);
+      return this.db.equipmentWorkOrders.filter((order) => (!query.branchId || order.branchId === query.branchId) && (!query.assetId || order.assetId === query.assetId) && (!query.status || order.status === query.status) && this.branchIsVisible(order.branchId)).map((order) => ({ ...order, partsCost: order.partsCost ? { ...order.partsCost } : undefined, laborCost: order.laborCost ? { ...order.laborCost } : undefined, totalCost: order.totalCost ? { ...order.totalCost } : undefined, replacementEstimate: order.replacementEstimate ? { ...order.replacementEstimate } : undefined }));
+    });
+  }
+
+  getEquipmentRecommendation(assetId: T.UUID): Promise<T.EquipmentRecommendation> {
+    return this.respond(() => {
+      this.requireOperationsRead();
+      const asset = this.db.equipmentAssets.find((candidate) => candidate.id === assetId && this.branchIsVisible(candidate.branchId));
+      if (!asset) throw ApiError.of(ERR.NOT_FOUND, "Equipment asset not found.");
+      const issues = this.db.equipmentIssues.filter((issue) => issue.assetId === asset.id);
+      const relevantIssues = issues.filter((issue) => issue.status !== "cancelled");
+      const orders = this.db.equipmentWorkOrders.filter((order) => order.assetId === asset.id);
+      const repairOrders = orders.filter((order) => order.status === "completed" && order.financialPostingStatus !== "reversed").sort((left, right) => left.openedAt.localeCompare(right.openedAt) || left.id.localeCompare(right.id));
+      const repairCostMinor = repairOrders.reduce((sum, order) => sum + (order.totalCost?.amount ?? 0), 0);
+      const replacement = orders.filter((order) => order.status !== "cancelled" && order.financialPostingStatus !== "reversed" && order.replacementEstimate).sort((left, right) => left.openedAt.localeCompare(right.openedAt) || left.id.localeCompare(right.id)).at(-1);
+      const downtimeDays = relevantIssues.reduce((sum, issue) => sum + (issue.downtimeDays ?? 0), 0);
+      const ageMonths = asset.purchaseDate ? Math.max(0, Math.floor((Date.now() - Date.parse(asset.purchaseDate)) / (30.44 * 86_400_000))) : undefined;
+      const rationale: string[] = [];
+      if (!repairCostMinor) rationale.push("Repair cost has not been recorded.");
+      if (!replacement?.replacementEstimate) rationale.push("Replacement cost has not been estimated.");
+      if (!asset.purchaseDate) rationale.push("Add the purchase date to check the machine’s age.");
+      if (!asset.expectedUsefulLifeMonths) rationale.push("Add how many months the machine is expected to last.");
+      const safetyIssue = relevantIssues.some((issue) => issue.status !== "resolved" && issue.safetyStatus === "out_of_service");
+      let decision: T.EquipmentRecommendation["decision"] = "insufficient_data";
+      if (repairCostMinor > 0 && replacement?.replacementEstimate && asset.purchaseDate && asset.expectedUsefulLifeMonths) decision = ageMonths! >= asset.expectedUsefulLifeMonths || repairCostMinor >= replacement.replacementEstimate.amount * 0.6 || safetyIssue ? "replace" : "fix";
+      return { assetId: asset.id, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor ? money(repairCostMinor, this.db.organization.currency) : undefined, replacementEstimate: replacement?.replacementEstimate ? { ...replacement.replacementEstimate } : undefined, issueCount: relevantIssues.length, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale };
+    });
+  }
+
   listUsers(query: UserListQuery): Promise<T.Page<T.StaffUser>> {
     return this.respond(() => {
       let items = [...this.db.users];
@@ -4772,6 +12116,11 @@ export class MockGymOSApi implements GymOSApi {
   inviteUser(input: T.InviteUserInput): Promise<T.StaffUser> {
     return this.respond(() => {
       this.require("users.manage");
+      if (input.role === "owner" && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only an owner can grant the owner role.");
+      const targetPermissions = permissionsFor(this.db, input.role);
+      if (targetPermissions.some((permission) => !permissionsFor(this.db, currentRole(this.db)).includes(permission))) {
+        throw ApiError.of(ERR.FORBIDDEN, "You cannot grant permissions your role does not possess.");
+      }
       const user: T.StaffUser = {
         id: mockUuid(),
         organizationId: this.db.organization.id,
@@ -4805,6 +12154,28 @@ export class MockGymOSApi implements GymOSApi {
       if (user.id === this.actor().id && input.status === "deactivated") {
         throw ApiError.of(ERR.VALIDATION, "You cannot deactivate your own account.");
       }
+      // Convex refuses to strand a member's reserved credit: a trainer with
+      // upcoming sessions must have them cancelled or reassigned first.
+      if (input.status === "deactivated") {
+        const profile = this.ptTrainers.find((item) => item.userId === user.id);
+        const now = Date.now();
+        if (profile && this.ptBookings.some((booking) => booking.trainerProfileId === profile.id && ["reserved", "confirmed"].includes(booking.status) && Date.parse(booking.startsAt) >= now)) {
+          throw ApiError.of(ERR.CONFLICT, "Reassign or cancel this trainer's future PT bookings before deactivating the account.");
+        }
+        // As in Convex, the profile is archived with the access change so the
+        // deactivated trainer disappears from member and public booking.
+        if (profile && profile.status !== "archived") {
+          const archived: T.PtTrainerProfile = { ...profile, status: "archived", updatedAt: nowISO() };
+          this.ptTrainers.splice(this.ptTrainers.indexOf(profile), 1, archived);
+          this.audit({ category: "users", action: "pt.trainer.archive", entityType: "pt_trainer", entityId: profile.id, entityLabel: profile.displayName, summary: "Trainer profile archived with account deactivation", before: { status: profile.status }, after: { status: "archived" } });
+        }
+      }
+      const nextRole = input.role ?? user.role;
+      if (nextRole === "owner" && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only an owner can grant the owner role.");
+      const actorPermissions = permissionsFor(this.db, currentRole(this.db));
+      if (nextRole !== user.role && permissionsFor(this.db, nextRole).some((permission) => !actorPermissions.includes(permission))) {
+        throw ApiError.of(ERR.FORBIDDEN, "You cannot grant permissions your role does not possess.");
+      }
       const before = { role: user.role, status: user.status, branches: user.branchIds.length };
       Object.assign(user, input);
       this.audit({
@@ -4829,7 +12200,13 @@ export class MockGymOSApi implements GymOSApi {
       if (!def) throw ApiError.of(ERR.NOT_FOUND, "Role not found.");
       if (role === "owner") throw ApiError.of(ERR.VALIDATION, "The owner role always has full access.");
       const before = { permissions: def.permissions.length, discountLimit: def.discountLimitMinor };
-      if (input.permissions) def.permissions = input.permissions;
+      const requestedPermissions = input.permissions ?? effectiveRolePermissions(role, def.permissions, def.catalogVersion);
+      const invalidPermissions = requestedPermissions.filter((permission) => !PERMISSIONS.includes(permission as Permission));
+      if (invalidPermissions.length > 0) throw ApiError.of(ERR.VALIDATION, "One or more permissions are not recognized.");
+      const actorPermissions = permissionsFor(this.db, currentRole(this.db));
+      if (requestedPermissions.some((permission) => !actorPermissions.includes(permission))) throw ApiError.of(ERR.FORBIDDEN, "You cannot grant permissions your role does not possess.");
+      def.permissions = requestedPermissions;
+      def.catalogVersion = PERMISSION_CATALOG_VERSION;
       if (input.discountLimitMinor !== undefined) def.discountLimitMinor = input.discountLimitMinor;
       this.audit({
         category: "users",

@@ -89,9 +89,21 @@
   --animate-marquee: marquee 46s linear infinite;
   --animate-underline: underline-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 
+  /* Ledger tutorial vignettes — settle-style motion that replays when a step
+     mounts. Direction-neutral (scale/rotate/draw) so RTL needs no mirroring. */
+  --animate-ledger-tilt: ledger-tilt 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-ledger-fill: ledger-fill 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-ledger-draw: ledger-draw 0.45s ease-out both;
+
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+  /* Route transition. Ends at transform:none so the settled page never keeps
+     a transform (which would turn fixed-position children into offset ones). */
+  @keyframes page-enter {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: none; }
   }
   @keyframes fade-in {
     from { opacity: 0; }
@@ -146,6 +158,20 @@
     from { transform: scaleX(0); }
     to { transform: scaleX(1); }
   }
+  /* A beam settling level — the "every debit has an equal credit" moment. */
+  @keyframes ledger-tilt {
+    0% { transform: rotate(-9deg); }
+    55% { transform: rotate(3deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes ledger-fill {
+    from { transform: scaleY(0.18); }
+    to { transform: scaleY(1); }
+  }
+  /* Checkmark stroke draw; the element supplies its own dash values. */
+  @keyframes ledger-draw {
+    to { stroke-dashoffset: 0; }
+  }
 }
 
 @utility marketing-grid {
@@ -174,10 +200,56 @@
   font-family: var(--font-marketing);
 }
 
+/* The landing's fixed bar: anchor jumps and focus scrolls stop below it. The
+   class is set by the landing's motion controller, so no other page is moved. */
+html.landing-motion-ready {
+  scroll-padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
+  /* A weak magnet: a section that ends up near the bar is pulled in under
+     it, but the page can still rest anywhere between two sections. */
+  scroll-snap-type: y proximity;
+}
+
+/* The stale-data notice sticks to the top of the document; on the landing
+   that is under the fixed bar, so it rests below the bar instead. */
+html.landing-motion-ready [data-experience-notice] {
+  top: calc(4.5rem + env(safe-area-inset-top, 0px));
+}
+
+@media (max-width: 720px) {
+  html.landing-motion-ready {
+    scroll-padding-top: calc(4.25rem + env(safe-area-inset-top, 0px));
+  }
+
+  html.landing-motion-ready [data-experience-notice] {
+    top: calc(4.25rem + env(safe-area-inset-top, 0px));
+  }
+}
+
 @layer base {
+  :root {
+    /* The neutral fallback is used outside an authenticated gym shell. The
+       TenantBrandProvider overrides these variables for the active workspace. */
+    --tenant-brand-primary: var(--color-ink);
+    --tenant-brand-primary-hover: #33312a;
+    --tenant-brand-primary-foreground: var(--color-paper);
+    --tenant-brand-primary-soft: var(--color-sunken);
+    --tenant-brand-primary-soft-foreground: var(--color-ink);
+    --tenant-brand-focus: var(--color-ink);
+  }
+
+  @keyframes loading-bar {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Fine-pointer devices use the authenticated shell's restrained edge
+       response. Touch-first devices restore native elasticity below so mobile
+       browser gestures such as pull-to-refresh keep working. */
+    overscroll-behavior-y: none;
+    background: var(--color-paper);
     /* Header links are in-page anchors; glide to them instead of jumping, and
        keep the sticky header from covering whatever we land on. */
     scroll-behavior: smooth;
@@ -193,11 +265,35 @@
 
   body {
     min-height: 100dvh;
+    overscroll-behavior-y: none;
     background: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.45;
+  }
+
+  /*
+    WebKit can extend a native text selection to a static block's padding
+    edge. Human-facing text blocks are paint anchors so a one-line selection
+    stays with its own line and does not wash over a surrounding surface.
+  */
+  :where(p, h1, h2, h3, h4, h5, h6) {
+    position: relative;
+  }
+
+  /* Mouse-dense controls remain compact on office laptops, while the same
+     controls meet a practical 44px target on reception tablets and phones. */
+  @media (pointer: coarse) {
+    html,
+    body {
+      overscroll-behavior-y: auto;
+    }
+
+    [data-touch-target] {
+      min-width: 2.75rem;
+      min-height: 2.75rem;
+    }
   }
 
   /* Playwright deliberately uses seeded personas instead of Clerk sessions.
@@ -221,14 +317,37 @@
     color: #fff;
   }
 
-  /* RTL: switch the stack so Arabic renders in Plex Sans Arabic */
+  /*
+    Arabic: keep Manrope for Latin letters and digits (names, phones, amounts,
+    receipt numbers) and let IBM Plex Sans Arabic, which has complete shaping,
+    supply every Arabic glyph. Overriding the font variables here reaches
+    every utility that reads --font-sans / --font-display, not just body.
+  */
+  html.rtl-font {
+    --font-sans: var(--font-manrope), var(--font-plex-arabic), "Segoe UI", system-ui, sans-serif;
+    --font-display: var(--font-manrope), var(--font-plex-arabic), "Segoe UI", system-ui, sans-serif;
+    --font-marketing: var(--font-manrope), var(--font-plex-arabic), system-ui, sans-serif;
+    --font-marketing-display: var(--font-manrope), var(--font-plex-arabic), system-ui, sans-serif;
+  }
+
   .rtl-font body,
   .rtl-font input,
   .rtl-font textarea,
   .rtl-font select,
   .rtl-font button {
-    font-family: var(--font-plex-arabic), var(--font-manrope), system-ui, sans-serif;
+    font-family: var(--font-sans);
+  }
+
+  /* Arabic letters join; any letter-spacing breaks the joins. */
+  .rtl-font *,
+  .rtl-font *::before,
+  .rtl-font *::after {
     letter-spacing: 0 !important;
+  }
+
+  /* Arabic needs a little more line height than the Latin scale. */
+  .rtl-font body {
+    line-height: 1.6;
   }
 
   /*
@@ -250,7 +369,7 @@
 
   /* Focus ring — one consistent treatment */
   :focus-visible {
-    outline: 2px solid var(--color-ink);
+    outline: 2px solid var(--tenant-brand-focus);
     outline-offset: 2px;
     border-radius: var(--radius-xs);
   }
@@ -292,17 +411,49 @@
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
+/*
+  While a text field has focus on a phone, the on-screen keyboard owns the
+  bottom of the screen. Hiding the dock keeps it from floating over the field
+  or the button beneath it; it returns as soon as the field loses focus. The
+  page reserve stays, so nothing shifts under the member's thumb.
+*/
+.member-app-shell:has(input:not([type="checkbox"]):not([type="radio"]):focus, textarea:focus, select:focus) .member-bottom-nav {
+  display: none;
+}
+
 @utility tabular {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
 
-/* Eyebrow / section label — the operational voice */
+/*
+  Legacy label utilities retained only while the product-wide migration is in
+  progress. New product code uses ContextLabel or TechnicalLabel explicitly so
+  typography communicates whether content is human context or system metadata.
+*/
 @utility eyebrow {
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+}
+
+@utility context-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1rem;
+  color: var(--color-ink-3);
+}
+
+@utility technical-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-ink-3);
 }
@@ -321,12 +472,31 @@
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
+  /* WebKit can paint a text selection through a static block's padding. A
+     positioned surface keeps the native highlight inside the card bounds. */
+  position: relative;
 }
 
 @utility panel-inset {
   background: var(--color-sunken);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-md);
+  position: relative;
+}
+
+/* Every enabled control reads as clickable. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"],
+[role="menuitem"],
+summary,
+label[for] {
+  cursor: pointer;
+}
+
+/* Route transition wrapper rendered by each shell's template.tsx. */
+.page-transition {
+  animation: page-enter 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Reduced motion */
@@ -345,7 +515,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Print — receipts only
+   Print — receipts, and the weekly class schedule when armed
    ------------------------------------------------------------------------- */
 @media print {
   body {
@@ -357,6 +527,41 @@
   #receipt-print,
   #receipt-print * {
     visibility: visible;
+  }
+  .print-schedule [data-print-root],
+  .print-schedule [data-print-root] * {
+    visibility: visible;
+  }
+  .print-schedule [data-print-root] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 0;
+  }
+  .print-schedule [data-print-root] .print\:hidden {
+    display: none !important;
+  }
+  .print-schedule [data-print-schedule] {
+    overflow: visible !important;
+    border: none;
+  }
+  /* The landscape sheet is an exact copy of the on-screen calendar: colors,
+     tints, and brand accents are forced onto paper. */
+  .print-schedule [data-print-root],
+  .print-schedule [data-print-root] * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .print-schedule [data-print-schedule] > div {
+    min-width: 0 !important;
+  }
+  .print-schedule [data-print-header] {
+    display: block !important;
+    margin-bottom: 6mm;
+  }
+  .print-schedule [data-print-schedule] button {
+    transform: none !important;
+    box-shadow: none !important;
   }
   #receipt-print {
     position: absolute;

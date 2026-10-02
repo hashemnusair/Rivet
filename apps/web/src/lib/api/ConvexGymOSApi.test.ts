@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConvexGymOSApi, type ConvexTransport, dataMode } from "./ConvexGymOSApi";
 import { ApiError, ERR } from "./errors";
 import type { CashShift, Session, ShiftTotals } from "@/lib/domain/types";
+import type { MarketplaceGym } from "@/lib/public/experience-data";
 
 const session: Session = {
   user: { id: "10000000-0000-4a00-8a00-000000000010", name: "Omar Al-Khatib", email: "omar@example.com" },
@@ -44,6 +45,29 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(calls[1]).toMatchObject({ operation: "members.list", organizationId: session.organization.id, activeBranchId: session.activeBranchId });
   });
 
+  it("does not retain a stale organization or branch after a scope selection fails", async () => {
+    const scopeErrors: Array<Record<string, unknown>> = [];
+    const api = new ConvexGymOSApi({
+      ...transportFor({ query: session }),
+      query: async (_reference, args) => {
+        const request = args as unknown as Record<string, unknown>;
+        scopeErrors.push(request);
+        if (request.organizationId === "stale-org") throw Object.assign(new Error("Organization not found"), { data: { code: ERR.NOT_FOUND, message: "Organization not found.", requestId: "scope-1" } });
+        if (request.activeBranchId === "stale-branch") throw Object.assign(new Error("Branch not found"), { data: { code: ERR.NOT_FOUND, message: "Branch not found.", requestId: "scope-2" } });
+        return session;
+      },
+    });
+
+    await api.getSession();
+    await expect(api.selectOrganization("stale-org")).rejects.toBeInstanceOf(ApiError);
+    await api.listMembers({ page: 1, pageSize: 1 });
+    expect(scopeErrors.at(-1)).toMatchObject({ organizationId: session.organization.id, activeBranchId: session.activeBranchId });
+
+    await expect(api.setActiveBranch("stale-branch")).rejects.toBeInstanceOf(ApiError);
+    await api.listMembers({ page: 1, pageSize: 1 });
+    expect(scopeErrors.at(-1)).toMatchObject({ organizationId: session.organization.id, activeBranchId: session.activeBranchId });
+  });
+
   it("routes member marketing preferences through the authenticated mutation boundary", async () => {
     let mutationArgs: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: { id: "customer-1" } }, (_kind, args) => { mutationArgs = args; }));
@@ -78,6 +102,152 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(values).toEqual([experience]);
     expect(errors).toHaveLength(0);
     expect(calls[0]).toMatchObject({ operation: "customer.experience", input: {}, correlationId: expect.any(String) });
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("exposes realtime workspace entitlement updates through the same transport seam", async () => {
+    const values: unknown[] = [];
+    const stop = vi.fn();
+    const access = { entitlements: { subscriptionPlan: "Growth", entitledModules: ["foundation", "revenue", "operations"] } };
+    const api = new ConvexGymOSApi({
+      ...transportFor(),
+      subscribe: (_reference, args, onValue) => {
+        expect(args).toMatchObject({ operation: "workspace.access", input: {} });
+        onValue(access);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await api.subscribeWorkspaceAccess((value) => values.push(value));
+    expect(values).toEqual([access]);
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("keeps dashboard reads safe while the Today projection is deployed separately", async () => {
+    const legacyDashboard = {
+      kpis: {},
+      revenueSeries: [],
+      branchRevenue: [],
+      funnel: [],
+      leaderboard: [],
+      alerts: [],
+      recentActivity: [],
+    };
+    const api = new ConvexGymOSApi(transportFor({ query: legacyDashboard }));
+
+    await expect(api.getDashboard({ from: "2026-08-29", to: "2026-08-29" })).resolves.toMatchObject({
+      todayQueue: {
+        items: [],
+        totalItems: 0,
+        urgentItems: 0,
+        highPriorityItems: 0,
+        kindCounts: {},
+        overdueItems: 0,
+        overdueKindCounts: {},
+      },
+    });
+
+    const values: unknown[] = [];
+    const stop = vi.fn();
+    const subscribedApi = new ConvexGymOSApi({
+      ...transportFor(),
+      subscribe: (_reference, _args, onValue) => {
+        onValue(legacyDashboard);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await subscribedApi.subscribeDashboard(
+      { from: "2026-08-29", to: "2026-08-29" },
+      (dashboard) => values.push(dashboard.todayQueue),
+    );
+    expect(values).toEqual([expect.objectContaining({ items: [], totalItems: 0 })]);
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("normalizes the public Convex projection without reviving non-operational rows", async () => {
+    const publicRow = {
+      id: "live-gym",
+      name: "Live Gym",
+      shortName: "LIVE",
+      tagline: "",
+      description: "",
+      city: "Amman",
+      areas: [],
+      category: "Gym",
+      audience: "All members",
+      memberCount: 1,
+      branchCount: 1,
+      fromPriceMinor: 0,
+      amenities: [],
+      accent: "#000000",
+      featured: false,
+      subscriptionStatus: "active" as const,
+      rivetPlan: "Starter" as const,
+      joinedAt: "2026-08-01",
+      lastActiveAt: "2026-08-01T00:00:00.000Z",
+      monthlyRevenueMinor: 0,
+      branches: [],
+    };
+    const suspendedRow = { ...publicRow, id: "suspended-gym", subscriptionStatus: "suspended" as const };
+    const hiddenRow = { ...publicRow, id: "hidden-gym", isPublic: false };
+    const api = new ConvexGymOSApi(transportFor({ query: [{ ...publicRow, logoUrl: "https://cdn.example/logo.png", isProvisioned: false, isArchived: true, archivedAt: "2026-08-20T00:00:00.000Z", archiveReason: "retained" }, suspendedRow, hiddenRow] }));
+
+    const gyms = await api.listMarketplaceGyms();
+    expect(gyms).toEqual([expect.objectContaining({ id: "live-gym", isPublic: true })]);
+    expect(gyms[0]).not.toHaveProperty("isProvisioned");
+    expect(gyms[0]).not.toHaveProperty("isArchived");
+    expect(gyms[0]).not.toHaveProperty("archivedAt");
+    expect(gyms[0]).not.toHaveProperty("archiveReason");
+    expect(gyms[0]).not.toHaveProperty("logoUrl");
+  });
+
+  it("keeps provisioning metadata on platform snapshots while stripping it from public rows", async () => {
+    const platformSnapshot = { gyms: [{ id: "legacy-gym", isProvisioned: false, logoUrl: "https://cdn.example/logo.png" }], bookings: [], invoices: [], supportCases: [], plans: [], applications: [], auditEvents: [], overview: {} };
+    const api = new ConvexGymOSApi(transportFor({ query: platformSnapshot }));
+
+    await expect(api.getPlatformSnapshot()).resolves.toMatchObject({ gyms: [{ id: "legacy-gym", isProvisioned: false, logoUrl: "https://cdn.example/logo.png" }] });
+  });
+
+  it("applies the same visibility contract to live marketplace updates", async () => {
+    const values: MarketplaceGym[][] = [];
+    const stop = vi.fn();
+    const row = {
+      id: "live-gym",
+      name: "Live Gym",
+      shortName: "LIVE",
+      tagline: "",
+      description: "",
+      city: "Amman",
+      areas: [],
+      category: "Gym",
+      audience: "All members",
+      memberCount: 1,
+      branchCount: 1,
+      fromPriceMinor: 0,
+      amenities: [],
+      accent: "#000000",
+      featured: false,
+      subscriptionStatus: "trial" as const,
+      rivetPlan: "Starter" as const,
+      joinedAt: "2026-08-01",
+      lastActiveAt: "2026-08-01T00:00:00.000Z",
+      monthlyRevenueMinor: 0,
+      branches: [],
+    };
+    const api = new ConvexGymOSApi({
+      ...transportFor(),
+      subscribe: (_reference, _args, onValue) => {
+        onValue([row]);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await api.subscribeMarketplaceGyms((gyms) => values.push(gyms));
+    expect(values).toEqual([[expect.objectContaining({ id: "live-gym", isPublic: true })]]);
     unsubscribe();
     expect(stop).toHaveBeenCalledOnce();
   });
@@ -123,6 +293,27 @@ describe("ConvexGymOSApi contract boundary", () => {
     const unsubscribe = await api.subscribePlatformSnapshot((value) => values.push(value));
     expect(values).toEqual([snapshot]);
     expect(calls[0]).toMatchObject({ operation: "platform.snapshot", input: {}, correlationId: expect.any(String) });
+    unsubscribe();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("subscribes to the public pricing catalog used by the landing page", async () => {
+    const values: unknown[] = [];
+    const calls: Array<Record<string, unknown>> = [];
+    const stop = vi.fn();
+    const plans = [{ name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" }];
+    const api = new ConvexGymOSApi({
+      ...transportFor(),
+      subscribe: (_reference, args, onValue) => {
+        calls.push(args as unknown as Record<string, unknown>);
+        onValue(plans);
+        return stop;
+      },
+    });
+
+    const unsubscribe = await api.subscribePublicSaasPlans((value) => values.push(value));
+    expect(values).toEqual([plans]);
+    expect(calls[0]).toMatchObject({ operation: "public.catalog", input: {}, correlationId: expect.any(String) });
     unsubscribe();
     expect(stop).toHaveBeenCalledOnce();
   });
@@ -180,6 +371,7 @@ describe("ConvexGymOSApi contract boundary", () => {
 
     await expect(api.completeLeadSale("lead-1", {
       homeBranchId: session.activeBranchId!,
+      gender: "female",
       preferredLanguage: "en",
       startDate: "2026-08-13",
       idempotencyKey: "lead-sale-1",
@@ -227,6 +419,8 @@ describe("ConvexGymOSApi contract boundary", () => {
       paymentCount: 0,
       refundCount: 0,
       discountsTotal: { amount: 0, currency: "JOD" },
+      supplierCashPayments: { amount: 0, currency: "JOD" },
+      supplierCashReversals: { amount: 0, currency: "JOD" },
     };
     const calls: Array<Record<string, unknown>> = [];
     const api = new ConvexGymOSApi(transportFor({ query: { shift, totals } }, (_kind, args) => calls.push(args)));
@@ -251,6 +445,8 @@ describe("ConvexGymOSApi contract boundary", () => {
       organization: { state: "available" as const, value: { id: "org-a", name: "Alpha Gym", status: "active" as const, currency: "JOD", timezone: "Asia/Amman" } },
       joinedAt: { state: "not_available" as const },
       branches: { state: "available" as const, value: [{ id: "branch-a", name: "Alpha Main", code: "MAIN", status: "active" as const }] },
+      members: { state: "available" as const, value: [] },
+      staff: { state: "available" as const, value: [] },
       owner: { state: "available" as const, value: { name: "Alpha Owner", email: "owner@alpha.example" } },
       usage: {
         memberCount: { state: "available" as const, value: 7 },
@@ -287,6 +483,10 @@ describe("ConvexGymOSApi contract boundary", () => {
     await api.updateOperationalPolicies({
       entry: { outstandingBalance: "warn", expiryWarningDays: 7, duplicateScanWindowMinutes: 2, enforceOperatingHours: true },
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 14, minimumFreezeDays: 1, maximumExtensionDays: 365 },
+      referrals: { enabled: false, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 },
+      memberFreezes: { requestsEnabled: false, freeFreezesPerWindow: 1, extraFreezeFeeMinor: 10_000, maxDaysPerFreeze: 30, windowDays: 365 },
+      classBooking: { enabled: true, eligibilityMode: "all_active_memberships", eligiblePlanIds: [], bookingHorizonDays: 30, cancellationCutoffHours: 2, maxActiveBookingsPerMember: 8, waitlistEnabled: true, waitlistSize: 12, noShowTracking: true },
+      retention: { inactivityDays: 14, expiredWinBackDays: 90, defaultSnoozeDays: 7 },
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
       operatingHours: [{ branchId: session.activeBranchId!, days }],
       trialSchedules: [{ branchId: session.activeBranchId!, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: true, opensAt: "09:00", closesAt: "20:00" }])) as import("@/lib/domain/types").OperationalPolicies["trialSchedules"][number]["days"] }],
@@ -353,6 +553,41 @@ describe("ConvexGymOSApi contract boundary", () => {
     expect(call).toMatchObject({ applicationId: result.applicationId, correlationId: expect.any(String) });
   });
 
+  it("sends staff invitations with the exact protected action contract", async () => {
+    const invited = {
+      id: "staff-invite-1",
+      name: "Staging Reception",
+      email: "reception@example.test",
+      role: "receptionist" as const,
+      branchScope: "selected" as const,
+      branchIds: [session.branches[0]!.id],
+      status: "invited" as const,
+    };
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ query: session, action: invited }, (_kind, args) => { call = args; }));
+
+    await api.getSession();
+    await expect(api.inviteUser({
+      name: invited.name,
+      email: invited.email,
+      role: invited.role,
+      branchScope: invited.branchScope,
+      branchIds: invited.branchIds,
+    })).resolves.toEqual(invited);
+
+    expect(call).toEqual({
+      input: {
+        name: invited.name,
+        email: invited.email,
+        role: invited.role,
+        branchScope: invited.branchScope,
+        branchIds: invited.branchIds,
+      },
+      organizationId: session.organization.id,
+      correlationId: expect.any(String),
+    });
+  });
+
   it("keeps platform tenant controls behind the platform mutation boundary", async () => {
     const gym = {
       id: "marketplace-gym-1",
@@ -383,8 +618,8 @@ describe("ConvexGymOSApi contract boundary", () => {
     let call: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: gym }, (_kind, args) => { call = args; }));
 
-    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false, reason: "Account requested a temporary pause." })).resolves.toEqual(gym);
-    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false } });
+    await expect(api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", billingInterval: "annual", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: false, reason: "Account requested a temporary pause." })).resolves.toEqual(gym);
+    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, status: "suspended", plan: "Growth", billingInterval: "annual", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: false } });
   });
 
   it("keeps SaaS catalog edits behind the platform mutation boundary", async () => {
@@ -392,8 +627,36 @@ describe("ConvexGymOSApi contract boundary", () => {
     let call: Record<string, unknown> | undefined;
     const api = new ConvexGymOSApi(transportFor({ mutation: plan }, (_kind, args) => { call = args; }));
 
-    await expect(api.updatePlatformPlan({ name: "Growth", priceMinor: 159_000, branches: 4, staff: 30, members: 3_000 })).resolves.toEqual(plan);
+    await expect(api.updatePlatformPlan({ name: "Growth", priceMinor: 159_000, branches: 4, staff: 30, members: 3_000, reason: "Annual pricing review approved." })).resolves.toEqual(plan);
     expect(call).toMatchObject({ operation: "platform.plan.update", input: { name: "Growth", priceMinor: 159_000 } });
+  });
+
+  it("routes archive-only gym removal with exact confirmation and reason", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const api = new ConvexGymOSApi(transportFor({ query: session, mutation: undefined }, (_kind, args) => calls.push(args)));
+
+    // Simulate an operator who opened a gym workspace before returning to the
+    // platform console. Archive must remain tenant-independent in that case.
+    await api.selectOrganization(session.organization.id);
+
+    await expect(api.archivePlatformGym({ gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." })).resolves.toBeUndefined();
+    const archiveCall = calls.find((call) => call.operation === "platform.gym.archive");
+    expect(archiveCall).toMatchObject({ operation: "platform.gym.archive", input: { gymId: "gym-archive", confirmation: "Northline Strength", reason: "Customer requested account closure." } });
+    expect(archiveCall).not.toHaveProperty("organizationId");
+    expect(archiveCall).not.toHaveProperty("activeBranchId");
+  });
+
+  it("carries the Enterprise tier through the live adapter boundary", async () => {
+    const enterprise = { name: "Enterprise" as const, priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" as const };
+    const gym = { id: "enterprise-gym", rivetPlan: "Enterprise" as const };
+    let call: Record<string, unknown> | undefined;
+    const api = new ConvexGymOSApi(transportFor({ mutation: gym }, (_kind, args) => { call = args; }));
+
+    await expect(api.updatePlatformGym({ gymId: gym.id, plan: "Enterprise", status: "active", reason: "Enable the Enterprise workspace tier." })).resolves.toEqual(gym);
+    expect(call).toMatchObject({ operation: "platform.gym.update", input: { gymId: gym.id, plan: "Enterprise" } });
+    const catalogApi = new ConvexGymOSApi(transportFor({ mutation: enterprise }, (_kind, args) => { call = args; }));
+    await expect(catalogApi.updatePlatformPlan({ name: enterprise.name, priceMinor: enterprise.priceMinor, branches: enterprise.branches, staff: enterprise.staff, members: enterprise.members, reason: "Publish the Enterprise catalog price." })).resolves.toEqual(enterprise);
+    expect(call).toMatchObject({ operation: "platform.plan.update", input: { name: "Enterprise", priceMinor: 500_000 } });
   });
 
   it("converts structured Convex errors into stable ApiErrors", async () => {
@@ -411,12 +674,38 @@ describe("ConvexGymOSApi contract boundary", () => {
     vi.unstubAllEnvs();
   });
 
-  it("honors an explicit mock mode in a production-mode Preview build", () => {
+  it("rejects mock mode in a production runtime outside the test harness", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "mock");
 
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("VITEST_WORKER_ID", "");
+    expect(() => dataMode()).toThrowError("RIVET production runtime cannot use mock data mode.");
+
+    vi.unstubAllEnvs();
+  });
+
+  it("allows mock mode only for an explicitly marked preview deployment", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "mock");
+    vi.stubEnv("NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS", "preview");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("VITEST_WORKER_ID", "");
     expect(dataMode()).toBe("mock");
 
+    vi.stubEnv("VERCEL_ENV", "production");
+    expect(() => dataMode()).toThrowError("RIVET production runtime cannot use mock data mode.");
+    vi.unstubAllEnvs();
+  });
+
+  it("fails closed when production hosting is reported with a development Node runtime", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_DATA_MODE", "mock");
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("VITEST_WORKER_ID", "");
+    expect(() => dataMode()).toThrowError("RIVET production runtime cannot use mock data mode.");
     vi.unstubAllEnvs();
   });
 });

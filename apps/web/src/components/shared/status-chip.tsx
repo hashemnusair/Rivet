@@ -2,12 +2,13 @@ import type {
   CheckInDecision,
   LeadStage,
   MembershipEffectiveStatus,
-  PaymentMethodKey,
   PaymentStatus,
   TransactionStatus,
+  TransactionType,
 } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
 import { useT } from "@/lib/i18n/provider";
+import { en } from "@/lib/i18n/messages/en";
 
 /**
  * Status language for the whole product. One shape, few colors, meaning first:
@@ -28,7 +29,7 @@ export function StatusChip({ tone, children, className, dot }: { tone: Tone; chi
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11px] font-medium leading-4 whitespace-nowrap",
+        "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[12px] font-medium leading-4 whitespace-nowrap",
         toneStyles[tone],
         className,
       )}
@@ -51,14 +52,8 @@ const MEMBERSHIP_TONE: Record<MembershipEffectiveStatus, Tone> = {
 
 export function MembershipStatusChip({ status, className }: { status?: MembershipEffectiveStatus; className?: string }) {
   const t = useT();
-  if (!status) {
-    return <StatusChip tone="outline" className={className}>{t("domain.membershipStatus.none")}</StatusChip>;
-  }
-  return (
-    <StatusChip tone={MEMBERSHIP_TONE[status]} className={className}>
-      {t(`domain.membershipStatus.${status}`)}
-    </StatusChip>
-  );
+  if (!status) return <StatusChip tone="outline" className={className}>{t("domain.membershipStatus.none")}</StatusChip>;
+  return <StatusChip tone={MEMBERSHIP_TONE[status]} className={className}>{t(`domain.membershipStatus.${status}`)}</StatusChip>;
 }
 
 const PAYMENT_TONE: Record<PaymentStatus, Tone> = {
@@ -71,11 +66,7 @@ const PAYMENT_TONE: Record<PaymentStatus, Tone> = {
 
 export function PaymentStatusChip({ status, className }: { status: PaymentStatus; className?: string }) {
   const t = useT();
-  return (
-    <StatusChip tone={PAYMENT_TONE[status]} className={className}>
-      {t(`domain.paymentStatus.${status}`)}
-    </StatusChip>
-  );
+  return <StatusChip tone={PAYMENT_TONE[status]} className={className}>{t(`domain.paymentStatus.${status}`)}</StatusChip>;
 }
 
 const TRANSACTION_TONE: Record<TransactionStatus, Tone> = {
@@ -87,11 +78,7 @@ const TRANSACTION_TONE: Record<TransactionStatus, Tone> = {
 
 export function TransactionStatusChip({ status, className }: { status: TransactionStatus; className?: string }) {
   const t = useT();
-  return (
-    <StatusChip tone={TRANSACTION_TONE[status]} className={className}>
-      {t(`domain.transactionStatus.${status}`)}
-    </StatusChip>
-  );
+  return <StatusChip tone={TRANSACTION_TONE[status]} className={className}>{t(`domain.transactionStatus.${status}`)}</StatusChip>;
 }
 
 const LEAD_TONE: Record<LeadStage, Tone> = {
@@ -105,13 +92,17 @@ const LEAD_TONE: Record<LeadStage, Tone> = {
   lost: "outline",
 };
 
+/**
+ * The plain English name of a lead stage, for places that need text rather than
+ * a chip. Screens that are translated use `leadStageName(t, stage)` instead.
+ */
+export function leadStageLabel(stage: string): string {
+  return en.domain.leadStage[stage as LeadStage] ?? stage;
+}
+
 export function LeadStageChip({ stage, className }: { stage: LeadStage; className?: string }) {
   const t = useT();
-  return (
-    <StatusChip tone={LEAD_TONE[stage]} className={className}>
-      {t(`domain.leadStage.${stage}`)}
-    </StatusChip>
-  );
+  return <StatusChip tone={LEAD_TONE[stage]} className={className}>{t(`domain.leadStage.${stage}`)}</StatusChip>;
 }
 
 const DECISION_TONE: Record<CheckInDecision, Tone> = {
@@ -123,32 +114,31 @@ const DECISION_TONE: Record<CheckInDecision, Tone> = {
 
 export function CheckInDecisionChip({ decision, className }: { decision: CheckInDecision; className?: string }) {
   const t = useT();
-  return (
-    <StatusChip tone={DECISION_TONE[decision]} className={className}>
-      {t(`domain.checkInDecision.${decision}`)}
-    </StatusChip>
-  );
+  return <StatusChip tone={DECISION_TONE[decision]} className={className}>{t(`domain.checkInDecision.${decision}`)}</StatusChip>;
 }
 
-/**
- * Ordered key lists for the pickers that offer these choices. The words live in
- * `domain.leadSource.*` and `domain.paymentMethod.*`; call sites translate, so
- * the order stays one decision made in one place.
- */
-export const LEAD_SOURCE_KEYS = [
-  "instagram",
-  "walk_in",
-  "referral",
-  "whatsapp",
-  "google",
-  "phone_call",
-  "other",
-] as const;
+export const LEAD_SOURCE_LABELS: Record<string, string> = {
+  instagram: "Instagram",
+  walk_in: "Walk-in",
+  referral: "Referral",
+  whatsapp: "WhatsApp",
+  google: "Google",
+  phone_call: "Phone call",
+  other: "Other",
+};
 
-export const PAYMENT_METHOD_KEYS: readonly PaymentMethodKey[] = [
-  "cash",
-  "card",
-  "bank_transfer",
-  "cliq",
-  "other",
-];
+/** Human names for the money-trail record types; the raw keys are storage identifiers. */
+export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
+  payment: "Payment",
+  refund: "Refund",
+  void: "Cancelled payment",
+  retail_sale: "Retail sale",
+};
+
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cash: "Cash",
+  card: "Card",
+  bank_transfer: "Bank transfer",
+  cliq: "CliQ",
+  other: "Other",
+};

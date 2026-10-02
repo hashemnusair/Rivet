@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
-import { api } from "./_generated/api";
+import { Blob as NodeBlob } from "node:buffer";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -52,6 +53,77 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("Convex personal-training lifecycle", () => {
+  it("projects trainer photos only when the active public asset belongs to that trainer", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const assetIds = await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-pt")).unique();
+      const foreignOrganization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-pt-foreign")).unique();
+      const trainer = organization ? await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "trainer-profile")).unique() : null;
+      expect(organization).not.toBeNull();
+      expect(foreignOrganization).not.toBeNull();
+      expect(trainer).not.toBeNull();
+      const storageId = await ctx.storage.store(new NodeBlob(["trainer-photo"], { type: "image/png" }) as unknown as Blob);
+      const insert = async (organizationId: NonNullable<typeof organization>, publicId: string, ownerPublicId: string, visibility: "public" | "private", status: "active" | "replaced") => await ctx.db.insert("mediaAssets", { organizationId: organizationId._id, publicId, ownerType: "trainer_photo", ownerPublicId, storageId, contentType: "image/png", sizeBytes: 13, visibility, status, createdAt: now, updatedAt: now });
+      const valid = await insert(organization!, "pt-photo-valid", "trainer-profile", "public", "active");
+      const privateAsset = await insert(organization!, "pt-photo-private", "trainer-profile", "private", "active");
+      const wrongOwner = await insert(organization!, "pt-photo-wrong-owner", "another-trainer", "public", "active");
+      const stale = await insert(organization!, "pt-photo-stale", "trainer-profile", "public", "replaced");
+      const foreign = await insert(foreignOrganization!, "pt-photo-foreign", "trainer-profile", "public", "active");
+      return { trainerId: trainer!._id, valid: String(valid), privateAsset: String(privateAsset), wrongOwner: String(wrongOwner), stale: String(stale), foreign: String(foreign) };
+    });
+
+    const setPhoto = async (photoAssetId: string) => {
+      await t.run(async (ctx) => ctx.db.patch(assetIds.trainerId, { photoAssetId }));
+      const experience = await t.withIdentity({ subject: "clerk-pt-customer" }).query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as { trainers: Array<{ photoUrl?: string }> };
+      return experience.trainers[0]?.photoUrl;
+    };
+
+    expect(await setPhoto("pt-photo-valid")).toEqual(expect.any(String));
+    for (const photoAssetId of ["pt-photo-private", "pt-photo-wrong-owner", "pt-photo-stale", "pt-photo-foreign"]) {
+      expect(await setPhoto(photoAssetId)).toBeUndefined();
+    }
+  });
+
+  it("keeps trainer uploads pending until the profile mutation links and activates them", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    const storageId = await t.run(async (ctx) => ctx.storage.store(new NodeBlob(["pending-trainer-photo"], { type: "image/png" }) as unknown as Blob));
+    const pending = await owner.mutation(internal.media.commit, {
+      organizationId: "org-pt",
+      correlationId: "cor-pt-trainer-photo-pending",
+      ownerType: "trainer_photo",
+      ownerPublicId: "trainer-profile",
+      altText: "Coach Lina during a strength session",
+      contentType: "image/png",
+      sizeBytes: 20,
+      storageId,
+    });
+    expect(pending.status).toBe("pending");
+
+    const profile = await owner.mutation(api.domain.mutate, operation("pt.trainer.upsert", {
+      id: "trainer-profile",
+      userId: "pt-trainer",
+      displayName: "Coach Lina",
+      specialties: ["Strength"],
+      languages: ["en", "ar"],
+      branchIds: ["pt-branch"],
+      status: "published",
+      photoAssetId: pending.id,
+      photoAlt: "Coach Lina during a strength session",
+    })) as { photoUrl?: string };
+    expect(profile.photoUrl).toEqual(expect.any(String));
+
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-pt")).unique();
+      const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization!._id).eq("publicId", pending.id)).unique();
+      expect(asset).toMatchObject({ status: "active", ownerType: "trainer_photo", ownerPublicId: "trainer-profile" });
+      expect(asset).not.toHaveProperty("deleteAfter");
+    });
+  });
+
   it("allows arbitrary package terms while preserving existing order terms and supports unpaid cancellation", async () => {
     const t = convexTest(schema, modules);
     await seed(t);
@@ -122,6 +194,9 @@ describe("Convex personal-training lifecycle", () => {
     expect(experience).toMatchObject({ availableSessions: 12, reservedSessions: 0 });
 
     const order = await owner.mutation(api.domain.mutate, operation("pt.package.refund", { orderId: requested.id, sessions: 2, reason: "Unused sessions refunded at member request" })) as { status: string; refundedSessions: number; refundedAmount: { amount: number } };
+    // Package revenue is what the PT charges collected net of refunds: 240 paid, 40 refunded.
+    const ownerWorkspace = await owner.query(api.domain.query, operation("pt.workspace")) as { metrics: { packageRevenue: { amount: number } } };
+    expect(ownerWorkspace.metrics.packageRevenue.amount).toBe(200_000);
     expect(order).toMatchObject({ status: "partially_refunded", refundedSessions: 2, refundedAmount: { amount: 40_000 } });
     experience = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as typeof experience;
     expect(experience.availableSessions).toBe(10);
@@ -190,5 +265,110 @@ describe("Convex personal-training lifecycle", () => {
     }));
     expect(stored.grants).toHaveLength(1);
     expect(stored.audits).toHaveLength(1);
+  });
+});
+
+describe("Convex trainer account boundaries", () => {
+  async function seedSecondTrainer(t: TestConvex<typeof schema>) {
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const organization = (await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-pt")).unique())!;
+      const branch = (await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", "pt-branch")).unique())!;
+      const other = await ctx.db.insert("users", { publicId: "pt-other-trainer", authSubject: "clerk-pt-other-trainer", email: "other@pt.example", fullName: "Other Trainer", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: other, role: "trainer", branchIds: [branch._id], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
+      const profile = await ctx.db.insert("ptTrainerProfiles", { organizationId: organization._id, publicId: "other-profile", userId: other, displayName: "Coach Omar", specialties: [], languages: ["en"], branchIds: [branch._id], status: "published", createdAt: now, updatedAt: now });
+      const invited = await ctx.db.insert("users", { publicId: "pt-invited-trainer", authSubject: "invite:invited@pt.example", email: "invited@pt.example", fullName: "Invited Trainer", platformAdmin: false, status: "invited", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: organization._id, userId: invited, role: "trainer", branchIds: [branch._id], branchScope: "selected", active: true, invitationStatus: "pending", clerkInvitationId: "inv_pending", createdAt: now, updatedAt: now });
+      const bookingDate = dateInDays(3);
+      const weekday = weekdays[new Date(`${bookingDate}T12:00:00Z`).getUTCDay()]!;
+      await ctx.db.insert("ptAvailabilityRules", { organizationId: organization._id, publicId: "availability-other", trainerProfileId: profile, branchId: branch._id, weekday, startMinute: 8 * 60, endMinute: 11 * 60, active: true, createdAt: now, updatedAt: now });
+    });
+  }
+
+  it("refuses to link a profile to an invited account that has never signed in", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await seedSecondTrainer(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    await expectCode(owner.mutation(api.domain.mutate, operation("pt.trainer.upsert", { userId: "pt-invited-trainer", displayName: "Invited Trainer", specialties: [], languages: ["en"], branchIds: ["pt-branch"], status: "draft" })), "VALIDATION_ERROR");
+    const linked = await owner.mutation(api.domain.mutate, operation("pt.trainer.upsert", { id: "other-profile", userId: "pt-other-trainer", displayName: "Coach Omar", specialties: ["Boxing"], languages: ["en"], branchIds: ["pt-branch"], status: "published" })) as { id: string; specialties: string[] };
+    expect(linked).toMatchObject({ id: "other-profile", specialties: ["Boxing"] });
+  });
+
+  it("keeps another trainer's schedule and sessions out of a trainer's reach while their own stay editable", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await seedSecondTrainer(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    const trainer = t.withIdentity({ subject: "clerk-pt-trainer" });
+    await owner.mutation(api.domain.mutate, operation("pt.introductory.apply", { sessionCount: 2, reason: "Pilot introduction approved by owner", idempotencyKey: "intro-boundary" }));
+    const otherDate = dateInDays(3);
+    const otherSlots = await owner.query(api.domain.query, operation("pt.slots", { trainerProfileId: "other-profile", branchId: "pt-branch", from: otherDate, to: otherDate })) as Array<{ startsAt: string }>;
+    const otherBooking = await owner.mutation(api.domain.mutate, operation("pt.booking.create", { membershipId: "pt-membership", trainerProfileId: "other-profile", branchId: "pt-branch", startsAt: otherSlots[0]!.startsAt, idempotencyKey: "other-booking" })) as { id: string };
+
+    const workspace = await trainer.query(api.domain.query, operation("pt.workspace")) as { trainers: Array<{ id: string }>; bookings: Array<{ id: string }> };
+    expect(workspace.trainers.map((item) => item.id)).toEqual(["trainer-profile"]);
+    expect(workspace.bookings.map((item) => item.id)).not.toContain(otherBooking.id);
+
+    const hours = [{ branchId: "pt-branch", weekday: "mon", startMinute: 9 * 60, endMinute: 12 * 60, active: true }];
+    await expectCode(trainer.mutation(api.domain.mutate, operation("pt.availability.replace", { trainerProfileId: "other-profile", rules: hours, exceptions: [] })), "FORBIDDEN");
+    await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.cancel", { bookingId: otherBooking.id, reason: "Not my session", cancelledByGym: true })), "FORBIDDEN");
+    await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.reschedule", { bookingId: otherBooking.id, trainerProfileId: "other-profile", branchId: "pt-branch", startsAt: otherSlots[0]!.startsAt, reason: "Move it", idempotencyKey: "move-other" })), "FORBIDDEN");
+    const own = await trainer.mutation(api.domain.mutate, operation("pt.availability.replace", { trainerProfileId: "trainer-profile", rules: hours, exceptions: [{ branchId: "pt-branch", date: dateInDays(10), reason: "Leave" }] })) as { availabilityRules: unknown[]; availabilityExceptions: unknown[] };
+    expect(own.availabilityRules).toHaveLength(1);
+    expect(own.availabilityExceptions).toHaveLength(1);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.parse(otherSlots[0]!.startsAt) + 15 * 60_000));
+    try {
+      await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.complete", { bookingId: otherBooking.id })), "FORBIDDEN");
+      await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.no_show", { bookingId: otherBooking.id, reason: "Member did not arrive" })), "FORBIDDEN");
+      const completed = await t.withIdentity({ subject: "clerk-pt-other-trainer" }).mutation(api.domain.mutate, operation("pt.booking.complete", { bookingId: otherBooking.id })) as { status: string };
+      expect(completed.status).toBe("completed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("Convex personal-training outcome context", () => {
+  it("keeps a started session visible with its reserved credit until an outcome is recorded, once", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-pt-owner" });
+    const trainer = t.withIdentity({ subject: "clerk-pt-trainer" });
+    const customer = t.withIdentity({ subject: "clerk-pt-customer" });
+    await owner.mutation(api.domain.mutate, operation("pt.introductory.apply", { sessionCount: 2, reason: "Pilot introduction approved by owner", idempotencyKey: "intro-context" }));
+    const bookingDate = dateInDays(2);
+    const slots = await owner.query(api.domain.query, operation("pt.slots", { trainerProfileId: "trainer-profile", branchId: "pt-branch", from: bookingDate, to: bookingDate })) as Array<{ startsAt: string }>;
+    const booking = await owner.mutation(api.domain.mutate, operation("pt.booking.create", { membershipId: "pt-membership", trainerProfileId: "trainer-profile", branchId: "pt-branch", startsAt: slots[0]!.startsAt, idempotencyKey: "context-booking" })) as { id: string };
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.parse(slots[0]!.startsAt) + 15 * 60_000));
+    try {
+      type Experience = { availableSessions: number; reservedSessions: number; cancellationCutoffHours: number; upcomingBookings: Array<{ id: string; status: string }> };
+      const staffView = await owner.query(api.domain.query, operation("pt.member", { membershipId: "pt-membership" })) as Experience;
+      expect(staffView).toMatchObject({ availableSessions: 1, reservedSessions: 1, cancellationCutoffHours: 12 });
+      expect(staffView.upcomingBookings.map((item) => item.id)).toEqual([booking.id]);
+      const memberView = await customer.query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as Experience;
+      expect(memberView).toMatchObject({ reservedSessions: 1, cancellationCutoffHours: 12 });
+      expect(memberView.upcomingBookings.map((item) => item.id)).toEqual([booking.id]);
+      const workspace = await trainer.query(api.domain.query, operation("pt.workspace")) as { cancellationCutoffHours: number; bookings: Array<{ id: string; status: string }> };
+      expect(workspace.cancellationCutoffHours).toBe(12);
+      expect(workspace.bookings.find((item) => item.id === booking.id)?.status).toBe("reserved");
+
+      const completed = await trainer.mutation(api.domain.mutate, operation("pt.booking.complete", { bookingId: booking.id })) as { status: string };
+      expect(completed.status).toBe("completed");
+      // A second recording cannot consume a second credit.
+      await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.complete", { bookingId: booking.id })), "VALIDATION_ERROR");
+      await expectCode(trainer.mutation(api.domain.mutate, operation("pt.booking.no_show", { bookingId: booking.id, reason: "Recorded twice by mistake" })), "VALIDATION_ERROR");
+      const after = await owner.query(api.domain.query, operation("pt.member", { membershipId: "pt-membership" })) as Experience;
+      expect(after).toMatchObject({ availableSessions: 1, reservedSessions: 0 });
+      expect(after.upcomingBookings).toEqual([]);
+      const ledger = await t.run(async (ctx) => (await ctx.db.query("ptCreditLedger").collect()).filter((entry) => entry.bookingPublicId === booking.id).map((entry) => entry.type));
+      expect(ledger).toEqual(["reserve", "consume"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

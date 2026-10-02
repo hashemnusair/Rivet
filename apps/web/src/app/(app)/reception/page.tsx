@@ -1,13 +1,17 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
+
 
 import {
   AlertTriangle,
   Ban,
   Banknote,
+  Building2,
   CheckCircle2,
   CornerDownLeft,
   Lock,
   RotateCcw,
+  RefreshCw,
   ScanLine,
   Search,
   ShieldAlert,
@@ -17,40 +21,51 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { qk } from "@/lib/api/keys";
-import type { CheckInPreview, CheckInResult, MembershipSummary } from "@/lib/domain/types";
+import type { CheckInPreview, CheckInResult, CheckInSummary, MemberSummary, MembershipSummary, Session } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { formatTime, todayISODate } from "@/lib/utils/dates";
+import { formatDate, formatTime, todayISODate } from "@/lib/utils/dates";
 import { formatMoney } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
+import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { Button } from "@/components/ui/button";
 import { Kbd, Monogram } from "@/components/ui/misc";
-import { ForbiddenState } from "@/components/ui/states";
+import { ForbiddenState, StatePanel } from "@/components/ui/states";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
 import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
 import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
-import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dialogs";
-import { useT } from "@/lib/i18n/provider";
+import { CloseShiftDialog, OpenShiftDialog, authoritativeExpectedCash } from "@/features/finance/shift-dialogs";
+import { ContextLabel } from "@/components/ui/typography";
 
 export default function ReceptionPage() {
   const t = useT();
-  const { session } = useApp();
+  const { session, setBranch } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
 
-  const branchId = session?.activeBranchId ?? session?.branches[0]?.id;
+  // Reception is a concrete branch lane. An organization-wide scope or a
+  // stale persisted branch must fail closed instead of silently using the
+  // first branch in the session.
+  const branchId = visibleBranchId(session?.branches, session?.activeBranchId);
   const branch = session?.branches.find((b) => b.id === branchId);
   const currency = session?.organization.currency ?? "JOD";
 
   const [query, setQuery] = useState("");
   const debounced = useDebouncedValue(query, 180);
   const [result, setResult] = useState<CheckInResult | null>(null);
+  const [recentPage, setRecentPage] = useState(1);
   const [dialog, setDialog] = useState<"override" | "collect" | "renew" | "openShift" | "closeShift" | null>(null);
+  const [branchSelecting, setBranchSelecting] = useState<string | null>(null);
+  const [branchSelectionError, setBranchSelectionError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const automaticBranchAttempt = useRef<string | null>(null);
+  // A scanner sends its Enter before the debounced preview has resolved. Keep
+  // that intent for the exact query it was pressed on, and commit only once
+  // the server identifies one person by a complete identifier.
+  const pendingCommit = useRef<string | null>(null);
 
   // Gate on the live *and* debounced query. Checking only the debounced value
   // would keep the previous member's verdict on screen for one debounce window
@@ -72,7 +87,7 @@ export default function ReceptionPage() {
   });
 
   const today = todayISODate(session?.organization.timezone ?? "Asia/Amman");
-  const recentInput = { branchId, date: today, acceptedOnly: true, pageSize: 100 } as const;
+  const recentInput = { branchId, date: today, acceptedOnly: true, page: recentPage, pageSize: 25 } as const;
   const recentQuery = useRealtimeApiQuery({
     queryKey: qk.checkIns(recentInput),
     query: (api) => api.listRecentCheckIns(recentInput),
@@ -88,61 +103,137 @@ export default function ReceptionPage() {
   });
 
   const preview = lookupActive ? previewQuery.data : undefined;
+  const shownMemberId = result?.member.id ?? preview?.member?.id;
+  // The rail already streams today's accepted visits, so a duplicate scan can
+  // say when this person actually came in instead of reading as a denial.
+  const lastAcceptedCheckIn = shownMemberId ? recentQuery.data?.items.find((item) => item.memberId === shownMemberId) : undefined;
 
   const focusInput = useCallback(() => inputRef.current?.focus(), []);
 
   useEffect(() => {
     focusInput();
-  }, [focusInput]);
+  }, [branchId, focusInput]);
 
-  /** After a decision is recorded, hold it briefly then reset for the next person. */
+  const chooseBranch = useCallback(async (nextBranchId: string) => {
+    setBranchSelecting(nextBranchId);
+    setBranchSelectionError(null);
+    try {
+      await setBranch(nextBranchId);
+    } catch {
+      setBranchSelectionError("That branch could not be opened. Check your connection and try again.");
+    } finally {
+      setBranchSelecting(null);
+    }
+  }, [setBranch]);
+
+  // A sole accessible branch is unambiguous. This also makes branch-assigned
+  // reception accounts land directly at their desk without an unnecessary
+  // organization-wide intermediate state.
+  useEffect(() => {
+    if (branchId || session?.branches.length !== 1) return;
+    const onlyBranchId = session.branches[0]!.id;
+    if (automaticBranchAttempt.current === onlyBranchId) return;
+    automaticBranchAttempt.current = onlyBranchId;
+    void chooseBranch(onlyBranchId);
+  }, [branchId, chooseBranch, session?.branches]);
+
+  /** A recorded verdict remains visible until staff explicitly starts the next lane. */
   const resetLane = useCallback(() => {
-    if (clearTimer.current) clearTimeout(clearTimer.current);
-    clearTimer.current = null;
+    pendingCommit.current = null;
     setResult(null);
     setQuery("");
     focusInput();
   }, [focusInput]);
 
-  useEffect(() => () => (clearTimer.current ? clearTimeout(clearTimer.current) : undefined), []);
+  /** A candidate's member number is a complete identifier, so it resolves to exactly one verdict. */
+  const chooseCandidate = useCallback((candidate: MemberSummary) => {
+    pendingCommit.current = null;
+    setResult(null);
+    setQuery(candidate.memberNumber);
+    focusInput();
+  }, [focusInput]);
 
   const checkIn = useApiMutation((api) => api.createCheckIn({ memberId: preview!.member!.id, branchId: branchId!, source: query.trim().startsWith("rivet-pass.") ? "qr" : "search", ...(query.trim().startsWith("rivet-pass.") ? { entryPassToken: query.trim() } : {}) }), {
     onSuccess: async (res) => {
       setResult(res);
+      setRecentPage(1);
+      // Leave the number selected: the next scan or keystroke replaces it
+      // instead of appending to it and producing a no-match.
+      inputRef.current?.focus();
+      inputRef.current?.select();
       await invalidate();
-      if (res.decision !== "blocked") {
-        clearTimer.current = setTimeout(resetLane, 3200);
-      }
     },
   });
 
   // Keyboard: Enter commits, Escape clears, any keystroke returns focus to the lane
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const inLane = target === inputRef.current || target === document.body;
       if (e.key === "Escape") {
         resetLane();
         return;
       }
-      if (e.key === "Enter" && !result && preview?.found && preview.decision !== "blocked" && !checkIn.isPending) {
-        const target = e.target as HTMLElement | null;
-        if (target?.tagName === "INPUT" || target === document.body) {
+      if (e.key === "Enter" && inLane && !result && !checkIn.isPending) {
+        if (preview?.found && preview.decision !== "blocked") {
           e.preventDefault();
+          pendingCommit.current = null;
           checkIn.mutate();
+        } else if (!preview && query.trim().length >= 3) {
+          // The verdict for this exact query is still on its way.
+          e.preventDefault();
+          pendingCommit.current = query.trim();
         }
+        return;
+      }
+      // A scanner types wherever focus is. Bring stray keystrokes back to the
+      // lane so a scan after a closed dialog still lands in the lookup.
+      if (target === document.body && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        inputRef.current?.focus();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [preview, result, checkIn, resetLane]);
+  }, [preview, query, result, checkIn, resetLane]);
+
+  // Commit a scan whose Enter arrived before the verdict, but only when the
+  // server matched one person by their complete number or pass — never a
+  // name fragment the desk has not looked at.
+  useEffect(() => {
+    const pending = pendingCommit.current;
+    if (!pending || previewQuery.isFetching || !preview || result || checkIn.isPending) return;
+    if (debounced.trim() !== pending) return;
+    pendingCommit.current = null;
+    const squeeze = (value: string) => value.toLowerCase().replace(/[\s-]/g, "");
+    const exact = preview.found && preview.member && (pending.startsWith("rivet-pass.") || squeeze(preview.member.memberNumber) === squeeze(pending));
+    if (exact && preview.decision !== "blocked") checkIn.mutate();
+  }, [checkIn, debounced, preview, previewQuery.isFetching, result]);
+
+  /**
+   * After money or a term changes at the desk, the verdict stays what it was
+   * (the visit happened at that time) but its facts must be the server's
+   * current ones — otherwise a settled balance still reads as due.
+   */
+  const refreshShownFacts = async () => {
+    const fresh = await previewQuery.refetch();
+    const data = fresh.data;
+    setResult((current) => {
+      if (!current || !data?.found || !data.member || data.member.id !== current.member.id) return current;
+      return { ...current, member: data.member, membership: data.membership ?? current.membership };
+    });
+  };
 
   if (!can("members.read")) {
-    return <ForbiddenState description={t("reception.forbidden")} />;
+    return <ForbiddenState description="The front desk needs access to look up members. Ask the owner or a manager." />;
   }
 
   if (!branchId || !branch) {
     return (
-      <ForbiddenState
-        description={t("reception.pickBranch")}
+      <ReceptionBranchState
+        branches={session?.branches ?? []}
+        selectingBranchId={branchSelecting}
+        error={branchSelectionError}
+        onSelect={(nextBranchId) => void chooseBranch(nextBranchId)}
       />
     );
   }
@@ -152,6 +243,9 @@ export default function ReceptionPage() {
   const decision = result?.decision ?? preview?.decision;
   const member = result?.member ?? preview?.member;
   const membership = result?.membership ?? preview?.membership;
+  // A cancelled term cannot be renewed (the server refuses); the desk sells a
+  // fresh membership instead, exactly as the member record does.
+  const renewalOf = membership && membership.status !== "cancelled" ? membership : undefined;
   const committed = result !== null;
 
   return (
@@ -159,13 +253,17 @@ export default function ReceptionPage() {
       {/* Shift strip — cash is gated on an open drawer */}
       <ShiftStrip
         shift={shift?.shift ?? null}
-        expected={shift ? { amount: shift.shift.openingFloat.amount + shift.totals.cashPayments.amount - shift.totals.cashRefunds.amount, currency } : null}
+        expected={shift ? { amount: authoritativeExpectedCash(shift.shift, shift) ?? shift.shift.openingFloat.amount, currency } : null}
         cashTaken={shift?.totals.cashPayments ?? null}
+        loading={shiftQuery.isLoading && shift === undefined}
+        error={shiftQuery.isError}
+        stale={shiftQuery.isBackgroundError || shiftQuery.streamState === "fallback"}
         currency={currency}
         canOpen={can("reconciliation.open_shift")}
         canClose={can("reconciliation.close_shift")}
         onOpen={() => setDialog("openShift")}
         onClose={() => setDialog("closeShift")}
+        onRetry={() => void shiftQuery.refetch()}
       />
 
       <div className="grid flex-1 gap-px bg-night-line lg:grid-cols-[1fr_330px]">
@@ -175,14 +273,14 @@ export default function ReceptionPage() {
         <div className="flex min-w-0 flex-col bg-night px-5 py-5 lg:px-8 lg:py-7">
           <div className="flex items-baseline justify-between gap-3">
             <div>
-              <p className="eyebrow-night">Front desk · {branch.name}</p>
+              <ContextLabel tone="night">Front desk · {branch.name}</ContextLabel>
               <h1 className="mt-1 font-display text-[22px] font-semibold tracking-tight text-night-ink">
                 Check in
               </h1>
             </div>
-            <p className="flex items-center gap-1.5 font-mono text-[11px] text-night-ink-3">
+            <ContextLabel tone="night" className="flex items-center gap-1.5">
               <ScanLine className="size-3.5" aria-hidden /> Scanner ready
-            </p>
+            </ContextLabel>
           </div>
 
           {/* Search lane */}
@@ -192,45 +290,53 @@ export default function ReceptionPage() {
               ref={inputRef}
               value={query}
               onChange={(e) => {
-                if (clearTimer.current) clearTimeout(clearTimer.current);
+                pendingCommit.current = null;
                 setResult(null);
                 setQuery(e.target.value);
               }}
-              placeholder={t("reception.lookup.placeholder")}
-              aria-label={t("reception.lookup.label")}
+              placeholder="Scan, or type a name, phone or member number"
+              aria-label="Find a member"
               autoComplete="off"
               spellCheck={false}
               data-testid="reception-search"
-              className="h-16 w-full rounded-lg border border-night-line bg-night-2 ps-12 pe-14 font-mono text-[18px] text-night-ink placeholder:text-night-ink-3/70 transition-colors hover:border-night-ink-3/40 focus:border-night-ink-2 focus:outline-none sm:pe-28"
+              className="h-16 w-full rounded-lg border border-night-line bg-night-2 ps-12 pe-14 text-[18px] text-night-ink placeholder:text-night-ink-3/70 transition-colors hover:border-night-ink-3/40 focus:border-night-ink-2 focus:outline-none sm:pe-28"
             />
             <div className="absolute end-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
               {query ? (
                 <button
                   type="button"
                   onClick={resetLane}
-                  aria-label={t("common.action.clear")}
+                  aria-label={t("reception.lookup.clear")}
                   className="rounded-sm p-1 text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink cursor-pointer"
                 >
                   <X className="size-4" />
                 </button>
               ) : null}
-              <span className="hidden items-center gap-1 font-mono text-[10.5px] uppercase tracking-wider text-night-ink-3 sm:flex">
-                <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd> clear
+              <span className="hidden items-center gap-1 text-[12px] text-night-ink-3 sm:flex">
+                <Kbd className="border-night-line bg-night-3 text-night-ink-2">{t("reception.lookup.esc")}</Kbd> clear
               </span>
             </div>
           </div>
 
           {/* Verdict */}
           <div className="mt-5 flex-1">
-            {!shown ? (
+            {!lookupActive && !result ? (
               <IdleState />
-            ) : previewQuery.isLoading && !result ? (
-              <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label={t("reception.lookup.looking")}>
+            ) : previewQuery.isLoading && !result && !preview ? (
+              <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label="Finding member">
                 <div className="h-4 w-40 animate-pulse rounded-sm bg-night-3" />
                 <div className="mt-3 h-10 w-64 animate-pulse rounded-sm bg-night-3" />
               </div>
+            ) : previewQuery.isError && !result && !preview ? (
+              <LookupErrorState onRetry={() => void previewQuery.refetch()} />
+            ) : !shown ? (
+              <IdleState />
             ) : !member ? (
-              <NoMatchState message={preview?.message ?? "No match."} query={debounced} canCreate={can("members.write")} />
+              preview?.candidates && preview.candidates.length > 1 ? (
+                <CandidatesState message={preview.message} candidates={preview.candidates} branches={session?.branches ?? []} onChoose={chooseCandidate} />
+              ) : (
+                <NoMatchState message={preview?.message ?? "No match."} query={debounced} canCreate={can("members.write")} />
+              )
             ) : (
               <VerdictPanel
                 decision={decision!}
@@ -246,6 +352,8 @@ export default function ReceptionPage() {
                 canCollect={can("payments.collect")}
                 canSell={can("memberships.sell")}
                 cashBlocked={!shift}
+                renewable={Boolean(renewalOf)}
+                lastAcceptedCheckIn={lastAcceptedCheckIn}
                 onCheckIn={() => checkIn.mutate()}
                 onOverride={() => setDialog("override")}
                 onCollect={() => setDialog("collect")}
@@ -256,21 +364,20 @@ export default function ReceptionPage() {
           </div>
 
           {/* Keyboard legend */}
-          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-night-line pt-4 font-mono text-[10.5px] uppercase tracking-wider text-night-ink-3">
+          <ContextLabel as="div" tone="night" className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-night-line pt-4">
             <span className="flex items-center gap-1.5">
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">
                 <CornerDownLeft className="size-2.5" />
               </Kbd>
-              check in
+              Check in
             </span>
             <span className="flex items-center gap-1.5">
-              <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd> next member
+              <Kbd className="border-night-line bg-night-3 text-night-ink-2">{t("reception.lookup.esc")}</Kbd> Next member
             </span>
             <span className="flex items-center gap-1.5">
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">⌘</Kbd>
-              <Kbd className="border-night-line bg-night-3 text-night-ink-2">K</Kbd> command palette
-            </span>
-          </div>
+              <Kbd className="border-night-line bg-night-3 text-night-ink-2">K</Kbd>{" "}{t("common.action.search")}</span>
+          </ContextLabel>
         </div>
 
         {/* ---------------------------------------------------------------- */}
@@ -278,40 +385,40 @@ export default function ReceptionPage() {
         {/* ---------------------------------------------------------------- */}
         <aside className="flex min-w-0 flex-col bg-night-2" aria-label={t("reception.activity.label")}>
           <section className="border-b border-night-line px-5 py-5">
-            <p className="eyebrow-night">{t("reception.activity.checkInsToday")}</p>
+            <ContextLabel tone="night">{t("reception.activity.checkInsToday")}</ContextLabel>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-[38px] font-medium leading-none tabular text-night-ink">
                 {recentQuery.data?.totalItems ?? "—"}
               </span>
-              <span className="text-[13px] text-night-ink-3">recorded visits</span>
+              <span className="text-[13px] text-night-ink-3">visits</span>
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <dt className="eyebrow-night">{t("reception.activity.branch")}</dt>
+                <ContextLabel as="dt" tone="night">{t("reception.activity.branch")}</ContextLabel>
                 <dd className="mt-0.5 truncate text-[13px] text-night-ink">{branch.name}</dd>
               </div>
               <div>
-                <dt className="eyebrow-night">{t("reception.activity.peakHour")}</dt>
+                <ContextLabel as="dt" tone="night">Busiest hour</ContextLabel>
                 <dd className="mt-0.5 text-[15px] tabular text-night-ink">{occupancyQuery.data?.peakHour ?? "—"}</dd>
               </div>
             </dl>
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col">
-            <p className="eyebrow-night border-b border-night-line px-5 py-3">{t("reception.activity.todayLog")}</p>
+            <ContextLabel tone="night" className="border-b border-night-line px-5 py-3">Who checked in today</ContextLabel>
             <ul className="flex-1 divide-y divide-night-line/70 overflow-y-auto">
               {(recentQuery.data?.items ?? []).length === 0 ? (
                 <li className="px-5 py-8 text-center text-[12.5px] text-night-ink-3">{t("reception.activity.noCheckIns")}</li>
               ) : (
                 (recentQuery.data?.items ?? []).map((c) => (
                   <li key={c.id} className="flex items-start gap-2.5 px-5 py-2.5">
-                    <span className="mt-0.5 text-[11px] tabular text-night-ink-3">{formatTime(c.occurredAt)}</span>
+                    <span className="mt-0.5 text-[12px] tabular text-night-ink-3">{formatTime(c.occurredAt)}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[12.5px] text-night-ink">{c.memberName}</p>
-                      <p className="truncate font-mono text-[10px] text-night-ink-3">{c.memberNumber}</p>
+                      <p className="truncate font-mono text-[10.5px] text-night-ink-3">{c.memberNumber}</p>
                       {c.overrideReason ? (
-                        <p className="truncate text-[11px] text-night-ink-3" title={c.overrideReason}>
-                          override · {c.overrideReason}
+                        <p className="truncate text-[12px] text-night-ink-3" title={c.overrideReason}>
+                          Let in anyway · {c.overrideReason}
                         </p>
                       ) : null}
                     </div>
@@ -320,6 +427,20 @@ export default function ReceptionPage() {
                 ))
               )}
             </ul>
+            {recentQuery.data && recentQuery.data.totalPages > 1 ? (
+              <div className="flex items-center justify-between gap-2 border-t border-night-line px-4 py-2.5 text-[12px] text-night-ink-3">
+                <span className="tabular" dir="ltr">
+                  {(recentQuery.data.page - 1) * recentQuery.data.pageSize + 1}–{Math.min(recentQuery.data.totalItems, recentQuery.data.page * recentQuery.data.pageSize)} of {recentQuery.data.totalItems}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Button size="xs" variant="night-ghost" disabled={recentQuery.data.page <= 1} onClick={() => setRecentPage((page) => Math.max(1, page - 1))} aria-label="Previous check-in page">
+                    Previous
+                  </Button>
+                  <span className="min-w-10 text-center tabular" dir="ltr">{recentQuery.data.page}/{recentQuery.data.totalPages}</span>
+                  <Button size="xs" variant="night-ghost" disabled={recentQuery.data.page >= recentQuery.data.totalPages} onClick={() => setRecentPage((page) => page + 1)} aria-label="Next check-in page">{t("dashboard.trainer.next")}</Button>
+                </div>
+              </div>
+            ) : null}
           </section>
         </aside>
       </div>
@@ -334,7 +455,7 @@ export default function ReceptionPage() {
           actorName={session?.user.name ?? "you"}
           onOverridden={(res) => {
             setResult(res);
-            clearTimer.current = setTimeout(resetLane, 3200);
+            setRecentPage(1);
           }}
         />
       ) : null}
@@ -343,9 +464,10 @@ export default function ReceptionPage() {
           open={dialog === "collect"}
           onOpenChange={(v) => setDialog(v ? "collect" : null)}
           member={member}
+          branchId={branchId}
+          cashDrawerOpen={Boolean(shift)}
           onCollected={() => {
-            setDialog(null);
-            void previewQuery.refetch();
+            void refreshShownFacts();
           }}
         />
       ) : null}
@@ -354,10 +476,12 @@ export default function ReceptionPage() {
           open={dialog === "renew"}
           onOpenChange={(v) => setDialog(v ? "renew" : null)}
           member={member}
-          renewalOf={membership as MembershipSummary | undefined}
+          renewalOf={renewalOf}
+          branchId={branchId}
+          cashDrawerOpen={Boolean(shift)}
           onCompleted={() => {
             setDialog(null);
-            void previewQuery.refetch();
+            void refreshShownFacts();
           }}
         />
       ) : null}
@@ -385,6 +509,73 @@ export default function ReceptionPage() {
   );
 }
 
+function ReceptionBranchState({
+  branches,
+  selectingBranchId,
+  error,
+  onSelect,
+}: {
+  branches: Session["branches"];
+  selectingBranchId: string | null;
+  error: string | null;
+  onSelect: (branchId: string) => void;
+}) {
+  const t = useT();
+  if (branches.length === 0) {
+    return (
+      <StatePanel
+        icon={Building2}
+        title="No branch to open"
+        description="Ask the gym owner to turn on a branch or add you to one."
+      />
+    );
+  }
+
+  const openingOnlyBranch = branches.length === 1;
+  return (
+    <StatePanel
+      icon={Building2}
+      title={openingOnlyBranch ? "Opening Reception…" : "Choose a branch to open Reception"}
+      description={openingOnlyBranch
+        ? `Setting this desk to ${branches[0]!.name}.`
+        : "Choose the branch this desk is in."}
+      action={
+        openingOnlyBranch ? (
+          error ? (
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-[12px] text-danger" role="alert">{error}</p>
+              <Button
+                type="button"
+                variant="secondary"
+                loading={selectingBranchId === branches[0]!.id}
+                onClick={() => onSelect(branches[0]!.id)}
+              >{t("common.action.retry")}</Button>
+            </div>
+          ) : null
+        ) : (
+          <div className="flex max-w-xl flex-wrap justify-center gap-2" aria-label="Reception branch">
+            {branches.map((candidate) => (
+              <Button
+                key={candidate.id}
+                type="button"
+                variant="secondary"
+                size="lg"
+                loading={selectingBranchId === candidate.id}
+                disabled={selectingBranchId !== null}
+                onClick={() => onSelect(candidate.id)}
+              >
+                <Building2 aria-hidden />
+                {candidate.name}
+              </Button>
+            ))}
+            {error ? <p className="basis-full pt-1 text-[12px] text-danger" role="alert">{error}</p> : null}
+          </div>
+        )
+      }
+    />
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Shift strip
 // ---------------------------------------------------------------------------
@@ -393,34 +584,56 @@ function ShiftStrip({
   shift,
   expected,
   cashTaken,
+  loading,
+  error,
+  stale,
   currency,
   canOpen,
   canClose,
   onOpen,
   onClose,
+  onRetry,
 }: {
   shift: { id: string; openedByName: string; openedAt: string; openingFloat: { amount: number; currency: string } } | null;
   expected: { amount: number; currency: string } | null;
   cashTaken: { amount: number; currency: string } | null;
+  loading: boolean;
+  error: boolean;
+  stale: boolean;
   currency: string;
   canOpen: boolean;
   canClose: boolean;
   onOpen: () => void;
   onClose: () => void;
+  onRetry: () => void;
 }) {
   const t = useT();
+  if (loading) {
+    return (
+      <div className="flex min-h-11 items-center gap-3 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8" role="status">
+        <span className="size-2 animate-pulse rounded-full bg-night-ink-3" aria-hidden />
+        <p className="text-[12.5px] text-night-ink-2">Checking the cash drawer…</p>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b border-warning/30 bg-warning/10 px-5 py-2.5 lg:px-8" role="alert">
+        <AlertTriangle className="size-3.5 text-warning" aria-hidden />
+        <p className="min-w-0 flex-1 text-[12.5px] text-night-ink-2"><span className="font-medium text-night-ink">Could not check the cash drawer.</span> You can&apos;t take cash until this works again.</p>
+        <Button size="xs" variant="night-outline" onClick={onRetry}><RefreshCw />{" "}{t("common.action.retry")}</Button>
+      </div>
+    );
+  }
   if (!shift) {
     return (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8">
         <Lock className="size-3.5 text-warning" aria-hidden />
         <p className="text-[12.5px] text-night-ink-2">
-          <span className="font-medium text-night-ink">{t("reception.shift.none")}</span> Check-ins work, but cash collection is disabled until the
-          drawer is counted.
+          <span className="font-medium text-night-ink">{t("reception.shift.none")}</span> Check-ins work. To take cash, open a shift first.
         </p>
         {canOpen ? (
-          <Button size="xs" variant="night" className="ms-auto" onClick={onOpen} data-testid="open-shift">
-            Open shift
-          </Button>
+          <Button size="xs" variant="night" className="ms-auto" onClick={onOpen} data-testid="open-shift">{t("dashboard.reception.openShift")}</Button>
         ) : null}
       </div>
     );
@@ -431,20 +644,21 @@ function ShiftStrip({
         <span className="size-1.5 rounded-full bg-success" aria-hidden />
         Shift open · {shift.openedByName}
       </span>
-      <span className="text-[11.5px] tabular text-night-ink-3">
-        since {formatTime(shift.openedAt)} · float {formatMoney(shift.openingFloat, { hideCurrency: true })}
+      <span className="text-[12px] tabular text-night-ink-3">
+        since {formatTime(shift.openedAt)} · starting cash {formatMoney(shift.openingFloat, { hideCurrency: true })}
       </span>
       {cashTaken ? (
-        <span className="text-[11.5px] tabular text-night-ink-3">
+        <span className="text-[12px] tabular text-night-ink-3">
           cash taken {formatMoney(cashTaken, { hideCurrency: true })}
         </span>
       ) : null}
       {expected ? (
-        <span className="text-[11.5px] tabular text-night-ink-2">
-          expected {formatMoney(expected, { hideCurrency: true })} {currency}
+        <span className="text-[12px] tabular text-night-ink-2">
+          expected in drawer {formatMoney(expected, { hideCurrency: true })} {currency}
         </span>
       ) : null}
       <div className="ms-auto flex items-center gap-2">
+        {stale ? <span className="text-[12px] text-warning">Reconnecting…</span> : null}
         <Button asChild size="xs" variant="night-ghost">
           <Link href="/payments/shifts">{t("reception.shift.history")}</Link>
         </Button>
@@ -469,25 +683,108 @@ function IdleState() {
       <ScanLine className="size-6 text-night-ink-3" aria-hidden />
       <p className="mt-3 font-display text-[15px] font-medium text-night-ink-2">{t("reception.lookup.ready")}</p>
       <p className="mt-1 max-w-sm text-[12.5px] text-night-ink-3">
-        Scan their code or start typing. Three characters is enough to match a name, phone or member number.
+        Scan their code or start typing. Type at least 3 letters or numbers.
       </p>
+    </div>
+  );
+}
+
+function LookupErrorState({ onRetry }: { onRetry: () => void }) {
+  const t = useT();
+  return (
+    <div className="rounded-lg border border-warning/35 bg-night-2 px-6 py-8 text-center" role="alert">
+      <AlertTriangle className="mx-auto size-5 text-warning" aria-hidden />
+      <p className="mt-3 font-display text-[16px] font-medium text-night-ink">Could not search for members</p>
+      <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-night-ink-3">Nobody was checked in. Check the internet connection and try again.</p>
+      <Button type="button" size="sm" variant="night-outline" className="mt-4" onClick={onRetry}><RefreshCw />{" "}{t("common.action.retry")}</Button>
     </div>
   );
 }
 
 function NoMatchState({ message, query, canCreate }: { message: string; query: string; canCreate: boolean }) {
   const t = useT();
+  // A number typed at the desk is the new member's phone, not their name.
+  const looksLikePhone = /^\+?[\d\s()-]{6,}$/.test(query.trim());
+  const registerHref = looksLikePhone
+    ? `/members/new?phone=${encodeURIComponent(query.trim())}`
+    : `/members/new?name=${encodeURIComponent(query.trim())}`;
   return (
     <div className="rounded-lg border border-night-line bg-night-2 px-6 py-8 text-center">
       <p className="font-display text-[16px] font-medium text-night-ink">{message}</p>
       <p className="mt-1 text-[12.5px] text-night-ink-3">{t("reception.lookup.checkSpelling")}</p>
       {canCreate ? (
         <Button asChild size="sm" variant="night-outline" className="mt-4">
-          <Link href={`/members/new?name=${encodeURIComponent(query)}`}>
-            <UserPlus /> Register as a new member
+          <Link href={registerHref}>
+            <UserPlus /> Add as a new member
           </Link>
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Several people matched. The desk picks one before any verdict is shown —
+ * the console never decides for the first name in the list.
+ */
+function CandidatesState({
+  message,
+  candidates,
+  branches,
+  onChoose,
+}: {
+  message: string;
+  candidates: MemberSummary[];
+  branches: Session["branches"];
+  onChoose: (candidate: MemberSummary) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-fade-up" data-testid="checkin-candidates" role="region" aria-label="Choose the member">
+      <div className="border-b border-night-line px-5 py-3">
+        <p className="font-display text-[16px] font-medium text-night-ink">{message}</p>
+        <p className="mt-0.5 text-[12.5px] text-night-ink-3">Scan their code or type their member number to skip this list.</p>
+      </div>
+      <ul className="divide-y divide-night-line/70">
+        {candidates.map((candidate) => {
+          // A branch outside this account's scope still needs a truthful label.
+          const branchName = branches.find((b) => b.id === candidate.homeBranchId)?.name ?? "Another branch";
+          return (
+            <li key={candidate.id}>
+              <button
+                type="button"
+                onClick={() => onChoose(candidate)}
+                className="flex w-full min-w-0 cursor-pointer items-center gap-3 px-5 py-3 text-start transition-colors hover:bg-night-3 focus-visible:bg-night-3 focus-visible:outline-none"
+                data-testid="checkin-candidate"
+              >
+                <Monogram name={candidate.fullName} size="sm" className="shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium text-night-ink" dir="auto">
+                    {candidate.fullName}
+                    {candidate.fullNameAr ? (
+                      <>
+                        {/* A logical start margin on an RTL span lands on its right, so separate with a dot instead. */}
+                        <span className="mx-1.5 text-night-ink-3" aria-hidden>·</span>
+                        <span className="text-[12.5px] font-normal text-night-ink-2" dir="rtl">{candidate.fullNameAr}</span>
+                      </>
+                    ) : null}
+                  </span>
+                  <span className="block truncate font-mono text-[11.5px] text-night-ink-3" dir="ltr">
+                    {candidate.memberNumber} · {candidate.phone}
+                  </span>
+                </span>
+                <span className="hidden shrink-0 text-end text-[12px] text-night-ink-2 sm:block">
+                  <span className="block">{candidate.status === "archived" ? t("members.list.archived") : candidate.currentPlanName ?? "No membership"}</span>
+                  <span className="block text-night-ink-3">
+                    {branchName}
+                    {candidate.outstanding.amount > 0 ? ` · owes ${formatMoney(candidate.outstanding, { hideCurrency: true })}` : ""}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -501,9 +798,11 @@ const VERDICT: Record<
   { band: string; label: string; icon: typeof CheckCircle2 }
 > = {
   allowed: { band: "bg-success text-white", label: "Allowed", icon: CheckCircle2 },
-  warning: { band: "bg-warning text-white", label: "Let in — with a notice", icon: AlertTriangle },
-  blocked: { band: "bg-signal text-white", label: "Blocked", icon: Ban },
-  overridden: { band: "bg-ink text-paper", label: "Overridden", icon: ShieldAlert },
+  warning: { band: "bg-warning text-white", label: "Allowed, with a warning", icon: AlertTriangle },
+  blocked: { band: "bg-signal text-white", label: "Entry refused", icon: Ban },
+  overridden: { band: "bg-ink text-paper", label: "Let in anyway", icon: ShieldAlert },
+  // A repeat scan is not a denial: the person is already inside.
+  duplicate: { band: "bg-night-3 text-night-ink", label: "Already checked in", icon: CheckCircle2 },
 };
 
 function VerdictPanel({
@@ -520,6 +819,8 @@ function VerdictPanel({
   canCollect,
   canSell,
   cashBlocked,
+  renewable,
+  lastAcceptedCheckIn,
   onCheckIn,
   onOverride,
   onCollect,
@@ -539,6 +840,8 @@ function VerdictPanel({
   canCollect: boolean;
   canSell: boolean;
   cashBlocked: boolean;
+  renewable: boolean;
+  lastAcceptedCheckIn?: CheckInSummary;
   onCheckIn: () => void;
   onOverride: () => void;
   onCollect: () => void;
@@ -546,11 +849,18 @@ function VerdictPanel({
   onNext: () => void;
 }) {
   const t = useT();
-  const verdict = VERDICT[decision] ?? VERDICT.blocked!;
+  const duplicateScan = decision === "blocked" && reasonCodes.includes("DUPLICATE_SCAN");
+  const verdict = duplicateScan ? VERDICT.duplicate! : (VERDICT[decision] ?? VERDICT.blocked!);
   const Icon = verdict.icon;
   const outstanding = member.outstanding;
   const hasBalance = outstanding.amount > 0;
-  const meaningfulCodes = reasonCodes.filter((c) => c !== "OK");
+  const meaningfulCodes = reasonCodes.filter((c) => c !== "OK" && !(duplicateScan && c === "DUPLICATE_SCAN"));
+  const shownMessage = duplicateScan && lastAcceptedCheckIn
+    ? `Already checked in at ${formatTime(lastAcceptedCheckIn.occurredAt)}${lastAcceptedCheckIn.actorName ? ` by ${lastAcceptedCheckIn.actorName}` : ""}. No second visit was recorded.`
+    : message;
+  // A future term has a start, not an expiry; a past one has already ended.
+  const termLabel = membership?.status === "scheduled" ? "Starts" : membership?.status === "expired" ? "Ended" : t("crm.queues.ends");
+  const termValue = formatDate(membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate);
 
   return (
     <div
@@ -566,7 +876,7 @@ function VerdictPanel({
         <span className="font-display text-[17px] font-semibold tracking-tight">
           {committed && decision !== "blocked" ? `Checked in · ${formatTime(occurredAt ?? new Date().toISOString())}` : verdict.label}
         </span>
-        <span className="min-w-0 break-words text-[13px] opacity-90">{message}</span>
+        <span className="min-w-0 break-words text-[13px] opacity-90">{shownMessage}</span>
       </div>
 
       {/* Identity + membership facts */}
@@ -585,8 +895,8 @@ function VerdictPanel({
         </div>
 
         <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-4" data-testid="checkin-facts">
-          <Cell label={t("reception.member.plan")} value={member.currentPlanName ?? "None"} muted={!member.currentPlanName} />
-          <Cell label={t("reception.member.expires")} value={member.membershipEndDate ?? "—"} mono />
+          <Cell label={t("reception.member.plan")} value={member.currentPlanName ?? "No plan"} muted={!member.currentPlanName} />
+          <Cell label={termLabel} value={termValue} mono />
           <Cell
             label={t("reception.member.visitsLeft")}
             value={membership?.remainingVisits != null ? `${membership.remainingVisits}` : "—"}
@@ -594,7 +904,7 @@ function VerdictPanel({
             muted={membership?.remainingVisits == null}
           />
           <Cell
-            label={t("reception.member.balance")}
+            label="Owes"
             value={formatMoney(outstanding, { hideCurrency: true })}
             mono
             tone={hasBalance ? "warn" : undefined}
@@ -616,7 +926,7 @@ function VerdictPanel({
 
       {criticalNotes ? (
         <div className="border-t border-night-line bg-signal/10 px-5 py-2.5">
-          <p className="eyebrow-night text-signal">{t("reception.member.criticalNote")}</p>
+          <ContextLabel tone="night" className="text-signal">Important note</ContextLabel>
           <p className="mt-0.5 break-words text-[13px] text-night-ink">{criticalNotes}</p>
         </div>
       ) : null}
@@ -633,8 +943,7 @@ function VerdictPanel({
               size="sm"
               variant="night-outline"
               onClick={onCollect}
-              disabled={cashBlocked}
-              title={cashBlocked ? t("reception.shift.openBeforeCash") : undefined}
+              title={cashBlocked ? "No shift is open. Take card, bank transfer or CliQ, not cash." : undefined}
               data-testid="quick-collect"
             >
               <Banknote /> Collect {formatMoney(outstanding, { hideCurrency: true })}
@@ -643,21 +952,28 @@ function VerdictPanel({
 
           {canSell && (decision === "blocked" || member.membershipEndDate) ? (
             <Button size="sm" variant="night-outline" onClick={onRenew} data-testid="quick-renew">
-              <RotateCcw /> {membership ? "Renew" : "Sell membership"}
+              <RotateCcw /> {renewable ? "Renew" : "Sell membership"}
             </Button>
           ) : null}
 
-          {committed ? (
-            <Button size="sm" variant="night" onClick={onNext} data-testid="next-member">
-              Next member <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd>
-            </Button>
+          {committed || duplicateScan ? (
+            <>
+              {duplicateScan && !committed && canOverride ? (
+                <Button size="sm" variant="night-ghost" onClick={onOverride} data-testid="override-checkin">
+                  <ShieldAlert /> Check in again
+                </Button>
+              ) : null}
+              <Button size="sm" variant="night" onClick={onNext} data-testid="next-member">
+                Next member <Kbd className="border-night-line bg-night-3 text-night-ink-2">{t("reception.lookup.esc")}</Kbd>
+              </Button>
+            </>
           ) : decision === "blocked" ? (
             canOverride ? (
               <Button size="sm" variant="signal" onClick={onOverride} data-testid="override-checkin">
-                <ShieldAlert /> Override
+                <ShieldAlert /> Let in anyway
               </Button>
             ) : (
-              <span className="text-[12px] text-night-ink-3">{t("reception.member.managerCanOverride")}</span>
+              <span className="text-[12px] text-night-ink-3">Only a manager can let them in.</span>
             )
           ) : (
             <Button size="sm" variant="night" loading={busy} onClick={onCheckIn} data-testid="confirm-checkin">
@@ -688,7 +1004,7 @@ function Cell({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="eyebrow-night">{label}</dt>
+      <ContextLabel as="dt" tone="night">{label}</ContextLabel>
       <dd
         className={cn(
           "mt-0.5 truncate text-[14px]",
@@ -711,5 +1027,7 @@ function DecisionDot({ decision }: { decision: string }) {
         : decision === "overridden"
           ? "bg-night-ink-2"
           : "bg-signal";
-  return <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", tone)} title={decision} aria-label={decision} />;
+  // Name the dot in desk words, never the stored decision key.
+  const label = VERDICT[decision]?.label ?? VERDICT.blocked!.label;
+  return <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", tone)} title={label} aria-label={label} />;
 }

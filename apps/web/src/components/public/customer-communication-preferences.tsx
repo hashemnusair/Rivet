@@ -26,7 +26,7 @@ export function CustomerCommunicationPreferences() {
     setSaveMessage(undefined);
     try {
       await updateMarketingPreference(optedIn);
-      setSaveMessage(optedIn ? "Marketing updates enabled." : "Marketing updates disabled.");
+      setSaveMessage(optedIn ? "You will get offers and news." : "You will not get offers or news.");
     } catch {
       setSaveMessage("We could not save that change. Try again.");
     } finally {
@@ -35,37 +35,37 @@ export function CustomerCommunicationPreferences() {
   };
 
   return (
-    <section id="communication" aria-labelledby="communication-heading" className="scroll-mt-24 border-y border-line py-4">
+    <section id="communication" aria-labelledby="communication-heading" className="panel scroll-mt-24 p-4 sm:p-5">
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
-          <h2 id="communication-heading" className="text-[13px] font-semibold">Communication updates</h2>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-ink-3">Offers and gym news. Service messages about bookings, payments, and entry remain separate.</p>
+          <h2 id="communication-heading" className="text-[13px] font-semibold">Offers and news</h2>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">Offers and news from your gyms. You still get messages about your bookings, payments and entry.</p>
         </div>
-        <Switch checked={preference.optedIn} onCheckedChange={(checked) => void toggle(checked)} disabled={saving} aria-label="Receive marketing updates" />
+        <Switch checked={preference.optedIn} onCheckedChange={(checked) => void toggle(checked)} disabled={saving} aria-label="Send me offers and news" />
       </div>
-      <p className="mt-3 text-[11.5px] text-ink-3">
+      <p className="mt-3 text-[12.5px] text-ink-3">
         {preference.status === "unknown" || preference.source === "system_default"
-          ? "No marketing choice is recorded. Promotional email, SMS, and WhatsApp are suppressed until you choose."
+          ? "You have not chosen yet. You will not get offers by email or WhatsApp until you turn this on."
           : `Last changed ${formatDate(preference.changedAt)}.`}
       </p>
-      {saveMessage ? <p className="mt-2 text-[11.5px] text-ink-2" role="status">{saveMessage}</p> : null}
-      <button type="button" onClick={() => setHistoryOpen(true)} className="mt-3 text-[11px] font-medium text-ink-2 underline decoration-line-3 underline-offset-2 hover:decoration-ink">
-        View preference history ({history.length})
+      {saveMessage ? <p className="mt-2 text-[12.5px] text-ink-2" role="status">{saveMessage}</p> : null}
+      <button type="button" onClick={() => setHistoryOpen(true)} className="mt-3 inline-flex min-h-8 items-center text-[12.5px] font-medium text-ink-2 underline decoration-line-3 underline-offset-4 hover:decoration-ink">
+        See your past choices ({history.length})
       </button>
 
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Communication preference history</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Your choices for offers and news</DialogTitle></DialogHeader>
           <DialogBody>
-            <p className="text-[12.5px] leading-relaxed text-ink-2">This history applies to promotional messages only. RIVET service messages are always sent when needed to operate your account.</p>
+            <p className="text-[12.5px] leading-relaxed text-ink-2">This list is only about offers and news. Messages about your bookings, payments and entry are always sent when needed.</p>
             <ol className="mt-5 divide-y divide-line rounded-md border border-line">
               {[...history].reverse().map((entry, index) => (
                 <li key={`${entry.changedAt ?? "default"}-${index}`} className="flex items-start justify-between gap-4 px-3 py-3">
                   <span>
-                    <span className="block text-[13px] font-medium">{entry.status === "unknown" ? "No choice recorded" : entry.optedIn ? "Marketing updates enabled" : "Marketing updates disabled"}</span>
-                    <span className="mt-0.5 block text-[11.5px] text-ink-3">{entry.source === "system_default" ? "Historical state" : "Selected by you"}{entry.changedAt ? ` · ${formatDate(entry.changedAt)}` : ""}</span>
+                    <span className="block text-[13px] font-medium">{entry.status === "unknown" ? "No choice yet" : entry.optedIn ? "Offers and news on" : "Offers and news off"}</span>
+                    <span className="mt-0.5 block text-[12px] text-ink-3">{entry.source === "system_default" ? "Default setting" : "Chosen by you"}{entry.changedAt ? ` · ${formatDate(entry.changedAt)}` : ""}</span>
                   </span>
-                  {index === 0 ? <span className="rounded-sm bg-sunken px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-3">Current</span> : null}
+                  {index === 0 ? <span className="rounded-sm bg-sunken px-1.5 py-0.5 text-[12px] font-medium text-ink-3">Current</span> : null}
                 </li>
               ))}
             </ol>

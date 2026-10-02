@@ -6,9 +6,10 @@ import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { getApi } from "@/lib/api/client";
 import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { MemberProfileMissingError } from "@/lib/auth/member-profile";
 import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { platformTenantDirectoryGyms, publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
-import { refreshFailureState } from "@/lib/public/experience-refresh";
+import { refreshFailureState, startExperienceSubscription } from "@/lib/public/experience-refresh";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
@@ -27,6 +28,8 @@ export interface BookTrialInput {
   preferredDate: string;
   preferredTime: string;
   goal: string;
+  idempotencyKey?: string;
+  referralToken?: string;
 }
 
 export interface RegisterCustomerInput {
@@ -56,7 +59,7 @@ interface ExperienceContextValue {
   registerCustomer: (input: RegisterCustomerInput) => Promise<CustomerPersona>;
   updateCustomerProfile: (input: CustomerProfileInput) => Promise<CustomerPersona>;
   updateMarketingPreference: (optedIn: boolean) => Promise<CustomerPersona>;
-  /** Signs in the authenticated person as themselves, creating their member profile once. */
+  /** Selects the authenticated person's member profile without rewriting it. */
   signInAsIdentity: (input: { email: string; fullName: string }) => Promise<CustomerPersona>;
   emailTaken: (email: string) => boolean;
   signOutCustomer: () => void;
@@ -119,6 +122,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   const [saasPlans, setSaasPlans] = useState<PlatformSaasPlan[]>([]);
   const marketplaceReadyRef = useRef(!convexMode);
   const catalogReadyRef = useRef(!convexMode);
+  const platformSnapshotHydratedRef = useRef(false);
 
   const markPublicExperienceReady = useCallback(() => {
     if (!marketplaceReadyRef.current || !catalogReadyRef.current) return;
@@ -137,6 +141,10 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   }, [convexMode, customer, registered]);
 
   const retryExperience = useCallback(() => {
+    // ConvexGymOSApi intentionally ignores mock behavior controls. In the
+    // preview adapter this clears an injected public-stream degradation before
+    // the fresh subscriptions below are created.
+    getApi().setBehavior({ failNextPublicSubscription: false });
     setExperienceAttempt((attempt) => attempt + 1);
   }, []);
 
@@ -153,7 +161,6 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      let cancelled = false;
       const hadRenderedData = experienceHydratedRef.current;
       if (!hadRenderedData) {
         setExperienceStatus("loading");
@@ -165,31 +172,14 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
         // full-page error or force the operator to reload manually.
         setExperienceRefreshing(true);
       }
-      const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+      const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
       const platformIdentity = identity.status === "ready" && identity.platformAdmin;
       if (memberIdentity || platformIdentity) return;
-      void getApi().listPublicSaasPlans().then((plans) => {
-        if (cancelled) return;
-        setSaasPlans(plans);
-        catalogReadyRef.current = true;
-        markPublicExperienceReady();
-      }).catch((error: unknown) => {
-        if (cancelled) return;
-        const message = error instanceof Error && error.message ? error.message : "RIVET could not load its live catalog.";
-        const failure = refreshFailureState(hadRenderedData, message);
-        setExperienceRefreshing(false);
-        setExperienceError(failure.message);
-        setExperienceStatus(failure.status);
-      });
-      return () => {
-        cancelled = true;
-      };
+      return;
     }
 
     setPreviewSessionReady(false);
     const restored = readStored<CustomerPersona[]>(STORAGE_KEYS.registered) ?? [];
-    void getApi().getPlatformSnapshot().then(setPlatformSnapshot).catch(() => undefined);
-    void getApi().listPublicSaasPlans().then(setSaasPlans).catch(() => undefined);
     if (restored.length > 0) setRegistered(restored);
 
     const storedBookings = readStored<TrialBooking[]>(STORAGE_KEYS.bookings);
@@ -204,33 +194,79 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     setExperienceStatus("ready");
     setExperienceReady(true);
     setPreviewSessionReady(true);
-  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
+  }, [convexMode, experienceAttempt, identity.email, identity.fullName, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
+
+  // The public pricing catalog is a shared live projection. Subscribing here
+  // keeps the landing page and the platform catalog on the same plan records,
+  // including edits made by an administrator while a public page is open.
+  useEffect(() => {
+    let cancelled = false;
+    catalogReadyRef.current = false;
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    const platformIdentity = identity.status === "ready" && identity.platformAdmin;
+    const onError = (error: unknown) => {
+      if (cancelled) return;
+      catalogReadyRef.current = false;
+      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh its live pricing catalog.";
+      const failure = refreshFailureState(experienceHydratedRef.current, message);
+      setExperienceError(failure.message);
+      setExperienceRefreshing(failure.showStaleNotice);
+      setExperienceStatus(failure.status);
+      if (!experienceHydratedRef.current && !memberIdentity && !platformIdentity) setExperienceReady(false);
+    };
+    const canMarkPublicReady = !memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready" || identity.status === "demo");
+    const dispose = startExperienceSubscription<PlatformSaasPlan[]>({
+      subscribe: (onValue, onSubscribeError) => getApi().subscribePublicSaasPlans(onValue, onSubscribeError),
+      label: "live pricing catalog",
+      onValue: (plans) => {
+        if (cancelled) return;
+        setSaasPlans(plans);
+        catalogReadyRef.current = true;
+        if (canMarkPublicReady) markPublicExperienceReady();
+      },
+      onError,
+    });
+    return () => {
+      cancelled = true;
+      dispose();
+    };
+  }, [convexMode, experienceAttempt, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // Public discovery is a live projection too: profile publication, trainer
   // visibility, package pricing, subscription eligibility, and branch counts
   // update without asking visitors to refresh the page.
   useEffect(() => {
-    if (!convexMode) return;
     let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
-    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    marketplaceReadyRef.current = false;
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
     const platformIdentity = identity.status === "ready" && identity.platformAdmin;
-    void getApi().subscribeMarketplaceGyms((gyms) => {
+    const onError = (error: unknown) => {
       if (cancelled) return;
-      setMarketplaceGyms(gyms);
-      marketplaceReadyRef.current = true;
-      if (!memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready")) markPublicExperienceReady();
-    }, (error) => {
-      if (cancelled) return;
-      setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
-    }).then((disposer) => {
-      if (cancelled) disposer();
-      else unsubscribe = disposer;
-    }).catch((error: unknown) => {
-      if (!cancelled) setExperienceError(error instanceof Error ? error.message : "RIVET could not refresh the gym directory.");
+      marketplaceReadyRef.current = false;
+      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh the gym directory.";
+      const failure = refreshFailureState(experienceHydratedRef.current, message);
+      setExperienceError(failure.message);
+      setExperienceRefreshing(failure.showStaleNotice);
+      setExperienceStatus(failure.status);
+      if (!experienceHydratedRef.current && !memberIdentity && !platformIdentity) setExperienceReady(false);
+    };
+    const canMarkPublicReady = !memberIdentity && !platformIdentity && (identity.status === "anonymous" || identity.status === "ready" || identity.status === "demo");
+    const dispose = startExperienceSubscription<MarketplaceGym[]>({
+      subscribe: (onValue, onSubscribeError) => getApi().subscribeMarketplaceGyms(onValue, onSubscribeError),
+      label: "live gym directory",
+      onValue: (gyms) => {
+        if (cancelled) return;
+        setMarketplaceGyms(gyms);
+        marketplaceReadyRef.current = true;
+        if (canMarkPublicReady) markPublicExperienceReady();
+      },
+      onError,
     });
-    return () => { cancelled = true; unsubscribe?.(); };
-  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
+    return () => {
+      cancelled = true;
+      dispose();
+    };
+  }, [convexMode, experienceAttempt, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status, markPublicExperienceReady]);
 
   // My Gyms is the first member-facing surface moved from polling to a native
   // Convex query watch. The adapter owns the transport details; this provider
@@ -238,7 +274,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   // the member explicitly opens the QR action so a stale code is never painted
   // as if it were valid.
   useEffect(() => {
-    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && identity.memberships.length === 0;
+    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
     if (!convexMode || !memberIdentity) return;
 
     let cancelled = false;
@@ -278,32 +314,34 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [convexMode, identity.memberships.length, identity.platformAdmin, identity.status]);
+  }, [convexMode, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status]);
 
   // Platform operations use one live projection. Convex invalidates this
   // query whenever an application, subscription, invoice, support case, or
   // underlying tenant total changes, so operator screens update without a
   // refresh and retain their last good snapshot through transient failures.
   useEffect(() => {
-    const platformIdentity = identity.status === "ready" && identity.platformAdmin;
-    if (!convexMode || !platformIdentity) return;
+    const platformIdentity = convexMode
+      ? identity.status === "ready" && identity.platformAdmin
+      : platformAdminSignedIn;
+    if (!platformIdentity) return;
 
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
     const handleError = (error: unknown) => {
       if (cancelled) return;
       const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh platform operations.";
-      setExperienceError(message);
-      setExperienceRefreshing(false);
-      if (!experienceHydratedRef.current) {
-        setExperienceStatus("error");
-        setExperienceReady(false);
-      }
+      const failure = refreshFailureState(platformSnapshotHydratedRef.current, message);
+      setExperienceError(failure.message);
+      setExperienceRefreshing(failure.showStaleNotice);
+      setExperienceStatus(failure.status);
+      if (!platformSnapshotHydratedRef.current) setExperienceReady(false);
     };
 
     void getApi().subscribePlatformSnapshot((snapshot) => {
       if (cancelled) return;
       setPlatformSnapshot(snapshot);
+      platformSnapshotHydratedRef.current = true;
       setMarketplaceGyms(snapshot.gyms);
       setSaasPlans(snapshot.plans);
       setBookings(snapshot.bookings);
@@ -322,7 +360,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [convexMode, identity.platformAdmin, identity.status]);
+  }, [convexMode, identity.platformAdmin, identity.status, platformAdminSignedIn]);
 
   /**
    * A real signed-in person is their own member, not one of the seeded
@@ -331,7 +369,13 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
    */
   const signInAsIdentity = useCallback(async (input: { email: string; fullName: string }) => {
     if (convexMode) {
-      const persona = await getApi().registerCustomer({ email: input.email, fullName: input.fullName, phone: "" });
+      // Login is a session transition, not a profile update. Writing here used
+      // to erase optional member fields and now fails once profile writes
+      // require gender. Read the identity-scoped profile that signup or the
+      // gym-member linking flow already created instead.
+      const experience = await getApi().getCustomerExperience();
+      const persona = experience.customer;
+      if (!persona) throw new MemberProfileMissingError();
       setCustomer(persona);
       setCustomerId(persona.id);
       return persona;
@@ -408,7 +452,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
   const bookTrial = useCallback(
     async (input: BookTrialInput) => {
-      const booking = await getApi().createTrialBooking({ ...input, customerId });
+      const booking = await getApi().createTrialBooking({ ...input, idempotencyKey: input.idempotencyKey ?? crypto.randomUUID(), customerId });
       if (!customerId && booking.customerId) setCustomerId(booking.customerId);
       setBookings((current) => {
         const next = [booking, ...current.filter((item) => item.id !== booking.id)];
@@ -512,15 +556,15 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  const showStaleNotice = convexMode && experienceStatus === "ready" && Boolean(experienceError);
+  const showStaleNotice = experienceStatus === "ready" && Boolean(experienceError);
 
   return (
     <ExperienceContext.Provider value={value}>
       {showStaleNotice ? (
-        <div className="sticky top-0 z-[60] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[11.5px] text-warning-deep" role="status" aria-live="polite">
-          <span>Showing the last known RIVET data while the live connection recovers.</span>
+        <div data-experience-notice className="sticky top-0 z-[60] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[12px] text-warning-deep" role="status" aria-live="polite">
+          <span>Could not connect. Showing your last saved information.</span>
           <button type="button" onClick={retryExperience} className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline">
-            <RefreshCcw className="size-3" aria-hidden /> Retry
+            <RefreshCcw className="size-3" aria-hidden /> Try again
           </button>
         </div>
       ) : null}

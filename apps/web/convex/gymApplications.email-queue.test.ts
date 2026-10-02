@@ -26,11 +26,125 @@ async function seedAdmin() {
 }
 
 describe("gym application durable email migration", () => {
+  it.each(["AB", "123", "1234"])("rejects a physical address shorter than five characters (%s)", async (gymAddress) => {
+    delete process.env.RIVET_OPERATIONAL_EMAIL_LIVE;
+    const t = await seedAdmin();
+    await expect(t.action(api.gymApplications.submit, {
+      gymName: `Short Address Gym ${gymAddress}`,
+      gymAddress,
+      ownerName: "Short Address Owner",
+      email: `short-${gymAddress}@example.test`,
+      contactNumber: "+962790000090",
+      plan: "Starter",
+    })).rejects.toThrow("INVALID_GYM_ADDRESS");
+  });
+
+  it("does not mutate a legacy duplicate application when a new address is submitted", async () => {
+    const t = await seedAdmin();
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("gymApplications", {
+        publicId: "legacy-address-application",
+        applicationKey: "legacy-owner@example.test::legacy-address-gym",
+        gymName: "Legacy Address Gym",
+        ownerName: "Legacy Owner",
+        email: "legacy-owner@example.test",
+        contactNumber: "+962790000091",
+        plan: "Starter",
+        status: "pending",
+        notificationStatus: "sent",
+        submittedAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const result = await t.action(api.gymApplications.submit, {
+      gymName: "Legacy Address Gym",
+      gymAddress: "12 New Address Road, Amman",
+      ownerName: "Legacy Owner",
+      email: "legacy-owner@example.test",
+      contactNumber: "+962790000091",
+      plan: "Starter",
+    });
+    expect(result).toMatchObject({ applicationId: "legacy-address-application", duplicate: true });
+    const application = await t.run((ctx) => ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", "legacy-address-application")).unique());
+    expect(application).not.toHaveProperty("gymAddress");
+  });
+
+  it("accepts Enterprise applications as a first-class launch plan", async () => {
+    delete process.env.RIVET_OPERATIONAL_EMAIL_LIVE;
+    process.env.RIVET_APPLICATION_RECIPIENTS = "sales@example.test";
+    const t = await seedAdmin();
+    const submitted = await t.action(api.gymApplications.submit, { gymName: "Enterprise Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Enterprise Owner", email: "enterprise-owner@example.test", contactNumber: "+962790000099", plan: "Enterprise", billingInterval: "annual" });
+    expect(submitted).toMatchObject({ status: "pending", duplicate: false });
+    const application = await t.run((ctx) => ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", submitted.applicationId)).unique());
+    expect(application).toMatchObject({ gymAddress: "12 Airport Road, Amman", plan: "Enterprise", billingInterval: "annual" });
+  });
+
+  it("replays a public application idempotently and rejects key reuse for different data", async () => {
+    delete process.env.RIVET_OPERATIONAL_EMAIL_LIVE;
+    const t = await seedAdmin();
+    const input = { gymName: "Retry Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Retry Owner", email: "retry-owner@example.test", contactNumber: "+962790000099", plan: "Growth" as const, idempotencyKey: "application-retry-key" };
+    const first = await t.action(api.gymApplications.submit, input);
+    const replay = await t.action(api.gymApplications.submit, input);
+    expect(first).toMatchObject({ duplicate: false, applicationId: expect.any(String) });
+    expect(replay).toMatchObject({ duplicate: true, applicationId: first.applicationId });
+    await expect(t.action(api.gymApplications.submit, { ...input, gymName: "Different Gym" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT" }) });
+    const applications = await t.run((ctx) => ctx.db.query("gymApplications").collect());
+    expect(applications).toHaveLength(1);
+  });
+
+  it("replaces expired public retry state before reusing its key", async () => {
+    const t = await seedAdmin();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("publicRequestIdempotency", { scope: "gym_application", key: "expired-application-key", requestHash: "old-hash", result: { applicationId: "old" }, createdAt: Date.now() - 86_400_000, expiresAt: Date.now() - 1 });
+      // Simulate duplicate stale rows left by an older implementation that
+      // used .unique() without cleaning expired retry state first.
+      await ctx.db.insert("publicRequestIdempotency", { scope: "gym_application", key: "expired-application-key", requestHash: "older-hash", result: { applicationId: "older" }, createdAt: Date.now() - 2 * 86_400_000, expiresAt: Date.now() - 2 });
+    });
+    const submitted = await t.action(api.gymApplications.submit, { gymName: "Expired Retry Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Retry Owner", email: "expired-owner@example.test", contactNumber: "+962790000096", plan: "Starter", idempotencyKey: "expired-application-key" });
+    expect(submitted.duplicate).toBe(false);
+    const rows = await t.run((ctx) => ctx.db.query("publicRequestIdempotency").withIndex("by_scope_key", (q) => q.eq("scope", "gym_application").eq("key", "expired-application-key")).collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.result).toMatchObject({ applicationId: submitted.applicationId });
+  });
+
+  it("silently accepts honeypot submissions without creating an application", async () => {
+    const t = await seedAdmin();
+    const before = await t.run((ctx) => ctx.db.query("gymApplications").collect());
+    const result = await t.action(api.gymApplications.submit, { gymName: "Spam Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Spam Owner", email: "spam@example.test", contactNumber: "+962790000098", plan: "Starter", website: "https://bot.invalid" });
+    const after = await t.run((ctx) => ctx.db.query("gymApplications").collect());
+    expect(result).toMatchObject({ status: "pending", duplicate: false });
+    expect(after).toHaveLength(before.length);
+  });
+
+  it("bounds repeated public application attempts without storing raw identifiers", async () => {
+    const t = await seedAdmin();
+    for (let index = 0; index < 5; index += 1) {
+      await t.action(api.gymApplications.submit, { gymName: `Rate Gym ${index}`, gymAddress: "12 Airport Road, Amman", ownerName: "Rate Owner", email: "rate-owner@example.test", contactNumber: "+962790000097", plan: "Starter", idempotencyKey: `rate-key-${index}` });
+    }
+    await expect(t.action(api.gymApplications.submit, { gymName: "Rate Gym 6", gymAddress: "12 Airport Road, Amman", ownerName: "Rate Owner", email: "rate-owner@example.test", contactNumber: "+962790000097", plan: "Starter", idempotencyKey: "rate-key-6" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "RATE_LIMITED", message: "Too many requests. Please wait and try again." }) });
+    const guards = await t.run((ctx) => ctx.db.query("publicRequestGuards").collect());
+    expect(guards).toHaveLength(1);
+    expect(JSON.stringify(guards[0])).not.toContain("rate-owner@example.test");
+  });
+
+  it("canonicalizes phone formatting and counts repeated existing-application attempts", async () => {
+    const t = await seedAdmin();
+    const phones = ["+962 79 000 0000", "+962790000000", "00962790000000", "+962-79-000-0000", "00962 79 000 0000", "+962790000000"];
+    for (let index = 0; index < 5; index += 1) {
+      await t.action(api.gymApplications.submit, { gymName: "Same Application Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Same Owner", email: "same-owner@example.test", contactNumber: phones[index]!, plan: "Starter" });
+    }
+    await expect(t.action(api.gymApplications.submit, { gymName: "Same Application Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Same Owner", email: "same-owner@example.test", contactNumber: phones[5]!, plan: "Starter" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "RATE_LIMITED" }) });
+    const applications = await t.run((ctx) => ctx.db.query("gymApplications").collect());
+    expect(applications).toHaveLength(1);
+  });
+
   it("captures applicant and internal notifications once while the worker is sandboxed", async () => {
     delete process.env.RIVET_OPERATIONAL_EMAIL_LIVE;
     process.env.RIVET_APPLICATION_RECIPIENTS = "sales@example.test";
     const t = await seedAdmin();
-    const input = { gymName: "Queue Gym", ownerName: "Queue Owner", email: "owner@example.test", contactNumber: "+962790000001", plan: "Growth" as const };
+    const input = { gymName: "Queue Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Queue Owner", email: "owner@example.test", contactNumber: "+962790000001", plan: "Growth" as const };
     const first = await t.action(api.gymApplications.submit, input);
     const replay = await t.action(api.gymApplications.submit, input);
     expect(first).toMatchObject({ notificationStatus: "not_configured", duplicate: false });
@@ -45,7 +159,7 @@ describe("gym application durable email migration", () => {
     process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "gym_application_received_applicant,gym_application_received_internal,gym_application_approved";
     process.env.RIVET_APPLICATION_RECIPIENTS = "sales@example.test";
     const t = await seedAdmin();
-    const submitted = await t.action(api.gymApplications.submit, { gymName: "Delivered Gym", ownerName: "Delivered Owner", email: "delivered-owner@example.test", contactNumber: "+962790000002", plan: "Pro" });
+    const submitted = await t.action(api.gymApplications.submit, { gymName: "Delivered Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Delivered Owner", email: "delivered-owner@example.test", contactNumber: "+962790000002", plan: "Pro" });
     expect(submitted.notificationStatus).toBe("not_configured");
 
     const submissionDeliveries = await t.run(async (ctx) => {
@@ -63,7 +177,7 @@ describe("gym application durable email migration", () => {
 
     const admin = t.withIdentity({ subject: "clerk-application-admin" });
     const reviewed = await admin.action(api.gymApplications.review, { applicationId: submitted.applicationId, decision: "approved", note: "Verified for durable queue test", correlationId: "cor-application-review" });
-    expect(reviewed.reviewNotificationStatus).toBe("not_configured");
+    expect(reviewed).toMatchObject({ gymAddress: "12 Airport Road, Amman", reviewNotificationStatus: "not_configured" });
     const reviewDelivery = await t.run(async (ctx) => {
       const row = await ctx.db.query("operationalEmailDeliveries").withIndex("by_related_entity", (q) => q.eq("relatedEntityType", "gym_application_review").eq("relatedEntityPublicId", submitted.applicationId)).unique();
       if (!row) throw new Error("Review delivery is missing");

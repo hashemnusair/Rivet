@@ -3,6 +3,7 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { forwardRef, type ComponentPropsWithoutRef, type ComponentRef, type HTMLAttributes } from "react";
 import { cn } from "@/lib/utils/cn";
+import { useT } from "@/lib/i18n/provider";
 
 // ---------------------------------------------------------------------------
 // Tooltip
@@ -37,8 +38,9 @@ function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
 }
 
 function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: number }) {
+  const t = useT();
   return (
-    <div className="w-full" aria-label="Loading" role="status">
+    <div className="w-full" aria-label={t("common.a11y.loading")} role="status">
       <div className="flex gap-3 border-b border-line py-2.5">
         {Array.from({ length: cols }).map((_, i) => (
           <Skeleton key={i} className="h-3 flex-1" />
@@ -91,8 +93,8 @@ function Monogram({
 }) {
   const tone = AVATAR_TONES[hashString(name) % AVATAR_TONES.length];
   const sizes = {
-    xs: "size-6 text-[9px]",
-    sm: "size-7 text-[10px]",
+    xs: "size-6 text-[12px]",
+    sm: "size-7 text-[12px]",
     md: "size-9 text-[11.5px]",
     lg: "size-12 text-[15px]",
     xl: "size-16 text-[20px]",

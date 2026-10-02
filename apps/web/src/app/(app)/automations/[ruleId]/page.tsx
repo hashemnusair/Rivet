@@ -1,5 +1,5 @@
-import { AutomationComingSoon } from "@/features/automations/coming-soon";
+import RuleMonitoringClient from "./rule-monitoring.client";
 
 export default function RuleEditorPage() {
-  return <AutomationComingSoon />;
+  return <RuleMonitoringClient />;
 }

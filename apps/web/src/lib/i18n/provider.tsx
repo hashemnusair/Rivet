@@ -1,22 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  DEFAULT_LOCALE,
-  LOCALE_COOKIE,
-  LOCALE_STORAGE_KEY,
-  dirFor,
-  isLocale,
-  type Direction,
-  type Locale,
-} from "./config";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { ARABIC_ENABLED, DEFAULT_LOCALE, LOCALE_COOKIE, dirFor, type Direction, type Locale } from "./config";
+import { isolate as isolateText, isolateLtr as isolateLtrText } from "./bidi";
 import { translate, type MessagePath, type MessageTree, type MessageVars } from "./dictionary";
-import { en, type Messages } from "./messages/en";
-import { ar } from "./messages/ar";
+import { ar, en, type Messages } from "./messages";
 
-const CATALOGUES: Record<Locale, Messages> = { en, ar };
+const CATALOGUES = { en, ar } as unknown as Record<Locale, MessageTree>;
 
-/** Every dot-path in the catalogue that resolves to a translatable string. */
+/** Every dot-path in the English catalogue that resolves to a string or plural group. */
 export type TKey = MessagePath<Messages>;
 
 export type TFunction = (key: TKey, vars?: MessageVars) => string;
@@ -24,110 +16,86 @@ export type TFunction = (key: TKey, vars?: MessageVars) => string;
 interface LocaleContextValue {
   locale: Locale;
   dir: Direction;
+  /** False when Arabic is hidden from this deployment; the switch must not render. */
+  switchEnabled: boolean;
   setLocale: (locale: Locale) => void;
-  toggleLocale: () => void;
   t: TFunction;
-  /** True until the stored preference has been read, so nothing flashes the
-   *  wrong direction mid-hydration. */
-  ready: boolean;
+  /**
+   * Wrap a name, email or other user text before passing it to `t()` as a
+   * variable. A no-op in English (so English output is byte-for-byte unchanged);
+   * in Arabic it adds Unicode isolates so the sentence cannot reorder it.
+   */
+  isolate: (value: string | number) => string;
+  /** Same, for values that must stay left-to-right: phones, ids, receipt numbers, amounts, ranges. */
+  isolateLtr: (value: string | number) => string;
 }
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
-/**
- * Applies the locale to the document itself. `dir` drives every logical CSS
- * property in the app, and `rtl-font` swaps the Latin stack for IBM Plex Sans
- * Arabic — both are already honoured by globals.css.
- */
+/** Direction and language are also applied to the live document so a switch repaints without a reload. */
 function applyToDocument(locale: Locale) {
-  const dir = dirFor(locale);
-  document.documentElement.lang = locale;
-  document.documentElement.dir = dir;
-  document.documentElement.classList.toggle("rtl-font", dir === "rtl");
+  const root = document.documentElement;
+  root.lang = locale;
+  root.dir = dirFor(locale);
+  root.classList.toggle("rtl-font", locale === "ar");
 }
 
-export function LocaleProvider({
-  children,
-  initialLocale = DEFAULT_LOCALE,
-}: {
-  children: ReactNode;
-  initialLocale?: Locale;
-}) {
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
-  const [ready, setReady] = useState(false);
+function makeT(locale: Locale): TFunction {
+  const messages = CATALOGUES[locale];
+  const fallback = CATALOGUES.en;
+  return (key, vars) => translate({ messages, fallback, locale }, key, vars);
+}
 
-  // The stored choice is read after mount rather than during render: the server
-  // painted `initialLocale`, and reading storage during render would desync the
-  // two trees.
-  useEffect(() => {
-    const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    const next = isLocale(stored) ? stored : initialLocale;
-    setLocaleState(next);
-    applyToDocument(next);
-    setReady(true);
-  }, [initialLocale]);
+export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE }: { children: ReactNode; initialLocale?: Locale }) {
+  const [locale, setLocaleState] = useState<Locale>(initialLocale);
 
   const setLocale = useCallback((next: Locale) => {
+    if (!ARABIC_ENABLED) return;
     setLocaleState(next);
     applyToDocument(next);
-    window.localStorage.setItem(LOCALE_STORAGE_KEY, next);
-    // Mirrored to a cookie so a future server render can pick the right
-    // direction before hydration instead of flipping after it.
+    // The server reads this cookie so the next full page load paints the right
+    // language and direction before hydration. A per-user saved preference is a follow-up.
     document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
   }, []);
 
-  const toggleLocale = useCallback(() => {
-    setLocale(locale === "ar" ? "en" : "ar");
-  }, [locale, setLocale]);
-
-  const t = useCallback<TFunction>(
-    (key, vars) =>
-      translate(
-        {
-          messages: CATALOGUES[locale] as unknown as MessageTree,
-          fallback: en as unknown as MessageTree,
-          locale,
-        },
-        key,
-        vars,
-      ),
-    [locale],
-  );
+  const t = useMemo(() => makeT(locale), [locale]);
 
   const value = useMemo<LocaleContextValue>(
-    () => ({ locale, dir: dirFor(locale), setLocale, toggleLocale, t, ready }),
-    [locale, setLocale, toggleLocale, t, ready],
+    () => ({
+      locale,
+      dir: dirFor(locale),
+      switchEnabled: ARABIC_ENABLED,
+      setLocale,
+      t,
+      isolate: locale === "ar" ? isolateText : String,
+      isolateLtr: locale === "ar" ? isolateLtrText : String,
+    }),
+    [locale, setLocale, t],
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
 
 /**
- * Used when a component renders outside the provider. The provider is mounted
- * in the root layout, so in the running app this never applies — but a unit
- * test rendering one component in isolation, or a fragment rendered outside the
- * tree, should show English rather than crash the page over a presentation
- * concern.
+ * Outside a provider (a unit test rendering one component, a fragment rendered
+ * outside the tree) every component shows English instead of crashing over a
+ * presentation concern. This is also what keeps every existing English test intact.
  */
 const FALLBACK: LocaleContextValue = {
   locale: DEFAULT_LOCALE,
   dir: dirFor(DEFAULT_LOCALE),
+  switchEnabled: false,
   setLocale: () => undefined,
-  toggleLocale: () => undefined,
-  t: (key, vars) =>
-    translate(
-      { messages: en as unknown as MessageTree, fallback: en as unknown as MessageTree, locale: DEFAULT_LOCALE },
-      key,
-      vars,
-    ),
-  ready: true,
+  t: makeT(DEFAULT_LOCALE),
+  isolate: String,
+  isolateLtr: String,
 };
 
 export function useLocale(): LocaleContextValue {
   return useContext(LocaleContext) ?? FALLBACK;
 }
 
-/** The common case — just the translate function. */
+/** The common case: just the translate function. */
 export function useT(): TFunction {
   return useLocale().t;
 }

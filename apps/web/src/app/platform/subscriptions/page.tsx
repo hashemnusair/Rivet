@@ -1,51 +1,209 @@
 "use client";
 
-import { ArrowRight, BadgeDollarSign, Check, CircleAlert, Clock3, Pencil } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Check, Pencil } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/shared/chrome";
+import { PlatformPage, PlatformPanel } from "@/components/platform/platform-page";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Field } from "@/components/ui/field";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input, Textarea } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
+import { ErrorState } from "@/components/ui/states";
 import { useApiMutation } from "@/lib/hooks/use-api";
-import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
-import { useExperience, usePlatformGyms } from "@/lib/providers/experience-provider";
+import { getApi } from "@/lib/api/client";
+import type { PlatformSaasPlan, UpdatePlatformPlanInput } from "@/lib/api/GymOSApi";
+import { entitledModulesForPlanSelection, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG } from "@/lib/domain/workspace-modules";
+import type { WorkspaceModuleCatalogEntry, WorkspaceModuleKey } from "@/lib/domain/types";
+import { useExperience } from "@/lib/providers/experience-provider";
+import { workspaceFeatureLabelsForPlan } from "@/lib/platform/workspace-feature-labels";
+import { calculatePlanPrice, formatJodMinor } from "@/lib/public/pricing";
+import { cn } from "@/lib/utils/cn";
 import { formatMoney } from "@/lib/utils/money";
 
-export default function SubscriptionsPage() {
-  const gyms = usePlatformGyms();
-  const { platformSnapshot } = useExperience();
-  const customerGyms = platformSnapshot?.gyms ?? gyms;
-  const [plans, setPlans] = useState<PlatformSaasPlan[]>(platformSnapshot?.plans ?? []);
-  const [editing, setEditing] = useState<PlatformSaasPlan | null>(null);
-  useEffect(() => setPlans(platformSnapshot?.plans ?? []), [platformSnapshot?.plans]);
+type PlanUpdateInput = UpdatePlatformPlanInput & {
+  name: PlatformSaasPlan["name"];
+  priceMinor: number;
+  branches: number;
+  staff: number;
+  members: number;
+  reason: string;
+};
 
-  const updatePlan = useApiMutation((api, input: { name: PlatformSaasPlan["name"]; priceMinor: number; branches: number; staff: number; members: number }) => api.updatePlatformPlan(input), {
-    onSuccess: (updated) => {
+function selectedWorkspaceModules(plan: Pick<PlatformSaasPlan, "name" | "entitledModules">): WorkspaceModuleKey[] {
+  return entitledModulesForPlanSelection(plan.name, plan.entitledModules);
+}
+
+export default function SubscriptionsPage() {
+  const { platformSnapshot, saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
+  const sourcePlans = useMemo(() => saasPlans?.length ? saasPlans : platformSnapshot?.plans ?? [], [platformSnapshot?.plans, saasPlans]);
+  const [plans, setPlans] = useState<PlatformSaasPlan[]>(sourcePlans);
+  const [editingPlan, setEditingPlan] = useState<PlatformSaasPlan | null>(null);
+
+  useEffect(() => {
+    setPlans(sourcePlans);
+  }, [sourcePlans]);
+
+  const updatePlan = useApiMutation((api, input: PlanUpdateInput) => api.updatePlatformPlan(input), {
+    onSuccess: async (updated) => {
       setPlans((current) => current.map((plan) => plan.name === updated.name ? updated : plan));
-      setEditing(null);
-      toast.success(`${updated.name} plan updated and audited.`);
+      // Read the same public catalog used by the landing page so this admin
+      // screen never presents a private, divergent pricing source.
+      try {
+        setPlans(await getApi().listPublicSaasPlans());
+      } catch {
+        // The mutation response remains authoritative until the live catalog
+        // subscription catches up.
+      }
+      toast.success(`${updated.name} plan updated. Landing-page pricing will refresh automatically.`);
+      setEditingPlan(null);
     },
   });
 
-  return <div className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8"><div className="mx-auto max-w-[1480px]">
-    <div><p className="eyebrow">Commercial operations</p><h1 className="mt-2 text-[30px] font-semibold tracking-tight">Subscriptions</h1><p className="mt-2 max-w-2xl text-[12.5px] text-ink-2">Plans, trials, renewals, and expansion opportunities across every RIVET tenant.</p></div>
-    <section className="mt-7 grid gap-3 sm:grid-cols-3"><Kpi label="Active MRR" value={platformSnapshot?.overview ? formatMoney(platformSnapshot.overview.activeMrr) : "—"} detail={`${platformSnapshot?.overview?.gymCounts.active ?? 0} active customer accounts`} icon={<BadgeDollarSign/>}/><Kpi label="Trial pipeline" value={`JD ${(customerGyms.filter((gym) => gym.subscriptionStatus === "trial").reduce((total, gym) => total + (plans.find((plan) => plan.name === gym.rivetPlan)?.priceMinor ?? 0), 0) / 1000).toFixed(3)}`} detail={`${customerGyms.filter((gym) => gym.subscriptionStatus === "trial").length} trial account${customerGyms.filter((gym) => gym.subscriptionStatus === "trial").length === 1 ? "" : "s"}`} icon={<Clock3/>}/><Kpi label="Past due" value={String(platformSnapshot?.overview?.gymCounts.past_due ?? 0)} detail="Accounts requiring billing follow-up" icon={<CircleAlert/>}/></section>
-    <div className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_.8fr]">
-      <section className="overflow-x-auto border border-line bg-surface"><div className="border-b border-line px-5 py-4"><p className="eyebrow">Customer plans</p><h2 className="mt-1 text-[17px] font-semibold">Current subscriptions</h2></div><table className="w-full min-w-[720px] text-start"><thead><tr className="border-b border-line bg-sunken text-start font-mono text-[8px] uppercase tracking-[.1em] text-ink-3"><th className="px-5 py-3 font-medium">Gym</th><th className="px-4 py-3 font-medium">Plan</th><th className="px-4 py-3 font-medium">Persisted directory</th><th className="px-4 py-3 font-medium">External billing</th><th className="px-4 py-3 font-medium">Status</th><th/></tr></thead><tbody>{customerGyms.map((gym)=> <tr key={gym.id} className="border-b border-line last:border-b-0"><td className="px-5 py-4"><p className="text-[12.5px] font-semibold">{gym.name}</p><p className="mt-1 text-[9.5px] text-ink-3">{gym.branchCount} branch{gym.branchCount>1?"es":""}</p></td><td className="px-4 py-4 text-[11.5px]">{gym.rivetPlan}</td><td className="px-4 py-4 text-[9px] text-ink-3">{gym.memberCount.toLocaleString()} members · {gym.branchCount} branches</td><td className="px-4 py-4 text-[11px] text-ink-3">Not configured</td><td className="px-4 py-4"><span className={gym.subscriptionStatus==="active"?"rounded-full bg-success-bg px-2 py-1 font-mono text-[7.5px] uppercase text-success":gym.subscriptionStatus==="suspended"?"rounded-full bg-danger-bg px-2 py-1 font-mono text-[7.5px] uppercase text-danger":"rounded-full bg-info-bg px-2 py-1 font-mono text-[7.5px] uppercase text-info"}>{gym.subscriptionStatus}</span></td><td className="px-4 py-4"><Button asChild variant="ghost" size="icon-sm"><Link href={`/platform/gyms/${gym.id}`} aria-label={`Open ${gym.name}`}><ArrowRight/></Link></Button></td></tr>)}</tbody></table></section>
-      <section className="border border-line bg-surface p-5"><div className="flex items-start justify-between gap-3"><div><p className="eyebrow">Plan catalog</p><h2 className="mt-1 text-[17px] font-semibold">Published pricing</h2></div><span className="font-mono text-[8px] uppercase tracking-[.1em] text-ink-3">Audited</span></div><div className="mt-5 grid gap-3">{plans.map((plan)=><div key={plan.name} className="border border-line p-4"><div className="flex items-center justify-between gap-3"><strong className="text-[13px]">{plan.name}</strong><div className="flex items-center gap-2"><span className="text-[13px] font-semibold">JD {(plan.priceMinor/1000).toFixed(3)}<small className="font-normal text-ink-3"> / mo</small></span><Button variant="ghost" size="icon-sm" aria-label={`Edit ${plan.name}`} onClick={() => setEditing(plan)}><Pencil/></Button></div></div><ul className="mt-3 grid gap-1.5 text-[9.5px] text-ink-3"><li className="flex items-center gap-1.5"><Check className="size-3 text-success"/>{plan.branches} branches</li><li className="flex items-center gap-1.5"><Check className="size-3 text-success"/>Up to {plan.members.toLocaleString()} members</li><li className="flex items-center gap-1.5"><Check className="size-3 text-success"/>{plan.staff} staff seats</li></ul></div>)}</div></section>
-    </div>
-    {editing ? <PlanDialog plan={editing} open onOpenChange={(open) => !open && setEditing(null)} saving={updatePlan.isPending} onSave={(input) => updatePlan.mutate(input)} /> : null}
-  </div></div>;
+  const loading = !plans.length && experienceStatus === "loading";
+  const failed = !plans.length && experienceStatus === "error";
+
+  if (failed) {
+    return <PlatformPage narrow><ErrorState title="Pricing catalog unavailable" description={experienceError ?? "The live subscription catalog could not be loaded."} onRetry={retryExperience} /></PlatformPage>;
+  }
+
+  return (
+    <PlatformPage narrow>
+      <PageHeader
+        title="Pricing & entitlements"
+        description="One audited catalog powers the public landing page, gym applications and workspace feature access. Every price or limit change needs a reason and is written to the platform audit trail; a gym's own subscription is changed in Billing."
+      />
+
+      <section className="mt-5" aria-labelledby="plan-catalog-title">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
+          <h2 id="plan-catalog-title" className="text-[15px] font-semibold">Four tiers, one live contract</h2>
+          <p className="text-[12.5px] text-ink-3">Monthly JOD · annual billing saves 20%</p>
+        </div>
+        <p className="mt-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-2.5 text-[12.5px] leading-relaxed text-warning-deep" role="note" data-testid="pricing-provisional-notice">Provisional: these prices and limits are live in the product but not yet signed off. The sign-off sheet is docs/19; nothing here should be quoted as final until it is signed.</p>
+        {loading ? <p className="px-5 py-10 text-center text-[12.5px] text-ink-3" role="status">Loading the live pricing catalog…</p> : plans.length === 0 ? <p className="mt-4 rounded-lg border border-dashed border-line-2 px-4 py-10 text-center text-[12.5px] text-ink-3">No pricing plans have been published.</p> : <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{plans.map((plan) => <PlanCard key={plan.name} plan={plan} onEdit={() => { updatePlan.reset(); setEditingPlan(plan); }} />)}</div>}
+      </section>
+
+      {editingPlan ? <PlanDialog plan={editingPlan} open saving={updatePlan.isPending} error={updatePlan.error} onOpenChange={(open) => { if (!open && !updatePlan.isPending) setEditingPlan(null); }} onSave={(input) => updatePlan.mutate(input)} /> : null}
+    </PlatformPage>
+  );
 }
 
-function PlanDialog({ plan, open, onOpenChange, saving, onSave }: { plan: PlatformSaasPlan; open: boolean; onOpenChange: (open: boolean) => void; saving: boolean; onSave: (input: { name: PlatformSaasPlan["name"]; priceMinor: number; branches: number; staff: number; members: number }) => void }) {
+function PlanCard({ plan, onEdit }: { plan: PlatformSaasPlan; onEdit: () => void }) {
+  const annual = calculatePlanPrice(plan, "annual");
+  const features = [
+    `Up to ${plan.branches.toLocaleString()} branch${plan.branches === 1 ? "" : "es"}`,
+    `Up to ${plan.members.toLocaleString()} members`,
+    `Up to ${plan.staff.toLocaleString()} staff seats`,
+    ...workspaceFeatureLabelsForPlan(plan),
+  ];
+  return (
+    <PlatformPanel className="flex h-full flex-col p-4 sm:p-5" aria-label={`${plan.name} plan`}>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-[15px] font-semibold">{plan.name}</h3>
+        <Button variant="ghost" size="icon-sm" aria-label={`Edit ${plan.name} plan`} onClick={onEdit}><Pencil /></Button>
+      </div>
+      <p className="mt-3 text-[23px] font-semibold leading-none tabular tracking-[-0.01em]">{formatMoney({ amount: plan.priceMinor, currency: "JOD" })}<span className="ms-1 text-[13px] font-medium text-ink-3">/ month</span></p>
+      <p className="mt-1.5 text-[12.5px] text-ink-3">JOD {formatJodMinor(annual.annualTotalMinor)} billed annually</p>
+      <ul className="mt-4 grid gap-1.5 border-t border-line pt-4 text-[12.5px] leading-relaxed text-ink-2">
+        {features.map((feature) => <li key={feature} className="flex items-start gap-2"><Check className="mt-1 size-3.5 shrink-0 text-ink-3" aria-hidden />{feature}</li>)}
+      </ul>
+    </PlatformPanel>
+  );
+}
+
+function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan: PlatformSaasPlan; open: boolean; saving: boolean; error: Error | null; onOpenChange: (open: boolean) => void; onSave: (input: PlanUpdateInput) => void }) {
   const [price, setPrice] = useState(String(plan.priceMinor / 1000));
   const [branches, setBranches] = useState(String(plan.branches));
   const [staff, setStaff] = useState(String(plan.staff));
   const [members, setMembers] = useState(String(plan.members));
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>Edit {plan.name} plan</DialogTitle><DialogDescription>These limits appear in the public catalog and are recorded in the platform audit stream.</DialogDescription></DialogHeader><DialogBody className="grid gap-4 sm:grid-cols-2"><Field label="Monthly price (JOD)"><Input value={price} onChange={(event) => setPrice(event.target.value)} inputMode="decimal" /></Field><Field label="Branches"><Input value={branches} onChange={(event) => setBranches(event.target.value)} inputMode="numeric" /></Field><Field label="Staff seats"><Input value={staff} onChange={(event) => setStaff(event.target.value)} inputMode="numeric" /></Field><Field label="Member capacity"><Input value={members} onChange={(event) => setMembers(event.target.value)} inputMode="numeric" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={saving} onClick={() => onSave({ name: plan.name, priceMinor: Math.round(Number(price) * 1000), branches: Number(branches), staff: Number(staff), members: Number(members) })}>Save plan</Button></DialogFooter></DialogContent></Dialog>;
-}
+  const [entitledModules, setEntitledModules] = useState<WorkspaceModuleKey[]>(selectedWorkspaceModules(plan));
+  const [reason, setReason] = useState("");
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
 
-function Kpi({label,value,detail,icon}:{label:string;value:string;detail:string;icon:React.ReactNode}){return <div className="border border-line bg-surface p-5"><span className="text-ink-3 [&_svg]:size-4">{icon}</span><p className="mt-6 font-mono text-[8px] uppercase tracking-[.11em] text-ink-3">{label}</p><p className="mt-2 text-[25px] font-semibold">{value}</p><p className="mt-1 text-[10px] text-ink-3">{detail}</p></div>}
+  useEffect(() => { setPrice(String(plan.priceMinor / 1000)); setBranches(String(plan.branches)); setStaff(String(plan.staff)); setMembers(String(plan.members)); setEntitledModules(selectedWorkspaceModules(plan)); setReason(""); setErrors({}); }, [plan]);
+
+  const toggleModule = (entry: WorkspaceModuleCatalogEntry) => {
+    if (!entry.configurable) return;
+    setEntitledModules((current) => {
+      const selected = new Set(current);
+      if (selected.has(entry.key)) {
+        const remove = (key: WorkspaceModuleKey) => {
+          selected.delete(key);
+          for (const dependent of WORKSPACE_MODULE_CATALOG.filter((candidate) => candidate.dependencies.includes(key))) {
+            if (selected.has(dependent.key)) remove(dependent.key);
+          }
+        };
+        remove(entry.key);
+      } else {
+        const add = (key: WorkspaceModuleKey) => {
+          selected.add(key);
+          const dependency = WORKSPACE_MODULE_CATALOG.find((candidate) => candidate.key === key);
+          dependency?.dependencies.forEach(add);
+        };
+        add(entry.key);
+      }
+      try {
+        return validateWorkspaceModuleSelection([...selected], WORKSPACE_MODULE_CATALOG.map((candidate) => candidate.key));
+      } catch {
+        return current;
+      }
+    });
+    setErrors((current) => ({ ...current, changes: undefined }));
+  };
+
+  const submit = () => {
+    const next: Record<string, string | undefined> = {};
+    const amount = Number(price);
+    const branchCount = Number(branches);
+    const staffCount = Number(staff);
+    const memberCount = Number(members);
+    if (!reason.trim()) next.reason = "A reason is required for the audit trail.";
+    else if (reason.trim().length < 3) next.reason = "Use at least 3 characters so the audit trail is meaningful.";
+    if (!Number.isFinite(amount) || amount < 0) next.price = "Enter a non-negative price.";
+    if (!Number.isSafeInteger(branchCount) || branchCount < 1) next.branches = "Use a whole number of at least 1.";
+    if (!Number.isSafeInteger(staffCount) || staffCount < 1) next.staff = "Use a whole number of at least 1.";
+    if (!Number.isSafeInteger(memberCount) || memberCount < 1) next.members = "Use a whole number of at least 1.";
+    const priceMinor = Math.round(amount * 1000);
+    const modulesChanged = JSON.stringify(entitledModules) !== JSON.stringify(selectedWorkspaceModules(plan));
+    if (Object.keys(next).length === 0 && priceMinor === plan.priceMinor && branchCount === plan.branches && staffCount === plan.staff && memberCount === plan.members && !modulesChanged) next.changes = "Change at least one price, limit, or capability before saving.";
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
+    onSave({ name: plan.name, priceMinor, branches: branchCount, staff: staffCount, members: memberCount, entitledModules, reason: reason.trim() });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Edit {plan.name} plan</DialogTitle><DialogDescription>These values update the public landing page, new applications, and the entitlement catalog. Existing gym subscriptions are changed in Billing.</DialogDescription></DialogHeader>
+        <DialogBody className="grid gap-4 sm:grid-cols-2">
+          <Field label="Monthly price (JOD)" required error={errors.price}><Input value={price} onChange={(event) => { setPrice(event.target.value); setErrors((current) => ({ ...current, price: undefined, changes: undefined })); }} inputMode="decimal" aria-invalid={Boolean(errors.price)} /></Field>
+          <Field label="Branches" required error={errors.branches}><Input value={branches} onChange={(event) => { setBranches(event.target.value); setErrors((current) => ({ ...current, branches: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.branches)} /></Field>
+          <Field label="Staff seats" required error={errors.staff}><Input value={staff} onChange={(event) => { setStaff(event.target.value); setErrors((current) => ({ ...current, staff: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.staff)} /></Field>
+          <Field label="Member capacity" required error={errors.members}><Input value={members} onChange={(event) => { setMembers(event.target.value); setErrors((current) => ({ ...current, members: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.members)} /></Field>
+          <fieldset className="rounded-md border border-line p-3 sm:col-span-2" aria-label={`${plan.name} workspace capabilities`}>
+            <legend className="px-1 text-[13px] font-medium">Workspace capabilities</legend>
+            <p className="mb-3 text-[12.5px] leading-relaxed text-ink-3">These module keys are the same entitlement contract used by gym navigation and direct routes. Foundation is required for every tier; optional modules can be packaged into any tier with an audited reason.</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {WORKSPACE_MODULE_CATALOG.map((entry) => {
+                const selected = entitledModules.includes(entry.key);
+                const disabled = entry.required;
+                return (
+                  <label key={entry.key} className={cn("flex items-start gap-2.5 rounded-md border px-3 py-2.5", disabled ? "border-line bg-sunken/50" : "border-line-2 hover:border-ink")}>
+                    <input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggleModule(entry)} className="mt-0.5 size-4 accent-[var(--tenant-brand-primary)]" aria-label={entry.label} />
+                    <span className="min-w-0"><span className="block text-[13px] font-medium">{entry.label}{entry.required ? " · required" : ""}</span><span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-3">{entry.description}</span></span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+          {errors.changes ? <p className="text-[12.5px] text-danger sm:col-span-2" role="alert">{errors.changes}</p> : null}
+          <Field label="Reason for this change" required error={errors.reason} hint="Written to the immutable platform audit trail." className="sm:col-span-2">
+            <Textarea value={reason} onChange={(event) => { setReason(event.target.value); setErrors((current) => ({ ...current, reason: undefined })); }} placeholder="Explain why the catalog limits, capabilities, or price are changing." aria-invalid={Boolean(errors.reason)} />
+          </Field>
+          {error ? <p className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger sm:col-span-2" role="alert">{error.message || "The plan could not be saved."}</p> : null}
+        </DialogBody>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button><Button loading={saving} onClick={submit}>Save plan</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

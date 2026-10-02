@@ -1,0 +1,26 @@
+[
+  {
+    "route": "/crm/pipeline?view=list",
+    "status": 200,
+    "title": "Leads",
+    "overflow": false
+  },
+  {
+    "route": "/crm/queues",
+    "status": 200,
+    "title": "Retention",
+    "overflow": false
+  },
+  {
+    "route": "/classes",
+    "status": 200,
+    "title": "Classes",
+    "overflow": false
+  },
+  {
+    "route": "/pt",
+    "status": 200,
+    "title": "Personal training",
+    "overflow": false
+  }
+]

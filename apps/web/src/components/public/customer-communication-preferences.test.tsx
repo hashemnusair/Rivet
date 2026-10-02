@@ -30,21 +30,21 @@ describe("CustomerCommunicationPreferences", () => {
   it("explains the service-message exception and shows unknown history", () => {
     render(<CustomerCommunicationPreferences />);
 
-    expect(screen.getByText(/Service messages about bookings, payments, and entry remain separate/)).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Receive marketing updates" })).not.toBeChecked();
-    expect(screen.getByText(/No marketing choice is recorded/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "View preference history (1)" })).toBeInTheDocument();
+    expect(screen.getByText(/You still get messages about your bookings, payments and entry/)).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Send me offers and news" })).not.toBeChecked();
+    expect(screen.getByText(/You have not chosen yet/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "See your past choices (1)" })).toBeInTheDocument();
   });
 
   it("persists an explicit opt-in and lets the member inspect the history", async () => {
     render(<CustomerCommunicationPreferences />);
 
-    fireEvent.click(screen.getByRole("switch", { name: "Receive marketing updates" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Send me offers and news" }));
     await waitFor(() => expect(state.updateMarketingPreference).toHaveBeenCalledWith(true));
-    expect(screen.getByRole("status")).toHaveTextContent("Marketing updates enabled.");
+    expect(screen.getByRole("status")).toHaveTextContent("You will get offers and news.");
 
-    fireEvent.click(screen.getByRole("button", { name: "View preference history (1)" }));
-    expect(await screen.findByRole("heading", { name: "Communication preference history" })).toBeInTheDocument();
-    expect(screen.getByText(/RIVET service messages are always sent when needed to operate your account/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "See your past choices (1)" }));
+    expect(await screen.findByRole("heading", { name: "Your choices for offers and news" })).toBeInTheDocument();
+    expect(screen.getByText(/Messages about your bookings, payments and entry are always sent when needed/)).toBeInTheDocument();
   });
 });

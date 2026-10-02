@@ -1,18 +1,21 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
-import { Plus, Search } from "lucide-react";
+
+import { FilterX, Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo } from "react";
 import { qk } from "@/lib/api/keys";
 import type { TransactionListQuery } from "@/lib/api/GymOSApi";
+import type { TransactionSummary } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { todayISODate, addDays } from "@/lib/utils/dates";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
-import { PAYMENT_METHOD_KEYS, TransactionStatusChip } from "@/components/shared/status-chip";
-import { useT } from "@/lib/i18n/provider";
+import { PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/misc";
@@ -24,17 +27,25 @@ import { FinanceNav } from "@/features/finance/finance-nav";
 import { money } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 
-export default function TransactionsPage() {
+const METHOD_FILTERS: readonly string[] = ["all", ...Object.keys(PAYMENT_METHOD_LABELS)];
+const TYPE_FILTERS = ["all", "payment", "refund"] as const;
+const RANGE_FILTERS = ["1", "7", "30", "all"] as const;
+
+function TransactionsPageInner() {
   const t = useT();
   const { session } = useApp();
   const { can } = usePermissions();
-  const [search, setSearch] = useState("");
-  const debounced = useDebouncedValue(search, 250);
-  const [method, setMethod] = useState("all");
-  const [type, setType] = useState("all");
-  const [range, setRange] = useState("30");
-  const [page, setPage] = useState(1);
-  const [collectOpen, setCollectOpen] = useState(false);
+  const params = useSearchParams();
+  const replaceParams = useReplaceSearchParams();
+  // The ledger view is fully URL-backed: search, method, type, range and page
+  // survive a refresh and Back/Forward. Unknown URL values fall back to the
+  // defaults instead of reaching the query.
+  const { text: search, setText: setSearch, settled: debounced } = useUrlSearchText();
+  const method = choiceFromParams(params, "method", METHOD_FILTERS, "all");
+  const type = choiceFromParams(params, "type", TYPE_FILTERS, "all");
+  const range = choiceFromParams(params, "range", RANGE_FILTERS, "30");
+  const page = pageFromParams(params);
+  const collectOpen = params.get("collect") === "1";
 
   const query: TransactionListQuery = useMemo(
     () => ({
@@ -42,11 +53,11 @@ export default function TransactionsPage() {
       method: method === "all" ? undefined : (method as TransactionListQuery["method"]),
       type: type === "all" ? undefined : (type as TransactionListQuery["type"]),
       branchId: session?.activeBranchId,
-      from: range === "all" ? undefined : addDays(todayISODate(), -Number(range)),
+      from: range === "all" ? undefined : addDays(todayISODate(session?.organization.timezone), -(Number(range) - 1)),
       page,
       pageSize: 20,
     }),
-    [debounced, method, type, session?.activeBranchId, range, page],
+    [debounced, method, type, session?.activeBranchId, session?.organization.timezone, range, page],
   );
 
   const { data, isLoading, isError, refetch } = useApiQuery(qk.transactions(query), (api) => api.listTransactions(query));
@@ -62,18 +73,17 @@ export default function TransactionsPage() {
   // error instead of being told they lack permission.
   if (!can("reports.financial.read")) {
     return (
-      <ForbiddenState description="Reading the branch transaction ledger needs financial-report permission. Reception can still collect payments and reconcile their own shift." />
+      <ForbiddenState description="You can't see payment details. You can still collect payments and close your own shift." />
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader
-        eyebrow="Finance"
-        title="Payments"
-        description="Every payment, refund and void — the immutable money trail."
+        title={t("nav.item.payments")}
+        description="All payments and refunds."
         actions={
-          <Button onClick={() => setCollectOpen(true)}>
+          <Button onClick={() => replaceParams({ collect: "1" }, { keepPage: true })}>
             <Plus /> Collect payment
           </Button>
         }
@@ -81,47 +91,51 @@ export default function TransactionsPage() {
 
       <FinanceNav />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-xs">
+      <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:items-center">
+        <div className="relative sm:col-span-3 lg:w-full lg:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Member or receipt #…" className="ps-8" aria-label="Search transactions" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search payments" data-touch-target />
         </div>
-        <Select value={method} onValueChange={(v) => { setMethod(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-40" aria-label="Method filter">
+        <Select value={method} onValueChange={(value) => replaceParams({ method: value === "all" ? undefined : value })}>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label="Payment method" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All methods</SelectItem>
-            {PAYMENT_METHOD_KEYS.map((k) => (
-              <SelectItem key={k} value={k}>{t(`domain.paymentMethod.${k}`)}</SelectItem>
+            {Object.entries(PAYMENT_METHOD_LABELS).map(([k, label]) => (
+              <SelectItem key={k} value={k}>{label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Select value={type} onValueChange={(v) => { setType(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-36" aria-label="Type filter">
+        <Select value={type} onValueChange={(value) => replaceParams({ type: value === "all" ? undefined : value })}>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Payment or refund" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
-            <SelectItem value="payment">Payments</SelectItem>
+            <SelectItem value="payment">{t("nav.item.payments")}</SelectItem>
             <SelectItem value="refund">Refunds</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={range} onValueChange={(v) => { setRange(v); setPage(1); }}>
-          <SelectTrigger sizeVariant="sm" className="w-36" aria-label="Date range">
+        <Select value={range} onValueChange={(value) => replaceParams({ range: value === "30" ? undefined : value })}>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Date range" data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="1">Today</SelectItem>
-            <SelectItem value="7">Last 7 days</SelectItem>
-            <SelectItem value="30">Last 30 days</SelectItem>
+            <SelectItem value="1">{t("common.time.today")}</SelectItem>
+            <SelectItem value="7">{t("common.time.last7Days")}</SelectItem>
+            <SelectItem value="30">{t("common.time.last30Days")}</SelectItem>
             <SelectItem value="all">All time</SelectItem>
           </SelectContent>
         </Select>
         {data ? (
-          <span className="ms-auto text-[11.5px] text-ink-3 tabular">
-            {data.totalItems} records · page net <MoneyText money={money(pageTotal)} />
+          <span className="text-[12px] text-ink-3 tabular sm:col-span-2 lg:ms-auto lg:whitespace-nowrap">
+            {data.totalItems} results · total on this page <MoneyText money={money(pageTotal)} />
           </span>
+        ) : null}
+        {["q", "method", "type", "range"].some((key) => params.has(key)) ? (
+          <Button variant="ghost" size="sm" className="justify-self-end" onClick={() => { setSearch(""); replaceParams({ q: undefined, method: undefined, type: undefined, range: undefined }); }}>
+            <FilterX />{" "}{t("common.action.clearFilters")}</Button>
         ) : null}
       </div>
 
@@ -135,24 +149,30 @@ export default function TransactionsPage() {
             <ErrorState onRetry={() => refetch()} />
           </div>
         ) : !data || data.items.length === 0 ? (
-          <EmptyState title="No transactions match" description="Try a wider date range or clear the filters." className="border-0" />
+          <EmptyState title="No payments found" description="Try a wider date range or clear the filters." className="border-0" />
         ) : (
-          <Table>
+          <>
+          <ul className="divide-y divide-line lg:hidden" aria-label={t("nav.item.payments")}>
+            {data.items.map((transaction) => <TransactionCompactRow key={transaction.id} transaction={transaction} />)}
+          </ul>
+          <Table className="hidden lg:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Receipt</TableHead>
-                <TableHead>When</TableHead>
-                <TableHead>Member</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Method</TableHead>
-                <TableHead className="text-end">Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>By</TableHead>
-                <TableHead>Branch</TableHead>
+                <TableHead>{t("members.tabs.payments.receipt")}</TableHead>
+                <TableHead>{t("members.tabs.checkIns.when")}</TableHead>
+                <TableHead>{t("crm.lead.member")}</TableHead>
+                <TableHead>{t("common.label.type")}</TableHead>
+                <TableHead>{t("members.tabs.payments.method")}</TableHead>
+                <TableHead className="text-end">{t("common.label.amount")}</TableHead>
+                <TableHead>{t("common.label.status")}</TableHead>
+                <TableHead>Staff</TableHead>
+                <TableHead>{t("common.label.branch")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.items.map((p) => (
+              {data.items.map((p) => {
+                const memberId = "memberId" in p ? p.memberId : p.customer?.memberId;
+                return (
                 <TableRow key={p.id}>
                   <TableCell>
                     <Link href={receiptHref(p.receiptId)} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">
@@ -163,13 +183,17 @@ export default function TransactionsPage() {
                     <DateTimeText iso={p.occurredAt} />
                   </TableCell>
                   <TableCell>
-                    <Link href={`/members/${p.memberId}`} className="text-[13px] font-medium hover:underline underline-offset-2">
-                      {p.memberName}
-                    </Link>
+                    {memberId ? (
+                      <Link href={`/members/${memberId}`} className="text-[13px] font-medium hover:underline underline-offset-2">
+                        {p.memberName}
+                      </Link>
+                    ) : (
+                      <span className="text-[13px] font-medium">{p.memberName}</span>
+                    )}
                     <span className="block font-mono text-[11px] text-ink-3">{p.memberNumber}</span>
                   </TableCell>
-                  <TableCell className="text-[12.5px] capitalize">{p.type}</TableCell>
-                  <TableCell className="text-[12.5px]">{t(`domain.paymentMethod.${p.method}`)}</TableCell>
+                  <TableCell className="text-[12.5px]">{TRANSACTION_TYPE_LABELS[p.type]}</TableCell>
+                  <TableCell className="text-[12.5px]">{PAYMENT_METHOD_LABELS[p.method]}</TableCell>
                   <TableCell className="text-end">
                     <MoneyText money={p.amount} />
                   </TableCell>
@@ -179,15 +203,43 @@ export default function TransactionsPage() {
                   <TableCell className="text-[12.5px] text-ink-2">{p.collectedByName}</TableCell>
                   <TableCell className="text-[12.5px] text-ink-2">{p.branchName.split("— ")[1] ?? p.branchName}</TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
+          </>
         )}
       </div>
 
-      {data ? <DataPagination page={data} onPage={setPage} /> : null}
+      {data ? <DataPagination page={data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} /> : null}
 
-      <CollectPaymentMemberPicker open={collectOpen} onOpenChange={setCollectOpen} />
+      <CollectPaymentMemberPicker open={collectOpen} onOpenChange={(open) => replaceParams({ collect: open ? "1" : undefined }, { keepPage: true })} />
     </div>
   );
+}
+
+function TransactionCompactRow({ transaction }: { transaction: TransactionSummary }) {
+  const memberId = "memberId" in transaction ? transaction.memberId : transaction.customer?.memberId;
+  return (
+    <li className="space-y-3 px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {memberId ? <Link href={`/members/${memberId}`} className="truncate text-[13.5px] font-semibold text-ink hover:underline">{transaction.memberName}</Link> : <p className="truncate text-[13.5px] font-semibold text-ink">{transaction.memberName}</p>}
+          <p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={transaction.occurredAt} /> · {transaction.branchName.split("— ")[1] ?? transaction.branchName}</p>
+        </div>
+        <MoneyText money={transaction.amount} className="shrink-0 text-[13.5px] font-semibold" />
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3 text-[12.5px] text-ink-2">
+        <TransactionStatusChip status={transaction.status} />
+        <span>{TRANSACTION_TYPE_LABELS[transaction.type]}</span>
+        <span>{PAYMENT_METHOD_LABELS[transaction.method]}</span>
+        <span>By {transaction.collectedByName}</span>
+        <Link href={receiptHref(transaction.receiptId)} className="ms-auto font-mono text-[12px] font-medium underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">{transaction.receiptNumber}</Link>
+      </div>
+    </li>
+  );
+}
+
+export default function TransactionsPage() {
+  return <Suspense><TransactionsPageInner /></Suspense>;
 }

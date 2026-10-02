@@ -1,5 +1,8 @@
 # 13 — Next Implementation Roadmap for Model 5.6 Luna Max
 
+> Historical planning input. For current code status, start with `CURRENT_STATE.md` and the canonical `13_PRODUCT_AND_OPERATIONS_TODO.md`. The eight-task repository completion batch is implemented; do not restart this older baseline or infer outstanding work solely from its milestone checkboxes.
+
+
 ## Assignment
 
 Continue RIVET from the current `main` branch and make the existing MVP operationally trustworthy. Most P0 screens and Convex workflows already exist. The next job is not to rebuild the frontend or add a new backend. It is to close the remaining authorization, realtime, lifecycle, end-to-end verification, and pilot-readiness gaps.

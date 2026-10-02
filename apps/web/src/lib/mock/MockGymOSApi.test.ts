@@ -1,9 +1,15 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ERR, isApiError } from "@/lib/api/errors";
-import type { MemberSummary, OperationalPolicies } from "@/lib/domain/types";
+import { DEMO_IDENTITY } from "@/lib/auth/rivet-identity";
+import type { PlatformGymDetail, PlatformSnapshot } from "@/lib/api/GymOSApi";
+import type { AccountingSourcePosting, MemberSummary, OperationalPolicies, Payment } from "@/lib/domain/types";
+import type * as T from "@/lib/domain/types";
 import { addDays, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { fromMajor, money } from "@/lib/utils/money";
+import { ptPackageUnitPriceMinor } from "@/lib/domain/personal-training";
 import { MockGymOSApi } from "./MockGymOSApi";
+import { BRANCH_ABD } from "./seed";
+import type { MockDb } from "./store";
 
 /**
  * These exercise the mock as the application's stand-in backend: mutations must
@@ -28,8 +34,37 @@ async function anyMemberWithBalance(): Promise<MemberSummary> {
 
 async function freshMemberForSale(): Promise<MemberSummary> {
   const session = await api.getSession();
-  return (await api.createMember({ fullName: "New Sale Test", phone: "+962 79 900 0100", homeBranchId: session.branches[0]!.id, preferredLanguage: "en" })).member;
+  return (await api.createMember({ fullName: "New Sale Test", phone: "+962 79 900 0100", homeBranchId: session.branches[0]!.id, preferredLanguage: "en", gender: "male" })).member;
 }
+
+describe("readable exports", () => {
+  it("keeps every staff dataset flat, labelled, and spreadsheet-safe", async () => {
+    for (const kind of ["members", "leads", "payments", "audit", "membership_liabilities", "personal_training", "operations"] as const) {
+      const exported = await api.requestExport({ kind, filters: {}, idempotencyKey: `mock-export-${kind}` });
+      expect(exported.status).toBe("completed");
+      expect(exported.content?.startsWith("\uFEFFRIVET export,")).toBe(true);
+      expect(exported.content).toContain("Generated at");
+      expect(exported.content).not.toContain("data_json");
+      expect(exported.content).not.toContain("[object Object]");
+      expect(exported.content).not.toContain("{\"");
+      expect(exported.content).not.toMatch(/RIVET (member|lead|transaction|charge|audit|PT order|record) ID/);
+    }
+  });
+
+  it("exports the member's actual data as a concise flat CSV", async () => {
+    const exported = await api.requestMemberPersonalDataExport("mock-personal-export-readable");
+    expect(exported.fileName).toMatch(/\.csv$/);
+    expect(exported.mimeType).toBe("text/csv;charset=utf-8");
+    expect(exported.content?.startsWith("\uFEFFRIVET export,My RIVET data\r\n")).toBe(true);
+    expect(exported.content).toContain("Category,Gym,Branch,Date,Record,Details,Amount,Currency,Status");
+    expect(exported.content).toContain("Profile,,,,Full name,");
+    expect(exported.content).toContain("Membership,");
+    expect(exported.content).toContain("Check-in,");
+    expect(exported.content).not.toContain("data_json");
+    expect(exported.content).not.toContain("{\"");
+    expect(exported.content).not.toContain("membership-retail-customer");
+  });
+});
 
 describe("session and role switching", () => {
   it("returns a session with the organization, branches and permissions", async () => {
@@ -39,6 +74,58 @@ describe("session and role switching", () => {
     expect(session.branches.length).toBeGreaterThanOrEqual(2);
     expect(session.roles).toEqual(["owner"]);
     expect(session.permissions).toContain("settings.manage");
+  });
+
+  it("builds a role-safe Today queue with only authorized actions", async () => {
+    const internals = api as unknown as { db: MockDb };
+    const owner = await api.getSession();
+    const member = internals.db.members.find((candidate) => candidate.homeBranchId === owner.branches[0]!.id);
+    if (!member) throw new Error("seed should contain a member in the first branch");
+    internals.db.tasks.unshift({
+      id: "today-owner-task",
+      organizationId: owner.organization.id,
+      type: "follow_up",
+      title: "Resolve the owner follow-up",
+      ownerId: owner.user.id,
+      ownerName: owner.user.name,
+      dueAt: new Date(Date.now() - 60_000).toISOString(),
+      priority: "high",
+      status: "open",
+      memberId: member.id,
+      subjectName: member.fullName,
+      createdById: owner.user.id,
+      createdAt: new Date(Date.now() - 120_000).toISOString(),
+    });
+
+    const ownerDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    expect(ownerDashboard.todayQueue.items).toContainEqual(expect.objectContaining({
+      id: "task:today-owner-task",
+      priority: "urgent",
+      action: { kind: "complete_task", label: "Done", taskId: "today-owner-task" },
+    }));
+
+    await api.switchDemoRole("receptionist");
+    const receptionDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    expect(receptionDashboard.todayQueue.items.every((item) => !["approval", "cash_variance", "facility_task"].includes(item.kind))).toBe(true);
+    expect(receptionDashboard.todayQueue.items.every((item) => item.action.kind !== "complete_task")).toBe(true);
+
+    const salesSession = await api.switchDemoRole("salesperson");
+    const now = new Date().toISOString();
+    const overdueOwnTasks = internals.db.tasks.filter((task) =>
+      task.status === "open" && task.ownerId === salesSession.user.id && task.dueAt < now,
+    );
+    // A lead's own overdue follow-up counts once: only when no open task already stands for it.
+    const leadsWithOpenTasks = new Set(internals.db.tasks.filter((task) => task.status === "open").map((task) => task.leadId));
+    const overdueOwnLeads = internals.db.leads.filter((lead) =>
+      lead.ownerId === salesSession.user.id && !["won", "lost"].includes(lead.stage) && !lead.convertedMemberId && Boolean(lead.nextFollowUpAt && lead.nextFollowUpAt < now) && !leadsWithOpenTasks.has(lead.id),
+    );
+    const salesDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    expect(salesDashboard.todayQueue.overdueKindCounts.follow_up).toBe(overdueOwnTasks.length + overdueOwnLeads.length);
+    expect(salesDashboard.todayQueue.items.filter((item) => item.kind === "follow_up").every((item) => item.subject !== undefined || !item.action.taskId)).toBe(true);
+
+    await api.switchDemoRole("trainer");
+    const trainerDashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    expect(trainerDashboard.todayQueue).toMatchObject({ totalItems: 0, items: [] });
   });
 
   it("swaps the permission set when the demo role changes", async () => {
@@ -60,9 +147,152 @@ describe("session and role switching", () => {
     });
     expect(owner.roles).toEqual(["owner"]);
   });
+
+  it("keeps All branches read-only and never falls back across selected branch scope", async () => {
+    const owner = await api.getSession();
+    expect(owner.branches.length).toBeGreaterThanOrEqual(2);
+    await api.setActiveBranch(undefined);
+    await expect(api.getSession()).resolves.toMatchObject({ activeBranchId: undefined });
+    await expect(api.listMembers({ pageSize: 100 })).resolves.toBeDefined();
+
+    const internals = api as unknown as { db: MockDb };
+    const receptionist = internals.db.users.find((user) => user.role === "receptionist" && user.status === "active");
+    if (!receptionist) throw new Error("seed should contain an active receptionist");
+    const [branchA, branchB] = owner.branches;
+    if (!branchA || !branchB) throw new Error("seed should contain two branches");
+
+    await api.switchDemoRole("receptionist", branchA.id);
+    receptionist.branchScope = "selected";
+    receptionist.branchIds = [branchA.id, branchB.id];
+    internals.db.session.activeBranchId = undefined;
+    await expect(api.listMembers({ pageSize: 100 })).rejects.toMatchObject({ code: ERR.ORGANIZATION_SELECTION_REQUIRED });
+
+    await expect(api.setActiveBranch("stale-branch")).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+    internals.db.branches.find((branch) => branch.id === branchB.id)!.status = "inactive";
+    await expect(api.setActiveBranch(branchB.id)).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+    internals.db.branches.find((branch) => branch.id === branchB.id)!.status = "active";
+    receptionist.branchIds = [branchA.id];
+    await expect(api.setActiveBranch(branchB.id)).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+  });
+});
+
+describe("Brand Kit persistence", () => {
+  it("applies palette and logo updates to settings and the authenticated session", async () => {
+    const session = await api.getSession();
+    const logo = await api.uploadMediaAsset({
+      ownerType: "gym_logo",
+      ownerId: session.organization.id,
+      altText: "Forge workspace logo",
+      file: new Blob(["logo"], { type: "image/png" }),
+    });
+
+    await api.updateBrandKit({ paletteKey: "gold", primaryColor: "#B88A2B", logoAssetId: logo.id });
+
+    await expect(api.getBrandKit()).resolves.toMatchObject({ paletteKey: "gold", primaryColor: "#b88a2b", logoAssetId: logo.id, logoAltText: "Forge workspace logo", version: 1 });
+    await expect(api.getSession()).resolves.toMatchObject({ organization: { brand: { paletteKey: "gold", primaryColor: "#b88a2b", logoAssetId: logo.id, logoAltText: "Forge workspace logo" } } });
+    expect((await api.listAuditEvents({ category: "settings", pageSize: 20 })).items.some((event) => event.action === "settings.brand.update")).toBe(true);
+  });
+});
+
+describe("operations identifier lifecycle", () => {
+  it("reuses archived zone and retired equipment codes without deleting history", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+
+    const archivedZone = await api.upsertZone({ branchId, code: "REUSE-01", name: "Old training zone", kind: "weights" });
+    await api.archiveZone(archivedZone.id);
+    const liveZone = await api.upsertZone({ branchId, code: "REUSE-01", name: "New training zone", kind: "cardio" });
+    expect(liveZone).toMatchObject({ status: "active", code: "REUSE-01" });
+    expect(liveZone.id).not.toBe(archivedZone.id);
+
+    const retiredAsset = await api.upsertEquipmentAsset({ branchId, code: "ASSET-REUSE", name: "Retired treadmill", status: "retired" });
+    const liveAsset = await api.upsertEquipmentAsset({ branchId, code: "ASSET-REUSE", name: "Replacement treadmill" });
+    expect(liveAsset).toMatchObject({ status: "active", code: "ASSET-REUSE" });
+    expect(liveAsset.id).not.toBe(retiredAsset.id);
+
+    const zones = await api.listZones({ branchId, includeArchived: true });
+    expect(zones.filter((zone) => zone.code === "REUSE-01")).toHaveLength(2);
+    expect(zones.map((zone) => zone.status)).toEqual(expect.arrayContaining(["archived", "active"]));
+    const assets = await api.listEquipmentAssets({ branchId });
+    expect(assets.filter((asset) => asset.code === "ASSET-REUSE")).toHaveLength(2);
+    expect(assets.map((asset) => asset.status)).toEqual(expect.arrayContaining(["retired", "active"]));
+  });
+});
+
+describe("workspace entitlement and preference boundary", () => {
+  it("keeps entitlement state separate from permissions and audits owner preferences", async () => {
+    const access = await api.getWorkspaceAccess();
+    expect(access.entitlements.source).toBe("subscription_plan");
+    expect(access.entitlements.subscriptionPlan).toBe("Pro");
+    expect(access.entitlements.entitledModules).toContain("finance");
+    expect(access.preferences.enabledModules).toContain("finance");
+
+    await api.switchDemoRole("manager");
+    await expect(api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "revenue", "operations"] })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("owner");
+    await api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "revenue", "operations"] });
+    expect((await api.getWorkspaceModulePreferences()).enabledModules).toEqual(["foundation", "revenue", "operations"]);
+    await expect(api.getWorkspaceModuleStatus("finance")).rejects.toMatchObject({ code: ERR.FEATURE_NOT_AVAILABLE });
+    await expect(api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "reporting"] })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    expect((await api.listAuditEvents({ category: "settings", pageSize: 20 })).items.some((event) => event.action === "workspace.module_preferences.update")).toBe(true);
+  });
+
+  it("projects the provisioned Pro tenant and fail-closed cleanup rows in the initial platform state", async () => {
+    const snapshot = await api.getPlatformSnapshot();
+    const forge = snapshot.gyms.find((gym) => gym.id === "forge-fitness");
+    const cleanupRows = snapshot.gyms.filter((gym) => gym.id !== "forge-fitness");
+
+    expect(forge).toMatchObject({
+      subscriptionStatus: "active",
+      rivetPlan: "Pro",
+      billingInterval: "monthly",
+      isPublic: true,
+      isProvisioned: true,
+      subscriptionStartedAt: expect.any(String),
+      currentPeriodEndsAt: expect.any(String),
+    });
+    expect(Date.parse(forge!.currentPeriodEndsAt!)).toBeGreaterThan(Date.now());
+    const forgeDetail = await api.getPlatformGymDetail("forge-fitness");
+    expect(forgeDetail.subscription.startedAt).toEqual({ state: "available", value: forge!.subscriptionStartedAt });
+    expect(forgeDetail.subscription.currentPeriodEndsAt).toEqual({ state: "available", value: forge!.currentPeriodEndsAt });
+    expect(forgeDetail.subscription.trialEndsAt).toEqual({ state: "not_configured" });
+    expect(snapshot.overview.activeMrr).toEqual({ amount: 249_000, currency: "JOD" });
+    expect(cleanupRows.length).toBeGreaterThan(0);
+    for (const gym of cleanupRows) {
+      expect(gym).toMatchObject({ subscriptionStatus: "suspended", isPublic: false, isProvisioned: false, subscriptionStatusReason: "Organization is not provisioned." });
+    }
+
+    const cleanupDetail = await api.getPlatformGymDetail(cleanupRows[0]!.id);
+    expect(cleanupDetail.controls).toMatchObject({ status: "suspended", isPublic: false });
+    expect(cleanupDetail.organization).toEqual({ state: "not_available" });
+    expect(cleanupDetail.subscription.status).toEqual({ state: "not_available" });
+    expect((await api.listMarketplaceGyms()).map((gym) => gym.id)).toEqual(["forge-fitness"]);
+  });
+
+  it("keeps the four-tier catalog ordered with the Enterprise price", async () => {
+    const plans = (await api.getPlatformSnapshot()).plans;
+    expect(plans.map((plan) => plan.name)).toEqual(["Starter", "Growth", "Pro", "Enterprise"]);
+    expect(plans.at(-1)).toMatchObject({ name: "Enterprise", priceMinor: 500_000 });
+  });
 });
 
 describe("platform gym applications", () => {
+  it.each(["AB", "123", "1234"])("rejects a physical address shorter than five characters (%s)", async (gymAddress) => {
+    await expect(api.submitGymApplication({
+      gymName: `Short Address Gym ${gymAddress}`,
+      gymAddress,
+      ownerName: "Short Address Owner",
+      email: `short-${gymAddress}@example.test`,
+      contactNumber: "+962 79 700 0090",
+      plan: "Starter",
+    })).rejects.toMatchObject({ code: ERR.VALIDATION });
+  });
+
+  it("persists the selected billing cadence through the application queue", async () => {
+    const submitted = await api.submitGymApplication({ gymName: "Annual Reconcile Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Annual Owner", email: "annual-owner@example.test", contactNumber: "+962 79 700 0000", plan: "Pro", billingInterval: "annual" });
+    expect((await api.listGymApplications()).find((application) => application.id === submitted.applicationId)).toMatchObject({ gymAddress: "12 Airport Road, Amman", plan: "Pro", billingInterval: "annual" });
+  });
+
   it("delivers the current application queue through the mock subscription contract", async () => {
     const values: unknown[] = [];
     const unsubscribe = await api.subscribePlatformApplications((applications) => values.push(applications));
@@ -94,9 +324,82 @@ describe("platform gym applications", () => {
     const cleared = await api.saveGymApplicationReviewNote({ applicationId: approved.id, note: "   " });
     expect(cleared.reviewNotes).toBeUndefined();
   });
+
+  it("keeps mock provisioning retries idempotent and exposes a completed checkpoint", async () => {
+    const application = (await api.listGymApplications()).find((item) => item.status === "pending");
+    expect(application).toBeDefined();
+    const approved = await api.reviewGymApplication({ applicationId: application!.id, decision: "approved" });
+    const first = await api.provisionGym({ applicationId: approved.id });
+    const second = await api.provisionGym({ applicationId: approved.id });
+    expect(second).toEqual(first);
+
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.applications.find((item) => item.id === approved.id)).toMatchObject({
+      provisioningStatus: "completed",
+      provisioningCheckpoint: "completed",
+      provisioningOutcome: "complete",
+      provisioningAttemptCount: 1,
+    });
+  });
+
+  it("projects a provisioned application into its own public listing, branch, owner invitation, and platform facts", async () => {
+    const application = (await api.listGymApplications()).find((item) => item.status === "pending");
+    expect(application).toBeDefined();
+    const approved = await api.reviewGymApplication({ applicationId: application!.id, decision: "approved" });
+    const result = await api.provisionGym({ applicationId: approved.id });
+
+    const snapshot = await api.getPlatformSnapshot();
+    const listing = snapshot.gyms.find((gym) => gym.name === approved.gymName);
+    expect(listing).toMatchObject({
+      subscriptionStatus: "trial",
+      rivetPlan: approved.plan,
+      billingInterval: approved.billingInterval,
+      isProvisioned: true,
+      isPublic: true,
+      branchCount: 1,
+      branches: [expect.objectContaining({ internalBranchId: result.branchId })],
+    });
+    const publicListings = await api.listMarketplaceGyms();
+    const publicListing = publicListings.find((gym) => gym.id === listing?.id);
+    expect(publicListing).toBeDefined();
+    expect(publicListing).not.toHaveProperty("isProvisioned");
+    expect(snapshot.overview.gymCounts.trial).toBe(1);
+    expect(snapshot.overview.branchCount).toBe(3);
+
+    const detail = await api.getPlatformGymDetail(listing!.id);
+    expect(detail.organization).toMatchObject({ state: "available", value: { id: result.organizationId, name: approved.gymName, status: "trial" } });
+    expect(detail.branches).toMatchObject({ state: "available", value: [expect.objectContaining({ id: result.branchId, code: "MAIN" })] });
+    expect(detail.owner).toMatchObject({ state: "available", value: { name: approved.ownerName, email: approved.email } });
+    expect(detail.activity).toMatchObject({ state: "available", value: [expect.objectContaining({ action: "gym.provisioned" })] });
+    expect(snapshot.applications.find((item) => item.id === approved.id)).toMatchObject({
+      provisioningStatus: "completed",
+      provisioningOutcome: "complete",
+      provisionedOrganizationId: result.organizationId,
+      provisionedBranchId: result.branchId,
+      clerkInvitationStatus: "pending",
+    });
+  });
+
+  it("reports a busy provisioning attempt instead of racing a second mock retry", async () => {
+    const application = (await api.listGymApplications()).find((item) => item.status === "pending");
+    expect(application).toBeDefined();
+    const approved = await api.reviewGymApplication({ applicationId: application!.id, decision: "approved" });
+    api.setBehavior({ latencyMs: 25 });
+    const first = api.provisionGym({ applicationId: approved.id });
+    await expect(api.provisionGym({ applicationId: approved.id })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await expect(first).resolves.toMatchObject({ status: "completed" });
+  });
 });
 
 describe("platform subscription controls", () => {
+  it("accepts the deterministic preview identity for support self-assignment", async () => {
+    const supportCase = (await api.listSupportCases())[0];
+    if (!supportCase) throw new Error("mock support seed should contain a case");
+
+    const assigned = await api.assignPlatformSupportCase(supportCase.id, DEMO_IDENTITY.userId);
+    expect(assigned).toMatchObject({ assigneeId: DEMO_IDENTITY.userId, assigneeName: DEMO_IDENTITY.fullName });
+  });
+
   it("persists gym support cases and their append-only platform conversation", async () => {
     const reception = await api.switchDemoRole("receptionist");
     const supportCase = await api.createSupportCase({ email: reception.user.email, subject: "Scanner unavailable", body: "The scanner is not detected.", priority: "urgent", branchId: reception.activeBranchId });
@@ -119,8 +422,23 @@ describe("platform subscription controls", () => {
     await expect(api.reopenPlatformSupportCase(supportCase.id)).resolves.toMatchObject({ status: "open" });
   });
 
+  it("records a plan upgrade request without changing the tenant plan", async () => {
+    const before = await api.getWorkspaceAccess();
+    const request = await api.createSupportCase({ email: DEMO_IDENTITY.email ?? "demo@example.test", subject: "Request Growth", body: "Please review our operations needs.", priority: "normal", requestType: "plan_upgrade", requestedPlan: "Growth", billingInterval: "annual" });
+    expect(request).toMatchObject({ requestType: "plan_upgrade", requestedPlan: "Growth", billingInterval: "annual" });
+    expect((await api.getWorkspaceAccess()).entitlements.subscriptionPlan).toBe(before.entitlements.subscriptionPlan);
+  });
+
   it("keeps platform invoices as a manual audited-style lifecycle", async () => {
     const gym = (await api.getPlatformSnapshot()).gyms[0]!;
+    await expect(api.createPlatformInvoice({
+      gymId: gym.id,
+      amountMinor: 149_000,
+      currency: "USD",
+      periodStart: "2026-08-01",
+      periodEnd: "2026-08-31",
+      dueAt: "2026-09-07",
+    })).rejects.toMatchObject({ code: ERR.VALIDATION });
     const invoice = await api.createPlatformInvoice({
       gymId: gym.id,
       amountMinor: 149_000,
@@ -140,6 +458,31 @@ describe("platform subscription controls", () => {
     await expect(api.voidPlatformInvoice(invoice.id, "Duplicate invoice.")).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 
+  it("reconciles one annual cycle, gives the agreement's payment window, suspends after it, and reactivates on payment", async () => {
+    const internalApi = api as unknown as { db: MockDb };
+    const boundary = Date.parse("2026-09-30T12:00:00.000Z");
+    internalApi.db.organization.billingInterval = "annual";
+    internalApi.db.organization.status = "active";
+    internalApi.db.organization.subscriptionStartedAt = "2025-09-30T12:00:00.000Z";
+    internalApi.db.organization.currentPeriodEndsAt = new Date(boundary).toISOString();
+    const reminder = await api.reconcilePlatformSubscriptions(boundary - 3 * 86_400_000);
+    expect(reminder).toMatchObject({ invoicesCreated: 1, markedPastDue: 0, suspended: 0 });
+    expect(await api.reconcilePlatformSubscriptions(boundary - 3 * 86_400_000)).toMatchObject({ invoicesCreated: 0 });
+    const invoice = (await api.getPlatformSnapshot()).invoices.find((item) => item.cycleKey);
+    expect(invoice).toMatchObject({ billingInterval: "annual", amountMinor: 2_390_400, status: "open" });
+    // Raised three days early and payable within fourteen days of that.
+    const dueAt = Date.parse(invoice!.dueAt!);
+    expect(dueAt).toBe(boundary - 3 * 86_400_000 + 14 * 86_400_000);
+    expect(await api.reconcilePlatformSubscriptions(boundary)).toMatchObject({ markedPastDue: 0, suspended: 0 });
+    expect(await api.reconcilePlatformSubscriptions(dueAt)).toMatchObject({ markedPastDue: 1, suspended: 0 });
+    expect(await api.reconcilePlatformSubscriptions(dueAt + 20 * 86_400_000)).toMatchObject({ suspended: 0 });
+    await api.reconcilePlatformSubscriptions(dueAt + 21 * 86_400_000);
+    expect((await api.getPlatformSnapshot()).gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ subscriptionStatus: "suspended", isPublic: false });
+    const paid = await api.recordPlatformInvoicePayment({ invoiceId: invoice!.id, reference: "BANK-ANNUAL", reason: "Annual transfer received." });
+    expect(paid.status).toBe("paid");
+    expect(internalApi.db.organization).toMatchObject({ status: "active", billingInterval: "annual", currentPeriodEndsAt: "2027-09-30T12:00:00.000Z" });
+  });
+
   it("delivers the complete platform projection through the realtime contract", async () => {
     const values: unknown[] = [];
     const unsubscribe = await api.subscribePlatformSnapshot((snapshot) => values.push(snapshot));
@@ -153,16 +496,225 @@ describe("platform subscription controls", () => {
     const before = await api.getPlatformSnapshot();
     const gym = before.gyms[0]!;
     expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(true);
-    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", isPublic: false, reason: "Account requested a temporary pause." });
+    const updatedGym = await api.updatePlatformGym({ gymId: gym.id, status: "suspended", plan: "Growth", currentPeriodEndsAt: gym.currentPeriodEndsAt, isPublic: false, reason: "Account requested a temporary pause." });
     expect(updatedGym).toMatchObject({ id: gym.id, subscriptionStatus: "suspended", rivetPlan: "Growth", isPublic: false });
     expect((await api.listMarketplaceGyms()).some((item) => item.id === gym.id)).toBe(false);
+    const branch = gym.branches[0]!;
+    await expect(api.createTrialBooking({ gymId: gym.id, branchId: branch.id, fullName: "Blocked Visitor", email: "blocked@example.com", phone: "+962 79 000 0000", preferredDate: "2026-08-20", preferredTime: branch.trialSlots[0] ?? "18:00", goal: "Should not be accepted" })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
 
     const plan = before.plans.find((item) => item.name === "Growth")!;
     const originalPrice = plan.priceMinor;
     const originalMembers = plan.members;
-    const updatedPlan = await api.updatePlatformPlan({ name: plan.name, priceMinor: plan.priceMinor + 1_000, members: plan.members + 100 });
+    const updatedPlan = await api.updatePlatformPlan({ name: plan.name, priceMinor: plan.priceMinor + 1_000, members: plan.members + 100, reason: "Annual pricing review approved." });
     expect(updatedPlan.priceMinor).toBe(originalPrice + 1_000);
     expect(updatedPlan.members).toBe(originalMembers + 100);
+  });
+
+  it("persists an admin-selected period boundary with an admin billing cadence change in the mock", async () => {
+    const requestedAnnualEnd = new Date(Date.now() + 730 * 86_400_000).toISOString();
+    const requestedMonthlyEnd = new Date(Date.now() + 90 * 86_400_000).toISOString();
+    const annual = await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", billingInterval: "annual", currentPeriodEndsAt: requestedAnnualEnd, reason: "Approve annual billing for the tenant." });
+    const annualStart = Date.parse(annual.subscriptionStartedAt!);
+    const annualEnd = Date.parse(annual.currentPeriodEndsAt!);
+    expect(annual).toMatchObject({ billingInterval: "annual", subscriptionStatus: "active" });
+    expect(annualEnd).toBe(Date.parse(requestedAnnualEnd));
+
+    const monthly = await api.updatePlatformGym({ gymId: "forge-fitness", billingInterval: "monthly", currentPeriodEndsAt: requestedMonthlyEnd, reason: "Move the tenant to monthly billing." });
+    const monthlyStart = Date.parse(monthly.subscriptionStartedAt!);
+    const monthlyEnd = Date.parse(monthly.currentPeriodEndsAt!);
+    expect(monthly).toMatchObject({ billingInterval: "monthly", subscriptionStatus: "active" });
+    expect(monthlyStart).toBe(annualStart);
+    expect(monthlyEnd).toBe(Date.parse(requestedMonthlyEnd));
+
+    const detail = await api.getPlatformGymDetail("forge-fitness");
+    const latestActivity = detail.activity.state === "available" ? detail.activity.value[0] as PlatformSnapshot["auditEvents"][number] & Record<string, unknown> : undefined;
+    expect(latestActivity).toMatchObject({ before: { billingInterval: "annual" }, after: { billingInterval: "monthly" } });
+  });
+
+  it("suspends and cancels without a date, bills server-derived paid terms, and keeps trial end automatic", async () => {
+    const suspended = await api.updatePlatformGym({ gymId: "forge-fitness", status: "suspended", reason: "Pause access immediately." });
+    expect(suspended).toMatchObject({ subscriptionStatus: "suspended" });
+
+    // Reactivation derives the term and issues the interval-correct invoice
+    // through the same path monthly and annual changes share.
+    const invoicesBefore = (await api.getPlatformSnapshot()).invoices.length;
+    const reactivated = await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", billingInterval: "annual", reason: "Reactivate on annual billing." });
+    expect(reactivated).toMatchObject({ subscriptionStatus: "active", billingInterval: "annual" });
+    expect(Date.parse(reactivated.currentPeriodEndsAt!)).toBeGreaterThan(Date.now() + 300 * 86_400_000);
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.invoices.length).toBe(invoicesBefore + 1);
+    const termInvoice = snapshot.invoices.find((invoice) => invoice.cycleKey?.startsWith("change:"));
+    const tenantPlanPrice = snapshot.plans.find((plan) => plan.name === reactivated.rivetPlan)!.priceMinor;
+    expect(termInvoice).toMatchObject({ status: "open", billingInterval: "annual", amountMinor: Math.round(tenantPlanPrice * 12 * 0.8) });
+
+    const cancelled = await api.updatePlatformGym({ gymId: "forge-fitness", status: "cancelled", reason: "Cancel the subscription." });
+    expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", cancelledAt: expect.any(String) });
+
+    await api.resetDemo();
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Trial end remains server-derived." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const trialInternalApi = api as unknown as { db: MockDb };
+    trialInternalApi.db.organization.status = "trial";
+    trialInternalApi.db.organization.trialEndsAt = undefined;
+    const trial = await api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Start the onboarding trial." });
+    expect(trial).toMatchObject({ subscriptionStatus: "trial", trialEndsAt: expect.any(String) });
+    expect(trial.currentPeriodEndsAt).toBeUndefined();
+  });
+
+  it("keeps unprovisioned directory rows cleanup-only and out of public/active counts", async () => {
+    const snapshot = await api.getPlatformSnapshot();
+    const directoryOnly = snapshot.gyms.find((gym) => gym.id !== "forge-fitness");
+    expect(directoryOnly).toBeDefined();
+    expect(snapshot.overview.gymCounts.active).toBe(1);
+    expect((await api.listMarketplaceGyms()).some((gym) => gym.id === directoryOnly?.id)).toBe(false);
+
+    await expect(api.updatePlatformGym({ gymId: directoryOnly!.id, status: "suspended", reason: "Reject unprovisioned tenant mutation." })).rejects.toMatchObject({ code: ERR.CONFIGURATION });
+    const hidden = await api.updatePlatformGym({ gymId: directoryOnly!.id, isPublic: false, reason: "Remove stale directory visibility." });
+    expect(hidden).toMatchObject({ subscriptionStatus: "suspended", isPublic: false });
+    expect((await api.getPlatformSnapshot()).overview.gymCounts.active).toBe(1);
+  });
+
+  it("synchronizes provisioned subscription facts, MRR, entitlements, and audit evidence", async () => {
+    const before = await api.getPlatformSnapshot();
+    const forgeBefore = before.gyms.find((gym) => gym.id === "forge-fitness")!;
+    const growthBefore = before.plans.find((plan) => plan.name === "Growth")!;
+
+    await api.updatePlatformGym({ gymId: forgeBefore.id, status: "suspended", plan: "Growth", currentPeriodEndsAt: forgeBefore.currentPeriodEndsAt, isPublic: true, reason: "Billing review requires access suspension." });
+
+    const suspended = await api.getPlatformGymDetail(forgeBefore.id);
+    expect(suspended.controls).toMatchObject({ status: "suspended", plan: "Growth", isPublic: false });
+    expect(suspended.organization).toMatchObject({ state: "available", value: { status: "suspended" } });
+    expect(suspended.subscription).toMatchObject({
+      plan: { state: "available", value: "Growth" },
+      status: { state: "available", value: "suspended" },
+      statusReason: { state: "available", value: "Billing review requires access suspension." },
+    });
+    expect(suspended.activity).toMatchObject({
+      state: "available",
+      value: [expect.objectContaining({ action: "gym.subscription.update", actorName: expect.any(String), summary: expect.stringContaining("suspended") })],
+    });
+
+    const suspendedSnapshot = await api.getPlatformSnapshot();
+    const suspendedGym = suspendedSnapshot.gyms.find((gym) => gym.id === forgeBefore.id)!;
+    expect(suspendedGym.lastActiveAt).toBe(forgeBefore.lastActiveAt);
+    expect(suspendedSnapshot.overview.gymCounts.suspended).toBe(1);
+    expect(suspendedSnapshot.overview.activeMrr.amount).toBe(0);
+    expect(suspendedSnapshot.auditEvents[0]).toMatchObject({ action: "gym.subscription.update", summary: expect.stringContaining("suspended"), actorName: expect.any(String) });
+
+    const workspace = await api.getWorkspaceAccess();
+    expect(workspace.entitlements).toMatchObject({ subscriptionPlan: "Growth", source: "subscription_plan", entitledModules: expect.arrayContaining(["foundation", "operations"]) });
+
+    await api.updatePlatformGym({ gymId: forgeBefore.id, status: "active", plan: "Growth", currentPeriodEndsAt: forgeBefore.currentPeriodEndsAt, isPublic: true, reason: "Billing review cleared; restore access." });
+    const restoredSnapshot = await api.getPlatformSnapshot();
+    expect(restoredSnapshot.gyms.find((gym) => gym.id === forgeBefore.id)).toMatchObject({ subscriptionStatus: "active", rivetPlan: "Growth", isPublic: true });
+    expect(restoredSnapshot.overview.activeMrr.amount).toBe(growthBefore.priceMinor);
+  });
+
+  it("pushes Starter, Growth, and Pro module access after each platform tier change", async () => {
+    const values: T.WorkspaceAccess[] = [];
+    const unsubscribe = await api.subscribeWorkspaceAccess((access) => values.push(access));
+    const transitions = [
+      { plan: "Starter" as const, entitled: ["foundation", "revenue"], locked: ["operations", "finance", "reporting"] },
+      { plan: "Growth" as const, entitled: ["foundation", "revenue", "operations"], locked: ["finance", "reporting"] },
+      { plan: "Pro" as const, entitled: ["foundation", "revenue", "operations", "finance", "reporting"], locked: [] },
+      { plan: "Enterprise" as const, entitled: ["foundation", "revenue", "operations", "finance", "reporting"], locked: [] },
+    ];
+
+    for (const transition of transitions) {
+      await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", plan: transition.plan, currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: true, reason: `Unlock ${transition.plan} modules for the tenant.` });
+      const access = values.at(-1);
+      expect(access?.entitlements).toMatchObject({ subscriptionPlan: transition.plan, entitledModules: transition.entitled });
+      expect(access?.modules.filter((module) => module.entitled && module.enabled).map((module) => module.key)).toEqual(transition.entitled);
+      for (const moduleKey of transition.locked) {
+        expect(access?.modules.find((module) => module.key === moduleKey)).toMatchObject({ entitled: false, enabled: false, lockedReason: "not_entitled" });
+        await expect(api.getWorkspaceModuleStatus(moduleKey as T.WorkspaceModuleKey)).rejects.toMatchObject({ code: ERR.FEATURE_NOT_AVAILABLE });
+      }
+      const session = await api.getSession();
+      expect(session.workspace?.entitlements).toMatchObject({ subscriptionPlan: transition.plan, entitledModules: transition.entitled });
+      if (transition.plan === "Starter") {
+        await api.updateWorkspaceModulePreferences({ enabledModules: ["foundation", "revenue"] });
+      }
+    }
+    unsubscribe();
+  });
+
+  it("rejects invalid lifecycle transitions and never publishes non-operational statuses", async () => {
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Attempt to restart the one-month onboarding trial." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "active", cancelledAt: "2026-01-01T00:00:00.000Z", reason: "Invalid cancellation date." } as Parameters<MockGymOSApi["updatePlatformGym"]>[0])).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Move the tenant to the Enterprise workspace tier." })).resolves.toMatchObject({ rivetPlan: "Enterprise" });
+
+    const overdue = await api.updatePlatformGym({ gymId: "forge-fitness", status: "overdue", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: true, reason: "Payment is past due." });
+    expect(overdue).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });
+  });
+
+  it("archives a gym only after typed confirmation and retains an audit record", async () => {
+    await expect(api.archivePlatformGym({ gymId: "forge-fitness", confirmation: "Forge", reason: "Customer requested account closure." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await api.archivePlatformGym({ gymId: "forge-fitness", confirmation: "Forge Fitness Club", reason: "Customer requested account closure." });
+
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ isArchived: true, isPublic: false, subscriptionStatus: "suspended" });
+    expect(snapshot.invoices.some((invoice) => invoice.gymId === "forge-fitness")).toBe(true);
+    expect(snapshot.supportCases.some((supportCase) => supportCase.gymId === "forge-fitness")).toBe(true);
+    expect(snapshot.auditEvents[0]).toMatchObject({ action: "gym.archive", entityPublicId: "forge-fitness", reason: "Customer requested account closure." });
+    await expect(api.getPlatformGymDetail("forge-fitness")).resolves.toMatchObject({ controls: { isArchived: true, isPublic: false, status: "suspended" } });
+    await expect(api.listMarketplaceGyms()).resolves.toEqual([]);
+    await expect(api.getSession()).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+  });
+
+  it("emits plan catalog changes and truthful audit events through the platform stream", async () => {
+    const snapshots: PlatformSnapshot[] = [];
+    const unsubscribe = await api.subscribePlatformSnapshot((snapshot) => snapshots.push(snapshot));
+    const plan = (await api.getPlatformSnapshot()).plans.find((item) => item.name === "Growth")!;
+
+    await api.updatePlatformPlan({ name: plan.name, priceMinor: plan.priceMinor + 5_000, reason: "Annual platform catalog review." });
+
+    expect(snapshots.at(-1)?.plans.find((item) => item.name === plan.name)).toMatchObject({ priceMinor: plan.priceMinor + 5_000 });
+    expect(snapshots.at(-1)?.auditEvents[0]).toMatchObject({ action: "plan.catalog_update", summary: "Updated Growth plan catalog limits and capabilities", actorName: expect.any(String) });
+    unsubscribe();
+  });
+
+  it("projects catalog capability toggles to the assigned gym entitlement", async () => {
+    const updated = await api.updatePlatformPlan({ name: "Pro", entitledModules: ["foundation", "revenue"], reason: "Keep finance and reporting behind an approved add-on." });
+    expect(updated.entitledModules).toEqual(["foundation", "revenue"]);
+    const access = await api.getWorkspaceAccess();
+    expect(access.entitlements).toMatchObject({ subscriptionPlan: "Pro", entitledModules: ["foundation", "revenue"] });
+    expect(access.modules.find((module) => module.key === "finance")).toMatchObject({ entitled: false, enabled: false });
+    expect((await api.listPublicSaasPlans()).find((plan) => plan.name === "Pro")).toMatchObject({ entitledModules: ["foundation", "revenue"] });
+  });
+
+  it("reports initial platform snapshot failures to subscribers instead of claiming ready data", async () => {
+    api.setBehavior({ failNextRequest: true });
+    const values: PlatformSnapshot[] = [];
+    const errors: unknown[] = [];
+    const unsubscribe = await api.subscribePlatformSnapshot((snapshot) => values.push(snapshot), (error) => errors.push(error));
+
+    expect(values).toHaveLength(0);
+    expect(errors).toEqual([expect.objectContaining({ code: ERR.FORCED_FAILURE })]);
+    unsubscribe();
+  });
+
+  it("pushes subscription visibility changes to the mock marketplace stream", async () => {
+    const values: string[][] = [];
+    const unsubscribe = await api.subscribeMarketplaceGyms((gyms) => values.push(gyms.map((gym) => gym.id)));
+    const gym = (await api.getPlatformSnapshot()).gyms[0]!;
+
+    expect(values.at(-1)).toContain(gym.id);
+    await api.updatePlatformGym({ gymId: gym.id, status: "suspended", currentPeriodEndsAt: gym.currentPeriodEndsAt, isPublic: false, reason: "Suspended for marketplace visibility test." });
+
+    expect(values.at(-1)).not.toContain(gym.id);
+    unsubscribe();
+  });
+
+  it("can fail the next public subscription without consuming a general request failure", async () => {
+    api.setBehavior({ failNextPublicSubscription: true });
+    const errors: unknown[] = [];
+    const unsubscribe = await api.subscribePublicSaasPlans(() => undefined, (error) => errors.push(error));
+
+    expect(errors).toEqual([expect.objectContaining({ code: ERR.FORCED_FAILURE })]);
+    expect(api.getBehavior().failNextPublicSubscription).toBe(true);
+    unsubscribe();
+    api.setBehavior({ failNextPublicSubscription: false });
   });
 
   it("returns target-scoped tenant facts and explicit provider gaps", async () => {
@@ -170,6 +722,12 @@ describe("platform subscription controls", () => {
     expect(forge.organization).toMatchObject({ state: "available", value: { name: "Forge Fitness Club" } });
     expect(forge.owner).toMatchObject({ state: "available", value: { name: "Omar Al-Khatib", email: "omar@forgefitness.jo" } });
     expect(forge.branches).toMatchObject({ state: "available", value: expect.arrayContaining([expect.objectContaining({ name: "Forge — Abdoun" })]) });
+    expect(forge.members).toMatchObject({ state: "available", value: expect.arrayContaining([expect.objectContaining({ memberNumber: expect.stringMatching(/^(ABD|SWF)-/), name: expect.any(String) })]) });
+    expect(forge.staff).toMatchObject({ state: "available", value: expect.arrayContaining([
+      expect.objectContaining({ name: "Omar Al-Khatib", email: "omar@forgefitness.jo", role: "owner", status: "active", branchScope: "all" }),
+      expect.objectContaining({ name: "Sanad Khries", status: "invited", invitationStatus: "pending" }),
+      expect.objectContaining({ name: "Rania Hijazi", status: "deactivated" }),
+    ]) });
     expect(forge.usage.memberCount.state).toBe("available");
     expect(forge.usage.paymentTransactionCount.state).toBe("available");
     expect(forge).not.toHaveProperty("health");
@@ -182,6 +740,8 @@ describe("platform subscription controls", () => {
     expect(directoryOnly.organization).toEqual({ state: "not_available" });
     expect(directoryOnly.owner).toEqual({ state: "not_available" });
     expect(directoryOnly.usage.memberCount).toEqual({ state: "not_available" });
+    expect(directoryOnly.members).toEqual({ state: "not_available" });
+    expect(directoryOnly.staff).toEqual({ state: "not_available" });
     expect(JSON.stringify(directoryOnly)).not.toContain("Omar Al-Khatib");
   });
 });
@@ -214,7 +774,10 @@ describe("gym public profile media", () => {
     });
     expect(draft).toMatchObject({ status: "draft", logo: { id: logo.id }, cover: { id: cover.id }, gallery: [{ id: gallery.id }] });
 
-    const published = await api.publishGymPublicProfile();
+    // The seeded page is already live, so publication runs through the
+    // platform review path.
+    await api.publishPlatformGymProfile({ gymId: "forge-fitness", reason: "Reviewed the media update." });
+    const published = await api.getGymPublicProfile();
     expect(published).toMatchObject({ status: "published", logo: { id: logo.id }, cover: { id: cover.id }, gallery: [{ id: gallery.id }] });
     expect((await api.listMarketplaceGyms())[0]).toMatchObject({ logo: { id: logo.id }, cover: { id: cover.id } });
 
@@ -231,7 +794,70 @@ describe("gym public profile media", () => {
       galleryAssetIds: [],
     });
     expect(replacementDraft).toMatchObject({ status: "draft", logo: { id: replacement.id }, gallery: [] });
-    expect(await api.publishGymPublicProfile()).toMatchObject({ status: "published", logo: { id: replacement.id }, gallery: [] });
+    await api.publishPlatformGymProfile({ gymId: "forge-fitness", reason: "Reviewed the logo replacement." });
+    expect(await api.getGymPublicProfile()).toMatchObject({ status: "published", logo: { id: replacement.id }, gallery: [] });
+  });
+
+  it("projects the published logo into reactive platform surfaces while keeping public rows scoped", async () => {
+    const snapshotValues: PlatformSnapshot[] = [];
+    const detailValues: PlatformGymDetail[] = [];
+    const stopSnapshot = await api.subscribePlatformSnapshot((snapshot) => snapshotValues.push(snapshot));
+    const stopDetail = await api.subscribePlatformGymDetail("forge-fitness", (detail) => detailValues.push(detail));
+    const profile = await api.getGymPublicProfile();
+    const logo = await api.uploadMediaAsset({ ownerType: "gym_logo", ownerId: profile.organizationId, altText: "Forge admin logo", file: new Blob(["logo"], { type: "image/png" }) });
+    await api.saveGymPublicProfile({ shortName: profile.shortName, taglineEn: profile.taglineEn, descriptionEn: profile.descriptionEn, category: profile.category, audience: profile.audience, amenities: profile.amenities, accentColor: profile.accentColor, logoAssetId: logo.id, galleryAssetIds: [] });
+    await api.publishPlatformGymProfile({ gymId: "forge-fitness", reason: "Reviewed the logo update." });
+
+    expect(snapshotValues.at(-1)?.gyms.find((gym) => gym.id === "forge-fitness")).toMatchObject({ logoUrl: logo.url });
+    expect(detailValues.at(-1)?.logoUrl).toEqual({ state: "available", value: logo.url });
+    expect((await api.listMarketplaceGyms()).find((gym) => gym.id === "forge-fitness")).not.toHaveProperty("logoUrl");
+    stopSnapshot();
+    stopDetail();
+  });
+
+  it("keeps trainer photos pending until the linked profile save", async () => {
+    const workspace = await api.getPtWorkspace();
+    const trainer = workspace.trainers[0];
+    expect(trainer).toBeDefined();
+    const asset = await api.uploadMediaAsset({ ownerType: "trainer_photo", ownerId: trainer!.id, altText: "Coach profile photo", file: new Blob(["trainer"], { type: "image/png" }) });
+    expect(asset.status).toBe("pending");
+    expect((await api.getPtWorkspace()).trainers[0]?.photoUrl).toBeUndefined();
+
+    await api.upsertPtTrainerProfile({
+      id: trainer!.id,
+      userId: trainer!.userId,
+      displayName: trainer!.displayName,
+      bioEn: trainer!.bioEn,
+      bioAr: trainer!.bioAr,
+      specialties: trainer!.specialties,
+      languages: trainer!.languages,
+      branchIds: trainer!.branchIds,
+      status: trainer!.status,
+      photoAssetId: asset.id,
+      photoAlt: "Coach profile photo",
+    });
+    expect((await api.getPtWorkspace()).trainers[0]?.photoUrl).toBe(asset.url);
+    expect((api as unknown as { mediaAssets: Map<string, T.MediaAsset> }).mediaAssets.get(asset.id)).toMatchObject({ status: "active" });
+  });
+
+  it("keeps member-photo uploads inside the member's branch scope", async () => {
+    const internals = api as unknown as { db: MockDb };
+    const session = await api.getSession();
+    const sourceBranch = session.branches[0];
+    const memberBranch = session.branches[1];
+    if (!sourceBranch || !memberBranch) throw new Error("seed should contain two branches");
+    const member = internals.db.members.find((candidate) => candidate.homeBranchId === memberBranch.id);
+    const salesperson = internals.db.users.find((candidate) => candidate.role === "salesperson" && candidate.status === "active");
+    if (!member || !salesperson) throw new Error("seed should contain a member and salesperson");
+
+    salesperson.branchScope = "selected";
+    salesperson.branchIds = [sourceBranch.id];
+    await api.switchDemoRole("salesperson", sourceBranch.id);
+    await expect(api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file: new Blob(["member"], { type: "image/png" }) })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+
+    salesperson.branchIds = [memberBranch.id];
+    await api.switchDemoRole("salesperson", memberBranch.id);
+    await expect(api.uploadMediaAsset({ ownerType: "member_photo", ownerId: member.id, file: new Blob(["member"], { type: "image/png" }) })).resolves.toMatchObject({ ownerType: "member_photo", visibility: "private", status: "active" });
   });
 });
 
@@ -254,6 +880,11 @@ describe("tenant/branch scoping and authorization", () => {
     const pendingRefund = (await api.listPendingApprovals()).find((event) => event.action === "payment.refund");
     expect(pendingRefund).toBeDefined();
 
+    const pendingPage = await api.listAuditEvents({ approvalStatus: "pending", pageSize: 1 });
+    expect(pendingPage.totalItems).toBeGreaterThan(1);
+    expect(pendingPage.items).toHaveLength(1);
+    expect(pendingPage.items.every((event) => event.approvalStatus === "pending")).toBe(true);
+
     await api.switchDemoRole("salesperson");
     await expect(api.reviewApproval(pendingRefund!.id, { decision: "approved" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
 
@@ -261,6 +892,9 @@ describe("tenant/branch scoping and authorization", () => {
     await api.reviewApproval(pendingRefund!.id, { decision: "approved", note: "Evidence checked" });
     const reviewed = await api.listAuditEvents({ entityId: pendingRefund!.entityId, pageSize: 20 });
     expect(reviewed.items.find((event) => event.id === pendingRefund!.id)?.approvalStatus).toBe("approved");
+    const approvedPage = await api.listAuditEvents({ approvalStatus: "approved", pageSize: 1 });
+    expect(approvedPage.totalItems).toBeGreaterThan(0);
+    expect(approvedPage.items.every((event) => event.approvalStatus === "approved")).toBe(true);
   });
 
   it("keeps approval results inside the actor's branch scope", async () => {
@@ -344,6 +978,7 @@ describe("member creation", () => {
       phone: "+962 79 555 1234",
       homeBranchId: branch.id,
       preferredLanguage: "ar",
+      gender: "male",
     });
 
     expect(member.memberNumber).toContain(branch.code);
@@ -356,23 +991,41 @@ describe("member creation", () => {
     expect(after.totalItems).toBe(before.totalItems + 1);
   });
 
-  it("defaults new members and imported rows to opted in while preserving explicit opt-out", async () => {
+  it("fails closed when a member mutation receives a stale branch", async () => {
+    await expect(api.createMember({
+      fullName: "Stale Branch Test",
+      phone: "+962 79 555 1200",
+      homeBranchId: "branch-no-longer-visible",
+      preferredLanguage: "en",
+      gender: "male",
+    })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+
+    await expect(api.previewMemberImport({
+      branchId: "branch-no-longer-visible",
+      csv: "full_name,phone\nStale Branch,+962790001200",
+    })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+  });
+
+  it("keeps unknown member and imported marketing preferences suppressed while preserving explicit opt-out", async () => {
     const session = await api.getSession();
     const created = await api.createMember({
       fullName: "Consent Default Test",
       phone: "+962 79 555 1240",
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "female",
     });
     expect(created.member.marketingOptIn).toBe(true);
-    expect(created.member.marketingPreference).toMatchObject({ optedIn: true, source: "system_default" });
+    expect(created.member.marketingPreference).toMatchObject({ optedIn: true, status: "unknown", source: "system_default" });
 
     const optedOut = await api.createMember({
       fullName: "Preference Explicit Test",
       phone: "+962 79 555 1241",
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "female",
       marketingOptIn: false,
+      marketingPreferenceSource: "staff_selected",
     });
     expect(optedOut.member.marketingOptIn).toBe(false);
     expect(optedOut.member.marketingPreference).toMatchObject({ optedIn: false, source: "staff_selected" });
@@ -384,13 +1037,36 @@ describe("member creation", () => {
 
     const preview = await api.previewMemberImport({
       branchId: session.branches[0]!.id,
-      csv: "full_name,phone,email\nConsent Import,+962790001240,consent-import@example.com",
+      csv: "full_name,phone,gender,email\nConsent Import,+962790001240,female,consent-import@example.com",
     });
     const imported = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-import-consent-1" });
     expect(imported.committedCount).toBe(1);
     const importedMember = (await api.listMembers({ search: "Consent Import", pageSize: 5 })).items[0];
     expect(importedMember).toBeDefined();
-    expect((await api.getMember(importedMember!.id)).marketingOptIn).toBe(true);
+    expect(await api.getMember(importedMember!.id)).toMatchObject({
+      marketingOptIn: true,
+      marketingPreference: { optedIn: true, status: "unknown", source: "imported" },
+    });
+  });
+
+  it("preflights import row validation and repeated contact identities before commit", async () => {
+    const session = await api.getSession();
+    const preview = await api.previewMemberImport({
+      branchId: session.branches[0]!.id,
+      csv: [
+        "full_name,phone,gender,email",
+        "Valid Import,0795558111,female,valid-import@example.com",
+        "Repeated Phone,0795558111,male,second@example.com",
+        "Repeated Email,+447700900555,female,valid-import@example.com",
+        "X,123,unknown,not-an-email",
+      ].join("\n"),
+    });
+
+    expect(preview).toMatchObject({ totalRows: 4, validRows: 1, duplicateRows: 2, errorRows: 1 });
+    expect(preview.rows[0]).toMatchObject({ phone: "+962795558111", status: "valid" });
+    expect(preview.rows[1]?.errors).toContain("A member with this phone or email already exists");
+    expect(preview.rows[2]?.errors).toContain("A member with this phone or email already exists");
+    expect(preview.rows[3]?.errors).toEqual(expect.arrayContaining(["Full name must be between 3 and 120 characters", "Enter a valid phone number", "Enter a valid email address"]));
   });
 
   it("warns about a duplicate phone instead of silently creating a second record", async () => {
@@ -401,6 +1077,7 @@ describe("member creation", () => {
       phone: existing.phone,
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
     });
     expect(result.duplicates.length).toBeGreaterThan(0);
     expect(result.duplicates[0]!.matchedOn).toBe("phone");
@@ -412,11 +1089,25 @@ describe("member creation", () => {
     expect(matches.map((m) => m.memberId)).toContain(existing.id);
   });
 
+  it("stores Jordan mobile numbers consistently and finds local-form searches", async () => {
+    const session = await api.getSession();
+    const result = await api.createMember({
+      fullName: "Jordan Alias Test",
+      phone: "079 321 4567",
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+      gender: "male",
+    });
+    expect(result.member.phone).toBe("+962793214567");
+    expect((await api.checkMemberDuplicates({ phone: "00962 79 321 4567" })).map((match) => match.memberId)).toContain(result.member.id);
+    expect((await api.listMembers({ search: "079 321", pageSize: 10 })).items.map((member) => member.id)).toContain(result.member.id);
+  });
+
   it("previews and commits member CSV rows with resumable idempotency", async () => {
     const branch = (await api.getSession()).branches[0]!;
     const preview = await api.previewMemberImport({
       branchId: branch.id,
-      csv: "full_name,phone,email\nImport Test,+962790000099,import-test@example.com",
+      csv: "full_name,phone,gender,email\nImport Test,+962790000099,male,import-test@example.com",
     });
     expect(preview.validRows).toBe(1);
 
@@ -427,6 +1118,28 @@ describe("member creation", () => {
 
     await expect(api.commitMemberImport({ importId: preview.id, cursor: 1, chunkSize: 25, idempotencyKey: "member-import-idem-1" })).rejects.toMatchObject({ code: ERR.VALIDATION });
     expect((await api.listMembers({ search: "Import Test", pageSize: 5 })).totalItems).toBe(1);
+  });
+
+  it("imports membership state and opening balances without creating a fake payment", async () => {
+    const session = await api.getSession();
+    const plan = (await api.listPlans({ status: "active", pageSize: 10 })).items.find((item) => item.kind === "time")!;
+    const preview = await api.previewMemberImport({
+      branchId: session.branches[0]!.id,
+      migrationCutoffDate: "2026-08-30",
+      planMappings: { LegacyMonthly: plan.id },
+      csv: "full_name,phone,gender,email,source_plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference\nMigration State,0799911223,female,migration-state@example.com,LegacyMonthly,2026-08-01,2099-09-07,,,,12.500,80.000,2026-08-20,OLD-44",
+    });
+    expect(preview).toMatchObject({ validRows: 1, membershipRows: 1, openingBalanceRows: 1, historicalEvidenceRows: 1, rows: [{ openingBalanceMinor: 12_500, historicalPaidMinor: 80_000 }] });
+
+    const result = await api.commitMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-state-import-1" });
+    const memberId = result.createdMemberIds[0]!;
+    expect(await api.getMember(memberId)).toMatchObject({ outstanding: { amount: 12_500, currency: session.organization.currency } });
+    expect((await api.listMemberships({ memberId, pageSize: 10 })).items).toEqual([expect.objectContaining({ planName: plan.name, salePrice: expect.objectContaining({ amount: 0 }) })]);
+    expect((await api.listMemberTimeline(memberId)).items.map((event) => event.title)).toEqual(expect.arrayContaining([expect.stringContaining("membership history imported"), expect.stringContaining("Opening balance imported"), expect.stringContaining("Historical payment evidence imported")]));
+    expect((await api.listTransactions({ memberId, pageSize: 10 })).items).toHaveLength(0);
+
+    expect(await api.undoMemberImport({ importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "member-state-undo-1", reason: "Wrong migration cutoff" })).toMatchObject({ archivedCount: 1, skippedCount: 0 });
+    expect((await api.listMemberships({ memberId, pageSize: 10 })).items).toHaveLength(0);
   });
 });
 
@@ -444,6 +1157,13 @@ describe("lead capture", () => {
     expect(lead.email).toBe("prospect@example.com");
     expect(lead.ownerId).toBeUndefined();
     expect(lead.ownerName).toBeUndefined();
+    await expect(api.createLead({
+      fullName: "Malformed Lead Email",
+      phone: "+962 79 555 1301",
+      email: "not-an-email",
+      branchId: session.branches[0]!.id,
+      source: "phone_call",
+    })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 
   it("requires assignment permission when choosing another staff owner", async () => {
@@ -457,6 +1177,23 @@ describe("lead capture", () => {
       source: "phone_call",
       ownerId: salesperson.id,
     })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+  });
+
+  it("validates self and target roles, and records audited contact corrections", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({ fullName: "Contact Correction Lead", phone: "+962 79 555 1302", email: "old@example.com", branchId: session.branches[0]!.id, source: "walk_in" });
+    const internals = api as unknown as { db: MockDb };
+    const receptionist = internals.db.users.find((user) => user.role === "receptionist" && user.status === "active");
+    expect(receptionist).toBeDefined();
+    await expect(api.updateLead(lead.id, { ownerId: receptionist!.id })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updateLead(lead.id, { ownerId: lead.ownerId })).resolves.toMatchObject({ ownerId: lead.ownerId });
+
+    const updated = await api.updateLeadContact(lead.id, { fullName: "  Corrected Contact Lead ", phone: " +962 79 555 1309 ", email: " NEW@EXAMPLE.COM " });
+    expect(updated).toMatchObject({ fullName: "Corrected Contact Lead", phone: "+962795551309", email: "new@example.com", stage: "new" });
+    expect(updated.activities).toContainEqual(expect.objectContaining({ type: "lead_contact_updated", body: "Contact details were updated; pipeline status was unchanged." }));
+    expect(updated.activities).not.toContainEqual(expect.objectContaining({ type: "call_attempt" }));
+    expect((await api.listAuditEvents({ category: "crm", entityId: lead.id, pageSize: 20 })).items).toContainEqual(expect.objectContaining({ action: "lead.contact.update", before: { fullName: "Contact Correction Lead", phone: "+962795551302", email: "old@example.com" }, after: { fullName: "Corrected Contact Lead", phone: "+962795551309", email: "new@example.com" } }));
+    await expect(api.updateLeadContact(lead.id, { fullName: "Corrected Contact Lead", phone: "+962 79 555 1309", email: "bad" })).rejects.toMatchObject({ code: ERR.VALIDATION });
   });
 });
 
@@ -472,7 +1209,7 @@ describe("collecting a payment", () => {
 
     expect(receipt.payment.amount.amount).toBe(owed);
     expect(receipt.receipt.receiptNumber).toMatch(/^R-\d+$/);
-    expect(receipt.member.memberNumber).toBe(member.memberNumber);
+    expect(receipt.member?.memberNumber).toBe(member.memberNumber);
 
     const after = await api.getMember(member.id);
     expect(after.outstanding.amount).toBe(0);
@@ -519,6 +1256,33 @@ describe("collecting a payment", () => {
 });
 
 describe("membership sale and renewal", () => {
+  it("commits a new member and their first sale as one idempotent workflow", async () => {
+    const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
+    const input = {
+      member: { fullName: "Atomic Member", phone: "+962 79 911 2233", homeBranchId: BRANCH_ABD, preferredLanguage: "en" as const, gender: "male" as const },
+      sale: { planId: plan.id, startDate: todayISODate(), payment: { amount: plan.basePrice, method: "card" as const, externalReference: "POS-ATOMIC-1" } },
+      idempotencyKey: "mock-member-sale-atomic-1",
+    };
+    const first = await api.createMemberMembershipSale(input);
+    const replay = await api.createMemberMembershipSale(input);
+    expect(replay).toEqual(first);
+    expect(first.sale.membership.memberId).toBe(first.member.id);
+    expect(first.sale.receipt).toBeDefined();
+    expect((await api.listMembers({ search: "Atomic Member", pageSize: 20 })).items).toHaveLength(1);
+  });
+
+  it("restores mock state when a composite sale fails", async () => {
+    const before = await api.listMembers({ pageSize: 100 });
+    await expect(api.createMemberMembershipSale({
+      member: { fullName: "Rollback Member", phone: "+962 79 911 2244", homeBranchId: BRANCH_ABD, preferredLanguage: "en", gender: "female" },
+      sale: { planId: "missing-plan", startDate: todayISODate() },
+      idempotencyKey: "mock-member-sale-rollback-1",
+    })).rejects.toThrow(/Plan not found/i);
+    const after = await api.listMembers({ pageSize: 100 });
+    expect(after.totalItems).toBe(before.totalItems);
+    expect(after.items.some((member) => member.fullName === "Rollback Member")).toBe(false);
+  });
+
   it("sells a membership with a payment and records charge, receipt and timeline together", async () => {
     const member = await freshMemberForSale();
     const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
@@ -611,7 +1375,10 @@ describe("membership sale and renewal", () => {
     const plans = (await api.listPlans({ status: "active", pageSize: 10 })).items;
     const originalPlan = plans[0]!;
     const replacement = plans.find((plan) => plan.id !== originalPlan.id)!;
-    const sale = await api.createMembershipSale({ memberId: member.id, planId: originalPlan.id, startDate: "2026-08-01", overrideReason: "Historical test sale date." });
+    // Anchor the sale to the first day of the current tenant-local month so the
+    // term is still running when the plan changes at "next renewal"; a fixed
+    // historical date silently expires as the calendar moves on.
+    const sale = await api.createMembershipSale({ memberId: member.id, planId: originalPlan.id, startDate: `${todayISODate("Asia/Amman").slice(0, 7)}-01`, overrideReason: "Current-month test sale date." });
 
     const changed = await api.changeMembershipPlan(sale.membership.id, {
       planId: replacement.id,
@@ -726,6 +1493,10 @@ describe("operational policies", () => {
     const updated = await api.updateOperationalPolicies({
       entry: { outstandingBalance: "block", expiryWarningDays: 10, duplicateScanWindowMinutes: 4, enforceOperatingHours: true },
       membership: { allowOverlappingMemberships: false, renewalWindowDays: 21, minimumFreezeDays: 5, maximumExtensionDays: 60 },
+      referrals: { enabled: true, rewardDays: 7, maxRewardDaysPerWindow: 30, windowDays: 90 },
+      memberFreezes: { requestsEnabled: true, freeFreezesPerWindow: 1, extraFreezeFeeMinor: 10_000, maxDaysPerFreeze: 30, windowDays: 365 },
+      classBooking: { enabled: true, eligibilityMode: "all_active_memberships", eligiblePlanIds: [], bookingHorizonDays: 30, cancellationCutoffHours: 2, maxActiveBookingsPerMember: 8, waitlistEnabled: true, waitlistSize: 12, noShowTracking: true },
+      retention: { inactivityDays: 14, expiredWinBackDays: 90, defaultSnoozeDays: 7 },
       operatingHours: [{ branchId: branch.id, days }],
       trialSchedules: [{ branchId: branch.id, days: Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((day) => [day, { enabled: day !== "fri", opensAt: "09:00", closesAt: "20:00" }])) as OperationalPolicies["trialSchedules"][number]["days"] }],
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
@@ -869,7 +1640,7 @@ describe("refunds and voids", () => {
 
     expect(refund.payment.type).toBe("refund");
     expect(refund.payment.amount.amount).toBe(-owed);
-    expect(refund.payment.originalPaymentId).toBe(receipt.payment.id);
+    expect("originalPaymentId" in refund.payment ? refund.payment.originalPaymentId : undefined).toBe(receipt.payment.id);
     // A refund never edits the original receipt; it issues a new numbered one.
     expect(refund.payment.receiptNumber).not.toBe(receipt.payment.receiptNumber);
 
@@ -983,6 +1754,36 @@ describe("refunds and voids", () => {
     });
   });
 
+  it("replays an identical refund retry and refuses the same key for different figures", async () => {
+    const member = await anyMemberWithBalance();
+    const receipt = await api.createPayment({ memberId: member.id, amount: money(10_000), method: "cash" }, "idem-ref-replay");
+    const input = { amount: money(4_000), reason: "Lost response, retried", idempotencyKey: "refund-replay-key" };
+    const first = await api.refundPayment(receipt.payment.id, input);
+    const replay = await api.refundPayment(receipt.payment.id, input);
+    expect(replay.receipt.id).toBe(first.receipt.id);
+    expect((await api.getReceipt(receipt.receipt.id)).payment.refundedAmount?.amount).toBe(4_000);
+    await expect(api.refundPayment(receipt.payment.id, { ...input, amount: money(5_000) })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("needs the paying branch's open drawer for a cash refund and keeps a closed drawer's cash out of reach of a void", async () => {
+    const member = await anyMemberWithBalance();
+    const branchId = member.homeBranchId ?? (await api.getSession()).branches[0]!.id;
+    const receipt = await api.createPayment({ memberId: member.id, amount: money(6_000), method: "cash" }, "idem-ref-drawer");
+    const open = (await api.getCurrentShiftTotals(branchId))!;
+    const expected = open.shift.openingFloat.amount + open.totals.cashPayments.amount - open.totals.cashRefunds.amount - open.totals.supplierCashPayments.amount + open.totals.supplierCashReversals.amount;
+    await api.closeCashShift(open.shift.id, { countedCash: money(expected) });
+
+    await expect(api.refundPayment(receipt.payment.id, { reason: "Cash back with the drawer closed", idempotencyKey: "refund-closed-drawer" })).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+    await expect(api.voidPayment(receipt.payment.id, { reason: "Void after the drawer closed", idempotencyKey: "void-closed-drawer" })).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+
+    const reopened = await api.openCashShift({ branchId, openingFloat: money(0) });
+    const refund = await api.refundPayment(receipt.payment.id, { reason: "Cash back from the new drawer", idempotencyKey: "refund-new-drawer" });
+    expect(refund.payment.shiftId).toBe(reopened.id);
+    expect((await api.getCurrentShiftTotals(branchId))!.totals.cashRefunds.amount).toBe(6_000);
+    // The original cash still belongs to the closed shift; it cannot be voided from the new one.
+    await expect(api.voidPayment(receipt.payment.id, { reason: "Void from another shift", idempotencyKey: "void-other-drawer" })).rejects.toMatchObject({ code: ERR.PAYMENT_ALREADY_REFUNDED });
+  });
+
   it("refuses to void a payment from an earlier business day", async () => {
     // "Same day" is the tenant's business day in Amman, not the UTC calendar day.
     const today = todayISODate();
@@ -1019,6 +1820,25 @@ describe("CRM", () => {
     expect(() => unsubscribe()).not.toThrow();
   });
 
+  it("projects persisted CRM activity into lead summaries and the dashboard funnel", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({ fullName: "Event Projection Lead", phone: "+962 79 900 0450", email: "event-projection@example.com", branchId: session.branches[0]!.id, source: "walk_in" });
+    await api.logContactAttempt(lead.id, { outcome: "answered_interested", stage: "contacted" });
+    const scheduled = await api.scheduleLeadTrial(lead.id, { preferredDate: addDays(todayISODate(), 1), preferredTime: "18:00" });
+    await api.updateTrialBooking(scheduled.trialBooking!.id, { status: "completed" });
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+    const offer = await api.createOffer({ leadId: lead.id, planId: plan.id, price: plan.basePrice });
+    await api.markOfferDelivered(offer.id, { channel: "manual", reference: "manual-projection-test" });
+
+    const detail = await api.getLead(lead.id);
+    expect(detail.progressFacts).toMatchObject({ hasAttempt: true, hasContact: true, hasTrialBooking: true, hasTrialCompletion: true, hasOfferDelivery: true, hasConversion: false, hasLoss: false });
+    const dashboard = await api.getDashboard({ from: todayISODate(), to: todayISODate() });
+    const funnel = new Map(dashboard.funnel.map((item) => [item.stage, item.count]));
+    expect(funnel.get("trial_completed")).toBeGreaterThan(0);
+    expect(funnel.get("offer_sent")).toBeGreaterThan(0);
+    expect(funnel.get("won")).toBeLessThanOrEqual(funnel.get("offer_sent") ?? 0);
+  });
+
   it("logs a contact attempt, moves the stage and schedules the next follow-up", async () => {
     const leads = await api.listLeads({ pageSize: 20 });
     const lead = leads.items.find((l) => l.stage === "new")!;
@@ -1033,6 +1853,19 @@ describe("CRM", () => {
     expect(detail.stage).toBe("contacted");
     expect(detail.nextFollowUpAt).toBe("2026-08-02T09:00:00Z");
     expect(detail.activities.some((a) => a.type === "call_attempt")).toBe(true);
+  });
+
+  it("requires and audits the real reason for a terminal not-sold outcome", async () => {
+    const session = await api.getSession();
+    const lead = await api.createLead({ fullName: "Reason Gate Lead", phone: "+962799000451", branchId: session.branches[0]!.id, source: "walk_in" });
+
+    await expect(api.logContactAttempt(lead.id, { outcome: "answered_not_interested", stage: "lost" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const closed = await api.logContactAttempt(lead.id, { outcome: "answered_not_interested", stage: "lost", notes: "Membership price is outside the prospect's budget" });
+
+    expect(closed).toMatchObject({ stage: "lost", lostReason: "Membership price is outside the prospect's budget", nextFollowUpAt: undefined });
+    expect(closed.activities).toContainEqual(expect.objectContaining({ type: "call_attempt", body: "Membership price is outside the prospect's budget" }));
+    const audit = await api.listAuditEvents({ category: "crm", entityId: lead.id, pageSize: 20 });
+    expect(audit.items).toContainEqual(expect.objectContaining({ action: "lead.lost", reason: "Membership price is outside the prospect's budget" }));
   });
 
   it("keeps offers as drafts until delivery is explicitly confirmed", async () => {
@@ -1311,6 +2144,7 @@ describe("free-trial lifecycle", () => {
     const result = await api.completeLeadSale(booking.leadId!, {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
       marketingOptIn: true,
       startDate: todayISODate(),
       idempotencyKey: "mock-simple-crm-sale",
@@ -1319,6 +2153,54 @@ describe("free-trial lifecycle", () => {
     expect(result.membership).toMatchObject({ memberId: result.member.id, planId: plan.id });
     const experience = await api.getCustomerExperience();
     expect(experience.bookings.find((item) => item.id === booking.id)?.status).toBe("converted");
+  });
+
+  it("carries a member referral from the share link through trial conversion and reward", async () => {
+    const internals = api as unknown as { db: MockDb; customerMemberLinks: Map<string, string> };
+    const customerMembership = (await api.getCustomerExperience()).memberships.find((item) => item.id === "membership-lina-forge")!;
+    const program = await api.ensureCustomerReferralLink(customerMembership.id);
+    const linkedMemberId = internals.customerMemberLinks.get(customerMembership.id);
+    const referrer = internals.db.members.find((member) => member.id === linkedMemberId)!;
+    const referrerMembership = internals.db.memberships.find((membership) => membership.memberId === referrer.id)!;
+    referrerMembership.startDate = addDays(todayISODate(), -5);
+    referrerMembership.endDate = addDays(todayISODate(), 30);
+    const originalEndDate = referrerMembership.endDate;
+    const referralToken = new URL(program.sharePath!, "https://rivet.jo").searchParams.get("ref")!;
+
+    const booking = await api.createTrialBooking({
+      customerId: "customer-referred-prospect",
+      gymId: "forge-fitness",
+      branchId: "forge-abdoun",
+      fullName: "Referral Prospect",
+      email: "referral-prospect@example.com",
+      phone: "+962 79 654 0099",
+      preferredDate: "2026-08-20",
+      preferredTime: "19:00",
+      goal: "Train with a friend",
+      referralToken,
+    });
+    expect(booking).not.toHaveProperty("referralToken");
+    const lead = await api.getLead(booking.leadId!) as T.Lead & { referredByMemberId?: string };
+    expect(lead).toMatchObject({ source: "referral", referredByMemberId: referrer.id });
+
+    await api.updateTrialBooking(booking.id, { status: "completed", note: "Referral trial completed" });
+    const session = await api.getSession();
+    const plan = (await api.listPlans({ status: "active", pageSize: 1 })).items[0]!;
+    await api.completeLeadSale(booking.leadId!, {
+      homeBranchId: session.branches[0]!.id,
+      preferredLanguage: "en",
+      gender: "male",
+      startDate: todayISODate(),
+      idempotencyKey: "mock-referral-trial-sale",
+      membership: { mode: "existing", planId: plan.id },
+    });
+
+    expect(referrerMembership.endDate).toBe(addDays(originalEndDate, 7));
+    const after = (await api.getCustomerExperience()).memberships.find((item) => item.id === customerMembership.id)!.referral!;
+    expect(after).toMatchObject({ earnedDays: 7, remainingDays: 23, successfulReferrals: 1, recordedReferrals: 1 });
+    // The dated history reports the applied reward without naming the friend.
+    expect(after.history[0]).toMatchObject({ days: 7, status: "applied" });
+    expect(JSON.stringify(after.history)).not.toMatch(/Referral Prospect|referral-prospect/);
   });
 
   it("reuses one matching member created by the legacy CRM flow and only adds the membership", async () => {
@@ -1330,6 +2212,7 @@ describe("free-trial lifecycle", () => {
       email: booking.email,
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
     });
     const memberCount = (await api.listMembers({ pageSize: 500 })).totalItems;
     await api.updateTrialBooking(booking.id, { status: "completed" });
@@ -1337,6 +2220,7 @@ describe("free-trial lifecycle", () => {
     const result = await api.completeLeadSale(booking.leadId!, {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "male",
       startDate: todayISODate(),
       idempotencyKey: "mock-simple-crm-existing-member-sale",
       membership: { mode: "existing", planId: plan.id },
@@ -1354,6 +2238,7 @@ describe("free-trial lifecycle", () => {
     const result = await api.completeLeadSale(booking.leadId!, {
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "female",
       startDate: todayISODate(),
       idempotencyKey: "mock-simple-crm-custom-sale",
       membership: { mode: "custom", name: "Eight week transformation", price: money(150_000), durationDays: 56, includedPtSessions: 4 },
@@ -1385,6 +2270,7 @@ describe("demo controls", () => {
       phone: "+962 79 000 0001",
       homeBranchId: session.branches[0]!.id,
       preferredLanguage: "en",
+      gender: "female",
     });
     expect((await api.listMembers({ pageSize: 1 })).totalItems).toBe(before.totalItems + 1);
 
@@ -1439,5 +2325,972 @@ describe("seed coverage required by the docs", () => {
   it("includes members with an outstanding balance", async () => {
     const outstanding = await api.listMembers({ membershipStatus: "outstanding", pageSize: 50 });
     expect(outstanding.totalItems).toBeGreaterThan(0);
+  });
+});
+
+describe("retail checkout", () => {
+  it("keeps shelf stock sellable while a purchase order is open and releases sold cost from the valuation", async () => {
+    const branchId = (await api.getSession()).branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-ON-ORDER", name: "Mock on-order item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 4, unitCost: money(500, "JOD"), idempotencyKey: "mock-on-order-opening" });
+    const supplier = await api.upsertSupplier({ name: "Mock on-order supplier", branchIds: [branchId], preferredProductIds: [product.id] });
+    const order = await api.createPurchaseOrder({ branchId, supplierId: supplier.id, lines: [{ productId: product.id, quantity: 50, unitCost: money(500, "JOD") }] });
+    await api.approvePurchaseOrder(order.id);
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ quantityOnHand: 4, availableQuantity: 4, totalCost: money(2_000, "JOD") })]);
+
+    const sale = await api.checkoutRetail({ branchId, guest: { fullName: "Shelf Guest", phone: "+962790000077" }, lines: [{ productId: product.id, quantity: 3 }], method: "card", externalReference: "VISA-ON-ORDER", idempotencyKey: "mock-on-order-sale" });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 1, totalCost: money(500, "JOD") })]);
+    await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 3 }], reason: "Unopened items returned", idempotencyKey: "mock-on-order-refund" });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 4, totalCost: money(2_000, "JOD") })]);
+
+    await api.receivePurchaseOrder({ purchaseOrderId: order.id, idempotencyKey: "mock-on-order-receive" });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 54, committedQuantity: 0 })]);
+  });
+
+  it("supports front-desk member and guest sales with idempotent stock decrements", async () => {
+    const ownerSession = await api.getSession();
+    const branchId = ownerSession.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-RETAIL", name: "Mock retail item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 3, unitCost: money(500, "JOD"), idempotencyKey: "mock-retail-opening" });
+    const member = await freshMemberForSale();
+    const reconciliationBefore = await api.getDailyReconciliation({ branchId, date: todayISODate("Asia/Amman", new Date()) });
+    await api.switchDemoRole("receptionist");
+    const memberSale = await api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" });
+    expect(memberSale.retailSale.lines[0]?.unitCost).toEqual(money(500, "JOD"));
+    const replay = await api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" });
+    expect(replay.receiptId).toBe(memberSale.receiptId);
+    await expect(api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "VISA-MOCK-1", idempotencyKey: "mock-retail-member" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    const guestSale = await api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000003" }, lines: [{ productId: product.id, quantity: 1 }], method: "cliq", externalReference: "CLIQ-MOCK-1", idempotencyKey: "mock-retail-guest" });
+    const guestReceipt = await api.getReceipt(guestSale.receiptId);
+    expect(guestReceipt).toMatchObject({ customer: { kind: "guest", fullName: "Mock Guest" }, retailSale: { lines: [{ quantity: 1 }] } });
+    expect(guestReceipt.member).toBeUndefined();
+    await expect(api.getReceipt(memberSale.receiptId)).resolves.toMatchObject({ customer: { kind: "member", memberId: member.id }, retailSale: { receiptId: memberSale.receiptId } });
+    const memberTimeline = await api.listMemberTimeline(member.id);
+    expect(memberTimeline.items).toEqual(expect.arrayContaining([expect.objectContaining({ type: "payment_collected", meta: expect.objectContaining({ receiptId: memberSale.receiptId }) })]));
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 1 })]);
+    await api.switchDemoRole("owner");
+    const shift = await api.getCurrentShiftTotals(branchId);
+    expect(shift?.totals).toMatchObject({ cashPayments: { amount: expect.any(Number) }, paymentCount: expect.any(Number) });
+    // Card and CliQ sales are intentionally not assigned to a cash drawer
+    // shift. The reconciliation assertions below verify those collections by
+    // payment method; this shift check only verifies the drawer projection.
+    expect(shift?.totals.cashPayments.amount).toBeGreaterThanOrEqual(0);
+    const reconciliation = await api.getDailyReconciliation({ branchId, date: todayISODate("Asia/Amman", new Date()) });
+    const beforeByMethod = new Map(reconciliationBefore.totalsByMethod.map((row) => [row.method, row.payments.amount]));
+    expect(reconciliation.totalsByMethod).toEqual(expect.arrayContaining([expect.objectContaining({ method: "card", payments: expect.objectContaining({ amount: (beforeByMethod.get("card") ?? 0) + 2_000 }) }), expect.objectContaining({ method: "cliq", payments: expect.objectContaining({ amount: (beforeByMethod.get("cliq") ?? 0) + 2_000 }) })]));
+    const transactions = await api.listTransactions({ branchId, type: "retail_sale", pageSize: 20 });
+    expect(transactions.items).toHaveLength(2);
+    expect(transactions.items).toEqual(expect.arrayContaining([expect.objectContaining({ type: "retail_sale", customer: expect.objectContaining({ kind: "guest" }) })]));
+    const otherBranch = ownerSession.branches[1]!.id;
+    const internals = api as unknown as { db: MockDb };
+    const otherBranchReceptionist = internals.db.users.find((user) => user.role === "receptionist" && user.branchIds.includes(otherBranch) && user.status === "active");
+    if (!otherBranchReceptionist) throw new Error("seed should contain a receptionist for the second branch");
+    internals.db.session.userId = otherBranchReceptionist.id;
+    internals.db.session.activeBranchId = otherBranch;
+    await expect(api.getReceipt(memberSale.receiptId)).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+  });
+
+  it("restores mock inventory for reason-gated retail refunds and voids", async () => {
+    const branchId = (await api.getSession()).branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-RETURN", name: "Mock return item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 4, unitCost: money(500, "JOD"), idempotencyKey: "mock-return-opening" });
+    const sale = await api.checkoutRetail({ branchId, guest: { fullName: "Return Guest", phone: "+962790000081" }, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "MOCK-RETURN", idempotencyKey: "mock-return-sale" });
+    await expect(api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "", idempotencyKey: "mock-return-invalid" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    const refunded = await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned unopened item", idempotencyKey: "mock-return-refund" });
+    expect(refunded.retailSale).toMatchObject({ status: "partially_refunded", refundedAmount: { amount: 2_000 }, returnedLines: [{ quantity: 1 }] });
+    const internals = api as unknown as { db: MockDb };
+    const refundPayment = internals.db.payments.find((payment) => payment.type === "refund" && "retailSaleId" in payment && payment.retailSaleId === sale.retailSale.id);
+    expect(refundPayment).toMatchObject({ amount: { amount: -2_000 }, originalPaymentId: `retail-payment-${sale.retailSale.id}`, refundReason: "Customer returned unopened item" });
+    expect(refundPayment?.receiptId).toBeTruthy();
+    expect((internals.db.stockMovements.find((movement) => movement.type === "return") as T.StockMovement | undefined)?.unitCost).toEqual(money(500, "JOD"));
+    await expect(api.getReceipt(refundPayment!.receiptId)).resolves.toMatchObject({ payment: { type: "refund", amount: { amount: -2_000 } }, retailSale: { status: "partially_refunded" } });
+    const originalReceipt = await api.getReceipt(sale.receiptId);
+    expect(originalReceipt.relatedPayments).toEqual(expect.arrayContaining([expect.objectContaining({ id: refundPayment!.id, type: "refund", amount: expect.objectContaining({ amount: -2_000 }) })]));
+    const refundTransactions = await api.listTransactions({ type: "refund", pageSize: 20 });
+    expect(refundTransactions.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: refundPayment!.id, amount: expect.objectContaining({ amount: -2_000 }) })]));
+    await expect(api.voidRetailSale(sale.retailSale.id, { reason: "Duplicate sale", idempotencyKey: "mock-return-void-blocked" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    const voidSale = await api.checkoutRetail({ branchId, guest: { fullName: "Void Guest", phone: "+962790000082" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "MOCK-VOID", idempotencyKey: "mock-void-sale" });
+    await expect(api.voidRetailSale(voidSale.retailSale.id, { reason: "Duplicate terminal entry", idempotencyKey: "mock-void-action" })).resolves.toMatchObject({ retailSale: { status: "voided" } });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 3 })]);
+    const cashSale = await api.checkoutRetail({ branchId, guest: { fullName: "Cash void guest", phone: "+962790000083" }, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "mock-cash-void-sale" });
+    const cashInternals = api as unknown as { db: MockDb };
+    cashInternals.db.shifts.filter((shift) => shift.branchId === branchId).forEach((shift) => { shift.status = "closed"; });
+    await expect(api.voidRetailSale(cashSale.retailSale.id, { reason: "Cash void after close", idempotencyKey: "mock-cash-void-after-close" })).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+    expect(cashInternals.db.retailSales.find((sale) => sale.id === cashSale.retailSale.id)?.status).toBe("completed");
+  });
+
+  it("does not sell an item until a positive retail price is configured", async () => {
+    const ownerSession = await api.getSession();
+    const branchId = ownerSession.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-UNPRICED", name: "Mock unpriced item", unit: "each", reorderPoint: 1 });
+    const laterProduct = await api.upsertProduct({ sku: "MOCK-LATER", name: "Mock later line", unit: "each", reorderPoint: 1, retailPrice: money(1_500, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-unpriced-opening" });
+    await api.switchDemoRole("receptionist");
+    await expect(api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000004" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-2", idempotencyKey: "mock-unpriced-sale" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await api.switchDemoRole("owner");
+    await api.upsertProduct({ id: product.id, sku: "MOCK-UNPRICED", name: "Mock now priced item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
+    await api.switchDemoRole("receptionist");
+    const internals = api as unknown as { db: MockDb };
+    internals.db.shifts.filter((shift) => shift.branchId === branchId).forEach((shift) => { shift.status = "closed"; });
+    const retailSalesBefore = internals.db.retailSales.length;
+    await expect(api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000004" }, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "mock-no-shift" })).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+    expect(internals.db.retailSales).toHaveLength(retailSalesBefore);
+    await expect(api.checkoutRetail({ branchId, guest: { fullName: "Mock Guest", phone: "+962790000004" }, lines: [{ productId: product.id, quantity: 1 }, { productId: laterProduct.id, quantity: 1 }], method: "card", externalReference: "VISA-MOCK-3", idempotencyKey: "mock-later-line-stock" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await expect(api.listInventory({ branchId, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 1 })]);
+    expect(internals.db.retailSales).toHaveLength(retailSalesBefore);
+  });
+
+  it("allows front-desk collection but denies checkout without payments.collect", async () => {
+    const ownerSession = await api.getSession();
+    const branchId = ownerSession.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-AUTH", name: "Mock auth item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 1, idempotencyKey: "mock-auth-opening" });
+    const input = { branchId, guest: { fullName: "Front Desk Guest", phone: "+962790000005" }, lines: [{ productId: product.id, quantity: 1 }], method: "card" as const, externalReference: "VISA-MOCK-4", idempotencyKey: "mock-auth-sale" };
+    await api.switchDemoRole("trainer");
+    await expect(api.checkoutRetail(input)).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("receptionist");
+    await expect(api.checkoutRetail(input)).resolves.toMatchObject({ retailSale: { customer: { kind: "guest" } } });
+  });
+
+  it("enforces branch member visibility and configured payment methods", async () => {
+    const ownerSession = await api.getSession();
+    const branchA = ownerSession.branches[0]!.id;
+    const branchB = ownerSession.branches[1]!.id;
+    const product = await api.upsertProduct({ sku: "MOCK-BRANCH-AUTH", name: "Branch scoped item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
+    await api.recordStockMovement({ branchId: branchA, productId: product.id, type: "receive", quantity: 2, idempotencyKey: "mock-branch-auth-opening" });
+    const branchBMember = await api.createMember({ fullName: "Branch B Member", phone: "+962 79 900 0999", homeBranchId: branchB, preferredLanguage: "en", gender: "male" });
+    const settings = await api.getOrganizationSettings();
+    await api.updatePaymentMethods(settings.paymentMethods.map((method) => method.key === "card" ? { ...method, enabled: false } : method));
+    await api.switchDemoRole("receptionist");
+    await expect(api.checkoutRetail({ branchId: branchA, memberId: branchBMember.member.id, lines: [{ productId: product.id, quantity: 1 }], method: "cash", idempotencyKey: "mock-branch-member" })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+    await expect(api.checkoutRetail({ branchId: branchA, guest: { fullName: "Disabled card guest", phone: "+962 79 900 0998" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-DISABLED", idempotencyKey: "mock-disabled-card" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.listInventory({ branchId: branchA, productId: product.id })).resolves.toEqual([expect.objectContaining({ availableQuantity: 2 })]);
+  });
+});
+
+describe("management accounting mock contract", () => {
+  it("rejects malformed posting dates before creating a ledger period", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    await expect(api.postManualJournal({
+      branchId: branch.id,
+      scope: "branch",
+      postingDate: "2026-02-30",
+      memo: "Invalid date",
+      reason: "Reject malformed calendar date",
+      idempotencyKey: "mock-accounting-invalid-date",
+      lines: [
+        { accountId: "acct-1100", debit: money(100), credit: money(0) },
+        { accountId: "acct-1200", debit: money(0), credit: money(100) },
+      ],
+    })).rejects.toMatchObject({ code: ERR.VALIDATION });
+  });
+
+  it("keeps reversal lines immutable and nets the original plus reversal to zero", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    const input = {
+      branchId: branch.id,
+      scope: "branch" as const,
+      memo: "Mock correction",
+      reason: "Owner-approved test correction",
+      idempotencyKey: "mock-accounting-manual-1",
+      lines: [
+        { accountId: "acct-1100", debit: money(1_000), credit: money(0) },
+        { accountId: "acct-1200", debit: money(0), credit: money(1_000) },
+      ],
+    };
+    const entry = await api.postManualJournal(input);
+    const originalLines = entry.lines.map((line) => ({ ...line, debit: { ...line.debit }, credit: { ...line.credit } }));
+    await expect(api.postManualJournal({ ...input, memo: "Different memo" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    expect((await api.postManualJournal(input)).id).toBe(entry.id);
+
+    const reversal = await api.reverseAccountingEntry(entry.id, { reason: "Owner-approved reversal", idempotencyKey: "mock-accounting-reversal-1" });
+    expect(reversal.reversalOfEntryId).toBe(entry.id);
+    expect((await api.reverseAccountingEntry(entry.id, { reason: "Owner-approved reversal", idempotencyKey: "mock-accounting-reversal-1" })).id).toBe(reversal.id);
+    await expect(api.reverseAccountingEntry(entry.id, { reason: "Different reversal reason", idempotencyKey: "mock-accounting-reversal-1" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+
+    const originalAfter = await api.getAccountingJournalEntry(entry.id);
+    expect(originalAfter.lines).toEqual(originalLines);
+    expect(await api.getAccountingTrialBalance()).toMatchObject({ rows: [], totalDebit: money(0), totalCredit: money(0) });
+  });
+
+  it("scopes source idempotency keys by full source identity", async () => {
+    const internals = api as unknown as { db: { payments: Payment[] } };
+    const payment = internals.db.payments.find((candidate) => candidate.status === "completed");
+    expect(payment).toBeDefined();
+    const posted = await api.postAccountingSource({ sourceType: "payment", sourceId: payment!.id, idempotencyKey: "shared-payment-void-key-mock", reason: "Verified cash collection" });
+    expect(posted.status).toBe("posted");
+    const replay = await api.postAccountingSource({ sourceType: "payment", sourceId: payment!.id, idempotencyKey: "shared-payment-void-key-mock", reason: "Verified cash collection" });
+    expect(replay.journalEntryId).toBe(posted.journalEntryId);
+    await expect(api.postAccountingSource({ sourceType: "void", sourceId: payment!.id, idempotencyKey: "shared-payment-void-key-mock", reason: "Attempted void with a reused key" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    const differentKey = await api.postAccountingSource({ sourceType: "void", sourceId: payment!.id, idempotencyKey: "different-void-key-mock", reason: "Void lifecycle is not complete" });
+    expect(differentKey).toMatchObject({ status: "unconfigured" });
+    expect(differentKey.journalEntryId).toBeUndefined();
+    const journal = await api.listAccountingJournalEntries({});
+    expect(journal.items.filter((item) => item.sourceId === payment!.id)).toHaveLength(1);
+  });
+
+  it("refreshes supported source facts into an idempotent, non-posting queue", async () => {
+    const sourceTypes = ["payment", "refund", "void", "membership_sale", "membership_renewal"] as const;
+    const first = await api.refreshAccountingSourceQueue({ sourceTypes: [...sourceTypes] });
+    expect(first.scanned).toBeGreaterThan(0);
+    expect(first.created).toBe(first.scanned);
+    expect(first.items.every((item) => !item.journalEntryId)).toBe(true);
+    expect(first.pending + first.unconfigured + first.excluded).toBe(first.scanned);
+
+    const replay = await api.refreshAccountingSourceQueue({ sourceTypes: [...sourceTypes] });
+    expect(replay).toMatchObject({ scanned: first.scanned, created: 0, updated: 0 });
+  });
+
+  it("projects retail collections into clearing and revenue accounting", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-ACCOUNTING-RETAIL", name: "Accounting retail item", unit: "each", reorderPoint: 1, retailPrice: money(2_000, "JOD") });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, unitCost: money(500, "JOD"), idempotencyKey: "mock-accounting-retail-opening" });
+    await api.switchDemoRole("receptionist");
+    const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Accounting guest", phone: "+962790000099" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "VISA-ACCOUNTING", idempotencyKey: "mock-accounting-retail-sale" });
+    await api.switchDemoRole("owner");
+    const refreshed = await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
+    const source = refreshed.items.find((item) => item.sourceId === sale.payment.id);
+    expect(source).toMatchObject({ sourceType: "payment", status: "pending", amount: money(2_000, "JOD"), policyCode: "retail-sale-card.v2", details: { saleType: "retail" } });
+    const posted = await api.postAccountingSource({ sourceType: "payment", sourceId: sale.payment.id, idempotencyKey: "mock-accounting-retail-post" });
+    expect(posted).toMatchObject({ status: "posted", amount: money(2_000, "JOD"), policyCode: "retail-sale-card.v2", policyVersion: 2 });
+    const journal = await api.getAccountingJournalEntry(posted.journalEntryId!);
+    expect(journal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "1110", debit: money(2_000, "JOD") }), expect.objectContaining({ accountCode: "4200", credit: money(2_000, "JOD") })]));
+    expect(journal).toMatchObject({ policyCode: "retail-sale-card.v2", policyVersion: 2, idempotencyKey: `source:payment:${sale.payment.id}:v2:mock-accounting-retail-post` });
+    const movements = (api as unknown as { db: MockDb }).db.stockMovements;
+    const saleMovement = movements.find((movement) => movement.referenceType === "retail_sale" && movement.referenceId === sale.retailSale.id);
+    expect(saleMovement).toBeDefined();
+    const stockRefresh = await api.refreshAccountingSourceQueue({ sourceTypes: ["stock_movement"] });
+    const stockSource = stockRefresh.items.find((item) => item.sourceId === saleMovement!.id);
+    expect(stockSource).toMatchObject({ status: "pending", policyCode: "stock-consume.v1", amount: money(500, "JOD") });
+    const stockPosted = await api.postAccountingSource({ sourceType: "stock_movement", sourceId: saleMovement!.id, idempotencyKey: "mock-accounting-retail-cogs" });
+    const stockJournal = await api.getAccountingJournalEntry(stockPosted.journalEntryId!);
+    expect(stockJournal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "5100", debit: money(500, "JOD") }), expect.objectContaining({ accountCode: "1300", credit: money(500, "JOD") })]));
+    const refunded = await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Accounting integration return", idempotencyKey: "mock-accounting-retail-refund" });
+    expect(refunded.payment).toMatchObject({ type: "refund", amount: money(-2_000, "JOD") });
+    const refundPayment = (api as unknown as { db: MockDb }).db.payments.find((payment) => payment.type === "refund" && "retailSaleId" in payment && payment.retailSaleId === sale.retailSale.id);
+    expect(refundPayment).toBeDefined();
+    const returnMovement = (api as unknown as { db: MockDb }).db.stockMovements.find((movement) => movement.referenceType === "retail_refund" && movement.referenceId === sale.retailSale.id);
+    expect(returnMovement).toBeDefined();
+    await api.refreshAccountingSourceQueue({ sourceTypes: ["refund", "stock_movement"] });
+    const refundPosted = await api.postAccountingSource({ sourceType: "refund", sourceId: refundPayment!.id, idempotencyKey: "mock-accounting-retail-refund-post" });
+    const refundJournal = await api.getAccountingJournalEntry(refundPosted.journalEntryId!);
+    expect(refundJournal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "4200", debit: money(2_000, "JOD") }), expect.objectContaining({ accountCode: "1110", credit: money(2_000, "JOD") })]));
+    const returnPosted = await api.postAccountingSource({ sourceType: "stock_movement", sourceId: returnMovement!.id, idempotencyKey: "mock-accounting-retail-return-cogs" });
+    const returnJournal = await api.getAccountingJournalEntry(returnPosted.journalEntryId!);
+    expect(returnJournal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "1300", debit: money(500, "JOD") }), expect.objectContaining({ accountCode: "5100", credit: money(500, "JOD") })]));
+  });
+
+  it("preserves a historical pending retail policy across refresh and post", async () => {
+    const branch = (await api.getSession()).branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-HISTORICAL-POLICY", name: "Historical policy item", unit: "each", reorderPoint: 1, retailPrice: money(1_000, "JOD") });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, unitCost: money(300, "JOD"), idempotencyKey: "mock-historical-policy-opening" });
+    await api.switchDemoRole("receptionist");
+    const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Historical policy guest", phone: "+962790000099" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "HISTORICAL-POLICY", idempotencyKey: "mock-historical-policy-sale" });
+    await api.switchDemoRole("owner");
+    await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
+    const internals = api as unknown as { accountingSources: T.AccountingSourcePosting[] };
+    const existing = internals.accountingSources.find((row) => row.sourceId === sale.payment.id);
+    expect(existing).toBeDefined();
+    Object.assign(existing!, { status: "unconfigured", policyCode: "retail-sale-card.v1", policyVersion: 1, reason: "Historical source awaiting review." });
+    const refreshed = await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
+    expect(refreshed.items.find((row) => row.sourceId === sale.payment.id)).toMatchObject({ status: "pending", policyCode: "retail-sale-card.v1", policyVersion: 1 });
+    const posted = await api.postAccountingSource({ sourceType: "payment", sourceId: sale.payment.id, idempotencyKey: "mock-historical-policy-post" });
+    expect(posted).toMatchObject({ status: "posted", policyCode: "retail-sale-card.v1", policyVersion: 1 });
+    const journal = await api.getAccountingJournalEntry(posted.journalEntryId!);
+    expect(journal).toMatchObject({ policyCode: "retail-sale-card.v1", policyVersion: 1, idempotencyKey: `source:payment:${sale.payment.id}:v1:mock-historical-policy-post` });
+    expect(journal.lines).toEqual(expect.arrayContaining([expect.objectContaining({ accountCode: "4100", credit: money(1_000, "JOD") })]));
+  });
+
+  it("replays an unconfigured source decision by key while a new key retries after source repair", async () => {
+    const internals = api as unknown as { db: { payments: Payment[] } };
+    const voided = internals.db.payments.find((payment) => payment.status === "voided");
+    expect(voided).toBeDefined();
+
+    const first = await api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "Review the voided collection" });
+    expect(first).toMatchObject({ status: "unconfigured" });
+    expect(first.journalEntryId).toBeUndefined();
+
+    voided!.status = "completed";
+    const refreshed = await api.refreshAccountingSourceQueue({ sourceTypes: ["payment"] });
+    const refreshedDecision = refreshed.items.find((item) => item.sourceId === voided!.id);
+    expect(refreshedDecision).toMatchObject({ sourceId: voided!.id, status: "pending" });
+    expect(refreshedDecision?.journalEntryId).toBeUndefined();
+
+    const replay = await api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "Review the voided collection" });
+    expect(replay).toMatchObject({ status: "unconfigured" });
+    expect(replay.journalEntryId).toBeUndefined();
+    await expect(api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "A materially different review reason" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+
+    const retried = await api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-retry-mock", reason: "Post after the source was corrected" });
+    expect(retried.status).toBe("posted");
+    expect(retried.journalEntryId).toBeDefined();
+    const replayAfterRetry = await api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "Review the voided collection" });
+    expect(replayAfterRetry).toMatchObject({ status: "unconfigured" });
+    expect(replayAfterRetry.journalEntryId).toBeUndefined();
+    await expect(api.postAccountingSource({ sourceType: "payment", sourceId: voided!.id, idempotencyKey: "stable-source-attempt-mock", reason: "A materially different review reason" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("hides consolidated and unknown-branch accounting rows from selected-branch managers", async () => {
+    const ownerSession = await api.getSession();
+    const branch = ownerSession.branches[0]!;
+    const normal = await api.postManualJournal({
+      branchId: branch.id,
+      scope: "branch",
+      memo: "Branch adjustment",
+      reason: "Owner-approved branch adjustment",
+      idempotencyKey: "scope-normal-mock",
+      lines: [
+        { accountId: "acct-1100", debit: money(1_000), credit: money(0) },
+        { accountId: "acct-1200", debit: money(0), credit: money(1_000) },
+      ],
+    });
+    const consolidated = await api.postManualJournal({
+      scope: "consolidated",
+      memo: "Consolidated adjustment",
+      reason: "Owner-approved organization adjustment",
+      idempotencyKey: "scope-consolidated-mock",
+      lines: [
+        { accountId: "acct-1100", debit: money(7_500), credit: money(0) },
+        { accountId: "acct-1200", debit: money(0), credit: money(7_500) },
+      ],
+    });
+    const now = new Date().toISOString();
+    const internals = api as unknown as { accountingSources: AccountingSourcePosting[] };
+    internals.accountingSources.push({
+      id: "mock-consolidated-source",
+      organizationId: ownerSession.organization.id,
+      sourceType: "payment",
+      sourceId: "mock-consolidated-source-fact",
+      status: "posted",
+      amount: money(9_900),
+      currency: "JOD",
+      journalEntryId: "mock-consolidated-journal",
+      occurredAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await api.switchDemoRole("manager", branch.id);
+    const managerInternals = api as unknown as { db: { session: { userId: string }; users: Array<{ id: string; branchScope: string; branchIds: string[] }> } };
+    const selectedManager = managerInternals.db.users.find((user) => user.id === managerInternals.db.session.userId);
+    expect(selectedManager).toBeDefined();
+    selectedManager!.branchScope = "selected";
+    selectedManager!.branchIds = [branch.id];
+    const managerEntries = await api.listAccountingJournalEntries();
+    expect(managerEntries.items.map((entry) => entry.id)).toContain(normal.id);
+    expect(managerEntries.items.map((entry) => entry.id)).not.toContain(consolidated.id);
+    await expect(api.getAccountingJournalEntry(consolidated.id)).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+
+    const managerTrialBalance = await api.getAccountingTrialBalance();
+    expect(managerTrialBalance.rows.some((row) => Math.abs(row.balance.amount) === 7_500)).toBe(false);
+    expect(managerTrialBalance).toMatchObject({ totalDebit: money(1_000), totalCredit: money(1_000) });
+
+    const managerSources = await api.listAccountingSourcePostings();
+    expect(managerSources.items.map((source) => source.sourceId)).not.toContain("mock-consolidated-source-fact");
+    await expect(api.postAccountingSource({ sourceType: "payment", sourceId: "mock-consolidated-source-fact", idempotencyKey: "scope-hidden-mock", reason: "Should not disclose consolidated source" })).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+
+    await api.switchDemoRole("owner");
+    expect((await api.listAccountingSourcePostings()).items.map((source) => source.sourceId)).toContain("mock-consolidated-source-fact");
+  });
+
+  it("permanently deletes a product, releases its SKU, and preserves movement history", async () => {
+    const session = await api.getSession();
+    const branch = session.branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-DELETE", name: "Disposable mock stock", unit: "each", reorderPoint: 1 });
+    const supplier = await api.upsertSupplier({ name: "Mock delete supplier", branchIds: [branch.id], preferredProductIds: [product.id] });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 2, idempotencyKey: "mock-delete-receive" });
+    await api.switchDemoRole("receptionist");
+    await expect(api.deleteProduct({ productId: product.id, reason: "No longer sold", confirmation: "mock-delete" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("owner");
+    await expect(api.deleteProduct({ productId: product.id, reason: "Stock must be cleared first", confirmation: "mock-delete" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "adjustment", quantity: -2, reason: "Clearing stock before permanent deletion", idempotencyKey: "mock-delete-clear" });
+    const deleted = await api.deleteProduct({ productId: product.id, reason: "No longer sold", confirmation: "mock-delete" });
+    expect(deleted).toMatchObject({ deleted: true, productId: product.id, sku: "MOCK-DELETE" });
+    await expect(api.deleteProduct({ productId: product.id, reason: "Retry", confirmation: "mock-delete" })).resolves.toMatchObject({ deleted: true, productId: product.id });
+    const replacement = await api.upsertProduct({ sku: "MOCK-DELETE", name: "Replacement mock stock", unit: "each", reorderPoint: 1 });
+    expect(replacement.id).not.toBe(product.id);
+    expect((await api.listSuppliers()).find((row) => row.id === supplier.id)?.preferredProductIds).not.toContain(product.id);
+    const movements = await api.listStockMovements({ productId: product.id });
+    expect(movements.items).toEqual(expect.arrayContaining([expect.objectContaining({ productId: product.id, productSku: "MOCK-DELETE", productName: "Disposable mock stock" })]));
+    expect((await api.listProducts()).some((row) => row.id === product.id)).toBe(false);
+  });
+
+  it("blocks permanent deletion while a purchase order is still open", async () => {
+    const session = await api.getSession();
+    const branch = session.branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-OPEN-PO", name: "Mock open PO stock", unit: "each", reorderPoint: 1 });
+    const supplier = await api.upsertSupplier({ name: "Mock open PO supplier", branchIds: [branch.id], preferredProductIds: [product.id] });
+    await api.createPurchaseOrder({ branchId: branch.id, supplierId: supplier.id, lines: [{ productId: product.id, quantity: 3, unitCost: money(100) }] });
+    await expect(api.deleteProduct({ productId: product.id, reason: "Open order", confirmation: "MOCK-OPEN-PO" })).rejects.toMatchObject({ code: ERR.CONFLICT });
+  });
+
+  it("refunds a deleted product into a non-sellable tombstone balance", async () => {
+    const session = await api.getSession();
+    const branch = session.branches[0]!;
+    const product = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Mock refundable retired stock", unit: "each", reorderPoint: 1, retailPrice: money(1_000) });
+    await api.recordStockMovement({ branchId: branch.id, productId: product.id, type: "receive", quantity: 1, unitCost: money(400, "JOD"), idempotencyKey: "mock-delete-refund-receive" });
+    const sale = await api.checkoutRetail({ branchId: branch.id, guest: { fullName: "Deleted mock guest", phone: "+962790000012" }, lines: [{ productId: product.id, quantity: 1 }], method: "card", externalReference: "MOCK-DELETE-REFUND", idempotencyKey: "mock-delete-refund-sale" });
+    await api.deleteProduct({ productId: product.id, reason: "Retiring this item", confirmation: "MOCK-DELETE-REFUND" });
+    const replacement = await api.upsertProduct({ sku: "MOCK-DELETE-REFUND", name: "Replacement mock retail stock", unit: "each", reorderPoint: 1 });
+    expect(replacement.id).not.toBe(product.id);
+    await expect(api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Customer returned retired item", idempotencyKey: "mock-delete-refund-action" })).resolves.toMatchObject({ retailSale: { status: "refunded" } });
+    const internals = api as unknown as { db: MockDb };
+    expect(internals.db.inventoryBalances).toEqual(expect.arrayContaining([expect.objectContaining({ productId: product.id, quantityOnHand: 1, sellable: false })]));
+    expect(internals.db.inventoryBalances.some((balance) => balance.productId === replacement.id)).toBe(false);
+    await expect(api.listInventory({ branchId: branch.id, productId: product.id })).resolves.toEqual([]);
+    expect(internals.db.stockMovements.some((movement) => movement.productId === product.id && movement.type === "return" && movement.productName === "Mock refundable retired stock")).toBe(true);
+    expect(internals.db.stockMovements.find((movement) => movement.productId === product.id && movement.type === "return")?.unitCost).toEqual(money(400, "JOD"));
+  });
+});
+
+describe("branch checklists parity", () => {
+  it("mirrors the convex day flow: lazy run, reason gates, correction, and escalation", async () => {
+    const templates = await api.listChecklistTemplates();
+    const opening = templates.find((template) => template.type === "opening")!;
+    expect(opening.items.length).toBeGreaterThan(2);
+
+    const day = await api.getChecklistDay({ branchId: opening.branchId });
+    const pendingRun = day.runs.find((run) => run.templateId === opening.id)!;
+    expect(pendingRun.id).toBeUndefined();
+    expect(pendingRun.progress.total).toBe(opening.items.length);
+
+    const afterComplete = await api.setChecklistItem({ templateId: opening.id, itemId: opening.items[0]!.id, status: "completed" });
+    expect(afterComplete.id).toBeTruthy();
+    expect(afterComplete.items.find((item) => item.itemId === opening.items[0]!.id)).toMatchObject({ status: "completed" });
+    expect(afterComplete.items.find((item) => item.itemId === opening.items[0]!.id)!.actorName).toBeTruthy();
+
+    // Failing a required item needs a reason; the linked space escalates.
+    const requiredWithZone = opening.items.find((item) => item.zoneId)!;
+    await expect(api.setChecklistItem({ templateId: opening.id, itemId: requiredWithZone.id, status: "failed" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await api.setChecklistItem({ templateId: opening.id, itemId: requiredWithZone.id, status: "failed", reason: "Shower drain blocked." });
+    const escalated = await api.createChecklistMaintenanceTask({ templateId: opening.id, itemId: requiredWithZone.id });
+    expect(escalated.items.find((item) => item.itemId === requiredWithZone.id)!.facilityTaskId).toBeTruthy();
+    await expect(api.createChecklistMaintenanceTask({ templateId: opening.id, itemId: requiredWithZone.id })).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // A recorded result only changes with a reasoned correction.
+    await expect(api.setChecklistItem({ templateId: opening.id, itemId: requiredWithZone.id, status: "completed" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    const corrected = await api.setChecklistItem({ templateId: opening.id, itemId: requiredWithZone.id, status: "completed", reason: "Drain cleared." });
+    expect(corrected.items.find((item) => item.itemId === requiredWithZone.id)).toMatchObject({ status: "completed" });
+
+    // Same template + date stays one run.
+    const again = await api.getChecklistDay({ branchId: opening.branchId });
+    expect(again.runs.filter((run) => run.templateId === opening.id)).toHaveLength(1);
+    expect(again.runs.find((run) => run.templateId === opening.id)!.id).toBe(afterComplete.id);
+  });
+});
+
+describe("front-desk lookup", () => {
+  it("offers every person a name fragment could mean instead of deciding for the first", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const alpha = (await api.createMember({ fullName: "Lookup Twin Alpha", phone: "+962 79 700 0001", homeBranchId: branchId, preferredLanguage: "en", gender: "female" })).member;
+    const beta = (await api.createMember({ fullName: "Lookup Twin Beta", phone: "+962 79 700 0002", homeBranchId: branchId, preferredLanguage: "en", gender: "male" })).member;
+
+    const ambiguous = await api.previewCheckIn({ branchId, query: "Lookup Twin" });
+    expect(ambiguous.found).toBe(false);
+    expect(ambiguous.member).toBeUndefined();
+    expect(ambiguous.reasonCodes).toEqual([]);
+    expect(ambiguous.message).toMatch(/2 members match/);
+    expect(ambiguous.candidates?.map((candidate) => candidate.id).sort()).toEqual([alpha.id, beta.id].sort());
+
+    const byNumber = await api.previewCheckIn({ branchId, query: beta.memberNumber.toLowerCase() });
+    expect(byNumber.found).toBe(true);
+    expect(byNumber.member?.id).toBe(beta.id);
+    expect(byNumber.candidates).toBeUndefined();
+
+    const byPhone = await api.previewCheckIn({ branchId, query: "0797000001" });
+    expect(byPhone.found).toBe(true);
+    expect(byPhone.member?.id).toBe(alpha.id);
+  });
+
+  it("explains a term that has not started instead of calling it expired", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const member = await freshMemberForSale();
+    const plan = (await api.listPlans({ status: "active", pageSize: 5 })).items[0]!;
+    const start = addDays(todayISODate(), 10);
+    await api.createMembershipSale({ memberId: member.id, planId: plan.id, startDate: start, overrideReason: "Starts after the member's travel" });
+
+    const preview = await api.previewCheckIn({ branchId, query: member.memberNumber });
+    expect(preview.found).toBe(true);
+    expect(preview.decision).toBe("blocked");
+    expect(preview.reasonCodes).toEqual(["MEMBERSHIP_NOT_STARTED"]);
+    expect(preview.message).toContain(start);
+    expect(preview.message).not.toMatch(/renew/i);
+    expect(preview.membership?.status).toBe("scheduled");
+  });
+});
+
+describe("payments taken away from the member's home branch", () => {
+  it("credits the desk's drawer and shift rather than the home branch's", async () => {
+    const session = await api.getSession();
+    const member = await anyMemberWithBalance();
+    const desk = session.branches.find((branch) => branch.id !== member.homeBranchId)!;
+    const shift = (await api.getCurrentCashShift(desk.id)) ?? (await api.openCashShift({ branchId: desk.id, openingFloat: money(0) }));
+
+    const receipt = await api.createPayment({ memberId: member.id, branchId: desk.id, amount: money(1_000), method: "cash" }, "idem-desk-branch");
+    const payment = receipt.payment as Payment;
+    expect(payment.branchId).toBe(desk.id);
+    expect(payment.shiftId).toBe(shift.id);
+
+    const home = await api.createPayment({ memberId: member.id, amount: money(1_000), method: "card", externalReference: "POS-HOME-1" }, "idem-home-branch");
+    expect((home.payment as Payment).branchId).toBe(member.homeBranchId);
+  });
+
+  it("refuses cash at a desk whose drawer is closed even when the home branch has one open", async () => {
+    const session = await api.getSession();
+    const member = await anyMemberWithBalance();
+    const home = member.homeBranchId;
+    if (!(await api.getCurrentCashShift(home))) await api.openCashShift({ branchId: home, openingFloat: money(0) });
+    const desk = session.branches.find((branch) => branch.id !== home)!;
+    const open = await api.getCurrentCashShift(desk.id);
+    if (open) {
+      const totals = (await api.getCurrentShiftTotals(desk.id))!.totals;
+      await api.closeCashShift(open.id, { countedCash: money(open.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount) });
+    }
+
+    await expect(api.createPayment({ memberId: member.id, branchId: desk.id, amount: money(1_000), method: "cash" }, "idem-closed-desk")).rejects.toMatchObject({ code: ERR.NO_OPEN_SHIFT });
+    await expect(api.createPayment({ memberId: member.id, branchId: "no-such-branch", amount: money(1_000), method: "card", externalReference: "POS-X" }, "idem-bad-branch")).rejects.toMatchObject({ code: ERR.NOT_FOUND });
+  });
+});
+
+async function membersWithActiveMemberships(count: number): Promise<Array<{ memberId: string; membershipId: string; name: string }>> {
+  const page = await api.listMembers({ membershipStatus: "active", pageSize: 12 });
+  const picked: Array<{ memberId: string; membershipId: string; name: string }> = [];
+  for (const member of page.items) {
+    const memberships = await api.listMemberships({ memberId: member.id, status: "active", pageSize: 5 });
+    const membership = memberships.items[0];
+    if (membership) picked.push({ memberId: member.id, membershipId: membership.id, name: member.fullName });
+    if (picked.length === count) break;
+  }
+  expect(picked).toHaveLength(count);
+  return picked;
+}
+
+describe("dated class rosters and waitlists", () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function futureClass(capacity: number, startMinute = 23 * 60) {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const date = addDays(todayISODate("Asia/Amman"), 2);
+    const dayOfWeek = new Date(`${date}T12:00:00Z`).getUTCDay();
+    const template = await api.upsertClassSession({ branchId, name: `Roster test ${capacity}`, dayOfWeek, startMinute, durationMinutes: 45, capacity, audience: "mixed" });
+    return { branchId, date, template, occurrenceId: `occ:${template.id}:${date}` };
+  }
+
+  it("seats the first member, waitlists the next, and promotes only when a confirmed seat is freed", async () => {
+    const { occurrenceId } = await futureClass(1);
+    const [first, second] = await membersWithActiveMemberships(2);
+    let occurrence = await api.addClassOccurrenceAttendee({ occurrenceId, memberId: first!.memberId, membershipId: first!.membershipId });
+    expect(occurrence).toMatchObject({ bookedCount: 1, waitlistCount: 0 });
+    occurrence = await api.addClassOccurrenceAttendee({ occurrenceId, memberId: second!.memberId, membershipId: second!.membershipId });
+    expect(occurrence).toMatchObject({ bookedCount: 1, waitlistCount: 1, spotsRemaining: 0 });
+    const waiting = occurrence.roster.find((entry) => entry.memberId === second!.memberId)!;
+    expect(waiting.status).toBe("waitlisted");
+
+    // Adding the same member twice changes nothing.
+    occurrence = await api.addClassOccurrenceAttendee({ occurrenceId, memberId: second!.memberId, membershipId: second!.membershipId });
+    expect(occurrence.roster.filter((entry) => entry.memberId === second!.memberId)).toHaveLength(1);
+
+    // Staff removal is reason-gated, and removing a waitlisted member frees no seat.
+    await expect(api.removeClassOccurrenceAttendee({ occurrenceId, bookingId: waiting.bookingId })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION);
+    occurrence = await api.removeClassOccurrenceAttendee({ occurrenceId, bookingId: waiting.bookingId, reason: "Member changed plans" });
+    expect(occurrence).toMatchObject({ bookedCount: 1, waitlistCount: 0 });
+    expect(occurrence.roster.find((entry) => entry.memberId === first!.memberId)?.status).toBe("booked");
+
+    // Back on the waitlist; when the seat holder is removed the seat passes on.
+    occurrence = await api.addClassOccurrenceAttendee({ occurrenceId, memberId: second!.memberId, membershipId: second!.membershipId });
+    const seat = occurrence.roster.find((entry) => entry.memberId === first!.memberId && entry.status === "booked")!;
+    occurrence = await api.removeClassOccurrenceAttendee({ occurrenceId, bookingId: seat.bookingId, reason: "Member is unwell" });
+    expect(occurrence).toMatchObject({ bookedCount: 1, waitlistCount: 0 });
+    expect(occurrence.roster.find((entry) => entry.memberId === second!.memberId && entry.status === "booked")).toMatchObject({ fromWaitlist: true });
+
+    // A repeated removal reports the roster as it is.
+    const again = await api.removeClassOccurrenceAttendee({ occurrenceId, bookingId: seat.bookingId, reason: "Double tap" });
+    expect(again).toMatchObject({ bookedCount: 1, waitlistCount: 0 });
+  });
+
+  it("carries a timetable edit into the dated class and fills the new seat from the waitlist", async () => {
+    const { branchId, date, template, occurrenceId } = await futureClass(1);
+    const [first, second] = await membersWithActiveMemberships(2);
+    await api.addClassOccurrenceAttendee({ occurrenceId, memberId: first!.memberId, membershipId: first!.membershipId });
+    await api.addClassOccurrenceAttendee({ occurrenceId, memberId: second!.memberId, membershipId: second!.membershipId });
+
+    await api.upsertClassSession({ sessionId: template.id, branchId, name: "Roster test renamed", dayOfWeek: template.dayOfWeek, startMinute: 22 * 60, durationMinutes: 45, capacity: 2, audience: "mixed" });
+    const occurrence = (await api.listClassOccurrences({ branchId, fromDate: date, toDate: date })).find((item) => item.id === occurrenceId)!;
+    expect(occurrence).toMatchObject({ name: "Roster test renamed", capacity: 2, bookedCount: 2, waitlistCount: 0, startsAt: new Date(`${date}T22:00:00+03:00`).toISOString() });
+    expect(occurrence.roster.find((entry) => entry.memberId === second!.memberId)).toMatchObject({ status: "booked", fromWaitlist: true });
+
+    await expect(api.upsertClassSession({ sessionId: template.id, branchId, name: "Roster test renamed", dayOfWeek: template.dayOfWeek, startMinute: 22 * 60, durationMinutes: 45, capacity: 1, audience: "mixed" }))
+      .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION && error.message.includes(date));
+  });
+});
+
+describe("PT outcomes and reserved credits", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("lists a started session until its outcome is recorded and refuses an outcome before the start", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the outcome test", idempotencyKey: "intro-mock-outcomes" });
+    const workspace = await api.getPtWorkspace();
+    expect(workspace.cancellationCutoffHours).toBe(12);
+    const trainer = workspace.trainers[0]!;
+    const branchId = trainer.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    let date = addDays(todayISODate("Asia/Amman"), 1);
+    let slots: T.PtAvailableSlot[] = [];
+    for (let attempt = 0; attempt < 7 && slots.length === 0; attempt += 1) {
+      slots = await api.listPtAvailableSlots({ trainerProfileId: trainer.id, branchId, from: date, to: date });
+      if (!slots.length) date = addDays(date, 1);
+    }
+    const booking = await api.createPtBooking({ membershipId: member!.membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[0]!.startsAt, idempotencyKey: "mock-booking-outcome" });
+    await expect(api.completePtBooking(booking.id)).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.parse(booking.startsAt) + 10 * 60_000));
+    const experience = await api.getPtMemberExperience(member!.membershipId);
+    expect(experience.cancellationCutoffHours).toBe(12);
+    expect(experience.reservedSessions).toBe(1);
+    expect(experience.upcomingBookings.map((item) => item.id)).toContain(booking.id);
+
+    expect((await api.completePtBooking(booking.id)).status).toBe("completed");
+    await expect(api.completePtBooking(booking.id)).rejects.toSatisfy((error) => isApiError(error));
+    const after = await api.getPtMemberExperience(member!.membershipId);
+    expect(after.reservedSessions).toBe(0);
+    expect(after.upcomingBookings.some((item) => item.id === booking.id)).toBe(false);
+  });
+});
+
+describe("trainer journey in the preview adapter", () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function firstOpenSlot(trainerProfileId: string, branchId: string): Promise<T.PtAvailableSlot> {
+    let date = addDays(todayISODate("Asia/Amman"), 1);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const slots = await api.listPtAvailableSlots({ trainerProfileId, branchId, from: date, to: date });
+      if (slots[0]) return slots[0];
+      date = addDays(date, 1);
+    }
+    throw new Error("The seeded trainer should have an open slot within ten days.");
+  }
+
+  async function activateSecondTrainer(): Promise<{ profile: T.PtTrainerProfile; branchId: string }> {
+    const invited = await api.inviteUser({ name: "Nour Coach", email: "nour@forgefitness.jo", role: "trainer", branchScope: "selected", branchIds: [BRANCH_ABD] });
+    expect(invited.status).toBe("invited");
+    // An invited account cannot carry a profile until it becomes active.
+    await expect(api.upsertPtTrainerProfile({ userId: invited.id, displayName: "Nour", specialties: [], languages: ["en"], branchIds: [BRANCH_ABD], status: "draft" }))
+      .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION);
+    await api.updateUserAccess(invited.id, { status: "active" });
+    const profile = await api.upsertPtTrainerProfile({ userId: invited.id, displayName: "Nour", specialties: ["Mobility"], languages: ["en"], branchIds: [BRANCH_ABD], status: "published" });
+    await api.replacePtAvailability({ trainerProfileId: profile.id, rules: (["sun", "mon", "tue", "wed", "thu"] as T.WeekdayKey[]).map((weekday) => ({ branchId: BRANCH_ABD, weekday, startMinute: 8 * 60, endMinute: 17 * 60, active: true })), exceptions: [] });
+    return { profile, branchId: BRANCH_ABD };
+  }
+
+  it("shows a trainer only their own profile, sessions and credit counters, never the gym's packages or money", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the trainer workspace test", idempotencyKey: "intro-mock-trainer-scope" });
+    const gymView = await api.getPtWorkspace();
+    const fadi = gymView.trainers[0]!;
+    const branchId = fadi.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    const slot = await firstOpenSlot(fadi.id, branchId);
+    const booking = await api.createPtBooking({ membershipId: member!.membershipId, trainerProfileId: fadi.id, branchId, startsAt: slot.startsAt, idempotencyKey: "mock-trainer-scope-booking" });
+    expect(gymView.packages.length).toBeGreaterThan(0);
+
+    await api.switchDemoRole("trainer");
+    const session = await api.getSession();
+    const workspace = await api.getPtWorkspace();
+    expect(workspace.trainers.map((item) => item.userId)).toEqual([session.user.id]);
+    expect(workspace.trainers[0]?.availabilityRules?.length).toBeGreaterThan(0);
+    expect(workspace.packages).toEqual([]);
+    expect(workspace.pendingOrders).toEqual([]);
+    expect(workspace.metrics.packageRevenue.amount).toBe(0);
+    expect(workspace.bookings.map((item) => item.id)).toEqual([booking.id]);
+    expect(workspace.metrics).toMatchObject({ sessionsReserved: 1, upcomingBookings: 1 });
+  });
+
+  it("lets a trainer manage their own schedule and sessions but not another trainer's", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the trainer isolation test", idempotencyKey: "intro-mock-trainer-isolation" });
+    const gymView = await api.getPtWorkspace();
+    const fadi = gymView.trainers[0]!;
+    const fadiBranch = fadi.branchIds[0]!;
+    const other = await activateSecondTrainer();
+    const [first, second] = await membersWithActiveMemberships(2);
+    const ownSlot = await firstOpenSlot(fadi.id, fadiBranch);
+    const ownBooking = await api.createPtBooking({ membershipId: first!.membershipId, trainerProfileId: fadi.id, branchId: fadiBranch, startsAt: ownSlot.startsAt, idempotencyKey: "mock-own-booking" });
+    const otherSlot = await firstOpenSlot(other.profile.id, other.branchId);
+    const otherBooking = await api.createPtBooking({ membershipId: second!.membershipId, trainerProfileId: other.profile.id, branchId: other.branchId, startsAt: otherSlot.startsAt, idempotencyKey: "mock-other-booking" });
+
+    await api.switchDemoRole("trainer");
+    const workspace = await api.getPtWorkspace();
+    expect(workspace.trainers.map((item) => item.id)).toEqual([fadi.id]);
+    expect(workspace.bookings.map((item) => item.id)).toEqual([ownBooking.id]);
+
+    const forbidden = (error: unknown) => isApiError(error) && error.code === ERR.FORBIDDEN;
+    const hours = (["sun", "mon", "tue", "wed", "thu"] as T.WeekdayKey[]).map((weekday) => ({ branchId: fadiBranch, weekday, startMinute: 9 * 60, endMinute: 15 * 60, active: true }));
+    const own = await api.replacePtAvailability({ trainerProfileId: fadi.id, rules: hours, exceptions: [{ branchId: fadiBranch, date: addDays(todayISODate("Asia/Amman"), 20), reason: "Leave" }] });
+    expect(own.availabilityRules).toHaveLength(5);
+    expect(own.availabilityExceptions).toHaveLength(1);
+    await expect(api.replacePtAvailability({ trainerProfileId: other.profile.id, rules: hours.map((rule) => ({ ...rule, branchId: other.branchId })), exceptions: [] })).rejects.toSatisfy(forbidden);
+    await expect(api.reschedulePtBooking({ bookingId: ownBooking.id, trainerProfileId: fadi.id, branchId: fadiBranch, startsAt: ownSlot.startsAt, reason: "Trainer asked to move it", idempotencyKey: "mock-trainer-move" })).rejects.toSatisfy(forbidden);
+    await expect(api.cancelPtBooking(otherBooking.id, { reason: "Not my session", cancelledByGym: true })).rejects.toSatisfy(forbidden);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Math.max(Date.parse(ownBooking.startsAt), Date.parse(otherBooking.startsAt)) + 10 * 60_000));
+    await expect(api.completePtBooking(otherBooking.id)).rejects.toSatisfy(forbidden);
+    await expect(api.markPtBookingNoShow(otherBooking.id, { reason: "Member did not arrive" })).rejects.toSatisfy(forbidden);
+    expect((await api.completePtBooking(ownBooking.id)).status).toBe("completed");
+    expect((await api.getPtWorkspace()).metrics.sessionsUsed).toBe(1);
+  });
+
+  it("lets a trainer cancel their own upcoming session as a gym cancellation that returns the credit", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the trainer cancellation test", idempotencyKey: "intro-mock-trainer-cancel" });
+    const fadi = (await api.getPtWorkspace()).trainers[0]!;
+    const branchId = fadi.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    const slot = await firstOpenSlot(fadi.id, branchId);
+    const booking = await api.createPtBooking({ membershipId: member!.membershipId, trainerProfileId: fadi.id, branchId, startsAt: slot.startsAt, idempotencyKey: "mock-trainer-cancel-booking" });
+    const before = await api.getPtMemberExperience(member!.membershipId);
+
+    await api.switchDemoRole("trainer");
+    const cancelled = await api.cancelPtBooking(booking.id, { reason: "Trainer unavailable", cancelledByGym: true });
+    expect(cancelled.status).toBe("gym_cancelled");
+    const after = await api.getPtMemberExperience(member!.membershipId);
+    expect(after.availableSessions).toBe(before.availableSessions + 1);
+    expect(after.reservedSessions).toBe(before.reservedSessions - 1);
+  });
+
+  it("keeps a trainer with upcoming sessions from being deactivated, then refuses the deactivated persona", async () => {
+    await api.applyPtIntroductoryCredits({ sessionCount: 2, reason: "Pilot credits for the deactivation test", idempotencyKey: "intro-mock-trainer-deactivate" });
+    const fadi = (await api.getPtWorkspace()).trainers[0]!;
+    const branchId = fadi.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    const slot = await firstOpenSlot(fadi.id, branchId);
+    const booking = await api.createPtBooking({ membershipId: member!.membershipId, trainerProfileId: fadi.id, branchId, startsAt: slot.startsAt, idempotencyKey: "mock-trainer-deactivate-booking" });
+
+    await expect(api.updateUserAccess(fadi.userId, { status: "deactivated" })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.CONFLICT);
+    await api.cancelPtBooking(booking.id, { reason: "Trainer leaving", cancelledByGym: true });
+    expect((await api.updateUserAccess(fadi.userId, { status: "deactivated" })).status).toBe("deactivated");
+    // The profile is archived with the account, so nobody can book the departed trainer.
+    expect((await api.getPtWorkspace()).trainers.find((item) => item.id === fadi.id)?.status).toBe("archived");
+    await expect(api.listPtAvailableSlots({ trainerProfileId: fadi.id, branchId, from: addDays(todayISODate("Asia/Amman"), 1), to: addDays(todayISODate("Asia/Amman"), 1) })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
+    expect((await api.getPtMemberExperience(member!.membershipId)).trainers.some((item) => item.id === fadi.id)).toBe(false);
+    await expect(api.switchDemoRole("trainer")).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
+    // The gym keeps the profile for history, and the trainer picker no longer offers the account.
+    expect((await api.listUsers({ role: "trainer", status: "active", pageSize: 10 })).items.some((user) => user.id === fadi.userId)).toBe(false);
+  });
+});
+
+describe("PT package pricing in the gym's currency", () => {
+  it("stores the package in the configured currency, refuses another one, and keeps order snapshots on later edits", async () => {
+    const internals = api as unknown as { db: MockDb };
+    internals.db.organization.currency = "USD";
+    await expect(api.upsertPtPackage({ name: "5 PT sessions", sessionCount: 5, totalPrice: money(100_000, "JOD"), validityDays: 60, branchAccess: "all", branchIds: [], status: "active" }))
+      .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION && /currency/i.test(error.message));
+    // The seeded JOD ladder is not part of a USD gym's active catalogue.
+    for (const seeded of (await api.getPtWorkspace()).packages) await api.upsertPtPackage({ ...seeded, totalPrice: money(seeded.totalPrice.amount, "USD"), status: "archived" });
+    const created = await api.upsertPtPackage({ name: "5 PT sessions", sessionCount: 5, totalPrice: money(4_550, "USD"), validityDays: 60, branchAccess: "all", branchIds: [], status: "active" });
+    expect(created.totalPrice).toEqual({ amount: 4_550, currency: "USD" });
+    expect(ptPackageUnitPriceMinor(created.totalPrice.amount, created.sessionCount)).toBe(910);
+
+    const [member] = await membersWithActiveMemberships(1);
+    const order = await api.requestPtPackage({ membershipId: member!.membershipId, packageId: created.id, idempotencyKey: "usd-package-order" });
+    expect(order.totalPriceSnapshot).toEqual({ amount: 4_550, currency: "USD" });
+    const edited = await api.upsertPtPackage({ ...created, totalPrice: money(4_000, "USD") });
+    expect(edited.totalPrice).toEqual({ amount: 4_000, currency: "USD" });
+    const orders = (await api.getPtWorkspace()).pendingOrders;
+    expect(orders.find((item) => item.id === order.id)?.totalPriceSnapshot).toEqual({ amount: 4_550, currency: "USD" });
+  });
+});
+
+describe("adapter text follows the stored currency", () => {
+  /** Re-denominate the seeded gym without touching any historical record's text. */
+  function useCurrency(currency: string) {
+    const internals = api as unknown as { db: MockDb };
+    internals.db.organization.currency = currency;
+    for (const plan of internals.db.plans) plan.basePrice = money(plan.basePrice.amount, currency);
+  }
+
+  it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: plan, offer, sale, discount and override text matches the stored minor amounts", async (currency, unit, decimals) => {
+    useCurrency(currency);
+    const major = (minor: number) => (minor / unit).toFixed(decimals);
+    const session = await api.getSession();
+    const plan = await api.createPlan({ name: "Text plan", code: "TXT", kind: "time", durationDays: 30, basePrice: money(40 * unit + 5, currency), branchAccess: "all", branchIds: [], freezeAllowanceDays: 0, includedPtSessions: 0 });
+    const lead = await api.createLead({ fullName: "Text Lead", phone: "+962 79 900 0177", branchId: session.branches[0]!.id, source: "walk_in" });
+    await api.createOffer({ leadId: lead.id, planId: plan.id, price: money(38 * unit, currency), expiresInDays: 7 });
+    const member = await freshMemberForSale();
+    await api.createMembershipSale({ memberId: member.id, planId: plan.id, startDate: todayISODate("Asia/Amman"), priceOverride: money(35 * unit + 5, currency), overrideReason: "Approved hardship price.", discount: money(5 * unit, currency), discountReason: "Referral thank-you" });
+    const audit = (await api.listAuditEvents({ pageSize: 60 })).items.map((event) => event.summary);
+    const leadTimeline = (await api.getLead(lead.id)).activities.map((activity) => activity.title);
+    expect(audit).toContain(`Plan created — ${currency} ${major(40 * unit + 5)}`);
+    expect(audit).toContain(`Price override: ${currency} ${major(35 * unit + 5)}`);
+    expect(audit).toContain(`Discount of ${currency} ${major(5 * unit)} applied`);
+    expect(audit).toContain(`Text plan — ${currency} ${major(30 * unit + 5)}`);
+    expect(leadTimeline).toContain(`Offer drafted — Text plan at ${currency} ${major(38 * unit)}`);
+    for (const line of [...audit, ...leadTimeline]) expect(line, line).not.toMatch(currency === "USD" ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
+  });
+
+  it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: retail sale and refund text matches the stored minor amounts", async (currency, unit, decimals) => {
+    useCurrency(currency);
+    const major = (minor: number) => (minor / unit).toFixed(decimals);
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const product = await api.upsertProduct({ sku: "TXT-DRINK", name: "Protein drink", unit: "each", reorderPoint: 1, retailPrice: money(2 * unit + 5, currency) });
+    await api.recordStockMovement({ branchId, productId: product.id, type: "receive", quantity: 3, unitCost: money(unit, currency), idempotencyKey: `text-retail-opening-${currency}` });
+    const member = await freshMemberForSale();
+    const sale = await api.checkoutRetail({ branchId, memberId: member.id, lines: [{ productId: product.id, quantity: 2 }], method: "card", externalReference: "VISA-TXT", idempotencyKey: `text-retail-${currency}` });
+    expect(sale.retailSale.total).toEqual(money(4 * unit + 10, currency));
+    await api.refundRetailSale(sale.retailSale.id, { lines: [{ productId: product.id, quantity: 1 }], reason: "Returned unopened", idempotencyKey: `text-retail-refund-${currency}` });
+    const audit = (await api.listAuditEvents({ pageSize: 60 })).items.map((event) => event.summary);
+    const timeline = (await api.listMemberTimeline(member.id, { pageSize: 50 })).items.map((event) => event.title);
+    expect(audit.some((line) => line.startsWith("Retail sale ") && line.endsWith(`· ${currency} ${major(4 * unit + 10)}`))).toBe(true);
+    expect(audit).toContain(`Refunded ${currency} ${major(2 * unit + 5)} from retail sale`);
+    expect(timeline).toContain(`Retail sale — ${currency} ${major(4 * unit + 10)}`);
+    expect(timeline).toContain(`Retail sale refunded — ${currency} ${major(2 * unit + 5)}`);
+    for (const line of [...audit, ...timeline]) expect(line, line).not.toMatch(currency === "USD" ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
+  });
+
+  it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: sale, payment, refund and void text matches the stored minor amounts", async (currency, unit, decimals) => {
+    useCurrency(currency);
+    const member = await freshMemberForSale();
+    const plan = (await api.listPlans({ pageSize: 1 })).items[0]!;
+    const sale = await api.createMembershipSale({ memberId: member.id, planId: plan.id, startDate: todayISODate("Asia/Amman"), payment: { amount: plan.basePrice, method: "card", externalReference: "POS-TXT" } });
+    expect(sale.charge.total.currency).toBe(currency);
+    expect(sale.payment?.amount.currency).toBe(currency);
+    const refundMinor = 15 * unit + 5;
+    await api.refundPayment(sale.payment!.id, { amount: money(refundMinor, currency), reason: "Approved partial refund for the currency test", idempotencyKey: `text-refund-${currency}` });
+    const locker = await api.createPayment({ memberId: member.id, amount: money(7 * unit, currency), method: "cash" }, `text-locker-${currency}`);
+    const keyed = await api.createPayment({ memberId: member.id, amount: money(3 * unit, currency), method: "cash" }, `text-keyed-${currency}`);
+    await api.voidPayment(keyed.payment.id, { reason: "Keyed against the wrong member", idempotencyKey: `text-void-${currency}` });
+    const major = (minor: number) => (minor / unit).toFixed(decimals);
+    const audit = (await api.listAuditEvents({ pageSize: 60 })).items.map((event) => event.summary);
+    const timeline = (await api.listMemberTimeline(member.id, { pageSize: 50 })).items.map((event) => event.title);
+    expect(locker.payment.amount).toEqual(money(7 * unit, currency));
+    expect(audit).toContain(`Collected ${currency} ${major(7 * unit)} (cash)`);
+    expect(audit).toContain(`Refunded ${currency} ${major(refundMinor)} (card)`);
+    expect(audit).toContain(`Voided ${currency} ${major(3 * unit)} (cash)`);
+    expect(timeline).toContain(`Payment collected — ${currency} ${major(plan.basePrice.amount)} card`);
+    expect(timeline).toContain(`Payment refunded — ${currency} ${major(refundMinor)}`);
+    for (const line of [...audit, ...timeline]) expect(line, line).not.toMatch(currency === "USD" ? /USD \d+\.\d{3}\b/ : /JOD \d+\.\d{2}\b(?!\d)/);
+  });
+
+  it.each([["JOD", 1_000, 3], ["USD", 100, 2]] as const)("%s: cash shift variance text and stored drawer amounts share the currency", async (currency, unit, decimals) => {
+    useCurrency(currency);
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const open = await api.getCurrentCashShift(branchId);
+    if (open) await api.closeCashShift(open.id, { countedCash: money(open.expectedCash?.amount ?? 0, currency), varianceExplanation: "Handover before the currency test" });
+    const shift = await api.openCashShift({ branchId, openingFloat: money(5 * unit, currency) });
+    const closed = await api.closeCashShift(shift.id, { countedCash: money(5 * unit - 3, currency), varianceExplanation: "Three coins short after the recount" });
+    expect(closed.expectedCash).toEqual(money(5 * unit, currency));
+    expect(closed.variance).toEqual(money(-3, currency));
+    const audit = (await api.listAuditEvents({ pageSize: 20 })).items.map((event) => event.summary);
+    expect(audit).toContain(`Shift closed with shortage of ${currency} ${(3 / unit).toFixed(decimals)}`);
+  });
+});
+
+describe("PT credit conservation in the preview adapter", () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function conserved(membershipId: string) {
+    const experience = await api.getPtMemberExperience(membershipId);
+    let available = 0; let reserved = 0;
+    for (const row of experience.entitlements) {
+      expect(row.consumed + row.reserved + row.revoked, `${row.source} never overspends`).toBeLessThanOrEqual(row.granted);
+      expect(row.available).toBe(Math.max(0, row.granted - row.reserved - row.consumed - row.revoked));
+      available += row.available; reserved += row.reserved;
+    }
+    expect(experience.availableSessions).toBe(available);
+    expect(experience.reservedSessions).toBe(reserved);
+    return experience;
+  }
+
+  it("keeps granted = available + reserved + consumed + revoked through every cancellation kind, outcomes, refunds and a race for the last credit", async () => {
+    const trainer = (await api.getPtWorkspace()).trainers[0]!;
+    const branchId = trainer.branchIds[0]!;
+    const [member] = await membersWithActiveMemberships(1);
+    const membershipId = member!.membershipId;
+    const ptPackage = (await api.getPtWorkspace()).packages[0]!;
+    const order = await api.requestPtPackage({ membershipId, packageId: ptPackage.id, idempotencyKey: "conserve-order" });
+    await api.createPayment({ memberId: member!.memberId, chargeId: order.chargeId, amount: money(Math.floor(ptPackage.totalPrice.amount / 2)), method: "card", externalReference: "POS-C1" }, "conserve-pay-1");
+    expect((await conserved(membershipId)).orders[0]?.status).toBe("pending_payment");
+    await api.createPayment({ memberId: member!.memberId, chargeId: order.chargeId, amount: money(ptPackage.totalPrice.amount - Math.floor(ptPackage.totalPrice.amount / 2)), method: "card", externalReference: "POS-C2" }, "conserve-pay-2");
+    const start = await conserved(membershipId);
+    expect(start.orders[0]?.status).toBe("active");
+    const granted = start.availableSessions;
+    expect(granted).toBeGreaterThanOrEqual(ptPackage.sessionCount);
+
+    const slotsOn = async (day: number) => {
+      const date = addDays(todayISODate("Asia/Amman"), day);
+      return await api.listPtAvailableSlots({ trainerProfileId: trainer.id, branchId, from: date, to: date });
+    };
+    let day = 1; let slots: T.PtAvailableSlot[] = [];
+    while (day < 10 && slots.length < 4) { slots = await slotsOn(day); if (slots.length < 4) day += 1; }
+    expect(slots.length).toBeGreaterThanOrEqual(4);
+
+    const gym = await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[0]!.startsAt, idempotencyKey: "conserve-gym" });
+    const late = await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[1]!.startsAt, idempotencyKey: "conserve-late" });
+    const noShow = await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[2]!.startsAt, idempotencyKey: "conserve-no-show" });
+    const done = await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[3]!.startsAt, idempotencyKey: "conserve-done" });
+    expect((await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: slots[3]!.startsAt, idempotencyKey: "conserve-done" })).id).toBe(done.id);
+    expect((await conserved(membershipId)).reservedSessions).toBe(4);
+
+    expect((await api.cancelPtBooking(gym.id, { reason: "Trainer unavailable", cancelledByGym: true })).status).toBe("gym_cancelled");
+    await expect(api.cancelPtBooking(gym.id, { reason: "Again", cancelledByGym: true })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.parse(late.startsAt) - 3_600_000));
+    expect((await api.cancelCustomerPtBooking(late.id, "Cancelled by member")).status).toBe("late_cancelled");
+    let experience = await conserved(membershipId);
+    expect(experience).toMatchObject({ availableSessions: granted - 3, reservedSessions: 2 });
+
+    vi.setSystemTime(new Date(Date.parse(done.startsAt) + 15 * 60_000));
+    expect((await api.markPtBookingNoShow(noShow.id, { reason: "Did not arrive" })).status).toBe("no_show");
+    expect((await api.completePtBooking(done.id)).status).toBe("completed");
+    await expect(api.completePtBooking(done.id)).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.NOT_FOUND);
+    experience = await conserved(membershipId);
+    expect(experience).toMatchObject({ availableSessions: granted - 3, reservedSessions: 0 });
+    expect(experience.entitlements.reduce((total, row) => total + row.consumed, 0)).toBe(3);
+
+    const unusedPackageCredits = experience.entitlements.find((row) => row.source === "package")!.available;
+    const refunded = await api.refundPtPackage(order.id, { sessions: unusedPackageCredits - 1, reason: "Member relocating; unused sessions refunded" });
+    expect(refunded.refundedSessions).toBe(unusedPackageCredits - 1);
+    await expect(api.refundPtPackage(order.id, { sessions: 5, reason: "Over-refund attempt" })).rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION);
+    experience = await conserved(membershipId);
+    const remaining = experience.availableSessions;
+    expect(remaining).toBeGreaterThanOrEqual(1);
+
+    // Spend down to the last credit, then race two reservations for it.
+    vi.useRealTimers();
+    const from = addDays(todayISODate("Asia/Amman"), day + 1);
+    const to = addDays(from, 13);
+    const later = await api.listPtAvailableSlots({ trainerProfileId: trainer.id, branchId, from, to });
+    expect(later.length).toBeGreaterThanOrEqual(remaining + 1);
+    for (let index = 0; remaining - index > 1; index += 1) {
+      await api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[index]!.startsAt, idempotencyKey: `conserve-drain-${index}` });
+    }
+    experience = await conserved(membershipId);
+    expect(experience.availableSessions).toBe(1);
+    const race = await Promise.allSettled([
+      api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[remaining - 1]!.startsAt, idempotencyKey: "conserve-final-a" }),
+      api.createPtBooking({ membershipId, trainerProfileId: trainer.id, branchId, startsAt: later[remaining]!.startsAt, idempotencyKey: "conserve-final-b" }),
+    ]);
+    expect(race.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    experience = await conserved(membershipId);
+    expect(experience.availableSessions).toBe(0);
+  });
+});
+
+describe("moving a class to another weekday", () => {
+  it("refuses while a member holds one of its dates", async () => {
+    const session = await api.getSession();
+    const branchId = session.branches[0]!.id;
+    const date = addDays(todayISODate("Asia/Amman"), 2);
+    const dayOfWeek = new Date(`${date}T12:00:00Z`).getUTCDay();
+    const template = await api.upsertClassSession({ branchId, name: "Move test", dayOfWeek, startMinute: 23 * 60, durationMinutes: 45, capacity: 2, audience: "mixed" });
+    const page = await api.listMembers({ membershipStatus: "active", pageSize: 3 });
+    const member = page.items[0]!;
+    const membership = (await api.listMemberships({ memberId: member.id, status: "active", pageSize: 5 })).items[0]!;
+    await api.addClassOccurrenceAttendee({ occurrenceId: `occ:${template.id}:${date}`, memberId: member.id, membershipId: membership.id });
+    await expect(api.upsertClassSession({ sessionId: template.id, branchId, name: "Move test", dayOfWeek: (dayOfWeek + 1) % 7, startMinute: 23 * 60, durationMinutes: 45, capacity: 2, audience: "mixed" }))
+      .rejects.toSatisfy((error) => isApiError(error) && error.code === ERR.VALIDATION && error.message.includes(date));
   });
 });

@@ -40,7 +40,7 @@ export async function notifyPlatformAdmins(ctx: MutationCtx, input: Notification
 export async function notifyOrganizationSupervisors(ctx: MutationCtx, input: NotificationInput & { organizationId: Id<"organizations">; roles?: OrganizationRole[] }) {
   const roles = input.roles ?? ["owner", "manager"];
   const memberships = (await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId)).collect())
-    .filter((membership) => membership.active && roles.includes(membership.role))
+    .filter((membership) => membership.active && (roles as string[]).includes(membership.role))
     .filter((membership) => !input.branchId || membership.branchScope === "all" || membership.branchIds.includes(input.branchId));
   await Promise.all(memberships.map(async (membership) => {
     const user = await ctx.db.get(membership.userId);

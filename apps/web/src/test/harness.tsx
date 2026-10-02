@@ -28,13 +28,15 @@ export interface RenderAppResult extends RenderResult {
 
 export async function renderWithApp(
   ui: ReactNode,
-  { role = "owner" as RoleKey, latencyMs = 0 }: { role?: RoleKey; latencyMs?: number } = {},
+  { role = "owner" as RoleKey, branchId, latencyMs = 0, prepare }: { role?: RoleKey; branchId?: string; latencyMs?: number; /** Adjust the seeded API (permissions, data) before the session loads. */ prepare?: (api: MockGymOSApi) => Promise<void> } = {},
 ): Promise<RenderAppResult> {
   window.sessionStorage.clear();
   window.sessionStorage.setItem("rivet.demo.persona", role);
+  if (branchId) window.sessionStorage.setItem("rivet.demo.branch", branchId);
 
   const api = new MockGymOSApi();
   api.setBehavior({ latencyMs });
+  if (prepare) await prepare(api);
   setApiForTests(api);
 
   const utils = render(

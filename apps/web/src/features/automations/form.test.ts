@@ -5,7 +5,7 @@ import { automationTriggerFieldValue, automationTriggerParameterLabel, automatio
 describe("automation rule form parameters", () => {
   it("keeps expired-membership thresholds as days when a rule is edited", () => {
     const trigger = "membership_expired" satisfies AutomationTriggerKey;
-    expect(automationTriggerParameterLabel(trigger)).toBe("Days after expiry");
+    expect(automationTriggerParameterLabel(trigger)).toBe("Days after it ended");
     expect(automationTriggerFieldValue(trigger, { daysAfter: 3 })).toBe("3");
     expect(automationTriggerParams(trigger, "3")).toEqual({ daysAfter: 3 });
   });

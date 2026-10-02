@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
+import { chooseFirstAvailableOption, requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
 
 /**
  * Production-shaped write verification for the highest-value operational loop:
@@ -11,6 +11,7 @@ import { requireStagingJourney, StagingCleanupLedger } from "./staging-harness";
  */
 test.describe("staged Convex operational flow", () => {
   test("persists a commercial loop across member, finance, reception, timeline and audit", async ({ page, baseURL }, testInfo) => {
+    test.setTimeout(120_000);
     test.skip(
       process.env.PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW !== "1" || process.env.PLAYWRIGHT_CONVEX_SMOKE !== "1" || process.env.PLAYWRIGHT_TARGET_CLASSIFICATION !== "staging",
       "Set the Convex smoke/write switches and PLAYWRIGHT_TARGET_CLASSIFICATION=staging for the isolated staging write test.",
@@ -34,7 +35,9 @@ test.describe("staged Convex operational flow", () => {
 
       await page.getByTestId("member-name").fill(fullName);
       await page.getByTestId("member-phone").fill(phone);
-      await page.locator("form").evaluate((form) => (form as HTMLFormElement).requestSubmit());
+      await chooseFirstAvailableOption(page, "Gender");
+      await chooseFirstAvailableOption(page, "Home branch");
+      await page.getByTestId("save-member").click();
       await expect(page).toHaveURL(/\/members\/[0-9a-f-]+$/);
       memberUrl = page.url();
       cleanupEntry = cleanup.plan({ targetType: "member", targetId: memberUrl.split("/").at(-1), action: "archive", reason: "Disposable staging commercial journey" });
@@ -47,7 +50,7 @@ test.describe("staged Convex operational flow", () => {
       await page.getByRole("option", { name: /Monthly All Access/i }).click();
       await sale.getByRole("combobox", { name: "Payment method" }).click();
       await page.getByRole("option", { name: "Card" }).click();
-      await sale.getByPlaceholder("e.g. POS-88213").fill(`STAGING-${guard.runId}`);
+      await sale.getByPlaceholder("For example: POS-88213").fill(`STAGING-${guard.runId}`);
       await sale.getByTestId("confirm-sale").click();
       await expect(sale).toBeHidden();
 
@@ -59,6 +62,7 @@ test.describe("staged Convex operational flow", () => {
 
       const memberNumber = (await page.getByRole("main").locator("header span.font-mono").first().innerText()).trim();
       await page.goto("/reception", { waitUntil: "domcontentloaded" });
+      await chooseFirstAvailableOption(page, "Active branch");
       await page.getByTestId("reception-search").fill(memberNumber);
 
       const verdict = page.getByTestId("checkin-verdict");
@@ -71,10 +75,10 @@ test.describe("staged Convex operational flow", () => {
       await expect(page.getByTestId("member-timeline")).toContainText(/checked in/i);
 
       await page.goto("/audit", { waitUntil: "domcontentloaded" });
-      const auditSearch = page.getByLabel("Search audit log");
+      const auditSearch = page.getByLabel("Search activity log");
       await auditSearch.fill(fullName);
-      await expect(page.getByRole("button", { name: /membership\.sale/i })).toBeVisible();
-      await expect(page.getByRole("button", { name: /payment\.collect/i })).toBeVisible();
+      await expect(page.getByRole("button", { name: /membership\.sale/i }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: /payment\.collect/i }).first()).toBeVisible();
     } finally {
       if (memberUrl) {
         const archived = await archiveDisposableMember(page, memberUrl);

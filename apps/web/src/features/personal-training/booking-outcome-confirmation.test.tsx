@@ -26,7 +26,7 @@ describe("BookingOutcomeConfirmation", () => {
     expect(screen.getByRole("dialog", { name: "Mark PT session as no-show?" })).toBeInTheDocument();
     expect(screen.getByText("Nour Haddad")).toBeInTheDocument();
     expect(screen.getByText("Rami Saleh")).toBeInTheDocument();
-    expect(screen.getByText(/One reserved PT credit will be consumed/)).toBeInTheDocument();
+    expect(screen.getByText(/One reserved PT credit will be used/)).toBeInTheDocument();
     const confirm = screen.getByRole("button", { name: "Record no-show" });
     expect(confirm).toBeDisabled();
     await user.type(screen.getByRole("textbox", { name: /No-show reason/i }), "Member did not arrive for the session.");
@@ -36,7 +36,7 @@ describe("BookingOutcomeConfirmation", () => {
 
   it("keeps routine completion quick while still confirming the consumed credit", async () => {
     await renderWithApp(<BookingOutcomeConfirmation booking={booking} action="completed" open onOpenChange={() => undefined} onConfirm={() => undefined} />);
-    expect(screen.getByText("Routine completion stays fast: no reason is required.")).toBeInTheDocument();
+    expect(screen.getByText("No reason is needed to complete a session.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Complete session" })).toBeEnabled();
     expect(screen.queryByLabelText(/reason/i)).not.toBeInTheDocument();
   });

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -16,17 +16,71 @@ import {
   requireReason,
   type ActorContext,
   type OrganizationRole,
+  type StoredOrganizationRole,
   type RequestArgs,
+  membershipInvitationAccepted,
 } from "./security";
-import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, roleDiscountLimit, toFrontendRole } from "./permissions";
+import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, roleDiscountLimit, rolePermissions, toFrontendRole } from "./permissions";
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 import { buildPlatformGymDetail } from "./platformGymDetail";
+import { addCalendarMonths, DAY_MS, PAYMENT_TERM_DAYS, termChange } from "./subscriptionTerm";
 import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
-import { marketingSuppressionReason } from "./marketing";
+import { marketingStatusFromProvenance, marketingSuppressionReason } from "./marketing";
 import { enqueueOperationalEmail } from "./operationalEmail";
+import {
+  buildWorkspaceAccess,
+  defaultWorkspacePreferences,
+  allWorkspaceModuleKeys,
+  entitledModulesForPlan,
+  entitledModulesForPlanSelection,
+  requireWorkspaceModule as requireConfiguredWorkspaceModule,
+  resolveWorkspaceEntitlements,
+  resolveWorkspacePreferences,
+  validateWorkspaceModuleSelection,
+  WORKSPACE_MODULE_CATALOG,
+  WORKSPACE_MODULE_CATALOG_VERSION,
+  type WorkspaceModuleKey,
+  type WorkspaceModulePlan,
+} from "./workspaceModules";
+import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
+import { operationsMutation, operationsQuery } from "./operations";
+import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
+import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
+import { resolveEmailMode } from "./emailMode";
+import { platformInvoiceAttachment } from "./platformInvoiceDocument";
+import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
+import { resolveMessagingMode } from "./messagingMode";
+import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
+import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
+import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
+import { analyticsQuery } from "./analyticsReports";
+import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
+import { accountingMutation, accountingQuery } from "./accounting";
+import { managementReportQuery } from "./managementReports";
+import { platformPlanEntitledModules } from "./platformPlanCatalog";
+import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
+import { automationAttentionHref } from "./automations";
+import { deriveLeadProgressFacts, leadProgressStageCompleted } from "../src/lib/crm/lead-progression";
+import {
+  canonicalPhoneKey,
+  countryCallingCodeForLocale,
+  LEAD_EMAIL_PATTERN,
+  LEAD_PHONE_PATTERN,
+  normalizeCountryCallingCode,
+  normalizePhoneForStorage,
+  phoneSearchMatches,
+} from "../src/lib/utils/contact";
+import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
+import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
+import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefScope, type BriefSourceInput, type BriefSourceKey, type OperatingBrief } from "./operatingBrief";
+import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
+import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "../src/lib/members/lookup";
+import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, resolveFollowUpTasks, shouldClearLeadFollowUp } from "../src/lib/crm/contact-outcomes";
+import { deriveRetentionRisks } from "../src/lib/retention/at-risk";
+import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits, type CsvValue } from "../src/lib/exports/csv";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -38,6 +92,7 @@ type DomainRecord = Doc<"domainRecords">;
 type Branch = Doc<"branches">;
 type Organization = Doc<"organizations">;
 type User = Doc<"users">;
+type Zone = Doc<"zones">;
 
 const OPERATION_ARGS = {
   operation: v.string(),
@@ -50,6 +105,19 @@ const OPERATION_ARGS = {
 
 const TZ_FALLBACK = "Asia/Amman";
 const JOD = "JOD";
+const CURRENCY_MINOR_EXPONENTS: Record<string, number> = {
+  AED: 2,
+  BHD: 3,
+  EUR: 2,
+  GBP: 2,
+  IQD: 3,
+  JOD: 3,
+  KWD: 3,
+  OMR: 3,
+  SAR: 2,
+  TND: 3,
+  USD: 2,
+};
 const DEFAULT_PAYMENT_METHODS = [
   { key: "cash", label: "Cash", enabled: true, affectsCashDrawer: true },
   { key: "card", label: "Card", enabled: true, affectsCashDrawer: false },
@@ -59,12 +127,28 @@ const DEFAULT_PAYMENT_METHODS = [
 ];
 const DEFAULT_NOTIFICATIONS = {
   managerAlerts: { cashVariance: true, refundOrVoid: true, checkinOverride: true, discountApproval: true },
+  renewalRecoveryEnabled: false,
   automationDeliveryMode: "sandbox",
   quietHoursStart: "22:00",
   quietHoursEnd: "08:00",
 };
+const AUTOMATIONS_PAUSE_REASON = "Automated delivery remains paused until providers, consent policy, and production verification are approved.";
+
+function automationsGloballyPaused(): boolean {
+  return process.env.RIVET_AUTOMATIONS_LIVE !== "true";
+}
+
+function requireAutomationsLive(correlationId: string): void {
+  if (automationsGloballyPaused()) {
+    domainError("FEATURE_NOT_AVAILABLE", AUTOMATIONS_PAUSE_REASON, {
+      correlationId,
+      details: { feature: "automations", globallyPaused: true },
+    });
+  }
+}
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ZONE_KINDS = ["floor", "studio", "weights", "cardio", "functional", "locker_room", "bathroom", "reception", "storage", "other"] as const;
 
 function normalizedTrialWindow(value: Data): Data {
   if (typeof value.enabled === "boolean" || value.opensAt || value.closesAt) {
@@ -111,6 +195,35 @@ const DEFAULT_OPERATIONAL_POLICIES = {
     bookingHorizonDays: 30,
     cancellationCutoffHours: 12,
   },
+  classBooking: {
+    enabled: true,
+    eligibilityMode: "all_active_memberships",
+    eligiblePlanIds: [],
+    bookingHorizonDays: 30,
+    cancellationCutoffHours: 2,
+    maxActiveBookingsPerMember: 8,
+    waitlistEnabled: true,
+    waitlistSize: 12,
+    noShowTracking: true,
+  },
+  retention: {
+    inactivityDays: 14,
+    expiredWinBackDays: 90,
+    defaultSnoozeDays: 7,
+  },
+  referrals: {
+    enabled: false,
+    rewardDays: 7,
+    maxRewardDaysPerWindow: 30,
+    windowDays: 90,
+  },
+  memberFreezes: {
+    requestsEnabled: false,
+    freeFreezesPerWindow: 1,
+    extraFreezeFeeMinor: 10_000,
+    maxDaysPerFreeze: 30,
+    windowDays: 365,
+  },
   operatingHours: [],
   trialSchedules: [],
 };
@@ -118,16 +231,18 @@ const DEFAULT_OPERATIONAL_POLICIES = {
 // intentionally starts without the Forge reference seed, so keep the approved
 // launch plans available until an operator has created editable catalog rows.
 // These values are also the defaults used by the application form.
-const DEFAULT_PLATFORM_PLANS: Data[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-];
+const PLAN_PRESENTATION: Record<string, { tone: string; entitledModules: string[] }> = {
+  Starter: { tone: "paper", entitledModules: ["foundation", "revenue"] },
+  Growth: { tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
+  Pro: { tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  Enterprise: { tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+};
+const DEFAULT_PLATFORM_PLANS: Data[] = PLAN_CATALOGUE.map((plan) => ({ ...plan, ...PLAN_PRESENTATION[plan.name] }));
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
 const GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"] as const;
-const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"] as const;
+const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"] as const;
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -142,11 +257,92 @@ function gymProfileMediaIds(value: unknown): string[] {
   ].filter((item): item is string => Boolean(item));
 }
 
+/**
+ * Publishes the tenant's saved profile draft: snapshots an immutable version,
+ * projects it onto the marketplace listing, and schedules unreferenced media
+ * for deletion. Shared by the tenant's first self-serve publish and the
+ * platform console's reviewed publish.
+ */
+async function applyGymProfilePublish(
+  ctx: MutationCtx,
+  organization: Doc<"organizations">,
+  listing: Doc<"domainRecords">,
+  draft: Doc<"domainRecords">,
+): Promise<{ versionId: string; listingBefore: Data }> {
+  const draftValue = data(draft.data);
+  const draftVersion = numberValue(draftValue.version);
+  const now = Date.now();
+  const publishedAt = utcIso(now);
+  const allVersions = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "gymProfileVersion")).collect();
+  const oldVersions = allVersions.filter((record) => stringValue(data(record.data).status) === "published");
+  for (const old of oldVersions) await ctx.db.patch(old._id, { data: { ...data(old.data), status: "unpublished", unpublishedAt: publishedAt, updatedAt: publishedAt }, updatedAt: now });
+  const versionId = newPublicId();
+  const versionValue = { ...draftValue, status: "published", version: draftVersion, publishedAt, updatedAt: publishedAt };
+  await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "gymProfileVersion", publicId: versionId, createdAt: now, updatedAt: now, data: versionValue });
+  await ctx.db.patch(draft._id, { data: versionValue, updatedAt: now });
+  const listingBefore = data(listing.data);
+  await ctx.db.patch(listing._id, { data: { ...listingBefore, shortName: draftValue.shortName, tagline: draftValue.taglineEn, taglineAr: draftValue.taglineAr, description: draftValue.descriptionEn, descriptionAr: draftValue.descriptionAr, category: draftValue.category, audience: draftValue.audience, amenities: draftValue.amenities, contactEmail: draftValue.contactEmail, contactPhone: draftValue.contactPhone, websiteUrl: draftValue.websiteUrl, instagramUrl: draftValue.instagramUrl, accent: draftValue.accentColor, logoAssetId: draftValue.logoAssetId, coverAssetId: draftValue.coverAssetId, galleryAssetIds: draftValue.galleryAssetIds, profilePublished: true, profileVersion: draftValue.version }, updatedAt: now });
+  // Keep assets referenced by immutable profile snapshots. The version
+  // history is retained for audit and preview, so replacing the current
+  // draft must not make an older snapshot point at a deleted object.
+  const referencedMedia = new Set([...gymProfileMediaIds(draftValue), ...allVersions.flatMap((record) => gymProfileMediaIds(record.data))]);
+  const orgPublicId = publicOrganizationId(organization);
+  const publicMedia = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", organization._id).eq("ownerType", "gym_gallery").eq("ownerPublicId", orgPublicId)).collect())
+    .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", organization._id).eq("ownerType", "gym_logo").eq("ownerPublicId", orgPublicId)).collect())
+    .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", organization._id).eq("ownerType", "gym_cover").eq("ownerPublicId", orgPublicId)).collect());
+  for (const asset of publicMedia.filter((item) => item.status === "active" && !referencedMedia.has(item.publicId))) await ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
+  return { versionId, listingBefore };
+}
+
 function offerProjection(value: Data): Data {
   const expiresAt = optionalString(value.expiresAt);
   return value.status === "sent" && expiresAt && Date.parse(expiresAt) <= Date.now()
     ? { ...value, status: "expired" }
     : value;
+}
+
+function publicOfferToken(): string {
+  return `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+async function publicOfferRecords(ctx: ReadContext, tokenValue: unknown): Promise<{ link: DomainRecord; offer: DomainRecord; lead: DomainRecord; organization: Organization }> {
+  const token = stringValue(tokenValue).trim();
+  if (!/^[a-f0-9]{64}$/.test(token)) domainError("NOT_FOUND", "This offer link is not available.");
+  const link = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "offerLink").eq("publicId", token)).unique();
+  if (!link) domainError("NOT_FOUND", "This offer link is not available.");
+  const linkData = data(link.data);
+  const [organization, offer, lead] = await Promise.all([
+    ctx.db.get(link.organizationId),
+    ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", link.organizationId).eq("entityType", "offer").eq("publicId", stringValue(linkData.offerId))).unique(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", link.organizationId).eq("entityType", "lead").eq("publicId", stringValue(linkData.leadId))).unique(),
+  ]);
+  if (!organization || organization.archivedAt || !["active", "trial", "past_due"].includes(organization.status) || !offer || !lead) domainError("NOT_FOUND", "This offer link is not available.");
+  return { link, offer, lead, organization };
+}
+
+async function publicOfferView(ctx: ReadContext, token: string): Promise<Data> {
+  const { offer, lead, organization } = await publicOfferRecords(ctx, token);
+  const current = offerProjection(data(offer.data));
+  const status = current.status === "draft" ? "preparing" : current.status === "sent" ? "available" : stringValue(current.status);
+  const brand = await brandKitView(ctx, organization);
+  return {
+    token,
+    recipientName: stringValue(data(lead.data).fullName),
+    organizationName: organization.name,
+    planName: stringValue(current.planName),
+    price: current.price,
+    expiresAt: optionalString(current.expiresAt),
+    status,
+    respondedAt: optionalString(current.respondedAt),
+    responseReason: optionalString(current.responseReason),
+    brand: {
+      paletteKey: brand.paletteKey,
+      primaryColor: brand.primaryColor,
+      tokens: brand.tokens,
+      logoUrl: brand.logoUrl,
+      logoAltText: brand.logoAltText,
+    },
+  };
 }
 
 function stringValue(value: unknown, fallback = ""): string {
@@ -155,6 +351,31 @@ function stringValue(value: unknown, fallback = ""): string {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function normalizedLeadEmail(value: unknown, actor: ActorContext): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") domainError("VALIDATION_ERROR", "Email must be a string.", { correlationId: actor.correlationId, fieldErrors: { email: ["Enter a valid email"] } });
+  const email = value.trim().toLowerCase();
+  if (!email) return undefined;
+  if (email.length > 254 || !LEAD_EMAIL_PATTERN.test(email)) domainError("VALIDATION_ERROR", "Enter a valid email address.", { correlationId: actor.correlationId, fieldErrors: { email: ["Enter a valid email"] } });
+  return email;
+}
+
+function normalizedLeadName(value: unknown, actor: ActorContext): string {
+  const fullName = stringValue(value).trim();
+  if (fullName.length < 3 || fullName.length > 120) domainError("VALIDATION_ERROR", "Full name must be between 3 and 120 characters.", { correlationId: actor.correlationId, fieldErrors: { fullName: ["Enter a full name"] } });
+  return fullName;
+}
+
+function normalizedLeadPhone(value: unknown, actor: ActorContext): string {
+  const phone = normalizePhoneForStorage(stringValue(value), organizationPhoneCountryCallingCode(actor.organization));
+  if (!LEAD_PHONE_PATTERN.test(phone)) domainError("VALIDATION_ERROR", "Enter a valid phone number.", { correlationId: actor.correlationId, fieldErrors: { phone: ["Enter a valid phone"] } });
+  return phone;
+}
+
+function organizationPhoneCountryCallingCode(organization: Pick<Organization, "locale" | "phoneCountryCallingCode">): string {
+  return normalizeCountryCallingCode(organization.phoneCountryCallingCode ?? countryCallingCodeForLocale(organization.locale));
 }
 
 function numberValue(value: unknown, fallback = 0): number {
@@ -195,15 +416,15 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function marketingPreferenceRecord(input: Data, actor: ActorContext, fallbackOptedIn = false): Data {
+function marketingPreferenceRecord(input: Data, actor: ActorContext, fallbackOptedIn = true): Data {
   const requestedSource = optionalString(input.marketingPreferenceSource);
   const source = requestedSource ?? "system_default";
   if (!["system_default", "staff_selected", "member_selected", "imported"].includes(source)) {
     domainError("VALIDATION_ERROR", "Marketing preference source is invalid.", { correlationId: actor.correlationId });
   }
-  const explicit = source !== "system_default" && typeof input.marketingOptIn === "boolean";
-  const optedIn = explicit ? marketingPreference(input.marketingOptIn) : fallbackOptedIn && explicit;
-  const status = explicit ? (optedIn ? "explicit_opt_in" : "explicit_opt_out") : "unknown";
+  const optedIn = typeof input.marketingOptIn === "boolean" ? input.marketingOptIn : fallbackOptedIn;
+  const status = marketingStatusFromProvenance(source, input.marketingOptIn);
+  const explicit = status !== "unknown";
   return {
     optedIn,
     status,
@@ -222,7 +443,7 @@ function customerPreferenceFromProfile(value: Data): Data {
   const status = storedStatus === "explicit_opt_in" || storedStatus === "explicit_opt_out" || storedStatus === "unknown"
     ? storedStatus
     : source === "member_selected" ? (legacyOptedIn ? "explicit_opt_in" : "explicit_opt_out") : "unknown";
-  const optedIn = status === "explicit_opt_in";
+  const optedIn = typeof value.marketingOptIn === "boolean" ? value.marketingOptIn : true;
   const changedAt = numberValue(value.marketingPreferenceChangedAt);
   return {
     optedIn,
@@ -246,9 +467,14 @@ function customerPreferenceEventView(value: Data): Data {
 
 async function platformPlans(ctx: ReadContext): Promise<Data[]> {
   const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
-  return rows.length > 0
-    ? rows.map((row): Data => ({ id: row.publicId, ...data(row.data) }))
-    : DEFAULT_PLATFORM_PLANS.map((plan) => ({ id: plan.name, ...plan }));
+  const persisted = new Map(rows.map((row): [string, Data] => {
+    const persistedValue = data(row.data);
+    const defaultValue = DEFAULT_PLATFORM_PLANS.find((plan) => stringValue(plan.name) === stringValue(persistedValue.name, row.publicId));
+    return [stringValue(persistedValue.name, row.publicId), { id: row.publicId, ...(defaultValue ?? {}), ...persistedValue }];
+  }));
+  const defaults = DEFAULT_PLATFORM_PLANS.map((plan) => persisted.get(stringValue(plan.name)) ?? { id: plan.name, ...plan });
+  const defaultNames = new Set(DEFAULT_PLATFORM_PLANS.map((plan) => stringValue(plan.name)));
+  return [...defaults, ...[...persisted.entries()].filter(([name]) => !defaultNames.has(name)).map(([, plan]) => plan)];
 }
 
 function recordId(value: unknown): string {
@@ -265,7 +491,7 @@ function newPublicId(): string {
   return crypto.randomUUID();
 }
 
-type PlatformAdminContext = Awaited<ReturnType<typeof requirePlatformAdmin>>;
+export type PlatformAdminContext = Awaited<ReturnType<typeof requirePlatformAdmin>>;
 
 async function insertPlatformAudit(
   ctx: MutationCtx,
@@ -299,13 +525,117 @@ async function insertPlatformAudit(
   });
 }
 
+function currencyMinorExponent(currency: string): number {
+  return CURRENCY_MINOR_EXPONENTS[currency.toUpperCase()] ?? 2;
+}
+
 function platformInvoiceAmount(amountMinor: number, currency: string): string {
-  return `${currency} ${(amountMinor / 1_000).toFixed(3)}`;
+  const exponent = currencyMinorExponent(currency);
+  return `${currency} ${(amountMinor / 10 ** exponent).toFixed(exponent)}`;
 }
 
 function validTimestamp(value: string): number | undefined {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function sameCalendarDate(left: number | undefined, right: number | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return new Date(left).toISOString().slice(0, 10) === new Date(right).toISOString().slice(0, 10);
+}
+
+/**
+ * Lifecycle controls accept either a date-only value from the admin form or a
+ * complete ISO timestamp. Date.parse normalizes impossible date-only values
+ * (for example, 2026-02-31), so date-only inputs are checked round-trip before
+ * they are persisted.
+ */
+function validSubscriptionTimestamp(value: unknown): number | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const normalized = value.trim();
+  const datePrefix = normalized.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePrefix)) {
+    const dateOnlyTimestamp = Date.parse(`${datePrefix}T00:00:00.000Z`);
+    if (!Number.isFinite(dateOnlyTimestamp) || new Date(dateOnlyTimestamp).toISOString().slice(0, 10) !== datePrefix) return undefined;
+  }
+  return validTimestamp(normalized);
+}
+
+type BillingInterval = "monthly" | "annual";
+
+function billingInterval(value: unknown): BillingInterval {
+  return value === "annual" ? "annual" : "monthly";
+}
+
+function platformSubscriptionStatusForOrganization(status: Organization["status"]): "trial" | "active" | "overdue" | "suspended" | "cancelled" {
+  return status === "past_due" ? "overdue" : status;
+}
+
+function platformPlanFromFacts(gym: Data, organization: Organization | null, entitlement: Doc<"organizationEntitlements"> | null): string | undefined {
+  // The tenant row is the billing authority. Entitlements are a materialized
+  // capability snapshot and the marketplace listing is only a projection. A
+  // stale entitlement/listing must never make the platform show or restore a
+  // plan that is different from the organization actually being operated.
+  return organization?.subscriptionPlan ?? optionalString(entitlement?.subscriptionPlan) ?? optionalString(gym.rivetPlan);
+}
+
+function platformSubscriptionSnapshot(
+  gym: Data,
+  organization: Organization | null,
+  entitlement: Doc<"organizationEntitlements"> | null,
+): Data {
+  const listingPlan = optionalString(gym.rivetPlan) ?? null;
+  const organizationPlan = organization?.subscriptionPlan ?? null;
+  const entitlementPlan = entitlement?.subscriptionPlan ?? null;
+  return {
+    subscriptionStatus: optionalString(gym.subscriptionStatus) ?? null,
+    rivetPlan: optionalString(gym.rivetPlan) ?? null,
+    isPublic: typeof gym.isPublic === "boolean" ? gym.isPublic : null,
+    trialEndsAt: optionalString(gym.trialEndsAt) ?? null,
+    subscriptionStartedAt: optionalString(gym.subscriptionStartedAt) ?? null,
+    currentPeriodEndsAt: optionalString(gym.currentPeriodEndsAt) ?? null,
+    cancelledAt: optionalString(gym.cancelledAt) ?? null,
+    subscriptionStatusReason: optionalString(gym.subscriptionStatusReason) ?? null,
+    billingInterval: organization?.billingInterval ?? optionalString(gym.billingInterval) ?? null,
+    lastActiveAt: optionalString(gym.lastActiveAt) ?? null,
+    isArchived: Boolean(gym.isArchived || organization?.archivedAt),
+    archivedAt: organization?.archivedAt !== undefined ? utcIso(organization.archivedAt) : optionalString(gym.archivedAt) ?? null,
+    archiveReason: organization?.archiveReason ?? optionalString(gym.archiveReason) ?? null,
+    planResolution: {
+      source: organizationPlan ? "organization" : entitlementPlan ? "organization_entitlement" : "marketplace_listing",
+      listingPlan,
+      organizationPlan,
+      entitlementPlan,
+      drift: Boolean(
+        (entitlementPlan && organizationPlan !== entitlementPlan)
+        || (entitlementPlan && listingPlan !== entitlementPlan)
+        || (!entitlementPlan && organizationPlan && listingPlan !== organizationPlan),
+      ),
+    },
+    organization: organization
+      ? {
+          id: publicOrganizationId(organization),
+          status: organization.status,
+          subscriptionPlan: organization.subscriptionPlan ?? null,
+          billingInterval: organization.billingInterval ?? "monthly",
+          subscriptionStartedAt: organization.subscriptionStartedAt ?? null,
+          trialEndsAt: organization.trialEndsAt ?? null,
+          currentPeriodEndsAt: organization.currentPeriodEndsAt ?? null,
+          cancelledAt: organization.cancelledAt ?? null,
+          subscriptionStatusReason: organization.subscriptionStatusReason ?? null,
+          archivedAt: organization.archivedAt ?? null,
+          archiveReason: organization.archiveReason ?? null,
+        }
+      : null,
+    entitlements: entitlement
+      ? {
+          catalogVersion: entitlement.catalogVersion,
+          subscriptionPlan: entitlement.subscriptionPlan ?? null,
+          entitledModules: entitlement.entitledModules,
+          source: entitlement.source,
+        }
+      : null,
+  };
 }
 
 async function supportCaseView(ctx: ReadContext, record: DomainRecord): Promise<Data> {
@@ -391,7 +721,7 @@ async function notifyOrganizationRoles(ctx: MutationCtx, input: {
     .query("organizationMemberships")
     .withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId))
     .collect())
-    .filter((membership) => membership.active && input.roles.includes(membership.role))
+    .filter((membership) => membership.active && (input.roles as string[]).includes(membership.role))
     .filter((membership) => !input.branchId || membership.branchScope === "all" || membership.branchIds.includes(input.branchId));
   await Promise.all(memberships.map(async (membership) => {
     if (input.excludeUserId && membership.userId === input.excludeUserId) return;
@@ -421,6 +751,7 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
   dedupeKey: string;
   messageClass?: "service" | "marketing";
   marketingOptIn?: boolean;
+  attachments?: Array<{ filename: string; contentType: string; contentBase64: string }>;
 }): Promise<void> {
   const suppressionReason = input.messageClass === "marketing"
     ? marketingSuppressionReason({ marketingOptIn: input.marketingOptIn })
@@ -433,14 +764,25 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
     templateVersion: input.templateVersion,
     language: input.language,
     recipientReference: input.recipientReference,
+    attachments: input.attachments,
     recipientEmail: input.recipientEmail,
     dedupeKey: input.dedupeKey,
     suppressionReason,
   });
 }
 
+/** "Bill to" on an invoice: the gym, its owner, and the plan it is on. */
+function invoiceCustomer(organization: Organization, owner: User): { name: string; address?: string; contactName?: string; contactEmail?: string; plan?: string } {
+  return {
+    name: organization.name,
+    contactName: `${owner.fullName} (owner)`,
+    contactEmail: owner.email,
+    plan: organization.subscriptionPlan ?? undefined,
+  };
+}
+
 async function platformGymOwnerRecipient(ctx: MutationCtx, gymId: string): Promise<{ organization: Organization; user: User } | null> {
-  const listing = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((record) => record.publicId === gymId);
+  const listing = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
   const targetOrganizationId = optionalString(data(listing?.data).targetOrganizationId);
   const organization = targetOrganizationId ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique() : null;
   if (!organization) return null;
@@ -585,7 +927,9 @@ function matchesSearch(values: unknown[], search?: string): boolean {
   const compact = query.replace(/[\s\-]/g, "");
   return values.some((value) => {
     if (typeof value !== "string") return false;
-    return value.toLowerCase().includes(query) || value.replace(/[\s\-]/g, "").includes(compact);
+    return value.toLowerCase().includes(query)
+      || value.replace(/[\s\-]/g, "").includes(compact)
+      || phoneSearchMatches(value, query);
   });
 }
 
@@ -625,7 +969,7 @@ function roleFromFrontend(value: unknown): OrganizationRole {
   return normalized as OrganizationRole;
 }
 
-function frontendRole(value: OrganizationRole): string {
+function frontendRole(value: StoredOrganizationRole): string {
   return toFrontendRole(value);
 }
 
@@ -635,6 +979,11 @@ async function branchByPublicId(ctx: ReadContext, organizationId: Id<"organizati
     .query("branches")
     .withIndex("by_organization_public_id", (q) => q.eq("organizationId", organizationId).eq("publicId", id))
     .unique();
+}
+
+async function zoneByPublicId(ctx: ReadContext, organizationId: Id<"organizations">, id?: string): Promise<Zone | null> {
+  if (!id) return null;
+  return await ctx.db.query("zones").withIndex("by_public_id", (q) => q.eq("organizationId", organizationId).eq("publicId", id)).unique();
 }
 
 async function recordsOf(ctx: ReadContext, actor: ActorContext, entityType: string): Promise<DomainRecord[]> {
@@ -656,10 +1005,26 @@ async function recordsOfBranch(ctx: ReadContext, actor: ActorContext, entityType
 }
 
 async function recordsOfMember(ctx: ReadContext, organizationId: Id<"organizations">, memberPublicId: string, entityType: string): Promise<DomainRecord[]> {
-  return await ctx.db
+  const indexed = await ctx.db
     .query("domainRecords")
     .withIndex("by_organization_member_type", (q) => q.eq("organizationId", organizationId).eq("memberPublicId", memberPublicId).eq("entityType", entityType))
     .collect();
+  if (indexed.length > 0) return indexed;
+  // Compatibility for records created before relationship keys were added.
+  // Current writes always populate the index, so established tenants leave
+  // this fallback naturally as their operational history rolls forward.
+  return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", entityType)).collect())
+    .filter((record) => optionalString(data(record.data).memberId) === memberPublicId);
+}
+
+async function recordsOfLead(ctx: ReadContext, organizationId: Id<"organizations">, leadPublicId: string, entityType: string): Promise<DomainRecord[]> {
+  const indexed = await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_lead_type", (q) => q.eq("organizationId", organizationId).eq("leadPublicId", leadPublicId).eq("entityType", entityType))
+    .collect();
+  if (indexed.length > 0) return indexed;
+  return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", entityType)).collect())
+    .filter((record) => optionalString(data(record.data).leadId) === leadPublicId);
 }
 
 async function recordOf(ctx: ReadContext, actor: ActorContext, entityType: string, id: string): Promise<DomainRecord> {
@@ -695,6 +1060,7 @@ async function insertRecord(
     branchId: branch?._id,
     memberPublicId: options.memberPublicId ?? optionalString(value.memberId),
     leadPublicId: options.leadPublicId ?? optionalString(value.leadId),
+    exportExpiresAt: entityType === "exportJob" && optionalString(value.expiresAt) ? Date.parse(stringValue(value.expiresAt)) : undefined,
     createdAt: now,
     updatedAt: now,
     data: enriched,
@@ -788,10 +1154,236 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
       entry: { ...DEFAULT_OPERATIONAL_POLICIES.entry, ...data(operational.entry) },
       membership: { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(operational.membership) },
       personalTraining: { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(operational.personalTraining) },
+      classBooking: { ...DEFAULT_OPERATIONAL_POLICIES.classBooking, ...data(operational.classBooking) },
+      retention: { ...DEFAULT_OPERATIONAL_POLICIES.retention, ...data(operational.retention) },
+      referrals: { ...DEFAULT_OPERATIONAL_POLICIES.referrals, ...data(operational.referrals) },
+      memberFreezes: { ...DEFAULT_OPERATIONAL_POLICIES.memberFreezes, ...data(operational.memberFreezes) },
       operatingHours: Array.isArray(operational.operatingHours) ? operational.operatingHours : [],
       trialSchedules: Array.isArray(operational.trialSchedules) ? operational.trialSchedules : [],
     },
   };
+}
+
+function workspacePlan(value: unknown): WorkspaceModulePlan | undefined {
+  return value === "Starter" || value === "Growth" || value === "Pro" || value === "Enterprise" ? value : undefined;
+}
+
+async function workspaceEntitlementRecord(ctx: ReadContext, actor: ActorContext) {
+  return await ctx.db
+    .query("organizationEntitlements")
+    .withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id))
+    .unique();
+}
+
+async function workspacePreferencesRecord(ctx: ReadContext, actor: ActorContext) {
+  return await ctx.db
+    .query("workspaceModulePreferences")
+    .withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id))
+    .unique();
+}
+
+async function workspaceEntitlementsData(ctx: ReadContext, actor: ActorContext): Promise<Data> {
+  const row = await workspaceEntitlementRecord(ctx, actor);
+  const organizationPlan = workspacePlan(actor.organization.subscriptionPlan);
+  const storedPlan = workspacePlan(row?.subscriptionPlan);
+  // Once a tenant has an explicit organization plan, derive the module set
+  // from that plan on every read. This closes the stale-row window between a
+  // platform mutation and its entitlement projection becoming visible to a
+  // live workspace query. The mutation still persists the matching snapshot
+  // for auditability and fast platform projections.
+  const plan = organizationPlan ?? storedPlan;
+  const catalogSelection = await platformPlanEntitledModules(ctx, plan);
+  const resolved = resolveWorkspaceEntitlements(
+    plan,
+    organizationPlan
+      ? {
+          subscriptionPlan: organizationPlan,
+          entitledModules: row?.entitledModules,
+          source: "subscription_plan",
+          updatedAt: row?.updatedAt,
+        }
+      : row
+        ? {
+            subscriptionPlan: row.subscriptionPlan,
+            entitledModules: row.entitledModules,
+            source: row.source,
+            updatedAt: row.updatedAt,
+          }
+        : undefined,
+    catalogSelection,
+  );
+  return {
+    organizationId: publicOrganizationId(actor.organization),
+    catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+    subscriptionPlan: resolved.subscriptionPlan,
+    entitledModules: resolved.entitledModules,
+    source: resolved.source,
+    updatedAt: row ? utcIso(row.updatedAt) : undefined,
+  };
+}
+
+async function workspacePreferencesData(ctx: ReadContext, actor: ActorContext, entitledModules: WorkspaceModuleKey[]): Promise<Data> {
+  const row = await workspacePreferencesRecord(ctx, actor);
+  const updatedById = row ? await publicUserIdFromId(ctx, actor.organization._id, row.updatedByUserId) : undefined;
+  const resolved = resolveWorkspacePreferences(entitledModules, row ? {
+    enabledModules: row.enabledModules,
+    updatedAt: row.updatedAt,
+    updatedById,
+  } : undefined);
+  return {
+    organizationId: publicOrganizationId(actor.organization),
+    catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+    enabledModules: resolved.enabledModules,
+    updatedAt: row ? utcIso(row.updatedAt) : undefined,
+    updatedById,
+  };
+}
+
+export function tenantToday(actor: ActorContext): string {
+  return todayIn(actor.organization.timezone || TZ_FALLBACK);
+}
+
+/** The person's open tasks as the follow-up surfaces see them, in the shape the preview adapter shares. */
+export async function followUpRelatedTasks(ctx: ReadContext, actor: ActorContext, subject: { memberId?: string; leadId?: string }): Promise<FollowUpRelatedTask[]> {
+  const rows = subject.memberId
+    ? await recordsOfMemberIdentity(ctx, actor, subject.memberId, "task")
+    : subject.leadId
+      ? await recordsOfLead(ctx, actor.organization._id, subject.leadId, "task")
+      : [];
+  const me = publicUserId(actor.user);
+  const open = rows.map((row) => data(row.data)).filter((task) => stringValue(task.status, "open") === "open");
+  const tasks = await toTaskSummaries(ctx, actor, open, [], []);
+  return tasks
+    .map((task) => ({
+      id: stringValue(task.id),
+      type: stringValue(task.type, "general"),
+      title: stringValue(task.title),
+      ownerId: optionalString(task.ownerId),
+      ownerName: stringValue(task.ownerName, "Unassigned"),
+      dueAt: stringValue(task.dueAt),
+      priority: stringValue(task.priority, "normal"),
+      status: "open",
+      mine: !optionalString(task.ownerId) || optionalString(task.ownerId) === me,
+      createdById: optionalString(task.createdById),
+      relatedTaskId: optionalString(task.relatedTaskId),
+      relatedTaskTitle: optionalString(task.relatedTaskTitle),
+    }))
+    .sort((left, right) => left.dueAt.localeCompare(right.dueAt));
+}
+
+/**
+ * The deterministic follow-up context for one member: the renewal target,
+ * whether the automated journey stops and why, consent and suppression for
+ * renewal messages, quiet hours, every reminder RIVET queued for the term
+ * with truthful status wording, the last contact, an agreed callback, the
+ * recorded evidence and the open work. The member workspace and renewal
+ * queue read this one deterministic projection.
+ */
+export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<MemberFollowUpContext> {
+  requirePermission(actor, "members.read");
+  const memberRecord = await recordOf(ctx, actor, "member", memberId);
+  const member = data(memberRecord.data);
+  const today = tenantToday(actor);
+  const identityIds = await memberIdentityIds(ctx, actor, memberId);
+  const [membershipRows, timelineRows, planRows, branches, chargeRows, settings, deliveryRows] = await Promise.all([
+    recordsOfMemberIdentity(ctx, actor, memberId, "membership"),
+    recordsOfMemberIdentity(ctx, actor, memberId, "timeline"),
+    recordsOf(ctx, actor, "plan"),
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    recordsOfMemberIdentity(ctx, actor, memberId, "charge"),
+    settingsData(ctx, actor),
+    Promise.all(identityIds.map((id) => ctx.db.query("renewalDeliveries").withIndex("by_organization_member", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", id)).collect())),
+  ]);
+  const planNames = new Map(planRows.map((row) => [row.publicId, stringValue(data(row.data).name)]));
+  const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+  const outstandingByMembership = new Map<string, number>();
+  for (const row of chargeRows) {
+    const charge = data(row.data);
+    const membershipId = optionalString(charge.membershipId);
+    if (!membershipId || !identityIds.includes(stringValue(charge.memberId))) continue;
+    outstandingByMembership.set(membershipId, (outstandingByMembership.get(membershipId) ?? 0) + collectibleOutstandingValue(charge, today));
+  }
+  const memberships: FollowUpMembershipLike[] = membershipRows
+    .map((row) => data(row.data))
+    .filter((term) => identityIds.includes(stringValue(term.memberId)))
+    .map((term) => {
+      const freeze = data(term.activeFreeze);
+      return {
+        id: stringValue(term.id),
+        planName: planNames.get(stringValue(term.planId)),
+        branchName: branchNames.get(stringValue(term.homeBranchId)),
+        startDate: stringValue(term.startDate),
+        endDate: stringValue(term.endDate),
+        status: statusOfMembership(term, today),
+        cancelledAt: optionalString(term.cancelledAt),
+        previousMembershipId: optionalString(term.previousMembershipId),
+        remainingVisits: typeof term.remainingVisits === "number" ? term.remainingVisits : undefined,
+        activeFreeze: term.activeFreeze ? { status: optionalString(freeze.status), startDate: optionalString(freeze.startDate), endDate: optionalString(freeze.endDate) } : undefined,
+        outstandingMinor: outstandingByMembership.get(stringValue(term.id)) ?? 0,
+      };
+    });
+  const timeline: FollowUpTimelineLike[] = timelineRows
+    .map((row) => data(row.data))
+    .filter((event) => identityIds.includes(stringValue(event.memberId)))
+    .map((event) => ({ id: stringValue(event.id), type: stringValue(event.type), title: stringValue(event.title), body: optionalString(event.body), occurredAt: stringValue(event.occurredAt), actorName: optionalString(event.actorName), meta: data(event.meta) }));
+  const deliveries: FollowUpDeliveryLike[] = deliveryRows.flat().map((row) => ({ id: row.publicId, checkpointKey: row.checkpointKey, channel: row.channel, status: row.status, suppressionReason: row.suppressionReason, cancellationReason: row.cancellationReason, deferredUntil: row.deferredUntil, attempts: row.attempts.length, updatedAt: row.updatedAt, membershipId: row.membershipPublicId }));
+  const notifications = data(settings.notifications);
+  const tasks = hasPermission(actor, "crm.read") ? await followUpRelatedTasks(ctx, actor, { memberId }) : [];
+  return buildMemberFollowUpContext({
+    member: { id: memberId, fullName: stringValue(member.fullName), phone: optionalString(member.phone), preferredLanguage: optionalString(member.preferredLanguage), status: stringValue(member.status, "active"), consent: member },
+    memberships,
+    timeline,
+    tasks,
+    deliveries,
+    quietHours: { start: stringValue(notifications.quietHoursStart, "22:00"), end: stringValue(notifications.quietHoursEnd, "08:00") },
+    deliveryMode: stringValue(notifications.automationDeliveryMode, "sandbox") === "live" ? "live" : "sandbox",
+    currency: actor.organization.currency,
+    timezone: actor.organization.timezone || TZ_FALLBACK,
+    today,
+    now: Date.now(),
+  });
+}
+
+/** An explicit, accepted link from a new task to an existing open task about the same person; never inferred. */
+async function relatedTaskLink(ctx: ReadContext, actor: ActorContext, input: Data, subject: { memberId?: string; leadId?: string }): Promise<{ id: string; title: string } | undefined> {
+  const relatedTaskId = optionalString(input.relatedTaskId);
+  if (!relatedTaskId) return undefined;
+  const related = data((await recordOf(ctx, actor, "task", relatedTaskId)).data);
+  const sameSubject = (subject.memberId && optionalString(related.memberId) === subject.memberId) || (subject.leadId && optionalString(related.leadId) === subject.leadId);
+  if (!sameSubject) domainError("VALIDATION_ERROR", "The related task is about someone else.", { correlationId: actor.correlationId });
+  if (stringValue(related.status, "open") !== "open") domainError("VALIDATION_ERROR", "The related task is no longer open. Review the suggestion again.", { correlationId: actor.correlationId });
+  return { id: relatedTaskId, title: stringValue(related.title) };
+}
+
+
+export async function workspaceAccessData(ctx: ReadContext, actor: ActorContext): Promise<Data> {
+  const entitlements = await workspaceEntitlementsData(ctx, actor);
+  const entitledModules = entitlements.entitledModules as WorkspaceModuleKey[];
+  const preferences = await workspacePreferencesData(ctx, actor, entitledModules);
+  return buildWorkspaceAccess(publicOrganizationId(actor.organization), entitlements as {
+    catalogVersion: number;
+    subscriptionPlan?: WorkspaceModulePlan;
+    entitledModules: WorkspaceModuleKey[];
+    source: "subscription_plan" | "legacy_default";
+    updatedAt?: string;
+  }, preferences as {
+    catalogVersion: number;
+    enabledModules: WorkspaceModuleKey[];
+    updatedAt?: string;
+    updatedById?: string;
+  });
+}
+
+function requireWorkspaceModule(actor: ActorContext, access: Data, moduleKey: WorkspaceModuleKey): void {
+  const status = arrayValue(access.modules).map(data).find((item) => item.key === moduleKey);
+  try {
+    requireConfiguredWorkspaceModule(moduleKey, {
+      entitledModules: (data(access.entitlements).entitledModules ?? []) as WorkspaceModuleKey[],
+      enabledModules: (data(access.preferences).enabledModules ?? []) as WorkspaceModuleKey[],
+    });
+  } catch {
+    domainError("FEATURE_NOT_AVAILABLE", "This feature is not available for your gym. Ask your gym owner.", { correlationId: actor.correlationId, details: { module: moduleKey, reason: status?.lockedReason ?? "not_entitled" } });
+  }
 }
 
 async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContext, raw: unknown): Promise<Data> {
@@ -799,8 +1391,10 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   const entry = data(value.entry);
   const membership = data(value.membership);
   const personalTraining = data(value.personalTraining);
+  const classBooking = data(value.classBooking);
+  const retention = data(value.retention);
   const outstandingBalance = stringValue(entry.outstandingBalance, "warn");
-  if (!["allow", "warn", "block"].includes(outstandingBalance)) domainError("VALIDATION_ERROR", "Outstanding-balance policy is invalid.", { correlationId: actor.correlationId });
+  if (!["allow", "warn", "block"].includes(outstandingBalance)) domainError("VALIDATION_ERROR", "Unpaid-balance policy is invalid.", { correlationId: actor.correlationId });
   const expiryWarningDays = numberValue(entry.expiryWarningDays, 7);
   const duplicateScanWindowMinutes = numberValue(entry.duplicateScanWindowMinutes, 2);
   const renewalWindowDays = numberValue(membership.renewalWindowDays, 14);
@@ -809,13 +1403,53 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
   const bookingHorizonDays = numberValue(personalTraining.bookingHorizonDays, 30);
   const cancellationCutoffHours = numberValue(personalTraining.cancellationCutoffHours, 12);
   const integerInRange = (candidate: number, minimum: number, maximum: number) => Number.isInteger(candidate) && candidate >= minimum && candidate <= maximum;
-  if (!integerInRange(expiryWarningDays, 0, 30)) domainError("VALIDATION_ERROR", "Expiry warning must be between 0 and 30 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(expiryWarningDays, 0, 30)) domainError("VALIDATION_ERROR", "End date warning must be between 0 and 30 days.", { correlationId: actor.correlationId });
   if (!integerInRange(duplicateScanWindowMinutes, 1, 15)) domainError("VALIDATION_ERROR", "Duplicate-scan window must be between 1 and 15 minutes.", { correlationId: actor.correlationId });
   if (!integerInRange(renewalWindowDays, 1, 90)) domainError("VALIDATION_ERROR", "Renewal window must be between 1 and 90 days.", { correlationId: actor.correlationId });
   if (!integerInRange(minimumFreezeDays, 1, 30)) domainError("VALIDATION_ERROR", "Minimum freeze must be between 1 and 30 days.", { correlationId: actor.correlationId });
   if (!integerInRange(maximumExtensionDays, 1, 365)) domainError("VALIDATION_ERROR", "Maximum extension must be between 1 and 365 days.", { correlationId: actor.correlationId });
   if (!integerInRange(bookingHorizonDays, 1, 90)) domainError("VALIDATION_ERROR", "PT booking horizon must be between 1 and 90 days.", { correlationId: actor.correlationId });
   if (!integerInRange(cancellationCutoffHours, 0, 72)) domainError("VALIDATION_ERROR", "PT cancellation cutoff must be between 0 and 72 hours.", { correlationId: actor.correlationId });
+  const classEligibilityMode = stringValue(classBooking.eligibilityMode, "all_active_memberships");
+  const classBookingHorizonDays = numberValue(classBooking.bookingHorizonDays, 30);
+  const classCancellationCutoffHours = numberValue(classBooking.cancellationCutoffHours, 2);
+  const maxActiveClassBookings = numberValue(classBooking.maxActiveBookingsPerMember, 8);
+  const classWaitlistSize = numberValue(classBooking.waitlistSize, 12);
+  if (!["all_active_memberships", "selected_plans"].includes(classEligibilityMode)) domainError("VALIDATION_ERROR", "Class eligibility mode is invalid.", { correlationId: actor.correlationId });
+  if (!integerInRange(classBookingHorizonDays, 1, 120)) domainError("VALIDATION_ERROR", "Class booking horizon must be between 1 and 120 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(classCancellationCutoffHours, 0, 72)) domainError("VALIDATION_ERROR", "Class cancellation cutoff must be between 0 and 72 hours.", { correlationId: actor.correlationId });
+  if (!integerInRange(maxActiveClassBookings, 1, 100)) domainError("VALIDATION_ERROR", "Active class booking limit must be between 1 and 100.", { correlationId: actor.correlationId });
+  if (!integerInRange(classWaitlistSize, 1, 200)) domainError("VALIDATION_ERROR", "Class waitlist size must be between 1 and 200.", { correlationId: actor.correlationId });
+  const eligiblePlanIds = [...new Set(arrayValue(classBooking.eligiblePlanIds).map((item) => stringValue(item).trim()).filter(Boolean))];
+  for (const planId of eligiblePlanIds) {
+    const plan = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "plan").eq("publicId", planId)).unique();
+    if (!plan) domainError("VALIDATION_ERROR", "A selected class-eligible plan was not found.", { correlationId: actor.correlationId });
+  }
+  if (classEligibilityMode === "selected_plans" && eligiblePlanIds.length === 0) domainError("VALIDATION_ERROR", "Select at least one plan that includes classes.", { correlationId: actor.correlationId });
+  const inactivityDays = numberValue(retention.inactivityDays, 14);
+  const expiredWinBackDays = numberValue(retention.expiredWinBackDays, 90);
+  const defaultSnoozeDays = numberValue(retention.defaultSnoozeDays, 7);
+  if (!integerInRange(inactivityDays, 3, 180)) domainError("VALIDATION_ERROR", "At-risk inactivity must be between 3 and 180 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(expiredWinBackDays, 7, 365)) domainError("VALIDATION_ERROR", "Win-back window must be between 7 and 365 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(defaultSnoozeDays, 1, 90)) domainError("VALIDATION_ERROR", "At-risk snooze must be between 1 and 90 days.", { correlationId: actor.correlationId });
+  const referrals = data(value.referrals);
+  const referralRewardDays = numberValue(referrals.rewardDays, 7);
+  const referralCapDays = numberValue(referrals.maxRewardDaysPerWindow, 30);
+  const referralWindowDays = numberValue(referrals.windowDays, 90);
+  if (!integerInRange(referralRewardDays, 1, 90)) domainError("VALIDATION_ERROR", "Referral reward must be between 1 and 90 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(referralCapDays, 1, 365)) domainError("VALIDATION_ERROR", "The referral cap must be between 1 and 365 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(referralWindowDays, 7, 365)) domainError("VALIDATION_ERROR", "The referral window must be between 7 and 365 days.", { correlationId: actor.correlationId });
+  if (referralRewardDays > referralCapDays) domainError("VALIDATION_ERROR", "The referral reward cannot exceed the per-member cap.", { correlationId: actor.correlationId });
+  const memberFreezes = data(value.memberFreezes);
+  const freeFreezesPerWindow = numberValue(memberFreezes.freeFreezesPerWindow, 1);
+  const extraFreezeFeeMinor = numberValue(memberFreezes.extraFreezeFeeMinor, 10_000);
+  const maxDaysPerFreeze = numberValue(memberFreezes.maxDaysPerFreeze, 30);
+  const freezeWindowDays = numberValue(memberFreezes.windowDays, 365);
+  if (!integerInRange(freeFreezesPerWindow, 0, 12)) domainError("VALIDATION_ERROR", "Free freezes must be between 0 and 12 per window.", { correlationId: actor.correlationId });
+  if (!Number.isSafeInteger(extraFreezeFeeMinor) || extraFreezeFeeMinor < 0 || extraFreezeFeeMinor > 1_000_000) domainError("VALIDATION_ERROR", "The extra-freeze fee must be between 0 and 1,000 JOD.", { correlationId: actor.correlationId });
+  if (!integerInRange(maxDaysPerFreeze, 1, 180)) domainError("VALIDATION_ERROR", "A freeze may run between 1 and 180 days.", { correlationId: actor.correlationId });
+  if (!integerInRange(freezeWindowDays, 30, 730)) domainError("VALIDATION_ERROR", "The freeze window must be between 30 and 730 days.", { correlationId: actor.correlationId });
+  if (maxDaysPerFreeze < minimumFreezeDays) domainError("VALIDATION_ERROR", "The maximum freeze cannot be below the minimum freeze.", { correlationId: actor.correlationId });
   const operatingHours: Data[] = [];
   const seenOperatingBranches = new Set<string>();
   for (const rawSchedule of arrayValue(value.operatingHours)) {
@@ -865,10 +1499,19 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
     }
     trialSchedules.push({ branchId, days: validatedDays });
   }
+  const calendarStartHour = classBooking.calendarStartHour === undefined || classBooking.calendarStartHour === null || classBooking.calendarStartHour === "" ? undefined : Number(classBooking.calendarStartHour);
+  const calendarEndHour = classBooking.calendarEndHour === undefined || classBooking.calendarEndHour === null || classBooking.calendarEndHour === "" ? undefined : Number(classBooking.calendarEndHour);
+  if (calendarStartHour !== undefined && (!Number.isSafeInteger(calendarStartHour) || calendarStartHour < 0 || calendarStartHour > 23)) domainError("VALIDATION_ERROR", "Calendar start hour must be between 00 and 23.", { correlationId: actor.correlationId });
+  if (calendarEndHour !== undefined && (!Number.isSafeInteger(calendarEndHour) || calendarEndHour < 1 || calendarEndHour > 24)) domainError("VALIDATION_ERROR", "Calendar end hour must be between 01 and 24.", { correlationId: actor.correlationId });
+  if (calendarStartHour !== undefined && calendarEndHour !== undefined && calendarEndHour <= calendarStartHour) domainError("VALIDATION_ERROR", "The calendar must end after it starts.", { correlationId: actor.correlationId });
   return {
     entry: { outstandingBalance, expiryWarningDays, duplicateScanWindowMinutes, enforceOperatingHours: booleanValue(entry.enforceOperatingHours) },
     membership: { allowOverlappingMemberships: booleanValue(membership.allowOverlappingMemberships), renewalWindowDays, minimumFreezeDays, maximumExtensionDays },
+    referrals: { enabled: booleanValue(referrals.enabled), rewardDays: referralRewardDays, maxRewardDaysPerWindow: referralCapDays, windowDays: referralWindowDays },
+    memberFreezes: { requestsEnabled: booleanValue(memberFreezes.requestsEnabled), freeFreezesPerWindow, extraFreezeFeeMinor, maxDaysPerFreeze, windowDays: freezeWindowDays },
     personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays, cancellationCutoffHours },
+    classBooking: { enabled: booleanValue(classBooking.enabled, true), eligibilityMode: classEligibilityMode, eligiblePlanIds, bookingHorizonDays: classBookingHorizonDays, cancellationCutoffHours: classCancellationCutoffHours, maxActiveBookingsPerMember: maxActiveClassBookings, waitlistEnabled: booleanValue(classBooking.waitlistEnabled, true), waitlistSize: classWaitlistSize, noShowTracking: booleanValue(classBooking.noShowTracking, true), calendarStartHour, calendarEndHour },
+    retention: { inactivityDays, expiredWinBackDays, defaultSnoozeDays },
     operatingHours,
     trialSchedules,
   };
@@ -883,6 +1526,7 @@ function organizationView(org: Organization): Data {
     currency: org.currency,
     timezone: org.timezone,
     locale: org.locale ?? "en-JO",
+    phoneCountryCallingCode: organizationPhoneCountryCallingCode(org),
     defaultLanguage: org.defaultLanguage ?? "en",
     taxRatePercent: org.taxRatePercent ?? 0,
     receiptPrefix: org.receiptPrefix ?? "RV",
@@ -902,6 +1546,48 @@ function branchView(branch: Branch, organizationId: string): Data {
     phone: branch.phone ?? "",
     capacity: branch.capacity ?? 120,
     status: branch.active && branch.status !== "inactive" ? "active" : "inactive",
+  };
+}
+
+function zoneView(zone: Zone, organizationId: string, branchId: string): Data {
+  return {
+    id: zone.publicId,
+    // Convex document IDs are an internal persistence detail. The typed API
+    // contract exposes stable public IDs consistently with branches and the
+    // rest of the authenticated workspace.
+    organizationId,
+    branchId,
+    code: zone.code,
+    name: zone.name,
+    nameAr: zone.nameAr,
+    kind: zone.kind,
+    capacity: zone.capacity,
+    status: zone.status,
+    createdAt: utcIso(zone.createdAt),
+    updatedAt: utcIso(zone.updatedAt),
+  };
+}
+
+async function brandKitView(ctx: ReadContext, organization: Organization): Promise<Data> {
+  const paletteKey: BrandPaletteKey = isBrandPaletteKey(organization.brandPaletteKey) ? organization.brandPaletteKey : DEFAULT_BRAND_PALETTE;
+  const primaryColor = normalizeBrandHex(organization.brandPrimaryColor) ?? BRAND_PALETTE_PRESETS[paletteKey];
+  const logoAssetId = organization.brandLogoAssetId;
+  const logo = logoAssetId
+    ? await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", logoAssetId)).unique()
+    : null;
+  const logoIsUsable = Boolean(logo && logo.status === "active" && logo.visibility === "public" && logo.ownerType === "gym_logo" && logo.ownerPublicId === publicOrganizationId(organization));
+  const logoUrl = logoIsUsable && logo ? await ctx.storage.getUrl(logo.storageId) : undefined;
+  return {
+    organizationId: publicOrganizationId(organization),
+    paletteKey,
+    primaryColor,
+    tokens: deriveBrandTokens(primaryColor),
+    logoAssetId: logoIsUsable ? logoAssetId : undefined,
+    logoUrl: logoIsUsable ? logoUrl ?? undefined : undefined,
+    logoAltText: logoIsUsable ? logo?.altText : undefined,
+    version: organization.brandVersion ?? 0,
+    updatedAt: organization.brandUpdatedAt ? utcIso(organization.brandUpdatedAt) : undefined,
+    updatedById: organization.brandUpdatedByUserId ? await publicUserIdFromId(ctx, organization._id, organization.brandUpdatedByUserId) : undefined,
   };
 }
 
@@ -926,7 +1612,8 @@ async function roleViews(ctx: ReadContext, actor: ActorContext): Promise<Data[]>
       key: frontendRole(role),
       label: definition?.label ?? fallback.label,
       description: definition?.description ?? fallback.description,
-      permissions: definition?.permissions ?? fallback.permissions,
+      permissions: rolePermissions(role, definition?.permissions, definition?.catalogVersion),
+      catalogVersion: definition?.catalogVersion ?? PERMISSION_CATALOG_VERSION,
       discountLimitMinor: definition?.discountLimitMinor ?? fallback.discountLimitMinor,
       isSystem: definition?.isSystem ?? true,
     };
@@ -935,12 +1622,24 @@ async function roleViews(ctx: ReadContext, actor: ActorContext): Promise<Data[]>
 
 async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchId?: string): Promise<Data> {
   const branches = await accessibleBranches(ctx, actor);
+  const workspace = await workspaceAccessData(ctx, actor);
+  const brand = await brandKitView(ctx, actor.organization);
   let selected: Branch | undefined;
   if (activeBranchId) {
     selected = branches.find((branch) => publicBranchId(branch) === activeBranchId);
     if (!selected) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
   } else if (actor.branchScope === "selected") {
-    selected = branches[0];
+    // A selected-branch actor may only receive an implicit branch when their
+    // membership has exactly one active branch. With multiple branches there
+    // is no safe default: the client must preserve an explicit branch choice
+    // (or ask the user to choose one) before any branch-scoped work can run.
+    if (branches.length === 1) selected = branches[0];
+    else if (branches.length > 1) {
+      domainError("ORGANIZATION_SELECTION_REQUIRED", "Select a branch before continuing.", {
+        correlationId: actor.correlationId,
+        details: { branchCount: branches.length },
+      });
+    }
   }
   return {
     user: { id: publicUserId(actor.user), name: actor.user.fullName, email: actor.user.email },
@@ -950,11 +1649,23 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
       currency: actor.organization.currency,
       timezone: actor.organization.timezone,
       locale: actor.organization.locale ?? "en-JO",
+      brand,
+      // What the gym pays RIVET, so Settings can state the term without a
+      // second round trip.
+      subscription: {
+        plan: actor.organization.subscriptionPlan,
+        status: actor.organization.status,
+        billingInterval: actor.organization.billingInterval ?? "monthly",
+        currentPeriodEndsAt: actor.organization.currentPeriodEndsAt === undefined ? undefined : utcIso(actor.organization.currentPeriodEndsAt),
+        trialEndsAt: actor.organization.trialEndsAt === undefined ? undefined : utcIso(actor.organization.trialEndsAt),
+      },
     },
     branches: branches.map((branch) => ({ id: publicBranchId(branch), name: branch.name, code: branch.code })),
     activeBranchId: selected ? publicBranchId(selected) : undefined,
     roles: [frontendRole(actor.role)],
     permissions: actor.permissions,
+    workspace,
+    legal: await agreementSessionState(ctx, actor),
   };
 }
 
@@ -981,34 +1692,96 @@ async function paymentRecords(ctx: ReadContext, actor: ActorContext): Promise<Do
 
 async function currentMembership(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data | undefined> {
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const terms = (await membershipRecords(ctx, actor))
+  const identityIds = await memberIdentityIds(ctx, actor, memberId);
+  const terms = (await recordsOfMemberIdentity(ctx, actor, memberId, "membership"))
     .map((record) => data(record.data))
-    .filter((membership) => membership.memberId === memberId)
+    .filter((membership) => identityIds.includes(stringValue(membership.memberId)))
     .map((membership) => ({ membership, status: statusOfMembership(membership, today) }));
   const rank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
   return terms.sort((a, b) => (rank[a.status] ?? 5) - (rank[b.status] ?? 5) || stringValue(b.membership.endDate).localeCompare(stringValue(a.membership.endDate)))[0]?.membership;
 }
 
+async function retentionQueueItems(ctx: ReadContext, actor: ActorContext, input: Data): Promise<Data[]> {
+  requirePermission(actor, "crm.read");
+  const branchId = optionalString(input.branchId);
+  if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+  const [memberRows, membershipRows, checkInRows, timelineRows, snoozeRows] = await Promise.all([
+    memberRecords(ctx, actor),
+    membershipRecords(ctx, actor),
+    recordsOf(ctx, actor, "checkIn"),
+    recordsOf(ctx, actor, "timeline"),
+    recordsOf(ctx, actor, "retentionState"),
+  ]);
+  const policies = data((await settingsData(ctx, actor)).operationalPolicies);
+  const retention = { ...DEFAULT_OPERATIONAL_POLICIES.retention, ...data(policies.retention) };
+  const membershipPolicy = { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(policies.membership) };
+  const members = memberRows.map((row) => data(row.data)).filter((member) => !branchId || member.homeBranchId === branchId);
+  const memberships = membershipRows.map((row) => data(row.data));
+  const risks = deriveRetentionRisks({
+    today: todayIn(actor.organization.timezone || TZ_FALLBACK),
+    inactivityDays: numberValue(retention.inactivityDays, 14),
+    renewalWindowDays: numberValue(membershipPolicy.renewalWindowDays, 14),
+    expiredWinBackDays: numberValue(retention.expiredWinBackDays, 90),
+    members: members.map((member) => ({ id: stringValue(member.id), status: stringValue(member.status), homeBranchId: stringValue(member.homeBranchId), assignedSalespersonId: optionalString(member.assignedSalespersonId), createdAt: stringValue(member.createdAt) })),
+    memberships: memberships.map((membership) => ({ id: stringValue(membership.id), memberId: stringValue(membership.memberId), homeBranchId: stringValue(membership.homeBranchId), startDate: stringValue(membership.startDate), endDate: stringValue(membership.endDate), totalVisits: typeof membership.totalVisits === "number" ? membership.totalVisits : undefined, remainingVisits: typeof membership.remainingVisits === "number" ? membership.remainingVisits : undefined, cancelledAt: optionalString(membership.cancelledAt), previousMembershipId: optionalString(membership.previousMembershipId), activeFreeze: data(membership.activeFreeze) })),
+    checkIns: checkInRows.map((row) => { const checkIn = data(row.data); return { memberId: stringValue(checkIn.memberId), decision: stringValue(checkIn.decision), occurredAt: stringValue(checkIn.occurredAt) }; }),
+    snoozes: snoozeRows.map((row) => { const snooze = data(row.data); return { memberId: stringValue(snooze.memberId), snoozedUntil: optionalString(snooze.snoozedUntil) }; }),
+    includeSnoozed: booleanValue(input.includeSnoozed),
+  }).filter((risk) => !branchId || risk.branchId === branchId)
+    .filter((risk) => actor.role !== "sales" || risk.assignedSalespersonId === publicUserId(actor.user));
+  const requestedReason = optionalString(input.reason);
+  if (requestedReason && !["all", "inactive", "expiring", "expired"].includes(requestedReason)) domainError("VALIDATION_ERROR", "At-risk reason is invalid.", { correlationId: actor.correlationId });
+  const filtered = risks.filter((risk) => !requestedReason || requestedReason === "all" || risk.reasons.some((reason) => reason.kind === requestedReason));
+  const memberById = new Map(members.map((member) => [stringValue(member.id), member]));
+  const termById = new Map(memberships.map((membership) => [stringValue(membership.id), membership]));
+  const [memberSummaries, membershipSummaries] = await Promise.all([
+    toMemberSummaries(ctx, actor, filtered.map((risk) => memberById.get(risk.memberId)).filter((value): value is Data => Boolean(value))),
+    toMembershipSummaries(ctx, actor, filtered.map((risk) => termById.get(risk.membershipId)).filter((value): value is Data => Boolean(value))),
+  ]);
+  const memberSummaryById = new Map(memberSummaries.map((member) => [stringValue(member.id), member]));
+  const membershipSummaryById = new Map(membershipSummaries.map((membership) => [stringValue(membership.id), membership]));
+  const contactsByMember = new Map<string, Data[]>();
+  for (const row of timelineRows) {
+    const event = data(row.data);
+    if (event.type !== "call_attempt" || !event.memberId) continue;
+    const contacts = contactsByMember.get(stringValue(event.memberId)) ?? [];
+    contacts.push(event);
+    contactsByMember.set(stringValue(event.memberId), contacts);
+  }
+  for (const contacts of contactsByMember.values()) contacts.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  const search = optionalString(input.search)?.trim().toLowerCase();
+  return filtered.flatMap((risk) => {
+    const member = memberSummaryById.get(risk.memberId);
+    const membership = membershipSummaryById.get(risk.membershipId);
+    if (!member || !membership) return [];
+    if (search && ![member.fullName, member.memberNumber, member.phone, membership.planName].some((value) => stringValue(value).toLowerCase().includes(search))) return [];
+    const contact = contactsByMember.get(risk.memberId)?.[0];
+    return [{ ...risk, member, membership, lastContactAt: optionalString(contact?.occurredAt), lastContactOutcome: optionalString(data(contact?.meta).outcome), recommendedSnoozeDays: numberValue(retention.defaultSnoozeDays, 7) }];
+  });
+}
+
 async function outstandingForMember(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data> {
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const total = (await chargeRecords(ctx, actor))
+  const identityIds = await memberIdentityIds(ctx, actor, memberId);
+  const total = (await recordsOfMemberIdentity(ctx, actor, memberId, "charge"))
     .map((record) => data(record.data))
-    .filter((charge) => charge.memberId === memberId)
+    .filter((charge) => identityIds.includes(stringValue(charge.memberId)))
     .reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
   return money(total, actor.organization.currency);
 }
 
 async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
+  const identityIds = await memberIdentityIds(ctx, actor, stringValue(value.id));
   const membership = await currentMembership(ctx, actor, stringValue(value.id));
   const plan = membership ? await recordOfOptional(ctx, actor, "plan", stringValue(membership.planId)) : null;
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const outstandingCharges = (await chargeRecords(ctx, actor))
+  const outstandingCharges = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "charge"))
     .map((record) => data(record.data))
-    .filter((charge) => charge.memberId === value.id && collectibleOutstandingValue(charge, today) > 0)
+    .filter((charge) => identityIds.includes(stringValue(charge.memberId)) && collectibleOutstandingValue(charge, today) > 0)
     .map((charge) => chargeProjection(charge, today));
-  const checkins = (await recordsOf(ctx, actor, "checkIn"))
+  const checkins = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "checkIn"))
     .map((record) => data(record.data))
-    .filter((checkin) => checkin.memberId === value.id && checkin.decision !== "blocked")
+    .filter((checkin) => identityIds.includes(stringValue(checkin.memberId)) && checkin.decision !== "blocked")
     .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
   return {
     id: stringValue(value.id),
@@ -1047,10 +1820,16 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
   ]);
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const rank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
+  const canonicalByIdentityId = new Map<string, string>();
+  for (const value of values) {
+    const canonicalId = stringValue(value.id);
+    canonicalByIdentityId.set(canonicalId, canonicalId);
+    for (const linkedId of arrayValue(value.mergedMemberIds).map(String)) canonicalByIdentityId.set(linkedId, canonicalId);
+  }
   const membershipsByMember = new Map<string, Data[]>();
   for (const record of memberships) {
     const membership = data(record.data);
-    const memberId = optionalString(membership.memberId);
+    const memberId = canonicalByIdentityId.get(stringValue(membership.memberId)) ?? optionalString(membership.memberId);
     if (!memberId) continue;
     const list = membershipsByMember.get(memberId) ?? [];
     list.push(membership);
@@ -1060,7 +1839,7 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
   const chargesByMember = new Map<string, Data[]>();
   for (const record of charges) {
     const charge = data(record.data);
-    const memberId = optionalString(charge.memberId);
+    const memberId = canonicalByIdentityId.get(stringValue(charge.memberId)) ?? optionalString(charge.memberId);
     if (!memberId) continue;
     const list = chargesByMember.get(memberId) ?? [];
     list.push(charge);
@@ -1070,7 +1849,7 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
   for (const record of checkIns) {
     const checkIn = data(record.data);
     if (checkIn.decision === "blocked") continue;
-    const memberId = optionalString(checkIn.memberId);
+    const memberId = canonicalByIdentityId.get(stringValue(checkIn.memberId)) ?? optionalString(checkIn.memberId);
     if (!memberId) continue;
     const occurredAt = optionalString(checkIn.occurredAt);
     if (occurredAt && (!lastCheckInByMember.has(memberId) || occurredAt > lastCheckInByMember.get(memberId)!)) lastCheckInByMember.set(memberId, occurredAt);
@@ -1121,25 +1900,29 @@ async function recordOfOptional(ctx: ReadContext, actor: ActorContext, entityTyp
 
 async function toMemberDetail(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
   const summary = await toMemberSummary(ctx, actor, value);
-  const checkins = (await recordsOf(ctx, actor, "checkIn"))
+  const identityIds = await memberIdentityIds(ctx, actor, stringValue(value.id));
+  const checkins = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "checkIn"))
     .map((record) => data(record.data))
-    .filter((checkin) => checkin.memberId === value.id && checkin.decision !== "blocked");
-  const payments = (await paymentRecords(ctx, actor))
+    .filter((checkin) => identityIds.includes(stringValue(checkin.memberId)) && checkin.decision !== "blocked");
+  const payments = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "payment"))
     .map((record) => data(record.data))
-    .filter((payment) => payment.memberId === value.id && payment.status !== "voided")
+    .filter((payment) => identityIds.includes(stringValue(payment.memberId)) && payment.status !== "voided")
     .reduce((sum, payment) => sum + amountOf(payment.amount), 0);
   const recent = checkins.map((checkin) => businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK)).sort().at(-1);
   const storedPreference = data(value.marketingPreference);
   const storedStatus = optionalString(storedPreference.status);
+  const storedSource = optionalString(storedPreference.source);
   const marketingStatus = storedStatus === "explicit_opt_in" || storedStatus === "explicit_opt_out" || storedStatus === "unknown"
     ? storedStatus
-    : optionalString(storedPreference.source) && storedPreference.source !== "system_default"
-      ? (marketingPreference(storedPreference.optedIn) ? "explicit_opt_in" : "explicit_opt_out")
+    : storedSource
+      ? marketingStatusFromProvenance(storedSource, storedPreference.optedIn)
       : value.marketingOptIn === false ? "explicit_opt_out" : "unknown";
-  const marketingOptIn = marketingStatus === "explicit_opt_in";
+  const marketingOptIn = typeof storedPreference.optedIn === "boolean"
+    ? storedPreference.optedIn
+    : typeof value.marketingOptIn === "boolean" ? value.marketingOptIn : true;
   const marketingPreferenceValue: Data = typeof storedPreference.source === "string"
     ? { ...storedPreference, optedIn: marketingOptIn, status: marketingStatus }
-    : { optedIn: false, status: "unknown", source: "system_default" };
+    : { optedIn: marketingOptIn, status: marketingStatus, source: "system_default" };
   const photoAsset = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "member_photo").eq("ownerPublicId", stringValue(value.id))).collect()).find((asset) => asset.status === "active" && asset.visibility === "private");
   const photoUrl = photoAsset ? (await ctx.storage.getUrl(photoAsset.storageId)) ?? undefined : undefined;
   const detail: Data = {
@@ -1286,12 +2069,34 @@ async function toMembershipDetail(ctx: MutationCtx | QueryCtx, actor: ActorConte
 async function toLeadSummary(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
   const branch = await branchByPublicId(ctx, actor.organization._id, optionalString(value.branchId));
   const owner = optionalString(value.ownerId) ? await userByPublicId(ctx, actor.organization._id, stringValue(value.ownerId)) : null;
-  const attempts = (await recordsOf(ctx, actor, "timeline"))
+  const [timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
+    recordsOfLead(ctx, actor.organization._id, stringValue(value.id), "timeline"),
+    recordsOfLead(ctx, actor.organization._id, stringValue(value.id), "offer"),
+    recordsOfLead(ctx, actor.organization._id, stringValue(value.id), "trialBooking"),
+  ]);
+  const leadId = stringValue(value.id);
+  const activities = timelineRecords
     .map((record) => data(record.data))
-    .filter((event) => event.leadId === value.id && event.type === "call_attempt")
+    .filter((event) => event.leadId === leadId);
+  const attempts = activities
+    .filter((event) => event.type === "call_attempt")
     .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
+  const offers = offerRecords
+    .map((record) => offerProjection(data(record.data)))
+    .filter((offer) => offer.leadId === leadId);
+  const trialBooking = trialBookingRecords
+    .map((record) => data(record.data))
+    .find((booking) => booking.leadId === leadId);
+  const progressFacts = deriveLeadProgressFacts({
+    stage: optionalString(value.stage),
+    lostReason: optionalString(value.lostReason),
+    convertedMemberId: optionalString(value.convertedMemberId),
+    activities,
+    offers,
+    trialBooking,
+  });
   const nextFollowUpAt = optionalString(value.nextFollowUpAt);
-  const open = value.stage !== "won" && value.stage !== "lost";
+  const open = !progressFacts.hasConversion && !progressFacts.hasLoss;
   return {
     ...value,
     branchName: branch?.name ?? "—",
@@ -1299,6 +2104,7 @@ async function toLeadSummary(ctx: ReadContext, actor: ActorContext, value: Data)
     lastContactOutcome: attempts[0] ? optionalString(data(attempts[0].meta).outcome) : undefined,
     lastContactAt: attempts[0] ? optionalString(attempts[0].occurredAt) : undefined,
     overdue: open && Boolean(nextFollowUpAt && new Date(nextFollowUpAt).getTime() < Date.now()),
+    progressFacts,
   };
 }
 
@@ -1310,29 +2116,64 @@ async function toLeadSummary(ctx: ReadContext, actor: ActorContext, value: Data)
  * mapper above.
  */
 async function toLeadSummaries(ctx: ReadContext, actor: ActorContext, values: Data[]): Promise<Data[]> {
-  const [branches, users, memberships, timelineRecords] = await Promise.all([
+  const [branches, users, memberships, timelineRecords, offerRecords, trialBookingRecords] = await Promise.all([
     ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("users").collect(),
     ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     recordsOf(ctx, actor, "timeline"),
+    recordsOf(ctx, actor, "offer"),
+    recordsOf(ctx, actor, "trialBooking"),
   ]);
   const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
   const activeUserIds = new Set(memberships.filter((membership) => membership.active).map((membership) => membership.userId));
   const ownerNames = new Map(users.filter((user) => activeUserIds.has(user._id)).map((user) => [publicUserId(user), user.fullName]));
   const attemptsByLead = new Map<string, Data[]>();
+  const activitiesByLead = new Map<string, Data[]>();
   for (const record of timelineRecords) {
     const event = data(record.data);
     const leadId = optionalString(event.leadId);
-    if (!leadId || event.type !== "call_attempt") continue;
-    const attempts = attemptsByLead.get(leadId) ?? [];
-    attempts.push(event);
-    attemptsByLead.set(leadId, attempts);
+    if (!leadId) continue;
+    const activities = activitiesByLead.get(leadId) ?? [];
+    activities.push(event);
+    activitiesByLead.set(leadId, activities);
+    if (event.type === "call_attempt") {
+      const attempts = attemptsByLead.get(leadId) ?? [];
+      attempts.push(event);
+      attemptsByLead.set(leadId, attempts);
+    }
   }
   for (const attempts of attemptsByLead.values()) attempts.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  const offersByLead = new Map<string, Data[]>();
+  for (const record of offerRecords) {
+    const offer = offerProjection(data(record.data));
+    const leadId = optionalString(offer.leadId);
+    if (!leadId) continue;
+    const offers = offersByLead.get(leadId) ?? [];
+    offers.push(offer);
+    offersByLead.set(leadId, offers);
+  }
+  const trialBookingByLead = new Map<string, Data>();
+  for (const record of trialBookingRecords) {
+    const booking = data(record.data);
+    const leadId = optionalString(booking.leadId);
+    if (leadId) trialBookingByLead.set(leadId, booking);
+  }
   return values.map((value) => {
-    const attempts = attemptsByLead.get(stringValue(value.id)) ?? [];
+    const leadId = stringValue(value.id);
+    const attempts = attemptsByLead.get(leadId) ?? [];
+    const activities = activitiesByLead.get(leadId) ?? [];
+    const offers = offersByLead.get(leadId) ?? [];
+    const trialBooking = trialBookingByLead.get(leadId);
+    const progressFacts = deriveLeadProgressFacts({
+      stage: optionalString(value.stage),
+      lostReason: optionalString(value.lostReason),
+      convertedMemberId: optionalString(value.convertedMemberId),
+      activities,
+      offers,
+      trialBooking,
+    });
     const nextFollowUpAt = optionalString(value.nextFollowUpAt);
-    const open = value.stage !== "won" && value.stage !== "lost";
+    const open = !progressFacts.hasConversion && !progressFacts.hasLoss;
     return {
       ...value,
       branchName: branchNames.get(stringValue(value.branchId)) ?? "—",
@@ -1340,6 +2181,7 @@ async function toLeadSummaries(ctx: ReadContext, actor: ActorContext, values: Da
       lastContactOutcome: attempts[0] ? optionalString(data(attempts[0].meta).outcome) : undefined,
       lastContactAt: attempts[0] ? optionalString(attempts[0].occurredAt) : undefined,
       overdue: open && Boolean(nextFollowUpAt && new Date(nextFollowUpAt).getTime() < Date.now()),
+      progressFacts,
     };
   });
 }
@@ -1353,6 +2195,31 @@ async function userByPublicId(ctx: ReadContext, organizationId: Id<"organization
     .withIndex("by_organization_user", (q) => q.eq("organizationId", organizationId).eq("userId", user._id))
     .unique();
   return membership?.active ? user : null;
+}
+
+async function assertLeadOwner(ctx: ReadContext, actor: ActorContext, ownerId: string): Promise<void> {
+  const owner = (await ctx.db.query("users").collect()).find((candidate) => publicUserId(candidate) === ownerId);
+  if (!owner) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
+  const membership = await ctx.db
+    .query("organizationMemberships")
+    .withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", owner._id))
+    .unique();
+  if (!membership) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
+  if (organizationUserStatus(owner, membership) !== "active" || !["owner", "manager", "sales"].includes(membership.role)) {
+    domainError("VALIDATION_ERROR", "Leads can only be assigned to active owner, manager, or sales staff.", { correlationId: actor.correlationId });
+  }
+}
+
+/**
+ * Staff access is organization-local. A person's Convex user row is the
+ * global identity shared by every gym, so a local membership deactivation
+ * must not overwrite `users.status` and revoke access to other gyms.
+ */
+function organizationUserStatus(user: User, membership: Doc<"organizationMemberships">): "active" | "invited" | "deactivated" {
+  if (!membership.active || membership.invitationStatus === "revoked") return "deactivated";
+  if (membership.invitationStatus === "pending" || user.status === "invited") return "invited";
+  if (user.status === "deactivated") return "deactivated";
+  return "active";
 }
 
 async function toTask(ctx: ReadContext, actor: ActorContext, value: Data): Promise<Data> {
@@ -1396,10 +2263,13 @@ async function toTransactionSummaries(ctx: ReadContext, actor: ActorContext, val
   const branchesById = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
   return values.map((value) => {
     const member = membersById.get(stringValue(value.memberId));
+    const customer = value.customer && typeof value.customer === "object" ? data(value.customer) : undefined;
+    const customerName = optionalString(customer?.fullName);
+    const customerNumber = optionalString(customer?.memberNumber);
     return {
       ...value,
-      memberName: member ? stringValue(member.fullName) : "—",
-      memberNumber: member ? stringValue(member.memberNumber) : "—",
+      memberName: customerName ?? (member ? stringValue(member.fullName) : "—"),
+      memberNumber: customerNumber ?? (customer?.kind === "guest" ? "Guest" : customer?.kind === "walk_in" ? "Walk-in" : member ? stringValue(member.memberNumber) : "—"),
       branchName: branchesById.get(stringValue(value.branchId)) ?? "—",
     };
   });
@@ -1408,6 +2278,77 @@ async function toTransactionSummaries(ctx: ReadContext, actor: ActorContext, val
 async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: string): Promise<Data> {
   const receipt = await recordOf(ctx, actor, "receipt", receiptId);
   const receiptData = data(receipt.data);
+  const retailSaleId = optionalString(receiptData.retailSaleId);
+  if (retailSaleId) {
+    const sale = await ctx.db.query("retailSales").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", retailSaleId)).unique();
+    if (!sale) domainError("NOT_FOUND", "Retail sale not found.", { correlationId: actor.correlationId });
+    const branch = await ctx.db.get(sale.branchId);
+    assertBranchAccess(actor, branch);
+    if (!branch) domainError("NOT_FOUND", "Branch not found.", { correlationId: actor.correlationId });
+    const customer = data(sale.customer);
+    const originalPaymentId = `retail-payment-${sale.publicId}`;
+    const originalPayment = {
+      id: originalPaymentId,
+      organizationId: publicOrganizationId(actor.organization),
+      branchId: publicBranchId(branch),
+      type: "retail_sale",
+      amount: { amount: sale.totalMinor, currency: sale.currency },
+      method: sale.method,
+      status: sale.status,
+      refundedAmount: sale.refundedMinor ? { amount: sale.refundedMinor, currency: sale.currency } : undefined,
+      refundReason: sale.refundReason,
+      voidReason: sale.voidReason,
+      customer,
+      receiptId: sale.receiptId,
+      receiptNumber: sale.receiptNumber,
+      collectedById: sale.createdByPublicId,
+      collectedByName: sale.createdByName,
+      shiftId: sale.shiftId,
+      externalReference: sale.externalReference,
+      idempotencyKey: sale.idempotencyKey,
+      occurredAt: utcIso(sale.createdAt),
+    };
+    const retailPayments = (await paymentRecords(ctx, actor)).map((row) => data(row.data));
+    const receiptPaymentId = stringValue(receiptData.paymentId, originalPaymentId);
+    const payment = retailPayments.find((item) => item.id === receiptPaymentId) ?? originalPayment;
+    const relatedPayments = retailPayments.filter((item) => item.id !== payment.id && (item.originalPaymentId === originalPaymentId || item.id === originalPaymentId));
+    const retailSale = {
+      id: sale.publicId,
+      organizationId: publicOrganizationId(actor.organization),
+      branchId: publicBranchId(branch),
+      receiptId: sale.receiptId,
+      receiptNumber: sale.receiptNumber,
+      customer,
+      lines: sale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency }, unitCost: line.unitCostMinor === undefined || line.unitCostCurrency === undefined ? undefined : { amount: line.unitCostMinor, currency: line.unitCostCurrency } })),
+      subtotal: { amount: sale.subtotalMinor, currency: sale.currency },
+      total: { amount: sale.totalMinor, currency: sale.currency },
+      status: sale.status,
+      refundedAmount: sale.refundedMinor ? { amount: sale.refundedMinor, currency: sale.currency } : undefined,
+      returnedLines: sale.returnedLines,
+      refundReason: sale.refundReason,
+      voidReason: sale.voidReason,
+      voidedAt: sale.voidedAt ? utcIso(sale.voidedAt) : undefined,
+      method: sale.method,
+      externalReference: sale.externalReference,
+      shiftId: sale.shiftId,
+      idempotencyKey: sale.idempotencyKey,
+      createdById: sale.createdByPublicId,
+      createdByName: sale.createdByName,
+      createdAt: utcIso(sale.createdAt),
+      updatedAt: utcIso(sale.updatedAt),
+    };
+    return {
+      receipt: receiptData,
+      receiptId: sale.receiptId,
+      organization: { name: actor.organization.name, receiptFooter: stringValue(actor.organization.receiptFooter), taxRatePercent: numberValue(actor.organization.taxRatePercent) },
+      branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },
+      member: customer.kind === "member" ? { fullName: stringValue(customer.fullName), memberNumber: stringValue(customer.memberNumber, "Member") } : undefined,
+      customer,
+      payment,
+      retailSale,
+      relatedPayments,
+    };
+  }
   const payment = await recordOf(ctx, actor, "payment", stringValue(receiptData.paymentId));
   const paymentData = data(payment.data);
   const branch = await branchByPublicId(ctx, actor.organization._id, optionalString(paymentData.branchId));
@@ -1427,6 +2368,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
       phone: branch?.phone ?? "",
     },
     member: { fullName: stringValue(data(member.data).fullName), memberNumber: stringValue(data(member.data).memberNumber) },
+    customer: { kind: "member", fullName: stringValue(data(member.data).fullName), phone: optionalString(data(member.data).phone), memberId: stringValue(paymentData.memberId), memberNumber: stringValue(data(member.data).memberNumber) },
     payment: paymentData,
     charge: charge ? data(charge.data) : undefined,
     relatedPayments: related,
@@ -1447,27 +2389,31 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
     .withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id))
     .order("desc")
     .collect();
-  if (actor.branchScope === "selected") rows = rows.filter((row) => !row.branchId || actor.branchIds.includes(row.branchId));
+  if (actor.branchScope === "selected") rows = rows.filter((row) => (!row.branchId && !row.destinationBranchId) || actor.branchIds.includes(row.branchId!) || actor.branchIds.includes(row.destinationBranchId!));
   const category = optionalString(input.category);
   const actorId = optionalString(input.actorId);
   const entityId = optionalString(input.entityId);
   const branchId = optionalString(input.branchId);
   const from = optionalString(input.from);
   const to = optionalString(input.to);
+  const approvalStatus = optionalString(input.approvalStatus);
+  if (approvalStatus && !["pending", "approved", "rejected"].includes(approvalStatus)) {
+    domainError("VALIDATION_ERROR", "Audit approval status is invalid.", { correlationId: actor.correlationId });
+  }
   const branch = branchId ? await branchByPublicId(ctx, actor.organization._id, branchId) : null;
   rows = rows.filter((row) =>
     (!category || row.category === category) &&
     (!actorId || row.actorPublicId === actorId) &&
     (!entityId || row.entityPublicId === entityId) &&
-    (!branch || row.branchId === branch._id) &&
-    (!from || row.occurredAt >= new Date(from).getTime()) &&
-    (!to || row.occurredAt <= new Date(`${to}T23:59:59.999Z`).getTime()) &&
+    (!branch || row.branchId === branch._id || row.destinationBranchId === branch._id) &&
+    instantFallsInTenantDateRange(row.occurredAt, actor.organization.timezone || TZ_FALLBACK, from, to) &&
     matchesSearch([row.summary, row.entityLabel, row.actorName, row.action], optionalString(input.search)),
   );
   const mapped = await Promise.all(rows.map(async (row) => ({
     id: row.publicId,
     organizationId: publicOrganizationId(actor.organization),
     branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined,
+    destinationBranchId: row.destinationBranchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.destinationBranchId) : undefined,
     actorId: row.actorPublicId,
     actorName: row.actorName,
     actorRole: row.actorRole === "member" ? "member" : frontendRole(row.actorRole),
@@ -1484,12 +2430,22 @@ async function auditPage(ctx: QueryCtx, actor: ActorContext, input: Data) {
     correlationId: row.correlationId,
     occurredAt: utcIso(row.occurredAt),
   })));
-  return page(mapped, input);
+  const filtered = approvalStatus
+    ? mapped.filter((row) => row.approvalStatus === approvalStatus)
+    : mapped;
+  return page(filtered, input);
 }
 
 async function publicBranchIdFromId(ctx: ReadContext, organizationId: Id<"organizations">, id: Id<"branches">): Promise<string> {
   const branch = await ctx.db.get(id);
   return branch?.publicId ?? id;
+}
+
+async function publicUserIdFromId(ctx: ReadContext, organizationId: Id<"organizations">, id: Id<"users">): Promise<string | undefined> {
+  const user = await ctx.db.get(id);
+  if (!user) return undefined;
+  const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organizationId).eq("userId", id)).unique();
+  return membership ? publicUserId(user) : undefined;
 }
 
 function marketplaceView(value: Data, includePlatformFields = false): Data {
@@ -1527,11 +2483,17 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
     monthlyRevenueMinor: includePlatformFields ? numberValue(value.monthlyRevenueMinor) : 0,
     ...(includePlatformFields ? {
       isPublic: booleanValue(value.isPublic),
+      isProvisioned: typeof value.isProvisioned === "boolean" ? value.isProvisioned : undefined,
+      isArchived: booleanValue(value.isArchived),
+      archivedAt: optionalString(value.archivedAt),
+      archiveReason: optionalString(value.archiveReason),
       trialEndsAt: optionalString(value.trialEndsAt),
       subscriptionStartedAt: optionalString(value.subscriptionStartedAt),
       currentPeriodEndsAt: optionalString(value.currentPeriodEndsAt),
       cancelledAt: optionalString(value.cancelledAt),
       subscriptionStatusReason: optionalString(value.subscriptionStatusReason),
+      billingInterval: optionalString(value.billingInterval),
+      logoUrl: optionalString(value.logoUrl),
     } : {}),
     branches: arrayValue(value.branches).map((item) => {
       const branch = data(item);
@@ -1546,18 +2508,65 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
   };
 }
 
-function acceptsPublicTrialRequests(value: Data): boolean {
-  return booleanValue(value.isPublic) && booleanValue(value.profilePublished, true) && ["active", "trial"].includes(stringValue(value.subscriptionStatus));
+function platformMarketplaceProjection(value: Data, organization: Organization | null, entitlement: Doc<"organizationEntitlements"> | null = null): Data {
+  // Keep unprovisioned legacy rows in the platform snapshot for cleanup, but
+  // never present them as publishable tenants.
+  if (!organization) return {
+    ...value,
+    isProvisioned: false,
+    subscriptionStatus: "suspended",
+    rivetPlan: undefined,
+    isPublic: false,
+    trialEndsAt: undefined,
+    subscriptionStartedAt: undefined,
+    currentPeriodEndsAt: undefined,
+    cancelledAt: undefined,
+    subscriptionStatusReason: "Organization is not provisioned.",
+    billingInterval: undefined,
+    logoUrl: undefined,
+    lastActiveAt: undefined,
+  };
+  const status = platformSubscriptionStatusForOrganization(organization.status);
+  const plan = platformPlanFromFacts(value, organization, entitlement);
+  const trialCurrent = status !== "trial" || (organization.trialEndsAt !== undefined && organization.trialEndsAt > Date.now());
+  const isArchived = organization.archivedAt !== undefined || booleanValue(value.isArchived);
+  return {
+    ...value,
+    isProvisioned: true,
+    subscriptionStatus: status,
+    ...(plan ? { rivetPlan: plan } : {}),
+    isPublic: !isArchived && (status === "active" || (status === "trial" && trialCurrent)) && booleanValue(value.isPublic),
+    isArchived,
+    archivedAt: organization.archivedAt !== undefined ? utcIso(organization.archivedAt) : optionalString(value.archivedAt),
+    archiveReason: organization.archiveReason ?? optionalString(value.archiveReason),
+    // Lifecycle dates and reasons are tenant-owned. Explicitly clear stale
+    // directory values when the authoritative organization has no value.
+    subscriptionStartedAt: organization.subscriptionStartedAt !== undefined ? utcIso(organization.subscriptionStartedAt) : undefined,
+    trialEndsAt: organization.trialEndsAt !== undefined ? utcIso(organization.trialEndsAt) : undefined,
+    currentPeriodEndsAt: organization.currentPeriodEndsAt !== undefined ? utcIso(organization.currentPeriodEndsAt) : undefined,
+    cancelledAt: organization.cancelledAt !== undefined ? utcIso(organization.cancelledAt) : undefined,
+    subscriptionStatusReason: organization.subscriptionStatusReason ?? undefined,
+    billingInterval: organization.billingInterval ?? "monthly",
+  };
+}
+
+function acceptsPublicTrialRequests(value: Data, authoritativeStatus = stringValue(value.subscriptionStatus), authoritativeTrialEndsAt?: number, useAuthoritativeTrialDate = false): boolean {
+  if (!booleanValue(value.isPublic) || !booleanValue(value.profilePublished, true) || !["active", "trial"].includes(authoritativeStatus)) return false;
+  if (authoritativeStatus !== "trial") return true;
+  const trialEndsAt = useAuthoritativeTrialDate ? authoritativeTrialEndsAt : validSubscriptionTimestamp(value.trialEndsAt);
+  return trialEndsAt !== undefined && trialEndsAt > Date.now();
 }
 
 function gymApplicationView(application: Doc<"gymApplications">): Data {
   return {
     id: application.publicId,
     gymName: application.gymName,
+    gymAddress: application.gymAddress ?? "",
     ownerName: application.ownerName,
     email: application.email,
     contactNumber: application.contactNumber,
     plan: application.plan,
+    billingInterval: application.billingInterval ?? "monthly",
     status: application.status,
     notificationStatus: application.notificationStatus,
     notificationError: application.notificationError,
@@ -1569,6 +2578,12 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
     reviewedBy: application.reviewedBy,
     reviewNotes: application.reviewNotes,
     provisioningStatus: application.provisioningStatus ?? "not_started",
+    provisioningCheckpoint: application.provisioningCheckpoint,
+    provisioningOutcome: application.provisioningOutcome,
+    provisioningAttemptCount: application.provisioningAttemptCount,
+    provisioningLastCorrelationId: application.provisioningLastCorrelationId,
+    provisioningProviderStatus: application.provisioningProviderStatus,
+    provisioningProviderCode: application.provisioningProviderCode,
     provisioningStartedAt: application.provisioningStartedAt ? utcIso(application.provisioningStartedAt) : undefined,
     provisioningError: application.provisioningError,
     provisionedAt: application.provisionedAt ? utcIso(application.provisionedAt) : undefined,
@@ -1576,6 +2591,7 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
     provisionedBranchId: application.provisionedBranchId,
     clerkOrganizationId: application.clerkOrganizationId,
     clerkInvitationId: application.clerkInvitationId,
+    clerkInvitationStatus: application.clerkInvitationStatus,
   };
 }
 
@@ -1701,6 +2717,30 @@ async function syncCustomerProfileToMemberRecord(
   return true;
 }
 
+const CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY = "customer_membership_identity_v2";
+
+async function customerMembershipRowsForIdentity(
+  ctx: ReadContext,
+  user: User,
+  customerProfileId?: string,
+): Promise<DomainRecord[]> {
+  const userId = publicUserId(user);
+  const [byUser, byProfile, indexState] = await Promise.all([
+    ctx.db.query("domainRecords").withIndex("by_type_customer_user", (q) => q.eq("entityType", "customerMembership").eq("customerUserPublicId", userId)).collect(),
+    customerProfileId
+      ? ctx.db.query("domainRecords").withIndex("by_type_customer_profile", (q) => q.eq("entityType", "customerMembership").eq("customerProfilePublicId", customerProfileId)).collect()
+      : Promise.resolve([] as DomainRecord[]),
+    ctx.db.query("maintenanceState").withIndex("by_key", (q) => q.eq("key", CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY)).unique(),
+  ]);
+  const indexed = [...byUser, ...byProfile].filter((record, index, rows) => rows.findIndex((candidate) => candidate._id === record._id) === index);
+  if (indexState?.status === "completed") return indexed;
+  // One compatibility read protects member accounts until the bounded cron has
+  // indexed every pre-release projection. New writes always populate both keys.
+  const legacy = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
+    .filter((record) => belongsToAuthenticatedCustomer(data(record.data), userId, customerProfileId));
+  return [...indexed, ...legacy].filter((record, index, rows) => rows.findIndex((candidate) => candidate._id === record._id) === index);
+}
+
 async function syncCustomerProfileToLinkedMembers(
   ctx: MutationCtx,
   user: User,
@@ -1708,7 +2748,7 @@ async function syncCustomerProfileToLinkedMembers(
   changedFields: string[],
   correlationId: string,
 ): Promise<void> {
-  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const rows = await customerMembershipRowsForIdentity(ctx, user, stringValue(profile.id));
   for (const row of rows) {
     const projection = data(row.data);
     if (!belongsToAuthenticatedCustomer(projection, publicUserId(user), stringValue(profile.id))) continue;
@@ -1776,8 +2816,8 @@ async function linkExactEmailMembersToCustomerProfile(ctx: MutationCtx, user: Us
         lastCheckInAt: optionalString(checks[0]?.occurredAt),
       };
       const existingProjection = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "customerMembership").eq("publicId", projection.membershipId)).unique();
-      if (existingProjection) await ctx.db.patch(existingProjection._id, { branchId: branch?._id, memberPublicId: memberRecord.publicId, data: { ...data(existingProjection.data), ...projection }, updatedAt: Date.now() });
-      else await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "customerMembership", publicId: projection.membershipId, branchId: branch?._id, memberPublicId: memberRecord.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: projection.membershipId, ...projection } });
+      if (existingProjection) await ctx.db.patch(existingProjection._id, { branchId: branch?._id, memberPublicId: memberRecord.publicId, customerUserPublicId: publicUserId(user), customerProfilePublicId: stringValue(profile.id), data: { ...data(existingProjection.data), ...projection }, updatedAt: Date.now() });
+      else await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "customerMembership", publicId: projection.membershipId, branchId: branch?._id, memberPublicId: memberRecord.publicId, customerUserPublicId: publicUserId(user), customerProfilePublicId: stringValue(profile.id), createdAt: Date.now(), updatedAt: Date.now(), data: { id: projection.membershipId, ...projection } });
       await syncCustomerProfileToMemberRecord(ctx, user, memberRecord, profile, [...CUSTOMER_PROFILE_MEMBER_FIELDS], `membership-link-${projection.membershipId}`);
     }
   }
@@ -1793,6 +2833,8 @@ async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): P
   const userId = publicUserId(user);
   const email = user.email.trim().toLowerCase();
   if (!email) domainError("CONFIGURATION_ERROR", "The authenticated Clerk identity is missing an email claim.");
+  const gender = optionalString(input.gender);
+  if (gender !== "female" && gender !== "male") domainError("VALIDATION_ERROR", "Choose female or male before saving your profile.", { fieldErrors: { gender: ["Choose female or male"] } });
   const existing = await ctx.db.query("customerProfiles").withIndex("by_user_id", (q) => q.eq("userId", userId)).unique();
   const legacy = existing ? undefined : await legacyCustomerProfileForUser(ctx, userId);
   const profileId = existing?.publicId ?? optionalString(legacy?.id) ?? newPublicId();
@@ -1870,6 +2912,61 @@ async function saveCustomerProfile(ctx: MutationCtx, user: User, input: Data): P
   return { ...value, marketingPreference: preference };
 }
 
+async function customerReferralProgramData(ctx: ReadContext, organization: Organization, portalMembershipId: string, memberId: string, gymId: string, internalMembershipId = portalMembershipId): Promise<Data> {
+  const [settings, rewards, links] = await Promise.all([
+    ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "referralReward")).collect(),
+    recordsOfMember(ctx, organization._id, memberId, "referralLink"),
+  ]);
+  const configured = data(data(data(settings?.data).operationalPolicies).referrals);
+  const policy = { ...DEFAULT_OPERATIONAL_POLICIES.referrals, ...configured } as Data;
+  const rewardDays = numberValue(policy.rewardDays, 7);
+  const maxRewardDaysPerWindow = numberValue(policy.maxRewardDaysPerWindow, 30);
+  const windowDays = numberValue(policy.windowDays, 90);
+  const windowStart = Date.now() - windowDays * 86_400_000;
+  const memberRewards = rewards.filter((row) => stringValue(data(row.data).referrerId) === memberId);
+  const currentRewards = memberRewards.filter((row) => row.createdAt >= windowStart);
+  const earnedDays = currentRewards.reduce((sum, row) => sum + numberValue(data(row.data).days), 0);
+  const link = links.map((row) => data(row.data)).find((row) => booleanValue(row.active, true) && row.membershipId === internalMembershipId);
+  // Attributed members whose first sale has not landed yet appear as dated
+  // "pending" rows. History rows carry only dates, days, and status — never
+  // the referred person's name or any other identifying detail.
+  const rewardedReferredIds = new Set(memberRewards.map((row) => stringValue(data(row.data).referredMemberId)));
+  const attributedMembers = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect())
+    .map((row) => data(row.data))
+    .filter((row) => stringValue(row.referredByMemberId) === memberId && stringValue(row.status) !== "archived" && !rewardedReferredIds.has(stringValue(row.id)));
+  const history = [
+    ...memberRewards.map((row) => {
+      const value = data(row.data);
+      const status = stringValue(value.status);
+      return {
+        occurredAt: stringValue(value.createdAt, utcIso(row.createdAt)),
+        days: numberValue(value.days),
+        status: status === "applied" ? "applied" : status === "cap_reached" ? "capped" : "ineligible",
+      };
+    }),
+    ...attributedMembers.map((row) => ({ occurredAt: stringValue(row.createdAt), days: 0, status: "pending" })),
+  ]
+    .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)))
+    .slice(0, 24)
+    // Synthetic ids: reward row ids embed the referred member's id, which
+    // must never reach the referrer's browser.
+    .map((event, index) => ({ id: `referral-event-${index}`, ...event }));
+  return {
+    membershipId: portalMembershipId,
+    enabled: booleanValue(policy.enabled),
+    rewardDays,
+    maxRewardDaysPerWindow,
+    windowDays,
+    earnedDays,
+    remainingDays: Math.max(0, maxRewardDaysPerWindow - earnedDays),
+    successfulReferrals: memberRewards.filter((row) => stringValue(data(row.data).status) === "applied").length,
+    recordedReferrals: memberRewards.length,
+    sharePath: link ? `/customer/gyms/${encodeURIComponent(gymId)}?ref=${encodeURIComponent(stringValue(link.id))}` : undefined,
+    history,
+  };
+}
+
 async function customerExperience(ctx: ReadContext): Promise<Data> {
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
@@ -1880,7 +2977,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
     .map((event) => customerPreferenceEventView(event));
   const preference = history.at(-1) ?? data(profile?.marketingPreference ?? customerPreferenceFromProfile({ createdAt: Date.now() }));
   const preferenceHistory = history.length > 0 ? history : [preference];
-  const membershipRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const membershipRows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
   const ownedMembershipRows = membershipRows
     .map((record): { record: DomainRecord; projection: Data } => ({ record, projection: { id: record.publicId, ...data(record.data) } }))
     .filter(({ projection }) => belongsToAuthenticatedCustomer(projection, userId, optionalString(profile?.id)));
@@ -1914,8 +3011,8 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
     const balanceMinor = charges.map((row) => data(row.data)).filter((item) => item.memberId === memberId).reduce((sum, item) => sum + collectibleOutstandingValue(item, todayIn(timezone)), 0);
     const marketplaceValue = data(marketplace?.data);
     const [logo, cover] = await Promise.all([
-      gymMediaAssetView(ctx, tenant, optionalString(marketplaceValue.logoAssetId)),
-      gymMediaAssetView(ctx, tenant, optionalString(marketplaceValue.coverAssetId)),
+      gymMediaAssetView(ctx, tenant, optionalString(marketplaceValue.logoAssetId), "gym_logo"),
+      gymMediaAssetView(ctx, tenant, optionalString(marketplaceValue.coverAssetId), "gym_cover"),
     ]);
     const branch = membershipRecord.branchId ? await ctx.db.get(membershipRecord.branchId) : null;
     const directoryBranch = arrayValue(marketplaceValue.branches).map(data).find((item) => item.internalBranchId === membership.homeBranchId || item.internalBranchId === (branch ? publicBranchId(branch) : undefined));
@@ -1927,6 +3024,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
         type: stringValue(item.type).startsWith("pt_") ? "pt" : stringValue(item.type).includes("payment") ? "payment" : "membership",
         title: stringValue(item.title, "Gym activity"),
         detail: optionalString(item.body),
+        href: optionalString(data(item.meta).receiptId) ? `/customer/receipts/${stringValue(data(item.meta).receiptId)}` : undefined,
         occurredAt: stringValue(item.occurredAt),
       })),
       ...paymentRows.map((row) => data(row.data)).filter((item) => item.memberId === memberId && item.status !== "voided").map((item) => ({
@@ -1934,9 +3032,11 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
         type: "payment",
         title: "Payment recorded",
         detail: optionalString(item.method),
+        href: optionalString(item.receiptId) ? `/customer/receipts/${stringValue(item.receiptId)}` : undefined,
         occurredAt: stringValue(item.occurredAt, stringValue(item.createdAt)),
       })),
     ].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)).slice(0, 100);
+    const referral = await customerReferralProgramData(ctx, tenant, stringValue(projection.id), memberId, marketplace?.publicId ?? stringValue(projection.gymId, publicOrganizationId(tenant)), internalMembershipId);
     return {
       ...projection,
       gymId: marketplace?.publicId ?? stringValue(projection.gymId, publicOrganizationId(tenant)),
@@ -1965,6 +3065,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
         checkedInByName: optionalString(item.actorName),
       })),
       activity,
+      referral,
       qrValue: "",
     };
   }));
@@ -1998,10 +3099,228 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
   };
 }
 
+type CustomerFinanceContext = {
+  organization: Organization;
+  memberId: string;
+  member: Data;
+  membershipId: string;
+};
+
+async function customerFinanceContexts(ctx: ReadContext): Promise<CustomerFinanceContext[]> {
+  const { user } = await requireMember(ctx);
+  const userId = publicUserId(user);
+  const profile = await customerProfileForUser(ctx, userId);
+  const rows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
+  const contexts: CustomerFinanceContext[] = [];
+  for (const row of rows) {
+    const projection = data(row.data);
+    if (!belongsToAuthenticatedCustomer(projection, userId, optionalString(profile?.id))) continue;
+    const organization = await ctx.db.get(row.organizationId);
+    if (!organization) continue;
+    const memberRecords = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect();
+    const memberRecord = memberRecords.find((candidate) => candidate.publicId === projection.memberId || stringValue(data(candidate.data).memberNumber) === stringValue(projection.memberNumber));
+    if (!memberRecord) continue;
+    contexts.push({
+      organization,
+      memberId: memberRecord.publicId,
+      member: data(memberRecord.data),
+      membershipId: optionalString(projection.membershipId) ?? row.publicId,
+    });
+  }
+  return contexts;
+}
+
+function customerPaymentExplanation(value: Data): string {
+  const status = stringValue(value.status, "completed");
+  const type = stringValue(value.type, "payment");
+  if (status === "voided" || type === "void") return "This payment was voided and remains in the history for audit.";
+  if (status === "refunded" || type === "refund") return "This amount was returned and is linked to the original payment.";
+  if (status === "partially_refunded") return "Part of this payment has been returned.";
+  if (type === "retail_sale") return "Retail purchase recorded by the gym.";
+  return "Payment received by the gym.";
+}
+
+async function customerFinancialTransactions(ctx: ReadContext, resolvedContexts?: CustomerFinanceContext[]): Promise<Data[]> {
+  const contexts = resolvedContexts ?? await customerFinanceContexts(ctx);
+  const transactions: Data[] = [];
+  for (const context of contexts) {
+    const [payments, retailSales, branches] = await Promise.all([
+      recordsOfMember(ctx, context.organization._id, context.memberId, "payment"),
+      ctx.db.query("retailSales").withIndex("by_organization", (q) => q.eq("organizationId", context.organization._id)).collect(),
+      ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", context.organization._id)).collect(),
+    ]);
+    const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+    for (const row of payments) {
+      const payment = data(row.data);
+      if (stringValue(payment.memberId) !== context.memberId) continue;
+      transactions.push({
+        id: stringValue(payment.id, row.publicId),
+        gymId: publicOrganizationId(context.organization),
+        gymName: context.organization.name,
+        branchName: branchNames.get(stringValue(payment.branchId)) ?? "Gym branch",
+        membershipId: optionalString(payment.membershipId) ?? context.membershipId,
+        receiptId: optionalString(payment.receiptId),
+        receiptNumber: stringValue(payment.receiptNumber, "Receipt pending"),
+        type: stringValue(payment.type, "payment"),
+        status: stringValue(payment.status, "completed"),
+        amount: payment.amount,
+        method: stringValue(payment.method, "other"),
+        occurredAt: stringValue(payment.occurredAt, stringValue(payment.createdAt)),
+        explanation: customerPaymentExplanation(payment),
+      });
+    }
+    for (const sale of retailSales.filter((candidate) => candidate.memberId === context.memberId || candidate.customer.memberId === context.memberId)) {
+      const branch = branches.find((candidate) => candidate._id === sale.branchId);
+      transactions.push({
+        id: `retail-payment-${sale.publicId}`,
+        gymId: publicOrganizationId(context.organization),
+        gymName: context.organization.name,
+        branchName: branch?.name ?? "Gym branch",
+        membershipId: context.membershipId,
+        receiptId: sale.receiptId,
+        receiptNumber: sale.receiptNumber,
+        type: "retail_sale",
+        status: sale.status,
+        amount: { amount: sale.totalMinor, currency: sale.currency },
+        method: sale.method,
+        occurredAt: utcIso(sale.createdAt),
+        explanation: customerPaymentExplanation({ type: "retail_sale", status: sale.status }),
+      });
+    }
+  }
+  return transactions.filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id && candidate.gymId === item.gymId) === index);
+}
+
+async function customerFinancialSummary(ctx: ReadContext): Promise<Data> {
+  const contexts = await customerFinanceContexts(ctx);
+  const transactions = await customerFinancialTransactions(ctx, contexts);
+  let outstanding = 0;
+  for (const context of contexts) {
+    const charges = await recordsOfMember(ctx, context.organization._id, context.memberId, "charge");
+    const today = todayIn(context.organization.timezone || TZ_FALLBACK);
+    outstanding += charges.map((row) => data(row.data)).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
+  }
+  const currency = contexts[0]?.organization.currency ?? "JOD";
+  const paidLifetime = transactions.reduce((sum, transaction) => {
+    const amount = amountOf(transaction.amount);
+    return sum + (transaction.type === "refund" ? -Math.abs(amount) : transaction.status === "voided" ? 0 : amount);
+  }, 0);
+  const receiptIds = new Set(transactions.map((transaction) => optionalString(transaction.receiptId)).filter(Boolean));
+  const latest = [...transactions].sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)))[0];
+  const gyms = contexts
+    .map((context) => ({ id: publicOrganizationId(context.organization), name: context.organization.name }))
+    .filter((gym, index, all) => all.findIndex((candidate) => candidate.id === gym.id) === index);
+  return { outstanding: money(outstanding, currency), paidLifetime: money(paidLifetime, currency), receiptCount: receiptIds.size, lastPaymentAt: optionalString(latest?.occurredAt), gyms };
+}
+
+async function customerTransactionPage(ctx: ReadContext, input: Data): Promise<Data> {
+  let items = await customerFinancialTransactions(ctx);
+  if (input.gymId) items = items.filter((item) => item.gymId === input.gymId);
+  if (input.status) items = items.filter((item) => item.status === input.status);
+  if (input.type) items = items.filter((item) => item.type === input.type);
+  if (input.from) items = items.filter((item) => stringValue(item.occurredAt).slice(0, 10) >= stringValue(input.from));
+  if (input.to) items = items.filter((item) => stringValue(item.occurredAt).slice(0, 10) <= stringValue(input.to));
+  items = items.filter((item) => matchesSearch([item.gymName, item.branchName, item.receiptNumber, item.method], optionalString(input.search)));
+  items = sortRecords(items, input.sort ?? "-occurredAt", (item, key) => key === "amount" ? amountOf(item.amount) : stringValue(item[key]));
+  return page(items, input);
+}
+
+async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promise<Data> {
+  const contexts = await customerFinanceContexts(ctx);
+  for (const context of contexts) {
+    const receipt = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "receipt").eq("publicId", receiptId)).unique();
+    if (!receipt) continue;
+    const receiptValue = data(receipt.data);
+    const retailSale = await ctx.db.query("retailSales").withIndex("by_receipt", (q) => q.eq("organizationId", context.organization._id).eq("receiptId", receiptId)).unique();
+    if (retailSale) {
+      if (retailSale.memberId !== context.memberId && retailSale.customer.memberId !== context.memberId) continue;
+      const branch = await ctx.db.get(retailSale.branchId);
+      if (!branch) continue;
+      const payment = {
+        id: `retail-payment-${retailSale.publicId}`,
+        organizationId: publicOrganizationId(context.organization),
+        branchId: publicBranchId(branch),
+        type: "retail_sale",
+        customer: retailSale.customer,
+        amount: { amount: retailSale.totalMinor, currency: retailSale.currency },
+        method: retailSale.method,
+        status: retailSale.status,
+        refundedAmount: retailSale.refundedMinor ? { amount: retailSale.refundedMinor, currency: retailSale.currency } : undefined,
+        refundReason: retailSale.refundReason,
+        voidReason: retailSale.voidReason,
+        receiptId,
+        receiptNumber: retailSale.receiptNumber,
+        collectedById: retailSale.createdByPublicId,
+        collectedByName: retailSale.createdByName,
+        shiftId: retailSale.shiftId,
+        externalReference: retailSale.externalReference,
+        idempotencyKey: retailSale.idempotencyKey,
+        occurredAt: utcIso(retailSale.createdAt),
+      };
+      return {
+        gymId: publicOrganizationId(context.organization),
+        receipt: receiptValue,
+        organization: { name: context.organization.name, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
+        branch: { name: branch.name, code: branch.code, address: branch.address ?? "", phone: branch.phone ?? "" },
+        member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
+        customer: retailSale.customer,
+        payment,
+        retailSale: {
+          id: retailSale.publicId,
+          organizationId: publicOrganizationId(context.organization),
+          branchId: publicBranchId(branch),
+          receiptId,
+          receiptNumber: retailSale.receiptNumber,
+          customer: retailSale.customer,
+          lines: retailSale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency }, unitCost: line.unitCostMinor === undefined || line.unitCostCurrency === undefined ? undefined : { amount: line.unitCostMinor, currency: line.unitCostCurrency } })),
+          subtotal: { amount: retailSale.subtotalMinor, currency: retailSale.currency },
+          total: { amount: retailSale.totalMinor, currency: retailSale.currency },
+          status: retailSale.status,
+          refundedAmount: retailSale.refundedMinor ? { amount: retailSale.refundedMinor, currency: retailSale.currency } : undefined,
+          returnedLines: retailSale.returnedLines,
+          refundReason: retailSale.refundReason,
+          voidReason: retailSale.voidReason,
+          voidedAt: retailSale.voidedAt ? utcIso(retailSale.voidedAt) : undefined,
+          method: retailSale.method,
+          externalReference: retailSale.externalReference,
+          shiftId: retailSale.shiftId,
+          idempotencyKey: retailSale.idempotencyKey,
+          createdById: retailSale.createdByPublicId,
+          createdByName: retailSale.createdByName,
+          createdAt: utcIso(retailSale.createdAt),
+          updatedAt: utcIso(retailSale.updatedAt),
+        },
+        relatedPayments: [],
+      };
+    }
+    const payment = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "payment").eq("publicId", stringValue(receiptValue.paymentId))).unique();
+    if (!payment || stringValue(data(payment.data).memberId) !== context.memberId) continue;
+    const paymentValue = data(payment.data);
+    const [branch, charge, relatedRows] = await Promise.all([
+      ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", stringValue(paymentValue.branchId))).unique(),
+      paymentValue.chargeId ? ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "charge").eq("publicId", stringValue(paymentValue.chargeId))).unique() : Promise.resolve(null),
+      recordsOfMember(ctx, context.organization._id, context.memberId, "payment"),
+    ]);
+    const relatedPayments = relatedRows.map((row) => data(row.data)).filter((item) => item.originalPaymentId === paymentValue.id || (paymentValue.originalPaymentId && item.id === paymentValue.originalPaymentId));
+    return {
+      gymId: publicOrganizationId(context.organization),
+      receipt: receiptValue,
+      organization: { name: context.organization.name, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
+      branch: { name: branch?.name ?? "Gym branch", code: branch?.code ?? "", address: branch?.address ?? "", phone: branch?.phone ?? "" },
+      member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
+      customer: { kind: "member", fullName: stringValue(context.member.fullName), phone: optionalString(context.member.phone), memberId: context.memberId, memberNumber: stringValue(context.member.memberNumber) },
+      payment: paymentValue,
+      charge: charge ? data(charge.data) : undefined,
+      relatedPayments,
+    };
+  }
+  domainError("NOT_FOUND", "Receipt not found.");
+}
+
 async function resolveEntryPass(ctx: ReadContext, actor: ActorContext, token: string, branchId: string): Promise<{ pass: Doc<"entryPasses">; membership: DomainRecord; payload: Data } | null> {
   if (!token.startsWith(`${ENTRY_PASS_PREFIX}.`)) return null;
   const secret = process.env.ENTRY_PASS_SIGNING_SECRET;
-  if (!secret) domainError("CONFIGURATION_ERROR", "Entry-pass validation is not configured.", { correlationId: actor.correlationId });
+  if (!secret) domainError("CONFIGURATION_ERROR", "Entry passes are not set up yet. Ask your gym owner.", { correlationId: actor.correlationId });
   const parts = token.split(".");
   if (parts.length !== 3 || parts[0] !== ENTRY_PASS_PREFIX) return null;
   const encodedPayload = parts[1] ?? "";
@@ -2026,12 +3345,12 @@ async function resolveEntryPass(ctx: ReadContext, actor: ActorContext, token: st
 
 async function createEntryPass(ctx: MutationCtx, input: Data): Promise<Data> {
   const secret = process.env.ENTRY_PASS_SIGNING_SECRET;
-  if (!secret) domainError("CONFIGURATION_ERROR", "Entry-pass signing is not configured.");
+  if (!secret) domainError("CONFIGURATION_ERROR", "Entry passes are not set up yet. Ask your gym owner.");
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
   const membershipId = recordId(input.membershipId);
-  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect();
+  const rows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
   const membership = rows.find((row) => row.publicId === membershipId && belongsToAuthenticatedCustomer(data(row.data), userId, optionalString(profile?.id)));
   if (!membership) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(membership.organizationId);
@@ -2126,29 +3445,76 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   const { user } = await requireMember(ctx);
   const gyms = await marketplaceRows(ctx);
   const gymRecord = gyms.find((record) => record.publicId === stringValue(input.gymId));
-  if (!gymRecord || !acceptsPublicTrialRequests(data(gymRecord.data))) domainError("NOT_FOUND", "Gym not found.");
+  if (!gymRecord) domainError("NOT_FOUND", "Gym not found.");
   const gym = data(gymRecord.data);
   const targetOrgPublicId = optionalString(gym.targetOrganizationId);
   const targetOrganization = targetOrgPublicId
     ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrgPublicId)).unique()
     : null;
-  if (!targetOrganization || !["trial", "active"].includes(targetOrganization.status)) {
+  if (!targetOrganization || gymRecord.organizationId !== targetOrganization._id || !acceptsPublicTrialRequests(gym, platformSubscriptionStatusForOrganization(targetOrganization.status), targetOrganization.trialEndsAt, true)) {
     domainError("NOT_FOUND", "This gym is not accepting online trial requests yet.");
   }
   const storageOrganization = targetOrganization;
+  const referralToken = optionalString(input.referralToken)?.trim();
+  let referredByMemberId: string | undefined;
+  if (referralToken) {
+    if (referralToken.length > 200) domainError("VALIDATION_ERROR", "This referral link is not valid.");
+    const referralLink = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "referralLink").eq("publicId", referralToken)).unique();
+    const referral = data(referralLink?.data);
+    const referrerId = optionalString(referral.memberId);
+    const referrer = referrerId ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "member").eq("publicId", referrerId)).unique() : null;
+    if (!referralLink || !booleanValue(referral.active, true) || referral.gymId !== input.gymId || !referrer || stringValue(data(referrer.data).status) === "archived") domainError("NOT_FOUND", "This referral link is no longer available.");
+    referredByMemberId = referrerId;
+  }
+  const idempotencyKey = optionalString(input.idempotencyKey)?.trim();
+  if (idempotencyKey && (idempotencyKey.length < 8 || idempotencyKey.length > 200)) {
+    domainError("VALIDATION_ERROR", "The trial request could not be processed.");
+  }
+  const preferredDate = stringValue(input.preferredDate);
+  const preferredTime = stringValue(input.preferredTime);
+  const requestHash = await privacyFingerprint({
+    scope: "customer.trial.create",
+    userId: publicUserId(user),
+    gymId: stringValue(input.gymId),
+    branchId: stringValue(input.branchId),
+    preferredDate,
+    preferredTime,
+    goal: stringValue(input.goal),
+    referralToken,
+  });
+  const idempotencyScope = `customer.trial.create:${await privacyFingerprint(publicUserId(user))}`;
+  if (idempotencyKey) {
+    // Read all matching rows instead of calling unique(). Older deployments
+    // may contain more than one expired record from before this guard existed.
+    // Remove stale records before inserting the replacement so retries remain
+    // deterministic and the index cannot accumulate ambiguous state.
+    const existingRequests = await ctx.db.query("publicRequestIdempotency").withIndex("by_scope_key", (q) => q.eq("scope", idempotencyScope).eq("key", idempotencyKey)).collect();
+    const existingRequest = existingRequests.find((row) => row.expiresAt > Date.now());
+    if (existingRequest) {
+      if (existingRequest.requestHash !== requestHash) domainError("CONFLICT", "This trial request has already been used.");
+      const bookingId = stringValue(data(existingRequest.result).bookingId);
+      const booking = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "trialBooking").eq("publicId", bookingId)).unique();
+      if (!booking) domainError("CONFIGURATION_ERROR", "The trial request could not be recovered.");
+      // Clean up any stale duplicate rows while retaining the active replay.
+      await Promise.all(existingRequests.filter((row) => row._id !== existingRequest._id && row.expiresAt <= Date.now()).map((row) => ctx.db.delete(row._id)));
+      return data(booking.data);
+    }
+    if (existingRequests.length > 0) {
+      // Replace expired retry state transactionally before the new insert.
+      await Promise.all(existingRequests.map((row) => ctx.db.delete(row._id)));
+    }
+  }
   const directoryBranch = arrayValue(gym.branches).map(data).find((candidate) => candidate.id === input.branchId);
   const actualBranchId = optionalString(directoryBranch?.internalBranchId) ?? stringValue(input.branchId);
   const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("publicId", actualBranchId)).unique();
   if (!branch || !branch.active || branch.status === "inactive") {
     domainError("NOT_FOUND", "The selected gym branch is not accepting online trial requests yet.");
   }
-  const preferredDate = stringValue(input.preferredDate);
-  const preferredTime = stringValue(input.preferredTime);
   const weekday = validatedWeekdayForDate(preferredDate);
   if (!weekday || !TIME_PATTERN.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.");
   const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
   const schedule = arrayValue(data(data(settings?.data).operationalPolicies).trialSchedules).map(data).find((candidate) => candidate.branchId === publicBranchId(branch));
-  if (!schedule) domainError("VALIDATION_ERROR", "Trial scheduling is not configured for this branch yet.");
+  if (!schedule) domainError("VALIDATION_ERROR", "Trial bookings are not set up for this branch yet.");
   const trialWindow = normalizedTrialWindow(data(data(schedule.days)[weekday]));
   if (!booleanValue(trialWindow.enabled) || preferredTime < stringValue(trialWindow.opensAt) || preferredTime > stringValue(trialWindow.closesAt)) {
     domainError("CONFLICT", "That trial time is outside this branch's trial-request hours.");
@@ -2161,6 +3527,12 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     return booking.customerUserId === publicUserId(user) && booking.gymId === stringValue(input.gymId) && ["requested", "confirmed"].includes(stringValue(booking.status));
   });
   if (existingOpenRequest) domainError("CONFLICT", "You already have an open trial request with this gym.");
+  await enforcePublicRateLimit(ctx, {
+    scope: "customer.trial.create",
+    fingerprint: await privacyFingerprint(publicUserId(user)),
+    maxRequests: 10,
+    windowMs: 24 * 60 * 60 * 1000,
+  });
   const profile = await saveCustomerProfile(ctx, user, input);
   const ownership = customerProfileOwnership(publicUserId(user), profile.id);
   const bookingId = newPublicId();
@@ -2185,7 +3557,7 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   if (branch) {
     leadId = newPublicId();
     const branchPublicId = publicBranchId(branch);
-    const lead = { id: leadId, organizationId: publicOrganizationId(targetOrganization), branchId: branchPublicId, fullName: base.fullName, phone: base.phone, email: base.email, stage: "trial_booked", source: "other", expectedValue: money(numberValue(gym.fromPriceMinor), targetOrganization.currency), nextFollowUpAt: utcIso(requestedAt), notes: `Free trial requested through RIVET Member. Goal: ${base.goal}`, createdAt, updatedAt: createdAt };
+    const lead = { id: leadId, organizationId: publicOrganizationId(targetOrganization), branchId: branchPublicId, fullName: base.fullName, phone: base.phone, email: base.email, stage: "trial_booked", source: referredByMemberId ? "referral" : "other", referredByMemberId, expectedValue: money(numberValue(gym.fromPriceMinor), targetOrganization.currency), nextFollowUpAt: utcIso(requestedAt), notes: `Free trial requested through RIVET Member${referredByMemberId ? " via a member referral link" : ""}. Goal: ${base.goal}`, createdAt, updatedAt: createdAt };
     await ctx.db.insert("domainRecords", { organizationId: targetOrganization._id, entityType: "lead", publicId: leadId, branchId: branch._id, leadPublicId: leadId, createdAt: Date.now(), updatedAt: Date.now(), data: lead });
     await ctx.db.patch((await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "trialBooking").eq("publicId", bookingId)).unique())!._id, { data: { ...base, leadId }, updatedAt: Date.now() });
     await notifyOrganizationRoles(ctx, {
@@ -2209,6 +3581,16 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     recipientEmail: profile.email,
     dedupeKey: `trial-request-confirmation:${bookingId}`,
   });
+  if (idempotencyKey) {
+    await ctx.db.insert("publicRequestIdempotency", {
+      scope: idempotencyScope,
+      key: idempotencyKey,
+      requestHash,
+      result: { bookingId },
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 365 * 86_400_000,
+    });
+  }
   return { ...base, ...(leadId ? { leadId } : {}) };
 }
 
@@ -2244,7 +3626,7 @@ const AUTOMATION_TRIGGER_KEYS = [
   "payment_outstanding",
 ] as const;
 const AUTOMATION_ACTION_KEYS = ["create_task", "queue_message", "notify_manager"] as const;
-const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer", "auditor"] as const;
+const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer"] as const;
 
 function automationInteger(value: unknown, label: string, correlationId: string, minimum: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
@@ -2255,13 +3637,13 @@ function automationInteger(value: unknown, label: string, correlationId: string,
 
 function normalizedAutomationTriggerParams(trigger: string, raw: Data, correlationId: string): Data {
   if (trigger === "membership_expiring") {
-    const daysBefore = [...new Set(arrayValue(raw.daysBefore).map((value) => automationInteger(value, "Expiry checkpoints", correlationId, 1)))].sort((left, right) => left - right);
-    if (daysBefore.length === 0) domainError("VALIDATION_ERROR", "Add at least one expiry checkpoint.", { correlationId });
+    const daysBefore = [...new Set(arrayValue(raw.daysBefore).map((value) => automationInteger(value, "End date checkpoints", correlationId, 1)))].sort((left, right) => left - right);
+    if (daysBefore.length === 0) domainError("VALIDATION_ERROR", "Add at least one end date checkpoint.", { correlationId });
     return { daysBefore };
   }
-  if (trigger === "membership_expired") return { daysAfter: automationInteger(raw.daysAfter, "Days after expiry", correlationId, 0) };
+  if (trigger === "membership_expired") return { daysAfter: automationInteger(raw.daysAfter, "Days after end date", correlationId, 0) };
   if (trigger === "member_inactive") return { days: automationInteger(raw.days, "Inactive days", correlationId, 1) };
-  if (trigger === "payment_outstanding") return { days: automationInteger(raw.days, "Outstanding days", correlationId, 1) };
+  if (trigger === "payment_outstanding") return { days: automationInteger(raw.days, "Unpaid days", correlationId, 1) };
   if (trigger === "lead_untouched") return { hours: automationInteger(raw.hours, "Untouched hours", correlationId, 1) };
   if (trigger === "follow_up_overdue") return { hours: automationInteger(raw.hours, "Overdue hours", correlationId, 1) };
   domainError("VALIDATION_ERROR", "Automation trigger is invalid.", { correlationId });
@@ -2361,7 +3743,7 @@ async function automationSubjectName(ctx: ReadContext, actor: ActorContext, subj
     if (member) return stringValue(data(member.data).fullName, linkedMemberId);
   }
   if (subjectType === "task") return stringValue(value.title, "Follow-up task");
-  if (subjectType === "charge") return stringValue(value.description, "Outstanding charge");
+  if (subjectType === "charge") return stringValue(value.description, "Unpaid charge");
   return stringValue(value.planName, "Membership");
 }
 
@@ -2502,7 +3884,9 @@ async function ptTrainerView(ctx: ReadContext, organization: Organization, value
       .query("mediaAssets")
       .withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", value.photoAssetId!))
       .unique();
-    if (asset && asset.status === "active" && asset.visibility === "public") photoUrl = (await ctx.storage.getUrl(asset.storageId)) ?? undefined;
+    if (asset && asset.ownerType === "trainer_photo" && asset.ownerPublicId === value.publicId && asset.status === "active" && asset.visibility === "public") {
+      photoUrl = (await ctx.storage.getUrl(asset.storageId)) ?? undefined;
+    }
   }
   return {
     id: value.publicId,
@@ -2606,6 +3990,29 @@ async function ptPackageOrderView(ctx: ReadContext, organization: Organization, 
   };
 }
 
+/**
+ * Resolve the tenant/member/branch facts that authorize an existing PT order.
+ * Idempotency records are intentionally not authorization records: a caller
+ * may know a key from another branch, so every replay must prove access to the
+ * order and its branch before the immutable view is returned. This helper
+ * deliberately does not require an active branch; an already-created order
+ * remains replayable after a safe branch lifecycle change, while new writes
+ * still call assertBranchAccess before mutating anything.
+ */
+async function ptPackageOrderScope(ctx: ReadContext, actor: ActorContext, order: Doc<"ptPackageOrders">): Promise<{ membership: DomainRecord; member: DomainRecord; charge: DomainRecord; branch: Branch }> {
+  if (order.organizationId !== actor.organization._id) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+  const membership = await recordOf(ctx, actor, "membership", order.membershipPublicId);
+  const membershipValue = data(membership.data);
+  if (stringValue(membershipValue.memberId) !== order.memberPublicId) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+  const member = await recordOf(ctx, actor, "member", order.memberPublicId);
+  const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(membershipValue.homeBranchId));
+  if (!branch || branch.organizationId !== actor.organization._id) domainError("NOT_FOUND", "PT package order branch not found.", { correlationId: actor.correlationId });
+  if (actor.branchScope === "selected" && !actor.branchIds.includes(branch._id)) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
+  const charge = await recordOf(ctx, actor, "charge", order.chargePublicId);
+  if (charge.branchId !== branch._id || optionalString(data(charge.data).memberId) !== order.memberPublicId) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+  return { membership, member, charge, branch };
+}
+
 function ptPackageLadderIsValid(packages: Array<{ sessionCount: number; totalPriceMinor: number }>): boolean {
   const sorted = [...packages].sort((left, right) => left.sessionCount - right.sessionCount);
   return sorted.every((item, index) => {
@@ -2673,13 +4080,18 @@ async function ptMemberExperience(ctx: ReadContext, actor: ActorContext, members
     ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
   ]);
   const entitlementViews = entitlements.map((item) => ptEntitlementView(actor.organization, item));
+  const policy = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
   return {
     organizationId: publicOrganizationId(actor.organization),
     membershipId: membershipRecord.publicId,
     availableSessions: entitlementViews.reduce((total, item) => total + numberValue(item.available), 0),
     reservedSessions: entitlementViews.reduce((total, item) => total + numberValue(item.reserved), 0),
+    cancellationCutoffHours: numberValue(policy.cancellationCutoffHours, 12),
     entitlements: entitlementViews,
-    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && item.endsAt >= Date.now()).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, actor.organization, item))),
+    // Every booking still holding a reserved credit is listed, including a
+    // session that started without an outcome: hiding it would leave the
+    // "reserved" count pointing at nothing.
+    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status)).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, actor.organization, item))),
     orders: await Promise.all(orders.sort((left, right) => right.createdAt - left.createdAt).map((item) => ptPackageOrderView(ctx, actor.organization, item))),
     trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, actor.organization, item))),
     packages: await Promise.all(packages.map((item) => ptPackageView(ctx, actor.organization, item))),
@@ -2690,8 +4102,8 @@ async function customerPtExperience(ctx: ReadContext, membershipId: string): Pro
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
-  const customerMembership = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
-    .find((record) => record.publicId === membershipId && belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+  const membershipRecord = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "customerMembership").eq("publicId", membershipId)).unique();
+  const customerMembership = membershipRecord && belongsToAuthenticatedCustomer(data(membershipRecord.data), userId, optionalString(profile?.id)) ? membershipRecord : null;
   if (!customerMembership) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(customerMembership.organizationId);
   if (!organization || organization.status === "suspended" || organization.status === "cancelled") domainError("NOT_FOUND", "Membership not found.");
@@ -2707,25 +4119,65 @@ async function customerPtExperience(ctx: ReadContext, membershipId: string): Pro
     ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", organization._id).eq("status", "active")).collect(),
   ]);
   const entitlementViews = entitlements.map((item) => ptEntitlementView(organization, item));
+  const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+  const policy = { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(data(data(settings?.data).operationalPolicies).personalTraining) };
   return {
     organizationId: publicOrganizationId(organization),
     membershipId,
     availableSessions: entitlementViews.reduce((total, item) => total + numberValue(item.available), 0),
     reservedSessions: entitlementViews.reduce((total, item) => total + numberValue(item.reserved), 0),
+    cancellationCutoffHours: numberValue(policy.cancellationCutoffHours, 12),
     entitlements: entitlementViews,
-    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status) && item.endsAt >= Date.now()).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, organization, item))),
+    // Sessions that started without an outcome stay listed while they hold a credit.
+    upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status)).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, organization, item))),
     orders: await Promise.all(orders.sort((left, right) => right.createdAt - left.createdAt).map((item) => ptPackageOrderView(ctx, organization, item))),
     trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, organization, item))),
     packages: await Promise.all(packages.map((item) => ptPackageView(ctx, organization, item))),
   };
 }
 
-async function gymMediaAssetView(ctx: ReadContext, organization: Organization, publicId: string | undefined): Promise<Data | undefined> {
+type PublicGymMediaOwnerType = "gym_logo" | "gym_cover" | "gym_gallery";
+
+async function gymMediaAssetView(
+  ctx: ReadContext,
+  organization: Organization,
+  publicId: string | undefined,
+  expectedOwnerType: PublicGymMediaOwnerType,
+): Promise<Data | undefined> {
   if (!publicId) return undefined;
   const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", publicId)).unique();
-  if (!asset || asset.status !== "active") return undefined;
+  // A profile reference is not sufficient proof that an asset is safe to
+  // expose. Require every public invariant at the projection boundary:
+  // same tenant, canonical owner type/id, public visibility, active status,
+  // and a live storage URL. This keeps stale profile snapshots and accidental
+  // private/foreign references from crossing into public/customer responses.
+  if (
+    !asset
+    || asset.ownerType !== expectedOwnerType
+    || asset.ownerPublicId !== publicOrganizationId(organization)
+    || asset.visibility !== "public"
+    || asset.status !== "active"
+  ) return undefined;
   const url = await ctx.storage.getUrl(asset.storageId);
+  if (!url) return undefined;
   return { id: asset.publicId, organizationId: publicOrganizationId(organization), ownerType: asset.ownerType, ownerId: asset.ownerPublicId, contentType: asset.contentType, sizeBytes: asset.sizeBytes, altText: asset.altText, visibility: asset.visibility, status: asset.status, url: url ?? undefined, deleteAfter: asset.deleteAfter ? utcIso(asset.deleteAfter) : undefined, createdAt: utcIso(asset.createdAt), updatedAt: utcIso(asset.updatedAt) };
+}
+
+/** Resolve only the canonical, published gym logo for platform surfaces.
+ * Marketplace rows store asset references rather than URLs; the reference
+ * must belong to the same organization, be a public active gym-logo asset,
+ * and resolve through Convex storage before it crosses the admin boundary.
+ * The organization Brand Kit logo is a safe fallback when a public profile has
+ * not selected a separate logo. */
+async function platformGymLogoUrl(ctx: ReadContext, organization: Organization, listingValue: Data): Promise<string | undefined> {
+  const candidateIds = [optionalString(listingValue.logoAssetId), optionalString(organization.brandLogoAssetId)].filter((id, index, ids): id is string => Boolean(id) && ids.indexOf(id) === index);
+  for (const assetId of candidateIds) {
+    const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", organization._id).eq("publicId", assetId)).unique();
+    if (!asset || asset.ownerType !== "gym_logo" || asset.ownerPublicId !== publicOrganizationId(organization) || asset.visibility !== "public" || asset.status !== "active") continue;
+    const url = await ctx.storage.getUrl(asset.storageId);
+    if (url) return url;
+  }
+  return undefined;
 }
 
 async function gymPublicProfileView(ctx: ReadContext, actor: ActorContext, source?: Data): Promise<Data> {
@@ -2735,14 +4187,18 @@ async function gymPublicProfileView(ctx: ReadContext, actor: ActorContext, sourc
   const [trainers, packages, logo, cover, gallery] = await Promise.all([
     ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("ptPackages").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
-    gymMediaAssetView(ctx, actor.organization, optionalString(value.logoAssetId)),
-    gymMediaAssetView(ctx, actor.organization, optionalString(value.coverAssetId)),
-    Promise.all(arrayValue(value.galleryAssetIds).map((id) => gymMediaAssetView(ctx, actor.organization, optionalString(id)))),
+    gymMediaAssetView(ctx, actor.organization, optionalString(value.logoAssetId), "gym_logo"),
+    gymMediaAssetView(ctx, actor.organization, optionalString(value.coverAssetId), "gym_cover"),
+    Promise.all(arrayValue(value.galleryAssetIds).map((id) => gymMediaAssetView(ctx, actor.organization, optionalString(id), "gym_gallery"))),
   ]);
+  const versionRecords = await recordsOf(ctx, actor, "gymProfileVersion");
   return {
     organizationId: publicOrganizationId(actor.organization),
     version: numberValue(value.version, numberValue(listingValue.profileVersion, 1)),
     status: stringValue(value.status, booleanValue(listingValue.profilePublished, true) ? "published" : "unpublished"),
+    // After the first publish, tenants save drafts but RIVET reviews and
+    // publishes them; the editor uses this to swap its publish action.
+    publishLocked: versionRecords.length > 0,
     shortName: stringValue(value.shortName, stringValue(listingValue.shortName, actor.organization.name.slice(0, 16))),
     taglineEn: stringValue(value.taglineEn, stringValue(listingValue.tagline)),
     taglineAr: optionalString(value.taglineAr) ?? optionalString(listingValue.taglineAr),
@@ -2771,14 +4227,927 @@ async function currentGymProfile(ctx: ReadContext, actor: ActorContext): Promise
   return await gymPublicProfileView(ctx, actor, draft ? data(draft.data) : undefined);
 }
 
+const SAVED_VIEW_SURFACES = new Set(["members", "leads", "customer_finance"]);
+const BULK_OPERATION_KINDS = new Set([
+  "members_add_tags",
+  "members_remove_tags",
+  "members_assign_branch",
+  "members_create_follow_up",
+  "members_archive",
+  "leads_assign_owner",
+  "leads_create_follow_up",
+  "leads_close_lost",
+]);
+
+function savedViewSurface(value: unknown, correlationId?: string): "members" | "leads" | "customer_finance" {
+  const surface = stringValue(value);
+  if (!SAVED_VIEW_SURFACES.has(surface)) domainError("VALIDATION_ERROR", "Choose a valid saved-view surface.", { correlationId });
+  return surface as "members" | "leads" | "customer_finance";
+}
+
+function savedViewState(value: unknown, correlationId?: string): Data {
+  if (!value || typeof value !== "object" || Array.isArray(value)) domainError("VALIDATION_ERROR", "Saved-view state must be an object.", { correlationId });
+  const state = data(value);
+  if (JSON.stringify(state).length > 20_000) domainError("VALIDATION_ERROR", "Saved-view state is too large.", { correlationId });
+  return state;
+}
+
+function savedViewProjection(view: Doc<"userSavedViews">): Data {
+  return {
+    id: view.publicId,
+    surface: view.surface,
+    name: view.name,
+    state: data(view.state),
+    isDefault: view.isDefault,
+    createdAt: utcIso(view.createdAt),
+    updatedAt: utcIso(view.updatedAt),
+  };
+}
+
+async function listSavedViews(ctx: QueryCtx, actor: ActorContext, surface: string): Promise<Data[]> {
+  const rows = await ctx.db.query("userSavedViews").withIndex("by_user_surface", (q) => q.eq("organizationId", actor.organization._id).eq("userId", actor.user._id).eq("surface", savedViewSurface(surface, actor.correlationId))).collect();
+  return rows.sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name)).map(savedViewProjection);
+}
+
+function bulkJobProjection(value: Data): Data {
+  return {
+    ...value,
+    failures: arrayValue(value.failures).map(data),
+  };
+}
+
+async function bulkOperationJobs(ctx: QueryCtx, actor: ActorContext): Promise<Data[]> {
+  const rows = await recordsOf(ctx, actor, "bulkOperationJob");
+  return rows
+    .map((row) => bulkJobProjection({ id: row.publicId, ...data(row.data) }))
+    .filter((job) => job.requestedById === publicUserId(actor.user))
+    .sort((left, right) => stringValue(right.createdAt).localeCompare(stringValue(left.createdAt)))
+    .slice(0, 25);
+}
+
+async function memberIdentityIds(ctx: ReadContext, actor: ActorContext, requestedMemberId: string): Promise<string[]> {
+  const requested = await recordOfOptional(ctx, actor, "member", requestedMemberId);
+  if (!requested) return [requestedMemberId];
+  const requestedValue = data(requested.data);
+  const canonicalId = optionalString(requestedValue.mergedIntoMemberId) ?? requestedMemberId;
+  const canonical = canonicalId === requestedMemberId ? requested : await recordOfOptional(ctx, actor, "member", canonicalId);
+  const linked = canonical ? arrayValue(data(canonical.data).mergedMemberIds).map(String) : [];
+  return [...new Set([canonicalId, ...linked])];
+}
+
+async function recordsOfMemberIdentity(ctx: ReadContext, actor: ActorContext, memberId: string, entityType: string): Promise<DomainRecord[]> {
+  const ids = await memberIdentityIds(ctx, actor, memberId);
+  const rows = await Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, entityType)));
+  return rows.flat().filter((record, index, all) => all.findIndex((candidate) => candidate._id === record._id) === index);
+}
+
+async function duplicateMemberSummary(ctx: ReadContext, actor: ActorContext, record: DomainRecord): Promise<Data> {
+  const value = data(record.data);
+  const ids = await memberIdentityIds(ctx, actor, record.publicId);
+  const [memberships, visits, timeline, charges] = await Promise.all([
+    Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, "membership"))),
+    Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, "checkIn"))),
+    Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, "timeline"))),
+    Promise.all(ids.map((id) => recordsOfMember(ctx, actor.organization._id, id, "charge"))),
+  ]);
+  const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+  const balance = charges.flat().map((row) => data(row.data)).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
+  return {
+    id: record.publicId,
+    memberNumber: stringValue(value.memberNumber),
+    fullName: stringValue(value.fullName),
+    phone: stringValue(value.phone),
+    email: optionalString(value.email),
+    homeBranchId: stringValue(value.homeBranchId),
+    status: optionalString(value.mergedIntoMemberId) ? "merged" : stringValue(value.status, "active"),
+    balance: money(balance, actor.organization.currency),
+    membershipCount: memberships.flat().length,
+    visitCount: visits.flat().filter((row) => data(row.data).decision !== "blocked").length,
+    timelineCount: timeline.flat().length,
+    mergedIntoMemberId: optionalString(value.mergedIntoMemberId),
+    version: String(record.updatedAt),
+  };
+}
+
+type DuplicateCaseCandidate = {
+  pair: DuplicateCandidatePair;
+  primaryRecord: DomainRecord;
+  candidateRecord: DomainRecord;
+  resolution?: Data;
+  status: string;
+};
+
+async function duplicateCaseCandidates(ctx: ReadContext, actor: ActorContext, requestedStatus?: string): Promise<DuplicateCaseCandidate[]> {
+  requirePermission(actor, "members.read");
+  const records = (await memberRecords(ctx, actor)).filter((record) => !optionalString(data(record.data).mergedIntoMemberId));
+  const resolutions = (await recordsOf(ctx, actor, "memberDuplicateResolution")).map((record) => ({ id: record.publicId, value: data(record.data) }));
+  const resolutionById = new Map(resolutions.map((resolution) => [resolution.id, resolution.value]));
+  const byId = new Map(records.map((record) => [record.publicId, record]));
+  const pairs = buildDuplicateCandidatePairs(records.map((record) => {
+    const value = data(record.data);
+    return { id: record.publicId, fullName: optionalString(value.fullName), phone: optionalString(value.phone), email: optionalString(value.email), memberNumber: optionalString(value.memberNumber), status: optionalString(value.mergedIntoMemberId) ? "merged" : stringValue(value.status, "active"), createdAt: record.createdAt, updatedAt: record.updatedAt };
+  }), organizationPhoneCountryCallingCode(actor.organization));
+  const candidates: DuplicateCaseCandidate[] = pairs.flatMap((pair) => {
+    const primaryRecord = byId.get(pair.primaryId);
+    const candidateRecord = byId.get(pair.candidateId);
+    if (!primaryRecord || !candidateRecord) return [];
+    const resolution = resolutionById.get(pair.id);
+    const status = stringValue(resolution?.status, "open");
+    return requestedStatus && requestedStatus !== status ? [] : [{ pair, primaryRecord, candidateRecord, resolution, status }];
+  });
+  const seen = new Set(candidates.map((item) => item.pair.id));
+  const allMemberRecords = await memberRecords(ctx, actor);
+  const allById = new Map(allMemberRecords.map((record) => [record.publicId, record]));
+  for (const resolution of resolutions) {
+    if (seen.has(resolution.id)) continue;
+    const status = stringValue(resolution.value.status);
+    if (requestedStatus && requestedStatus !== status) continue;
+    const primaryRecord = allById.get(stringValue(resolution.value.primaryMemberId));
+    const candidateRecord = allById.get(stringValue(resolution.value.candidateMemberId));
+    if (!primaryRecord || !candidateRecord) continue;
+    candidates.push({
+      pair: { id: resolution.id, primaryId: primaryRecord.publicId, candidateId: candidateRecord.publicId, reasons: arrayValue(resolution.value.reasons).map(String) as DuplicateCandidatePair["reasons"], confidence: stringValue(resolution.value.confidence, "strong") as DuplicateCandidatePair["confidence"], createdAt: Date.parse(stringValue(resolution.value.createdAt)) || primaryRecord.createdAt, updatedAt: Date.parse(stringValue(resolution.value.updatedAt)) || primaryRecord.updatedAt },
+      primaryRecord,
+      candidateRecord,
+      resolution: resolution.value,
+      status,
+    });
+  }
+  return candidates.sort((left, right) => right.pair.updatedAt - left.pair.updatedAt || left.pair.id.localeCompare(right.pair.id));
+}
+
+async function duplicateCaseView(ctx: ReadContext, actor: ActorContext, candidate: DuplicateCaseCandidate): Promise<Data> {
+  const { pair, primaryRecord, candidateRecord, resolution, status } = candidate;
+  const [primary, duplicate] = await Promise.all([
+    duplicateMemberSummary(ctx, actor, primaryRecord),
+    duplicateMemberSummary(ctx, actor, candidateRecord),
+  ]);
+  return { id: pair.id, status, reasons: pair.reasons, confidence: pair.confidence, primary, candidate: duplicate, createdAt: optionalString(resolution?.createdAt) ?? utcIso(pair.createdAt), updatedAt: optionalString(resolution?.updatedAt) ?? utcIso(pair.updatedAt), resolutionReason: optionalString(resolution?.reason), survivingMemberId: optionalString(resolution?.survivingMemberId), correlationId: optionalString(resolution?.correlationId) };
+}
+
+async function duplicateCasePage(ctx: ReadContext, actor: ActorContext, input: Data): Promise<Data> {
+  const candidates = await duplicateCaseCandidates(ctx, actor, optionalString(input.status));
+  const paged = page(candidates, input);
+  return { ...paged, items: await Promise.all(paged.items.map((candidate) => duplicateCaseView(ctx, actor, candidate))) };
+}
+
+async function duplicateCase(ctx: ReadContext, actor: ActorContext, caseId: string): Promise<Data> {
+  const found = (await duplicateCaseCandidates(ctx, actor)).find((item) => item.pair.id === caseId)
+    ?? (await duplicateCaseCandidates(ctx, actor, "ignored")).find((item) => item.pair.id === caseId)
+    ?? (await duplicateCaseCandidates(ctx, actor, "merged")).find((item) => item.pair.id === caseId);
+  if (!found) domainError("NOT_FOUND", "Duplicate case not found.", { correlationId: actor.correlationId });
+  return await duplicateCaseView(ctx, actor, found);
+}
+
+const ONBOARDING_VERSION = 1;
+
+async function onboardingProgressRecord(ctx: ReadContext, user: User, audience: "owner" | "staff" | "member", organizationId?: Id<"organizations">) {
+  const rows = await ctx.db.query("userOnboardingProgress").withIndex("by_user_audience", (q) => q.eq("userId", user._id).eq("audience", audience)).collect();
+  return rows.find((row) => row.organizationId === organizationId) ?? null;
+}
+
+function onboardingProgressView(record: Doc<"userOnboardingProgress"> | null, audience: "owner" | "staff" | "member"): Data {
+  return { audience, version: ONBOARDING_VERSION, completedStepKeys: record?.completedStepKeys ?? [], dismissedAt: record?.dismissedAt ? utcIso(record.dismissedAt) : undefined, completedAt: record?.completedAt ? utcIso(record.completedAt) : undefined, updatedAt: utcIso(record?.updatedAt ?? Date.now()) };
+}
+
+export async function onboardingExperience(ctx: ReadContext, input: Data, request: RequestArgs): Promise<Data> {
+  const audience = stringValue(input.audience) as "owner" | "staff" | "member";
+  if (!(["owner", "staff", "member"] as string[]).includes(audience)) domainError("VALIDATION_ERROR", "Choose a valid onboarding audience.", { correlationId: request.correlationId });
+  if (audience === "member") {
+    const { user } = await requireMember(ctx);
+    const progressRecord = await onboardingProgressRecord(ctx, user, audience);
+    const progress = onboardingProgressView(progressRecord, audience);
+    const completed = new Set(arrayValue(progress.completedStepKeys).map(String));
+    const profile = await customerProfileForUser(ctx, publicUserId(user));
+    const membershipRows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
+    const memberships = membershipRows.map((row) => data(row.data));
+    const tasks = [
+      { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details so your gyms can support you.", href: "/customer/profile", category: "required", complete: Boolean(profile?.name && profile?.phone && profile?.emergencyContactPhone), completionMode: "state" },
+      { key: "member_memberships", title: "Open My Gyms", description: "Review your membership, balance, branch, and validity dates.", href: "/customer/my-gyms", category: "required", complete: memberships.length > 0, completionMode: "state" },
+      { key: "member_entry", title: "Learn the entry QR", description: "See how to create a short-lived front-desk entry pass.", href: "/customer/my-gyms", category: "recommended", complete: completed.has("member_entry"), completionMode: "manual" },
+      { key: "member_finance", title: "Find payments and receipts", description: "Know where balances, refunds, and printable receipts live.", href: "/customer/finance", category: "recommended", complete: completed.has("member_finance"), completionMode: "manual" },
+      { key: "member_install", title: "Install RIVET", description: "Add the member app to your home screen for quicker access.", href: "/customer/getting-started#install", category: "optional", complete: completed.has("member_install"), completionMode: "manual" },
+    ];
+    return { progress, tasks, role: "member" };
+  }
+
+  const actor = await requireActor(ctx, request);
+  if (audience === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can complete these setup steps.", { correlationId: actor.correlationId });
+  const progressRecord = await onboardingProgressRecord(ctx, actor.user, audience, actor.organization._id);
+  const progress = onboardingProgressView(progressRecord, audience);
+  const completed = new Set(arrayValue(progress.completedStepKeys).map(String));
+  const [branches, plans, members, teamMemberships, settings, listing, shifts] = await Promise.all([
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "plan")).collect(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member")).collect(),
+    ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    settingsData(ctx, actor),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "marketplaceGym")).first(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "shift")).collect(),
+  ]);
+  const liveProviderReady = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
+  const ownerTasks = [
+    { key: "owner_identity", title: "Confirm organization identity", description: "Review the gym name, timezone, currency, and receipt identity.", href: "/settings?section=organization", category: "required", complete: Boolean(actor.organization.name && actor.organization.timezone && actor.organization.currency), completionMode: "state" },
+    { key: "owner_branch", title: "Configure your first branch", description: "Set the branch address and operating hours used by reception.", href: "/settings?section=branches", category: "required", complete: branches.some((branch) => branch.active), completionMode: "state" },
+    { key: "owner_payments", title: "Configure payments and receipts", description: "Enable accepted methods and review receipt numbering.", href: "/settings?section=payments", category: "required", complete: arrayValue(settings.paymentMethods).some((method) => booleanValue(data(method).enabled)), completionMode: "state" },
+    { key: "owner_plan", title: "Create a membership plan", description: "Publish at least one plan the sales team can sell.", href: "/plans", category: "required", complete: plans.some((row) => stringValue(data(row.data).status, "active") === "active"), completionMode: "state" },
+    { key: "owner_staff", title: "Invite your team", description: "Add managers, sales, reception, or trainers with the right scope.", href: "/settings?section=users", category: "required", complete: teamMemberships.filter((membership) => membership.active).length > 1, completionMode: "state" },
+    { key: "owner_members", title: "Add or import members", description: "Start with CSV import or create the first live member.", href: "/members/import", category: "required", complete: members.length > 0, completionMode: "state" },
+    { key: "owner_reception", title: "Prepare reception", description: "Open a first shift and verify the front-desk workflow.", href: "/reception", category: "required", complete: shifts.length > 0, completionMode: "state" },
+    { key: "owner_public_profile", title: "Publish the gym profile", description: "Review what prospective members see in discovery.", href: "/settings?section=profile", category: "recommended", complete: Boolean(listing && booleanValue(data(listing.data).profilePublished, booleanValue(data(listing.data).isPublic))), completionMode: "state" },
+    { key: "owner_provider", title: "Review provider readiness", description: "Understand which email and messaging features remain unavailable before activation.", href: "/automations", category: "optional", complete: liveProviderReady, completionMode: "state", unavailableReason: liveProviderReady ? undefined : "Email provider delivery is not configured yet." },
+  ];
+  const manualTask = (key: string, title: string, description: string, href: string, category: "required" | "recommended" | "optional" = "recommended") => ({ key, title, description, href, category, complete: completed.has(key), completionMode: "manual" });
+  const staffTasks = [
+    manualTask("staff_role", "Understand your role", `Review what the ${actor.role} role can see and change.`, "/getting-started#role", "required"),
+    manualTask("staff_navigation", "Learn navigation and search", "Use the sidebar and ⌘K search to move without losing your place.", "/getting-started#navigation"),
+    hasPermission(actor, "members.read") ? manualTask("staff_member", "Open a member record", "Find the timeline, membership, payment, and follow-up actions.", "/members", "required") : null,
+    hasPermission(actor, "crm.read") ? manualTask("staff_tasks", "Find your follow-up queue", "Review overdue and upcoming work assigned to you.", "/crm/queues", "required") : null,
+    actor.role === "receptionist" ? manualTask("staff_reception", "Practice the front desk", "Learn check-in and cash-shift rules for your branch.", "/reception", "required") : null,
+    actor.role === "trainer" ? manualTask("staff_training", "Learn your PT workspace", "Review your schedule, member bookings, and package credits.", "/pt", "required") : null,
+    actor.role === "manager" && hasPermission(actor, "audit.read") ? manualTask("staff_audit", "Review accountability tools", "Find approvals and immutable records for sensitive actions.", "/audit", "required") : null,
+    manualTask("staff_security", "Review safe handling", "Know why sensitive changes require reasons and leave audit events.", "/getting-started#security"),
+  ].filter(Boolean);
+  return { progress, tasks: audience === "owner" ? ownerTasks : staffTasks, role: actor.role, organizationName: actor.organization.name };
+}
+
+async function updateOnboardingProgressMutation(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const audience = stringValue(input.audience) as "owner" | "staff" | "member";
+  const { user } = audience === "member" ? await requireMember(ctx) : await requireAuthenticated(ctx);
+  const actor = audience === "member" ? null : await requireActor(ctx, request);
+  if (audience === "owner" && actor?.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can complete these setup steps.", { correlationId: request.correlationId });
+  if (!(["owner", "staff", "member"] as string[]).includes(audience)) domainError("VALIDATION_ERROR", "Choose a valid onboarding audience.", { correlationId: request.correlationId });
+  const organizationId = actor?.organization._id;
+  const existing = await onboardingProgressRecord(ctx, user, audience, organizationId);
+  const currentKeys = existing?.completedStepKeys ?? [];
+  const stepKey = optionalString(input.completedStepKey);
+  const preview = await onboardingExperience(ctx, { audience }, request);
+  const previewTasks = arrayValue(preview.tasks).map(data);
+  const validKeys = new Set(previewTasks.map((task) => stringValue(task.key)));
+  if (stepKey && !validKeys.has(stepKey)) domainError("VALIDATION_ERROR", "Unknown onboarding step.", { correlationId: request.correlationId });
+  const selectedTask = stepKey ? previewTasks.find((task) => stringValue(task.key) === stepKey) : undefined;
+  if (selectedTask && stringValue(selectedTask.completionMode) !== "manual") domainError("CONFLICT", "This setup step completes only when its underlying work is finished.", { correlationId: request.correlationId });
+  const completedStepKeys = booleanValue(input.restart) ? [] : [...new Set([...currentKeys, ...(stepKey ? [stepKey] : [])])];
+  const now = Date.now();
+  const requiredTasks = previewTasks.filter((task) => task.category === "required");
+  const allRequiredComplete = requiredTasks.every((task) => booleanValue(task.complete) || (stringValue(task.completionMode) === "manual" && completedStepKeys.includes(stringValue(task.key))));
+  const value = { version: ONBOARDING_VERSION, completedStepKeys, dismissedAt: booleanValue(input.restart) ? undefined : booleanValue(input.dismissed) ? now : existing?.dismissedAt, completedAt: allRequiredComplete ? now : undefined, updatedAt: now };
+  if (existing) await ctx.db.patch(existing._id, value);
+  else await ctx.db.insert("userOnboardingProgress", { userId: user._id, organizationId, audience, createdAt: now, ...value });
+  return await onboardingExperience(ctx, { audience }, request);
+}
+
+function pushSubscriptionView(row: Doc<"pushSubscriptions">): Data {
+  return { id: row.publicId, label: row.label, createdAt: utcIso(row.createdAt), updatedAt: utcIso(row.updatedAt) };
+}
+
+async function listMemberPushSubscriptions(ctx: ReadContext): Promise<Data[]> {
+  const { user } = await requireMember(ctx);
+  const rows = await ctx.db.query("pushSubscriptions").withIndex("by_user", (q) => q.eq("userId", user._id)).collect();
+  return rows.filter((row) => !row.revokedAt).sort((left, right) => right.updatedAt - left.updatedAt).map(pushSubscriptionView);
+}
+
+async function saveMemberPushSubscription(ctx: MutationCtx, input: Data): Promise<Data> {
+  const { user } = await requireMember(ctx);
+  const endpoint = stringValue(input.endpoint).trim();
+  const p256dh = stringValue(input.p256dh).trim();
+  const auth = stringValue(input.auth).trim();
+  const label = stringValue(input.label, "This device").trim().slice(0, 80) || "This device";
+  if (!endpoint.startsWith("https://") || endpoint.length > 2_000 || p256dh.length < 16 || p256dh.length > 500 || auth.length < 8 || auth.length > 500) domainError("VALIDATION_ERROR", "The browser push subscription is invalid.");
+  const existing = await ctx.db.query("pushSubscriptions").withIndex("by_user_endpoint", (q) => q.eq("userId", user._id).eq("endpoint", endpoint)).unique();
+  const now = Date.now();
+  if (existing) {
+    await ctx.db.patch(existing._id, { p256dh, auth, label, revokedAt: undefined, updatedAt: now });
+    return pushSubscriptionView({ ...existing, p256dh, auth, label, revokedAt: undefined, updatedAt: now });
+  }
+  const publicId = newPublicId();
+  const id = await ctx.db.insert("pushSubscriptions", { userId: user._id, publicId, endpoint, p256dh, auth, label, createdAt: now, updatedAt: now });
+  const created = await ctx.db.get(id);
+  if (!created) domainError("INTERNAL_ERROR", "Push subscription could not be saved.");
+  return pushSubscriptionView(created);
+}
+
+async function revokeMemberPushSubscription(ctx: MutationCtx, input: Data): Promise<void> {
+  const { user } = await requireMember(ctx);
+  const publicId = recordId(input.subscriptionId);
+  const row = await ctx.db.query("pushSubscriptions").withIndex("by_public_id", (q) => q.eq("publicId", publicId)).unique();
+  if (!row || row.userId !== user._id || row.revokedAt) domainError("NOT_FOUND", "Push subscription not found.");
+  await ctx.db.delete(row._id);
+}
+
+const EXPORT_KINDS = ["members", "leads", "payments", "audit", "membership_liabilities", "personal_training", "operations"] as const;
+type StaffExportKind = (typeof EXPORT_KINDS)[number];
+
+function staffExportKind(value: unknown, correlationId: string): StaffExportKind {
+  const kind = stringValue(value) as StaffExportKind;
+  if (!EXPORT_KINDS.includes(kind)) domainError("VALIDATION_ERROR", "Choose a supported export dataset.", { correlationId });
+  return kind;
+}
+
+function requireExportPermission(actor: ActorContext, kind: StaffExportKind): void {
+  if (kind === "members") return requirePermission(actor, "members.read");
+  if (kind === "leads") return requirePermission(actor, "crm.read");
+  if (["payments", "membership_liabilities"].includes(kind)) return requirePermission(actor, "reports.financial.read");
+  if (kind === "audit") return requirePermission(actor, "audit.read");
+  if (kind === "personal_training") return requirePermission(actor, "pt.reports.read");
+  return requirePermission(actor, "operations.manage");
+}
+
+const STAFF_EXPORT_TITLES: Record<StaffExportKind, string> = {
+  members: "Member directory",
+  leads: "CRM leads",
+  payments: "Payment ledger",
+  audit: "Activity log",
+  membership_liabilities: "Unpaid member balances",
+  personal_training: "Personal training package orders",
+  operations: "Products, suppliers, and stock activity",
+};
+
+const STAFF_EXPORT_HEADERS: Record<StaffExportKind, string[]> = {
+  members: ["Member number", "Full name", "Arabic name", "Phone", "Email", "Gender", "Member status", "Membership status", "Current plan", "Membership ends", "Outstanding amount", "Currency", "Home branch", "Last check-in", "Preferred language", "Marketing consent", "Tags", "Notes", "Created"],
+  leads: ["Full name", "Phone", "Email", "Branch", "Stage", "Source", "Owner", "Expected value", "Currency", "Next follow-up", "Last contacted", "Last contact outcome", "Overdue", "Lost reason", "Created", "Updated"],
+  payments: ["When", "Member", "Member number", "Branch", "Receipt number", "Transaction type", "Payment method", "Amount", "Currency", "Status", "Refunded amount", "Recorded by", "External reference", "Refund reason", "Void reason"],
+  audit: ["When", "Branch", "Recorded by", "Role", "Category", "Action", "Record type", "Record", "Summary", "Reason", "Approval status"],
+  membership_liabilities: ["Member", "Member number", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status", "Collectible now", "Created"],
+  personal_training: ["Member", "Member number", "Package", "Sessions purchased", "Total price", "Currency", "Status", "Paid", "Refunded sessions", "Refunded amount", "Created", "Updated"],
+  operations: ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "Reference type", "When"],
+};
+
+function exportFilterSummary(filters: Data): string {
+  const entries = Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== "");
+  return entries.length > 0
+    ? entries.map(([key, value]) => `${exportStatusLabel(key)}: ${String(value)}`).join("; ")
+    : "None";
+}
+
+function csvFromRows(rows: Data[], metadata: { title: string; headers: string[]; generatedAt: string; timezone: string; branchScope: string; filters: Data }): { content: string; rowCount: number; totalRows: number; complete: boolean } {
+  const normalized = rows.slice(0, 2_000);
+  const content = buildCsvDocument({
+    title: metadata.title,
+    metadata: [
+      { label: "Generated at", value: formatExportDateTime(metadata.generatedAt, metadata.timezone) },
+      { label: "Timezone", value: metadata.timezone },
+      { label: "Branch scope", value: metadata.branchScope },
+      { label: "Applied filters", value: exportFilterSummary(metadata.filters) },
+    ],
+    headers: metadata.headers,
+    rows: normalized.map((row) => metadata.headers.map((header) => row[header] as string | number | boolean | null | undefined)),
+  });
+  const contentBytes = new TextEncoder().encode(content).byteLength;
+  const complete = normalized.length === rows.length && contentBytes <= 750_000;
+  return { content, rowCount: complete ? normalized.length : contentBytes > 750_000 ? 0 : normalized.length, totalRows: rows.length, complete };
+}
+
+function exportMatchesFilters(row: Data, filters: Data, timezone: string): boolean {
+  const branchId = optionalString(filters.branchId);
+  if (branchId && ![row.branchId, row.homeBranchId].includes(branchId)) return false;
+  const search = optionalString(filters.search);
+  if (search && !matchesSearch(Object.values(row).map((value) => typeof value === "object" ? JSON.stringify(value) : value), search)) return false;
+  const from = optionalString(filters.from);
+  const to = optionalString(filters.to);
+  const occurred = optionalString(row.occurredAt) ?? optionalString(row.createdAt) ?? optionalString(row.updatedAt);
+  // "From" and "to" are gym-calendar days, as on every other dated screen.
+  // Comparing the UTC timestamp put a late-evening payment on the wrong day
+  // for any gym east of Greenwich.
+  if ((from || to) && occurred && !instantFallsInTenantDateRange(occurred, timezone, from, to)) return false;
+  return true;
+}
+
+async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: StaffExportKind, filters: Data): Promise<Data[]> {
+  const timezone = actor.organization.timezone || TZ_FALLBACK;
+  const currency = actor.organization.currency || JOD;
+  const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+  const branchPublicIdsByInternalId = new Map(branches.map((branch) => [String(branch._id), publicBranchId(branch)]));
+
+  if (kind === "members") {
+    const memberValues = (await memberRecords(ctx, actor)).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters, timezone));
+    const summaries = await toMemberSummaries(ctx, actor, memberValues);
+    const rawById = new Map(memberValues.map((row) => [stringValue(row.id), row]));
+    return summaries.map((summary) => {
+      const raw: Data = rawById.get(stringValue(summary.id)) ?? {};
+      const preference = data(raw.marketingPreference);
+      const marketingStatus = optionalString(preference.status) ?? (raw.marketingOptIn === false ? "explicit_opt_out" : "unknown");
+      return {
+        "Member number": summary.memberNumber,
+        "Full name": summary.fullName,
+        "Arabic name": summary.fullNameAr,
+        "Phone": summary.phone,
+        "Email": summary.email,
+        "Gender": exportStatusLabel(optionalString(raw.gender)),
+        "Member status": exportStatusLabel(optionalString(summary.status)),
+        "Membership status": exportStatusLabel(optionalString(summary.membershipStatus)),
+        "Current plan": summary.currentPlanName,
+        "Membership ends": summary.membershipEndDate,
+        "Outstanding amount": formatMinorUnits(amountOf(summary.outstanding), currency),
+        "Currency": currency,
+        "Home branch": branchNames.get(stringValue(summary.homeBranchId)) ?? "Unknown branch",
+        "Last check-in": formatExportDateTime(optionalString(summary.lastCheckInAt), timezone),
+        "Preferred language": exportStatusLabel(optionalString(raw.preferredLanguage)),
+        "Marketing consent": exportStatusLabel(marketingStatus),
+        "Tags": exportList(summary.tags),
+        "Notes": optionalString(raw.notes),
+        "Created": formatExportDateTime(optionalString(summary.createdAt), timezone),
+      };
+    });
+  }
+  if (kind === "leads") {
+    const leadValues = (await recordsOf(ctx, actor, "lead")).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters, timezone));
+    const summaries = await toLeadSummaries(ctx, actor, leadValues);
+    return summaries.map((lead) => {
+      const expected = data(lead.expectedValue);
+      const expectedCurrency = currencyOf(expected, currency);
+      return {
+        "Full name": lead.fullName,
+        "Phone": lead.phone,
+        "Email": lead.email,
+        "Branch": lead.branchName,
+        "Stage": exportStatusLabel(optionalString(lead.stage)),
+        "Source": exportStatusLabel(optionalString(lead.source)),
+        "Owner": lead.ownerName ?? "Unassigned",
+        "Expected value": lead.expectedValue ? formatMinorUnits(amountOf(expected), expectedCurrency) : "",
+        "Currency": lead.expectedValue ? expectedCurrency : "",
+        "Next follow-up": formatExportDateTime(optionalString(lead.nextFollowUpAt), timezone),
+        "Last contacted": formatExportDateTime(optionalString(lead.lastContactAt), timezone),
+        "Last contact outcome": exportStatusLabel(optionalString(lead.lastContactOutcome)),
+        "Overdue": booleanValue(lead.overdue),
+        "Lost reason": optionalString(lead.lostReason),
+        "Created": formatExportDateTime(optionalString(lead.createdAt), timezone),
+        "Updated": formatExportDateTime(optionalString(lead.updatedAt), timezone),
+      };
+    });
+  }
+  if (kind === "payments") {
+    const values = (await paymentRecords(ctx, actor)).map((record) => ({ id: record.publicId, ...data(record.data) })).filter((row) => exportMatchesFilters(row, filters, timezone));
+    const transactions = await toTransactionSummaries(ctx, actor, values);
+    return transactions.map((payment) => {
+      const paymentCurrency = currencyOf(payment.amount, currency);
+      return {
+        "When": formatExportDateTime(optionalString(payment.occurredAt), timezone),
+        "Member": payment.memberName,
+        "Member number": payment.memberNumber,
+        "Branch": payment.branchName,
+        "Receipt number": payment.receiptNumber,
+        "Transaction type": exportStatusLabel(optionalString(payment.type)),
+        "Payment method": exportStatusLabel(optionalString(payment.method)),
+        "Amount": formatMinorUnits(amountOf(payment.amount), paymentCurrency),
+        "Currency": paymentCurrency,
+        "Status": exportStatusLabel(optionalString(payment.status)),
+        "Refunded amount": payment.refundedAmount ? formatMinorUnits(amountOf(payment.refundedAmount), paymentCurrency) : "",
+        "Recorded by": payment.collectedByName,
+        "External reference": payment.externalReference,
+        "Refund reason": payment.refundReason,
+        "Void reason": payment.voidReason,
+      };
+    });
+  }
+  if (kind === "membership_liabilities") {
+    const members = new Map((await memberRecords(ctx, actor)).map((record) => [record.publicId, data(record.data)]));
+    return (await chargeRecords(ctx, actor)).map((record): Data => ({ id: record.publicId, ...chargeProjection(data(record.data), todayIn(timezone)) }))
+      .filter((row) => amountOf(row.outstandingAmount) > 0 && exportMatchesFilters({ ...row, homeBranchId: members.get(stringValue(row.memberId))?.homeBranchId }, filters, timezone))
+      .map((charge) => {
+        const member = members.get(stringValue(charge.memberId));
+        const chargeCurrency = currencyOf(charge.total, currency);
+        return {
+          "Member": member ? member.fullName : "Unknown member",
+          "Member number": member ? member.memberNumber : "",
+          "Description": charge.description,
+          "Issued": charge.issueDate,
+          "Due": charge.dueDate,
+          "Total": formatMinorUnits(amountOf(charge.total), chargeCurrency),
+          "Paid": formatMinorUnits(amountOf(charge.paidAmount), chargeCurrency),
+          "Outstanding": formatMinorUnits(amountOf(charge.outstandingAmount), chargeCurrency),
+          "Currency": chargeCurrency,
+          "Status": exportStatusLabel(optionalString(charge.status)),
+          "Collectible now": booleanValue(charge.collectible),
+          "Created": formatExportDateTime(optionalString(charge.createdAt), timezone),
+        };
+      });
+  }
+  if (kind === "audit") {
+    let events = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").collect();
+    if (actor.branchScope === "selected") events = events.filter((event) => !event.branchId || actor.branchIds.includes(event.branchId));
+    return events.map((event) => ({ id: event.publicId, branchId: event.branchId ? branchPublicIdsByInternalId.get(String(event.branchId)) : undefined, actorName: event.actorName, actorRole: event.actorRole, category: event.category, action: event.action, entityType: event.entityType, entityLabel: event.entityLabel, summary: event.summary, reason: event.reason, approvalStatus: event.approvalStatus, occurredAt: utcIso(event.occurredAt) }))
+      .filter((row) => exportMatchesFilters(row, filters, timezone))
+      .map((event) => ({
+        "When": formatExportDateTime(event.occurredAt, timezone),
+        "Branch": event.branchId ? branchNames.get(event.branchId) ?? "Unknown branch" : "Organization-wide",
+        "Recorded by": event.actorName,
+        "Role": exportStatusLabel(event.actorRole),
+        "Category": exportStatusLabel(event.category),
+        "Action": event.action.replaceAll("_", " "),
+        "Record type": exportStatusLabel(event.entityType),
+        "Record": event.entityLabel,
+        "Summary": event.summary,
+        "Reason": event.reason,
+        "Approval status": exportStatusLabel(event.approvalStatus),
+      }));
+  }
+  if (kind === "personal_training") {
+    const orders = await ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+    const visibleMembers = new Map((await memberRecords(ctx, actor)).map((record) => [record.publicId, data(record.data)]));
+    return orders.filter((order) => visibleMembers.has(order.memberPublicId)).map((order) => ({ id: order.publicId, memberId: order.memberPublicId, homeBranchId: visibleMembers.get(order.memberPublicId)?.homeBranchId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters, timezone)).map((order) => {
+      const member = visibleMembers.get(order.memberId);
+      return {
+        "Member": member?.fullName ?? "Unknown member",
+        "Member number": member?.memberNumber,
+        "Package": order.packageName,
+        "Sessions purchased": order.sessions,
+        "Total price": formatMinorUnits(order.totalPriceMinor, order.currency),
+        "Currency": order.currency,
+        "Status": exportStatusLabel(order.status),
+        "Paid": formatExportDateTime(order.paidAt, timezone),
+        "Refunded sessions": order.refundedSessions,
+        "Refunded amount": formatMinorUnits(order.refundedMinor, order.currency),
+        "Created": formatExportDateTime(order.createdAt, timezone),
+        "Updated": formatExportDateTime(order.updatedAt, timezone),
+      };
+    });
+  }
+  const [products, suppliers, balances, movements, operationBranches] = await Promise.all([
+    ctx.db.query("products").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("suppliers").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("inventoryBalances").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("stockMovements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+    ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
+  ]);
+  const branchPublicIds = new Map(operationBranches.map((branch) => [branch._id, publicBranchId(branch)]));
+  const scoped = <T extends { branchId?: Id<"branches"> }>(rows: T[]) => actor.branchScope === "all" ? rows : rows.filter((row) => !row.branchId || actor.branchIds.includes(row.branchId));
+  const productById = new Map(products.map((product) => [String(product._id), product]));
+  const operationRows: Data[] = [
+    ...products.map((row) => ({ recordType: "Product", id: row.publicId, sku: row.sku, itemName: row.name, unit: row.unit, reorderPoint: row.reorderPoint, status: row.status, amountMinor: row.retailPriceMinor, currency: row.retailPriceCurrency })),
+    ...suppliers.map((row) => ({ recordType: "Supplier", id: row.publicId, itemName: row.name, contactName: row.contactName, email: row.email, phone: row.phone, status: row.status })),
+    ...scoped(balances).map((row) => ({ recordType: "Stock balance", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: productById.get(String(row.productId))?.sku, itemName: productById.get(String(row.productId))?.name, quantityOnHand: row.quantityOnHand, committedQuantity: row.committedQuantity, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency })),
+    ...scoped(movements).map((row) => ({ recordType: "Stock movement", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: row.productSku, itemName: row.productName, movementType: row.type, quantityChange: row.quantityDelta, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency, reason: row.reason, referenceType: row.referenceType, occurredAt: utcIso(row.occurredAt) })),
+  ];
+  return operationRows.filter((row) => exportMatchesFilters(row, filters, timezone)).map((row) => ({
+    "Record type": row.recordType,
+    "Branch": row.branchId ? branchNames.get(row.branchId) ?? "Unknown branch" : "Organization-wide",
+    "SKU": row.sku,
+    "Product or supplier": row.itemName,
+    "Unit": row.unit ? exportStatusLabel(row.unit) : "",
+    "Status": exportStatusLabel(row.status),
+    "Reorder point": row.reorderPoint,
+    "Quantity on hand": row.quantityOnHand,
+    "Committed quantity": row.committedQuantity,
+    "Movement type": exportStatusLabel(row.movementType),
+    "Quantity change": row.quantityChange,
+    "Amount": row.amountMinor === undefined ? "" : formatMinorUnits(row.amountMinor, row.currency),
+    "Currency": row.currency,
+    "Contact name": row.contactName,
+    "Phone": row.phone,
+    "Email": row.email,
+    "Reason": row.reason,
+    "Reference type": exportStatusLabel(row.referenceType),
+    "When": formatExportDateTime(row.occurredAt, timezone),
+  }));
+}
+
+function exportJobView(value: Data): Data {
+  return { id: stringValue(value.id), kind: stringValue(value.kind), status: stringValue(value.status), fileName: optionalString(value.fileName), mimeType: optionalString(value.mimeType), rowCount: numberValue(value.rowCount), totalRows: typeof value.totalRows === "number" ? value.totalRows : numberValue(value.rowCount), content: Date.parse(stringValue(value.expiresAt)) > Date.now() ? optionalString(value.content) : undefined, failureMessage: optionalString(value.failureMessage), timezone: optionalString(value.timezone), branchScope: optionalString(value.branchScope), filters: data(value.filters), createdAt: stringValue(value.createdAt), completedAt: optionalString(value.completedAt), expiresAt: optionalString(value.expiresAt) };
+}
+
+async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const { user } = await requireMember(ctx);
+  const idempotencyKey = stringValue(input.idempotencyKey).trim();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: request.correlationId });
+  const userId = publicUserId(user);
+  const [experience, contexts, preferenceEvents] = await Promise.all([
+    customerExperience(ctx),
+    customerFinanceContexts(ctx),
+    ctx.db.query("customerMarketingPreferenceEvents").withIndex("by_user_id", (q) => q.eq("userId", userId)).collect(),
+  ]);
+  const profile = data(experience.customer);
+  const memberships = arrayValue(experience.memberships).map(data);
+  const trialBookings = arrayValue(experience.bookings).map(data);
+  const marketplaceGyms = await marketplaceRows(ctx);
+  const marketplaceNames = new Map(marketplaceGyms.map((gym) => [gym.publicId, stringValue(data(gym.data).name, gym.publicId)]));
+  const marketplaceBranchNames = new Map(marketplaceGyms.flatMap((gym) => arrayValue(data(gym.data).branches).map(data).map((branch) => [`${gym.publicId}:${stringValue(branch.id)}`, stringValue(branch.name, stringValue(branch.id))] as const)));
+  const organizations = new Map(contexts.map((context) => [String(context.organization._id), context.organization]));
+  const organizationsByPublicId = new Map(contexts.map((context) => [publicOrganizationId(context.organization), context.organization]));
+  const personalTimezone = contexts[0]?.organization.timezone || TZ_FALLBACK;
+  const transactions = await customerFinancialTransactions(ctx, contexts);
+  const charges: Data[] = [];
+  const visits: Data[] = [];
+  const timeline: Data[] = [];
+  const classBookings: Data[] = [];
+  for (const context of contexts) {
+    const timezone = context.organization.timezone || TZ_FALLBACK;
+    const currency = context.organization.currency || JOD;
+    const [chargeRecordsForMember, checkInRecords, timelineRecords, bookings, branches] = await Promise.all([
+      recordsOfMember(ctx, context.organization._id, context.memberId, "charge"),
+      recordsOfMember(ctx, context.organization._id, context.memberId, "checkIn"),
+      recordsOfMember(ctx, context.organization._id, context.memberId, "timeline"),
+      ctx.db.query("classBookings").withIndex("by_member_start", (q) => q.eq("organizationId", context.organization._id).eq("memberPublicId", context.memberId)).collect(),
+      ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", context.organization._id)).collect(),
+    ]);
+    const branchNames = new Map(branches.map((branch) => [publicBranchId(branch), branch.name]));
+    const branchNamesByInternalId = new Map(branches.map((branch) => [String(branch._id), branch.name]));
+    charges.push(...chargeRecordsForMember.map((record) => {
+      const charge = chargeProjection(data(record.data), todayIn(timezone));
+      const chargeCurrency = currencyOf(charge.total, currency);
+      return {
+        gym: context.organization.name,
+        description: charge.description,
+        issueDate: charge.issueDate,
+        dueDate: charge.dueDate,
+        total: formatMinorUnits(amountOf(charge.total), chargeCurrency),
+        paid: formatMinorUnits(amountOf(charge.paidAmount), chargeCurrency),
+        outstanding: formatMinorUnits(amountOf(charge.outstandingAmount), chargeCurrency),
+        currency: chargeCurrency,
+        status: exportStatusLabel(optionalString(charge.status)),
+        id: record.publicId,
+      };
+    }));
+    visits.push(...checkInRecords.map((record) => {
+      const checkIn = data(record.data);
+      return {
+        gym: context.organization.name,
+        branch: optionalString(checkIn.branchName) ?? branchNames.get(stringValue(checkIn.branchId)) ?? "Gym branch",
+        occurredAt: formatExportDateTime(optionalString(checkIn.occurredAt), timezone),
+        result: exportStatusLabel(optionalString(checkIn.decision)),
+        reason: exportList(checkIn.reasonCodes) || optionalString(checkIn.reason),
+        recordedBy: optionalString(checkIn.actorName),
+        id: record.publicId,
+      };
+    }));
+    timeline.push(...timelineRecords.map((record) => {
+      const event = data(record.data);
+      return {
+        gym: context.organization.name,
+        occurredAt: formatExportDateTime(optionalString(event.occurredAt), timezone),
+        type: exportStatusLabel(optionalString(event.type)),
+        title: optionalString(event.title),
+        detail: optionalString(event.body) ?? optionalString(event.detail),
+        recordedBy: optionalString(event.actorName),
+        id: record.publicId,
+      };
+    }));
+    const resolvedClassBookings = await Promise.all(bookings.map(async (booking): Promise<Data> => {
+      const occurrence = await ctx.db.get(booking.occurrenceId);
+      return {
+        gym: context.organization.name,
+        branch: branchNamesByInternalId.get(String(booking.branchId)) ?? "Gym branch",
+        className: occurrence?.name ?? "Class",
+        startsAt: formatExportDateTime(booking.startsAt, timezone),
+        status: exportStatusLabel(booking.status),
+        bookedAt: formatExportDateTime(booking.bookedAt, timezone),
+        fromWaitlist: booking.fromWaitlist,
+        id: booking.publicId,
+      };
+    }));
+    classBookings.push(...resolvedClassBookings);
+  }
+  const now = isoNow();
+  const details = (...values: Array<string | undefined>) => values.filter((value): value is string => Boolean(value?.trim())).join(" · ");
+  const rows: CsvValue[][] = [];
+  const profileFields: Array<[string, string | undefined]> = [
+    ["Full name", stringValue(profile.name, user.fullName)],
+    ["Arabic name", optionalString(profile.nameAr)],
+    ["Email", stringValue(profile.email, user.email)],
+    ["Phone", optionalString(profile.phone)],
+    ["Date of birth", optionalString(profile.dateOfBirth)],
+    ["Gender", exportStatusLabel(optionalString(profile.gender))],
+    ["Preferred language", exportStatusLabel(optionalString(profile.preferredLanguage))],
+    ["Address", optionalString(profile.addressLine1)],
+    ["City", optionalString(profile.city)],
+    ["Emergency contact", optionalString(profile.emergencyContactName)],
+    ["Emergency relationship", optionalString(profile.emergencyContactRelationship)],
+    ["Emergency phone", optionalString(profile.emergencyContactPhone)],
+  ];
+  rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => ["Profile", "", "", "", label, value, "", "", ""]));
+  rows.push(...memberships.map((membership): CsvValue[] => {
+    const context = contexts.find((item) => item.membershipId === membership.membershipId || item.membershipId === membership.id);
+    const currency = context?.organization.currency ?? JOD;
+    return [
+      "Membership",
+      membership.gymName,
+      membership.branchName,
+      membership.startDate,
+      membership.planName,
+      details(
+        optionalString(membership.memberNumber) ? `Member ${optionalString(membership.memberNumber)}` : undefined,
+        optionalString(membership.endDate) ? `Ends ${optionalString(membership.endDate)}` : undefined,
+        optionalString(membership.lastCheckInAt) ? `Last check-in ${formatExportDateTime(optionalString(membership.lastCheckInAt), context?.organization.timezone ?? TZ_FALLBACK)}` : undefined,
+      ),
+      formatMinorUnits(numberValue(membership.balanceMinor), currency),
+      currency,
+      exportStatusLabel(optionalString(membership.status)),
+    ];
+  }));
+  rows.push(...charges.map((charge): CsvValue[] => [
+    "Charge",
+    charge.gym,
+    "",
+    charge.issueDate,
+    charge.description,
+    details(
+      charge.dueDate ? `Due ${charge.dueDate}` : undefined,
+      charge.total ? `Total ${charge.total} ${charge.currency}` : undefined,
+      charge.paid ? `Paid ${charge.paid} ${charge.currency}` : undefined,
+    ),
+    charge.outstanding,
+    charge.currency,
+    charge.status,
+  ]));
+  rows.push(...transactions.map((transaction): CsvValue[] => {
+    const currency = currencyOf(transaction.amount, JOD);
+    return [
+      "Payment",
+      transaction.gymName,
+      transaction.branchName,
+      formatExportDateTime(optionalString(transaction.occurredAt), organizationsByPublicId.get(stringValue(transaction.gymId))?.timezone ?? TZ_FALLBACK),
+      optionalString(transaction.receiptNumber) ? `${exportStatusLabel(optionalString(transaction.type))} · Receipt ${optionalString(transaction.receiptNumber)}` : exportStatusLabel(optionalString(transaction.type)),
+      details(exportStatusLabel(optionalString(transaction.method)), optionalString(transaction.explanation)),
+      formatMinorUnits(amountOf(transaction.amount), currency),
+      currency,
+      exportStatusLabel(optionalString(transaction.status)),
+    ];
+  }));
+  rows.push(...visits.map((visit): CsvValue[] => ["Check-in", visit.gym, visit.branch, visit.occurredAt, "Gym visit", visit.reason, "", "", visit.result]));
+  rows.push(...timeline.map((event): CsvValue[] => ["Account activity", event.gym, "", event.occurredAt, event.title || event.type, event.detail, "", "", ""]));
+  rows.push(...classBookings.map((booking): CsvValue[] => [
+    "Class booking",
+    booking.gym,
+    booking.branch,
+    booking.startsAt,
+    booking.className,
+    details(booking.bookedAt ? `Booked ${booking.bookedAt}` : undefined, booking.fromWaitlist ? "Promoted from waitlist" : undefined),
+    "",
+    "",
+    booking.status,
+  ]));
+  rows.push(...trialBookings.map((booking): CsvValue[] => {
+    const gymId = stringValue(booking.gymId);
+    return [
+      "Trial booking",
+      marketplaceNames.get(gymId) ?? "Unknown gym",
+      marketplaceBranchNames.get(`${gymId}:${stringValue(booking.branchId)}`) ?? "Unknown branch",
+      details(optionalString(booking.preferredDate), optionalString(booking.preferredTime)),
+      optionalString(booking.goal) || "Gym trial",
+      optionalString(booking.createdAt) ? `Requested ${formatExportDateTime(optionalString(booking.createdAt), personalTimezone)}` : "",
+      "",
+      "",
+      exportStatusLabel(optionalString(booking.status)),
+    ];
+  }));
+  rows.push(...[...preferenceEvents].sort((left, right) => left.changedAt - right.changedAt).map((event): CsvValue[] => [
+    "Marketing preference",
+    "",
+    "",
+    formatExportDateTime(event.changedAt, personalTimezone),
+    "Marketing messages",
+    `Recorded through ${exportStatusLabel(event.source)}`,
+    "",
+    "",
+    `${event.optedIn ? "Allowed" : "Not allowed"} · ${exportStatusLabel(event.status)}`,
+  ]));
+  const totalRows = rows.length;
+  const content = buildCsvDocument({
+    title: "My RIVET data",
+    metadata: [
+      { label: "Generated at", value: formatExportDateTime(now, personalTimezone) },
+      { label: "Account", value: stringValue(profile.email, user.email) },
+      { label: "Included gyms", value: [...organizations.values()].map((organization) => organization.name).join("; ") || "None" },
+    ],
+    headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"],
+    rows,
+    emptyMessage: "No personal data was available for export.",
+  });
+  if (new TextEncoder().encode(content).byteLength > 750_000) domainError("CONFLICT", `Your personal-data export contains ${totalRows} records and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { correlationId: request.correlationId });
+  for (const organization of organizations.values()) await ctx.db.insert("auditEvents", { organizationId: organization._id, publicId: newPublicId(), actorUserId: user._id, actorPublicId: userId, actorName: user.fullName, actorRole: "member", category: "settings", action: "member.personal_data_export", entityType: "member_data_export", entityPublicId: idempotencyKey, entityLabel: user.fullName, summary: "Member downloaded a personal-data export", correlationId: request.correlationId ?? idempotencyKey, occurredAt: Date.now() });
+  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
+}
+
+function workspaceInternalHref(value: unknown, correlationId: string): string {
+  const href = stringValue(value).trim();
+  if (!href.startsWith("/") || href.startsWith("//") || href.length > 500) domainError("VALIDATION_ERROR", "Workspace links must use an internal RIVET route.", { correlationId });
+  return href;
+}
+
+function workspacePages(actor: ActorContext): Data[] {
+  const rows: Array<Data & { permission?: string; anyPermission?: string[] }> = [
+    { id: "dashboard", title: "Dashboard", subtitle: "Today, revenue, alerts and queue", href: "/dashboard" },
+    { id: "reception", title: "Reception", subtitle: "Check-ins and cash shift", href: "/reception" },
+    { id: "members", title: "Members", subtitle: "Directory and memberships", href: "/members", permission: "members.read" },
+    { id: "leads", title: "Leads", subtitle: "CRM pipeline", href: "/crm/pipeline", permission: "crm.read" },
+    { id: "followups", title: "Follow-ups", subtitle: "Due and overdue CRM work", href: "/crm/queues", permission: "crm.read" },
+    { id: "payments", title: "Payments", subtitle: "Transactions and receipts", href: "/payments", permission: "reports.financial.read" },
+    { id: "exports", title: "Downloads", subtitle: "Download your gym records", href: "/exports", anyPermission: ["members.read", "crm.read", "reports.financial.read", "audit.read", "pt.reports.read", "operations.manage"] },
+    { id: "audit", title: "Activity log", subtitle: "Sensitive action history", href: "/audit", permission: "audit.read" },
+    { id: "automations", title: "Automation monitoring", subtitle: "Rules, providers and execution history", href: "/automations", permission: "automations.manage" },
+    // Every active gym employee can open Settings for their personal profile;
+    // the page filters organization sections and each server mutation still
+    // enforces its own permission.
+    { id: "settings", title: "Settings", subtitle: "Profile, organization and team", href: "/settings" },
+    { id: "settings-my-profile", title: "My profile", subtitle: "Display name and phone", href: "/settings?section=my-profile" },
+    { id: "support", title: "Support", subtitle: "Cases", href: "/support" },
+  ];
+  return rows.filter((row) => (!row.permission || actor.permissions.includes(row.permission)) && (!row.anyPermission || row.anyPermission.some((permission) => actor.permissions.includes(permission))));
+}
+
+function workspaceQuickActions(actor: ActorContext): Data[] {
+  return [
+    hasPermission(actor, "members.write") ? { id: "new-member", title: "Create member", subtitle: "Open a new member record", href: "/members/new" } : null,
+    hasPermission(actor, "crm.write") ? { id: "new-lead", title: "Create lead", subtitle: "Add a lead to the pipeline", href: "/crm/pipeline?new=1" } : null,
+    hasPermission(actor, "payments.collect") ? { id: "collect-payment", title: "Collect payment", subtitle: "Find a member and record payment", href: "/payments?collect=1" } : null,
+    hasPermission(actor, "members.read") ? { id: "start-checkin", title: "Start check-in", subtitle: "Open the reception lookup", href: "/reception" } : null,
+  ].filter(Boolean).map((row) => data(row));
+}
+
+async function workspaceSearch(ctx: ReadContext, actor: ActorContext, input: Data): Promise<Data[]> {
+  const search = stringValue(input.search).trim();
+  if (search.length < 2) return [];
+  if (search.length > 120) domainError("VALIDATION_ERROR", "Search is too long.", { correlationId: actor.correlationId });
+  const results: Data[] = [];
+  if (hasPermission(actor, "members.read")) {
+    const rows = (await recordsOf(ctx, actor, "member")).map((record) => data(record.data)).filter((member) => matchesSearch([member.fullName, member.fullNameAr, member.memberNumber, member.phone, member.email], search)).slice(0, 7);
+    results.push(...rows.map((member) => ({ kind: "member", id: stringValue(member.id), title: stringValue(member.fullName), subtitle: `${stringValue(member.memberNumber)} · ${stringValue(member.phone)}`, href: `/members/${member.id}`, keywords: [stringValue(member.phone), stringValue(member.memberNumber)] })));
+  }
+  if (hasPermission(actor, "crm.read")) {
+    const rows = (await recordsOf(ctx, actor, "lead")).map((record) => data(record.data)).filter((lead) => matchesSearch([lead.fullName, lead.phone, lead.email, lead.source], search)).slice(0, 6);
+    results.push(...rows.map((lead) => ({ kind: "lead", id: stringValue(lead.id), title: stringValue(lead.fullName), subtitle: `${stringValue(lead.stage)} · ${stringValue(lead.phone)}`, href: `/crm/leads/${lead.id}`, keywords: [stringValue(lead.phone), stringValue(lead.email)] })));
+  }
+  if (hasPermission(actor, "reports.financial.read")) {
+    const rows = (await recordsOf(ctx, actor, "payment")).map((record) => data(record.data)).filter((payment) => matchesSearch([payment.receiptNumber, payment.externalReference, payment.idempotencyKey, payment.memberName, payment.memberNumber], search)).slice(0, 6);
+    results.push(...rows.map((payment) => ({ kind: "receipt", id: stringValue(payment.receiptId, stringValue(payment.id)), title: stringValue(payment.receiptNumber, "Receipt"), subtitle: `${stringValue(payment.memberName, stringValue(payment.memberNumber, "Member"))} · ${stringValue(payment.status)}`, href: `/payments/receipts/${stringValue(payment.receiptId, stringValue(payment.id))}`, keywords: [stringValue(payment.externalReference), stringValue(payment.idempotencyKey)] })));
+  }
+  const navigation: Data[] = workspacePages(actor).map((row) => ({ kind: "page", ...row }));
+  const actions: Data[] = workspaceQuickActions(actor).map((row) => ({ kind: "action", ...row }));
+  results.push(...[...navigation, ...actions].filter((row) => matchesSearch([row.title, row.subtitle], search)));
+  return results.slice(0, 24);
+}
+
+function recentWorkspaceItemView(row: Doc<"recentWorkspaceItems">): Data {
+  return { kind: row.kind, id: row.entityPublicId, title: row.title, subtitle: row.subtitle, href: row.href, viewedAt: utcIso(row.viewedAt) };
+}
+
+function pinnedWorkspaceItemView(row: Doc<"pinnedWorkspaceItems">): Data {
+  return { id: row.publicId, targetKey: row.targetKey, kind: row.kind, label: row.label, href: row.href, position: row.position, createdAt: utcIso(row.createdAt) };
+}
+
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  if (operation === "users.profile.get") {
+    const actor = await requireActor(ctx, request);
+    return { id: publicUserId(actor.user), name: actor.user.fullName, email: actor.user.email, phone: actor.user.phone ?? "" };
+  }
+
   if (operation === "session") {
     const actor = await requireActor(ctx, request);
     return await buildSession(ctx, actor, request.activeBranchId);
   }
 
+  if (operation === "platform.email.deliveries") {
+    // The last hundred messages across every gym, newest first, with what
+    // happened to each: the answer to "why did nothing arrive" without a
+    // trip to the provider's dashboard.
+    await requirePlatformAdmin(ctx, request.correlationId);
+    const rows = (await ctx.db.query("operationalEmailDeliveries").order("desc").take(100));
+    const names = new Map<string, string>();
+    const out: Data[] = [];
+    for (const row of rows) {
+      const key = row.organizationId ? String(row.organizationId) : "";
+      if (key && !names.has(key)) names.set(key, (await ctx.db.get(row.organizationId!))?.name ?? "");
+      out.push({
+        id: row.publicId,
+        kind: row.kind,
+        gym: key ? names.get(key) ?? "" : "RIVET",
+        recipientEmail: row.recipientEmail,
+        subject: row.subject,
+        status: row.status,
+        suppressionReason: row.suppressionReason,
+        lastErrorCode: row.lastErrorCode ?? row.attempts.at(-1)?.errorCode,
+        providerId: row.providerId,
+        attachments: (row.attachments ?? []).map((attachment) => attachment.filename),
+        attempts: row.attempts.map((attempt) => ({ attemptedAt: utcIso(attempt.attemptedAt), outcome: attempt.outcome, statusCode: attempt.statusCode, errorCode: attempt.errorCode, mode: attempt.mode, deliveredTo: attempt.deliveredTo })),
+        createdAt: utcIso(row.createdAt),
+        updatedAt: utcIso(row.updatedAt),
+      });
+    }
+    return out;
+  }
+
+  if (operation === "billing.invoices.list") {
+    // A gym reads only its own platform invoices, newest first, in the
+    // same shape the platform console uses.
+    const actor = await requireActor(ctx, request);
+    const rows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "platformInvoice")).collect();
+    return rows
+      .map((row): Data => ({ id: row.publicId, gym: actor.organization.name, ...data(row.data) }))
+      .filter((invoice) => invoice.status !== "draft")
+      .sort((left, right) => String(right.issuedAt ?? right.createdAt ?? "").localeCompare(String(left.issuedAt ?? left.createdAt ?? "")));
+  }
+
+  if (operation === "legal.agreement.current" || operation === "platform.agreements.list" || operation === "platform.agreement.get") {
+    return await legalAgreementQuery(ctx, operation, input, request);
+  }
+
   if (operation === "health") {
     return { status: "ok", serverTime: Date.now() };
+  }
+
+  if (operation === "public.offer") {
+    return await publicOfferView(ctx, stringValue(input.token));
   }
 
   if (operation === "notifications.list") {
@@ -2793,11 +5162,33 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return await Promise.all(notifications.map((notification) => notificationView(ctx, notification)));
   }
 
+  if (operation === "onboarding.get") return await onboardingExperience(ctx, input, request);
+  if (operation === "push.list") return await listMemberPushSubscriptions(ctx);
+
   if (operation === "public.marketplace") {
     const rows = await marketplaceRows(ctx);
-    return await Promise.all(rows.filter((row) => acceptsPublicTrialRequests(data(row.data))).map(async (row) => {
-      const organization = await ctx.db.get(row.organizationId);
-      if (!organization) return marketplaceView(data(row.data));
+    const visibleRows: Array<{ row: DomainRecord; organization: Organization; entitlement: Doc<"organizationEntitlements"> | null }> = [];
+    for (const row of rows) {
+      const listing = data(row.data);
+      // Publication/profile flags belong to the directory record, but tenant
+      // lifecycle is authoritative on organizations. Do not reject a healthy
+      // tenant solely because an old directory status is stale; the projection
+      // below will replace that status from the organization row.
+      if (!booleanValue(listing.isPublic) || !booleanValue(listing.profilePublished, true)) continue;
+      // The directory projection is not an authority for tenant lifecycle.
+      // Require a real, same-tenant organization and read its status before a
+      // gym is exposed to member discovery. This prevents stale active/public
+      // rows (including unprovisioned demo rows) surviving suspension.
+      const targetOrganizationId = optionalString(listing.targetOrganizationId);
+      if (!targetOrganizationId) continue;
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique();
+      const entitlement = organization
+        ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
+        : null;
+      if (!organization || organization._id !== row.organizationId || !acceptsPublicTrialRequests(listing, platformSubscriptionStatusForOrganization(organization.status), organization.trialEndsAt, true)) continue;
+      visibleRows.push({ row, organization, entitlement });
+    }
+    return await Promise.all(visibleRows.map(async ({ row, organization, entitlement }) => {
       const listingValue = data(row.data);
       const [trainers, packages, plans, members, branches, tenantSettings, logo, cover, gallery] = await Promise.all([
         ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect(),
@@ -2806,13 +5197,15 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect(),
         ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect(),
         ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique(),
-        gymMediaAssetView(ctx, organization, optionalString(listingValue.logoAssetId)),
-        gymMediaAssetView(ctx, organization, optionalString(listingValue.coverAssetId)),
-        Promise.all(arrayValue(listingValue.galleryAssetIds).map((id) => gymMediaAssetView(ctx, organization, optionalString(id)))),
+        gymMediaAssetView(ctx, organization, optionalString(listingValue.logoAssetId), "gym_logo"),
+        gymMediaAssetView(ctx, organization, optionalString(listingValue.coverAssetId), "gym_cover"),
+        Promise.all(arrayValue(listingValue.galleryAssetIds).map((id) => gymMediaAssetView(ctx, organization, optionalString(id), "gym_gallery"))),
       ]);
       const activePlans = plans.map((item) => data(item.data)).filter((item) => stringValue(item.status, "active") === "active");
       const activePrices = activePlans.map((item) => amountOf(item.basePrice)).filter((amount) => amount > 0);
-      const baseView = marketplaceView(data(row.data));
+      // Keep the public projection aligned with the tenant lifecycle even if
+      // an older directory row has not yet been repaired by an admin.
+      const baseView = marketplaceView(platformMarketplaceProjection(listingValue, organization, entitlement));
       const rawBranches = arrayValue(listingValue.branches).map(data);
       const trialSchedules = arrayValue(data(data(tenantSettings?.data).operationalPolicies).trialSchedules).map(data);
       const liveBranches = branches.filter((branch) => branch.active && branch.status !== "inactive");
@@ -2863,6 +5256,41 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return await platformPlans(ctx);
   }
   if (operation === "customer.experience") return await customerExperience(ctx);
+  if (operation === "customer.finance.summary") return await customerFinancialSummary(ctx);
+  if (operation === "customer.finance.transactions") return await customerTransactionPage(ctx, input);
+  if (operation === "customer.receipt") return await customerReceiptDetail(ctx, recordId(input.receiptId));
+  if (operation === "customer.membership.freezePolicy") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+    const operationalPolicies = data(data(settings?.data).operationalPolicies);
+    const policy = { ...(DEFAULT_OPERATIONAL_POLICIES.memberFreezes as Data), ...data(operationalPolicies.memberFreezes) };
+    const membershipPolicy = { ...(DEFAULT_OPERATIONAL_POLICIES.membership as Data), ...data(operationalPolicies.membership) };
+    const windowStart = Date.now() - numberValue(policy.windowDays, 365) * 86_400_000;
+    const approved = (await recordsOfMember(ctx, context.organization._id, context.member.publicId, "freezeRequest"))
+      .map((row) => data(row.data))
+      .filter((candidate) => stringValue(candidate.status) === "approved" && Date.parse(stringValue(candidate.decidedAt, stringValue(candidate.requestedAt))) >= windowStart)
+      .length;
+    const freeRequests = numberValue(policy.freeFreezesPerWindow, 1);
+    return {
+      requestsEnabled: booleanValue(policy.requestsEnabled),
+      minimumDays: numberValue(membershipPolicy.minimumFreezeDays, 1),
+      maximumDays: numberValue(policy.maxDaysPerFreeze, 30),
+      expectedFeeMinor: approved < freeRequests ? 0 : numberValue(policy.extraFreezeFeeMinor, 10_000),
+      currency: context.organization.currency,
+      freeRequestsRemaining: Math.max(0, freeRequests - approved),
+    };
+  }
+  if (operation === "customer.membership.freezeRequests") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    return (await recordsOfMember(ctx, context.organization._id, context.member.publicId, "freezeRequest"))
+      .map((row) => data(row.data))
+      .filter((value) => stringValue(value.membershipId) === context.membership.publicId)
+      .sort((left, right) => stringValue(right.requestedAt).localeCompare(stringValue(left.requestedAt)));
+  }
+  if (operation === "customer.classes") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    return await customerClassesQuery(ctx, context);
+  }
   if (operation === "customer.pt") return await customerPtExperience(ctx, recordId(input.membershipId));
   if (operation === "customer.pt.slots") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
@@ -2895,31 +5323,52 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   }
   if (operation === "platform.snapshot") {
     await requirePlatformAdmin(ctx, request.correlationId);
-    const gyms = (await marketplaceRows(ctx)).map((row) => marketplaceView(data(row.data), true));
-    const bookings = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
-    const invoices = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row): Data => ({ id: row.publicId, ...data(row.data) }));
+    const gymProjections = await Promise.all((await marketplaceRows(ctx)).map(async (row) => {
+      const listing = data(row.data);
+      const targetOrganizationId = optionalString(listing.targetOrganizationId);
+      const organization = targetOrganizationId
+        ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+        : null;
+      const sameTenantOrganization = organization && organization._id === row.organizationId ? organization : null;
+      const entitlement = sameTenantOrganization
+        ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", sameTenantOrganization._id)).unique()
+        : null;
+      const logoUrl = sameTenantOrganization ? await platformGymLogoUrl(ctx, sameTenantOrganization, listing) : undefined;
+      return {
+        view: marketplaceView(platformMarketplaceProjection({ ...listing, logoUrl }, sameTenantOrganization, entitlement), true),
+        provisioned: Boolean(sameTenantOrganization),
+        organizationId: sameTenantOrganization ? String(sameTenantOrganization._id) : undefined,
+      };
+    }));
+    const gyms = gymProjections.map(({ view }) => view);
+    const bookings = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect()).map((row): Data => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
+    const invoices = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row): Data => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
     const supportCaseRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "supportCase")).collect();
-    const supportCases = await Promise.all(supportCaseRows.map((row) => supportCaseView(ctx, row)));
+    const supportCases = await Promise.all(supportCaseRows.map(async (row) => ({ view: await supportCaseView(ctx, row), organizationId: String(row.organizationId) })));
+    const supportCaseViews = supportCases.map(({ view }) => view);
     const applications = (await ctx.db.query("gymApplications").collect()).map(gymApplicationView);
     const auditEvents = (await ctx.db.query("platformAuditEvents").withIndex("by_occurred").collect())
       .sort((left, right) => right.occurredAt - left.occurredAt)
       .slice(0, 100)
       .map((event) => ({ id: event.publicId, action: event.action, summary: event.summary, actorName: event.actorName, occurredAt: utcIso(event.occurredAt) }));
     const plans = await platformPlans(ctx);
-    const [organizations, branches, staffMemberships, memberRows] = await Promise.all([
+    const [organizations, branches, staffMemberships, memberRows, entitlements] = await Promise.all([
       ctx.db.query("organizations").collect(),
       ctx.db.query("branches").collect(),
       ctx.db.query("organizationMemberships").collect(),
       ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).collect(),
+      ctx.db.query("organizationEntitlements").collect(),
     ]);
+    const entitlementByOrganization = new Map(entitlements.map((entitlement) => [String(entitlement.organizationId), entitlement]));
+    const provisionedOrganizationIds = new Set(gymProjections.filter(({ view, provisioned, organizationId }) => provisioned && !booleanValue(view.isArchived) && organizationId).map(({ organizationId }) => organizationId as string));
     const overview = buildPlatformOverview({
-      gyms: gyms.map((gym) => ({ id: stringValue(gym.id), subscriptionStatus: stringValue(gym.subscriptionStatus), trialEndsAt: optionalString(gym.trialEndsAt) })),
-      organizations: organizations.map((organization) => ({ status: organization.status, subscriptionPlan: organization.subscriptionPlan })),
+      gyms: gymProjections.map(({ view, provisioned, organizationId }) => ({ id: stringValue(view.id), organizationId, subscriptionStatus: stringValue(view.subscriptionStatus), trialEndsAt: optionalString(view.trialEndsAt), provisioned: provisioned && !booleanValue(view.isArchived) })),
+      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, billingInterval: billingInterval(organization.billingInterval), provisioned: provisionedOrganizationIds.has(String(organization._id)) })),
       plans: plans.map((plan) => ({ name: stringValue(plan.name), priceMinor: numberValue(plan.priceMinor) })),
-      branches: branches.map((branch) => ({ active: branch.active, status: branch.status })),
-      members: memberRows.map((member) => ({ status: optionalString(data(member.data).status) })),
-      staffMemberships: staffMemberships.map((membership) => ({ active: membership.active })),
-      bookings: bookings.map((booking) => ({ status: optionalString(booking.status) })),
+      branches: branches.map((branch) => ({ organizationId: String(branch.organizationId), active: branch.active, status: branch.status })),
+      members: memberRows.map((member) => ({ organizationId: String(member.organizationId), status: optionalString(data(member.data).status) })),
+      staffMemberships: staffMemberships.map((membership) => ({ organizationId: String(membership.organizationId), active: membership.active })),
+      bookings: bookings.map((booking) => ({ organizationId: optionalString(booking.organizationId), gymId: optionalString(booking.gymId), status: optionalString(booking.status) })),
       applications: applications.map((application) => ({
         id: stringValue(application.id),
         gymName: stringValue(application.gymName),
@@ -2928,29 +5377,49 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         updatedAt: stringValue(application.updatedAt),
         provisioningStatus: optionalString(application.provisioningStatus),
         provisioningError: optionalString(application.provisioningError),
+        provisioningOutcome: optionalString(application.provisioningOutcome),
       })),
       invoices: invoices.map((invoice) => ({
         id: stringValue(invoice.id),
+        organizationId: optionalString(invoice.organizationId),
         gymId: optionalString(invoice.gymId),
         gym: optionalString(invoice.gym),
         amount: optionalString(invoice.amount),
         amountMinor: typeof invoice.amountMinor === "number" ? invoice.amountMinor : undefined,
         currency: optionalString(invoice.currency),
+        cycleKey: optionalString(invoice.cycleKey),
+        billingInterval: invoice.billingInterval === "annual" || invoice.billingInterval === "monthly" ? invoice.billingInterval : undefined,
+        subtotalMinor: typeof invoice.subtotalMinor === "number" ? invoice.subtotalMinor : undefined,
+        creditMinor: typeof invoice.creditMinor === "number" ? invoice.creditMinor : undefined,
+        creditDays: typeof invoice.creditDays === "number" ? invoice.creditDays : undefined,
         status: optionalString(invoice.status),
         date: optionalString(invoice.date),
         issuedAt: optionalString(invoice.issuedAt),
+        dueAt: optionalString(invoice.dueAt),
+        periodStart: optionalString(invoice.periodStart),
+        periodEnd: optionalString(invoice.periodEnd),
+        paymentReference: optionalString(invoice.paymentReference),
+        paidAt: optionalString(invoice.paidAt),
+        pastDueAt: optionalString(invoice.pastDueAt),
+        voidedAt: optionalString(invoice.voidedAt),
         occurredAt: optionalString(invoice.occurredAt),
       })),
-      supportCases: supportCases.map((supportCase) => ({
-        id: stringValue(supportCase.id),
-        gym: optionalString(supportCase.gym),
-        subject: optionalString(supportCase.subject),
-        priority: optionalString(supportCase.priority),
-        status: optionalString(supportCase.status),
-        createdAt: optionalString(supportCase.createdAt),
+      supportCases: supportCases.map(({ view, organizationId }) => ({
+        id: stringValue(view.id),
+        organizationId,
+        gymId: optionalString(view.gymId),
+        gym: optionalString(view.gym),
+        subject: optionalString(view.subject),
+        body: optionalString(view.body),
+        priority: optionalString(view.priority),
+        status: optionalString(view.status),
+        requestType: optionalString(view.requestType),
+        requestedPlan: optionalString(view.requestedPlan),
+        billingInterval: optionalString(view.billingInterval),
+        createdAt: optionalString(view.createdAt),
       })),
     });
-    return { gyms, bookings, invoices, supportCases, applications, auditEvents, plans, overview };
+    return { gyms, bookings, invoices, supportCases: supportCaseViews, applications, auditEvents, plans, overview };
   }
   if (operation === "platform.gym.detail") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
@@ -2959,26 +5428,58 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     if (!row) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
 
     const gym = data(row.data);
-    const rawStatus = stringValue(gym.subscriptionStatus);
+    const targetOrganizationId = optionalString(gym.targetOrganizationId);
+    const organizationCandidate = targetOrganizationId
+      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+      : null;
+    const organization = organizationCandidate && organizationCandidate._id === row.organizationId ? organizationCandidate : null;
+    const entitlement = organization
+      ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
+      : null;
     const rawPlan = stringValue(gym.rivetPlan);
+    const effectiveStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : "suspended";
+    const effectivePlan = organization ? platformPlanFromFacts(gym, organization, entitlement) ?? rawPlan : rawPlan;
     const allowedStatuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
     const allowedPlans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
-    if (!allowedStatuses.includes(rawStatus as (typeof allowedStatuses)[number]) || !allowedPlans.includes(rawPlan as (typeof allowedPlans)[number])) {
+    if (!allowedStatuses.includes(effectiveStatus as (typeof allowedStatuses)[number]) || !allowedPlans.includes(effectivePlan as (typeof allowedPlans)[number])) {
       domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription projection.", { correlationId: admin.correlationId });
     }
 
-    const targetOrganizationId = optionalString(gym.targetOrganizationId);
-    const organization = targetOrganizationId
-      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
-      : null;
-
     let branches: Array<{ id: string; name: string; code: string; address?: string; phone?: string; status: "active" | "inactive" }> = [];
+    let members: Array<{
+      id: string;
+      memberNumber: string;
+      name: string;
+      status: "active" | "inactive" | "archived";
+      branchId?: string;
+      branchName?: string;
+      membershipStatus?: string;
+      planName?: string;
+      membershipEndDate?: string;
+      joinedAt?: string;
+    }> = [];
+    let staff: Array<{
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      status: "active" | "invited" | "deactivated";
+      branchScope: "all" | "selected";
+      branchIds: string[];
+      branchNames: string[];
+      invitationStatus?: "pending" | "accepted" | "revoked";
+      joinedAt?: string;
+    }> = [];
     let owner: { name: string; email: string; phone?: string } | undefined;
+    let agreement: (Record<string, unknown> & { id: string; reference: string; status: string }) | undefined;
     let memberCount = 0;
     let activeStaffCount = 0;
     let staffLimit: number | undefined;
     let automationRuleCount = 0;
     let paymentTransactionCount = 0;
+    let recurringAmountMinor: number | undefined;
+    let invoices: Array<Record<string, unknown> & { id: string }> | undefined;
+    let publicPage: { publishedVersion: number; draftVersion?: number; draftStatus?: string; draftUpdatedAt?: string } | undefined;
     let activity: Array<{ id: string; action: string; summary: string; actorName: string; occurredAt: string }> = [];
 
     if (organization) {
@@ -2997,19 +5498,119 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const ownerMembership = membershipRows.find((membership) => membership.active && membership.role === "owner");
       const ownerUser = ownerMembership ? await ctx.db.get(ownerMembership.userId) : null;
       if (ownerUser) owner = { name: ownerUser.fullName, email: ownerUser.email, phone: ownerUser.phone };
+      agreement = await agreementSummaryForOrganization(ctx, organization._id, organization.name) as (Record<string, unknown> & { id: string; reference: string; status: string }) | undefined;
 
-      const [memberRows, planRows, ruleRows, paymentRows] = await Promise.all([
+      const [memberRows, planRows, ruleRows, paymentRows, membershipDetailRows, tenantPlanRows, staffUsers] = await Promise.all([
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect(),
         platformPlans(ctx),
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "automationRule")).collect(),
         ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "payment")).collect(),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership")).collect(),
+        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "plan")).collect(),
+        Promise.all(membershipRows.map((membership) => ctx.db.get(membership.userId))),
       ]);
       memberCount = memberRows.filter((member) => stringValue(data(member.data).status) === "active").length;
       automationRuleCount = ruleRows.length;
       paymentTransactionCount = paymentRows.length;
-      const configuredPlan = planRows.find((plan) => stringValue(data(plan).name) === rawPlan);
+
+      const branchById = new Map<string, typeof branchRows[number]>();
+      for (const branch of branchRows) {
+        branchById.set(publicBranchId(branch), branch);
+        branchById.set(String(branch._id), branch);
+      }
+      const plansById = new Map(tenantPlanRows.map((row) => [row.publicId, data(row.data)]));
+      const membershipsByMember = new Map<string, Data[]>();
+      for (const row of membershipDetailRows) {
+        const membership = data(row.data);
+        const memberId = optionalString(membership.memberId);
+        if (!memberId) continue;
+        const values = membershipsByMember.get(memberId) ?? [];
+        values.push(membership);
+        membershipsByMember.set(memberId, values);
+      }
+      const membershipRank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
+      const today = todayIn(organization.timezone || TZ_FALLBACK);
+      const validMemberStatus = (value: string): "active" | "inactive" | "archived" => ["active", "inactive", "archived"].includes(value) ? value as "active" | "inactive" | "archived" : "active";
+      // Keep every current member record in this tenant. Merged rows are
+      // historical aliases and are intentionally omitted, matching the gym's
+      // own member directory without leaking another tenant's data.
+      members = memberRows
+        .map((row) => ({ row, value: data(row.data) }))
+        .filter(({ value }) => !optionalString(value.mergedIntoMemberId))
+        .map(({ row, value }) => {
+          const memberId = stringValue(value.id, row.publicId);
+          const membership = (membershipsByMember.get(memberId) ?? [])
+            .map((candidate) => ({ candidate, status: statusOfMembership(candidate, today) }))
+            .sort((left, right) => (membershipRank[left.status] ?? 5) - (membershipRank[right.status] ?? 5) || stringValue(right.candidate.endDate).localeCompare(stringValue(left.candidate.endDate)))[0]?.candidate;
+          const branchId = optionalString(value.homeBranchId);
+          const branch = branchId ? branchById.get(branchId) : undefined;
+          const memberStatus = validMemberStatus(stringValue(value.status, "active"));
+          const plan = membership ? plansById.get(stringValue(membership.planId)) : undefined;
+          return {
+            id: memberId,
+            memberNumber: stringValue(value.memberNumber, memberId),
+            name: stringValue(value.fullName, stringValue(value.memberNumber, memberId)),
+            status: memberStatus,
+            ...(branchId ? { branchId } : {}),
+            ...(branch ? { branchName: branch.name } : {}),
+            ...(membership ? { membershipStatus: statusOfMembership(membership, today), planName: optionalString(plan?.name), membershipEndDate: optionalString(membership.endDate) } : {}),
+            ...(optionalString(value.createdAt) ? { joinedAt: optionalString(value.createdAt) } : {}),
+          };
+        });
+
+      const userById = new Map(staffUsers.flatMap((user) => user ? [[String(user._id), user], [publicUserId(user), user]] : []));
+      const accountStatus = (membership: typeof membershipRows[number], user: NonNullable<typeof staffUsers[number]>): "active" | "invited" | "deactivated" => {
+        if (!membership.active || membership.invitationStatus === "revoked" || user.status === "deactivated") return "deactivated";
+        if (membership.invitationStatus === "pending" || user.status === "invited") return "invited";
+        return "active";
+      };
+      staff = membershipRows.flatMap((membership, index) => {
+        const user = staffUsers[index] ? userById.get(String(staffUsers[index]!._id)) : undefined;
+        if (!user) return [];
+        const branchScope = membership.branchScope ?? (membership.role === "owner" || membership.role === "manager" ? "all" : "selected");
+        const assignedBranches = membership.branchIds.map((branchId) => branchById.get(String(branchId))).filter((branch): branch is typeof branchRows[number] => Boolean(branch));
+        const branchIds = assignedBranches.map((branch) => publicBranchId(branch));
+        const branchNames = assignedBranches.map((branch) => branch.name);
+        const invitationStatus = membership.invitationStatus ?? (user.status === "invited" ? "pending" : user.status === "active" ? "accepted" : undefined);
+        return [{
+          id: publicUserId(user),
+          name: user.fullName,
+          email: user.email,
+          role: toFrontendRole(membership.role),
+          status: accountStatus(membership, user),
+          branchScope,
+          branchIds,
+          branchNames,
+          ...(invitationStatus ? { invitationStatus } : {}),
+          joinedAt: utcIso(membership.createdAt),
+        }];
+      });
+      const configuredPlan = planRows.find((plan) => stringValue(data(plan).name) === effectivePlan);
       const configuredStaffLimit = configuredPlan ? data(configuredPlan).staff : undefined;
       if (typeof configuredStaffLimit === "number" && Number.isFinite(configuredStaffLimit)) staffLimit = configuredStaffLimit;
+
+      // The recurring amount is the same catalog price and annual formula the
+      // subscription clock invoices with, so this panel can never disagree
+      // with the ledger it summarizes.
+      const configuredPrice = configuredPlan ? data(configuredPlan).priceMinor : undefined;
+      if (typeof configuredPrice === "number" && Number.isSafeInteger(configuredPrice) && configuredPrice >= 0) {
+        recurringAmountMinor = termPriceMinor(configuredPrice, billingInterval(organization.billingInterval));
+      }
+      invoices = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
+        .map((row) => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
+
+      // Public-page review facts: after the first self-serve publish, tenant
+      // drafts wait here for a platform admin to review and publish them.
+      const profileDraft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
+      const profileDraftValue = profileDraft ? data(profileDraft.data) : undefined;
+      publicPage = {
+        publishedVersion: booleanValue(gym.profilePublished, false) ? numberValue(gym.profileVersion, 0) : 0,
+        ...(profileDraftValue ? {
+          draftVersion: numberValue(profileDraftValue.version),
+          draftStatus: stringValue(profileDraftValue.status, "draft"),
+          draftUpdatedAt: optionalString(profileDraftValue.updatedAt),
+        } : {}),
+      };
 
       const directActivity = await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "platform_gym").eq("entityPublicId", gymId)).collect();
       const applicationId = optionalString(gym.applicationId);
@@ -3023,8 +5624,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       activity = targetActivity.map((event) => ({ id: event.publicId, action: event.action, summary: event.summary, actorName: event.actorName, occurredAt: utcIso(event.occurredAt) }));
     }
 
-    const status = rawStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
-    const plan = rawPlan as "Starter" | "Growth" | "Pro" | "Enterprise";
+    const status = effectiveStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
+    const plan = effectivePlan as "Starter" | "Growth" | "Pro" | "Enterprise";
+    const logoUrl = organization ? await platformGymLogoUrl(ctx, organization, gym) : undefined;
     return buildPlatformGymDetail({
       gym: {
         id: gymId,
@@ -3033,8 +5635,12 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         accent: stringValue(gym.accent, "#1b1a15"),
         subscriptionStatus: status,
         rivetPlan: plan,
-        isPublic: booleanValue(gym.isPublic),
+        isPublic: Boolean(organization && (status === "active" || status === "trial") && booleanValue(gym.isPublic)),
+        isArchived: Boolean(organization?.archivedAt || gym.isArchived),
+        archivedAt: organization?.archivedAt ?? validSubscriptionTimestamp(gym.archivedAt),
+        archiveReason: organization?.archiveReason ?? optionalString(gym.archiveReason),
       },
+      logoUrl,
       organization: organization
         ? {
             id: publicOrganizationId(organization),
@@ -3043,17 +5649,26 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
             currency: organization.currency,
             timezone: organization.timezone,
             createdAt: organization.createdAt,
-            subscriptionPlan: organization.subscriptionPlan,
+            subscriptionPlan: plan,
+            billingInterval: organization.billingInterval ?? "monthly",
             subscriptionStartedAt: organization.subscriptionStartedAt,
             trialEndsAt: organization.trialEndsAt,
             currentPeriodEndsAt: organization.currentPeriodEndsAt,
             cancelledAt: organization.cancelledAt,
             subscriptionStatusReason: organization.subscriptionStatusReason,
+            archivedAt: organization.archivedAt,
+            archiveReason: organization.archiveReason,
           }
         : undefined,
       branches,
+      members,
+      staff,
       owner,
+      agreement,
       usage: { memberCount, activeStaffCount, staffLimit, automationRuleCount, paymentTransactionCount },
+      recurringAmountMinor,
+      invoices,
+      publicPage,
       activity,
     });
   }
@@ -3062,6 +5677,40 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
+    case "savedViews.list":
+      return await listSavedViews(ctx, actor, stringValue(input.surface));
+    case "bulk.jobs":
+      return await bulkOperationJobs(ctx, actor);
+    case "exports.list": {
+      const jobs = (await recordsOf(ctx, actor, "exportJob"))
+        .map((record) => data(record.data))
+        .filter((job) => stringValue(job.requestedById) === publicUserId(actor.user))
+        .sort((left, right) => stringValue(right.createdAt).localeCompare(stringValue(left.createdAt)));
+      return jobs.map(exportJobView);
+    }
+    case "workspace.search":
+      return await workspaceSearch(ctx, actor, input);
+    case "workspace.recents": {
+      const rows = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_viewed", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).order("desc").take(12);
+      return rows.map(recentWorkspaceItemView);
+    }
+    case "workspace.pins": {
+      const rows = await ctx.db.query("pinnedWorkspaceItems").withIndex("by_user_organization", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).collect();
+      return rows.sort((left, right) => left.position - right.position || left.createdAt - right.createdAt).map(pinnedWorkspaceItemView);
+    }
+    case "members.import.list": {
+      requirePermission(actor, "members.read");
+      const imports = (await recordsOf(ctx, actor, "memberImport")).map((record) => data(record.data)).sort((left, right) => stringValue(right.createdAt).localeCompare(stringValue(left.createdAt)));
+      return imports.slice(0, 25).map((value) => memberImportView(value, false));
+    }
+    case "members.import.get": {
+      requirePermission(actor, "members.read");
+      return memberImportView(data((await recordOf(ctx, actor, "memberImport", recordId(input.importId))).data), true);
+    }
+    case "duplicates.list":
+      return await duplicateCasePage(ctx, actor, input);
+    case "duplicates.get":
+      return await duplicateCase(ctx, actor, recordId(input.caseId));
     case "support.list": {
       const records = await recordsOf(ctx, actor, "supportCase");
       const visible = actor.role === "owner" || actor.role === "manager"
@@ -3072,14 +5721,53 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "settings.get": {
       const branches = await accessibleBranches(ctx, actor);
       const settings = await settingsData(ctx, actor);
+      const brand = await brandKitView(ctx, actor.organization);
       return {
-        organization: organizationView(actor.organization),
+        organization: { ...organizationView(actor.organization), brand },
+        brand,
         branches: branches.map((branch) => branchView(branch, orgId)),
         paymentMethods: settings.paymentMethods,
         roles: await roleViews(ctx, actor),
         notifications: settings.notifications,
         operationalPolicies: settings.operationalPolicies,
+        workspace: await workspaceAccessData(ctx, actor),
       };
+    }
+    case "workspace.access":
+      return await workspaceAccessData(ctx, actor);
+    case "workspace.entitlements": {
+      const access = await workspaceAccessData(ctx, actor);
+      return access.entitlements;
+    }
+    case "workspace.preferences": {
+      const access = await workspaceAccessData(ctx, actor);
+      return access.preferences;
+    }
+    case "messaging.status": {
+      const resolution = resolveMessagingMode();
+      const settings = (await recordsOf(ctx, actor, "settings"))[0];
+      const notifications = data(data(settings?.data).notifications);
+      return {
+        mode: resolution.mode,
+        provider: resolution.provider,
+        whatsappReady: resolution.whatsappReady,
+        sandboxConfigured: resolution.sandboxConfigured,
+        allowlistSize: resolution.allowlistSize,
+        warning: resolution.warning,
+        gymDeliveryMode: stringValue(notifications.automationDeliveryMode, "sandbox"),
+        quietHoursStart: stringValue(notifications.quietHoursStart, "22:00"),
+        quietHoursEnd: stringValue(notifications.quietHoursEnd, "08:00"),
+        catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION,
+      };
+    }
+    case "messaging.templates.catalogue":
+      return MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] }));
+    case "workspace.module": {
+      const key = stringValue(input.moduleKey);
+      if (!WORKSPACE_MODULE_CATALOG.some((module) => module.key === key)) domainError("VALIDATION_ERROR", "This feature could not be found.", { correlationId: actor.correlationId, details: { module: key } });
+      const access = await workspaceAccessData(ctx, actor);
+      requireWorkspaceModule(actor, access, key as WorkspaceModuleKey);
+      return arrayValue(access.modules).map(data).find((item) => item.key === key);
     }
     case "settings.operationalEmail.get": {
       requirePermission(actor, "settings.manage");
@@ -3087,10 +5775,33 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const updatedBy = settings ? await ctx.db.get(settings.updatedByUserId) : undefined;
       const confirmedBy = settings?.ownerConfirmedByUserId ? await ctx.db.get(settings.ownerConfirmedByUserId) : undefined;
       const providerConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
-      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: Boolean(settings?.ownerConfirmedAt), ownerConfirmedAt: settings?.ownerConfirmedAt ? utcIso(settings.ownerConfirmedAt) : undefined, ownerConfirmedBy: confirmedBy?.fullName, updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
+      return { enabledKinds: settings?.enabledKinds ?? [], availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: resolveEmailMode().mode !== "off" && providerConfigured, deliveryMode: resolveEmailMode().mode, deliveryModeSource: resolveEmailMode().source, deliveryModeWarning: resolveEmailMode().warning, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: Boolean(settings?.ownerConfirmedAt), ownerConfirmedAt: settings?.ownerConfirmedAt ? utcIso(settings.ownerConfirmedAt) : undefined, ownerConfirmedBy: confirmedBy?.fullName, updatedAt: settings ? utcIso(settings.updatedAt) : undefined, updatedBy: updatedBy?.fullName, reason: settings?.reason };
     }
+    case "settings.brand.get":
+      requirePermission(actor, "settings.manage");
+      return await brandKitView(ctx, actor.organization);
     case "branches.list":
       return (await accessibleBranches(ctx, actor)).map((branch) => branchView(branch, orgId));
+    case "zones.list": {
+      const requestedBranchId = optionalString(input.branchId);
+      const branches = requestedBranchId
+        ? [await branchByPublicId(ctx, actor.organization._id, requestedBranchId)]
+        : await accessibleBranches(ctx, actor);
+      const validBranches = branches.filter((branch): branch is Branch => Boolean(branch));
+      for (const branch of validBranches) assertBranchAccess(actor, branch);
+      if (requestedBranchId && validBranches.length === 0) domainError("NOT_FOUND", "Branch not found.", { correlationId: actor.correlationId });
+      const rows = (await Promise.all(validBranches.map((branch) => ctx.db.query("zones").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).collect()))).flat();
+      const branchIds = new Map(validBranches.map((branch) => [String(branch._id), publicBranchId(branch)]));
+      const includeArchived = input.includeArchived === true;
+      return rows
+        .filter((zone) => includeArchived || zone.status === "active")
+        .sort((left, right) => left.code.localeCompare(right.code))
+        .map((zone) => {
+          const branchId = branchIds.get(String(zone.branchId));
+          if (!branchId) domainError("NOT_FOUND", "Zone branch not found.", { correlationId: actor.correlationId });
+          return zoneView(zone, orgId, branchId);
+        });
+    }
     case "profiles.gym.get": {
       requirePermission(actor, "profiles.manage");
       return await currentGymProfile(ctx, actor);
@@ -3117,13 +5828,12 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "pt.workspace": {
       const canReadReports = hasPermission(actor, "pt.reports.read");
       if (!canReadReports && !hasPermission(actor, "pt.schedule.self")) requirePermission(actor, "pt.reports.read");
-      const [allTrainers, allPackages, allBookings, allOrders, entitlements, paymentRows] = await Promise.all([
+      const [allTrainers, allPackages, allBookings, allOrders, entitlements] = await Promise.all([
         ctx.db.query("ptTrainerProfiles").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
         ctx.db.query("ptPackages").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
         ctx.db.query("ptBookings").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id)).collect(),
         ctx.db.query("ptPackageOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
         ctx.db.query("ptEntitlements").withIndex("by_expiry", (q) => q.eq("organizationId", actor.organization._id).eq("status", "active")).collect(),
-        ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "payment")).collect(),
       ]);
       const ownTrainer = allTrainers.find((item) => item.userId === actor.user._id);
       const visibleTrainers = canReadReports ? allTrainers : ownTrainer ? [ownTrainer] : [];
@@ -3131,9 +5841,17 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const visibleBookings = allBookings.filter((item) => visibleTrainerIds.has(item.trainerProfileId) && (actor.branchScope === "all" || actor.branchIds.includes(item.branchId)));
       const visibleEntitlementIds = new Set(visibleBookings.map((item) => item.entitlementId));
       const visibleEntitlements = canReadReports ? entitlements : entitlements.filter((item) => visibleEntitlementIds.has(item._id));
-      const ptChargeIds = new Set(allOrders.map((order) => order.chargePublicId));
-      const packageRevenue = canReadReports ? paymentRows.map((row) => data(row.data)).filter((payment) => ptChargeIds.has(stringValue(payment.chargeId)) && payment.status !== "voided").reduce((total, payment) => total + amountOf(payment.amount), 0) : 0;
+      // Package revenue is what the PT charges have actually collected, net of
+      // refunds and voids, which the charge already carries as paidAmount. One
+      // indexed lookup per order replaces scanning every payment the gym has
+      // ever taken on each realtime update of this workspace.
+      const ptChargeIds = [...new Set(allOrders.map((order) => order.chargePublicId))];
+      const packageRevenue = canReadReports
+        ? (await Promise.all(ptChargeIds.map((chargeId) => recordOfOptional(ctx, actor, "charge", chargeId)))).reduce((total, charge) => total + amountOf(data(charge?.data).paidAmount), 0)
+        : 0;
+      const ptPolicy = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
       return {
+        cancellationCutoffHours: numberValue(ptPolicy.cancellationCutoffHours, 12),
         trainers: await Promise.all(visibleTrainers.map((item) => ptTrainerView(ctx, actor.organization, item))),
         packages: canReadReports ? await Promise.all(allPackages.map((item) => ptPackageView(ctx, actor.organization, item))) : [],
         bookings: await Promise.all(visibleBookings.sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, actor.organization, item))),
@@ -3174,7 +5892,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "members.read");
       const branchId = optionalString(input.branchId);
       const records = branchId ? await recordsOfBranch(ctx, actor, "member", branchId) : await memberRecords(ctx, actor);
-      let candidateValues = records.map((record) => data(record.data));
+      let candidateValues = records.map((record) => data(record.data)).filter((member) => !optionalString(member.mergedIntoMemberId));
       if (branchId) candidateValues = candidateValues.filter((member) => member.homeBranchId === branchId);
       if (input.status) candidateValues = candidateValues.filter((member) => stringValue(member.status, "active") === input.status);
       candidateValues = candidateValues.filter((member) => matchesSearch([member.fullName, member.fullNameAr, member.phone, member.memberNumber, member.email], optionalString(input.search)));
@@ -3193,28 +5911,34 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "members.get": {
       requirePermission(actor, "members.read");
-      const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
-      return await toMemberDetail(ctx, actor, data(record.data));
+      const requested = await recordOf(ctx, actor, "member", recordId(input.memberId));
+      const mergedIntoMemberId = optionalString(data(requested.data).mergedIntoMemberId);
+      const record = mergedIntoMemberId ? await recordOf(ctx, actor, "member", mergedIntoMemberId) : requested;
+      return await toMemberDetail(ctx, actor, { ...data(record.data), redirectedFromMemberId: mergedIntoMemberId ? requested.publicId : undefined });
     }
     case "members.duplicates": {
       requirePermission(actor, "members.read");
-      const phone = normalize(optionalString(input.phone));
+      const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+      const phone = canonicalPhoneKey(optionalString(input.phone), callingCode);
       const email = normalize(optionalString(input.email));
       const records = await memberRecords(ctx, actor);
       return records
         .map((record) => data(record.data))
         .filter((member) => member.status !== "archived")
         .flatMap((member) => {
-          if (phone && normalize(optionalString(member.phone)) === phone) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "phone" }];
+          if (phone && canonicalPhoneKey(optionalString(member.phone), callingCode) === phone) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "phone" }];
           if (email && normalize(optionalString(member.email)) === email) return [{ memberId: member.id, fullName: member.fullName, memberNumber: member.memberNumber, matchedOn: "email" }];
           return [];
         });
     }
+    case "members.followup_context":
+      return await memberFollowUpContextData(ctx, actor, recordId(input.memberId));
     case "members.timeline": {
       requirePermission(actor, "members.read");
       const memberId = recordId(input.memberId);
       await recordOf(ctx, actor, "member", memberId);
-      let events = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.memberId === memberId);
+      const identityIds = await memberIdentityIds(ctx, actor, memberId);
+      let events = (await recordsOfMemberIdentity(ctx, actor, memberId, "timeline")).map((record) => data(record.data)).filter((event) => identityIds.includes(stringValue(event.memberId)));
       if (Array.isArray(input.types)) events = events.filter((event) => arrayValue(input.types).includes(event.type));
       events.sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
       return page(events, input);
@@ -3223,6 +5947,20 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "members.read");
       const record = await recordOf(ctx, actor, "plan", recordId(input.planId));
       return await toPlan(ctx, actor, data(record.data));
+    }
+    case "memberships.freeze_requests.list": {
+      requirePermission(actor, "memberships.freeze");
+      const status = optionalString(input.status);
+      const requests = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest")).collect();
+      const visibleMembershipIds = actor.branchScope === "all"
+        ? null
+        : new Set((await membershipRecords(ctx, actor)).map((record) => record.publicId));
+      return requests
+        .filter((row) => actor.branchScope === "all" || (row.branchId ? actor.branchIds.includes(row.branchId) : visibleMembershipIds?.has(stringValue(data(row.data).membershipId))))
+        .map((row) => data(row.data))
+        .filter((value) => !status || stringValue(value.status) === status)
+        .sort((left, right) => stringValue(right.requestedAt).localeCompare(stringValue(left.requestedAt)))
+        .slice(0, 100);
     }
     case "memberships.list": {
       requirePermission(actor, "members.read");
@@ -3286,8 +6024,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "crm.read");
       const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const leadId = stringValue(data(lead.data).id);
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).filter((event) => event.leadId === leadId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((record) => offerProjection(data(record.data))).filter((offer) => offer.leadId === leadId);
+      const activities = (await recordsOfLead(ctx, actor.organization._id, leadId, "timeline")).map((record) => data(record.data)).filter((event) => event.leadId === leadId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, leadId, "offer")).map((record) => offerProjection(data(record.data))).filter((offer) => offer.leadId === leadId);
       const trialBooking = await linkedTrialBooking(ctx, actor, leadId);
       return { ...(await toLeadSummary(ctx, actor, data(lead.data))), notes: optionalString(data(lead.data).notes), activities, offers, ...(trialBooking ? { trialBooking: data(trialBooking.data) } : {}) };
     }
@@ -3331,6 +6069,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       );
       if (input.status) items = items.filter((task) => task.status === input.status);
       if (input.ownerId) items = items.filter((task) => task.ownerId === input.ownerId);
+      if (input.memberId) items = items.filter((task) => task.memberId === input.memberId);
+      if (input.leadId) items = items.filter((task) => task.leadId === input.leadId);
       if (input.overdueOnly) items = items.filter((task) => task.status === "open" && stringValue(task.dueAt) < isoNow());
       if (input.dueBefore) items = items.filter((task) => stringValue(task.dueAt) <= stringValue(input.dueBefore));
       items = sortRecords(items, input.sort ?? "dueAt", (task, key) => stringValue(task[key]));
@@ -3411,6 +6151,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       items.sort((a, b) => numberValue(a.daysUntilExpiry) - numberValue(b.daysUntilExpiry));
       return page(items, input);
     }
+    case "retention.queue": {
+      const items = await retentionQueueItems(ctx, actor, input);
+      return page(items, input);
+    }
     case "checkins.preview": {
       requirePermission(actor, "members.read");
       const branchId = recordId(input.branchId);
@@ -3419,13 +6163,30 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (!query) return { found: false, decision: "blocked", reasonCodes: [], message: "Type a name, phone, or member number." };
       if (query.length < 3) return { found: false, decision: "blocked", reasonCodes: [], message: "Keep typing — at least 3 characters." };
       const entryPass = await resolveEntryPass(ctx, actor, query, branchId);
-      const members = await memberRecords(ctx, actor);
-      const member = entryPass
-        ? members.map((record) => data(record.data)).find((item) => item.id === entryPass.payload.memberId || item.memberNumber === data(entryPass.membership.data).memberNumber)
-        : query.startsWith(`${ENTRY_PASS_PREFIX}.`)
-          ? undefined
-          : members.map((record) => data(record.data)).find((item) => matchesSearch([item.fullName, item.fullNameAr, item.phone, item.memberNumber, item.email], query));
-      if (!member) return { found: false, decision: "blocked", reasonCodes: [], message: `No member matches “${query}”.` };
+      // A profile merged into another one must never be the record the desk
+      // acts on: its survivor carries the membership and the balance.
+      const members = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter((item) => !optionalString(item.mergedIntoMemberId));
+      let member: Data | undefined;
+      let candidates: Data[] = [];
+      if (entryPass) {
+        member = members.find((item) => item.id === entryPass.payload.memberId || item.memberNumber === data(entryPass.membership.data).memberNumber);
+      } else if (!query.startsWith(`${ENTRY_PASS_PREFIX}.`)) {
+        const lookup = resolveMemberLookup(members.map((item) => ({ id: stringValue(item.id), memberNumber: stringValue(item.memberNumber), fullName: stringValue(item.fullName), fullNameAr: optionalString(item.fullNameAr), phone: stringValue(item.phone), email: optionalString(item.email), status: stringValue(item.status, "active"), record: item })), query, organizationPhoneCountryCallingCode(actor.organization));
+        member = lookup.member?.record;
+        candidates = lookup.candidates.map((candidate) => candidate.record);
+      }
+      if (!member) {
+        if (candidates.length > 1) {
+          return {
+            found: false,
+            decision: "blocked",
+            reasonCodes: [],
+            message: `${candidates.length} members match “${query}”. Choose the right person to continue.`,
+            candidates: await toMemberSummaries(ctx, actor, candidates.slice(0, MAX_LOOKUP_CANDIDATES)),
+          };
+        }
+        return { found: false, decision: "blocked", reasonCodes: [], message: `No member matches “${query}”.` };
+      }
       return await evaluateCheckIn(ctx, actor, member, branchId, false);
     }
     case "checkins.list": {
@@ -3460,8 +6221,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (input.memberId) items = items.filter((item) => item.memberId === input.memberId);
       if (input.method) items = items.filter((item) => item.method === input.method);
       if (input.type) items = items.filter((item) => item.type === input.type);
-      if (input.from) items = items.filter((item) => stringValue(item.occurredAt) >= input.from);
-      if (input.to) items = items.filter((item) => stringValue(item.occurredAt) <= `${input.to}T23:59:59.999Z`);
+      const transactionTimezone = actor.organization.timezone || TZ_FALLBACK;
+      if (input.from || input.to) items = items.filter((item) => instantFallsInTenantDateRange(stringValue(item.occurredAt), transactionTimezone, optionalString(input.from), optionalString(input.to)));
       items = items.filter((item) => matchesSearch([item.memberName, item.memberNumber, item.receiptNumber], optionalString(input.search)));
       items = sortRecords(items, input.sort ?? "-occurredAt", (item, key) => key === "amount" ? amountOf(item.amount) : stringValue(item[key]));
       return page(items, input);
@@ -3495,6 +6256,56 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       requirePermission(actor, "automations.manage");
       const rules = (await recordsOf(ctx, actor, "automationRule")).map((record) => data(record.data));
       return rules;
+    }
+    case "automations.monitoring": {
+      requirePermission(actor, "automations.manage");
+      const rules = (await recordsOf(ctx, actor, "automationRule")).map((record) => data(record.data));
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const executions = (await recordsOf(ctx, actor, "automationExecution"))
+        .map((record) => data(record.data))
+        .filter((execution) => {
+          const occurredAt = Date.parse(stringValue(execution.executedAt));
+          return Number.isFinite(occurredAt) && occurredAt >= cutoff;
+        });
+      const statuses = executions.map((execution) => stringValue(execution.status));
+      const globallyPaused = automationsGloballyPaused();
+      const emailConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
+      const messaging = resolveMessagingMode();
+      const whatsappConfigured = messaging.provider === "twilio" && messaging.whatsappReady;
+      return {
+        globallyPaused,
+        pauseReason: globallyPaused ? AUTOMATIONS_PAUSE_REASON : "Automation delivery is enabled for this environment.",
+        ruleCount: rules.length,
+        persistedEnabledCount: rules.filter((rule) => rule.enabled === true).length,
+        executionsLast30Days: executions.length,
+        successCount: statuses.filter((status) => ["success", "completed"].includes(status)).length,
+        suppressedCount: statuses.filter((status) => ["suppressed", "skipped_duplicate"].includes(status)).length,
+        retryCount: statuses.filter((status) => status === "retrying").length,
+        failureCount: statuses.filter((status) => status === "failed").length,
+        providers: [
+          {
+            key: "internal_tasks",
+            label: "Internal tasks and manager alerts",
+            configured: true,
+            live: !globallyPaused,
+            detail: globallyPaused ? "Configured, but held by the global pause." : "Ready for internal task and notification actions.",
+          },
+          {
+            key: "email",
+            label: "Operational email",
+            configured: emailConfigured,
+            live: !globallyPaused && emailConfigured && process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true",
+            detail: emailConfigured ? "Provider credentials are configured; delivery still follows the global and operational-email gates." : "Resend credentials are not configured.",
+          },
+          {
+            key: "sms_whatsapp",
+            label: "WhatsApp",
+            configured: whatsappConfigured,
+            live: !globallyPaused && whatsappConfigured && messaging.mode === "live",
+            detail: whatsappConfigured ? `WhatsApp sender configured; RIVET messaging mode is ${messaging.mode}.` : "No WhatsApp provider is connected. Queued messages cannot leave RIVET.",
+          },
+        ],
+      };
     }
     case "automations.rule": {
       requirePermission(actor, "automations.manage");
@@ -3546,10 +6357,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "approvals.list": {
       requirePermission(actor, "audit.read");
       let rows = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").collect();
-      if (actor.branchScope === "selected") rows = rows.filter((row) => !row.branchId || actor.branchIds.includes(row.branchId));
+      if (actor.branchScope === "selected") rows = rows.filter((row) => (!row.branchId && !row.destinationBranchId) || actor.branchIds.includes(row.branchId!) || actor.branchIds.includes(row.destinationBranchId!));
       const reviews = await recordsOf(ctx, actor, "approvalReview");
       const reviewedIds = new Set(reviews.map((review) => optionalString(data(review.data).auditEventId)).filter(Boolean));
-      return await Promise.all(rows.filter((row) => row.approvalStatus === "pending" && !reviewedIds.has(row.publicId)).map(async (row) => ({ id: row.publicId, organizationId: orgId, branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined, actorId: row.actorPublicId, actorName: row.actorName, actorRole: row.actorRole === "member" ? "member" : frontendRole(row.actorRole), category: row.category, action: row.action, entityType: row.entityType, entityId: row.entityPublicId, entityLabel: row.entityLabel, summary: row.summary, reason: row.reason, before: row.before, after: row.after, approvalStatus: row.approvalStatus, correlationId: row.correlationId, occurredAt: utcIso(row.occurredAt) })));
+      return await Promise.all(rows.filter((row) => row.approvalStatus === "pending" && !reviewedIds.has(row.publicId)).map(async (row) => ({ id: row.publicId, organizationId: orgId, branchId: row.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.branchId) : undefined, destinationBranchId: row.destinationBranchId ? await publicBranchIdFromId(ctx, actor.organization._id, row.destinationBranchId) : undefined, actorId: row.actorPublicId, actorName: row.actorName, actorRole: row.actorRole === "member" ? "member" : frontendRole(row.actorRole), category: row.category, action: row.action, entityType: row.entityType, entityId: row.entityPublicId, entityLabel: row.entityLabel, summary: row.summary, reason: row.reason, before: row.before, after: row.after, approvalStatus: row.approvalStatus, correlationId: row.correlationId, occurredAt: utcIso(row.occurredAt) })));
     }
     case "users.list": {
       if (!hasPermission(actor, "users.manage") && !hasPermission(actor, "crm.assign")) requirePermission(actor, "users.manage");
@@ -3558,7 +6369,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       for (const user of users) {
         const membership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
         if (!membership) continue;
-        const row: Data = { id: publicUserId(user), organizationId: orgId, name: user.fullName, email: user.email, phone: user.phone ?? "", role: frontendRole(membership.role), branchScope: membership.branchScope ?? (membership.role === "owner" || membership.role === "manager" ? "all" : "selected"), branchIds: await Promise.all(membership.branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: user.status ?? (membership.invitationStatus === "pending" ? "invited" : "active"), invitedAt: membership.invitedAt ? utcIso(membership.invitedAt) : undefined };
+        const row: Data = { id: publicUserId(user), organizationId: orgId, name: user.fullName, email: user.email, phone: user.phone ?? "", role: frontendRole(membership.role), branchScope: membership.branchScope ?? (membership.role === "owner" || membership.role === "manager" ? "all" : "selected"), branchIds: await Promise.all(membership.branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: organizationUserStatus(user, membership), invitedAt: membership.invitedAt ? utcIso(membership.invitedAt) : undefined };
         output.push(row);
       }
       const filtered = output.filter((user) => (!input.role || user.role === input.role) && (!input.status || user.status === input.status) && matchesSearch([user.name, user.email, user.phone], optionalString(input.search)));
@@ -3566,6 +6377,61 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "dashboard":
       return await dashboardData(ctx, actor, input);
+    case "dashboard.brief":
+      return await operatingBriefData(ctx, actor, input);
+    case "operations.products.list":
+    case "operations.suppliers.list":
+    case "operations.inventory.list":
+    case "operations.stock_movements.list":
+    case "operations.low_stock.list":
+    case "operations.purchase_orders.list":
+    case "operations.facility_tasks.list":
+    case "operations.equipment_assets.list":
+    case "operations.equipment_issues.list":
+    case "operations.equipment_work_orders.list":
+    case "operations.equipment.recommendation":
+      return await operationsQuery(ctx, actor, operation, input);
+    case "operations.payables.list":
+    case "operations.payables.export":
+    case "operations.payables.reconciliation":
+    case "operations.supplier_payments.list":
+    case "operations.supplier_payment.get":
+      return await payablesQuery(ctx, actor, operation, input);
+    case "classes.calendar":
+    case "classes.sessions.list":
+    case "classes.occurrences.list":
+    case "classes.coaches.list":
+      return await classesQuery(ctx, actor, operation, input);
+    case "checklists.assignees.list":
+    case "checklists.templates.list":
+    case "checklists.day":
+      return await checklistsQuery(ctx, actor, operation, input);
+    case "analytics.peak_hours":
+    case "analytics.class_utilization":
+    case "analytics.retention":
+    case "analytics.renewal_forecast":
+    case "analytics.collections":
+    case "analytics.crm_funnel":
+    case "analytics.control_trends":
+      return await analyticsQuery(ctx, actor, operation, input);
+    case "accounting.accounts.list":
+    case "finance.accounts.list":
+    case "accounting.periods.list":
+    case "finance.periods.list":
+    case "accounting.journal_entries.list":
+    case "finance.journal_entries.list":
+    case "accounting.journal_entries.get":
+    case "finance.journal_entries.get":
+    case "accounting.trial_balance":
+    case "finance.trial_balance":
+    case "accounting.source_postings.list":
+    case "finance.source_postings.list":
+      return await accountingQuery(ctx, actor, operation, input);
+    case "reports.income_statement":
+    case "reports.balance_sheet":
+    case "reports.cashflow_statement":
+    case "reports.gm_analysis":
+      return await managementReportQuery(ctx, actor, operation, input);
     default:
       domainError("NOT_FOUND", `Unknown query operation ${operation}.`, { correlationId: actor.correlationId });
   }
@@ -3609,7 +6475,10 @@ async function evaluateCheckIn(ctx: ReadContext, actor: ActorContext, member: Da
     decision = "blocked"; codes.push("NO_ACTIVE_MEMBERSHIP"); message = "No membership on file. Sell or renew a membership to allow entry.";
   } else {
     const status = statusOfMembership(membership, today);
-    if (["expired", "scheduled", "cancelled"].includes(status)) {
+    if (status === "scheduled") {
+      // A future term is not an expired one: the desk must not be told to renew a membership the member already bought.
+      decision = "blocked"; codes.push("MEMBERSHIP_NOT_STARTED"); message = `Membership starts on ${stringValue(membership.startDate)}. Entry before then needs a manager override.`;
+    } else if (["expired", "cancelled"].includes(status)) {
       decision = "blocked"; codes.push("MEMBERSHIP_EXPIRED"); message = status === "cancelled" ? "Membership was cancelled. Entry requires a manager override." : "Membership is not currently valid. Renew to allow entry.";
     } else if (status === "frozen") {
       decision = "blocked"; codes.push("MEMBERSHIP_FROZEN"); message = "Membership is frozen. Unfreeze or ask a manager to override.";
@@ -3628,13 +6497,13 @@ async function evaluateCheckIn(ctx: ReadContext, actor: ActorContext, member: Da
         if (outstanding && balancePolicy !== "allow") codes.push("OUTSTANDING_BALANCE");
         if (outstanding && balancePolicy === "block") {
           decision = "blocked";
-          message = "Entry blocked because this member has an outstanding balance.";
+          message = "Entry blocked because this member has an unpaid amount.";
         }
         if (codes.length > 0) {
           if (decision !== "blocked") decision = "warning";
           const parts: string[] = [];
           if (codes.includes("EXPIRES_SOON")) parts.push(daysLeft === 0 ? "membership expires today" : `membership expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`);
-          if (codes.includes("OUTSTANDING_BALANCE")) parts.push("outstanding balance due");
+          if (codes.includes("OUTSTANDING_BALANCE")) parts.push("unpaid amount due");
           if (decision !== "blocked") message = `Allowed with notice — ${parts.join("; ")}.`;
         }
       }
@@ -3675,6 +6544,19 @@ async function allocateReceipt(ctx: MutationCtx, actor: ActorContext): Promise<{
   return { id: newPublicId(), number };
 }
 
+/**
+ * Whether a payment method moves physical cash through the branch drawer.
+ * "cash" always does; a configured method can opt in through its settings.
+ * Collections, refunds and voids consult the same answer so the drawer story
+ * cannot disagree with itself.
+ */
+async function methodAffectsCashDrawer(ctx: ReadContext, actor: ActorContext, method: string): Promise<boolean> {
+  if (method === "cash") return true;
+  const settings = await settingsData(ctx, actor);
+  const paymentMethod = arrayValue(settings.paymentMethods).map(data).find((item) => item.key === method);
+  return booleanValue(paymentMethod?.affectsCashDrawer);
+}
+
 async function findOpenShift(ctx: ReadContext, actor: ActorContext, branchId: string): Promise<DomainRecord | null> {
   const shifts = await recordsOf(ctx, actor, "shift");
   return shifts.find((record) => {
@@ -3701,7 +6583,7 @@ async function paymentRecord(
     .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "payment.create").eq("key", idempotencyKey))
     .unique();
   if (existing) {
-    if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different payment.", { correlationId: actor.correlationId });
+    if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
     const result = data(existing.result);
     const payment = await recordOf(ctx, actor, "payment", stringValue(result.paymentId));
     const receipt = await recordOf(ctx, actor, "receipt", stringValue(result.receiptId));
@@ -3714,19 +6596,19 @@ async function paymentRecord(
   assertBranchAccess(actor, branch);
   const amount = amountOf(input.amount);
   if (!Number.isSafeInteger(amount) || amount <= 0) domainError("VALIDATION_ERROR", "Payment amount must be greater than zero.", { correlationId: actor.correlationId });
-  if (currencyOf(input.amount, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Payment currency does not match the organization.", { correlationId: actor.correlationId });
+  if (currencyOf(input.amount, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Use your gym’s currency for this payment.", { correlationId: actor.correlationId });
   const chargeRecordsList = await chargeRecords(ctx, actor);
   const requestedChargeId = optionalString(input.chargeId);
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const charge = chargeRecordsList
     .find((record) => requestedChargeId ? record.publicId === requestedChargeId : data(record.data).memberId === memberId && collectibleOutstandingValue(data(record.data), today) > 0);
-  if (!charge) domainError("NO_OUTSTANDING_BALANCE", "No outstanding balance is available for this member.", { correlationId: actor.correlationId });
+  if (!charge) domainError("NO_OUTSTANDING_BALANCE", "No unpaid amount is available for this member.", { correlationId: actor.correlationId });
   const chargeData = data(charge.data);
   if (chargeData.memberId !== memberId) domainError("NOT_FOUND", "Charge not found.", { correlationId: actor.correlationId });
   if (!chargeIsCollectibleValue(chargeData, today)) domainError("VALIDATION_ERROR", `This invoice becomes collectible on ${chargeDueDateValue(chargeData)}.`, { correlationId: actor.correlationId, fieldErrors: { chargeId: ["Upcoming invoices cannot be paid before their due date"] } });
   const outstanding = amountOf(chargeData.outstandingAmount);
   const allocation = paymentAllocation(amount, outstanding);
-  if (!allocation.ok) domainError("VALIDATION_ERROR", allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Payment cannot exceed the outstanding balance." : "Payment amount must be greater than zero.", { correlationId: actor.correlationId, fieldErrors: { amount: [allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Cannot exceed outstanding balance" : "Must be a positive integer"] } });
+  if (!allocation.ok) domainError("VALIDATION_ERROR", allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Payment cannot exceed the unpaid amount." : "Payment amount must be greater than zero.", { correlationId: actor.correlationId, fieldErrors: { amount: [allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Cannot exceed unpaid amount" : "Must be a positive integer"] } });
   const method = stringValue(input.method, "cash");
   const externalReference = optionalString(input.externalReference)?.trim();
   if (["card", "bank_transfer", "cliq"].includes(method) && !externalReference) {
@@ -3768,7 +6650,7 @@ async function paymentRecord(
   const paid = amountOf(chargeData.paidAmount) + amount;
   await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, outstanding - amount), actor.organization.currency), status: paymentStatusForCharge(amountOf(chargeData.total), paid) });
   if (paid >= amountOf(chargeData.total)) await activatePtOrderForCharge(ctx, actor, charge.publicId);
-  await insertTimeline(ctx, actor, { memberId, type: "payment_collected", title: `Payment collected — ${actor.organization.currency} ${(amount / 1000).toFixed(3)} ${method.replace("_", " ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { receiptNumber: allocated.number, receiptId: allocated.id } });
+  await insertTimeline(ctx, actor, { memberId, type: "payment_collected", title: `Payment collected — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} ${method.replace("_", " ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { receiptNumber: allocated.number, receiptId: allocated.id } });
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.create", key: idempotencyKey, requestHash, result: { paymentId: payment.id, receiptId: receipt.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
   const member = data(memberRecord.data);
   await queueOperationalEmail(ctx, {
@@ -3802,7 +6684,7 @@ async function auditPaymentCollection(ctx: MutationCtx, actor: ActorContext, pay
     entityType: "payment",
     entityId: stringValue(payment.id),
     entityLabel: await paymentAuditEntityLabel(ctx, actor, payment),
-    summary: `Collected ${actor.organization.currency} ${(amountOf(payment.amount) / 1000).toFixed(3)} (${stringValue(payment.method).replace("_", " ")})`,
+    summary: `Collected ${actor.organization.currency} ${formatMinorUnits(amountOf(payment.amount), actor.organization.currency)} (${stringValue(payment.method).replace("_", " ")})`,
     after: { amount: amountOf(payment.amount), method: payment.method },
     branchId: optionalString(payment.branchId),
   });
@@ -3810,22 +6692,27 @@ async function auditPaymentCollection(ctx: MutationCtx, actor: ActorContext, pay
 
 async function shiftTotals(ctx: ReadContext, actor: ActorContext, shift: Data): Promise<Data> {
   const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.shiftId === shift.id && payment.status !== "voided");
-  const total = (method: string, type = "payment") => payments.filter((payment) => payment.method === method && payment.type === type).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
+  const isCollection = (payment: Data) => payment.type === "payment" || payment.type === "retail_sale";
+  const total = (method: string, type?: string) => payments.filter((payment) => payment.method === method && (type ? payment.type === type : isCollection(payment))).reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
   const discounts = (await chargeRecords(ctx, actor)).map((record) => data(record.data)).filter((charge) => payments.some((payment) => payment.chargeId === charge.id)).reduce((sum, charge) => sum + amountOf(charge.discount), 0);
-  return { cashPayments: money(total("cash"), actor.organization.currency), cashRefunds: money(total("cash", "refund"), actor.organization.currency), cardPayments: money(total("card"), actor.organization.currency), transferPayments: money(total("bank_transfer") + total("cliq"), actor.organization.currency), otherPayments: money(total("other"), actor.organization.currency), paymentCount: payments.filter((payment) => payment.type === "payment").length, refundCount: payments.filter((payment) => payment.type === "refund").length, discountsTotal: money(discounts, actor.organization.currency) };
+  const supplierCash = await supplierCashShiftMovements(ctx, actor, stringValue(shift.id));
+  return { cashPayments: money(total("cash"), actor.organization.currency), cashRefunds: money(total("cash", "refund"), actor.organization.currency), cardPayments: money(total("card"), actor.organization.currency), transferPayments: money(total("bank_transfer") + total("cliq"), actor.organization.currency), otherPayments: money(total("other"), actor.organization.currency), paymentCount: payments.filter(isCollection).length, refundCount: payments.filter((payment) => payment.type === "refund").length, discountsTotal: money(discounts, actor.organization.currency), supplierCashPayments: money(supplierCash.paidMinor, actor.organization.currency), supplierCashReversals: money(supplierCash.reversedMinor, actor.organization.currency) };
 }
 
 async function dailyReconciliation(ctx: ReadContext, actor: ActorContext, branchId: string, date: string): Promise<Data> {
   const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.branchId === branchId && payment.status !== "voided" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date);
+  const isCollection = (payment: Data) => payment.type === "payment" || payment.type === "retail_sale";
   const methods = ["cash", "card", "bank_transfer", "cliq", "other"];
   const totalsByMethod = methods.map((method) => {
     const rows = payments.filter((payment) => payment.method === method);
-    const collected = rows.filter((payment) => payment.type === "payment").reduce((sum, payment) => sum + amountOf(payment.amount), 0);
+    const collected = rows.filter(isCollection).reduce((sum, payment) => sum + amountOf(payment.amount), 0);
     const refunded = rows.filter((payment) => payment.type === "refund").reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
     return { method, payments: money(collected, actor.organization.currency), refunds: money(refunded, actor.organization.currency), net: signedMoney(collected - refunded, actor.organization.currency), count: rows.length };
   }).filter((item) => item.count > 0);
   const shifts = (await recordsOf(ctx, actor, "shift")).map((record) => data(record.data)).filter((shift) => shift.branchId === branchId && businessDate(stringValue(shift.openedAt), actor.organization.timezone || TZ_FALLBACK) === date);
-  return { branchId, date, totalsByMethod, totalCollected: money(payments.filter((payment) => payment.type === "payment").reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), totalRefunded: money(payments.filter((payment) => payment.type === "refund").reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0), actor.organization.currency), discountsTotal: money(0, actor.organization.currency), shifts, totalVariance: signedMoney(shifts.reduce((sum, shift) => sum + amountOf(shift.variance), 0), actor.organization.currency) };
+  const branchDoc = await branchByPublicId(ctx, actor.organization._id, branchId);
+  const supplierPayments = branchDoc ? await supplierPaymentsForDay(ctx, actor, branchDoc._id, date) : { cashPaidMinor: 0, cashReturnedMinor: 0, totalPaidMinor: 0, count: 0 };
+  return { branchId, date, totalsByMethod, supplierPayments: { cashPaid: money(supplierPayments.cashPaidMinor, actor.organization.currency), cashReturned: money(supplierPayments.cashReturnedMinor, actor.organization.currency), totalPaid: money(supplierPayments.totalPaidMinor, actor.organization.currency), count: supplierPayments.count }, totalCollected: money(payments.filter(isCollection).reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), totalRefunded: money(payments.filter((payment) => payment.type === "refund").reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0), actor.organization.currency), discountsTotal: money(0, actor.organization.currency), shifts, totalVariance: signedMoney(shifts.reduce((sum, shift) => sum + amountOf(shift.variance), 0), actor.organization.currency) };
 }
 
 function parseCsv(value: string): string[][] {
@@ -3861,40 +6748,286 @@ function firstHeader(headers: string[], names: string[]): number {
   return headers.findIndex((header) => names.includes(header));
 }
 
+function validImportDate(value: string | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function importCurrencyDigits(currency: string): number {
+  if (["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"].includes(currency.toUpperCase())) return 3;
+  if (["CLP", "ISK", "JPY", "KRW"].includes(currency.toUpperCase())) return 0;
+  return 2;
+}
+
+function normalizedImportNumber(value: string): string {
+  const digits = "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹";
+  return value
+    .replace(/[٠-٩۰-۹]/g, (character) => String(digits.indexOf(character) % 10))
+    .replace(/٬/g, ",")
+    .replace(/٫/g, ".")
+    .trim();
+}
+
+function normalizedImportGender(value: string | undefined): "male" | "female" | undefined {
+  const normalized = value?.normalize("NFKC").trim().toLocaleLowerCase();
+  if (["male", "m", "man", "men", "ذكر"].includes(normalized ?? "")) return "male";
+  if (["female", "f", "woman", "women", "أنثى", "انثى"].includes(normalized ?? "")) return "female";
+  return undefined;
+}
+
+function importedMoneyMinor(value: string | undefined, currency: string): { amount?: number; error?: string } {
+  if (!value?.trim()) return {};
+  const normalized = normalizedImportNumber(value).replace(/\s/g, "").replace(/,/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return { error: `Enter ${currency} amounts as positive numbers` };
+  const digits = importCurrencyDigits(currency);
+  const [whole, fraction = ""] = normalized.split(".");
+  if (fraction.length > digits) return { error: `${currency} amounts can have at most ${digits} decimal place${digits === 1 ? "" : "s"}` };
+  const amount = Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, "0") || 0);
+  if (!Number.isSafeInteger(amount) || amount < 0) return { error: `Enter a valid ${currency} amount` };
+  return { amount };
+}
+
+function normalizedPlanMapping(value: unknown): Map<string, string> {
+  return new Map(Object.entries(data(value)).flatMap(([sourceName, planId]) => typeof planId === "string" && planId.trim() ? [[normalize(sourceName), planId.trim()]] : []));
+}
+
+function memberImportView(value: Data, includeRows: boolean): Data {
+  const rows = arrayValue(value.rows).map(data);
+  return {
+    id: stringValue(value.id),
+    branchId: stringValue(value.branchId),
+    totalRows: numberValue(value.totalRows, rows.length),
+    validRows: numberValue(value.validRows, rows.filter((row) => row.status === "valid").length),
+    duplicateRows: numberValue(value.duplicateRows, rows.filter((row) => row.status === "duplicate").length),
+    errorRows: numberValue(value.errorRows, rows.filter((row) => row.status === "invalid").length),
+    status: stringValue(value.status, "preview"),
+    cursor: numberValue(value.nextCursor),
+    committedCount: numberValue(value.committedCount),
+    skippedCount: numberValue(value.skippedCount),
+    sourceFileName: optionalString(value.sourceFileName),
+    sourceKind: optionalString(value.sourceKind),
+    sourceHeaders: arrayValue(value.sourceHeaders).map(String),
+    columnMapping: data(value.columnMapping),
+    migrationCutoffDate: optionalString(value.migrationCutoffDate),
+    planMappings: data(value.planMappings),
+    membershipRows: numberValue(value.membershipRows),
+    openingBalanceRows: numberValue(value.openingBalanceRows),
+    historicalEvidenceRows: numberValue(value.historicalEvidenceRows),
+    currency: optionalString(value.currency),
+    undoExpiresAt: optionalString(value.undoExpiresAt),
+    createdAt: stringValue(value.createdAt),
+    completedAt: optionalString(value.completedAt),
+    undoneAt: optionalString(value.undoneAt),
+    undoCursor: numberValue(value.undoCursor),
+    undoArchivedCount: numberValue(value.undoArchivedCount),
+    undoSkippedCount: numberValue(value.undoSkippedCount),
+    ...(includeRows ? { rows } : {}),
+  };
+}
+
 async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
   requirePermission(actor, "members.write");
   const branchId = recordId(input.branchId);
   assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
   const csv = stringValue(input.csv);
   if (!csv.trim()) domainError("VALIDATION_ERROR", "CSV content is required.", { correlationId: actor.correlationId });
+  if (new TextEncoder().encode(csv).byteLength > 5_000_000) domainError("VALIDATION_ERROR", "Member import files must be 5 MB or smaller.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Choose a member file no larger than 5 MB"] } });
   const rows = parseCsv(csv);
   const headers = (rows.shift() ?? []).map(normalizedHeader);
   const nameIndex = firstHeader(headers, ["full_name", "name", "member_name"]);
   const phoneIndex = firstHeader(headers, ["phone", "mobile", "mobile_number"]);
+  const genderIndex = firstHeader(headers, ["gender", "sex", "member_gender"]);
   const emailIndex = firstHeader(headers, ["email", "email_address"]);
-  if (nameIndex < 0 || phoneIndex < 0) domainError("VALIDATION_ERROR", "CSV headers must include full name and phone columns.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Required headers: full_name, phone"] } });
+  const planIndex = firstHeader(headers, ["source_plan_name", "plan", "plan_name", "membership_plan"]);
+  const membershipStartIndex = firstHeader(headers, ["membership_start_date", "membership_start", "start_date"]);
+  const membershipEndIndex = firstHeader(headers, ["membership_end_date", "membership_end", "end_date", "expiry_date"]);
+  const remainingVisitsIndex = firstHeader(headers, ["remaining_visits", "visits_left"]);
+  const freezeStartIndex = firstHeader(headers, ["freeze_start_date", "freeze_start"]);
+  const freezeEndIndex = firstHeader(headers, ["freeze_end_date", "freeze_end"]);
+  const openingBalanceIndex = firstHeader(headers, ["opening_balance", "outstanding_balance"]);
+  const historicalPaidIndex = firstHeader(headers, ["historical_paid_total", "total_paid"]);
+  const historicalPaymentDateIndex = firstHeader(headers, ["historical_payment_date", "last_payment_date"]);
+  const historicalPaymentReferenceIndex = firstHeader(headers, ["historical_payment_reference", "payment_reference"]);
+  if (nameIndex < 0 || phoneIndex < 0 || genderIndex < 0) domainError("VALIDATION_ERROR", "CSV headers must include full name, phone, and gender columns.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Required headers: full_name, phone, gender"] } });
+  if (rows.length > 10_000) domainError("VALIDATION_ERROR", "A single import can contain at most 10,000 members.", { correlationId: actor.correlationId, fieldErrors: { csv: ["Split this file into imports of 10,000 rows or fewer"] } });
+  const migrationCutoffDate = optionalString(input.migrationCutoffDate) ?? todayIn(actor.organization.timezone || TZ_FALLBACK);
+  if (!validImportDate(migrationCutoffDate)) domainError("VALIDATION_ERROR", "Choose a valid migration cutoff date.", { correlationId: actor.correlationId, fieldErrors: { migrationCutoffDate: ["Use YYYY-MM-DD"] } });
+  const planMappings = normalizedPlanMapping(input.planMappings);
+  const planRecords = await recordsOf(ctx, actor, "plan");
+  const plansById = new Map(planRecords.map((record) => [record.publicId, data(record.data)]));
   const existing = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter((member) => member.status !== "archived");
-  const seen = new Set<string>();
+  const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+  const existingByPhone = new Map<string, string[]>();
+  const existingByEmail = new Map<string, string[]>();
+  for (const member of existing) {
+    const memberId = stringValue(member.id);
+    const phoneKey = canonicalPhoneKey(optionalString(member.phone), callingCode);
+    const emailKey = normalize(optionalString(member.email));
+    if (phoneKey) existingByPhone.set(phoneKey, [...(existingByPhone.get(phoneKey) ?? []), memberId]);
+    if (emailKey) existingByEmail.set(emailKey, [...(existingByEmail.get(emailKey) ?? []), memberId]);
+  }
+  const seenPhones = new Set<string>();
+  const seenEmails = new Set<string>();
   const previewRows: Data[] = rows.map((values, index) => {
     const fullName = stringValue(values[nameIndex]).trim();
-    const phone = stringValue(values[phoneIndex]).trim();
-    const email = optionalString(values[emailIndex]);
-    const duplicateMemberIds = existing.filter((member) => normalize(member.phone) === normalize(phone) || (email && normalize(optionalString(member.email)) === normalize(email))).map((member) => stringValue(member.id));
-    const duplicateKey = `${normalize(phone)}:${normalize(email)}`;
-    if (seen.has(duplicateKey) && phone) duplicateMemberIds.push(`csv-row-${index}`);
-    if (phone) seen.add(duplicateKey);
+    const phone = normalizePhoneForStorage(stringValue(values[phoneIndex]), callingCode);
+    const gender = normalizedImportGender(optionalString(values[genderIndex]));
+    const email = optionalString(values[emailIndex])?.trim().toLowerCase();
+    const sourcePlanName = optionalString(values[planIndex])?.trim();
+    const planId = sourcePlanName ? planMappings.get(normalize(sourcePlanName)) : undefined;
+    const plan = planId ? plansById.get(planId) : undefined;
+    const membershipStartDate = optionalString(values[membershipStartIndex])?.trim();
+    const membershipEndDate = optionalString(values[membershipEndIndex])?.trim();
+    const remainingVisitsRaw = optionalString(values[remainingVisitsIndex])?.trim();
+    const remainingVisits = remainingVisitsRaw && /^\d+$/.test(normalizedImportNumber(remainingVisitsRaw)) ? Number(normalizedImportNumber(remainingVisitsRaw)) : undefined;
+    const freezeStartDate = optionalString(values[freezeStartIndex])?.trim();
+    const freezeEndDate = optionalString(values[freezeEndIndex])?.trim();
+    const openingBalance = importedMoneyMinor(optionalString(values[openingBalanceIndex]), actor.organization.currency);
+    const historicalPaid = importedMoneyMinor(optionalString(values[historicalPaidIndex]), actor.organization.currency);
+    const historicalPaymentDate = optionalString(values[historicalPaymentDateIndex])?.trim();
+    const historicalPaymentReference = optionalString(values[historicalPaymentReferenceIndex])?.trim().slice(0, 160);
+    const hasMembershipData = Boolean(sourcePlanName || membershipStartDate || membershipEndDate || remainingVisitsRaw || freezeStartDate || freezeEndDate || openingBalance.amount || historicalPaid.amount || historicalPaymentDate || historicalPaymentReference);
+    const phoneKey = canonicalPhoneKey(phone, callingCode);
+    const emailKey = normalize(email);
+    const duplicateMemberIds = [...new Set([...(existingByPhone.get(phoneKey) ?? []), ...(emailKey ? existingByEmail.get(emailKey) ?? [] : [])])];
+    if ((phoneKey && seenPhones.has(phoneKey)) || (emailKey && seenEmails.has(emailKey))) duplicateMemberIds.push(`csv-row-${index + 2}`);
+    if (phoneKey) seenPhones.add(phoneKey);
+    if (emailKey) seenEmails.add(emailKey);
     const errors = [
-      ...(fullName ? [] : ["Full name is required"]),
-      ...(phone ? [] : ["Phone is required"]),
+      ...(fullName.length >= 3 && fullName.length <= 120 ? [] : ["Full name must be between 3 and 120 characters"]),
+      ...(LEAD_PHONE_PATTERN.test(phone) ? [] : ["Enter a valid phone number"]),
+      ...(gender ? [] : ["Gender must be male or female"]),
+      ...(!email || (email.length <= 254 && LEAD_EMAIL_PATTERN.test(email)) ? [] : ["Enter a valid email address"]),
+      ...(hasMembershipData && !sourcePlanName ? ["Choose the source plan column for membership data"] : []),
+      ...(sourcePlanName && !planId ? [`Map source plan “${sourcePlanName}” to a RIVET plan`] : []),
+      ...(planId && (!plan || plan.status === "archived") ? ["The mapped RIVET plan is unavailable"] : []),
+      ...(plan && plan.branchAccess === "selected" && !arrayValue(plan.branchIds).map(String).includes(branchId) ? ["The mapped plan is not available at this branch"] : []),
+      ...(sourcePlanName && !validImportDate(membershipStartDate) ? ["Enter a valid membership start date"] : []),
+      ...(sourcePlanName && !validImportDate(membershipEndDate) ? ["Enter a valid membership end date"] : []),
+      ...(validImportDate(membershipStartDate) && validImportDate(membershipEndDate) && membershipEndDate < membershipStartDate ? ["Membership end date must be on or after its start date"] : []),
+      ...(validImportDate(membershipEndDate) && membershipEndDate < migrationCutoffDate ? ["Only active or scheduled membership terms can be imported"] : []),
+      ...(plan?.kind === "visits" && (remainingVisits == null || remainingVisits < 0 || remainingVisits > numberValue(plan.visitAllowance)) ? [`Enter visits remaining between 0 and ${numberValue(plan.visitAllowance)}`] : []),
+      ...(remainingVisitsRaw && remainingVisits == null ? ["Visits remaining must be a whole number"] : []),
+      ...((freezeStartDate || freezeEndDate) && (!validImportDate(freezeStartDate) || !validImportDate(freezeEndDate)) ? ["Enter both current-freeze dates"] : []),
+      ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && freezeEndDate < freezeStartDate ? ["Freeze end date must be on or after its start date"] : []),
+      ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && (migrationCutoffDate < freezeStartDate || migrationCutoffDate > freezeEndDate) ? ["A current freeze must include the migration cutoff date"] : []),
+      ...(validImportDate(freezeStartDate) && validImportDate(freezeEndDate) && validImportDate(membershipStartDate) && validImportDate(membershipEndDate) && (freezeStartDate < membershipStartDate || freezeEndDate > membershipEndDate) ? ["Freeze dates must sit inside the membership term"] : []),
+      ...(openingBalance.error ? [openingBalance.error] : []),
+      ...(historicalPaid.error ? [historicalPaid.error] : []),
+      ...((openingBalance.amount || historicalPaid.amount || historicalPaymentDate || historicalPaymentReference) && !sourcePlanName ? ["Financial migration evidence requires a membership term"] : []),
+      ...(historicalPaid.amount && !validImportDate(historicalPaymentDate) ? ["Historical amount paid requires its last payment date"] : []),
+      ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
       ...(duplicateMemberIds.length ? ["A member with this phone or email already exists"] : []),
     ];
-    return { rowNumber: index + 2, fullName, phone, email, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };
+    return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: optionalString(plan?.name), membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };
   });
   const id = newPublicId();
   const now = Date.now();
-  await insertRecord(ctx, actor, "memberImport", { id, branchId, rows: previewRows, totalRows: previewRows.length, nextCursor: 0, status: "preview", createdAt: isoNow(), createdById: publicUserId(actor.user) }, { branchId });
-  await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member CSV · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows`, branchId });
-  return { id, branchId, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, rows: previewRows, createdAt: utcIso(now) };
+  const sourceKind = ["csv", "xlsx", "pasted"].includes(stringValue(input.sourceKind)) ? stringValue(input.sourceKind) : "csv";
+  const sourceFileName = optionalString(input.sourceFileName)?.trim().slice(0, 180);
+  const sourceHeaders = arrayValue(input.sourceHeaders).slice(0, 100).map((header) => stringValue(header).slice(0, 160));
+  const columnMapping = data(input.columnMapping);
+  const rawPlanMappings = Object.fromEntries(Object.entries(data(input.planMappings)).filter(([, value]) => typeof value === "string"));
+  const value = { id, branchId, rows: previewRows, totalRows: previewRows.length, validRows: previewRows.filter((row) => row.status === "valid").length, duplicateRows: previewRows.filter((row) => row.status === "duplicate").length, errorRows: previewRows.filter((row) => row.status === "invalid").length, membershipRows: previewRows.filter((row) => row.planId).length, openingBalanceRows: previewRows.filter((row) => numberValue(row.openingBalanceMinor) > 0).length, historicalEvidenceRows: previewRows.filter((row) => numberValue(row.historicalPaidMinor) > 0).length, currency: actor.organization.currency, migrationCutoffDate, planMappings: rawPlanMappings, nextCursor: 0, committedCount: 0, skippedCount: 0, createdMembers: [], status: "preview", sourceFileName, sourceKind, sourceHeaders, columnMapping, createdAt: isoNow(), createdById: publicUserId(actor.user) };
+  await insertRecord(ctx, actor, "memberImport", value, { branchId });
+  await insertAudit(ctx, actor, { category: "members", action: "member.import_preview", entityType: "member_import", entityId: id, entityLabel: `Member migration · ${previewRows.length} rows`, summary: `Previewed ${previewRows.length} member rows, including ${value.membershipRows} membership terms`, branchId, after: { migrationCutoffDate, membershipRows: value.membershipRows, openingBalanceRows: value.openingBalanceRows, historicalEvidenceRows: value.historicalEvidenceRows } });
+  return memberImportView({ ...value, createdAt: utcIso(now) }, true);
+}
+
+async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorContext, importData: Data, row: Data, member: Data): Promise<Data> {
+  const planId = optionalString(row.planId);
+  if (!planId) return {};
+  const planRecord = await recordOf(ctx, actor, "plan", planId);
+  const plan = data(planRecord.data);
+  if (stringValue(plan.status) === "archived") domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” was archived after preview. Run the preview again.`, { correlationId: actor.correlationId });
+  if (plan.branchAccess === "selected" && !arrayValue(plan.branchIds).map(String).includes(stringValue(importData.branchId))) domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” is no longer available at this branch. Run the preview again.`, { correlationId: actor.correlationId });
+  const membershipId = newPublicId();
+  const freezeStartDate = optionalString(row.freezeStartDate);
+  const freezeEndDate = optionalString(row.freezeEndDate);
+  const activeFreeze = freezeStartDate && freezeEndDate ? {
+    id: newPublicId(),
+    membershipId,
+    startDate: freezeStartDate,
+    endDate: freezeEndDate,
+    status: "active",
+    reason: "Current freeze imported from the previous system",
+    createdById: publicUserId(actor.user),
+    createdAt: isoNow(),
+    migrationImported: true,
+  } : undefined;
+  const membership = await insertRecord(ctx, actor, "membership", {
+    id: membershipId,
+    organizationId: publicOrganizationId(actor.organization),
+    memberId: stringValue(member.id),
+    planId,
+    homeBranchId: stringValue(importData.branchId),
+    startDate: stringValue(row.membershipStartDate),
+    endDate: stringValue(row.membershipEndDate),
+    ...(plan.kind === "visits" ? { totalVisits: numberValue(plan.visitAllowance), remainingVisits: numberValue(row.remainingVisits) } : {}),
+    salePrice: money(0, actor.organization.currency),
+    discount: money(0, actor.organization.currency),
+    discountApprovalStatus: "none",
+    soldById: publicUserId(actor.user),
+    frozenDaysUsed: 0,
+    activeFreeze,
+    freezes: activeFreeze ? [activeFreeze] : [],
+    adjustments: [],
+    migration: { importBatchId: stringValue(importData.id), sourceRowNumber: numberValue(row.rowNumber), sourcePlanName: optionalString(row.sourcePlanName), cutoffDate: stringValue(importData.migrationCutoffDate), financialPostingEligible: false },
+    createdAt: isoNow(),
+  }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
+  const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id));
+  let chargeId: string | undefined;
+  let chargeVersion: string | undefined;
+  if (numberValue(row.openingBalanceMinor) > 0) {
+    chargeId = newPublicId();
+    const amount = numberValue(row.openingBalanceMinor);
+    await insertRecord(ctx, actor, "charge", {
+      id: chargeId,
+      organizationId: publicOrganizationId(actor.organization),
+      memberId: stringValue(member.id),
+      membershipId,
+      description: `Opening balance at ${stringValue(importData.migrationCutoffDate)}`,
+      subtotal: money(amount, actor.organization.currency),
+      discount: money(0, actor.organization.currency),
+      tax: money(0, actor.organization.currency),
+      total: money(amount, actor.organization.currency),
+      paidAmount: money(0, actor.organization.currency),
+      outstandingAmount: money(amount, actor.organization.currency),
+      status: "unpaid",
+      issueDate: stringValue(importData.migrationCutoffDate),
+      dueDate: stringValue(importData.migrationCutoffDate),
+      migration: { importBatchId: stringValue(importData.id), sourceRowNumber: numberValue(row.rowNumber), kind: "opening_receivable", accountingPostingEligible: false },
+      createdAt: isoNow(),
+    }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
+    chargeVersion = String((await recordOf(ctx, actor, "charge", chargeId)).updatedAt);
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Opening balance imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Unpaid as of ${stringValue(importData.migrationCutoffDate)}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: importData.id, chargeId, sourceRowNumber: row.rowNumber } });
+  }
+  let evidenceId: string | undefined;
+  let evidenceVersion: string | undefined;
+  if (numberValue(row.historicalPaidMinor) > 0) {
+    evidenceId = newPublicId();
+    const amount = numberValue(row.historicalPaidMinor);
+    await insertRecord(ctx, actor, "migrationPaymentEvidence", {
+      id: evidenceId,
+      organizationId: publicOrganizationId(actor.organization),
+      memberId: stringValue(member.id),
+      membershipId,
+      amount: money(amount, actor.organization.currency),
+      lastPaymentDate: stringValue(row.historicalPaymentDate),
+      sourceReference: optionalString(row.historicalPaymentReference),
+      importBatchId: stringValue(importData.id),
+      sourceRowNumber: numberValue(row.rowNumber),
+      readOnly: true,
+      accountingPostingEligible: false,
+      createdAt: isoNow(),
+    }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
+    evidenceVersion = String((await recordOf(ctx, actor, "migrationPaymentEvidence", evidenceId)).updatedAt);
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Historical payment evidence imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Read-only evidence through ${stringValue(row.historicalPaymentDate)}${optionalString(row.historicalPaymentReference) ? ` · ${stringValue(row.historicalPaymentReference)}` : ""}. No RIVET payment or receipt was created.`, meta: { importBatchId: importData.id, evidenceId, sourceRowNumber: row.rowNumber } });
+  }
+  await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `${stringValue(plan.name)} membership history imported`, body: `${stringValue(row.membershipStartDate)} → ${stringValue(row.membershipEndDate)} · source cutoff ${stringValue(importData.migrationCutoffDate)}`, meta: { importBatchId: importData.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
+  await insertAudit(ctx, actor, { category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(plan.name)}`, summary: `Imported active or scheduled membership history from row ${numberValue(row.rowNumber)}`, branchId: stringValue(importData.branchId), after: { startDate: row.membershipStartDate, endDate: row.membershipEndDate, activeFreeze: Boolean(activeFreeze), openingBalanceMinor: numberValue(row.openingBalanceMinor), historicalPaidMinor: numberValue(row.historicalPaidMinor), importBatchId: importData.id, financialPostingEligible: false } });
+  return { membershipId, membershipVersion: String(membershipRecord.updatedAt), chargeId, chargeVersion, evidenceId, evidenceVersion };
 }
 
 async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -3904,20 +7037,32 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
   const requestHash = JSON.stringify({ importId, cursor: numberValue(input.cursor), chunkSize: numberValue(input.chunkSize), idempotencyKey });
   const existingIdempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "member-import.commit").eq("key", idempotencyKey)).unique();
   if (existingIdempotency) {
-    if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This import idempotency key was already used for a different chunk.", { correlationId: actor.correlationId });
+    if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
     return data(existingIdempotency.result);
   }
   const record = await recordOf(ctx, actor, "memberImport", importId);
   const importData = data(record.data);
+  if (["undoing", "undone"].includes(stringValue(importData.status))) domainError("CONFLICT", "This import is already being undone.", { correlationId: actor.correlationId });
   const rows = arrayValue(importData.rows).map(data);
   const cursor = Math.max(0, Math.floor(numberValue(input.cursor, numberValue(importData.nextCursor))));
   if (cursor !== numberValue(importData.nextCursor)) domainError("CONFLICT", "Import cursor is stale. Resume from the latest cursor.", { correlationId: actor.correlationId });
   const chunkSize = Math.min(100, Math.max(1, Math.floor(numberValue(input.chunkSize, 25))));
   const end = Math.min(rows.length, cursor + chunkSize);
   const createdMemberIds: string[] = [];
+  const createdMembers = arrayValue(importData.createdMembers).map(data);
   const errors: Data[] = [];
   let skippedCount = 0;
   const failedCount = 0;
+  const callingCode = organizationPhoneCountryCallingCode(actor.organization);
+  const currentMembers = (await memberRecords(ctx, actor)).map((item) => data(item.data)).filter((member) => member.status !== "archived");
+  const knownPhones = new Map<string, string>();
+  const knownEmails = new Map<string, string>();
+  for (const member of currentMembers) {
+    const phoneKey = canonicalPhoneKey(optionalString(member.phone), callingCode);
+    const emailKey = normalize(optionalString(member.email));
+    if (phoneKey) knownPhones.set(phoneKey, stringValue(member.id));
+    if (emailKey) knownEmails.set(emailKey, stringValue(member.id));
+  }
   for (let index = cursor; index < end; index += 1) {
     const row = rows[index];
     if (!row || row.status !== "valid") {
@@ -3925,44 +7070,147 @@ async function commitMemberImport(ctx: MutationCtx, actor: ActorContext, input: 
       if (row) rows[index] = { ...row, status: "skipped" };
       continue;
     }
-    const duplicate = (await memberRecords(ctx, actor)).map((item) => data(item.data)).find((member) => member.status !== "archived" && (normalize(member.phone) === normalize(stringValue(row.phone)) || (row.email && normalize(optionalString(member.email)) === normalize(optionalString(row.email)))));
-    if (duplicate) {
+    const phoneKey = canonicalPhoneKey(stringValue(row.phone), callingCode);
+    const emailKey = normalize(optionalString(row.email));
+    const duplicateId = knownPhones.get(phoneKey) ?? (emailKey ? knownEmails.get(emailKey) : undefined);
+    if (duplicateId) {
       skippedCount += 1;
-      rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [stringValue(duplicate.id)] };
+      rows[index] = { ...row, status: "duplicate", errors: [...arrayValue(row.errors).map(String), "A member with this phone or email already exists"], duplicateMemberIds: [duplicateId] };
       continue;
     }
-    const result = await createMemberMutation(ctx, actor, { fullName: row.fullName, phone: row.phone, email: row.email, homeBranchId: importData.branchId, preferredLanguage: "en" });
+    const result = await createMemberMutation(ctx, actor, {
+      fullName: row.fullName,
+      phone: row.phone,
+      gender: row.gender,
+      email: row.email,
+      homeBranchId: importData.branchId,
+      preferredLanguage: "en",
+      marketingOptIn: true,
+      marketingPreferenceSource: "imported",
+    });
     const member = data(result.member);
     createdMemberIds.push(stringValue(member.id));
+    if (phoneKey) knownPhones.set(phoneKey, stringValue(member.id));
+    if (emailKey) knownEmails.set(emailKey, stringValue(member.id));
+    const memberRecord = await recordOf(ctx, actor, "member", stringValue(member.id));
+    const tagged = await patchRecord(ctx, actor, memberRecord, { importBatchId: importId, importRowNumber: numberValue(row.rowNumber), migrationCutoffDate: optionalString(importData.migrationCutoffDate) });
+    const artifacts = await createImportedMembershipArtifacts(ctx, actor, importData, row, member);
+    const taggedRecord = await recordOf(ctx, actor, "member", stringValue(tagged.id));
+    createdMembers.push({ memberId: stringValue(member.id), memberVersion: String(taggedRecord.updatedAt), version: String(taggedRecord.updatedAt), rowNumber: numberValue(row.rowNumber), ...artifacts });
     rows[index] = { ...row, status: "committed", memberId: member.id };
   }
   const nextCursor = end;
   const status = nextCursor >= rows.length ? "completed" : "processing";
-  await patchRecord(ctx, actor, record, { rows, nextCursor, status, committedAt: status === "completed" ? isoNow() : undefined });
-  const result = { importId, status, cursor: nextCursor, totalRows: rows.length, committedCount: createdMemberIds.length, skippedCount, failedCount, createdMemberIds, errors };
+  const committedCount = numberValue(importData.committedCount) + createdMemberIds.length;
+  const totalSkippedCount = numberValue(importData.skippedCount) + skippedCount;
+  const completedAt = status === "completed" ? isoNow() : undefined;
+  const undoExpiresAt = completedAt ? utcIso(Date.now() + 7 * 86_400_000) : undefined;
+  await patchRecord(ctx, actor, record, { rows, nextCursor, status, createdMembers, committedCount, skippedCount: totalSkippedCount, completedAt, undoExpiresAt });
+  const result = { importId, status, cursor: nextCursor, totalRows: rows.length, committedCount, skippedCount: totalSkippedCount, failedCount, createdMemberIds, errors };
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "member-import.commit", key: idempotencyKey, requestHash, result, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 });
   await insertAudit(ctx, actor, { category: "members", action: "member.import_commit", entityType: "member_import", entityId: importId, entityLabel: `Member CSV · rows ${cursor + 1}-${end}`, summary: `Committed ${createdMemberIds.length} members`, branchId: optionalString(importData.branchId) });
   return result;
 }
 
-async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input: Data, options: { rejectDuplicates?: boolean } = {}): Promise<{ member: Data; duplicates: Data[] }> {
+async function undoMemberImport(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  requirePermission(actor, "members.archive");
+  const reason = stringValue(input.reason).trim();
+  requireReason(reason, actor.correlationId);
+  const importId = recordId(input.importId);
+  const idempotencyKey = recordId(input.idempotencyKey);
+  const cursor = Math.max(0, Math.floor(numberValue(input.cursor)));
+  const chunkSize = Math.min(100, Math.max(1, Math.floor(numberValue(input.chunkSize, 25))));
+  const requestHash = JSON.stringify({ importId, cursor, chunkSize, reason });
+  const replay = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "member-import.undo").eq("key", idempotencyKey)).unique();
+  if (replay) {
+    if (replay.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This undo request key was already used for a different batch.", { correlationId: actor.correlationId });
+    return data(replay.result);
+  }
+  const importRecord = await recordOf(ctx, actor, "memberImport", importId);
+  const importData = data(importRecord.data);
+  if (!["completed", "undoing"].includes(stringValue(importData.status))) domainError("CONFLICT", "Only a completed import can be undone.", { correlationId: actor.correlationId });
+  if (Date.parse(stringValue(importData.undoExpiresAt)) < Date.now()) domainError("CONFLICT", "The seven-day undo window for this import has ended.", { correlationId: actor.correlationId });
+  const expectedCursor = numberValue(importData.undoCursor);
+  if (cursor !== expectedCursor) domainError("CONFLICT", "Undo cursor is stale. Resume from the latest cursor.", { correlationId: actor.correlationId });
+  const createdMembers = arrayValue(importData.createdMembers).map(data);
+  const end = Math.min(createdMembers.length, cursor + chunkSize);
+  let archivedCount = 0;
+  let skippedCount = 0;
+  for (let index = cursor; index < end; index += 1) {
+    const created = createdMembers[index];
+    if (!created) continue;
+    const memberId = stringValue(created.memberId);
+    const memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", memberId)).unique();
+    if (!memberRecord || String(memberRecord.updatedAt) !== stringValue(created.memberVersion, stringValue(created.version)) || stringValue(data(memberRecord.data).importBatchId) !== importId) { skippedCount += 1; continue; }
+    const [memberships, payments, charges, checkIns, legacyCheckIns, customerMemberships, evidence] = await Promise.all([
+      recordsOfMember(ctx, actor.organization._id, memberId, "membership"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "payment"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "charge"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "checkIn"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "checkin"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "customerMembership"),
+      recordsOfMember(ctx, actor.organization._id, memberId, "migrationPaymentEvidence"),
+    ]);
+    const importedMembershipId = optionalString(created.membershipId);
+    const importedChargeId = optionalString(created.chargeId);
+    const importedEvidenceId = optionalString(created.evidenceId);
+    const onlyImportedArtifacts = memberships.every((item) => item.publicId === importedMembershipId)
+      && charges.every((item) => item.publicId === importedChargeId)
+      && evidence.every((item) => item.publicId === importedEvidenceId)
+      && payments.length === 0 && checkIns.length === 0 && legacyCheckIns.length === 0 && customerMemberships.length === 0;
+    const artifactVersionsMatch = (!importedMembershipId || (memberships[0]?.publicId === importedMembershipId && String(memberships[0].updatedAt) === stringValue(created.membershipVersion)))
+      && (!importedChargeId || (charges[0]?.publicId === importedChargeId && String(charges[0].updatedAt) === stringValue(created.chargeVersion)))
+      && (!importedEvidenceId || (evidence[0]?.publicId === importedEvidenceId && String(evidence[0].updatedAt) === stringValue(created.evidenceVersion)));
+    if (!onlyImportedArtifacts || !artifactVersionsMatch) { skippedCount += 1; continue; }
+    for (const artifact of [...evidence, ...charges, ...memberships]) await ctx.db.delete(artifact._id);
+    const member = data(memberRecord.data);
+    const now = isoNow();
+    await ctx.db.patch(memberRecord._id, { data: { ...member, status: "archived", archivedAt: now, importUndoId: importId }, updatedAt: Date.now() });
+    await insertAudit(ctx, actor, { category: "members", action: "member.import_undo", entityType: "member", entityId: memberId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(member.memberNumber)}`, summary: "Untouched imported member and migration artifacts removed from active records", reason, before: { status: member.status, importBatchId: importId, membershipId: importedMembershipId, chargeId: importedChargeId, evidenceId: importedEvidenceId }, after: { status: "archived", importUndoId: importId }, branchId: optionalString(member.homeBranchId) });
+    archivedCount += 1;
+  }
+  const nextCursor = end;
+  const status = nextCursor >= createdMembers.length ? "undone" : "undoing";
+  const totalArchived = numberValue(importData.undoArchivedCount) + archivedCount;
+  const totalSkipped = numberValue(importData.undoSkippedCount) + skippedCount;
+  await patchRecord(ctx, actor, importRecord, { status, undoCursor: nextCursor, undoArchivedCount: totalArchived, undoSkippedCount: totalSkipped, undoneAt: status === "undone" ? isoNow() : undefined, undoReason: reason });
+  const result = { importId, status, cursor: nextCursor, totalCreated: createdMembers.length, archivedCount: totalArchived, skippedCount: totalSkipped };
+  await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "member-import.undo", key: idempotencyKey, requestHash, result, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 });
+  if (status === "undone") await insertAudit(ctx, actor, { category: "members", action: "member.import_batch_undo", entityType: "member_import", entityId: importId, entityLabel: stringValue(importData.sourceFileName, `Member import ${importId}`), summary: `Archived ${totalArchived} untouched imported members; skipped ${totalSkipped} changed records`, reason, branchId: optionalString(importData.branchId) });
+  return result;
+}
+
+async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input: Data, options: { rejectDuplicates?: boolean; confirmedDuplicateMemberIds?: string[] } = {}): Promise<{ member: Data; duplicates: Data[] }> {
   requirePermission(actor, "members.write");
   const fullName = stringValue(input.fullName).trim();
-  const phone = stringValue(input.phone).trim();
-  if (!fullName || !phone) domainError("VALIDATION_ERROR", "Name and phone are required.", { correlationId: actor.correlationId, fieldErrors: { ...(fullName ? {} : { fullName: ["Full name is required"] }), ...(phone ? {} : { phone: ["Phone is required"] }) } });
+  const phone = normalizedLeadPhone(input.phone, actor);
+  const email = normalizedLeadEmail(input.email, actor);
+  const gender = optionalString(input.gender);
+  if (!fullName || !phone || (gender !== "male" && gender !== "female")) domainError("VALIDATION_ERROR", "Name, phone, and gender are required.", { correlationId: actor.correlationId, fieldErrors: { ...(fullName ? {} : { fullName: ["Full name is required"] }), ...(phone ? {} : { phone: ["Phone is required"] }), ...(gender === "male" || gender === "female" ? {} : { gender: ["Choose male or female"] }) } });
   const homeBranchId = recordId(input.homeBranchId);
   const branch = await branchByPublicId(ctx, actor.organization._id, homeBranchId);
   assertBranchAccess(actor, branch);
   const existingMembers = await memberRecords(ctx, actor);
   const duplicates = duplicateMemberMatches(
     existingMembers.map((record) => data(record.data)),
-    { phone, email: input.email },
+    { phone, email },
+    organizationPhoneCountryCallingCode(actor.organization),
   ) as Data[];
-  if (options.rejectDuplicates && duplicates.length > 0) {
+  const confirmedDuplicateMemberIds = new Set(options.confirmedDuplicateMemberIds ?? []);
+  const unconfirmedDuplicates = duplicates.filter((duplicate) => !confirmedDuplicateMemberIds.has(stringValue(duplicate.memberId)));
+  if (options.rejectDuplicates && unconfirmedDuplicates.length > 0) {
     domainError("DUPLICATE_MEMBER", "This lead matches an existing member. Open that member instead of creating a duplicate.", {
       correlationId: actor.correlationId,
-      details: { matches: duplicates },
+      details: { matches: unconfirmedDuplicates },
     });
+  }
+  const referredByMemberId = optionalString(input.referredByMemberId);
+  let referredByName: string | undefined;
+  if (referredByMemberId) {
+    const referrer = await recordOf(ctx, actor, "member", referredByMemberId);
+    const referrerData = data(referrer.data);
+    if (stringValue(referrerData.status) === "archived") domainError("NOT_FOUND", "The referring member was not found.", { correlationId: actor.correlationId });
+    referredByName = stringValue(referrerData?.fullName, referredByMemberId);
   }
   const sequence = await allocateSequence(ctx, actor, `member:${branch.code}`, 1000);
   const preference = marketingPreferenceRecord(input, actor);
@@ -3973,8 +7221,8 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     fullName,
     fullNameAr: optionalString(input.fullNameAr),
     phone,
-    email: optionalString(input.email),
-    gender: optionalString(input.gender),
+    email,
+    gender,
     dateOfBirth: optionalString(input.dateOfBirth),
     homeBranchId,
     status: "active",
@@ -3986,6 +7234,8 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     addressLine1: optionalString(input.addressLine1),
     city: optionalString(input.city),
     source: optionalString(input.source),
+    referredByMemberId,
+    referredByName,
     assignedSalespersonId: optionalString(input.assignedSalespersonId),
     marketingOptIn: preference.optedIn,
     marketingPreference: preference,
@@ -3994,6 +7244,9 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   }, { branchId: homeBranchId });
   await insertTimeline(ctx, actor, { memberId: member.id, type: "member_created", title: "Member profile created", actorId: publicUserId(actor.user), actorName: actor.user.fullName, branchId: homeBranchId });
   await insertAudit(ctx, actor, { category: "members", action: "member.create", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: "Member profile created", branchId: homeBranchId });
+  if (duplicates.length > 0 && unconfirmedDuplicates.length === 0) {
+    await insertAudit(ctx, actor, { category: "members", action: "member.duplicate_identity_override", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: "Created a distinct member after reviewing contact matches", reason: "Front desk confirmed this is a different person.", after: { matchedMemberIds: duplicates.map((duplicate) => duplicate.memberId) }, branchId: homeBranchId });
+  }
   return { member: await toMemberDetail(ctx, actor, member), duplicates };
 }
 
@@ -4040,7 +7293,7 @@ async function createMembershipMutation(
       .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", `membership.${operation}`).eq("key", idempotencyKey))
       .unique();
     if (existing) {
-      if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different membership sale.", { correlationId: actor.correlationId });
+      if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
       const stored = data(existing.result);
       const replayMembership = await recordOf(ctx, actor, "membership", stringValue(stored.membershipId));
       const replayCharge = await recordOf(ctx, actor, "charge", stringValue(stored.chargeId));
@@ -4098,19 +7351,22 @@ async function createMembershipMutation(
     actorName: actor.user.fullName,
     meta: { membershipId: membership.id, previousMembershipId, previousPlanId: options.previousPlanId, effectiveDate: operation === "plan_change" ? options.effectiveDate : undefined },
   });
-  if (priceOverride) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Price override: ${actor.organization.currency} ${(price / 1000).toFixed(3)}`, reason: stringValue(input.overrideReason), before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
+  if (priceOverride) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Price override: ${actor.organization.currency} ${formatMinorUnits(price, actor.organization.currency)}`, reason: stringValue(input.overrideReason), before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
   if (dateOverride) await insertAudit(ctx, actor, { category: "memberships", action: "membership.date_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Start date overridden to ${startDate}`, reason: stringValue(input.overrideReason), before: { startDate: options.standardStartDate }, after: { startDate }, branchId: memberData.homeBranchId });
-  if (discount > 0) await insertAudit(ctx, actor, { category: "payments", action: "membership.discount", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Discount applied: ${actor.organization.currency} ${(discount / 1000).toFixed(3)}`, reason: stringValue(input.discountReason), before: { price, discount: 0, approvalStatus: "none" }, after: { price, discount, approvalStatus: approvalPending ? "pending" : "approved" }, approvalStatus: approvalPending ? "pending" : "approved", branchId: memberData.homeBranchId });
-  await insertAudit(ctx, actor, { category: "memberships", action: operation === "plan_change" ? "membership.plan_change" : renewal ? "membership.renew" : "membership.sale", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `${stringValue(planData.name)} — ${actor.organization.currency} ${(total / 1000).toFixed(3)}${operation === "plan_change" ? " · no proration" : ""}`, reason: options.reason, before: operation === "plan_change" ? { planId: options.previousPlanId } : undefined, after: { startDate: membership.startDate, endDate: membership.endDate, total, planId: planData.id }, branchId: memberData.homeBranchId });
+  if (discount > 0) await insertAudit(ctx, actor, { category: "payments", action: "membership.discount", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Discount applied: ${actor.organization.currency} ${formatMinorUnits(discount, actor.organization.currency)}`, reason: stringValue(input.discountReason), before: { price, discount: 0, approvalStatus: "none" }, after: { price, discount, approvalStatus: approvalPending ? "pending" : "approved" }, approvalStatus: approvalPending ? "pending" : "approved", branchId: memberData.homeBranchId });
+  await insertAudit(ctx, actor, { category: "memberships", action: operation === "plan_change" ? "membership.plan_change" : renewal ? "membership.renew" : "membership.sale", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `${stringValue(planData.name)} — ${actor.organization.currency} ${formatMinorUnits(total, actor.organization.currency)}${operation === "plan_change" ? " · no proration" : ""}`, reason: options.reason, before: operation === "plan_change" ? { planId: options.previousPlanId } : undefined, after: { startDate: membership.startDate, endDate: membership.endDate, total, planId: planData.id }, branchId: memberData.homeBranchId });
   let payment: Data | undefined;
   let receipt: Data | undefined;
   if (input.payment && amountOf(data(input.payment).amount) > 0) {
-    const paymentResult = await paymentRecord(ctx, actor, { ...data(input.payment), memberId: memberData.id, chargeId: charge.id, branchId: memberData.homeBranchId }, `sale-${membership.id}`);
+    // The drawer that takes the money is the desk's branch when the caller names one; paymentRecord asserts access to it.
+    const paymentResult = await paymentRecord(ctx, actor, { ...data(input.payment), memberId: memberData.id, chargeId: charge.id, branchId: optionalString(data(input.payment).branchId) ?? memberData.homeBranchId }, `sale-${membership.id}`);
     payment = paymentResult.payment;
     receipt = paymentResult.receipt;
     await auditPaymentCollection(ctx, actor, payment);
   }
-  const result = { membership: await toMembership(ctx, actor, membership), charge, payment, receipt, timelineEventIds: [event.id] };
+  const persistedCharge = await recordOf(ctx, actor, "charge", charge.id);
+  const persistedReceipt = receipt ? await recordOf(ctx, actor, "receipt", stringValue(receipt.id)) : null;
+  const result = { membership: await toMembership(ctx, actor, membership), charge: data(persistedCharge.data), payment, receipt: persistedReceipt ? data(persistedReceipt.data) : undefined, timelineEventIds: [event.id] };
   if (idempotencyKey && requestHash) {
     await ctx.db.insert("idempotencyRecords", {
       organizationId: actor.organization._id,
@@ -4123,7 +7379,164 @@ async function createMembershipMutation(
     });
   }
   await syncCustomerMembershipProjection(ctx, actor, membership, memberData, planData);
+  if (operation === "sale") await applyReferralReward(ctx, actor, memberData);
   return result;
+}
+
+/**
+ * Grants the gym-configured referral reward the first time a referred member
+ * buys a membership: free days are added to the referrer's active membership,
+ * bounded by the per-referrer cap inside its rolling window. Every outcome —
+ * applied, cap reached, or no active membership — is recorded immutably so
+ * the rule cannot be gamed by repeat sales or self-referrals.
+ */
+async function applyReferralReward(ctx: MutationCtx, actor: ActorContext, referredMember: Data): Promise<void> {
+  const referrerId = optionalString(referredMember.referredByMemberId);
+  const referredId = stringValue(referredMember.id);
+  if (!referrerId || referrerId === referredId) return;
+  const policies = data(data((await settingsData(ctx, actor)).operationalPolicies).referrals);
+  if (!booleanValue(policies.enabled)) return;
+  const rewardDays = numberValue(policies.rewardDays, 7);
+  const capDays = numberValue(policies.maxRewardDaysPerWindow, 30);
+  const windowDays = numberValue(policies.windowDays, 90);
+  const dedupeId = `referral-${referredId}`;
+  const already = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "referralReward").eq("publicId", dedupeId)).unique();
+  if (already) return;
+  const referrer = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", referrerId)).unique();
+  const referrerData = referrer ? data(referrer.data) : undefined;
+  if (!referrer || stringValue(referrerData?.status) === "archived") return;
+  const windowStart = Date.now() - windowDays * 86_400_000;
+  const priorRewards = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "referralReward")).collect())
+    .filter((row) => row.createdAt >= windowStart && stringValue(data(row.data).referrerId) === referrerId);
+  const usedDays = priorRewards.reduce((sum, row) => sum + numberValue(data(row.data).days, 0), 0);
+  const grantDays = Math.max(0, Math.min(rewardDays, capDays - usedDays));
+  const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+  const memberships = await recordsOfMember(ctx, actor.organization._id, referrerId, "membership");
+  const active = memberships
+    .map((row) => ({ row, value: data(row.data) }))
+    .filter(({ value }) => ["active", "expiring", "frozen"].includes(statusOfMembership(value, today)))
+    .sort((left, right) => stringValue(right.value.endDate).localeCompare(stringValue(left.value.endDate)))[0];
+  let status = "applied";
+  let appliedMembershipId: string | undefined;
+  let newEndDate: string | undefined;
+  if (grantDays === 0) {
+    status = "cap_reached";
+  } else if (!active) {
+    status = "no_active_membership";
+  } else {
+    newEndDate = addDays(stringValue(active.value.endDate), grantDays);
+    appliedMembershipId = stringValue(active.value.id);
+    await patchRecord(ctx, actor, active.row, {
+      endDate: newEndDate,
+      adjustments: [...arrayValue(active.value.adjustments), { id: newPublicId(), membershipId: appliedMembershipId, type: "referral_bonus", reason: `Referred ${stringValue(referredMember.fullName)} — ${grantDays} free day${grantDays === 1 ? "" : "s"}`, actorId: publicUserId(actor.user), before: { endDate: active.value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() }],
+    });
+    const plan = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "plan").eq("publicId", stringValue(active.value.planId))).unique();
+    if (plan && referrerData) await syncCustomerMembershipProjection(ctx, actor, { ...active.value, endDate: newEndDate }, referrerData, data(plan.data));
+  }
+  await insertRecord(ctx, actor, "referralReward", {
+    id: dedupeId,
+    referrerId,
+    referrerName: stringValue(referrerData?.fullName),
+    referredMemberId: referredId,
+    referredMemberName: stringValue(referredMember.fullName),
+    days: status === "applied" ? grantDays : 0,
+    requestedDays: rewardDays,
+    status,
+    appliedMembershipId,
+    newEndDate,
+    createdAt: isoNow(),
+  });
+  await insertAudit(ctx, actor, {
+    category: "memberships",
+    action: "membership.referral_reward",
+    entityType: "member",
+    entityId: referrerId,
+    entityLabel: stringValue(referrerData?.fullName, referrerId),
+    summary: status === "applied"
+      ? `Referral reward: ${grantDays} free day${grantDays === 1 ? "" : "s"} for referring ${stringValue(referredMember.fullName)}`
+      : `Referral reward for ${stringValue(referredMember.fullName)} not applied (${status === "cap_reached" ? "cap reached" : "no active membership"})`,
+    before: status === "applied" ? { endDate: active?.value.endDate } : undefined,
+    after: { status, days: status === "applied" ? grantDays : 0, referredMemberId: referredId },
+    branchId: optionalString(referrerData?.homeBranchId),
+  });
+}
+
+async function membershipSaleResultFromIdempotency(
+  ctx: MutationCtx,
+  actor: ActorContext,
+  stored: Data,
+): Promise<Data> {
+  const replayMembership = await recordOf(ctx, actor, "membership", stringValue(stored.membershipId));
+  const replayCharge = await recordOf(ctx, actor, "charge", stringValue(stored.chargeId));
+  const replayPayment = stored.paymentId ? await recordOf(ctx, actor, "payment", stringValue(stored.paymentId)) : null;
+  const replayReceipt = stored.receiptId ? await recordOf(ctx, actor, "receipt", stringValue(stored.receiptId)) : null;
+  return {
+    membership: await toMembership(ctx, actor, data(replayMembership.data)),
+    charge: data(replayCharge.data),
+    payment: replayPayment ? data(replayPayment.data) : undefined,
+    receipt: replayReceipt ? data(replayReceipt.data) : undefined,
+    timelineEventIds: arrayValue(stored.timelineEventIds).map(String),
+  };
+}
+
+async function createMemberMembershipSaleMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  requirePermission(actor, "members.write");
+  requirePermission(actor, "memberships.sell");
+  const memberInput = data(input.member);
+  const saleInput = data(input.sale);
+  const idempotencyKey = stringValue(input.idempotencyKey).trim();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 120) {
+    domainError("VALIDATION_ERROR", "A valid sale request key is required.", { correlationId: actor.correlationId });
+  }
+  const confirmedDuplicateMemberIds = arrayValue(input.confirmedDuplicateMemberIds).map(String).sort();
+  const requestHash = JSON.stringify({ member: memberInput, sale: saleInput, confirmedDuplicateMemberIds });
+  const existing = await ctx.db
+    .query("idempotencyRecords")
+    .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "member.create_and_sell").eq("key", idempotencyKey))
+    .unique();
+  if (existing) {
+    if (existing.requestHash !== requestHash) {
+      domainError("VALIDATION_ERROR", "This request key was already used for a different member sale.", { correlationId: actor.correlationId });
+    }
+    const stored = data(existing.result);
+    const member = await recordOf(ctx, actor, "member", stringValue(stored.memberId));
+    return {
+      member: await toMemberDetail(ctx, actor, data(member.data)),
+      sale: await membershipSaleResultFromIdempotency(ctx, actor, stored),
+    };
+  }
+
+  const created = await createMemberMutation(ctx, actor, memberInput, { rejectDuplicates: true, confirmedDuplicateMemberIds });
+  const memberId = stringValue(data(created.member).id);
+  const normalizedSaleInput: Data = { ...saleInput, memberId };
+  delete normalizedSaleInput.idempotencyKey;
+  const sale = await createMembershipMutation(
+    ctx,
+    actor,
+    normalizedSaleInput,
+    undefined,
+    { standardStartDate: todayIn(actor.organization.timezone || TZ_FALLBACK) },
+  );
+  const saleData = data(sale);
+  const resultReference = {
+    memberId,
+    membershipId: stringValue(data(saleData.membership).id),
+    chargeId: stringValue(data(saleData.charge).id),
+    paymentId: optionalString(data(saleData.payment).id),
+    receiptId: optionalString(data(saleData.receipt).id),
+    timelineEventIds: arrayValue(saleData.timelineEventIds).map(String),
+  };
+  await ctx.db.insert("idempotencyRecords", {
+    organizationId: actor.organization._id,
+    operation: "member.create_and_sell",
+    key: idempotencyKey,
+    requestHash,
+    result: resultReference,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 86_400_000 * 365,
+  });
+  const member = await recordOf(ctx, actor, "member", memberId);
+  return { member: await toMemberDetail(ctx, actor, data(member.data)), sale };
 }
 
 async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
@@ -4134,9 +7547,66 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   const lead = input.leadId ? await recordOf(ctx, actor, "lead", stringValue(input.leadId)) : null;
   const member = input.memberId ? await recordOf(ctx, actor, "member", stringValue(input.memberId)) : null;
   const subject = lead ? data(lead.data).fullName : member ? data(member.data).fullName : "—";
-  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
-  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+  const related = await relatedTaskLink(ctx, actor, input, { memberId: optionalString(input.memberId), leadId: optionalString(input.leadId) });
+  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}) }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
+  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, body: related ? `Follow-on to: ${related.title}` : undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   return task;
+}
+
+/**
+ * A logged contact is the follow-up happening. The actor's open follow-up
+ * tasks for that person are moved to the next date or closed with the
+ * outcome, never stacked; a task is created only when none exists and the
+ * caller asked for one. Team managers may resolve anyone's task, exactly as
+ * they may complete it from Today.
+ */
+async function resolveFollowUpTasksForContact(
+  ctx: MutationCtx,
+  actor: ActorContext,
+  subject: { memberId?: string; leadId?: string },
+  subjectName: string,
+  outcome: string,
+  nextFollowUpAt: string | undefined,
+  options: { createWhenMissing: boolean },
+): Promise<void> {
+  const taskRecords = subject.memberId
+    ? await recordsOfMember(ctx, actor.organization._id, subject.memberId, "task")
+    : subject.leadId
+      ? await recordsOfLead(ctx, actor.organization._id, subject.leadId, "task")
+      : [];
+  const byId = new Map(taskRecords.map((record) => [record.publicId, record]));
+  const timezone = actor.organization.timezone || TZ_FALLBACK;
+  const today = todayIn(timezone);
+  const resolution = resolveFollowUpTasks({
+    tasks: taskRecords.map((record) => { const task = data(record.data); return { id: record.publicId, type: stringValue(task.type), status: stringValue(task.status, "open"), ownerId: optionalString(task.ownerId), memberId: optionalString(task.memberId), leadId: optionalString(task.leadId), dueAt: stringValue(task.dueAt) }; }),
+    subject,
+    actorId: publicUserId(actor.user),
+    canManageTeam: actor.role === "owner" || actor.role === "manager",
+    nextFollowUpAt,
+    outcome,
+    isDue: (dueAt) => businessDate(dueAt, timezone) <= today,
+  });
+  const completedOutcome = completedByContactOutcome(outcome);
+  for (const task of resolution.complete) {
+    const record = byId.get(task.id);
+    if (!record) continue;
+    const updated = await patchRecord(ctx, actor, record, { status: "completed", outcome: completedOutcome, completedAt: isoNow() });
+    if (task.memberId) await insertTimeline(ctx, actor, { memberId: task.memberId, type: "task_completed", title: `Task completed: ${stringValue(updated.title)}`, body: completedOutcome, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+  }
+  if (resolution.reschedule && nextFollowUpAt) {
+    const record = byId.get(resolution.reschedule.id);
+    if (record) await patchRecord(ctx, actor, record, { dueAt: nextFollowUpAt, ...(resolution.reschedule.type === "follow_up" ? { title: followUpTaskTitle(subjectName, outcome) } : {}) });
+  } else if (resolution.createFollowUp && nextFollowUpAt && options.createWhenMissing) {
+    await createTaskMutation(ctx, actor, {
+      type: "follow_up",
+      title: followUpTaskTitle(subjectName, outcome),
+      ownerId: publicUserId(actor.user),
+      dueAt: nextFollowUpAt,
+      priority: "normal",
+      memberId: subject.memberId,
+      leadId: subject.leadId,
+    });
+  }
 }
 
 function automationQuietHours(timezone: string, start: string, end: string): boolean {
@@ -4247,7 +7717,7 @@ async function executeAutomationCandidate(
         kind: "automation_attention",
         title: stringValue(rule.name, "Automation requires attention"),
         body: candidate.subjectName,
-        href: memberId ? `/members/${memberId}` : leadId ? `/crm/leads/${leadId}` : "/automations",
+        href: automationAttentionHref(memberId, leadId),
         dedupeKey: `automation-notification:${executionId}`,
       });
       actionResults.push({ key, status: "completed" });
@@ -4275,6 +7745,180 @@ async function executeAutomationCandidate(
     retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] },
     suppressionReason: status === "suppressed" ? actionResults.map((item) => stringValue(item.suppressionReason)).filter(Boolean).join("; ") : undefined,
   }, { branchId: candidate.branchId, memberPublicId: memberId, leadPublicId: leadId });
+}
+
+function bulkFailureMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.replace(/^\[CONVEX [^\]]+\]\s*/, "").slice(0, 240);
+  return "This record could not be updated.";
+}
+
+async function runBulkOperationMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
+  const kind = stringValue(input.kind);
+  if (!BULK_OPERATION_KINDS.has(kind)) domainError("VALIDATION_ERROR", "Choose a valid bulk operation.", { correlationId: actor.correlationId });
+  const ids = [...new Set(arrayValue(input.recordIds).map(String).filter(Boolean))];
+  if (ids.length < 1 || ids.length > 100) domainError("VALIDATION_ERROR", "Select between 1 and 100 records.", { correlationId: actor.correlationId });
+  const idempotencyKey = stringValue(input.idempotencyKey).trim();
+  if (!idempotencyKey || idempotencyKey.length > 200) domainError("VALIDATION_ERROR", "A valid bulk-operation key is required.", { correlationId: actor.correlationId });
+  const requestHash = JSON.stringify({ kind, ids, tags: input.tags, branchId: input.branchId, ownerId: input.ownerId, dueAt: input.dueAt, reason: input.reason });
+  const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "bulk.run").eq("key", idempotencyKey)).unique();
+  if (existing) {
+    if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This bulk-operation key was already used for different work.", { correlationId: actor.correlationId });
+    const stored = data(existing.result);
+    const prior = await recordOf(ctx, actor, "bulkOperationJob", stringValue(stored.jobId));
+    return bulkJobProjection(data(prior.data));
+  }
+
+  if (kind.startsWith("members_")) requirePermission(actor, kind === "members_archive" ? "members.archive" : "members.write");
+  if (kind.startsWith("leads_")) requirePermission(actor, "crm.write");
+  if (kind === "leads_assign_owner") requirePermission(actor, "crm.assign");
+  if (kind.endsWith("create_follow_up")) requirePermission(actor, "crm.write");
+
+  const tags = [...new Set(arrayValue(input.tags).map((tag) => String(tag).trim()).filter(Boolean))];
+  if ((kind === "members_add_tags" || kind === "members_remove_tags") && (tags.length < 1 || tags.length > 20 || tags.some((tag) => tag.length > 40))) {
+    domainError("VALIDATION_ERROR", "Choose between 1 and 20 valid tags.", { correlationId: actor.correlationId });
+  }
+  const reason = optionalString(input.reason)?.trim();
+  if ((kind === "members_archive" || kind === "leads_close_lost") && (!reason || reason.length < 3)) {
+    domainError("VALIDATION_ERROR", "Record a reason for this bulk action.", { correlationId: actor.correlationId });
+  }
+  const dueAt = optionalString(input.dueAt);
+  if (kind.endsWith("create_follow_up") && (!dueAt || Number.isNaN(new Date(dueAt).getTime()))) {
+    domainError("VALIDATION_ERROR", "Choose a valid follow-up date and time.", { correlationId: actor.correlationId });
+  }
+  const branch = kind === "members_assign_branch" ? await branchByPublicId(ctx, actor.organization._id, recordId(input.branchId)) : null;
+  if (kind === "members_assign_branch") {
+    if (!branch || !branch.active) domainError("NOT_FOUND", "Destination branch not found.", { correlationId: actor.correlationId });
+    assertBranchAccess(actor, branch);
+  }
+  const owner = kind === "leads_assign_owner" ? await userByPublicId(ctx, actor.organization._id, recordId(input.ownerId)) : null;
+  if (kind === "leads_assign_owner" && !owner) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
+
+  const failures: Data[] = [];
+  let succeededCount = 0;
+  let skippedCount = 0;
+  for (const id of ids) {
+    try {
+      if (kind.startsWith("members_")) {
+        const record = await recordOf(ctx, actor, "member", id);
+        const member = data(record.data);
+        if (kind === "members_add_tags" || kind === "members_remove_tags") {
+          const current = arrayValue(member.tags).map(String);
+          const next = kind === "members_add_tags" ? [...new Set([...current, ...tags])] : current.filter((tag) => !tags.includes(tag));
+          if (JSON.stringify(current) === JSON.stringify(next)) { skippedCount += 1; continue; }
+          await patchRecord(ctx, actor, record, { tags: next });
+          await insertTimeline(ctx, actor, { memberId: id, branchId: optionalString(member.homeBranchId), type: "member_updated", title: kind === "members_add_tags" ? `Tags added: ${tags.join(", ")}` : `Tags removed: ${tags.join(", ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+        } else if (kind === "members_assign_branch") {
+          if (member.homeBranchId === publicBranchId(branch!)) { skippedCount += 1; continue; }
+          await ctx.db.patch(record._id, { branchId: branch!._id, data: { ...member, homeBranchId: publicBranchId(branch!) }, updatedAt: Date.now() });
+          await insertTimeline(ctx, actor, { memberId: id, branchId: publicBranchId(branch!), type: "member_updated", title: `Home branch assigned — ${branch!.name}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+        } else if (kind === "members_create_follow_up") {
+          await createTaskMutation(ctx, actor, { type: "follow_up", title: `Follow up — ${stringValue(member.fullName)}`, ownerId: publicUserId(actor.user), dueAt, priority: "normal", memberId: id });
+        } else if (kind === "members_archive") {
+          if (stringValue(member.status) === "archived") { skippedCount += 1; continue; }
+          const photos = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "member_photo").eq("ownerPublicId", id)).collect()).filter((asset) => asset.status === "active");
+          const deleteAfter = Date.now() + 90 * 86_400_000;
+          await patchRecord(ctx, actor, record, { status: "archived", archivedAt: isoNow() });
+          await Promise.all(photos.map((asset) => ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter, updatedAt: Date.now() })));
+          await insertAudit(ctx, actor, { category: "members", action: "member.archive", entityType: "member", entityId: id, entityLabel: `${stringValue(member.fullName)} · ${stringValue(member.memberNumber)}`, summary: "Member archived in bulk", reason, before: { status: member.status }, after: { status: "archived", privatePhotosScheduledForDeletion: photos.length }, branchId: optionalString(member.homeBranchId) });
+        }
+      } else {
+        const record = await recordOf(ctx, actor, "lead", id);
+        const lead = data(record.data);
+        if (kind === "leads_assign_owner") {
+          if (lead.ownerId === publicUserId(owner!)) { skippedCount += 1; continue; }
+          await patchRecord(ctx, actor, record, { ownerId: publicUserId(owner!), ownerName: owner!.fullName, updatedAt: isoNow() });
+          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_assigned", title: `Assigned to ${owner!.fullName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+        } else if (kind === "leads_create_follow_up") {
+          await createTaskMutation(ctx, actor, { type: "follow_up", title: `Follow up — ${stringValue(lead.fullName)}`, ownerId: optionalString(lead.ownerId) ?? publicUserId(actor.user), dueAt, priority: "normal", leadId: id });
+        } else if (kind === "leads_close_lost") {
+          if (stringValue(lead.stage) === "lost") { skippedCount += 1; continue; }
+          await patchRecord(ctx, actor, record, { stage: "lost", lostReason: reason, nextFollowUpAt: undefined, updatedAt: isoNow() });
+          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_lost", title: "Lead closed as not sold", body: reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+        }
+      }
+      succeededCount += 1;
+    } catch (error) {
+      failures.push({ recordId: id, message: bulkFailureMessage(error) });
+    }
+  }
+
+  const now = isoNow();
+  const job = {
+    id: newPublicId(),
+    kind,
+    status: failures.length === ids.length ? "failed" : failures.length ? "partially_completed" : "completed",
+    requestedCount: ids.length,
+    succeededCount,
+    skippedCount,
+    failedCount: failures.length,
+    failures,
+    correlationId: actor.correlationId ?? newPublicId(),
+    requestedById: publicUserId(actor.user),
+    createdAt: now,
+    completedAt: now,
+  };
+  await insertRecord(ctx, actor, "bulkOperationJob", job);
+  await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "bulk.run", key: idempotencyKey, requestHash, result: { jobId: job.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 30 });
+  await insertAudit(ctx, actor, { category: kind.startsWith("members_") ? "members" : "crm", action: `bulk.${kind}`, entityType: "bulk_operation", entityId: job.id, entityLabel: `${ids.length} selected records`, summary: `${succeededCount} updated, ${skippedCount} skipped, ${failures.length} failed`, reason, after: { kind, requestedCount: ids.length, succeededCount, skippedCount, failedCount: failures.length } });
+  return bulkJobProjection(job);
+}
+
+const MEMBER_MERGE_FIELDS = ["fullName", "fullNameAr", "phone", "email", "dateOfBirth", "gender", "preferredLanguage", "addressLine1", "city", "emergencyContactName", "emergencyContactRelationship", "emergencyContactPhone", "homeBranchId"] as const;
+
+async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, input: Data, resolution: "ignored" | "merged"): Promise<Data> {
+  requirePermission(actor, resolution === "merged" ? "members.archive" : "members.write");
+  const caseId = recordId(input.caseId);
+  const reason = stringValue(input.reason).trim();
+  if (reason.length < 3) domainError("VALIDATION_ERROR", "Record a reason for this duplicate decision.", { correlationId: actor.correlationId });
+  const current = await duplicateCase(ctx, actor, caseId);
+  if (stringValue(current.status) !== "open") domainError("CONFLICT", "This duplicate case has already been resolved.", { correlationId: actor.correlationId });
+  const primary = data(current.primary);
+  const candidate = data(current.candidate);
+  const now = isoNow();
+  let survivingMemberId: string | undefined;
+  let mergeAuditReference: string | undefined;
+
+  if (resolution === "merged") {
+    survivingMemberId = recordId(input.survivingMemberId);
+    const mergedMemberId = recordId(input.mergedMemberId);
+    const pair = new Set([stringValue(primary.id), stringValue(candidate.id)]);
+    if (!pair.has(survivingMemberId) || !pair.has(mergedMemberId) || survivingMemberId === mergedMemberId) domainError("VALIDATION_ERROR", "Choose one member from this duplicate case to keep.", { correlationId: actor.correlationId });
+    if (stringValue(input.primaryVersion) !== stringValue(primary.version) || stringValue(input.candidateVersion) !== stringValue(candidate.version)) domainError("CONFLICT", "One of these member records changed. Review the latest values before merging.", { correlationId: actor.correlationId });
+    const survivor = await recordOf(ctx, actor, "member", survivingMemberId);
+    const merged = await recordOf(ctx, actor, "member", mergedMemberId);
+    const survivorValue = data(survivor.data);
+    const mergedValue = data(merged.data);
+    if (optionalString(survivorValue.mergedIntoMemberId) || optionalString(mergedValue.mergedIntoMemberId)) domainError("CONFLICT", "One of these members has already been merged.", { correlationId: actor.correlationId });
+    const projections = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "customerMembership")).collect()).filter((row) => pair.has(stringValue(data(row.data).memberId)));
+    const hasMemberOwnedIdentity = Boolean(optionalString(survivorValue.customerProfileId) || optionalString(mergedValue.customerProfileId) || projections.some((projection) => {
+      const value = data(projection.data);
+      return Boolean(optionalString(value.customerUserId) || optionalString(value.customerId));
+    }));
+    if (hasMemberOwnedIdentity) domainError("CONFLICT", "These records are linked to a member account. Resolve the member identity before merging.", { correlationId: actor.correlationId });
+    const sources = data(input.fieldSourceMemberIds);
+    const patch: Data = {};
+    for (const field of MEMBER_MERGE_FIELDS) {
+      const sourceId = optionalString(sources[field]);
+      if (sourceId && !pair.has(sourceId)) domainError("VALIDATION_ERROR", `Invalid field source for ${field}.`, { correlationId: actor.correlationId });
+      const source = sourceId === mergedMemberId ? mergedValue : survivorValue;
+      if (Object.prototype.hasOwnProperty.call(source, field)) patch[field] = source[field];
+    }
+    patch.tags = [...new Set([...arrayValue(survivorValue.tags).map(String), ...arrayValue(mergedValue.tags).map(String)])];
+    patch.mergedMemberIds = [...new Set([...arrayValue(survivorValue.mergedMemberIds).map(String), mergedMemberId, ...arrayValue(mergedValue.mergedMemberIds).map(String)])];
+    patch.updatedAt = now;
+    await patchRecord(ctx, actor, survivor, patch);
+    await patchRecord(ctx, actor, merged, { status: "archived", archivedAt: now, mergedIntoMemberId: survivingMemberId, mergedAt: now });
+    const mergedProjections = projections.filter((projection) => stringValue(data(projection.data).memberId) === mergedMemberId);
+    await Promise.all(mergedProjections.map((projection) => ctx.db.patch(projection._id, { memberPublicId: survivingMemberId, data: { ...data(projection.data), memberId: survivingMemberId, memberNumber: stringValue(patch.memberNumber, stringValue(survivorValue.memberNumber)) }, updatedAt: Date.now() })));
+    const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
+    const audit = await insertAudit(ctx, actor, { category: "members", action: "member.merge", entityType: "member", entityId: survivingMemberId, entityLabel: `${stringValue(patch.fullName, stringValue(survivorValue.fullName))} · ${stringValue(survivorValue.memberNumber)}`, summary: `Merged ${stringValue(mergedValue.memberNumber)} into ${stringValue(survivorValue.memberNumber)} without rewriting historical records`, reason, before: { survivor: survivorValue, merged: mergedValue }, after: { survivingMemberId, mergedMemberId, selectedFieldSources: sources, mergedTimelineEventId: timeline.id, retainedHistoricalMemberIds: patch.mergedMemberIds, customerMembershipProjectionsRelinked: mergedProjections.length } });
+    mergeAuditReference = stringValue(audit.publicId);
+  }
+
+  const resolutionValue = { id: caseId, status: resolution, reasons: current.reasons, confidence: current.confidence, primaryMemberId: primary.id, candidateMemberId: candidate.id, survivingMemberId, reason, correlationId: actor.correlationId, mergeAuditReference, createdAt: now, updatedAt: now };
+  await insertRecord(ctx, actor, "memberDuplicateResolution", resolutionValue);
+  if (resolution === "ignored") await insertAudit(ctx, actor, { category: "members", action: "member.duplicate.ignore", entityType: "duplicate_case", entityId: caseId, entityLabel: `${stringValue(primary.memberNumber)} ↔ ${stringValue(candidate.memberNumber)}`, summary: "Duplicate suggestion ignored", reason, after: { primaryMemberId: primary.id, candidateMemberId: candidate.id } });
+  return { ...current, status: resolution, resolutionReason: reason, survivingMemberId, correlationId: actor.correlationId, updatedAt: now };
 }
 
 async function insertPtLedger(ctx: MutationCtx, actor: ActorContext, input: {
@@ -4370,8 +8014,8 @@ async function syncCustomerMembershipProjection(ctx: MutationCtx, actor: ActorCo
     lastCheckInAt: optionalString(checks[0]?.occurredAt),
   };
   const existing = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "customerMembership").eq("publicId", stringValue(membership.id))).unique();
-  if (existing) await ctx.db.patch(existing._id, { branchId: branch?._id, memberPublicId: stringValue(member.id), data: { ...data(existing.data), ...value }, updatedAt: Date.now() });
-  else await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "customerMembership", publicId: stringValue(membership.id), branchId: branch?._id, memberPublicId: stringValue(member.id), createdAt: Date.now(), updatedAt: Date.now(), data: value });
+  if (existing) await ctx.db.patch(existing._id, { branchId: branch?._id, memberPublicId: stringValue(member.id), customerUserPublicId: publicUserId(user), customerProfilePublicId: optionalString(profile?.id), data: { ...data(existing.data), ...value }, updatedAt: Date.now() });
+  else await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "customerMembership", publicId: stringValue(membership.id), branchId: branch?._id, memberPublicId: stringValue(member.id), customerUserPublicId: publicUserId(user), customerProfilePublicId: optionalString(profile?.id), createdAt: Date.now(), updatedAt: Date.now(), data: value });
 }
 
 async function revokeUnusedIncludedPtCredits(ctx: MutationCtx, actor: ActorContext, membershipId: string, reason: string): Promise<void> {
@@ -4424,7 +8068,7 @@ async function reverseUnusedPtOrderAfterVoid(ctx: MutationCtx, actor: ActorConte
   const order = await ctx.db.query("ptPackageOrders").withIndex("by_charge", (q) => q.eq("organizationId", actor.organization._id).eq("chargePublicId", chargeId)).unique();
   if (!order || order.status === "pending_payment" || !order.entitlementId) return;
   const entitlement = await ctx.db.get(order.entitlementId);
-  if (!entitlement) domainError("NOT_FOUND", "PT package entitlement not found.", { correlationId: actor.correlationId });
+  if (!entitlement) domainError("NOT_FOUND", "The member’s PT package could not be found.", { correlationId: actor.correlationId });
   if (entitlement.reserved > 0 || entitlement.consumed > 0 || entitlement.revoked > 0) {
     domainError("VALIDATION_ERROR", "This payment cannot be voided after PT credits were reserved, used, or refunded. Use the audited PT package refund workflow.", { correlationId: actor.correlationId });
   }
@@ -4450,8 +8094,8 @@ async function customerPtContext(ctx: ReadContext, membershipId: string) {
   const { user } = await requireMember(ctx);
   const userId = publicUserId(user);
   const profile = await customerProfileForUser(ctx, userId);
-  const projection = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "customerMembership")).collect())
-    .find((record) => record.publicId === membershipId && belongsToAuthenticatedCustomer(data(record.data), userId, optionalString(profile?.id)));
+  const projectionRecord = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "customerMembership").eq("publicId", membershipId)).unique();
+  const projection = projectionRecord && belongsToAuthenticatedCustomer(data(projectionRecord.data), userId, optionalString(profile?.id)) ? projectionRecord : null;
   if (!projection) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(projection.organizationId);
   if (!organization || !["trial", "active", "past_due"].includes(organization.status)) domainError("NOT_FOUND", "Membership not found.");
@@ -4502,10 +8146,67 @@ async function insertCustomerPtAudit(ctx: MutationCtx, input: { organization: Or
   });
 }
 
+async function ensureCustomerReferralLink(ctx: MutationCtx, membershipId: string, correlationId: string): Promise<Data> {
+  const context = await customerPtContext(ctx, membershipId);
+  const projection = data(context.projection.data);
+  const member = data(context.member.data);
+  const gymId = stringValue(projection.gymId, publicOrganizationId(context.organization));
+  const current = await customerReferralProgramData(ctx, context.organization, context.projection.publicId, context.member.publicId, gymId, context.membership.publicId);
+  if (!booleanValue(current.enabled)) domainError("CONFLICT", "This gym has not enabled member referral rewards.", { correlationId });
+  if (optionalString(current.sharePath)) return current;
+  const token = newPublicId();
+  const now = Date.now();
+  await ctx.db.insert("domainRecords", {
+    organizationId: context.organization._id,
+    entityType: "referralLink",
+    publicId: token,
+    branchId: context.membership.branchId,
+    memberPublicId: context.member.publicId,
+    createdAt: now,
+    updatedAt: now,
+    data: { id: token, organizationId: publicOrganizationId(context.organization), memberId: context.member.publicId, membershipId: context.membership.publicId, gymId, active: true, createdAt: utcIso(now) },
+  });
+  await insertCustomerPtAudit(ctx, { organization: context.organization, user: context.user, branchId: context.membership.branchId, action: "member.referral_link_created", entityType: "member", entityId: context.member.publicId, entityLabel: stringValue(member.memberNumber, context.member.publicId), summary: "Member created a referral share link", correlationId, after: { membershipId: context.membership.publicId } });
+  return await customerReferralProgramData(ctx, context.organization, context.projection.publicId, context.member.publicId, gymId, context.membership.publicId);
+}
+
 async function mutationData(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  if (operation === "exports.member_personal_data") return await memberPersonalDataExport(ctx, input, request);
   if (operation === "bootstrap.ensure") {
     const { user } = await requireAuthenticated(ctx);
     return user._id;
+  }
+
+  if (operation === "onboarding.update") return await updateOnboardingProgressMutation(ctx, input, request);
+  if (operation === "push.subscribe") return await saveMemberPushSubscription(ctx, input);
+  if (operation === "push.revoke") return await revokeMemberPushSubscription(ctx, input);
+
+  if (operation === "public.offer.respond") {
+    const token = stringValue(input.token).trim();
+    const { link, offer, lead, organization } = await publicOfferRecords(ctx, token);
+    const current = offerProjection(data(offer.data));
+    const outcome = stringValue(input.outcome);
+    if (outcome !== "accepted" && outcome !== "declined") domainError("VALIDATION_ERROR", "Choose accept or decline.", { correlationId: request.correlationId });
+    if (current.status === outcome) return await publicOfferView(ctx, token);
+    if (current.status === "expired") domainError("CONFLICT", "This offer has ended.", { correlationId: request.correlationId });
+    if (current.status !== "sent") domainError("CONFLICT", "This offer is not ready for a response.", { correlationId: request.correlationId });
+    const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 240) : "";
+    await enforcePublicRateLimit(ctx, { scope: "public-offer-response", fingerprint: await privacyFingerprint({ token }), maxRequests: 5, windowMs: 60 * 60_000, correlationId: request.correlationId });
+    const respondedAt = isoNow();
+    const offerData = { ...data(offer.data), status: outcome, respondedAt, responseReason: reason || (outcome === "declined" ? "Declined by recipient" : undefined), responseSource: "public_link" };
+    await ctx.db.patch(offer._id, { data: offerData, updatedAt: Date.now() });
+    const leadData = data(lead.data);
+    await ctx.db.patch(lead._id, { data: { ...leadData, ...(outcome === "declined" ? { stage: "contacted", nextFollowUpAt: new Date(Date.now() + 86_400_000).toISOString() } : {}), updatedAt: respondedAt }, updatedAt: Date.now() });
+    await ctx.db.patch(link._id, { data: { ...data(link.data), outcome, respondedAt }, updatedAt: Date.now() });
+    const responseId = newPublicId();
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "offerResponse", publicId: responseId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: responseId, organizationId: publicOrganizationId(organization), offerId: offer.publicId, leadId: lead.publicId, outcome, reason: reason || undefined, source: "public_link", occurredAt: respondedAt } });
+    const timelineId = newPublicId();
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: timelineId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: timelineId, organizationId: publicOrganizationId(organization), leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.publicId, outcome, source: "public_link" } } });
+    return await publicOfferView(ctx, token);
+  }
+
+  if (operation === "legal.agreement.sign" || operation === "platform.agreement.reveal_id" || operation === "platform.agreement.countersign" || operation === "platform.agreement.resend_copies" || operation === "legal.agreement.attach_print_signature" || operation === "platform.agreement.void") {
+    return await legalAgreementMutation(ctx, operation, input, request);
   }
 
   if (operation === "platform.marketingMigration.apply") {
@@ -4594,15 +8295,72 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.profile.update") return await registerCustomer(ctx, input);
   if (operation === "customer.marketingPreference.update") return await updateCustomerMarketingPreference(ctx, input);
   if (operation === "customer.trial.create") return await createCustomerTrial(ctx, input);
+  if (operation === "customer.referral.ensure") return await ensureCustomerReferralLink(ctx, recordId(input.membershipId), stringValue(request.correlationId, newPublicId()));
   if (operation === "customer.entryPass") return await createEntryPass(ctx, input);
+  if (operation === "customer.classes.book" || operation === "customer.classes.cancel") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    return await customerClassesMutation(ctx, context, operation, input, stringValue(request.correlationId, newPublicId()));
+  }
+  if (operation === "customer.membership.freezeRequest") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    const organization = context.organization;
+    const actorless = { organization } as { organization: typeof organization };
+    void actorless;
+    const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+    const policies = data(data(data(settings?.data).operationalPolicies).memberFreezes);
+    const defaults = DEFAULT_OPERATIONAL_POLICIES.memberFreezes as Data;
+    const policy = { ...defaults, ...policies };
+    if (!booleanValue(policy.requestsEnabled)) domainError("VALIDATION_ERROR", "This gym does not accept freeze requests from the app. Ask at the front desk.", { correlationId: request.correlationId });
+    const membershipData = data(context.membership.data);
+    const today = todayIn(organization.timezone || TZ_FALLBACK);
+    const startDate = stringValue(input.startDate);
+    const days = numberValue(input.days, 0);
+    const reason = stringValue(input.reason).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || startDate < today) domainError("VALIDATION_ERROR", "Choose a start date from today onward.", { correlationId: request.correlationId });
+    if (stringValue(membershipData.endDate) < startDate) domainError("VALIDATION_ERROR", "The freeze must start before the membership ends.", { correlationId: request.correlationId });
+    const minimumFreezeDays = numberValue(data(data(data(settings?.data).operationalPolicies).membership).minimumFreezeDays, 1);
+    if (!Number.isSafeInteger(days) || days < minimumFreezeDays || days > numberValue(policy.maxDaysPerFreeze, 30)) {
+      domainError("VALIDATION_ERROR", `A freeze must be between ${minimumFreezeDays} and ${numberValue(policy.maxDaysPerFreeze, 30)} days.`, { correlationId: request.correlationId });
+    }
+    if (!reason) domainError("VALIDATION_ERROR", "Tell the gym why you need the freeze.", { correlationId: request.correlationId });
+    const membershipId = context.membership.publicId;
+    const existingRequests = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "freezeRequest")).collect()).map((row) => data(row.data));
+    if (existingRequests.some((candidate) => stringValue(candidate.membershipId) === membershipId && stringValue(candidate.status) === "pending")) {
+      domainError("CONFLICT", "You already have a freeze request waiting for the gym.", { correlationId: request.correlationId });
+    }
+    const activeFreeze = data(membershipData.activeFreeze);
+    if (stringValue(activeFreeze.status) === "active" && stringValue(activeFreeze.endDate) >= today) {
+      domainError("CONFLICT", "This membership already has an active or scheduled freeze.", { correlationId: request.correlationId });
+    }
+    const memberId = context.member.publicId;
+    const windowStart = Date.now() - numberValue(policy.windowDays, 365) * 86_400_000;
+    const approvedInWindow = existingRequests.filter((candidate) => stringValue(candidate.memberId) === memberId && stringValue(candidate.status) === "approved" && Date.parse(stringValue(candidate.decidedAt, stringValue(candidate.requestedAt))) >= windowStart).length;
+    const expectedFeeMinor = approvedInWindow < numberValue(policy.freeFreezesPerWindow, 1) ? 0 : numberValue(policy.extraFreezeFeeMinor, 10_000);
+    const now = Date.now();
+    const value = {
+      id: newPublicId(),
+      membershipId,
+      memberId,
+      memberName: stringValue(data(context.member.data).fullName, memberId),
+      branchId: optionalString(membershipData.homeBranchId),
+      startDate,
+      days,
+      reason,
+      status: "pending",
+      expectedFeeMinor,
+      requestedAt: utcIso(now),
+    };
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "freezeRequest", publicId: stringValue(value.id), branchId: context.membership.branchId, memberPublicId: memberId, createdAt: now, updatedAt: now, data: value });
+    return value;
+  }
   if (operation === "customer.pt.package.request") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
     const idempotencyKey = stringValue(input.idempotencyKey).trim();
-    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: request.correlationId });
     const requestHash = JSON.stringify({ membershipId: input.membershipId, packageId: input.packageId });
     const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", context.organization._id).eq("operation", "customer.pt.package.request").eq("key", idempotencyKey)).unique();
     if (existingKey) {
-      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different package request.", { correlationId: request.correlationId });
+      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: request.correlationId });
       const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", context.organization._id).eq("publicId", stringValue(data(existingKey.result).orderId))).unique();
       if (!order) domainError("NOT_FOUND", "PT package order not found.");
       return await ptPackageOrderView(ctx, context.organization, order);
@@ -4646,10 +8404,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (operation === "customer.pt.booking.create") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
     const idempotencyKey = stringValue(input.idempotencyKey).trim();
-    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: request.correlationId });
     const existing = await ctx.db.query("ptBookings").withIndex("by_organization_idempotency", (q) => q.eq("organizationId", context.organization._id).eq("idempotencyKey", idempotencyKey)).unique();
     if (existing) {
-      if (existing.membershipPublicId !== context.membership.publicId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT booking.", { correlationId: request.correlationId });
+      if (existing.membershipPublicId !== context.membership.publicId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: request.correlationId });
       return await ptBookingView(ctx, context.organization, existing);
     }
     const membership = data(context.membership.data);
@@ -4720,7 +8478,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const { user } = await requireMember(ctx);
     requireReason(input.reason, request.correlationId);
     const idempotencyKey = stringValue(input.idempotencyKey).trim();
-    if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: request.correlationId });
+    if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: request.correlationId });
     const booking = await ctx.db.query("ptBookings").withIndex("by_public_id", (q) => q.eq("publicId", recordId(input.bookingId))).unique();
     if (!booking) domainError("NOT_FOUND", "PT booking not found.", { correlationId: request.correlationId });
     const organization = await ctx.db.get(booking.organizationId);
@@ -4731,7 +8489,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const requestHash = JSON.stringify({ bookingId: booking.publicId, trainerProfileId: input.trainerProfileId, branchId: input.branchId, startsAt: input.startsAt });
     const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", organization._id).eq("operation", "customer.pt.booking.reschedule").eq("key", idempotencyKey)).unique();
     if (existingKey) {
-      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another reschedule.", { correlationId: request.correlationId });
+      if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: request.correlationId });
       return await ptBookingView(ctx, organization, booking);
     }
     const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
@@ -4816,70 +8574,374 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (!updated) domainError("NOT_FOUND", "Gym application not found.", { correlationId: admin.correlationId });
     return gymApplicationView(updated);
   }
+  if (operation === "platform.gym.archive") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const gymId = recordId(input.gymId);
+    requireReason(input.reason, admin.correlationId);
+    if (typeof input.confirmation !== "string") {
+      domainError("VALIDATION_ERROR", "Type the gym name exactly to confirm archiving.", { correlationId: admin.correlationId, fieldErrors: { confirmation: ["Must match the gym name exactly"] } });
+    }
+    const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
+    if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
+    const current = data(record.data);
+    const gymName = optionalString(current.name);
+    if (!gymName) domainError("CONFIGURATION_ERROR", "This gym has no canonical name to confirm archiving.", { correlationId: admin.correlationId });
+    if (input.confirmation !== gymName) {
+      domainError("VALIDATION_ERROR", "Type the gym name exactly to confirm archiving.", { correlationId: admin.correlationId, fieldErrors: { confirmation: ["Must match the gym name exactly"] } });
+    }
+    const targetOrganizationId = optionalString(current.targetOrganizationId);
+    const targetOrganization = targetOrganizationId
+      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+      : null;
+    const organization = targetOrganization && record.organizationId === targetOrganization._id ? targetOrganization : null;
+    const entitlement = organization
+      ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
+      : null;
+    if (organization?.archivedAt || booleanValue(current.isArchived)) {
+      domainError("CONFLICT", "This gym is already archived and cannot be changed through the subscription controls.", { correlationId: admin.correlationId });
+    }
+    const now = Date.now();
+    const reason = input.reason.trim();
+    const updated = {
+      ...current,
+      subscriptionStatus: "suspended",
+      isPublic: false,
+      isArchived: true,
+      archivedAt: new Date(now).toISOString(),
+      archiveReason: reason,
+      subscriptionStatusReason: reason,
+    };
+    await ctx.db.patch(record._id, { data: updated, updatedAt: now });
+    let updatedOrganization: Organization | null = organization;
+    if (organization) {
+      await ctx.db.patch(organization._id, {
+        status: "suspended",
+        archivedAt: now,
+        archiveReason: reason,
+        archivedByUserId: admin.user._id,
+        subscriptionStatusReason: reason,
+        updatedAt: now,
+      });
+      updatedOrganization = await ctx.db.get(organization._id);
+      if (!updatedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
+    }
+    await insertPlatformAudit(ctx, admin, {
+      action: "gym.archive",
+      entityType: "platform_gym",
+      entityPublicId: gymId,
+      entityLabel: gymName,
+      summary: `Archived ${gymName} and removed platform access`,
+      reason,
+      before: platformSubscriptionSnapshot(current, organization, entitlement),
+      after: platformSubscriptionSnapshot(updated, updatedOrganization, entitlement),
+    });
+    return marketplaceView(platformMarketplaceProjection(updated, updatedOrganization, entitlement), true);
+  }
+
   if (operation === "platform.gym.update") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const gymId = recordId(input.gymId);
     const requestedStatus = optionalString(input.status);
     const requestedPlan = optionalString(input.plan);
-    const requestedPublic = input.isPublic === undefined ? undefined : booleanValue(input.isPublic);
+    const requestedBillingInterval = input.billingInterval;
+    const requestedPublic = input.isPublic === undefined ? undefined : input.isPublic;
     requireReason(input.reason, admin.correlationId);
     const reason = input.reason.trim();
-    const statuses = new Set(["trial", "active", "overdue", "suspended", "cancelled"]);
-    const plans = new Set(["Starter", "Growth", "Pro", "Enterprise"]);
-    if (requestedStatus && !statuses.has(requestedStatus)) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
-    if (requestedPlan && !plans.has(requestedPlan)) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
+    const statuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
+    const plans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
+    if (requestedStatus && !statuses.includes(requestedStatus as (typeof statuses)[number])) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
+    if (requestedPlan && !plans.includes(requestedPlan as (typeof plans)[number])) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
+    if (requestedBillingInterval !== undefined && requestedBillingInterval !== "monthly" && requestedBillingInterval !== "annual") domainError("VALIDATION_ERROR", "Billing cadence is invalid.", { correlationId: request.correlationId });
     if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") domainError("VALIDATION_ERROR", "Public listing must be a boolean.", { correlationId: request.correlationId });
-    const lifecycleInputs = [input.trialEndsAt, input.subscriptionStartedAt, input.currentPeriodEndsAt, input.cancelledAt];
-    if (!requestedStatus && !requestedPlan && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, listing, or lifecycle change.", { correlationId: request.correlationId });
-    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
+    // Trial, subscription-start, and cancellation timestamps remain
+    // server-owned. The current paid period boundary is the one lifecycle
+    // value an admin may select for a material membership change.
+    const lifecycleInputs = [input.trialEndsAt, input.subscriptionStartedAt, input.cancelledAt];
+    if (lifecycleInputs.some((value) => value !== undefined)) {
+      domainError("VALIDATION_ERROR", "Trial, subscription start, and cancellation dates are derived automatically.", { correlationId: admin.correlationId });
+    }
+    const requestedPeriodEndsAtInput = input.currentPeriodEndsAt;
+    const requestedPeriodEndsAt = requestedPeriodEndsAtInput === undefined ? undefined : validSubscriptionTimestamp(requestedPeriodEndsAtInput);
+    if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) {
+      domainError("VALIDATION_ERROR", "The membership end date must be a valid calendar date.", { correlationId: admin.correlationId });
+    }
+    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
+    const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
-    const lifecycleDate = (key: "trialEndsAt" | "subscriptionStartedAt" | "currentPeriodEndsAt" | "cancelledAt"): { iso?: string; timestamp?: number } => {
-      if (input[key] === undefined) return {};
-      const timestamp = validTimestamp(stringValue(input[key]));
-      if (timestamp === undefined) domainError("VALIDATION_ERROR", "Subscription lifecycle dates are invalid.", { correlationId: admin.correlationId, fieldErrors: { [key]: ["Enter a valid date"] } });
-      return { iso: new Date(timestamp).toISOString(), timestamp };
-    };
-    const trialEnds = lifecycleDate("trialEndsAt");
-    const subscriptionStarted = lifecycleDate("subscriptionStartedAt");
-    const currentPeriodEnds = lifecycleDate("currentPeriodEndsAt");
-    const cancelled = lifecycleDate("cancelledAt");
-    if (requestedStatus === "trial" && !trialEnds.iso && !optionalString(current.trialEndsAt)) domainError("VALIDATION_ERROR", "A trial end date is required when starting a trial.", { correlationId: admin.correlationId, fieldErrors: { trialEndsAt: ["Required for trials"] } });
-    const now = isoNow();
+    const targetOrganizationId = optionalString(current.targetOrganizationId);
+    const targetOrganization = targetOrganizationId
+      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+      : null;
+    const organization = targetOrganization && record.organizationId === targetOrganization._id ? targetOrganization : null;
+    if (organization?.archivedAt || booleanValue(current.isArchived)) {
+      domainError("CONFLICT", "Archived gyms cannot be changed through the subscription controls.", { correlationId: admin.correlationId });
+    }
+    const entitlementBefore = organization
+      ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
+      : null;
+    const hasTenantMutation = Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || lifecycleInputs.some((value) => value !== undefined));
+    if (!organization) {
+      // Directory-only and mismatched rows stay in the platform snapshot for
+      // cleanup, but cannot claim a tenant lifecycle/plan update succeeded.
+      // The only safe mutation is an explicit hide operation.
+      if (hasTenantMutation || requestedPublic !== false) {
+        domainError("CONFIGURATION_ERROR", "This directory row is not linked to a provisioned organization; only hiding it is supported.", { correlationId: admin.correlationId });
+      }
+      const hidden = { ...current, isPublic: false };
+      await ctx.db.patch(record._id, { data: hidden, updatedAt: Date.now() });
+      await insertPlatformAudit(ctx, admin, {
+        action: "gym.subscription.update",
+        entityType: "platform_gym",
+        entityPublicId: gymId,
+        entityLabel: stringValue(current.name, gymId),
+        summary: "Hid an unprovisioned gym directory row",
+        reason,
+        before: platformSubscriptionSnapshot(current, null, null),
+        after: platformSubscriptionSnapshot(hidden, null, null),
+      });
+      return marketplaceView(platformMarketplaceProjection(hidden, null), true);
+    }
+    const organizationStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : undefined;
+    const previousSubscriptionStatus = organizationStatus ?? optionalString(current.subscriptionStatus);
+    const statusTransitioned = requestedStatus !== undefined && requestedStatus !== previousSubscriptionStatus;
+    const rawStatus = requestedStatus ?? organizationStatus ?? optionalString(current.subscriptionStatus);
+    if (!rawStatus || !statuses.includes(rawStatus as (typeof statuses)[number])) {
+      domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription status.", { correlationId: admin.correlationId });
+    }
+    const nextStatus = rawStatus as (typeof statuses)[number];
+    if (nextStatus === "trial" && previousSubscriptionStatus !== "trial") {
+      domainError("VALIDATION_ERROR", "A provisioned gym cannot be moved back into trial; trials start automatically during onboarding.", { correlationId: admin.correlationId });
+    }
+    // A provisioned organization is the authoritative source for its plan. A
+    // directory row can therefore be repaired by a status/listing save even
+    // when an older projection contains a stale plan value.
+    // The organization owns the subscription. Existing entitlement/listing
+    // values are repairable projections and must not override an org plan on a
+    // status-only save or a plan change.
+    const rawPlan = requestedPlan ?? organization?.subscriptionPlan ?? optionalString(entitlementBefore?.subscriptionPlan) ?? optionalString(current.rivetPlan);
+    if (!rawPlan || !plans.includes(rawPlan as (typeof plans)[number])) {
+      domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription plan.", { correlationId: admin.correlationId });
+    }
+    const nextPlan = rawPlan as (typeof plans)[number];
+    // Once a row is linked, organization lifecycle timestamps are authoritative.
+    // Never promote stale directory dates into the tenant on an unrelated save.
+    const storedTrialEndsAt = organization?.trialEndsAt;
+    const storedSubscriptionStartedAt = organization?.subscriptionStartedAt;
+    const storedCurrentPeriodEndsAt = organization?.currentPeriodEndsAt;
+    const nowMs = Date.now();
+    const existingInterval = billingInterval(organization?.billingInterval ?? current.billingInterval);
+    const interval = requestedBillingInterval === undefined ? existingInterval : requestedBillingInterval;
+    const materialMembershipChange = (requestedStatus !== undefined && requestedStatus !== previousSubscriptionStatus)
+      || (requestedPlan !== undefined && requestedPlan !== organization?.subscriptionPlan)
+      || (requestedBillingInterval !== undefined && interval !== existingInterval);
+    const storedPeriodEndsAt = storedCurrentPeriodEndsAt === undefined ? undefined : validSubscriptionTimestamp(new Date(storedCurrentPeriodEndsAt).toISOString());
+    const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, storedPeriodEndsAt);
+    if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) {
+      domainError("VALIDATION_ERROR", "Trial end is fixed automatically from onboarding; do not provide a paid period end date.", { correlationId: admin.correlationId });
+    }
+    // A material change that lands on an active subscription starts a new paid
+    // term today: the server derives the boundary and issues the invoice, so
+    // monthly and annual changes always bill through the same path. The new
+    // term is one interval long, and the unfinished part of the paid term it
+    // replaces comes back as money off that invoice.
+    const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
+    const catalog = await platformPlans(ctx);
+    const monthlyCatalogPrice = (name: string | undefined) => numberValue(catalog.find((candidate) => stringValue(candidate.name) === name)?.priceMinor);
+    const outgoingMonthlyPrice = monthlyCatalogPrice(organization?.subscriptionPlan);
+    const change = startsNewPaidTerm
+      ? termChange({
+          now: nowMs,
+          interval,
+          monthlyPriceMinor: monthlyCatalogPrice(nextPlan),
+          // Only a paid, running term is worth anything back. An overdue term
+          // was never paid for, so it earns no credit; its unpaid invoice is
+          // voided below instead.
+          ...(previousSubscriptionStatus === "active" && storedPeriodEndsAt !== undefined && outgoingMonthlyPrice > 0
+            ? { outgoing: { periodEndsAt: storedPeriodEndsAt, monthlyPriceMinor: outgoingMonthlyPrice, interval: existingInterval } }
+            : {}),
+        })
+      : undefined;
+    const computedPeriodEndsAt = change?.periodEndsAt;
+    const nextSubscriptionStartedAt = storedSubscriptionStartedAt
+      ?? ((nextStatus === "trial" || nextStatus === "active") ? nowMs : undefined);
+    const nextTrialEndsAt = nextStatus === "trial"
+      ? storedTrialEndsAt ?? (nextSubscriptionStartedAt === undefined ? undefined : addCalendarMonths(nextSubscriptionStartedAt, 1))
+      : storedTrialEndsAt;
+    if (nextStatus === "trial" && nextTrialEndsAt !== undefined && nextTrialEndsAt <= nowMs) {
+      domainError("VALIDATION_ERROR", "A trial must end in the future; its end date is derived from onboarding.", { correlationId: admin.correlationId });
+    }
+    // An explicit admin date remains an override; otherwise the server-derived
+    // term applies, and non-billing changes keep the stored boundary.
+    const selectedPeriodEndsAt = periodBoundaryChanged ? requestedPeriodEndsAt : computedPeriodEndsAt ?? storedPeriodEndsAt;
+    if ((materialMembershipChange || periodBoundaryChanged) && selectedPeriodEndsAt !== undefined && storedSubscriptionStartedAt !== undefined && selectedPeriodEndsAt < storedSubscriptionStartedAt) {
+      domainError("VALIDATION_ERROR", "The membership end date must be on or after the subscription start date.", { correlationId: admin.correlationId });
+    }
+    if ((materialMembershipChange || periodBoundaryChanged) && nextStatus === "active" && selectedPeriodEndsAt !== undefined && selectedPeriodEndsAt <= nowMs) {
+      domainError("VALIDATION_ERROR", "An active subscription must end in the future.", { correlationId: admin.correlationId });
+    }
+    const nextCurrentPeriodEndsAt = nextStatus === "trial" ? undefined : selectedPeriodEndsAt;
+    const nextCancelledAt = nextStatus === "cancelled" ? nowMs : undefined;
+    if (nextStatus === "trial" && nextTrialEndsAt === undefined) {
+      domainError("CONFIGURATION_ERROR", "A trial cannot start until its onboarding date is established.", { correlationId: admin.correlationId });
+    }
+    const now = new Date(nowMs).toISOString();
+    const nextPublic = organization && (nextStatus === "active" || nextStatus === "trial")
+      ? requestedPublic ?? booleanValue(current.isPublic)
+      : false;
     const updated = {
       ...current,
-      ...(requestedStatus ? { subscriptionStatus: requestedStatus } : {}),
-      ...(requestedPlan ? { rivetPlan: requestedPlan } : {}),
-      ...(requestedPublic !== undefined ? { isPublic: requestedPublic } : {}),
-      ...(trialEnds.iso ? { trialEndsAt: trialEnds.iso } : {}),
-      ...(subscriptionStarted.iso ? { subscriptionStartedAt: subscriptionStarted.iso } : {}),
-      ...(currentPeriodEnds.iso ? { currentPeriodEndsAt: currentPeriodEnds.iso } : {}),
-      ...(cancelled.iso ? { cancelledAt: cancelled.iso } : {}),
-      ...(requestedStatus === "active" && !subscriptionStarted.iso && !optionalString(current.subscriptionStartedAt) ? { subscriptionStartedAt: now } : {}),
-      ...(requestedStatus === "cancelled" && !cancelled.iso ? { cancelledAt: now } : {}),
-      ...(requestedStatus && requestedStatus !== "cancelled" ? { cancelledAt: undefined } : {}),
+      subscriptionStatus: nextStatus,
+      rivetPlan: nextPlan,
+      isPublic: nextPublic,
+      trialEndsAt: nextTrialEndsAt !== undefined ? new Date(nextTrialEndsAt).toISOString() : undefined,
+      subscriptionStartedAt: nextSubscriptionStartedAt !== undefined ? new Date(nextSubscriptionStartedAt).toISOString() : undefined,
+      currentPeriodEndsAt: nextCurrentPeriodEndsAt !== undefined ? new Date(nextCurrentPeriodEndsAt).toISOString() : undefined,
+      ...(nextStatus === "cancelled" ? { cancelledAt: new Date(nextCancelledAt!).toISOString() } : { cancelledAt: undefined }),
       subscriptionStatusReason: reason,
-      lastActiveAt: now,
+      billingInterval: interval,
+      ...(nextStatus === "active" || nextStatus === "trial" ? { lastActiveAt: now } : {}),
     };
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
-    const targetOrganizationId = optionalString(current.targetOrganizationId);
-    if (targetOrganizationId) {
-      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique();
-      if (organization) {
-        const statusMap: Record<string, "trial" | "active" | "past_due" | "suspended" | "cancelled"> = { trial: "trial", active: "active", overdue: "past_due", suspended: "suspended", cancelled: "cancelled" };
-        await ctx.db.patch(organization._id, {
-          ...(requestedStatus ? { status: statusMap[requestedStatus] } : {}),
-          ...(requestedPlan && requestedPlan !== "Enterprise" ? { subscriptionPlan: requestedPlan as "Starter" | "Growth" | "Pro" } : {}),
-          ...(trialEnds.timestamp !== undefined ? { trialEndsAt: trialEnds.timestamp } : {}),
-          ...(subscriptionStarted.timestamp !== undefined ? { subscriptionStartedAt: subscriptionStarted.timestamp } : {}),
-          ...(currentPeriodEnds.timestamp !== undefined ? { currentPeriodEndsAt: currentPeriodEnds.timestamp } : {}),
-          ...(cancelled.timestamp !== undefined ? { cancelledAt: cancelled.timestamp } : {}),
-          ...(requestedStatus === "active" && subscriptionStarted.timestamp === undefined && !organization.subscriptionStartedAt ? { subscriptionStartedAt: Date.now() } : {}),
-          ...(requestedStatus === "cancelled" && cancelled.timestamp === undefined ? { cancelledAt: Date.now() } : {}),
-          ...(requestedStatus && requestedStatus !== "cancelled" ? { cancelledAt: undefined } : {}),
-          subscriptionStatusReason: reason,
-          updatedAt: Date.now(),
+    const previousModulePlan = workspacePlan(organization?.subscriptionPlan);
+    let updatedOrganization: Organization | null = organization;
+    let updatedEntitlement: Doc<"organizationEntitlements"> | null = entitlementBefore;
+    let issuedTermInvoice: { invoiceId: string; amountMinor: number; creditMinor: number; creditDays: number; periodEnd: string } | undefined;
+    if (organization) {
+      const modulePlan = workspacePlan(nextPlan);
+      if (!modulePlan) domainError("CONFIGURATION_ERROR", "This gym has no configured workspace entitlement plan.", { correlationId: admin.correlationId });
+      const organizationStatus = nextStatus === "overdue" ? "past_due" : nextStatus;
+      await ctx.db.patch(organization._id, {
+        status: organizationStatus,
+        subscriptionPlan: modulePlan,
+        billingInterval: interval,
+        ...(nextTrialEndsAt !== undefined ? { trialEndsAt: nextTrialEndsAt } : { trialEndsAt: undefined }),
+        ...(nextSubscriptionStartedAt !== undefined ? { subscriptionStartedAt: nextSubscriptionStartedAt } : {}),
+        ...(nextCurrentPeriodEndsAt !== undefined ? { currentPeriodEndsAt: nextCurrentPeriodEndsAt } : { currentPeriodEndsAt: undefined }),
+        ...(nextStatus === "cancelled" ? { cancelledAt: nextCancelledAt } : { cancelledAt: undefined }),
+        subscriptionStatusReason: reason,
+        updatedAt: nowMs,
+      });
+      updatedOrganization = await ctx.db.get(organization._id);
+      if (!updatedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
+      const catalogPlan = catalog.find((candidate) => stringValue(candidate.name) === modulePlan);
+      const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
+      const entitlementUpdatedAt = Date.now();
+      const entitlementNeedsSync = !entitlementBefore
+        || requestedPlan !== undefined
+        || entitlementBefore.subscriptionPlan !== modulePlan
+        || entitlementBefore.catalogVersion !== WORKSPACE_MODULE_CATALOG_VERSION
+        || entitlementBefore.source !== "subscription_plan"
+        || JSON.stringify(entitlementBefore.entitledModules) !== JSON.stringify(entitledModules);
+      if (entitlementBefore && entitlementNeedsSync) {
+        await ctx.db.patch(entitlementBefore._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
+        updatedEntitlement = await ctx.db.get(entitlementBefore._id);
+      } else if (!entitlementBefore) {
+        const entitlementId = await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
+        updatedEntitlement = await ctx.db.get(entitlementId);
+      }
+      // Newly purchased modules start enabled so a plan upgrade is immediately
+      // usable. Keep the stored preference row intact on downgrades so an
+      // upgrade can restore the tenant's prior choices; read-time entitlement
+      // filtering still locks those modules while the tenant is below the tier.
+      if (requestedPlan !== undefined && previousModulePlan !== modulePlan) {
+        const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+        if (preferences) {
+          const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, catalog.find((candidate) => stringValue(candidate.name) === previousModulePlan)?.entitledModules) : [];
+          const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
+          if (newlyEntitled.length > 0) {
+            const candidate = [...preferences.enabledModules, ...newlyEntitled];
+            let enabledModules: WorkspaceModuleKey[];
+            try {
+              enabledModules = validateWorkspaceModuleSelection(candidate, entitledModules);
+            } catch {
+              enabledModules = defaultWorkspacePreferences(entitledModules);
+            }
+            if (JSON.stringify(enabledModules) !== JSON.stringify(preferences.enabledModules)) {
+              await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: entitlementUpdatedAt });
+            }
+          }
+        }
+      }
+      if (startsNewPaidTerm && nextCurrentPeriodEndsAt !== undefined) {
+        // The new paid term is billed the moment it is granted. Earlier unpaid
+        // subscription invoices cover a term this change supersedes, so they
+        // are voided instead of double-billing the tenant. Manually created
+        // invoices (no cycle key) are never touched.
+        const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
+        for (const row of invoiceRows) {
+          const invoice = data(row.data);
+          const invoiceStatus = stringValue(invoice.status);
+          const key = optionalString(invoice.cycleKey);
+          if (!key || !["draft", "open", "past_due", "failed"].includes(invoiceStatus)) continue;
+          await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: nowMs });
+          await insertPlatformAudit(ctx, admin, {
+            action: "invoice.void",
+            entityType: "platform_invoice",
+            entityPublicId: row.publicId,
+            entityLabel: row.publicId,
+            summary: "Voided a subscription invoice superseded by a subscription change",
+            reason,
+            before: { status: invoiceStatus },
+            after: { status: "void" },
+          });
+        }
+        const catalogPrice = monthlyCatalogPrice(modulePlan);
+        if (!Number.isSafeInteger(catalogPrice) || catalogPrice <= 0) {
+          domainError("CONFIGURATION_ERROR", "The plan catalog has no valid price for this plan, so the term invoice cannot be issued.", { correlationId: admin.correlationId });
+        }
+        // An admin-chosen end date replaces the derived term, so the credit
+        // that belongs to the derived term is not applied to it.
+        const termInvoice = periodBoundaryChanged || !change
+          ? { subtotalMinor: termPriceMinor(catalogPrice, interval), creditMinor: 0, creditDays: 0, amountMinor: termPriceMinor(catalogPrice, interval) }
+          : change;
+        const amountMinor = termInvoice.amountMinor;
+        const invoiceId = `INV-${newPublicId()}`;
+        const periodEndIso = new Date(nextCurrentPeriodEndsAt).toISOString();
+        await ctx.db.insert("domainRecords", {
+          organizationId: organization._id,
+          entityType: "platformInvoice",
+          publicId: invoiceId,
+          createdAt: nowMs,
+          updatedAt: nowMs,
+          data: {
+            id: invoiceId,
+            gymId,
+            gym: stringValue(current.name, "Gym"),
+            amountMinor,
+            amount: platformInvoiceAmount(amountMinor, JOD),
+            currency: JOD,
+            date: now,
+            issuedAt: now,
+            dueAt: new Date(nowMs + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
+            periodStart: now,
+            periodEnd: periodEndIso,
+            cycleKey: `change:${targetOrganizationId}:${nowMs}`,
+            billingInterval: interval,
+            ...(termInvoice.creditMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
+            // A credit large enough to cover the whole term leaves nothing to
+            // collect, so the invoice is settled rather than left to chase.
+            ...(amountMinor === 0
+              ? { status: "paid", paidAt: now, paymentReference: "Settled by the credit from the previous term" }
+              : { status: "open" }),
+            createdAt: now,
+            updatedAt: now,
+          },
         });
+        issuedTermInvoice = { invoiceId, amountMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays, periodEnd: periodEndIso };
+        const billedRecipient = await platformGymOwnerRecipient(ctx, gymId);
+        if (billedRecipient && billedRecipient.organization._id === organization._id) {
+          const issued = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "platformInvoice").eq("publicId", invoiceId)).unique();
+          await queueOperationalEmail(ctx, {
+            organizationId: billedRecipient.organization._id,
+            kind: "platform_invoice_issued",
+            templateVersion: "platform-invoice-issued-v1",
+            recipientReference: publicUserId(billedRecipient.user),
+            recipientEmail: billedRecipient.user.email,
+            dedupeKey: `subscription-change-invoice:${invoiceId}`,
+            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user))] : undefined,
+          });
+        }
       }
     }
     await insertPlatformAudit(ctx, admin, {
@@ -4887,42 +8949,140 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       entityType: "platform_gym",
       entityPublicId: gymId,
       entityLabel: stringValue(current.name, gymId),
-      summary: "Updated gym subscription controls",
+      summary: issuedTermInvoice
+        ? `Updated gym subscription controls and issued ${issuedTermInvoice.invoiceId} for the new term`
+        : "Updated gym subscription controls",
       reason,
-      before: { subscriptionStatus: current.subscriptionStatus, rivetPlan: current.rivetPlan, isPublic: current.isPublic, trialEndsAt: current.trialEndsAt, subscriptionStartedAt: current.subscriptionStartedAt, currentPeriodEndsAt: current.currentPeriodEndsAt, cancelledAt: current.cancelledAt },
-      after: { subscriptionStatus: updated.subscriptionStatus, rivetPlan: updated.rivetPlan, isPublic: updated.isPublic, trialEndsAt: updated.trialEndsAt, subscriptionStartedAt: updated.subscriptionStartedAt, currentPeriodEndsAt: updated.currentPeriodEndsAt, cancelledAt: updated.cancelledAt },
+      before: platformSubscriptionSnapshot(current, organization, entitlementBefore),
+      after: { ...platformSubscriptionSnapshot(updated, updatedOrganization, updatedEntitlement), ...(issuedTermInvoice ? { termInvoice: issuedTermInvoice } : {}) },
     });
-    if (requestedStatus === "suspended" || requestedStatus === "cancelled") {
+    if (organization && statusTransitioned && (requestedStatus === "suspended" || requestedStatus === "cancelled")) {
       const recipient = await platformGymOwnerRecipient(ctx, gymId);
-      if (recipient) await queueOperationalEmail(ctx, {
+      if (recipient && recipient.organization._id === organization._id) await queueOperationalEmail(ctx, {
         organizationId: recipient.organization._id,
         kind: requestedStatus === "suspended" ? "platform_subscription_suspended" : "platform_subscription_cancelled",
         templateVersion: requestedStatus === "suspended" ? "subscription-suspended-v1" : "subscription-cancelled-v1",
         recipientReference: publicUserId(recipient.user),
         recipientEmail: recipient.user.email,
-        dedupeKey: `subscription-${requestedStatus}:${gymId}:${now}`,
+        dedupeKey: `subscription-${requestedStatus}:${gymId}`,
       });
     }
-    return marketplaceView(updated, true);
+    return marketplaceView(platformMarketplaceProjection(updated, updatedOrganization, updatedEntitlement), true);
+  }
+
+  if (operation === "platform.gym.profile.publish") {
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const gymId = recordId(input.gymId);
+    requireReason(input.reason, admin.correlationId);
+    const reason = input.reason.trim();
+    const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
+    if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: admin.correlationId });
+    const current = data(record.data);
+    const targetOrganizationId = optionalString(current.targetOrganizationId);
+    const targetOrganization = targetOrganizationId
+      ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
+      : null;
+    const organization = targetOrganization && record.organizationId === targetOrganization._id ? targetOrganization : null;
+    if (!organization) domainError("CONFIGURATION_ERROR", "This gym is not linked to a provisioned organization.", { correlationId: admin.correlationId });
+    const draft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
+    if (!draft) domainError("VALIDATION_ERROR", "This gym has not saved a public-page draft yet.", { correlationId: admin.correlationId });
+    const draftValue = data(draft.data);
+    if (!stringValue(draftValue.taglineEn).trim() || !stringValue(draftValue.descriptionEn).trim()) domainError("VALIDATION_ERROR", "The saved draft is missing its English tagline or description.", { correlationId: admin.correlationId });
+    const draftVersion = numberValue(draftValue.version);
+    if (stringValue(draftValue.status) === "published" && booleanValue(current.profilePublished, false) && numberValue(current.profileVersion) === draftVersion) {
+      return { id: gymId, publishedVersion: draftVersion };
+    }
+    const { versionId, listingBefore } = await applyGymProfilePublish(ctx, organization, record, draft);
+    await insertPlatformAudit(ctx, admin, {
+      action: "gym.profile.publish",
+      entityType: "platform_gym",
+      entityPublicId: gymId,
+      entityLabel: stringValue(current.name, gymId),
+      summary: `Reviewed and published the public page draft v${draftVersion}`,
+      reason,
+      before: { profilePublished: booleanValue(listingBefore.profilePublished, false), profileVersion: listingBefore.profileVersion },
+      after: { profilePublished: true, profileVersion: draftVersion, versionId },
+    });
+    return { id: gymId, publishedVersion: draftVersion };
   }
 
   if (operation === "platform.plan.update") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const name = stringValue(input.name);
-    if (!["Starter", "Growth", "Pro"].includes(name)) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
+    requireReason(input.reason, admin.correlationId);
+    const reason = input.reason.trim();
+    if (!["Starter", "Growth", "Pro", "Enterprise"].includes(name)) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
     const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).find((row) => stringValue(data(row.data).name) === name);
-    if (!record) domainError("NOT_FOUND", "Plan not found.", { correlationId: admin.correlationId });
+    const defaultPlan = DEFAULT_PLATFORM_PLANS.find((plan) => stringValue(plan.name) === name);
+    if (!record && !defaultPlan) domainError("NOT_FOUND", "Plan not found.", { correlationId: admin.correlationId });
+    const current: Data = record
+      ? { id: record.publicId, ...(defaultPlan ?? {}), ...data(record.data) }
+      : { id: name, ...(defaultPlan ?? {}) };
     const numeric = (key: string, fallback: number) => input[key] === undefined ? fallback : numberValue(input[key], -1);
-    const priceMinor = numeric("priceMinor", numberValue(data(record.data).priceMinor));
-    const branches = numeric("branches", numberValue(data(record.data).branches));
-    const staff = numeric("staff", numberValue(data(record.data).staff));
-    const members = numeric("members", numberValue(data(record.data).members));
+    const priceMinor = numeric("priceMinor", numberValue(current.priceMinor));
+    const branches = numeric("branches", numberValue(current.branches));
+    const staff = numeric("staff", numberValue(current.staff));
+    const members = numeric("members", numberValue(current.members));
     if (![priceMinor, branches, staff, members].every((value) => Number.isSafeInteger(value) && value >= 0) || branches < 1 || staff < 1 || members < 1) {
       domainError("VALIDATION_ERROR", "Plan limits and price must be valid positive integers.", { correlationId: admin.correlationId });
     }
-    const current = data(record.data);
-    const updated = { ...current, name, priceMinor, branches, staff, members };
-    await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+    const modulePlan = workspacePlan(name);
+    if (!modulePlan) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
+    const defaultEntitledModules = entitledModulesForPlan(modulePlan);
+    let entitledModules = entitledModulesForPlanSelection(modulePlan, current.entitledModules);
+    if (input.entitledModules !== undefined) {
+      if (!Array.isArray(input.entitledModules)) domainError("VALIDATION_ERROR", "Workspace capabilities must be an array.", { correlationId: admin.correlationId });
+      if (input.entitledModules.some((module: unknown) => typeof module !== "string")) {
+        domainError("VALIDATION_ERROR", "Workspace capabilities must use canonical module keys.", { correlationId: admin.correlationId });
+      }
+      const unsupported = input.entitledModules.filter((module): module is string => typeof module === "string" && !allWorkspaceModuleKeys().includes(module as WorkspaceModuleKey));
+      if (unsupported.length > 0) domainError("VALIDATION_ERROR", `Unknown workspace capabilities: ${unsupported.join(", ")}.`, { correlationId: admin.correlationId });
+      try {
+        entitledModules = validateWorkspaceModuleSelection(input.entitledModules, allWorkspaceModuleKeys());
+      } catch (error) {
+        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace capabilities are invalid.", { correlationId: admin.correlationId });
+      }
+    }
+    const updated = { ...current, name, priceMinor, branches, staff, members, entitledModules };
+    const updatedAt = Date.now();
+    const planRecord = record ?? await (async () => {
+      const organization = await ctx.db.query("organizations").first();
+      if (!organization) domainError("CONFIGURATION_ERROR", "A platform organization is required before the plan catalog can be persisted.", { correlationId: admin.correlationId });
+      const id = await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "platformPlan", publicId: name, createdAt: updatedAt, updatedAt, data: updated });
+      return await ctx.db.get(id);
+    })();
+    if (!planRecord) domainError("CONFIGURATION_ERROR", "The platform plan catalog row could not be persisted.", { correlationId: admin.correlationId });
+    if (record) await ctx.db.patch(record._id, { data: updated, updatedAt });
+
+    // Catalog capability edits are authoritative for gyms already assigned to
+    // this tier. Materialize the same selection into each tenant entitlement
+    // so navigation, direct-route guards, and server module checks converge
+    // without waiting for a later subscription mutation.
+    const assignedOrganizations = (await ctx.db.query("organizations").collect()).filter((organization) => organization.subscriptionPlan === modulePlan);
+    for (const organization of assignedOrganizations) {
+      const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+      const previousEntitled = entitlement?.entitledModules ?? entitledModulesForPlan(modulePlan);
+      const entitlementUpdatedAt = Date.now();
+      if (entitlement) {
+        await ctx.db.patch(entitlement._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
+      } else {
+        await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
+      }
+      const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+      if (preferences) {
+        const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
+        const candidate = [...preferences.enabledModules.filter((module) => entitledModules.includes(module)), ...newlyEntitled];
+        let enabledModules: WorkspaceModuleKey[];
+        try {
+          enabledModules = validateWorkspaceModuleSelection(candidate, entitledModules);
+        } catch {
+          enabledModules = defaultWorkspacePreferences(entitledModules);
+        }
+        if (JSON.stringify(enabledModules) !== JSON.stringify(preferences.enabledModules)) {
+          await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: entitlementUpdatedAt });
+        }
+      }
+    }
     await ctx.db.insert("platformAuditEvents", {
       publicId: crypto.randomUUID(),
       actorUserId: admin.user._id,
@@ -4930,32 +9090,38 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       actorName: admin.user.fullName,
       action: "plan.catalog_update",
       entityType: "platform_plan",
-      entityPublicId: record.publicId,
+      entityPublicId: planRecord.publicId,
       entityLabel: name,
-      summary: `Updated ${name} plan catalog limits`,
-      before: { priceMinor: current.priceMinor, branches: current.branches, staff: current.staff, members: current.members },
-      after: { priceMinor, branches, staff, members },
+      summary: `Updated ${name} plan catalog limits and capabilities`,
+      reason,
+      before: { priceMinor: current.priceMinor, branches: current.branches, staff: current.staff, members: current.members, entitledModules: current.entitledModules ?? defaultEntitledModules },
+      after: { priceMinor, branches, staff, members, entitledModules },
       correlationId: admin.correlationId,
       occurredAt: Date.now(),
     });
-    return { id: record.publicId, ...updated };
+    return { id: planRecord.publicId, ...updated };
   }
 
   if (operation === "platform.invoice.create") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const gymId = recordId(input.gymId);
     const amountMinor = numberValue(input.amountMinor, -1);
-    const currency = stringValue(input.currency, JOD).trim().toUpperCase();
+    const currency = input.currency === undefined
+      ? JOD
+      : typeof input.currency === "string"
+        ? input.currency.trim().toUpperCase()
+        : "";
     const dueAtValue = stringValue(input.dueAt);
     const periodStartValue = stringValue(input.periodStart);
     const periodEndValue = stringValue(input.periodEnd);
     const dueAt = validTimestamp(dueAtValue);
     const periodStart = validTimestamp(periodStartValue);
     const periodEnd = validTimestamp(periodEndValue);
+    const cycleKey = input.cycleKey === undefined ? undefined : stringValue(input.cycleKey).trim() || undefined;
     if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
       domainError("VALIDATION_ERROR", "Invoice amount must be a positive integer in minor units.", { correlationId: admin.correlationId });
     }
-    if (!/^[A-Z]{3}$/.test(currency)) domainError("VALIDATION_ERROR", "Invoice currency must be a three-letter ISO code.", { correlationId: admin.correlationId });
+    if (currency !== JOD) domainError("VALIDATION_ERROR", "Platform invoices must use JOD in the MVP.", { correlationId: admin.correlationId, fieldErrors: { currency: ["Only JOD is supported"] } });
     if (dueAt === undefined || periodStart === undefined || periodEnd === undefined || periodEnd < periodStart) {
       domainError("VALIDATION_ERROR", "Invoice dates are invalid.", { correlationId: admin.correlationId });
     }
@@ -4967,6 +9133,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique()
       : null;
     if (!organization) domainError("CONFIGURATION_ERROR", "This gym is not linked to a provisioned organization.", { correlationId: admin.correlationId });
+    if (gymRecord.organizationId !== organization._id) domainError("CONFIGURATION_ERROR", "The gym directory record is linked to a different organization.", { correlationId: admin.correlationId });
+    if (cycleKey) {
+      const existingCycle = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
+        .find((row) => {
+          const existing = data(row.data);
+          return stringValue(existing.gymId) === gymId && stringValue(existing.cycleKey) === cycleKey && stringValue(existing.status) !== "void";
+        });
+      if (existingCycle) return { id: existingCycle.publicId, ...data(existingCycle.data) };
+    }
+    const interval = billingInterval(organization.billingInterval ?? gym.billingInterval);
     const invoiceId = `INV-${newPublicId()}`;
     const createdAt = isoNow();
     const invoice: Data = {
@@ -4980,6 +9156,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       dueAt: new Date(dueAt).toISOString(),
       periodStart: new Date(periodStart).toISOString(),
       periodEnd: new Date(periodEnd).toISOString(),
+      ...(cycleKey ? { cycleKey } : {}),
+      billingInterval: interval,
       status: "draft",
       createdAt,
       updatedAt: createdAt,
@@ -5006,7 +9184,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   if (["platform.invoice.issue", "platform.invoice.past_due", "platform.invoice.payment", "platform.invoice.void"].includes(operation)) {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const invoiceId = recordId(input.invoiceId);
-    const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).find((row) => row.publicId === invoiceId);
+    const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "platformInvoice").eq("publicId", invoiceId)).unique();
     if (!record) domainError("NOT_FOUND", "Invoice not found.", { correlationId: admin.correlationId });
     const current = data(record.data);
     const status = stringValue(current.status);
@@ -5029,7 +9207,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       action = "invoice.mark_past_due";
       summary = "Marked platform invoice past due";
     } else if (operation === "platform.invoice.payment") {
-      if (!["open", "past_due", "failed"].includes(status)) domainError("VALIDATION_ERROR", "Only an outstanding invoice can be marked paid.", { correlationId: admin.correlationId });
+      if (!["open", "past_due", "failed"].includes(status)) domainError("VALIDATION_ERROR", "Only an unpaid invoice can be marked paid.", { correlationId: admin.correlationId });
       requireReason(input.reason, admin.correlationId);
       reason = input.reason.trim();
       const reference = stringValue(input.reference).trim();
@@ -5049,6 +9227,47 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
 
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+    if (operation === "platform.invoice.payment") {
+      const gymId = stringValue(current.gymId);
+      const listing = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect()).find((row) => row.publicId === gymId);
+      const listingData = data(listing?.data);
+      const targetOrganizationId = optionalString(listingData.targetOrganizationId);
+      const organization = targetOrganizationId ? await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", targetOrganizationId)).unique() : null;
+      if (organization?.archivedAt) domainError("CONFLICT", "Archived gyms cannot be reactivated by recording a subscription payment.", { correlationId: admin.correlationId });
+      const periodEndTimestamp = validTimestamp(stringValue(current.periodEnd));
+      if (listing && organization && listing.organizationId === organization._id && organization.status !== "cancelled" && periodEndTimestamp !== undefined) {
+        const billing = billingInterval(current.billingInterval ?? organization.billingInterval);
+        const startedAt = organization.subscriptionStartedAt ?? validTimestamp(stringValue(current.periodStart)) ?? Date.now();
+        // Paying a late or superseded invoice must never shorten a term the
+        // gym has already paid past, so the boundary only ever moves forward.
+        const nextBoundary = Math.max(periodEndTimestamp, organization.currentPeriodEndsAt ?? 0);
+        await ctx.db.patch(organization._id, {
+          status: "active",
+          billingInterval: billing,
+          subscriptionStartedAt: startedAt,
+          trialEndsAt: undefined,
+          currentPeriodEndsAt: nextBoundary,
+          cancelledAt: undefined,
+          subscriptionStatusReason: reason,
+          updatedAt: Date.now(),
+        });
+        await ctx.db.patch(listing._id, {
+          data: {
+            ...listingData,
+            subscriptionStatus: "active",
+            billingInterval: billing,
+            isPublic: true,
+            subscriptionStartedAt: utcIso(startedAt),
+            trialEndsAt: undefined,
+            currentPeriodEndsAt: utcIso(nextBoundary),
+            cancelledAt: undefined,
+            subscriptionStatusReason: reason,
+            lastActiveAt: now,
+          },
+          updatedAt: Date.now(),
+        });
+      }
+    }
     await insertPlatformAudit(ctx, admin, {
       action,
       entityType: "platform_invoice",
@@ -5068,6 +9287,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         recipientReference: publicUserId(recipient.user),
         recipientEmail: recipient.user.email,
         dedupeKey: `${operation}:${invoiceId}:${now}`,
+        // The invoice travels with the notice, as the paperwork it is.
+        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user))],
       });
       if (recipient && operation === "platform.invoice.past_due") {
         await notifyOrganizationRoles(ctx, {
@@ -5183,8 +9404,132 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   }
 
   const actor = await requireActor(ctx, request);
+  const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
+    case "exports.request": {
+      const kind = staffExportKind(input.kind, actor.correlationId);
+      requireExportPermission(actor, kind);
+      const idempotencyKey = stringValue(input.idempotencyKey).trim();
+      if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: actor.correlationId });
+      const filters = data(input.filters);
+      const branchId = optionalString(filters.branchId);
+      if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+      const existing = (await recordsOf(ctx, actor, "exportJob")).map((record) => data(record.data)).find((job) => stringValue(job.requestedById) === publicUserId(actor.user) && stringValue(job.idempotencyKey) === idempotencyKey);
+      const requestFingerprint = JSON.stringify({ kind, filters });
+      if (existing) {
+        if (stringValue(existing.requestFingerprint) !== requestFingerprint) domainError("CONFLICT", "This export request key was already used for different filters.", { correlationId: actor.correlationId });
+        return exportJobView(existing);
+      }
+      const generatedAt = isoNow();
+      const branchScope = branchId ? `branch:${branchId}` : actor.branchScope === "all" ? "all accessible branches" : `${actor.branchIds.length} assigned branches`;
+      const rows = await staffExportRows(ctx, actor, kind, filters);
+      const csv = csvFromRows(rows, {
+        title: STAFF_EXPORT_TITLES[kind],
+        headers: STAFF_EXPORT_HEADERS[kind],
+        generatedAt,
+        timezone: actor.organization.timezone || TZ_FALLBACK,
+        branchScope,
+        filters,
+      });
+      const id = newPublicId();
+      const fileName = `rivet-${kind.replaceAll("_", "-")}-${generatedAt.slice(0, 10)}.csv`;
+      const status = csv.complete ? "completed" : "failed";
+      const failureMessage = csv.complete ? undefined : `This export contains ${csv.totalRows} rows and exceeds the current safe single-download limit. Narrow the date, branch, or search filters and try again.`;
+      const value = { id, kind, status, fileName: csv.complete ? fileName : undefined, mimeType: csv.complete ? "text/csv;charset=utf-8" : undefined, rowCount: csv.rowCount, totalRows: csv.totalRows, content: csv.complete ? csv.content : undefined, failureMessage, timezone: actor.organization.timezone || TZ_FALLBACK, branchScope, filters, requestedById: publicUserId(actor.user), idempotencyKey, requestFingerprint, createdAt: generatedAt, completedAt: generatedAt, expiresAt: utcIso(Date.now() + 86_400_000) };
+      await insertRecord(ctx, actor, "exportJob", value);
+      await insertAudit(ctx, actor, { category: "settings", action: csv.complete ? "data.export" : "data.export_rejected", entityType: "data_export", entityId: id, entityLabel: fileName, summary: csv.complete ? `Exported ${kind.replaceAll("_", " ")} (${csv.rowCount} rows)` : `Rejected oversized ${kind.replaceAll("_", " ")} export (${csv.totalRows} rows)`, after: { kind, status, rowCount: csv.rowCount, totalRows: csv.totalRows, filters, branchScope, timezone: actor.organization.timezone || TZ_FALLBACK } });
+      return exportJobView(value);
+    }
+    case "workspace.recent.record": {
+      const kind = stringValue(input.kind);
+      if (!["member", "lead", "receipt", "page"].includes(kind)) domainError("VALIDATION_ERROR", "Recent-item kind is invalid.", { correlationId: actor.correlationId });
+      const entityPublicId = recordId(input.id);
+      const title = stringValue(input.title).trim().slice(0, 160);
+      if (!title) domainError("VALIDATION_ERROR", "Recent-item title is required.", { correlationId: actor.correlationId });
+      const subtitle = optionalString(input.subtitle)?.trim().slice(0, 240);
+      const href = workspaceInternalHref(input.href, actor.correlationId);
+      const existing = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_entity", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id).eq("kind", kind as "member" | "lead" | "receipt" | "page").eq("entityPublicId", entityPublicId)).unique();
+      const viewedAt = Date.now();
+      if (existing) await ctx.db.patch(existing._id, { title, subtitle, href, viewedAt });
+      else await ctx.db.insert("recentWorkspaceItems", { userId: actor.user._id, organizationId: actor.organization._id, kind: kind as "member" | "lead" | "receipt" | "page", entityPublicId, title, subtitle, href, viewedAt });
+      const all = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_viewed", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).order("desc").collect();
+      await Promise.all(all.slice(20).map((row) => ctx.db.delete(row._id)));
+      return undefined;
+    }
+    case "workspace.recents.clear": {
+      const rows = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_viewed", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).collect();
+      await Promise.all(rows.map((row) => ctx.db.delete(row._id)));
+      return undefined;
+    }
+    case "workspace.pin.upsert": {
+      const targetKey = stringValue(input.targetKey).trim().slice(0, 160);
+      const kind = stringValue(input.kind);
+      if (!targetKey || !["action", "saved_view"].includes(kind)) domainError("VALIDATION_ERROR", "Pinned target is invalid.", { correlationId: actor.correlationId });
+      const label = stringValue(input.label).trim().slice(0, 80);
+      const href = workspaceInternalHref(input.href, actor.correlationId);
+      if (!label) domainError("VALIDATION_ERROR", "Pinned label is required.", { correlationId: actor.correlationId });
+      if (kind === "action" && !workspaceQuickActions(actor).some((action) => stringValue(action.id) === targetKey && stringValue(action.href) === href)) domainError("FORBIDDEN", "This quick action is not available for your role.", { correlationId: actor.correlationId });
+      if (kind === "saved_view") {
+        const savedView = await ctx.db.query("userSavedViews").withIndex("by_public_id", (q) => q.eq("publicId", targetKey)).unique();
+        if (!savedView || savedView.userId !== actor.user._id || savedView.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Saved view not found.", { correlationId: actor.correlationId });
+      }
+      const rows = await ctx.db.query("pinnedWorkspaceItems").withIndex("by_user_organization", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).collect();
+      const existing = rows.find((row) => row.targetKey === targetKey);
+      const position = Math.max(0, Math.min(99, Number.isInteger(input.position) ? numberValue(input.position) : existing?.position ?? rows.length));
+      const now = Date.now();
+      if (existing) { await ctx.db.patch(existing._id, { label, href, position, updatedAt: now }); return pinnedWorkspaceItemView({ ...existing, label, href, position, updatedAt: now }); }
+      if (rows.length >= 12) domainError("VALIDATION_ERROR", "You can pin up to 12 workspace actions.", { correlationId: actor.correlationId });
+      const publicId = newPublicId();
+      const id = await ctx.db.insert("pinnedWorkspaceItems", { userId: actor.user._id, organizationId: actor.organization._id, publicId, targetKey, kind: kind as "action" | "saved_view", label, href, position, createdAt: now, updatedAt: now });
+      const created = await ctx.db.get(id);
+      if (!created) domainError("INTERNAL_ERROR", "Pinned action could not be saved.", { correlationId: actor.correlationId });
+      return pinnedWorkspaceItemView(created);
+    }
+    case "workspace.pin.delete": {
+      const row = await ctx.db.query("pinnedWorkspaceItems").withIndex("by_public_id", (q) => q.eq("publicId", recordId(input.id))).unique();
+      if (!row || row.userId !== actor.user._id || row.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Pinned action not found.", { correlationId: actor.correlationId });
+      await ctx.db.delete(row._id);
+      return undefined;
+    }
+    case "savedViews.save": {
+      const surface = savedViewSurface(input.surface, actor.correlationId);
+      const state = savedViewState(input.state, actor.correlationId);
+      const name = stringValue(input.name).trim();
+      if (name.length < 1 || name.length > 60) domainError("VALIDATION_ERROR", "Saved-view names must be between 1 and 60 characters.", { correlationId: actor.correlationId });
+      const isDefault = booleanValue(input.isDefault);
+      const existingRows = await ctx.db.query("userSavedViews").withIndex("by_user_surface", (q) => q.eq("organizationId", actor.organization._id).eq("userId", actor.user._id).eq("surface", surface)).collect();
+      if (existingRows.length >= 25 && !input.id) domainError("VALIDATION_ERROR", "You can save up to 25 views on this page.", { correlationId: actor.correlationId });
+      const duplicate = existingRows.find((view) => view.name.toLocaleLowerCase() === name.toLocaleLowerCase() && view.publicId !== input.id);
+      if (duplicate) domainError("CONFLICT", "You already have a saved view with this name.", { correlationId: actor.correlationId });
+      if (isDefault) await Promise.all(existingRows.filter((view) => view.isDefault).map((view) => ctx.db.patch(view._id, { isDefault: false, updatedAt: Date.now() })));
+      const requestedId = optionalString(input.id);
+      const existing = requestedId ? existingRows.find((view) => view.publicId === requestedId) : null;
+      const now = Date.now();
+      if (existing) {
+        await ctx.db.patch(existing._id, { name, state, isDefault, updatedAt: now });
+        return savedViewProjection({ ...existing, name, state, isDefault, updatedAt: now });
+      }
+      if (requestedId) domainError("NOT_FOUND", "Saved view not found.", { correlationId: actor.correlationId });
+      const publicId = newPublicId();
+      const id = await ctx.db.insert("userSavedViews", { organizationId: actor.organization._id, userId: actor.user._id, publicId, surface, name, state, isDefault, createdAt: now, updatedAt: now });
+      const created = await ctx.db.get(id);
+      if (!created) domainError("INTERNAL_ERROR", "Saved view could not be created.", { correlationId: actor.correlationId });
+      return savedViewProjection(created);
+    }
+    case "savedViews.delete": {
+      const viewId = recordId(input.viewId);
+      const view = await ctx.db.query("userSavedViews").withIndex("by_public_id", (q) => q.eq("publicId", viewId)).unique();
+      if (!view || view.organizationId !== actor.organization._id || view.userId !== actor.user._id) domainError("NOT_FOUND", "Saved view not found.", { correlationId: actor.correlationId });
+      await ctx.db.delete(view._id);
+      return undefined;
+    }
+    case "bulk.run":
+      return await runBulkOperationMutation(ctx, actor, input);
+    case "duplicates.ignore":
+      return await resolveDuplicateMutation(ctx, actor, input, "ignored");
+    case "duplicates.merge":
+      return await resolveDuplicateMutation(ctx, actor, input, "merged");
     case "support.reply": {
       const body = stringValue(input.body).trim();
       if (!body) domainError("VALIDATION_ERROR", "A support reply is required.", { correlationId: actor.correlationId, fieldErrors: { body: ["Required"] } });
@@ -5235,10 +9580,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const subject = stringValue(input.subject).trim();
       const body = stringValue(input.body).trim();
       const priority = stringValue(input.priority, "normal");
+      const requestType = stringValue(input.requestType, "general");
+      const requestedPlan = optionalString(input.requestedPlan);
+      const billingInterval = optionalString(input.billingInterval);
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) domainError("VALIDATION_ERROR", "A valid contact email is required.", { correlationId: actor.correlationId, fieldErrors: { email: ["Enter a valid email"] } });
       if (!subject) domainError("VALIDATION_ERROR", "A support subject is required.", { correlationId: actor.correlationId, fieldErrors: { subject: ["Required"] } });
       if (!body) domainError("VALIDATION_ERROR", "A support message is required.", { correlationId: actor.correlationId, fieldErrors: { body: ["Required"] } });
       if (!["normal", "urgent"].includes(priority)) domainError("VALIDATION_ERROR", "Support priority is invalid.", { correlationId: actor.correlationId });
+      if (!["general", "plan_upgrade"].includes(requestType)) domainError("VALIDATION_ERROR", "Support request type is invalid.", { correlationId: actor.correlationId });
+      if (requestType === "plan_upgrade" && !["Starter", "Growth", "Pro", "Enterprise"].includes(requestedPlan ?? "")) domainError("VALIDATION_ERROR", "A requested plan is required for upgrade requests.", { correlationId: actor.correlationId });
+      if (billingInterval && !["monthly", "annual"].includes(billingInterval)) domainError("VALIDATION_ERROR", "Billing cadence is invalid.", { correlationId: actor.correlationId });
       const requestedBranchId = optionalString(input.branchId);
       const branch = requestedBranchId ? await branchByPublicId(ctx, actor.organization._id, requestedBranchId) : undefined;
       if (requestedBranchId) assertBranchAccess(actor, branch ?? null);
@@ -5256,6 +9607,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         subject,
         body,
         priority,
+        requestType,
+        requestedPlan: requestType === "plan_upgrade" ? requestedPlan : undefined,
+        billingInterval: requestType === "plan_upgrade" ? billingInterval : undefined,
         status: "open",
         createdAt,
         updatedAt: createdAt,
@@ -5297,18 +9651,24 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       return await previewMemberImport(ctx, actor, input);
     case "members.import.commit":
       return await commitMemberImport(ctx, actor, input);
+    case "members.import.undo":
+      return await undoMemberImport(ctx, actor, input);
     case "members.create":
       return await createMemberMutation(ctx, actor, input);
+    case "members.create_and_sell":
+      return await createMemberMembershipSaleMutation(ctx, actor, input);
     case "members.update": {
       requirePermission(actor, "members.write");
       const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const patch: Data = { ...input };
       delete patch.memberId;
+      if (Object.prototype.hasOwnProperty.call(input, "phone")) patch.phone = normalizedLeadPhone(input.phone, actor);
+      if (Object.prototype.hasOwnProperty.call(input, "email")) patch.email = normalizedLeadEmail(input.email, actor);
       const homeBranch = patch.homeBranchId ? await branchByPublicId(ctx, actor.organization._id, stringValue(patch.homeBranchId)) : null;
       if (patch.homeBranchId) assertBranchAccess(actor, homeBranch);
       const previous = data(record.data);
       const memberOwnedFields = ["fullName", "fullNameAr", "phone", "email", "dateOfBirth", "gender", "preferredLanguage", "addressLine1", "city", "emergencyContactName", "emergencyContactRelationship", "emergencyContactPhone"];
-      if (previous.customerProfileId && memberOwnedFields.some((field) => input[field] !== undefined && stringValue(input[field]) !== stringValue(previous[field]))) {
+      if (previous.customerProfileId && memberOwnedFields.some((field) => Object.prototype.hasOwnProperty.call(input, field) && stringValue(patch[field]) !== stringValue(previous[field]))) {
         domainError("FORBIDDEN", "Personal profile fields are managed by the member account. Update gym-owned notes, tags, or membership details here.", { correlationId: actor.correlationId });
       }
       const marketingChanged = input.marketingOptIn !== undefined || input.marketingPreferenceSource !== undefined;
@@ -5381,7 +9741,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         domainError("CONFLICT", "This archived member still has an active or scheduled membership.", { correlationId: actor.correlationId });
       }
       if (amountOf(await outstandingForMember(ctx, actor, record.publicId)) > 0) {
-        domainError("CONFLICT", "Settle the member's outstanding balance before deletion.", { correlationId: actor.correlationId });
+        domainError("CONFLICT", "Collect what the member owes before deleting their record.", { correlationId: actor.correlationId });
       }
       const [reservedBookings, confirmedBookings] = await Promise.all([
         ctx.db.query("ptBookings").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "reserved")).collect(),
@@ -5426,7 +9786,27 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const outcome = stringValue(input.outcome);
       if (!outcome) domainError("VALIDATION_ERROR", "Contact outcome is required.", { correlationId: actor.correlationId });
-      return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "call_attempt", title: `Contact — ${outcome.replaceAll("_", " ")}`, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
+      const nextFollowUpAt = optionalString(input.nextFollowUpAt);
+      await resolveFollowUpTasksForContact(ctx, actor, { memberId: member.publicId }, stringValue(data(member.data).fullName), outcome, nextFollowUpAt, { createWhenMissing: true });
+      const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Contact — ${outcome.replaceAll("_", " ")}`;
+      return await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(data(member.data).homeBranchId), type: "call_attempt", title: contactTitle, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
+    }
+    case "retention.snooze": {
+      requirePermission(actor, "crm.write");
+      const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
+      const memberData = data(member.data);
+      const until = stringValue(input.until);
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(until) || until <= today || until > addDays(today, 90)) domainError("VALIDATION_ERROR", "Choose a snooze date within the next 90 days.", { correlationId: actor.correlationId });
+      const publicId = `retention:${member.publicId}`;
+      const existing = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "retentionState").eq("publicId", publicId)).unique();
+      const before = existing ? data(existing.data) : undefined;
+      const value = { id: publicId, memberId: member.publicId, snoozedUntil: until, snoozedAt: isoNow(), snoozedById: publicUserId(actor.user), reason: optionalString(input.reason)?.trim() };
+      if (existing) await patchRecord(ctx, actor, existing, value);
+      else await insertRecord(ctx, actor, "retentionState", value, { branchId: optionalString(memberData.homeBranchId), memberPublicId: member.publicId });
+      await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(memberData.homeBranchId), type: "note", title: `Retention follow-up snoozed until ${until}`, body: value.reason, meta: { kind: "retention_snooze", until } });
+      await insertAudit(ctx, actor, { category: "crm", action: "retention.snooze", entityType: "member", entityId: member.publicId, entityLabel: `${stringValue(memberData.fullName)} · ${stringValue(memberData.memberNumber)}`, summary: `At-risk follow-up snoozed until ${until}`, reason: value.reason, before, after: value, branchId: optionalString(memberData.homeBranchId) });
+      return undefined;
     }
     case "plans.create": {
       requirePermission(actor, "settings.manage");
@@ -5502,42 +9882,23 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (stringValue(draftValue.status) === "published" && booleanValue(listingValue.profilePublished, false) && numberValue(listingValue.profileVersion) === draftVersion) {
         return await currentGymProfile(ctx, actor);
       }
-      const now = Date.now();
-      const publishedAt = utcIso(now);
       const allVersions = await recordsOf(ctx, actor, "gymProfileVersion");
-      const oldVersions = allVersions.filter((record) => stringValue(data(record.data).status) === "published");
-      for (const old of oldVersions) await ctx.db.patch(old._id, { data: { ...data(old.data), status: "unpublished", unpublishedAt: publishedAt, updatedAt: publishedAt }, updatedAt: now });
-      const versionId = newPublicId();
-      const versionValue = { ...draftValue, status: "published", version: draftVersion, publishedAt, updatedAt: publishedAt };
-      await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "gymProfileVersion", publicId: versionId, createdAt: now, updatedAt: now, data: versionValue });
-      await ctx.db.patch(draft._id, { data: versionValue, updatedAt: now });
-      const listingBefore = data(listing.data);
-      await ctx.db.patch(listing._id, { data: { ...listingBefore, shortName: draftValue.shortName, tagline: draftValue.taglineEn, taglineAr: draftValue.taglineAr, description: draftValue.descriptionEn, descriptionAr: draftValue.descriptionAr, category: draftValue.category, audience: draftValue.audience, amenities: draftValue.amenities, contactEmail: draftValue.contactEmail, contactPhone: draftValue.contactPhone, websiteUrl: draftValue.websiteUrl, instagramUrl: draftValue.instagramUrl, accent: draftValue.accentColor, logoAssetId: draftValue.logoAssetId, coverAssetId: draftValue.coverAssetId, galleryAssetIds: draftValue.galleryAssetIds, profilePublished: true, profileVersion: draftValue.version }, updatedAt: now });
-      // Keep assets referenced by immutable profile snapshots. The version
-      // history is retained for audit and preview, so replacing the current
-      // draft must not make an older snapshot point at a deleted object.
-      const referencedMedia = new Set([...gymProfileMediaIds(draftValue), ...allVersions.flatMap((record) => gymProfileMediaIds(record.data))]);
-      const publicMedia = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_gallery").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect())
-        .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_logo").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect())
-        .concat(await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "gym_cover").eq("ownerPublicId", publicOrganizationId(actor.organization))).collect());
-      for (const asset of publicMedia.filter((item) => item.status === "active" && !referencedMedia.has(item.publicId))) await ctx.db.patch(asset._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
-      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.publish", entityType: "gym_public_profile", entityId: versionId, entityLabel: actor.organization.name, summary: `Published gym profile v${numberValue(draftValue.version)}`, before: { profilePublished: booleanValue(listingBefore.profilePublished, true), version: listingBefore.profileVersion }, after: { profilePublished: true, version: draftValue.version } });
+      // Only the very first publish is self-serve. Every later change is
+      // reviewed by the platform team: the tenant keeps saving drafts and
+      // sends a support case; RIVET publishes the draft from the console.
+      if (allVersions.length > 0) {
+        domainError("VALIDATION_ERROR", "The public page locks after its first publish. Save your draft, then ask RIVET support to review and publish it.", { correlationId: actor.correlationId });
+      }
+      const { versionId, listingBefore } = await applyGymProfilePublish(ctx, actor.organization, listing, draft);
+      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.publish", entityType: "gym_public_profile", entityId: versionId, entityLabel: actor.organization.name, summary: `Published gym profile v${draftVersion}`, before: { profilePublished: booleanValue(listingBefore.profilePublished, true), version: listingBefore.profileVersion }, after: { profilePublished: true, version: draftVersion } });
       return await currentGymProfile(ctx, actor);
     }
     case "profiles.gym.unpublish": {
       requirePermission(actor, "profiles.manage");
-      requireReason(input.reason, actor.correlationId);
-      const listing = (await marketplaceRows(ctx)).find((record) => record.organizationId === actor.organization._id);
-      if (!listing) domainError("NOT_FOUND", "Gym public profile not found.", { correlationId: actor.correlationId });
-      const draft = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "gymProfileDraft").eq("publicId", "current")).unique();
-      const now = Date.now();
-      const changedAt = utcIso(now);
-      await ctx.db.patch(listing._id, { data: { ...data(listing.data), profilePublished: false }, updatedAt: now });
-      if (draft) await ctx.db.patch(draft._id, { data: { ...data(draft.data), status: "unpublished", updatedAt: changedAt }, updatedAt: now });
-      const published = (await recordsOf(ctx, actor, "gymProfileVersion")).filter((record) => stringValue(data(record.data).status) === "published");
-      for (const record of published) await ctx.db.patch(record._id, { data: { ...data(record.data), status: "unpublished", unpublishedAt: changedAt, updatedAt: changedAt }, updatedAt: now });
-      await insertAudit(ctx, actor, { category: "settings", action: "gym_profile.unpublish", entityType: "gym_public_profile", entityId: "current", entityLabel: actor.organization.name, summary: "Unpublished gym profile", reason: stringValue(input.reason), before: { profilePublished: booleanValue(data(listing.data).profilePublished, true) }, after: { profilePublished: false } });
-      return await currentGymProfile(ctx, actor);
+      // Removing the live page is a platform decision, like every change
+      // after the first publish. Support routes it to the RIVET team, which
+      // hides the listing from the console.
+      domainError("VALIDATION_ERROR", "Ask RIVET support to take the public page down; the platform team removes it from discovery for you.", { correlationId: actor.correlationId });
     }
     case "pt.trainer.upsert": {
       requirePermission(actor, "pt.manage");
@@ -5546,7 +9907,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const user = await userByPublicId(ctx, actor.organization._id, recordId(input.userId));
       if (!user || user.status === "deactivated") domainError("NOT_FOUND", "Active trainer account not found.", { correlationId: actor.correlationId });
       const staffMembership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
-      if (!staffMembership?.active || staffMembership.role !== "trainer") domainError("VALIDATION_ERROR", "Trainer profiles must link to an active staff member with the trainer role.", { correlationId: actor.correlationId });
+      // An invitation that has not been accepted is not staff yet: the same
+      // rule the mock and the trainer picker apply, so a profile cannot be
+      // published (and booked) for someone who has never signed in.
+      if (!staffMembership?.active || staffMembership.role !== "trainer" || user.status !== "active" || !membershipInvitationAccepted(staffMembership)) domainError("VALIDATION_ERROR", "Trainer profiles must link to an active staff member with the trainer role.", { correlationId: actor.correlationId });
       const requestedBranchIds = arrayValue(input.branchIds).map(String);
       if (requestedBranchIds.length === 0) domainError("VALIDATION_ERROR", "Select at least one trainer branch.", { correlationId: actor.correlationId });
       const branches = await Promise.all(requestedBranchIds.map((id) => branchByPublicId(ctx, actor.organization._id, id)));
@@ -5555,14 +9919,20 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (branches.some((branch) => staffMembership.branchScope !== "all" && !staffMembership.branchIds.includes(branch!._id))) domainError("FORBIDDEN", "Trainer profile cannot include a branch outside the staff member's access.", { correlationId: actor.correlationId });
       const status = stringValue(input.status, "draft");
       if (!(["draft", "published", "archived"] as string[]).includes(status)) domainError("VALIDATION_ERROR", "Trainer profile status is invalid.", { correlationId: actor.correlationId });
-      const photoAssetId = optionalString(input.photoAssetId);
-      if (status === "published" && photoAssetId && !stringValue(input.photoAlt).trim()) domainError("VALIDATION_ERROR", "Published trainer photos require alt text.", { correlationId: actor.correlationId, fieldErrors: { photoAlt: ["Required for published photos"] } });
       const existingById = input.id ? await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(input.id))).unique() : null;
       const existingByUser = await ctx.db.query("ptTrainerProfiles").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id)).unique();
       const existing = existingById ?? existingByUser;
+      // Editing without selecting a replacement must not silently unlink the
+      // current photo. New uploads remain pending until this mutation links
+      // them to the canonical trainer public id.
+      const photoAssetId = optionalString(input.photoAssetId) ?? existing?.photoAssetId;
+      if (status === "published" && photoAssetId && !stringValue(input.photoAlt).trim() && !existing?.photoAlt?.trim()) domainError("VALIDATION_ERROR", "Published trainer photos require alt text.", { correlationId: actor.correlationId, fieldErrors: { photoAlt: ["Required for published photos"] } });
+      let photoAsset: Doc<"mediaAssets"> | null = null;
       if (photoAssetId) {
         const asset = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", photoAssetId)).unique();
-        if (!asset || asset.ownerType !== "trainer_photo" || asset.ownerPublicId !== (existing?.publicId ?? stringValue(input.id))) domainError("NOT_FOUND", "Trainer photo not found.", { correlationId: actor.correlationId });
+        const expectedOwnerPublicId = existing?.publicId ?? optionalString(input.id);
+        if (!asset || !expectedOwnerPublicId || asset.ownerType !== "trainer_photo" || asset.ownerPublicId !== expectedOwnerPublicId || asset.visibility !== "public" || !["pending", "active"].includes(asset.status)) domainError("NOT_FOUND", "Trainer photo not found.", { correlationId: actor.correlationId });
+        photoAsset = asset;
       }
       if (existingById && existingByUser && existingById._id !== existingByUser._id) domainError("CONFLICT", "This trainer account already has a profile.", { correlationId: actor.correlationId });
       if (existing && status === "archived") {
@@ -5579,7 +9949,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         languages: arrayValue(input.languages).map(String).filter((item): item is "en" | "ar" => item === "en" || item === "ar"),
         branchIds: branches.map((branch) => branch!._id),
         photoAssetId,
-        photoAlt: optionalString(input.photoAlt),
+        photoAlt: optionalString(input.photoAlt) ?? existing?.photoAlt,
         status: status as "draft" | "published" | "archived",
         updatedAt: now,
       };
@@ -5598,6 +9968,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         profile = (await ctx.db.get(id))!;
         await insertAudit(ctx, actor, { category: "users", action: "pt.trainer.create", entityType: "pt_trainer", entityId: profile.publicId, entityLabel: displayName, summary: "Created trainer profile", after: { status, branchCount: branches.length } });
       }
+      // An upload alone is never publicly projectable. Linking it to the
+      // authorized trainer profile is the atomic activation boundary.
+      if (photoAsset?.status === "pending") await ctx.db.patch(photoAsset._id, { status: "active", deleteAfter: undefined, updatedAt: now });
       return await ptTrainerView(ctx, actor.organization, profile);
     }
     case "pt.package.upsert": {
@@ -5608,7 +9981,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const validityDays = numberValue(input.validityDays);
       if (!name || !Number.isSafeInteger(sessionCount) || sessionCount < 1 || sessionCount > 1_000) domainError("VALIDATION_ERROR", "PT packages must contain between 1 and 1,000 whole sessions.", { correlationId: actor.correlationId });
       if (!Number.isSafeInteger(totalPriceMinor) || totalPriceMinor <= 0 || !Number.isInteger(validityDays) || validityDays < 1 || validityDays > 730) domainError("VALIDATION_ERROR", "Package price and validity must be positive.", { correlationId: actor.correlationId });
-      if (currencyOf(input.totalPrice, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Package currency does not match the organization.", { correlationId: actor.correlationId });
+      if (currencyOf(input.totalPrice, actor.organization.currency) !== actor.organization.currency) domainError("VALIDATION_ERROR", "Use your gym’s currency for this package.", { correlationId: actor.correlationId });
       const branchAccess = stringValue(input.branchAccess, "all");
       const requestedBranches = branchAccess === "selected" ? arrayValue(input.branchIds).map(String) : [];
       if (branchAccess === "selected" && requestedBranches.length === 0) domainError("VALIDATION_ERROR", "Select at least one package branch.", { correlationId: actor.correlationId });
@@ -5700,23 +10073,30 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "pt.package.request": {
       requirePermission(actor, "pt.book_for_member");
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ membershipId: input.membershipId, packageId: input.packageId });
-      const idempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.request").eq("key", idempotencyKey)).unique();
-      if (idempotency) {
-        if (idempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different package request.", { correlationId: actor.correlationId });
-        const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(idempotency.result).orderId))).unique();
-        if (!order) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
-        return await ptPackageOrderView(ctx, actor.organization, order);
-      }
+      // Prove the requested member and membership branch before consulting a
+      // known idempotency key. A key from another branch must never turn into
+      // an order projection for a selected-branch actor.
       const membershipRecord = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
       const membership = data(membershipRecord.data);
+      await recordOf(ctx, actor, "member", stringValue(membership.memberId));
+      const membershipBranch = await branchByPublicId(ctx, actor.organization._id, stringValue(membership.homeBranchId));
+      if (!membershipBranch || membershipBranch.organizationId !== actor.organization._id) domainError("NOT_FOUND", "Membership branch not found.", { correlationId: actor.correlationId });
+      if (actor.branchScope === "selected" && !actor.branchIds.includes(membershipBranch._id)) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
+      const idempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.request").eq("key", idempotencyKey)).unique();
+      if (idempotency) {
+        if (idempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
+        const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(idempotency.result).orderId))).unique();
+        if (!order) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+        await ptPackageOrderScope(ctx, actor, order);
+        return await ptPackageOrderView(ctx, actor.organization, order);
+      }
       const status = statusOfMembership(membership, todayIn(actor.organization.timezone || TZ_FALLBACK));
       if (!["active", "expiring"].includes(status)) domainError("MEMBERSHIP_NOT_ACTIVE", "An active, unfrozen membership is required to request a PT package.", { correlationId: actor.correlationId });
       const ptPackage = await ctx.db.query("ptPackages").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.packageId))).unique();
       if (!ptPackage || ptPackage.status !== "active") domainError("NOT_FOUND", "PT package not found.", { correlationId: actor.correlationId });
-      const branch = await branchByPublicId(ctx, actor.organization._id, stringValue(membership.homeBranchId));
-      if (!branch) domainError("NOT_FOUND", "Membership branch not found.", { correlationId: actor.correlationId });
+      const branch = membershipBranch;
       assertBranchAccess(actor, branch);
       if (ptPackage.branchAccess === "selected" && !ptPackage.branchIds.includes(branch._id)) domainError("NOT_FOUND", "This PT package is not available at the membership branch.", { correlationId: actor.correlationId });
       const issueDate = todayIn(actor.organization.timezone || TZ_FALLBACK);
@@ -5751,19 +10131,26 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requireReason(input.reason, actor.correlationId);
       const orderId = recordId(input.orderId);
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ orderId, reason: stringValue(input.reason).trim() });
-      const existingIdempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.cancel").eq("key", idempotencyKey)).unique();
-      if (existingIdempotency) {
-        if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT cancellation.", { correlationId: actor.correlationId });
-        const replay = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(existingIdempotency.result).orderId))).unique();
-        if (!replay) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
-        return await ptPackageOrderView(ctx, actor.organization, replay);
-      }
+      // Resolve and authorize the target order before looking up the key. A
+      // known cancellation key must not bypass organization/member/branch
+      // scope checks for a selected-branch actor.
       const order = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", orderId)).unique();
       if (!order) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+      const orderScope = await ptPackageOrderScope(ctx, actor, order);
+      const existingIdempotency = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.package.cancel").eq("key", idempotencyKey)).unique();
+      if (existingIdempotency) {
+        if (existingIdempotency.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
+        const replay = await ctx.db.query("ptPackageOrders").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(data(existingIdempotency.result).orderId))).unique();
+        if (!replay) domainError("NOT_FOUND", "PT package order not found.", { correlationId: actor.correlationId });
+        if (replay.publicId !== order.publicId) domainError("CONFLICT", "The cancellation idempotency record does not match the requested order.", { correlationId: actor.correlationId });
+        await ptPackageOrderScope(ctx, actor, replay);
+        return await ptPackageOrderView(ctx, actor.organization, replay);
+      }
+      assertBranchAccess(actor, orderScope.branch);
       if (order.status !== "pending_payment") domainError("VALIDATION_ERROR", "Only a pending PT package order can be cancelled. Use the PT refund flow after activation.", { correlationId: actor.correlationId });
-      const charge = await recordOf(ctx, actor, "charge", order.chargePublicId);
+      const charge = orderScope.charge;
       const chargeData = data(charge.data);
       if (amountOf(chargeData.paidAmount) > 0 || stringValue(chargeData.status) === "partial" || stringValue(chargeData.status) === "paid") {
         domainError("VALIDATION_ERROR", "Refund or void the collected payment before cancelling this PT order.", { correlationId: actor.correlationId });
@@ -5783,11 +10170,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const sessionCount = numberValue(input.sessionCount, 2);
       if (!Number.isInteger(sessionCount) || sessionCount < 1 || sessionCount > 100) domainError("VALIDATION_ERROR", "Introductory PT credits must be between 1 and 100 sessions.", { correlationId: actor.correlationId });
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ sessionCount, reason: stringValue(input.reason).trim() });
       const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.introductory.apply").eq("key", idempotencyKey)).unique();
       if (existingKey) {
-        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another credit grant.", { correlationId: actor.correlationId });
+        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return data(existingKey.result);
       }
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
@@ -5820,7 +10207,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!order || !order.entitlementId || !["active", "partially_refunded"].includes(order.status)) domainError("NOT_FOUND", "Active PT package order not found.", { correlationId: actor.correlationId });
       const [entitlement, ptPackage, charge] = await Promise.all([ctx.db.get(order.entitlementId), ctx.db.get(order.packageId), recordOf(ctx, actor, "charge", order.chargePublicId)]);
       const terms = ptPackageTerms(order, ptPackage ?? undefined);
-      if (!entitlement || terms.sessionCount < 1 || terms.validityDays < 1) domainError("NOT_FOUND", "PT package entitlement not found.", { correlationId: actor.correlationId });
+      if (!entitlement || terms.sessionCount < 1 || terms.validityDays < 1) domainError("NOT_FOUND", "The member’s PT package could not be found.", { correlationId: actor.correlationId });
       const available = ptAvailable(entitlement);
       if (sessions > available) domainError("VALIDATION_ERROR", "Only unused, unreserved PT sessions can be refunded.", { correlationId: actor.correlationId, details: { availableSessions: available } });
       const previousSessions = order.refundedSessions ?? 0;
@@ -5851,20 +10238,26 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await patchRecord(ctx, actor, originalRecord, { refundedAmount: money(newRefunded, actor.organization.currency), refundReason: stringValue(input.reason), status: newRefunded >= amountOf(original.amount) ? "refunded" : "partially_refunded" });
         remaining -= part;
       }
+      // The charge carries what was actually collected: a refund of unused
+      // sessions lowers paidAmount exactly as a membership refund does, while
+      // nothing becomes outstanding because the sessions are revoked with it.
+      const chargeRecord = await recordOf(ctx, actor, "charge", order.chargePublicId);
+      const chargeValue = data(chargeRecord.data);
+      await patchRecord(ctx, actor, chargeRecord, { paidAmount: money(Math.max(0, amountOf(chargeValue.paidAmount) - refundMinor), actor.organization.currency) });
       await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + sessions, status: ptAvailable({ ...entitlement, revoked: entitlement.revoked + sessions }) === 0 && entitlement.reserved === 0 ? "revoked" : "active", updatedAt: Date.now() });
       await ctx.db.patch(order._id, { refundedSessions: nextSessions, refundedMinor: cumulativeMinor, status: nextSessions >= terms.sessionCount ? "refunded" : "partially_refunded", updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: order.memberPublicId, type: "refund_revoke", quantity: -sessions, reason: stringValue(input.reason) });
-      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: `${sessions} PT credit${sessions === 1 ? "" : "s"} refunded`, body: `${actor.organization.currency} ${(refundMinor / 1_000).toFixed(3)} · ${stringValue(input.reason)}`, meta: { orderId: order.publicId, chargeId: charge.publicId, sessions, refundMinor } });
-      await insertAudit(ctx, actor, { category: "payments", action: "pt.package.refund", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: `Refunded ${sessions} unused PT session${sessions === 1 ? "" : "s"} — ${actor.organization.currency} ${(refundMinor / 1_000).toFixed(3)}`, reason: stringValue(input.reason), before: { available, refundedSessions: previousSessions, refundedMinor: previousMinor }, after: { available: available - sessions, refundedSessions: nextSessions, refundedMinor: cumulativeMinor } });
+      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: `${sessions} PT credit${sessions === 1 ? "" : "s"} refunded`, body: `${actor.organization.currency} ${formatMinorUnits(refundMinor, actor.organization.currency)} · ${stringValue(input.reason)}`, meta: { orderId: order.publicId, chargeId: charge.publicId, sessions, refundMinor } });
+      await insertAudit(ctx, actor, { category: "payments", action: "pt.package.refund", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: `Refunded ${sessions} unused PT session${sessions === 1 ? "" : "s"} — ${actor.organization.currency} ${formatMinorUnits(refundMinor, actor.organization.currency)}`, reason: stringValue(input.reason), before: { available, refundedSessions: previousSessions, refundedMinor: previousMinor }, after: { available: available - sessions, refundedSessions: nextSessions, refundedMinor: cumulativeMinor } });
       return await ptPackageOrderView(ctx, actor.organization, (await ctx.db.get(order._id))!);
     }
     case "pt.booking.create": {
       requirePermission(actor, "pt.book_for_member");
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const existing = await ctx.db.query("ptBookings").withIndex("by_organization_idempotency", (q) => q.eq("organizationId", actor.organization._id).eq("idempotencyKey", idempotencyKey)).unique();
       if (existing) {
-        if (existing.membershipPublicId !== input.membershipId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different PT booking.", { correlationId: actor.correlationId });
+        if (existing.membershipPublicId !== input.membershipId || (await ctx.db.get(existing.trainerProfileId))?.publicId !== input.trainerProfileId || existing.startsAt !== Date.parse(stringValue(input.startsAt))) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return await ptBookingView(ctx, actor.organization, existing);
       }
       const membershipRecord = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
@@ -5917,7 +10310,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const policy = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
       const timely = cancelledByGym || booking.startsAt - Date.now() >= numberValue(policy.cancellationCutoffHours, 12) * 3_600_000;
       const entitlement = await ctx.db.get(booking.entitlementId);
-      if (!entitlement) domainError("NOT_FOUND", "PT entitlement not found.", { correlationId: actor.correlationId });
+      if (!entitlement) domainError("NOT_FOUND", "The member’s PT package could not be found.", { correlationId: actor.correlationId });
       await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + (timely ? 0 : 1), updatedAt: Date.now() });
       const status = cancelledByGym ? "gym_cancelled" : timely ? "cancelled" : "late_cancelled";
       await ctx.db.patch(booking._id, { status, cancellationReason: stringValue(input.reason).trim(), updatedAt: Date.now() });
@@ -5933,14 +10326,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "pt.book_for_member");
       requireReason(input.reason, actor.correlationId);
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
-      if (!idempotencyKey) domainError("VALIDATION_ERROR", "An idempotency key is required.", { correlationId: actor.correlationId });
+      if (!idempotencyKey) domainError("VALIDATION_ERROR", "This action could not be confirmed. Refresh and try again.", { correlationId: actor.correlationId });
       const booking = await ctx.db.query("ptBookings").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", recordId(input.bookingId))).unique();
       if (!booking || (actor.branchScope === "selected" && !actor.branchIds.includes(booking.branchId))) domainError("NOT_FOUND", "PT booking not found.", { correlationId: actor.correlationId });
       if (!["reserved", "confirmed"].includes(booking.status)) domainError("VALIDATION_ERROR", "Only an upcoming PT booking can be rescheduled.", { correlationId: actor.correlationId });
       const requestHash = JSON.stringify({ bookingId: booking.publicId, trainerProfileId: input.trainerProfileId, branchId: input.branchId, startsAt: input.startsAt });
       const existingKey = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "pt.booking.reschedule").eq("key", idempotencyKey)).unique();
       if (existingKey) {
-        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for another reschedule.", { correlationId: actor.correlationId });
+        if (existingKey.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return await ptBookingView(ctx, actor.organization, booking);
       }
       const membershipRecord = await recordOf(ctx, actor, "membership", booking.membershipPublicId);
@@ -5989,7 +10382,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const trainer = await ctx.db.get(booking.trainerProfileId);
       if (trainer?.userId === actor.user._id) requirePermission(actor, "pt.outcome.self"); else requirePermission(actor, "pt.manage");
       const entitlement = await ctx.db.get(booking.entitlementId);
-      if (!entitlement) domainError("NOT_FOUND", "PT entitlement not found.", { correlationId: actor.correlationId });
+      if (!entitlement) domainError("NOT_FOUND", "The member’s PT package could not be found.", { correlationId: actor.correlationId });
       const status = operation === "pt.booking.complete" ? "completed" : "no_show";
       if (status === "no_show") requireReason(input.reason, actor.correlationId);
       await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1, updatedAt: Date.now() });
@@ -6057,6 +10450,45 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await revokeUnusedIncludedPtCredits(ctx, actor, old.publicId, `Superseded by immediate plan change: ${stringValue(input.reason)}`);
       }
       return result;
+    }
+    case "memberships.freeze_request.decide": {
+      requirePermission(actor, "memberships.freeze");
+      const requestId = recordId(input.requestId);
+      const decision = stringValue(input.decision);
+      const note = optionalString(input.note);
+      if (decision !== "approved" && decision !== "denied") domainError("VALIDATION_ERROR", "Decide approved or denied.", { correlationId: actor.correlationId });
+      if (decision === "denied") requireReason(input.note, actor.correlationId);
+      const row = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest").eq("publicId", requestId)).unique();
+      if (!row) domainError("NOT_FOUND", "Freeze request not found.", { correlationId: actor.correlationId });
+      const value = data(row.data);
+      const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(value.membershipId));
+      const membershipData = data(membershipRecord.data);
+      if (stringValue(value.status) !== "pending") domainError("CONFLICT", "This freeze request was already decided.", { correlationId: actor.correlationId });
+      const now = Date.now();
+      let feeMinor = 0;
+      let chargeId: string | undefined;
+      if (decision === "approved") {
+        // The policy is re-evaluated at approval so stale requests cannot
+        // sneak past a cap that has since been used up.
+        const policy = { ...(DEFAULT_OPERATIONAL_POLICIES.memberFreezes as Data), ...data(data((await settingsData(ctx, actor)).operationalPolicies).memberFreezes) };
+        const windowStart = now - numberValue(policy.windowDays, 365) * 86_400_000;
+        const approvedInWindow = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "freezeRequest")).collect())
+          .map((candidate) => data(candidate.data))
+          .filter((candidate) => stringValue(candidate.memberId) === stringValue(value.memberId) && stringValue(candidate.status) === "approved" && Date.parse(stringValue(candidate.decidedAt, stringValue(candidate.requestedAt))) >= windowStart)
+          .length;
+        feeMinor = approvedInWindow < numberValue(policy.freeFreezesPerWindow, 1) ? 0 : numberValue(policy.extraFreezeFeeMinor, 10_000);
+        const memberRecord = await recordOf(ctx, actor, "member", stringValue(value.memberId));
+        const memberData = data(memberRecord.data);
+        if (feeMinor > 0) {
+          chargeId = newPublicId();
+          await insertRecord(ctx, actor, "charge", { id: chargeId, organizationId: publicOrganizationId(actor.organization), memberId: stringValue(value.memberId), membershipId: stringValue(value.membershipId), description: "Membership freeze fee", subtotal: money(feeMinor, actor.organization.currency), discount: money(0, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(feeMinor, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(feeMinor, actor.organization.currency), status: "unpaid", issueDate: todayIn(actor.organization.timezone || TZ_FALLBACK), dueDate: stringValue(value.startDate), createdAt: isoNow() }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: stringValue(value.memberId) });
+        }
+        await mutationData(ctx, "memberships.freeze", { membershipId: stringValue(value.membershipId), startDate: stringValue(value.startDate), endDate: addDays(stringValue(value.startDate), Math.max(0, numberValue(value.days, 1) - 1)), reason: `Member request approved: ${stringValue(value.reason)}` }, request);
+      }
+      const decided = { ...value, status: decision, feeMinor: decision === "approved" ? feeMinor : undefined, chargeId, decisionNote: note, decidedAt: utcIso(now), decidedBy: actor.user.fullName };
+      await ctx.db.patch(row._id, { data: decided, updatedAt: now });
+      await insertAudit(ctx, actor, { category: "memberships", action: `membership.freeze_request.${decision}`, entityType: "membership", entityId: stringValue(value.membershipId), entityLabel: stringValue(value.memberName), summary: decision === "approved" ? `Approved a ${numberValue(value.days, 0)}-day freeze request${feeMinor > 0 ? ` with a ${actor.organization.currency} ${formatMinorUnits(feeMinor, actor.organization.currency)} fee` : " free of charge"}` : "Denied a member freeze request", reason: note ?? stringValue(value.reason), before: { status: "pending" }, after: { status: decision, feeMinor, chargeId }, branchId: optionalString(membershipData.homeBranchId) });
+      return decided;
     }
     case "memberships.freeze": {
       requirePermission(actor, "memberships.freeze");
@@ -6168,7 +10600,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           .withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "membership.transfer").eq("key", idempotencyKey))
           .unique();
         if (existing) {
-          if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different membership transfer.", { correlationId: actor.correlationId });
+          if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
           return await toMembershipDetail(ctx, actor, data(record.data));
         }
       }
@@ -6197,16 +10629,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       const branchId = recordId(input.branchId);
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
-      const requestedOwnerId = optionalString(input.ownerId);
+      const fullName = normalizedLeadName(input.fullName, actor);
+      const phone = normalizedLeadPhone(input.phone, actor);
+      const email = normalizedLeadEmail(input.email, actor);
+      const requestedOwnerId = input.ownerId === undefined ? undefined : input.ownerId === "unassigned" ? "unassigned" : recordId(input.ownerId);
       const ownerId: string | undefined = requestedOwnerId === "unassigned" ? undefined : requestedOwnerId ?? publicUserId(actor.user);
-      if (ownerId && ownerId !== publicUserId(actor.user)) {
-        requirePermission(actor, "crm.assign");
-        const owner = await userByPublicId(ctx, actor.organization._id, ownerId);
-        if (!owner) domainError("NOT_FOUND", "Lead owner not found.", { correlationId: actor.correlationId });
-        const ownerMembership = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", owner._id)).unique();
-        if (!ownerMembership || !ownerMembership.active || !["owner", "manager", "sales"].includes(ownerMembership.role)) domainError("VALIDATION_ERROR", "Leads can only be assigned to active owner, manager, or sales staff.", { correlationId: actor.correlationId });
-      }
-      const lead = await insertRecord(ctx, actor, "lead", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId, fullName: stringValue(input.fullName).trim(), phone: stringValue(input.phone).trim(), email: optionalString(input.email), stage: "new", source: stringValue(input.source, "other"), ownerId, expectedValue: input.expectedValue ? { amount: amountOf(input.expectedValue), currency: actor.organization.currency } : undefined, nextFollowUpAt: optionalString(input.nextFollowUpAt), notes: optionalString(input.notes), createdAt: isoNow(), updatedAt: isoNow() }, { branchId });
+      if (ownerId && ownerId !== publicUserId(actor.user)) requirePermission(actor, "crm.assign");
+      if (ownerId) await assertLeadOwner(ctx, actor, ownerId);
+      const lead = await insertRecord(ctx, actor, "lead", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId, fullName, phone, email, stage: "new", source: stringValue(input.source, "other"), ownerId, expectedValue: input.expectedValue ? { amount: amountOf(input.expectedValue), currency: actor.organization.currency } : undefined, nextFollowUpAt: optionalString(input.nextFollowUpAt), notes: optionalString(input.notes), createdAt: isoNow(), updatedAt: isoNow() }, { branchId });
       await insertTimeline(ctx, actor, { leadId: lead.id, branchId, type: "member_created", title: "Lead captured", body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return { ...(await toLeadSummary(ctx, actor, lead)), notes: optionalString(lead.notes), activities: [], offers: [] };
     }
@@ -6214,19 +10644,114 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       const record = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const current = data(record.data);
-      if (input.ownerId && input.ownerId !== current.ownerId) requirePermission(actor, "crm.assign");
       const patch: Data = { ...input, updatedAt: isoNow() };
       delete patch.leadId;
+      if (Object.prototype.hasOwnProperty.call(input, "ownerId")) {
+        const requestedOwnerId = input.ownerId === "unassigned" ? undefined : recordId(input.ownerId);
+        if (requestedOwnerId && requestedOwnerId !== current.ownerId) requirePermission(actor, "crm.assign");
+        if (requestedOwnerId) await assertLeadOwner(ctx, actor, requestedOwnerId);
+        patch.ownerId = requestedOwnerId;
+      }
+      // Closing from the lead record must follow the same rules as closing
+      // from the pipeline: a real reason, no dangling follow-up, one audit fact.
+      const closingAsLost = stringValue(input.stage) === "lost" && stringValue(current.stage) !== "lost";
+      const lostReason = optionalString(input.lostReason)?.trim();
+      if (closingAsLost) {
+        if (!lostReason || lostReason.length < 5) domainError("VALIDATION_ERROR", "A specific reason is required before closing a lead.", { correlationId: actor.correlationId });
+        patch.lostReason = lostReason;
+        patch.nextFollowUpAt = undefined;
+      }
       const updated = await patchRecord(ctx, actor, record, patch);
+      if (closingAsLost) {
+        for (const taskRecord of await recordsOfLead(ctx, actor.organization._id, record.publicId, "task")) {
+          const task = data(taskRecord.data);
+          if (stringValue(task.status, "open") !== "open") continue;
+          await patchRecord(ctx, actor, taskRecord, { status: "cancelled", outcome: `Lead marked not sold: ${lostReason}`, completedAt: isoNow() });
+        }
+        await insertAudit(ctx, actor, {
+          category: "crm",
+          action: "lead.lost",
+          entityType: "lead",
+          entityId: record.publicId,
+          entityLabel: stringValue(current.fullName),
+          summary: "Lead marked as not sold",
+          reason: lostReason,
+          before: { stage: stringValue(current.stage), lostReason: optionalString(current.lostReason) ?? null },
+          after: { stage: "lost", lostReason: lostReason ?? null },
+          branchId: optionalString(current.branchId),
+        });
+      }
       return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities: [], offers: [] };
+    }
+    case "leads.update_contact": {
+      requirePermission(actor, "crm.write");
+      const record = await recordOf(ctx, actor, "lead", recordId(input.leadId));
+      const current = data(record.data);
+      const fullName = normalizedLeadName(input.fullName, actor);
+      const phone = normalizedLeadPhone(input.phone, actor);
+      const email = normalizedLeadEmail(input.email, actor);
+      const currentEmail = typeof current.email === "string" ? current.email.trim().toLowerCase() || null : null;
+      const before = { fullName: stringValue(current.fullName), phone: stringValue(current.phone), email: currentEmail };
+      const after = { fullName, phone, email: email ?? null };
+      const changedFields = Object.entries(after).filter(([field, value]) => before[field as keyof typeof before] !== value).map(([field]) => field);
+      if (changedFields.length === 0) {
+        const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+        const offers = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
+        return { ...(await toLeadSummary(ctx, actor, current)), notes: optionalString(current.notes), activities, offers };
+      }
+      const updated = await patchRecord(ctx, actor, record, { fullName, phone, email, updatedAt: isoNow() });
+      await insertAudit(ctx, actor, { category: "crm", action: "lead.contact.update", entityType: "lead", entityId: record.publicId, entityLabel: fullName, summary: "Lead contact details corrected", before, after, branchId: optionalString(current.branchId) });
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "lead_contact_updated", title: "Lead contact details corrected", body: "Contact details were updated; pipeline status was unchanged.", actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { fields: changedFields.join(",") } });
+      const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
+      return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities, offers };
     }
     case "leads.contact": {
       requirePermission(actor, "crm.write");
       const record = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const current = data(record.data);
-      const updatedLead = await patchRecord(ctx, actor, record, { ...(input.stage ? { stage: input.stage } : { stage: current.stage === "new" ? "attempted" : current.stage }), ...(input.nextFollowUpAt !== undefined ? { nextFollowUpAt: input.nextFollowUpAt || undefined } : {}), updatedAt: isoNow() });
-      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: `Call — ${stringValue(input.outcome).replaceAll("_", " ")}`, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+      const nextStage = optionalString(input.stage) ?? (current.stage === "new" ? "attempted" : stringValue(current.stage));
+      const notes = optionalString(input.notes)?.trim();
+      if (nextStage === "lost" && (!notes || notes.length < 5)) {
+        domainError("VALIDATION_ERROR", "A specific reason is required before closing a lead.", { correlationId: actor.correlationId });
+      }
+      // A contact with no new date clears a lead date that was already due
+      // (this contact was that follow-up) or any date after a terminal outcome,
+      // so an overdue lead does not go straight back to Today.
+      const contactTimezone = actor.organization.timezone || TZ_FALLBACK;
+      const clearsDueFollowUp = input.nextFollowUpAt === undefined && nextStage !== "lost" && shouldClearLeadFollowUp({ outcome: stringValue(input.outcome), currentNextFollowUpAt: optionalString(current.nextFollowUpAt), isDue: (dueAt) => businessDate(dueAt, contactTimezone) <= todayIn(contactTimezone) });
+      const updatedLead = await patchRecord(ctx, actor, record, {
+        stage: nextStage,
+        ...(nextStage === "lost"
+          ? { lostReason: notes, nextFollowUpAt: undefined }
+          : input.nextFollowUpAt !== undefined
+            ? { nextFollowUpAt: input.nextFollowUpAt || undefined }
+            : clearsDueFollowUp
+              ? { nextFollowUpAt: undefined }
+              : {}),
+        updatedAt: isoNow(),
+      });
+      const outcome = stringValue(input.outcome);
+      // The lead keeps its own next-follow-up date; open tasks about the lead
+      // are the same work and must not survive as duplicates on Today.
+      await resolveFollowUpTasksForContact(ctx, actor, { leadId: record.publicId }, stringValue(current.fullName), outcome, nextStage === "lost" ? undefined : optionalString(input.nextFollowUpAt), { createWhenMissing: false });
+      const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${outcome.replaceAll("_", " ")}`;
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
+      if (nextStage === "lost") {
+        await insertAudit(ctx, actor, {
+          category: "crm",
+          action: "lead.lost",
+          entityType: "lead",
+          entityId: record.publicId,
+          entityLabel: stringValue(current.fullName),
+          summary: "Lead marked as not sold",
+          reason: notes,
+          before: { stage: stringValue(current.stage), lostReason: optionalString(current.lostReason) ?? null },
+          after: { stage: "lost", lostReason: notes ?? null },
+          branchId: optionalString(current.branchId),
+        });
+      }
+      const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers: [] };
     }
     case "trials.schedule_for_lead": {
@@ -6246,7 +10771,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!weekday || !TIME_PATTERN.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.", { correlationId: actor.correlationId });
       const settings = await settingsData(ctx, actor);
       const schedule = arrayValue(data(data(settings).operationalPolicies).trialSchedules).map(data).find((candidate) => candidate.branchId === branchId);
-      if (!schedule) domainError("VALIDATION_ERROR", "Trial scheduling is not configured for this branch yet.", { correlationId: actor.correlationId });
+      if (!schedule) domainError("VALIDATION_ERROR", "Trial bookings are not set up for this branch yet.", { correlationId: actor.correlationId });
       const trialWindow = normalizedTrialWindow(data(data(schedule.days)[weekday]));
       if (!booleanValue(trialWindow.enabled) || preferredTime < stringValue(trialWindow.opensAt) || preferredTime > stringValue(trialWindow.closesAt)) {
         domainError("CONFLICT", "That trial time is outside this branch's trial hours.", { correlationId: actor.correlationId });
@@ -6274,8 +10799,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const updatedLead = await patchRecord(ctx, actor, lead, { stage: "trial_booked", nextFollowUpAt: utcIso(requestedAt), updatedAt: isoNow() });
       await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", body: `${preferredDate} · ${preferredTime}${optionalString(input.goal) ? ` · ${optionalString(input.goal)}` : ""}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
       await insertAudit(ctx, actor, { category: "crm", action: "trial.scheduled", entityType: "trial_booking", entityId: booking.id, entityLabel: `${stringValue(leadValue.fullName)} · ${preferredDate} ${preferredTime}`, summary: "Trial scheduled by staff", branchId });
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === lead.publicId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === lead.publicId);
+      const activities = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === lead.publicId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === lead.publicId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers, trialBooking: booking };
     }
     case "trials.update": {
@@ -6337,15 +10862,21 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           dedupeKey: `trial-status:${booking.publicId}:${nextStatus}`,
         });
       }
-      const activities = (await recordsOf(ctx, actor, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === leadId);
-      const offers = (await recordsOf(ctx, actor, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === leadId);
+      const activities = (await recordsOfLead(ctx, actor.organization._id, leadId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === leadId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, leadId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === leadId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers, trialBooking: updatedBooking };
     }
     case "offers.create": {
       requirePermission(actor, "crm.write");
       const lead = await recordOf(ctx, actor, "lead", recordId(input.leadId));
       const plan = await recordOf(ctx, actor, "plan", recordId(input.planId));
-      const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: amountOf(input.price), currency: actor.organization.currency }, expiresAt: input.expiresInDays ? new Date(Date.now() + numberValue(input.expiresInDays) * 86_400_000).toISOString() : undefined, status: "draft", createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
+      const expiresInDays = numberValue(input.expiresInDays, 7);
+      const price = amountOf(input.price);
+      if (!Number.isInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > 60) domainError("VALIDATION_ERROR", "Offer end date must be between 1 and 60 days.", { correlationId: actor.correlationId });
+      if (!Number.isSafeInteger(price) || price < 0) domainError("VALIDATION_ERROR", "Enter a valid offer price.", { correlationId: actor.correlationId });
+      const token = publicOfferToken();
+      const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: price, currency: actor.organization.currency }, expiresAt: new Date(Date.now() + expiresInDays * 86_400_000).toISOString(), status: "draft", publicToken: token, createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
+      await insertRecord(ctx, actor, "offerLink", { id: token, offerId: offer.id, leadId: lead.publicId, createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
       await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(data(lead.data).branchId), type: "offer_drafted", title: `Offer drafted — ${stringValue(data(plan.data).name)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offer.id } });
       return offer;
     }
@@ -6380,7 +10911,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (stringValue(current.status) !== "sent") domainError("CONFLICT", "Only a delivered offer can receive an outcome.", { correlationId: actor.correlationId });
       const expiresAt = optionalString(current.expiresAt);
       if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
-        domainError("CONFLICT", "This offer has expired.", { correlationId: actor.correlationId });
+        domainError("CONFLICT", "This offer has ended.", { correlationId: actor.correlationId });
       }
       const outcome = stringValue(input.outcome);
       if (outcome !== "accepted" && outcome !== "declined") domainError("VALIDATION_ERROR", "Choose a valid offer outcome.", { correlationId: actor.correlationId });
@@ -6485,6 +11016,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const matchingMembers = duplicateMemberMatches(
         (await memberRecords(ctx, actor)).map((record) => data(record.data)),
         { phone: leadData.phone, email: leadData.email },
+        organizationPhoneCountryCallingCode(actor.organization),
       );
       const matchingMemberIds = [...new Set(matchingMembers.map((match) => match.memberId))];
       if (matchingMemberIds.length > 1) {
@@ -6510,6 +11042,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           preferredLanguage: input.preferredLanguage,
           source: leadData.source,
           assignedSalespersonId: leadData.ownerId,
+          referredByMemberId: leadData.referredByMemberId,
         }, { rejectDuplicates: true });
       const memberDetail = created?.member ?? await toMemberDetail(ctx, actor, data(existingMemberRecord!.data));
       const member = data(memberDetail);
@@ -6574,7 +11107,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
       const entryPassToken = optionalString(input.entryPassToken);
       const entryPass = entryPassToken ? await resolveEntryPass(ctx, actor, entryPassToken, branchId) : null;
-      if (entryPassToken && !entryPass) domainError("NOT_FOUND", "Entry pass is invalid, expired, or already used.", { correlationId: actor.correlationId });
+      if (entryPassToken && !entryPass) domainError("NOT_FOUND", "This entry pass cannot be used. Ask the member for a new one.", { correlationId: actor.correlationId });
       const memberRecord = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const member = data(memberRecord.data);
       if (entryPass && entryPass.payload.memberId && entryPass.payload.memberId !== member.id) domainError("NOT_FOUND", "Entry pass is not valid for this member.", { correlationId: actor.correlationId });
@@ -6600,7 +11133,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
       const entryPassToken = optionalString(input.entryPassToken);
       const entryPass = entryPassToken ? await resolveEntryPass(ctx, actor, entryPassToken, branchId) : null;
-      if (entryPassToken && !entryPass) domainError("NOT_FOUND", "Entry pass is invalid, expired, or already used.", { correlationId: actor.correlationId });
+      if (entryPassToken && !entryPass) domainError("NOT_FOUND", "This entry pass cannot be used. Ask the member for a new one.", { correlationId: actor.correlationId });
       const memberRecord = await recordOf(ctx, actor, "member", recordId(input.memberId));
       const member = data(memberRecord.data);
       if (entryPass && entryPass.payload.memberId && entryPass.payload.memberId !== member.id) domainError("NOT_FOUND", "Entry pass is not valid for this member.", { correlationId: actor.correlationId });
@@ -6619,7 +11152,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "payments.create": {
       requirePermission(actor, "payments.collect");
       if (!optionalString(input.chargeId)) {
-        domainError("VALIDATION_ERROR", "Select the specific outstanding charge before collecting payment.", { correlationId: actor.correlationId, fieldErrors: { chargeId: ["Required"] } });
+        domainError("VALIDATION_ERROR", "Select the specific unpaid charge before collecting payment.", { correlationId: actor.correlationId, fieldErrors: { chargeId: ["Required"] } });
       }
       const idempotencyKey = recordId(input.idempotencyKey);
       const result = await paymentRecord(ctx, actor, input, idempotencyKey);
@@ -6635,7 +11168,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const requestHash = JSON.stringify({ paymentId, amount: input.amount, reason: input.reason, idempotencyKey });
       const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "payment.refund").eq("key", idempotencyKey)).unique();
       if (existing) {
-        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different refund.", { correlationId: actor.correlationId });
+        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return await receiptDetail(ctx, actor, stringValue(data(existing.result).receiptId));
       }
       const originalRecord = await recordOf(ctx, actor, "payment", paymentId);
@@ -6652,14 +11185,23 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const alreadyRefunded = related.reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
       const remaining = amountOf(original.amount) - alreadyRefunded;
       if (input.amount != null && currencyOf(input.amount, "") !== actor.organization.currency) {
-        domainError("VALIDATION_ERROR", "Refund currency does not match the organization.", { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", "Use your gym’s currency for this refund.", { correlationId: actor.correlationId });
       }
       const allocation = refundAllocation(input.amount == null ? undefined : amountOf(input.amount), remaining);
       if (!allocation.ok && allocation.code === "PAYMENT_ALREADY_REFUNDED") domainError(allocation.code, "This payment was already fully refunded.", { correlationId: actor.correlationId });
       if (!allocation.ok) domainError(allocation.code, "Refund amount exceeds the refundable balance.", { correlationId: actor.correlationId });
       const amount = allocation.amount;
+      // A cash refund is money leaving the drawer of the branch that took the
+      // payment. Without an open shift there it would be a cash movement no
+      // shift close or daily reconciliation could ever see, so it is refused
+      // the same way a cash collection or retail refund is. Non-cash refunds
+      // are recorded against whatever shift happens to be open, for context.
+      const openShift = await findOpenShift(ctx, actor, stringValue(original.branchId));
+      if (!openShift && await methodAffectsCashDrawer(ctx, actor, stringValue(original.method))) {
+        domainError("NO_OPEN_SHIFT", "Open a cash shift at the branch that took this payment before refunding it in cash.", { correlationId: actor.correlationId });
+      }
       const allocated = await allocateReceipt(ctx, actor);
-      const refund = { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId: original.branchId, memberId: original.memberId, chargeId: original.chargeId, type: "refund", amount: signedMoney(-amount, actor.organization.currency), method: original.method, status: "completed", receiptId: allocated.id, receiptNumber: allocated.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: (await findOpenShift(ctx, actor, stringValue(original.branchId))) ? stringValue(data((await findOpenShift(ctx, actor, stringValue(original.branchId)))!.data).id) : undefined, idempotencyKey: `refund-${original.id}-${allocated.id}`, originalPaymentId: original.id, refundReason: stringValue(input.reason), occurredAt: isoNow() };
+      const refund = { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId: original.branchId, memberId: original.memberId, chargeId: original.chargeId, type: "refund", amount: signedMoney(-amount, actor.organization.currency), method: original.method, status: "completed", receiptId: allocated.id, receiptNumber: allocated.number, collectedById: publicUserId(actor.user), collectedByName: actor.user.fullName, shiftId: openShift ? stringValue(data(openShift.data).id) : undefined, idempotencyKey: `refund-${original.id}-${allocated.id}`, originalPaymentId: original.id, refundReason: stringValue(input.reason), occurredAt: isoNow() };
       const receipt = { id: allocated.id, receiptNumber: allocated.number, paymentId: refund.id, issuedAt: refund.occurredAt };
       await insertRecord(ctx, actor, "payment", refund, { branchId: optionalString(original.branchId), memberPublicId: optionalString(original.memberId) });
       await insertRecord(ctx, actor, "receipt", receipt, { branchId: optionalString(original.branchId), memberPublicId: optionalString(original.memberId) });
@@ -6669,11 +11211,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId));
         const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amount); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "refunded" : "partial" });
       }
-      await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Refunded ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
-      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${(amount / 1000).toFixed(3)}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Refunded ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
+      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.refund", key: idempotencyKey, requestHash, result: { receiptId: receipt.id, paymentId: refund.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
       const refundBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
-      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: refundBranch?._id, roles: ["owner", "manager"], kind: "refund_review", title: "Payment refund recorded", body: `${actor.organization.currency} ${(amount / 1000).toFixed(3)} · ${actor.user.fullName}`, href: `/payments/receipts/${receipt.id}`, dedupeKey: `refund:${refund.id}` });
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: refundBranch?._id, roles: ["owner", "manager"], kind: "refund_review", title: "Payment refund recorded", body: `${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} · ${actor.user.fullName}`, href: `/payments/receipts/${receipt.id}`, dedupeKey: `refund:${refund.id}` });
       return await receiptDetail(ctx, actor, receipt.id);
     }
     case "payments.void": {
@@ -6684,7 +11226,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const requestHash = JSON.stringify({ paymentId, reason: input.reason, idempotencyKey });
       const existing = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "payment.void").eq("key", idempotencyKey)).unique();
       if (existing) {
-        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "This idempotency key was already used for a different void.", { correlationId: actor.correlationId });
+        if (existing.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
         return await receiptDetail(ctx, actor, stringValue(data(existing.result).receiptId));
       }
       const originalRecord = await recordOf(ctx, actor, "payment", paymentId);
@@ -6694,6 +11236,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (original.status === "refunded" || original.status === "partially_refunded") domainError("PAYMENT_ALREADY_REFUNDED", "Refunded payments cannot be voided.", { correlationId: actor.correlationId });
       const paymentDay = todayIn(actor.organization.timezone || TZ_FALLBACK);
       if (businessDate(stringValue(original.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== paymentDay) domainError("VOID_WINDOW_EXPIRED", "Payments can only be voided on the same business day. Issue a refund instead.", { correlationId: actor.correlationId });
+      // A void says the collection never happened. Once the drawer that took
+      // the cash has been counted and closed, that money is part of a
+      // reconciled total; removing it afterwards would rewrite a closed shift.
+      // Retail sales already apply this rule; membership payments follow it.
+      if (await methodAffectsCashDrawer(ctx, actor, stringValue(original.method))) {
+        const openShift = await findOpenShift(ctx, actor, stringValue(original.branchId));
+        if (!openShift || !original.shiftId || stringValue(data(openShift.data).id) !== stringValue(original.shiftId)) {
+          domainError("NO_OPEN_SHIFT", "Cash payments can only be voided while their original cash shift is open. Issue a refund instead.", { correlationId: actor.correlationId });
+        }
+      }
       await patchRecord(ctx, actor, originalRecord, { status: "voided", voidReason: stringValue(input.reason) });
       if (original.chargeId) {
         const charge = await recordOf(ctx, actor, "charge", stringValue(original.chargeId));
@@ -6702,11 +11254,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await reverseUnusedPtOrderAfterVoid(ctx, actor, charge.publicId, stringValue(input.reason));
         await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" });
       }
-      await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Voided ${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
+      await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Voided ${actor.organization.currency} ${formatMinorUnits(amountOf(original.amount), actor.organization.currency)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
       await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.void", key: idempotencyKey, requestHash, result: { receiptId: original.receiptId, paymentId: original.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
       const voidBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
-      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: voidBranch?._id, roles: ["owner", "manager"], kind: "void_review", title: "Payment voided", body: `${actor.organization.currency} ${(amountOf(original.amount) / 1000).toFixed(3)} · ${actor.user.fullName}`, href: `/payments/receipts/${stringValue(original.receiptId)}`, dedupeKey: `void:${original.id}` });
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: voidBranch?._id, roles: ["owner", "manager"], kind: "void_review", title: "Payment voided", body: `${actor.organization.currency} ${formatMinorUnits(amountOf(original.amount), actor.organization.currency)} · ${actor.user.fullName}`, href: `/payments/receipts/${stringValue(original.receiptId)}`, dedupeKey: `void:${original.id}` });
       return await receiptDetail(ctx, actor, stringValue(original.receiptId));
     }
     case "shifts.open": {
@@ -6724,15 +11276,15 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const shift = data(record.data);
       if (shift.status !== "open") domainError("VALIDATION_ERROR", "This shift is already closed.", { correlationId: actor.correlationId });
       const totals = await shiftTotals(ctx, actor, shift);
-      const expected = amountOf(shift.openingFloat) + amountOf(totals.cashPayments) - amountOf(totals.cashRefunds);
+      const expected = amountOf(shift.openingFloat) + amountOf(totals.cashPayments) - amountOf(totals.cashRefunds) - amountOf(totals.supplierCashPayments) + amountOf(totals.supplierCashReversals);
       const counted = amountOf(input.countedCash);
       const variance = counted - expected;
       if (variance !== 0) requireReason(input.varianceExplanation, actor.correlationId, "varianceExplanation");
       const updated = await patchRecord(ctx, actor, record, { status: "closed", closedAt: isoNow(), closedById: publicUserId(actor.user), expectedCash: money(expected, actor.organization.currency), countedCash: money(counted, actor.organization.currency), variance: signedMoney(variance, actor.organization.currency), varianceExplanation: optionalString(input.varianceExplanation), varianceApprovalStatus: varianceApprovalStatusForAmount(variance) });
-      await insertAudit(ctx, actor, { category: "reconciliation", action: variance === 0 ? "shift.close" : "shift.close_variance", entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: variance === 0 ? "Cash shift closed" : `Cash shift closed with variance ${actor.organization.currency} ${(variance / 1000).toFixed(3)}`, reason: optionalString(input.varianceExplanation), before: { status: "open" }, after: { status: "closed", expected, counted, variance }, approvalStatus: varianceAuditApprovalStatusForAmount(variance), branchId: optionalString(shift.branchId) });
+      await insertAudit(ctx, actor, { category: "reconciliation", action: variance === 0 ? "shift.close" : "shift.close_variance", entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: variance === 0 ? "Cash shift closed" : `Cash shift closed with variance ${actor.organization.currency} ${formatMinorUnits(variance, actor.organization.currency)}`, reason: optionalString(input.varianceExplanation), before: { status: "open" }, after: { status: "closed", expected, counted, variance }, approvalStatus: varianceAuditApprovalStatusForAmount(variance), branchId: optionalString(shift.branchId) });
       if (variance !== 0) {
         const shiftBranch = await branchByPublicId(ctx, actor.organization._id, stringValue(shift.branchId));
-        await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: shiftBranch?._id, roles: ["owner", "manager"], kind: "cash_shift_variance", title: "Cash shift variance", body: `${actor.organization.currency} ${(variance / 1000).toFixed(3)} · ${actor.user.fullName}`, href: "/payments/shifts", dedupeKey: `shift-variance:${record.publicId}` });
+        await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: shiftBranch?._id, roles: ["owner", "manager"], kind: "cash_shift_variance", title: "Cash shift variance", body: `${actor.organization.currency} ${formatMinorUnits(variance, actor.organization.currency)} · ${actor.user.fullName}`, href: "/payments/shifts", dedupeKey: `shift-variance:${record.publicId}` });
       }
       return updated;
     }
@@ -6741,15 +11293,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requireReason(input.note, actor.correlationId, "note");
       const record = await recordOf(ctx, actor, "shift", recordId(input.shiftId));
       const shift = data(record.data);
-      if (shift.varianceApprovalStatus !== "pending") domainError("VALIDATION_ERROR", "This shift has no pending variance approval.", { correlationId: actor.correlationId });
+      if (shift.varianceApprovalStatus !== "pending") domainError("VALIDATION_ERROR", "This shift has no cash difference waiting for approval.", { correlationId: actor.correlationId });
       const decision = stringValue(input.decision);
       if (decision !== "approved" && decision !== "rejected") domainError("VALIDATION_ERROR", "Approval decision is invalid.", { correlationId: actor.correlationId });
       const updated = await patchRecord(ctx, actor, record, { varianceApprovalStatus: decision });
-      await insertAudit(ctx, actor, { category: "reconciliation", action: `shift.variance.${decision}`, entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: `${decision === "approved" ? "Approved" : "Rejected"} cash variance`, reason: stringValue(input.note), before: { varianceApprovalStatus: "pending" }, after: { varianceApprovalStatus: decision }, branchId: optionalString(shift.branchId) });
+      await insertAudit(ctx, actor, { category: "reconciliation", action: `shift.variance.${decision}`, entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: `${decision === "approved" ? "Approved" : "Rejected"} cash difference`, reason: stringValue(input.note), before: { varianceApprovalStatus: "pending" }, after: { varianceApprovalStatus: decision }, branchId: optionalString(shift.branchId) });
       return updated;
     }
     case "automations.rule.create": {
       requirePermission(actor, "automations.manage");
+      requireAutomationsLive(actor.correlationId);
       const normalized = normalizedAutomationRulePatch(input, undefined, actor.correlationId, true);
       await assertAutomationTemplateReferences(ctx, actor, arrayValue(normalized.actions).map(data));
       const rule = await insertRecord(ctx, actor, "automationRule", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), ...normalized, executionsLast30Days: 0, updatedAt: isoNow() });
@@ -6758,6 +11311,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "automations.rule.update": {
       requirePermission(actor, "automations.manage");
+      requireAutomationsLive(actor.correlationId);
       const record = await recordOf(ctx, actor, "automationRule", recordId(input.id));
       const patch: Data = normalizedAutomationRulePatch(input, data(record.data), actor.correlationId, false);
       if (patch.actions) await assertAutomationTemplateReferences(ctx, actor, arrayValue(patch.actions).map(data));
@@ -6768,6 +11322,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "automations.run": {
       requirePermission(actor, "automations.manage");
+      requireAutomationsLive(actor.correlationId);
       requireReason(input.reason, actor.correlationId);
       const ruleRecord = await recordOf(ctx, actor, "automationRule", recordId(input.ruleId));
       const rule = data(ruleRecord.data);
@@ -6794,6 +11349,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     case "automations.execution.retry": {
       requirePermission(actor, "automations.manage");
+      requireAutomationsLive(actor.correlationId);
       requireReason(input.reason, actor.correlationId);
       const executionRecord = await recordOf(ctx, actor, "automationExecution", recordId(input.executionId));
       const execution = data(executionRecord.data);
@@ -6814,7 +11370,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           kind: "automation_failed",
           title: "Automation retries exhausted",
           body: stringValue(execution.subjectName, stringValue(execution.ruleName)),
-          href: `/automations/${stringValue(execution.ruleId)}`,
+          href: "/audit?category=automations",
           dedupeKey: `automation-exhausted:${executionRecord.publicId}`,
         });
         domainError("VALIDATION_ERROR", "This execution has exhausted its retry limit.", { correlationId: actor.correlationId });
@@ -6845,11 +11401,79 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       });
       return await automationExecutionView(ctx, actor, { ...executionRecord, data: updated, updatedAt: Date.now() });
     }
+    case "workspace.preferences.update": {
+      if (actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can change which features are on.", { correlationId: actor.correlationId });
+      const access = await workspaceAccessData(ctx, actor);
+      const inputModules = arrayValue(input.enabledModules);
+      let enabledModules: WorkspaceModuleKey[];
+      try {
+        enabledModules = validateWorkspaceModuleSelection(inputModules, access.entitlements.entitledModules as WorkspaceModuleKey[]);
+      } catch (error) {
+        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace module preferences are invalid.", { correlationId: actor.correlationId });
+      }
+      const existing = await workspacePreferencesRecord(ctx, actor);
+      const before = access.preferences.enabledModules as WorkspaceModuleKey[];
+      const changed = JSON.stringify(before) !== JSON.stringify(enabledModules);
+      const now = Date.now();
+      if (existing) {
+        await ctx.db.patch(existing._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: actor.user._id, updatedAt: now });
+      } else {
+        await ctx.db.insert("workspaceModulePreferences", { organizationId: actor.organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: actor.user._id, createdAt: now, updatedAt: now });
+      }
+      if (changed) {
+        await insertAudit(ctx, actor, {
+          category: "settings",
+          action: "workspace.module_preferences.update",
+          entityType: "workspace_module_preferences",
+          entityId: publicOrganizationId(actor.organization),
+          entityLabel: actor.organization.name,
+          summary: "Workspace module preferences updated",
+          before: { enabledModules: before.join(",") },
+          after: { enabledModules: enabledModules.join(",") },
+        });
+      }
+      return await workspaceAccessData(ctx, actor);
+    }
+    case "settings.brand.update": {
+      if (actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can change the gym’s branding.", { correlationId: actor.correlationId });
+      const paletteKeyInput = input.paletteKey;
+      if (!isBrandPaletteKey(paletteKeyInput)) domainError("VALIDATION_ERROR", "Choose a supported Brand Kit palette.", { correlationId: actor.correlationId, fieldErrors: { paletteKey: ["Choose a supported palette."] } });
+      const requestedColor = input.primaryColor === undefined || input.primaryColor === null || input.primaryColor === ""
+        ? BRAND_PALETTE_PRESETS[paletteKeyInput]
+        : normalizeBrandHex(input.primaryColor);
+      if (!requestedColor) domainError("VALIDATION_ERROR", "Primary color must be a six-digit hex color.", { correlationId: actor.correlationId, fieldErrors: { primaryColor: ["Use #RRGGBB."] } });
+      const requestedLogoId = input.logoAssetId === null || input.logoAssetId === "" ? undefined : optionalString(input.logoAssetId);
+      let logo: Doc<"mediaAssets"> | null = null;
+      if (requestedLogoId) {
+        logo = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", requestedLogoId)).unique();
+        if (!logo || logo.ownerType !== "gym_logo" || logo.ownerPublicId !== publicOrganizationId(actor.organization) || logo.visibility !== "public" || !["pending", "active"].includes(logo.status)) {
+          domainError("NOT_FOUND", "Brand logo was not found in this gym.", { correlationId: actor.correlationId });
+        }
+      }
+      const previousLogoId = (actor.organization as Organization & { brandLogoAssetId?: string }).brandLogoAssetId;
+      const now = Date.now();
+      if (logo?.status === "pending") await ctx.db.patch(logo._id, { status: "active", deleteAfter: undefined, updatedAt: now });
+      if (previousLogoId && previousLogoId !== requestedLogoId) {
+        const previous = await ctx.db.query("mediaAssets").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", previousLogoId)).unique();
+        if (previous && previous.status === "active") await ctx.db.patch(previous._id, { status: "scheduled_for_deletion", deleteAfter: now + 30 * 86_400_000, updatedAt: now });
+      }
+      const previousBrand = await brandKitView(ctx, actor.organization);
+      const nextVersion = ((actor.organization as Organization & { brandVersion?: number }).brandVersion ?? 0) + 1;
+      await ctx.db.patch(actor.organization._id, { brandLogoAssetId: requestedLogoId, brandPaletteKey: paletteKeyInput, brandPrimaryColor: requestedColor, brandVersion: nextVersion, brandUpdatedAt: now, brandUpdatedByUserId: actor.user._id, updatedAt: now });
+      const nextBrand = await brandKitView(ctx, { ...actor.organization, brandLogoAssetId: requestedLogoId, brandPaletteKey: paletteKeyInput, brandPrimaryColor: requestedColor, brandVersion: nextVersion, brandUpdatedAt: now, brandUpdatedByUserId: actor.user._id });
+      await insertAudit(ctx, actor, { category: "settings", action: "settings.brand.update", entityType: "organization_brand", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: "Tenant Brand Kit updated", before: { paletteKey: previousBrand.paletteKey, primaryColor: previousBrand.primaryColor, logoAssetId: previousBrand.logoAssetId, version: previousBrand.version }, after: { paletteKey: nextBrand.paletteKey, primaryColor: nextBrand.primaryColor, logoAssetId: nextBrand.logoAssetId, version: nextBrand.version } });
+      return nextBrand;
+    }
     case "settings.organization.update": {
       requirePermission(actor, "settings.manage");
-      const allowed = ["name", "timezone", "locale", "defaultLanguage", "taxRatePercent", "receiptPrefix", "receiptFooter"];
+      const allowed = ["name", "timezone", "locale", "phoneCountryCallingCode", "defaultLanguage", "taxRatePercent", "receiptPrefix", "receiptFooter"];
       const patch: Partial<Organization> = {};
       for (const key of allowed) if (input[key] !== undefined) (patch as Record<string, unknown>)[key] = input[key];
+      if (patch.phoneCountryCallingCode !== undefined) {
+        const digits = String(patch.phoneCountryCallingCode).replace(/\D/g, "");
+        if (!/^\d{1,3}$/.test(digits)) domainError("VALIDATION_ERROR", "Enter a valid country calling code.", { correlationId: actor.correlationId, fieldErrors: { phoneCountryCallingCode: ["Use 1 to 3 digits, for example +962"] } });
+        patch.phoneCountryCallingCode = digits;
+      }
       await ctx.db.patch(actor.organization._id, { ...patch, updatedAt: Date.now() });
       await insertAudit(ctx, actor, { category: "settings", action: "settings.organization_update", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: stringValue(input.name, actor.organization.name), summary: "Organization settings updated", before: { name: actor.organization.name, receiptFooter: actor.organization.receiptFooter, taxRatePercent: actor.organization.taxRatePercent }, after: patch });
       return await settingsView(ctx, actor);
@@ -6887,7 +11511,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       else await ctx.db.insert("operationalEmailSettings", { organizationId: actor.organization._id, enabledKinds, updatedByUserId: actor.user._id, reason, ownerConfirmedAt: now, ownerConfirmedByUserId: actor.user._id, createdAt: now, updatedAt: now });
       await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_email.update", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: `Enabled ${enabledKinds.length} gym-controlled service email type${enabledKinds.length === 1 ? "" : "s"}`, reason: reason || undefined, before: { enabledKinds: existing?.enabledKinds ?? [] }, after: { enabledKinds } });
       const providerConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
-      return { enabledKinds, availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: true, ownerConfirmedAt: utcIso(now), ownerConfirmedBy: actor.user.fullName, updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: reason || undefined };
+      return { enabledKinds, availableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], configurableKinds: [...GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS], mandatoryPlatformKinds: [...MANDATORY_PLATFORM_EMAIL_KINDS], liveWorkerEnabled: resolveEmailMode().mode !== "off" && providerConfigured, deliveryMode: resolveEmailMode().mode, deliveryModeSource: resolveEmailMode().source, deliveryModeWarning: resolveEmailMode().warning, providerConfigured, webhookConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()), ownerConfirmed: true, ownerConfirmedAt: utcIso(now), ownerConfirmedBy: actor.user.fullName, updatedAt: utcIso(now), updatedBy: actor.user.fullName, reason: reason || undefined };
     }
     case "settings.operationalPolicies": {
       requirePermission(actor, "settings.manage");
@@ -6899,6 +11523,68 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       else await insertRecord(ctx, actor, "settings", { id: "settings", ...value });
       await insertAudit(ctx, actor, { category: "settings", action: "settings.operational_policies", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: "Entry, membership, and operating-hour policies updated", before, after: operationalPolicies });
       return await settingsView(ctx, actor);
+    }
+    case "zones.upsert": {
+      requirePermission(actor, "settings.manage");
+      if (actor.role !== "owner" && actor.role !== "manager") domainError("FORBIDDEN", "Only an owner or manager can manage zones.", { correlationId: actor.correlationId });
+      const branchId = optionalString(input.branchId);
+      const branch = await branchByPublicId(ctx, actor.organization._id, branchId);
+      assertBranchAccess(actor, branch);
+      const code = stringValue(input.code).trim().toUpperCase();
+      const name = stringValue(input.name).trim();
+      const nameAr = optionalString(input.nameAr)?.trim();
+      const kind = stringValue(input.kind);
+      if (!/^[A-Z0-9][A-Z0-9_-]{0,15}$/.test(code)) domainError("VALIDATION_ERROR", "Zone code must be 1–16 letters, numbers, underscores, or hyphens.", { correlationId: actor.correlationId, fieldErrors: { code: ["Use 1–16 uppercase letters, numbers, underscores, or hyphens."] } });
+      if (name.length < 1 || name.length > 80) domainError("VALIDATION_ERROR", "Zone name must be between 1 and 80 characters.", { correlationId: actor.correlationId, fieldErrors: { name: ["Required, up to 80 characters."] } });
+      if (nameAr && nameAr.length > 80) domainError("VALIDATION_ERROR", "Arabic zone name must be 80 characters or fewer.", { correlationId: actor.correlationId, fieldErrors: { nameAr: ["Up to 80 characters."] } });
+      if (!ZONE_KINDS.includes(kind as typeof ZONE_KINDS[number])) domainError("VALIDATION_ERROR", "Zone kind is not supported.", { correlationId: actor.correlationId, fieldErrors: { kind: ["Choose a supported zone kind."] } });
+      const capacity = input.capacity === undefined || input.capacity === null || input.capacity === "" ? undefined : numberValue(input.capacity, Number.NaN);
+      if (capacity !== undefined && (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 100_000)) domainError("VALIDATION_ERROR", "Zone capacity must be a positive whole number.", { correlationId: actor.correlationId, fieldErrors: { capacity: ["Use a positive whole number."] } });
+      const inputId = optionalString(input.id);
+      const existing = inputId ? await zoneByPublicId(ctx, actor.organization._id, inputId) : null;
+      if (inputId && !existing) domainError("NOT_FOUND", "Zone not found.", { correlationId: actor.correlationId });
+      if (existing) {
+        assertBranchAccess(actor, await ctx.db.get(existing.branchId));
+        if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A zone cannot be moved between branches.", { correlationId: actor.correlationId });
+      }
+      // Archived zones remain in history, but their human-facing code can be
+      // reused by a new live zone. Query all historical matches and reserve
+      // only the active code; using `.unique()` here made an archived code
+      // look permanently occupied.
+      const duplicate = (await ctx.db.query("zones").withIndex("by_branch_code", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("code", code)).collect()).find((candidate) => candidate.status === "active");
+      if (duplicate && duplicate._id !== existing?._id) domainError("CONFLICT", "That zone code is already used in this branch.", { correlationId: actor.correlationId });
+      const status = input.status === "archived" ? "archived" as const : "active" as const;
+      const now = Date.now();
+      if (existing) {
+        const before = zoneView(existing, orgId, publicBranchId(branch));
+        await ctx.db.patch(existing._id, { code, name, nameAr, kind: kind as typeof ZONE_KINDS[number], capacity, status, updatedAt: now });
+        const updated = await ctx.db.get(existing._id);
+        if (!updated) domainError("NOT_FOUND", "Zone could not be loaded after update.", { correlationId: actor.correlationId });
+        await insertAudit(ctx, actor, { category: "settings", action: "zone.update", entityType: "zone", entityId: updated.publicId, entityLabel: updated.name, summary: "Zone updated", before, after: zoneView(updated, orgId, publicBranchId(branch)), branchId: publicBranchId(branch) });
+        return zoneView(updated, orgId, publicBranchId(branch));
+      }
+      const publicId = newPublicId();
+      const zoneId = await ctx.db.insert("zones", { organizationId: actor.organization._id, branchId: branch._id, publicId, code, name, nameAr, kind: kind as typeof ZONE_KINDS[number], capacity, status, createdAt: now, updatedAt: now });
+      const created = await ctx.db.get(zoneId);
+      if (!created) domainError("NOT_FOUND", "Zone could not be created.", { correlationId: actor.correlationId });
+      await insertAudit(ctx, actor, { category: "settings", action: "zone.create", entityType: "zone", entityId: created.publicId, entityLabel: created.name, summary: "Zone created", after: zoneView(created, orgId, publicBranchId(branch)), branchId: publicBranchId(branch) });
+      return zoneView(created, orgId, publicBranchId(branch));
+    }
+    case "zones.archive": {
+      requirePermission(actor, "settings.manage");
+      if (actor.role !== "owner" && actor.role !== "manager") domainError("FORBIDDEN", "Only an owner or manager can archive zones.", { correlationId: actor.correlationId });
+      const zone = await zoneByPublicId(ctx, actor.organization._id, optionalString(input.id));
+      if (!zone) domainError("NOT_FOUND", "Zone not found.", { correlationId: actor.correlationId });
+      const branch = await ctx.db.get(zone.branchId);
+      assertBranchAccess(actor, branch);
+      const branchPublicId = publicBranchId(branch);
+      if (zone.status === "archived") return zoneView(zone, orgId, branchPublicId);
+      const now = Date.now();
+      await ctx.db.patch(zone._id, { status: "archived", updatedAt: now });
+      const archived = await ctx.db.get(zone._id);
+      if (!archived) domainError("NOT_FOUND", "Zone could not be loaded after archive.", { correlationId: actor.correlationId });
+      await insertAudit(ctx, actor, { category: "settings", action: "zone.archive", entityType: "zone", entityId: zone.publicId, entityLabel: zone.name, summary: "Zone archived", before: zoneView(zone, orgId, branchPublicId), after: zoneView(archived, orgId, branchPublicId), branchId: branchPublicId });
+      return zoneView(archived, orgId, branchPublicId);
     }
     case "branches.upsert": {
       requirePermission(actor, "settings.manage");
@@ -6934,6 +11620,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         if (trainerProfile) {
           const futureBookings = await ctx.db.query("ptBookings").withIndex("by_trainer_start", (q) => q.eq("trainerProfileId", trainerProfile._id).gte("startsAt", Date.now())).collect();
           if (futureBookings.some((booking) => ["reserved", "confirmed"].includes(booking.status))) domainError("CONFLICT", "Reassign or cancel this trainer's future PT bookings before deactivating the account.", { correlationId: actor.correlationId });
+          // A deactivated account must not stay bookable: the profile is
+          // archived with the access change, so members and the public
+          // page stop offering the trainer the moment access ends.
+          if (trainerProfile.status !== "archived") {
+            await ctx.db.patch(trainerProfile._id, { status: "archived", updatedAt: Date.now() });
+            await insertAudit(ctx, actor, { category: "users", action: "pt.trainer.archive", entityType: "pt_trainer", entityId: trainerProfile.publicId, entityLabel: trainerProfile.displayName, summary: "Trainer profile archived with account deactivation", before: { status: trainerProfile.status }, after: { status: "archived" } });
+          }
         }
       }
       if (membership.role === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Only an owner can change owner access.", { correlationId: actor.correlationId });
@@ -6949,14 +11642,52 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const role = input.role ? roleFromFrontend(input.role) : membership.role;
       if (role === "owner" && actor.role !== "owner") domainError("FORBIDDEN", "Only an owner can grant the owner role.", { correlationId: actor.correlationId });
       const targetDefinition = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", role)).unique();
-      const targetPermissions = targetDefinition?.permissions ?? DEFAULT_ROLE_DEFINITIONS[role].permissions;
+      const targetPermissions = rolePermissions(role, targetDefinition?.permissions, targetDefinition?.catalogVersion);
       if (targetPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId: actor.correlationId });
-      await ctx.db.patch(membership._id, { role, branchIds: input.branchIds ? resolvedBranches.map((branch) => branch!._id) : membership.branchIds, branchScope, active: input.status ? input.status !== "deactivated" : membership.active, updatedAt: Date.now() });
-      await ctx.db.patch(user._id, { status: input.status ?? user.status ?? "active", updatedAt: Date.now() });
-      await insertAudit(ctx, actor, { category: "users", action: input.status === "deactivated" ? "user.deactivate" : "user.access_update", entityType: "user", entityId: publicUserId(user), entityLabel: user.fullName, summary: input.status === "deactivated" ? "Account deactivated" : "Access updated", reason: input.status === "deactivated" ? "Deactivated by administrator" : undefined, before: { role: membership.role, status: user.status }, after: { role, status: input.status ?? user.status ?? "active" } });
+      const nextActive = input.status ? input.status !== "deactivated" : membership.active;
+      const nextMembershipValues = { ...membership, role, branchIds: input.branchIds ? resolvedBranches.map((branch) => branch!._id) : membership.branchIds, branchScope, active: nextActive };
+      await ctx.db.patch(membership._id, { role, branchIds: nextMembershipValues.branchIds, branchScope, active: nextActive, updatedAt: Date.now() });
+      const beforeStatus = organizationUserStatus(user, membership);
+      const afterStatus = organizationUserStatus(user, nextMembershipValues);
+      await insertAudit(ctx, actor, { category: "users", action: input.status === "deactivated" ? "user.access_deactivate" : "user.access_update", entityType: "user", entityId: publicUserId(user), entityLabel: user.fullName, summary: input.status === "deactivated" ? "Organization access deactivated" : "Organization access updated", reason: input.status === "deactivated" ? "Deactivated by administrator" : undefined, before: { role: membership.role, status: beforeStatus, membershipActive: membership.active }, after: { role, status: afterStatus, membershipActive: nextActive } });
       const updated = await ctx.db.get(user._id);
       const nextMembership = await ctx.db.get(membership._id);
-      return { id: publicUserId(updated ?? user), organizationId: publicOrganizationId(actor.organization), name: (updated ?? user).fullName, email: (updated ?? user).email, phone: (updated ?? user).phone ?? "", role: frontendRole((nextMembership ?? membership).role), branchScope: (nextMembership ?? membership).branchScope ?? "selected", branchIds: await Promise.all((nextMembership ?? membership).branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: (updated ?? user).status ?? "active" };
+      return { id: publicUserId(updated ?? user), organizationId: publicOrganizationId(actor.organization), name: (updated ?? user).fullName, email: (updated ?? user).email, phone: (updated ?? user).phone ?? "", role: frontendRole((nextMembership ?? membership).role), branchScope: (nextMembership ?? membership).branchScope ?? "selected", branchIds: await Promise.all((nextMembership ?? membership).branchIds.map((id) => publicBranchIdFromId(ctx, actor.organization._id, id))), status: organizationUserStatus(updated ?? user, nextMembership ?? membership) };
+    }
+    case "users.profile.update": {
+      // This operation is deliberately self-scoped. The authenticated actor
+      // is the only user row that may be changed; callers never supply a
+      // target user id, so a staff member cannot turn profile editing into an
+      // access-management mutation.
+      const name = stringValue(input.name).trim().replace(/\s+/g, " ");
+      if (name.length < 2 || name.length > 160) {
+        domainError("VALIDATION_ERROR", "Display name must be between 2 and 160 characters.", {
+          correlationId: actor.correlationId,
+          fieldErrors: { name: ["Enter a display name between 2 and 160 characters."] },
+        });
+      }
+      const rawPhone = input.phone === undefined ? actor.user.phone ?? "" : stringValue(input.phone).trim();
+      const phone = rawPhone ? normalizePhoneForStorage(rawPhone, organizationPhoneCountryCallingCode(actor.organization)) : "";
+      if (phone && (phone.length < 9 || phone.length > 18 || !LEAD_PHONE_PATTERN.test(phone))) {
+        domainError("VALIDATION_ERROR", "Enter a valid phone number or leave it blank.", {
+          correlationId: actor.correlationId,
+          fieldErrors: { phone: ["Enter a valid phone number or leave it blank."] },
+        });
+      }
+      const before = { name: actor.user.fullName, phone: actor.user.phone ?? "" };
+      const now = Date.now();
+      await ctx.db.patch(actor.user._id, { fullName: name, profileNameUpdatedAt: now, phone: phone || undefined, updatedAt: now });
+      await insertAudit(ctx, actor, {
+        category: "users",
+        action: "user.profile_update",
+        entityType: "user",
+        entityId: publicUserId(actor.user),
+        entityLabel: name,
+        summary: "Personal account profile updated",
+        before,
+        after: { name, phone },
+      });
+      return { id: publicUserId(actor.user), name, email: actor.user.email, phone };
     }
     case "roles.update": {
       requirePermission(actor, "users.manage");
@@ -6965,16 +11696,17 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const current = await ctx.db.query("roleDefinitions").withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", role)).unique();
       const fallback = DEFAULT_ROLE_DEFINITIONS[role];
       if (!current) domainError("NOT_FOUND", "Role not found.", { correlationId: actor.correlationId });
-      const requestedPermissions = input.permissions === undefined ? current.permissions : arrayValue(input.permissions).map(String);
+      const effectiveCurrentPermissions = rolePermissions(role, current.permissions, current.catalogVersion);
+      const requestedPermissions = input.permissions === undefined ? effectiveCurrentPermissions : arrayValue(input.permissions).map(String);
       const invalidPermissions = requestedPermissions.filter((permission) => !PERMISSIONS.includes(permission as (typeof PERMISSIONS)[number]));
       if (invalidPermissions.length > 0) domainError("VALIDATION_ERROR", "One or more permissions are not recognized.", { correlationId: actor.correlationId, details: { permissions: invalidPermissions } });
       if (requestedPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId: actor.correlationId });
       const discountLimitMinor = input.discountLimitMinor === undefined ? current.discountLimitMinor : numberValue(input.discountLimitMinor);
       if (!Number.isSafeInteger(discountLimitMinor) || discountLimitMinor < 0) domainError("VALIDATION_ERROR", "Discount limit must be a non-negative integer amount.", { correlationId: actor.correlationId });
-      const updated = { permissions: requestedPermissions, discountLimitMinor, updatedAt: Date.now() };
+      const updated = { permissions: requestedPermissions, catalogVersion: PERMISSION_CATALOG_VERSION, discountLimitMinor, updatedAt: Date.now() };
       await ctx.db.patch(current._id, updated);
       await insertAudit(ctx, actor, { category: "users", action: "role.permissions_change", entityType: "role", entityId: publicOrganizationId(actor.organization), entityLabel: current.label, summary: `Permissions updated for the ${current.label} role`, before: { permissions: current.permissions.length, discountLimit: current.discountLimitMinor }, after: { permissions: updated.permissions.length, discountLimit: updated.discountLimitMinor } });
-      return { key: frontendRole(role), label: current.label ?? fallback.label, description: current.description ?? fallback.description, permissions: updated.permissions, discountLimitMinor: updated.discountLimitMinor, isSystem: current.isSystem };
+      return { key: frontendRole(role), label: current.label ?? fallback.label, description: current.description ?? fallback.description, permissions: rolePermissions(role, updated.permissions, updated.catalogVersion), catalogVersion: updated.catalogVersion, discountLimitMinor: updated.discountLimitMinor, isSystem: current.isSystem };
     }
     case "approvals.review": {
       requirePermission(actor, "audit.read");
@@ -7000,6 +11732,69 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: event.category, action: `${event.action}.${decision}`, entityType: event.entityType, entityId: event.entityPublicId, entityLabel: event.entityLabel, summary: `${decision === "approved" ? "Approved" : "Rejected"}: ${event.summary}`, reason: note, before, after, branchId: event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined });
       return undefined;
     }
+    case "operations.product.upsert":
+    case "operations.product.delete":
+    case "operations.product.archive":
+    case "operations.supplier.upsert":
+    case "operations.supplier.archive":
+    case "operations.stock_movement.record":
+    case "operations.inventory.transfer":
+    case "operations.retail.checkout":
+    case "operations.retail.refund":
+    case "operations.retail.void":
+    case "operations.low_stock.refresh":
+    case "operations.low_stock.dismiss":
+    case "operations.purchase_order.delivery_date":
+    case "operations.purchase_order.create":
+    case "operations.purchase_order.approve":
+    case "operations.purchase_order.receive":
+    case "operations.supplier_notification.preview":
+    case "operations.facility_task.upsert":
+    case "operations.equipment_asset.upsert":
+    case "operations.equipment_issue.report":
+    case "operations.equipment_issue.update":
+    case "operations.equipment_work_order.upsert":
+      return await operationsMutation(ctx, actor, operation, input);
+    case "operations.supplier_payment.record":
+    case "operations.supplier_payment.reverse":
+      return await payablesMutation(ctx, actor, operation, input);
+    case "classes.session.upsert":
+    case "classes.session.delete":
+    case "classes.roster.add":
+    case "classes.roster.remove":
+    case "classes.attendance.set":
+    case "classes.occurrence.roster.add":
+    case "classes.occurrence.roster.remove":
+    case "classes.occurrence.attendance.set":
+    case "classes.occurrence.cancel":
+    case "classes.occurrence.attendance.finalize":
+    case "classes.occurrence.coach.substitute":
+    case "classes.coach.upsert":
+    case "classes.coach.remove":
+      return await classesMutation(ctx, actor, operation, input);
+    case "checklists.template.upsert":
+    case "checklists.run.assign":
+    case "checklists.run.ensure":
+    case "checklists.item.set":
+    case "checklists.item.create_task":
+      return await checklistsMutation(ctx, actor, operation, input);
+    case "accounting.manual_journal.post":
+    case "finance.manual_journal.post":
+    case "accounting.source.post":
+    case "finance.source.post":
+    case "accounting.source.exclude":
+    case "finance.source.exclude":
+    case "accounting.source.reconsider":
+    case "finance.source.reconsider":
+    case "accounting.source_postings.refresh":
+    case "finance.source_postings.refresh":
+    case "accounting.entry.reverse":
+    case "finance.entry.reverse":
+    case "accounting.period.close":
+    case "finance.period.close":
+    case "accounting.period.reopen":
+    case "finance.period.reopen":
+      return await accountingMutation(ctx, actor, operation, input);
     case "demo.reset":
       requirePermission(actor, "settings.manage");
       return undefined;
@@ -7011,10 +11806,199 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
 async function settingsView(ctx: ReadContext, actor: ActorContext): Promise<Data> {
   const settings = await settingsData(ctx, actor);
   const branches = await accessibleBranches(ctx, actor);
-  return { organization: organizationView(actor.organization), branches: branches.map((branch) => branchView(branch, publicOrganizationId(actor.organization))), paymentMethods: settings.paymentMethods, roles: await roleViews(ctx, actor), notifications: settings.notifications, operationalPolicies: settings.operationalPolicies };
+  const brand = await brandKitView(ctx, actor.organization);
+  return { organization: { ...organizationView(actor.organization), brand }, brand, branches: branches.map((branch) => branchView(branch, publicOrganizationId(actor.organization))), paymentMethods: settings.paymentMethods, roles: await roleViews(ctx, actor), notifications: settings.notifications, operationalPolicies: settings.operationalPolicies, workspace: await workspaceAccessData(ctx, actor) };
 }
 
-async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<Data> {
+function briefErrorCode(error: unknown): string | undefined {
+  if (error instanceof ConvexError) {
+    const payload = error.data as { code?: unknown } | undefined;
+    return typeof payload?.code === "string" ? payload.code : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The evidence-backed daily operating brief for the caller's own scope.
+ *
+ * The Today queue is the first source, built by `dashboardData` with the
+ * same permission and branch rules and without its page limit. Four more
+ * sources are read separately so a failure, a module that is off or a role
+ * that may not see one is reported as partial coverage instead of silently
+ * shrinking the brief: lapsed memberships, open machine reports, low stock
+ * and the gym's open RIVET cases. Every figure is computed by
+ * `buildOperatingBrief`; nothing here asks a model.
+ */
+export async function operatingBriefData(ctx: QueryCtx, actor: ActorContext, input: Data): Promise<OperatingBrief> {
+  requirePermission(actor, "members.read");
+  const timezone = actor.organization.timezone || TZ_FALLBACK;
+  const today = todayIn(timezone);
+  const generatedAt = isoNow();
+  const branchId = optionalString(input.branchId);
+  if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+  const dashboard = await dashboardData(ctx, actor, { branchId, from: addDays(today, -29), to: today }, { complete: true });
+  const todayQueue = data(dashboard.todayQueue);
+  const queue = (Array.isArray(todayQueue.items) ? todayQueue.items : []) as BriefQueueItem[];
+  const branchRows = await accessibleBranches(ctx, actor);
+  const branchNameById = new Map(branchRows.map((branch) => [publicBranchId(branch), branch.name]));
+  // A record with no branch is organization-wide; one with a branch must be in the actor's scope and, when requested, the selected branch.
+  const visible = (candidateBranchId?: string) => !candidateBranchId || (branchNameById.has(candidateBranchId) && (!branchId || candidateBranchId === branchId));
+  const scope: BriefScope = {
+    ...(branchId ? { branchId } : {}),
+    branches: branchRows.map((branch) => ({ id: publicBranchId(branch), name: branch.name })),
+    branchScope: actor.branchScope,
+    role: frontendRole(actor.role),
+    userId: publicUserId(actor.user),
+  };
+  const actorPublicId = publicUserId(actor.user);
+  const sources: BriefSourceInput[] = [];
+  const read = async (key: BriefSourceKey, permitted: boolean, load: () => Promise<BriefQueueItem[]>) => {
+    if (!permitted) {
+      sources.push({ key, status: "no_permission", message: "Not included for your role." });
+      return;
+    }
+    try {
+      sources.push({ key, status: "ok", items: await load() });
+    } catch (error) {
+      const code = briefErrorCode(error);
+      sources.push({
+        key,
+        status: code === "FEATURE_NOT_AVAILABLE" ? "not_enabled" : code === "FORBIDDEN" ? "no_permission" : "unavailable",
+        message: code === "FEATURE_NOT_AVAILABLE" ? "The operations module is off for this gym." : code === "FORBIDDEN" ? "Not included for your role." : "This source could not be read just now; the rest of the brief is current.",
+      });
+    }
+  };
+
+  await read("expired", hasPermission(actor, "crm.read"), async () => {
+    const [memberRows, membershipRows, planRows] = await Promise.all([memberRecords(ctx, actor), membershipRecords(ctx, actor), recordsOf(ctx, actor, "plan")]);
+    const members = new Map(memberRows.map((record) => [record.publicId, data(record.data)] as const));
+    const planById = new Map(planRows.map((record) => [record.publicId, data(record.data)] as const));
+    const memberships = membershipRows.map((record) => data(record.data));
+    const renewedIds = new Set(memberships.map((membership) => optionalString(membership.previousMembershipId)).filter(Boolean));
+    const items: BriefQueueItem[] = [];
+    for (const membership of memberships) {
+      const membershipId = stringValue(membership.id);
+      if (renewedIds.has(membershipId) || statusOfMembership(membership, today) !== "expired") continue;
+      const homeBranchId = optionalString(membership.homeBranchId);
+      if (!visible(homeBranchId)) continue;
+      const member = members.get(stringValue(membership.memberId));
+      if (!member || stringValue(member.status) === "archived") continue;
+      if (actor.role === "sales" && optionalString(member.assignedSalespersonId) !== actorPublicId) continue;
+      const endDate = stringValue(membership.endDate);
+      const daysSince = diffDays(endDate, today);
+      if (daysSince < 0 || daysSince > 30) continue;
+      const planName = stringValue(planById.get(stringValue(membership.planId))?.name, "Membership");
+      items.push({
+        id: `expired:${membershipId}`,
+        kind: "renewal",
+        priority: "normal",
+        title: `Win back ${stringValue(member.fullName)}`,
+        detail: `${planName} · ended ${daysSince === 0 ? "today" : `${daysSince} day${daysSince === 1 ? "" : "s"} ago`}, not renewed`,
+        subjectName: stringValue(member.fullName),
+        subject: { kind: "member", id: stringValue(member.id) },
+        ...(homeBranchId && branchNameById.get(homeBranchId) ? { branchName: branchNameById.get(homeBranchId) } : {}),
+        dueAt: `${endDate}T20:59:59.999Z`,
+        overdue: true,
+        href: `/members/${stringValue(member.id)}?action=renew`,
+        action: { kind: "navigate", label: hasPermission(actor, "memberships.sell") ? "Renew" : "Open" },
+      });
+    }
+    return items;
+  });
+
+  const operationsPermitted = hasPermission(actor, "operations.manage");
+  await read("equipment", operationsPermitted, async () => {
+    const [issues, assets] = await Promise.all([
+      operationsQuery(ctx, actor, "operations.equipment_issues.list", branchId ? { branchId } : {}) as Promise<Data[]>,
+      operationsQuery(ctx, actor, "operations.equipment_assets.list", branchId ? { branchId } : {}) as Promise<Data[]>,
+    ]);
+    const assetById = new Map(assets.map((asset) => [stringValue(asset.id), asset] as const));
+    return issues
+      .filter((issue) => ["open", "in_progress"].includes(stringValue(issue.status)) && visible(optionalString(issue.branchId)))
+      .map((issue): BriefQueueItem => {
+        const asset = assetById.get(stringValue(issue.assetId));
+        const issueBranchId = stringValue(issue.branchId);
+        const safetyStatus = stringValue(issue.safetyStatus, "unknown");
+        const severity = stringValue(issue.severity);
+        return {
+          id: `equipment:${stringValue(issue.id)}`,
+          kind: "equipment_issue",
+          priority: safetyStatus === "out_of_service" || severity === "critical" ? "urgent" : severity === "high" ? "high" : "normal",
+          title: stringValue(issue.title),
+          detail: `${asset ? `${stringValue(asset.code)} ${stringValue(asset.name)}` : "Machine"} · ${stringValue(issue.status).replaceAll("_", " ")} · safety: ${safetyStatus.replaceAll("_", " ")}`,
+          ...(optionalString(issue.description) ? { description: optionalString(issue.description) } : {}),
+          ...(branchNameById.get(issueBranchId) ? { branchName: branchNameById.get(issueBranchId) } : {}),
+          occurredAt: stringValue(issue.reportedAt),
+          href: `/operations?tab=equipment&branch=${encodeURIComponent(issueBranchId)}`,
+          action: { kind: "navigate", label: "Open" },
+          safetyStatus,
+        };
+      });
+  });
+
+  await read("stock", operationsPermitted, async () => {
+    const alerts = await operationsQuery(ctx, actor, "operations.low_stock.list", branchId ? { branchId } : {}) as Data[];
+    const products = await ctx.db.query("products").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+    const productName = new Map(products.map((product) => [product.publicId, product.name] as const));
+    return alerts.filter((alert) => visible(optionalString(alert.branchId))).map((alert): BriefQueueItem => {
+      const alertBranchId = stringValue(alert.branchId);
+      const available = numberValue(alert.availableQuantity);
+      return {
+        id: `stock:${alertBranchId}:${stringValue(alert.productId)}`,
+        kind: "low_stock",
+        priority: available <= 0 ? "high" : "normal",
+        title: `Reorder ${productName.get(stringValue(alert.productId)) ?? "product"}`,
+        detail: `${available} available · reorder at ${numberValue(alert.reorderPoint)}`,
+        ...(branchNameById.get(alertBranchId) ? { branchName: branchNameById.get(alertBranchId) } : {}),
+        occurredAt: stringValue(alert.updatedAt),
+        href: `/operations?tab=inventory&stock=attention&branch=${encodeURIComponent(alertBranchId)}`,
+        action: { kind: "navigate", label: "Open" },
+      };
+    });
+  });
+
+  await read("support", actor.role === "owner" || actor.role === "manager", async () => {
+    const records = await recordsOf(ctx, actor, "supportCase");
+    const views = await Promise.all(records.map((record) => supportCaseView(ctx, record)));
+    return views
+      .filter((view) => stringValue(view.status) !== "resolved" && visible(optionalString(view.branchId)))
+      .map((view): BriefQueueItem => {
+        const caseBranchId = optionalString(view.branchId);
+        return {
+          id: `support:${stringValue(view.id)}`,
+          kind: "support_case",
+          priority: stringValue(view.priority) === "urgent" ? "urgent" : "normal",
+          title: stringValue(view.subject),
+          detail: `${stringValue(view.status) === "waiting" ? "Waiting" : "Open"} · ${stringValue(view.creatorName, "your gym")}`,
+          ...(optionalString(view.body) ? { description: stringValue(view.body).slice(0, 300) } : {}),
+          ...(caseBranchId && branchNameById.get(caseBranchId) ? { branchName: branchNameById.get(caseBranchId) } : {}),
+          occurredAt: stringValue(view.updatedAt) || stringValue(view.createdAt),
+          href: `/support?case=${encodeURIComponent(stringValue(view.id))}`,
+          action: { kind: "navigate", label: "Open case" },
+        };
+      });
+  });
+
+  return buildOperatingBrief({
+    generatedAt,
+    today,
+    timezone,
+    currency: actor.organization.currency,
+    scope,
+    queue,
+    queueTotal: numberValue(todayQueue.totalItems, queue.length),
+    sources,
+  });
+}
+
+/**
+ * The dashboard projection. `options.complete` is internal to the operating
+ * brief: it lifts the Today queue's page limit, the at-risk sample and the
+ * due-today filter on maintenance tasks so the brief can list every
+ * unresolved item with the same rules the queue applies. The public
+ * `dashboard` query never sets it.
+ */
+async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, options: { complete?: boolean } = {}): Promise<Data> {
   requirePermission(actor, "members.read");
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const from = optionalString(input.from) ?? addDays(today, -29);
@@ -7033,24 +12017,102 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     allPayments.map((payment) => ({ type: stringValue(payment.type), status: optionalString(payment.status), amount: amountOf(payment.amount), occurredAt: stringValue(payment.occurredAt) })),
     { today, from, to, timezone: actor.organization.timezone || TZ_FALLBACK },
   );
-  const members = (await memberRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
-  const memberships = (await membershipRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
-  const leads = (await recordsOf(ctx, actor, "lead")).map((record) => data(record.data)).filter(inBranch);
-  const tasks = (await recordsOf(ctx, actor, "task")).map((record) => data(record.data)).filter(inBranch);
-  const checkins = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data)).filter((checkin) => inBranch(checkin) && inRange(checkin, "occurredAt"));
-  const outstanding = (await chargeRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch).reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
-  const activeLeads = leads.filter((lead) => !["won", "lost"].includes(stringValue(lead.stage))).length;
+  const [memberRows, membershipRows, planRows, leadRows, taskRows, checkinRows, chargeRows, shiftRows, timelineRecords, offerRecords, trialBookingRecords, retentionStateRows] = await Promise.all([
+    memberRecords(ctx, actor),
+    membershipRecords(ctx, actor),
+    recordsOf(ctx, actor, "plan"),
+    recordsOf(ctx, actor, "lead"),
+    recordsOf(ctx, actor, "task"),
+    recordsOf(ctx, actor, "checkIn"),
+    chargeRecords(ctx, actor),
+    recordsOf(ctx, actor, "shift"),
+    recordsOf(ctx, actor, "timeline"),
+    recordsOf(ctx, actor, "offer"),
+    recordsOf(ctx, actor, "trialBooking"),
+    recordsOf(ctx, actor, "retentionState"),
+  ]);
+  const members = memberRows.map((record) => data(record.data)).filter(inBranch);
+  const memberships = membershipRows.map((record) => data(record.data)).filter(inBranch);
+  const plans = planRows.map((record) => data(record.data));
+  const leads = leadRows.map((record) => data(record.data)).filter(inBranch);
+  // A task carries no branch of its own; it belongs where its member or lead
+  // does. Filtering tasks by a branch field they never have emptied the Today
+  // queue and the overdue KPI whenever a branch was selected.
+  const memberBranchById = new Map(memberRows.map((record) => [record.publicId, optionalString(data(record.data).homeBranchId)]));
+  const leadBranchById = new Map(leadRows.map((record) => [record.publicId, optionalString(data(record.data).branchId)]));
+  const taskBranchOf = (task: Data): string | undefined => task.memberId
+    ? memberBranchById.get(stringValue(task.memberId))
+    : task.leadId
+      ? leadBranchById.get(stringValue(task.leadId))
+      : optionalString(task.branchId);
+  const tasks = taskRows.map((record) => data(record.data)).filter((task) => { const taskBranch = taskBranchOf(task); return !branchId || !taskBranch || taskBranch === branchId; });
+  const allCheckins = checkinRows.map((record) => data(record.data)).filter(inBranch);
+  const checkins = allCheckins.filter((checkin) => inRange(checkin, "occurredAt"));
+  const charges = chargeRows.map((record) => data(record.data));
+  const shifts = shiftRows.map((record) => data(record.data)).filter(inBranch);
+  const activitiesByLead = new Map<string, Data[]>();
+  for (const record of timelineRecords) {
+    const event = data(record.data);
+    const leadId = optionalString(event.leadId);
+    if (!leadId) continue;
+    const activities = activitiesByLead.get(leadId) ?? [];
+    activities.push(event);
+    activitiesByLead.set(leadId, activities);
+  }
+  const offersByLead = new Map<string, Data[]>();
+  for (const record of offerRecords) {
+    const offer = offerProjection(data(record.data));
+    const leadId = optionalString(offer.leadId);
+    if (!leadId) continue;
+    const offers = offersByLead.get(leadId) ?? [];
+    offers.push(offer);
+    offersByLead.set(leadId, offers);
+  }
+  const trialBookingByLead = new Map<string, Data>();
+  for (const record of trialBookingRecords) {
+    const booking = data(record.data);
+    const leadId = optionalString(booking.leadId);
+    if (leadId) trialBookingByLead.set(leadId, booking);
+  }
+  const progressFactsByLead = new Map(leads.map((lead) => {
+    const leadId = stringValue(lead.id);
+    return [leadId, deriveLeadProgressFacts({
+      stage: optionalString(lead.stage),
+      lostReason: optionalString(lead.lostReason),
+      convertedMemberId: optionalString(lead.convertedMemberId),
+      activities: activitiesByLead.get(leadId),
+      offers: offersByLead.get(leadId),
+      trialBooking: trialBookingByLead.get(leadId),
+    })] as const;
+  }));
+  const leadHasProgressFact = (lead: Data, stage: string): boolean => {
+    const facts = progressFactsByLead.get(stringValue(lead.id));
+    return facts ? leadProgressStageCompleted(facts, stage) : false;
+  };
+  const memberById = new Map(members.map((member) => [stringValue(member.id), member]));
+  const outstanding = charges
+    .filter((charge) => {
+      const member = memberById.get(stringValue(charge.memberId));
+      return member ? inBranch(member) : !branchId;
+    })
+    .reduce((sum, charge) => sum + collectibleOutstandingValue(charge, today), 0);
+  const activeLeads = leads.filter((lead) => {
+    const facts = progressFactsByLead.get(stringValue(lead.id));
+    return facts && !facts.hasConversion && !facts.hasLoss;
+  }).length;
   const overdue = tasks.filter((task) => task.status === "open" && stringValue(task.dueAt) < isoNow()).length;
-  const renewals = memberships.filter((membership) => { const status = statusOfMembership(membership, today); const days = diffDays(today, stringValue(membership.endDate)); return (status === "expiring" || status === "active") && days <= 7 && days >= 0; }).length;
-  const expiredUnactioned = memberships.filter((membership) => statusOfMembership(membership, today) === "expired" && !memberships.some((other) => other.previousMembershipId === membership.id)).length;
+  // A membership that already has a renewal is not "ending" work any more; the Today list skips it too.
+  const renewedMembershipIds = new Set(memberships.map((membership) => optionalString(membership.previousMembershipId)).filter(Boolean));
+  const renewals = memberships.filter((membership) => { const status = statusOfMembership(membership, today); const days = diffDays(today, stringValue(membership.endDate)); return (status === "expiring" || status === "active") && days <= 7 && days >= 0 && !renewedMembershipIds.has(stringValue(membership.id)); }).length;
+  const expiredUnactioned = memberships.filter((membership) => statusOfMembership(membership, today) === "expired" && !renewedMembershipIds.has(stringValue(membership.id))).length;
   const checkinsToday = checkins.filter((checkin) => checkin.decision !== "blocked" && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length;
   const branchRows = await accessibleBranches(ctx, actor);
-  const branchRevenue = await Promise.all(branchRows.map(async (branch) => { const id = publicBranchId(branch); const collected = validPayments.filter((payment) => payment.branchId === id && payment.type === "payment").reduce((sum, payment) => sum + amountOf(payment.amount), 0); const branchMembers = members.filter((member) => member.homeBranchId === id); return { branchId: id, branchName: branch.name, collected: money(collected, actor.organization.currency), checkInsToday: checkins.filter((checkin) => checkin.branchId === id && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length, activeMembers: branchMembers.filter((member) => member.status === "active").length }; }));
+  const branchRevenue = await Promise.all(branchRows.map(async (branch) => { const id = publicBranchId(branch); const collected = validPayments.filter((payment) => payment.branchId === id && ["payment", "retail_sale"].includes(stringValue(payment.type))).reduce((sum, payment) => sum + amountOf(payment.amount), 0); const branchMembers = members.filter((member) => member.homeBranchId === id); return { branchId: id, branchName: branch.name, collected: money(collected, actor.organization.currency), checkInsToday: checkins.filter((checkin) => checkin.branchId === id && businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today).length, activeMembers: branchMembers.filter((member) => member.status === "active").length }; }));
   const funnelStages = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"];
-  const funnel = funnelStages.map((stage) => ({ stage, label: stage.replaceAll("_", " "), count: leads.filter((lead) => lead.stage === stage).length }));
+  const funnel = funnelStages.map((stage) => ({ stage, label: stage.replaceAll("_", " "), count: leads.filter((lead) => leadHasProgressFact(lead, stage)).length }));
   const organizationMemberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   const users = (await Promise.all(organizationMemberships.filter((membership) => membership.active).map((membership) => ctx.db.get(membership.userId)))).filter((user): user is User => Boolean(user));
-  const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = allValidPayments.filter((payment) => payment.collectedById === id && payment.type === "payment" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && lead.stage === "won").length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
+  const leaderboard = await Promise.all(users.map(async (user) => { const id = publicUserId(user); const userPayments = allValidPayments.filter((payment) => payment.collectedById === id && ["payment", "retail_sale"].includes(stringValue(payment.type)) && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)); return { userId: id, name: user.fullName, revenueCollected: money(userPayments.reduce((sum, payment) => sum + amountOf(payment.amount), 0), actor.organization.currency), newSales: memberships.filter((membership) => membership.soldById === id && !membership.previousMembershipId).length, renewals: memberships.filter((membership) => membership.soldById === id && Boolean(membership.previousMembershipId)).length, leadsConverted: leads.filter((lead) => lead.ownerId === id && progressFactsByLead.get(stringValue(lead.id))?.hasConversion).length, followUpsCompleted: tasks.filter((task) => task.ownerId === id && task.status === "completed").length, overdueFollowUps: tasks.filter((task) => task.ownerId === id && task.status === "open" && stringValue(task.dueAt) < isoNow()).length }; }));
   const audits = await ctx.db.query("auditEvents").withIndex("by_organization_occurred", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(12);
   const approvalReviews = await recordsOf(ctx, actor, "approvalReview");
   const reviewedApprovalIds = new Set(approvalReviews.map((review) => stringValue(data(review.data).auditEventId)));
@@ -7058,8 +12120,266 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data): P
     .filter((event) => event.approvalStatus === "pending" && !reviewedApprovalIds.has(event.publicId))
     .slice(0, 8)
     .map((event) => ({ id: event.publicId, kind: event.action.includes("variance") ? "pending_variance" : event.action.includes("discount") ? "pending_discount" : "approval", title: event.summary, detail: event.reason ?? "Review required", actorName: event.actorName, href: event.entityType === "cash_shift" ? "/payments/shifts" : "/audit", severity: "warning", occurredAt: utcIso(event.occurredAt) }));
-  const timeline = (await recordsOf(ctx, actor, "timeline")).map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
-  return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, recentActivity: timeline };
+  const branchNameById = new Map(branchRows.map((branch) => [publicBranchId(branch), branch.name]));
+  const leadById = new Map(leads.map((lead) => [stringValue(lead.id), lead]));
+  const planById = new Map(plans.map((plan) => [stringValue(plan.id), plan]));
+  const actorPublicId = publicUserId(actor.user);
+  const role = frontendRole(actor.role);
+  const canManageTeam = actor.role === "owner" || actor.role === "manager";
+  const queueBranchVisible = (candidateBranchId?: string) => !branchId || !candidateBranchId || candidateBranchId === branchId;
+  const queueItems: Array<Data & TodayQueueSortableItem> = [];
+
+  if (hasPermission(actor, "crm.read")) {
+    for (const task of tasks) {
+      if (stringValue(task.status, "open") !== "open") continue;
+      const taskBranchId = task.memberId
+        ? optionalString(memberById.get(stringValue(task.memberId))?.homeBranchId)
+        : task.leadId
+          ? optionalString(leadById.get(stringValue(task.leadId))?.branchId)
+          : undefined;
+      if (!queueBranchVisible(taskBranchId)) continue;
+      if (!canManageTeam && stringValue(task.ownerId) !== actorPublicId) continue;
+      const dueAt = stringValue(task.dueAt);
+      if (businessDate(dueAt, actor.organization.timezone || TZ_FALLBACK) > today) continue;
+      const overdueTask = dueAt < isoNow();
+      const canComplete = hasPermission(actor, "crm.write") && (canManageTeam || stringValue(task.ownerId) === actorPublicId);
+      queueItems.push({
+        id: `task:${stringValue(task.id)}`,
+        kind: "follow_up",
+        priority: overdueTask && stringValue(task.priority) === "high" ? "urgent" : overdueTask ? "high" : stringValue(task.priority) === "high" ? "high" : "normal",
+        title: stringValue(task.title),
+        detail: `${stringValue(task.subjectName)} · ${stringValue(task.ownerName)}`,
+        subjectName: stringValue(task.subjectName),
+        subject: task.leadId ? { kind: "lead", id: stringValue(task.leadId) } : task.memberId ? { kind: "member", id: stringValue(task.memberId) } : undefined,
+        branchName: taskBranchId ? branchNameById.get(taskBranchId) : undefined,
+        dueAt,
+        overdue: overdueTask,
+        href: task.leadId ? `/crm/leads/${stringValue(task.leadId)}` : task.memberId ? `/members/${stringValue(task.memberId)}` : "/crm/queues",
+        action: canComplete
+          ? { kind: "complete_task", label: "Done", taskId: stringValue(task.id) }
+          : { kind: "navigate", label: "Open" },
+      });
+    }
+
+    // A lead's own next-follow-up date is work too. It only appears here when
+    // no open task already represents it, so nothing shows twice.
+    const leadsWithOpenTasks = new Set(tasks.filter((task) => stringValue(task.status, "open") === "open").map((task) => optionalString(task.leadId)).filter(Boolean));
+    const lastLeadContactOutcome = new Map<string, { occurredAt: string; outcome?: string }>();
+    for (const record of timelineRecords) {
+      const event = data(record.data);
+      const leadId = optionalString(event.leadId);
+      if (!leadId || event.type !== "call_attempt") continue;
+      const current = lastLeadContactOutcome.get(leadId);
+      if (!current || current.occurredAt < stringValue(event.occurredAt)) lastLeadContactOutcome.set(leadId, { occurredAt: stringValue(event.occurredAt), outcome: optionalString(data(event.meta).outcome) });
+    }
+    for (const lead of leads) {
+      const leadId = stringValue(lead.id);
+      const nextFollowUpAt = optionalString(lead.nextFollowUpAt);
+      if (!nextFollowUpAt || leadsWithOpenTasks.has(leadId)) continue;
+      const facts = progressFactsByLead.get(leadId);
+      if (!facts || facts.hasConversion || facts.hasLoss) continue;
+      if (!canManageTeam && optionalString(lead.ownerId) !== actorPublicId) continue;
+      if (businessDate(nextFollowUpAt, actor.organization.timezone || TZ_FALLBACK) > today) continue;
+      const overdueLead = nextFollowUpAt < isoNow();
+      const lastLabel = describeContactOutcome(lastLeadContactOutcome.get(leadId)?.outcome);
+      const leadBranchId = optionalString(lead.branchId);
+      queueItems.push({
+        id: `lead-follow-up:${leadId}`,
+        kind: "follow_up",
+        priority: overdueLead ? "high" : "normal",
+        title: `Follow up — ${stringValue(lead.fullName)}`,
+        detail: lastLabel ? `Lead · last contact: ${lastLabel}` : "Lead · not contacted yet",
+        subjectName: stringValue(lead.fullName),
+        subject: { kind: "lead", id: leadId },
+        branchName: leadBranchId ? branchNameById.get(leadBranchId) : undefined,
+        dueAt: nextFollowUpAt,
+        overdue: overdueLead,
+        href: `/crm/leads/${leadId}?action=contact`,
+        action: { kind: "navigate", label: hasPermission(actor, "crm.write") ? "Log contact" : "Open" },
+      });
+    }
+
+    const renewedIds = new Set(memberships.map((membership) => optionalString(membership.previousMembershipId)).filter(Boolean));
+    for (const membership of memberships) {
+      const membershipId = stringValue(membership.id);
+      const homeBranchId = optionalString(membership.homeBranchId);
+      if (renewedIds.has(membershipId) || !queueBranchVisible(homeBranchId)) continue;
+      const member = memberById.get(stringValue(membership.memberId));
+      if (!member || stringValue(member.status) !== "active") continue;
+      if (actor.role === "sales" && optionalString(member.assignedSalespersonId) !== actorPublicId) continue;
+      const daysUntilExpiry = diffDays(today, stringValue(membership.endDate));
+      const membershipStatus = statusOfMembership(membership, today);
+      if (daysUntilExpiry < 0 || daysUntilExpiry > 7 || !["active", "expiring"].includes(membershipStatus)) continue;
+      const planName = stringValue(planById.get(stringValue(membership.planId))?.name, "Membership");
+      queueItems.push({
+        id: `renewal:${membershipId}`,
+        kind: "renewal",
+        priority: daysUntilExpiry <= 2 ? "high" : "normal",
+        title: `Renew ${stringValue(member.fullName)}`,
+        detail: `${planName} · ${daysUntilExpiry === 0 ? "ends today" : `${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"} left`}`,
+        subjectName: stringValue(member.fullName),
+        subject: { kind: "member", id: stringValue(member.id) },
+        branchName: homeBranchId ? branchNameById.get(homeBranchId) : undefined,
+        dueAt: `${stringValue(membership.endDate)}T20:59:59.999Z`,
+        href: `/members/${stringValue(member.id)}?action=renew`,
+        action: { kind: "navigate", label: hasPermission(actor, "memberships.sell") ? "Renew" : "Open" },
+      });
+    }
+
+    const operationalPolicies = data((await settingsData(ctx, actor)).operationalPolicies);
+    const retentionPolicy = { ...DEFAULT_OPERATIONAL_POLICIES.retention, ...data(operationalPolicies.retention) };
+    const membershipPolicy = { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(operationalPolicies.membership) };
+    const retentionRisks = deriveRetentionRisks({
+      today,
+      inactivityDays: numberValue(retentionPolicy.inactivityDays, 14),
+      renewalWindowDays: numberValue(membershipPolicy.renewalWindowDays, 14),
+      expiredWinBackDays: numberValue(retentionPolicy.expiredWinBackDays, 90),
+      members: members.map((member) => ({ id: stringValue(member.id), status: stringValue(member.status), homeBranchId: stringValue(member.homeBranchId), assignedSalespersonId: optionalString(member.assignedSalespersonId), createdAt: stringValue(member.createdAt) })),
+      memberships: memberships.map((membership) => ({ id: stringValue(membership.id), memberId: stringValue(membership.memberId), homeBranchId: stringValue(membership.homeBranchId), startDate: stringValue(membership.startDate), endDate: stringValue(membership.endDate), totalVisits: typeof membership.totalVisits === "number" ? membership.totalVisits : undefined, remainingVisits: typeof membership.remainingVisits === "number" ? membership.remainingVisits : undefined, cancelledAt: optionalString(membership.cancelledAt), previousMembershipId: optionalString(membership.previousMembershipId), activeFreeze: data(membership.activeFreeze) })),
+      checkIns: allCheckins.map((checkIn) => ({ memberId: stringValue(checkIn.memberId), decision: stringValue(checkIn.decision), occurredAt: stringValue(checkIn.occurredAt) })),
+      snoozes: retentionStateRows.map((row) => { const state = data(row.data); return { memberId: stringValue(state.memberId), snoozedUntil: optionalString(state.snoozedUntil) }; }),
+    }).filter((risk) => queueBranchVisible(risk.branchId))
+      .filter((risk) => actor.role !== "sales" || risk.assignedSalespersonId === actorPublicId)
+      // Expiring-only members already have the dedicated renewal item above.
+      .filter((risk) => risk.reasons.some((reason) => reason.kind !== "expiring"))
+      .slice(0, options.complete ? BRIEF_QUEUE_LIMIT : 6);
+    for (const risk of retentionRisks) {
+      const member = memberById.get(risk.memberId);
+      const term = memberships.find((membership) => stringValue(membership.id) === risk.membershipId);
+      if (!member || !term) continue;
+      const plan = planById.get(stringValue(term.planId));
+      queueItems.push({
+        id: `at-risk:${risk.memberId}`,
+        kind: "at_risk",
+        priority: risk.priority,
+        title: `Contact ${stringValue(member.fullName)}`,
+        detail: `${risk.reasons.map((reason) => reason.label).join(" · ")}${plan ? ` · ${stringValue(plan.name)}` : ""}`,
+        subjectName: stringValue(member.fullName),
+        subject: { kind: "member", id: risk.memberId },
+        branchName: branchNameById.get(risk.branchId),
+        occurredAt: risk.lastVisitAt,
+        href: `/crm/queues?view=at-risk&member=${encodeURIComponent(risk.memberId)}`,
+        action: { kind: "navigate", label: "Follow up" },
+      });
+    }
+  }
+
+  if (hasPermission(actor, "payments.collect") || hasPermission(actor, "reports.financial.read")) {
+    for (const member of members) {
+      const memberId = stringValue(member.id);
+      const homeBranchId = optionalString(member.homeBranchId);
+      if (stringValue(member.status) !== "active" || !queueBranchVisible(homeBranchId)) continue;
+      if (actor.role === "sales" && optionalString(member.assignedSalespersonId) !== actorPublicId) continue;
+      const amount = charges.filter((charge) => stringValue(charge.memberId) === memberId).reduce((total, charge) => total + collectibleOutstandingValue(charge, today), 0);
+      if (amount <= 0) continue;
+      queueItems.push({
+        id: `balance:${memberId}`,
+        kind: "outstanding_balance",
+        priority: "high",
+        title: `Collect from ${stringValue(member.fullName)}`,
+        detail: "Owes money",
+        subjectName: stringValue(member.fullName),
+        subject: { kind: "member", id: memberId },
+        branchName: homeBranchId ? branchNameById.get(homeBranchId) : undefined,
+        amount: money(amount, actor.organization.currency),
+        href: `/members/${memberId}?action=collect`,
+        action: { kind: "navigate", label: hasPermission(actor, "payments.collect") ? "Collect" : "Open" },
+      });
+    }
+  }
+
+  if (["owner", "manager", "receptionist"].includes(role)) {
+    const latestBlockedByMember = new Map<string, Data>();
+    for (const checkin of checkins) {
+      if (stringValue(checkin.decision) !== "blocked" || businessDate(stringValue(checkin.occurredAt), actor.organization.timezone || TZ_FALLBACK) !== today) continue;
+      const memberId = stringValue(checkin.memberId);
+      const existing = latestBlockedByMember.get(memberId);
+      if (!existing || stringValue(existing.occurredAt) < stringValue(checkin.occurredAt)) latestBlockedByMember.set(memberId, checkin);
+    }
+    for (const checkin of latestBlockedByMember.values()) {
+      const checkinBranchId = optionalString(checkin.branchId);
+      queueItems.push({
+        id: `access:${stringValue(checkin.memberId)}`,
+        kind: "access_denial",
+        priority: "urgent",
+        title: `${stringValue(checkin.memberName)} was refused entry`,
+        detail: arrayValue(checkin.reasonCodes).map((reason) => stringValue(reason).toLowerCase().replaceAll("_", " ")).join(" · ") || "Entry refused",
+        subjectName: stringValue(checkin.memberName),
+        branchName: checkinBranchId ? branchNameById.get(checkinBranchId) : undefined,
+        occurredAt: stringValue(checkin.occurredAt),
+        href: `/members/${stringValue(checkin.memberId)}`,
+        action: { kind: "navigate", label: "Review" },
+      });
+    }
+  }
+
+  if (hasPermission(actor, "audit.read")) {
+    for (const event of audits) {
+      const eventBranchId = event.branchId ? await publicBranchIdFromId(ctx, actor.organization._id, event.branchId) : undefined;
+      if (event.approvalStatus !== "pending" || reviewedApprovalIds.has(event.publicId) || !queueBranchVisible(eventBranchId) || event.action === "shift.close_variance") continue;
+      queueItems.push({
+        id: `approval:${event.publicId}`,
+        kind: "approval",
+        priority: "high",
+        title: event.summary,
+        detail: `${event.entityLabel} · ${event.actorName}`,
+        branchName: eventBranchId ? branchNameById.get(eventBranchId) : undefined,
+        occurredAt: utcIso(event.occurredAt),
+        href: "/audit?approval=pending",
+        action: { kind: "navigate", label: "Review" },
+      });
+    }
+  }
+
+  if (hasPermission(actor, "reconciliation.read")) {
+    for (const shift of shifts) {
+      const shiftBranchId = optionalString(shift.branchId);
+      if (!queueBranchVisible(shiftBranchId) || stringValue(shift.status) !== "closed" || stringValue(shift.varianceApprovalStatus) !== "pending" || amountOf(shift.variance) === 0) continue;
+      queueItems.push({
+        id: `variance:${stringValue(shift.id)}`,
+        kind: "cash_variance",
+        priority: "urgent",
+        title: `Check the cash difference at ${shiftBranchId ? branchNameById.get(shiftBranchId) ?? "the branch" : "the branch"}`,
+        detail: `Shift opened by ${stringValue(shift.openedByName)}`,
+        branchName: shiftBranchId ? branchNameById.get(shiftBranchId) : undefined,
+        occurredAt: optionalString(shift.closedAt),
+        amount: money(amountOf(shift.variance), stringValue(data(shift.variance).currency, actor.organization.currency)),
+        href: "/payments/shifts",
+        action: { kind: "navigate", label: "Review" },
+      });
+    }
+  }
+
+  if (hasPermission(actor, "operations.manage")) {
+    const workspace = await workspaceAccessData(ctx, actor);
+    const operationsEnabled = arrayValue(workspace.modules).map(data).some((module) => module.key === "operations" && module.entitled === true && module.enabled === true);
+    if (operationsEnabled) {
+      const facilityRows = (await Promise.all((["open", "in_progress", "blocked"] as const).map((status) => ctx.db.query("facilityTasks").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", status)).collect()))).flat();
+      for (const task of facilityRows) {
+        if (actor.branchScope === "selected" && !actor.branchIds.includes(task.branchId)) continue;
+        const taskBranchId = await publicBranchIdFromId(ctx, actor.organization._id, task.branchId);
+        if (!queueBranchVisible(taskBranchId)) continue;
+        const dueAt = task.dueAt ? utcIso(task.dueAt) : undefined;
+        const dueToday = dueAt ? businessDate(dueAt, actor.organization.timezone || TZ_FALLBACK) <= today : false;
+        if (!options.complete && !dueToday && !["high", "critical"].includes(task.severity)) continue;
+        queueItems.push({
+          id: `facility:${task.publicId}`,
+          kind: "facility_task",
+          priority: task.severity === "critical" || task.status === "blocked" ? "urgent" : task.severity === "high" ? "high" : "normal",
+          title: task.title,
+          detail: `${task.kind} · ${task.status.replaceAll("_", " ")}`,
+          branchName: branchNameById.get(taskBranchId),
+          dueAt,
+          href: `/operations?tab=facilities&branch=${encodeURIComponent(taskBranchId)}`,
+          action: { kind: "navigate", label: "Open" },
+        });
+      }
+    }
+  }
+  queueItems.push(...(await checklistTodayQueueItems(ctx, actor, queueBranchVisible)) as Array<Data & TodayQueueSortableItem>);
+  const todayQueue = finalizeTodayQueue(queueItems, isoNow(), options.complete ? BRIEF_QUEUE_LIMIT : undefined);
+  const timeline = timelineRecords.map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
+  return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, todayQueue, recentActivity: timeline };
 }
 
 export const query = convexQuery({

@@ -57,7 +57,7 @@ export function OverrideCheckInDialog({
         onOverridden(result);
         onOpenChange(false);
       },
-      onError: (e) => setServerError(isApiError(e) ? e.message : "Override failed."),
+      onError: (e) => setServerError(isApiError(e) ? e.message : "The check-in was not saved. Try again."),
     },
   );
 
@@ -69,7 +69,7 @@ export function OverrideCheckInDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldAlert className="size-4 text-signal" aria-hidden /> Override and let in
+            <ShieldAlert className="size-4 text-signal" aria-hidden /> Let in anyway
           </DialogTitle>
           <DialogDescription>
             {member.fullName} · <span className="font-mono">{member.memberNumber}</span>
@@ -77,7 +77,7 @@ export function OverrideCheckInDialog({
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className="rounded-md border border-signal/30 bg-signal-bg px-3 py-2.5">
-            <p className="eyebrow text-signal-deep">Entry was blocked because</p>
+            <p className="context-label text-signal-deep">Entry was refused because</p>
             <ul className="mt-1.5 space-y-0.5">
               {preview.reasonCodes.map((code) => (
                 <li key={code} className="text-[13px] text-signal-deep">
@@ -88,16 +88,16 @@ export function OverrideCheckInDialog({
           </div>
 
           <Field
-            label="Override reason"
+            label="Reason"
             required
-            hint={`Recorded in the audit log against ${actorName}. Managers review overrides daily.`}
+            hint={`Saved with your name, ${actorName}. Managers check these every day.`}
           >
             <Textarea
               autoFocus
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Paid at Abdoun branch this morning, receipt shown"
+              placeholder="For example: Paid at Abdoun branch this morning, receipt shown"
               data-testid="override-reason"
             />
           </Field>
@@ -114,11 +114,10 @@ export function OverrideCheckInDialog({
             onClick={() => mutation.mutate()}
             data-testid="confirm-override"
           >
-            Override entry
+            Let in anyway
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-

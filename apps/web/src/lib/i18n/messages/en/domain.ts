@@ -1,53 +1,55 @@
 /**
- * The product's own nouns: every status, stage, verdict, tender and role that
- * is stored as a code and rendered as words. Keys match the domain unions in
- * `lib/domain/types`, so a new member of any union is a compile error here.
+ * The product's own nouns: every status, stage, verdict, payment method and
+ * role that is stored as a code and rendered as words. Keys match the domain
+ * unions in `lib/domain/types`, so a new member of any union is a compile error
+ * at the call sites that index by it. Words match docs/22_PLAIN_LANGUAGE_GUIDE.md.
  */
 export const domain = {
   membershipStatus: {
     active: "Active",
-    expiring: "Expiring",
+    expiring: "Ending soon",
     frozen: "Frozen",
     expired: "Expired",
     cancelled: "Cancelled",
     depleted: "Visits used up",
-    scheduled: "Scheduled",
+    scheduled: "Not started",
     none: "No membership",
   },
-
   paymentStatus: {
     paid: "Paid",
-    partial: "Partial",
+    partial: "Part paid",
     unpaid: "Unpaid",
     refunded: "Refunded",
-    void: "Void",
+    void: "Cancelled",
   },
-
   transactionStatus: {
     completed: "Completed",
-    voided: "Voided",
+    voided: "Cancelled",
     refunded: "Refunded",
-    partially_refunded: "Part-refunded",
+    partially_refunded: "Partly refunded",
   },
-
+  transactionType: {
+    payment: "Payment",
+    refund: "Refund",
+    void: "Cancelled payment",
+    retail_sale: "Retail sale",
+  },
   leadStage: {
     new: "New",
-    attempted: "Attempted",
+    attempted: "Did not answer",
     contacted: "Contacted",
     trial_booked: "Trial booked",
     trial_completed: "Trial done",
     offer_sent: "Offer sent",
-    won: "Won",
-    lost: "Lost",
+    won: "Sold",
+    lost: "Not sold",
   },
-
   checkInDecision: {
     allowed: "Allowed",
     warning: "Warning",
-    blocked: "Blocked",
-    overridden: "Override",
+    blocked: "Refused",
+    overridden: "Let in anyway",
   },
-
   leadSource: {
     instagram: "Instagram",
     walk_in: "Walk-in",
@@ -57,7 +59,6 @@ export const domain = {
     phone_call: "Phone call",
     other: "Other",
   },
-
   paymentMethod: {
     cash: "Cash",
     card: "Card",
@@ -65,7 +66,6 @@ export const domain = {
     cliq: "CliQ",
     other: "Other",
   },
-
   role: {
     owner: "Owner",
     manager: "Manager",

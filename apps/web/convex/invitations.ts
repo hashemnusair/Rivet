@@ -49,7 +49,7 @@ function optionalString(input: unknown): string | undefined {
 function roleFromFrontend(input: unknown, correlationId: string): OrganizationRole {
   const role = stringValue(input);
   const normalized = role === "salesperson" ? "sales" : role;
-  if (!["owner", "manager", "sales", "receptionist", "trainer", "auditor"].includes(normalized)) {
+  if (!["owner", "manager", "sales", "receptionist", "trainer"].includes(normalized)) {
     domainError("VALIDATION_ERROR", "A valid staff role is required.", { correlationId });
   }
   return normalized as OrganizationRole;
@@ -78,7 +78,7 @@ async function prepareInvitation(ctx: MutationCtx, input: Data, organizationId: 
     .query("roleDefinitions")
     .withIndex("by_organization_role", (q) => q.eq("organizationId", actor.organization._id).eq("role", role))
     .unique();
-  const targetPermissions = configuredRole?.permissions ?? rolePermissions(role);
+  const targetPermissions = rolePermissions(role, configuredRole?.permissions, configuredRole?.catalogVersion);
   if (targetPermissions.some((permission) => !actor.permissions.includes(permission))) {
     domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId });
   }
@@ -205,13 +205,13 @@ export const markSent = internalMutation({
     actorUserId: v.id("users"),
     actorPublicId: v.string(),
     actorName: v.string(),
-    actorRole: v.union(v.literal("owner"), v.literal("manager"), v.literal("sales"), v.literal("receptionist"), v.literal("trainer"), v.literal("auditor")),
+    actorRole: v.union(v.literal("owner"), v.literal("manager"), v.literal("sales"), v.literal("receptionist"), v.literal("trainer")),
     userPublicId: v.string(),
     userName: v.string(),
     correlationId: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.membershipId, { clerkInvitationId: args.clerkInvitationId, invitationSentAt: args.sentAt, invitationLastAttemptAt: args.sentAt, invitationError: undefined, invitationStatus: "pending", updatedAt: args.sentAt });
+    await ctx.db.patch(args.membershipId, { clerkInvitationId: args.clerkInvitationId, clerkInvitationStatus: "pending", invitationSentAt: args.sentAt, invitationLastAttemptAt: args.sentAt, invitationError: undefined, invitationStatus: "pending", updatedAt: args.sentAt });
     await ctx.db.insert("auditEvents", {
       organizationId: args.organizationId,
       publicId: crypto.randomUUID(),
@@ -241,13 +241,13 @@ export const markFailed = internalMutation({
     actorUserId: v.id("users"),
     actorPublicId: v.string(),
     actorName: v.string(),
-    actorRole: v.union(v.literal("owner"), v.literal("manager"), v.literal("sales"), v.literal("receptionist"), v.literal("trainer"), v.literal("auditor")),
+    actorRole: v.union(v.literal("owner"), v.literal("manager"), v.literal("sales"), v.literal("receptionist"), v.literal("trainer")),
     userPublicId: v.string(),
     userName: v.string(),
     correlationId: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.membershipId, { invitationLastAttemptAt: args.attemptedAt, invitationError: args.message, updatedAt: args.attemptedAt });
+    await ctx.db.patch(args.membershipId, { clerkInvitationStatus: "failed", invitationLastAttemptAt: args.attemptedAt, invitationError: args.message, updatedAt: args.attemptedAt });
     await ctx.db.insert("auditEvents", {
       organizationId: args.organizationId,
       publicId: crypto.randomUUID(),
@@ -269,7 +269,7 @@ export const markFailed = internalMutation({
       organizationId: args.organizationId,
       kind: "staff_invitation_failure",
       title: "Staff invitation needs attention",
-      body: `${args.userName} · invitation delivery failed`,
+      body: `The invitation to ${args.userName} could not be sent. Check their email address and try again.`,
       href: "/settings?section=users",
       dedupeKey: `staff-invitation-failed:${args.userPublicId}:${args.attemptedAt}`,
     });

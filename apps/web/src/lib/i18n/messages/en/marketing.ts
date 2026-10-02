@@ -276,7 +276,7 @@ export const marketing = {
   footer: {
     blurb:
       "The revenue and operations system for gyms — and the simplest way for members to find, join, and enter them.",
-    madeIn: "صُنع في عمّان · Made in Amman",
+    madeIn: "Made in Amman",
     product: "Product",
     overview: "Overview",
     members: "Members",

@@ -1,0 +1,31 @@
+import { expect, test } from "@playwright/test";
+
+test.describe("member file import", () => {
+  test("uploads a CSV, previews its members, and keeps raw text secondary", async ({ page }) => {
+    await page.goto("/login/gym");
+    await page.getByRole("radio", { name: /owner/i }).click();
+    await page.getByRole("button", { name: /Sign in as .+/i }).click();
+    // The persona is stored once the sign-in resolves; jumping to a deep
+    // route before that leaves the workspace guard waiting for nobody.
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/members/import");
+
+    await expect(page.getByRole("heading", { name: "Import members" })).toBeVisible();
+    await expect(page.getByText("Drop a member file here")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Member CSV content" })).toHaveCount(0);
+
+    await page.getByLabel("Choose member file").setInputFiles({
+      name: "pilot-members.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("full_name,phone,gender,email\nDina Qasem,0798112233,female,dina.qasem@example.com"),
+    });
+
+    await expect(page.getByText("pilot-members.csv")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Match the columns" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Check members" })).toBeEnabled();
+    await page.getByRole("button", { name: "Check members" }).click();
+
+    await expect(page.getByRole("heading", { name: "Review before import" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Import 1 member" })).toBeVisible();
+  });
+});

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
+import { enqueueOperationalEmail } from "./operationalEmail";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
@@ -12,6 +14,7 @@ const previousEnvironment = {
   globalTypes: process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES,
 };
 afterEach(() => {
+  for (const key of ["RIVET_EMAIL_MODE", "RIVET_EMAIL_SANDBOX_TO", "RIVET_EMAIL_ALLOWLIST"]) delete process.env[key];
   for (const [key, value] of Object.entries({ RIVET_OPERATIONAL_EMAIL_LIVE: previousEnvironment.live, RESEND_API_KEY: previousEnvironment.apiKey, RESEND_FROM_EMAIL: previousEnvironment.from, RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES: previousEnvironment.globalTypes })) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
@@ -48,7 +51,7 @@ describe("durable operational email", () => {
     expect(replay.publicId).toBe(first.publicId);
     const rows = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").collect());
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.suppressionReason).toContain("disabled or the provider is not configured");
+    expect(rows[0]?.suppressionReason).toMatch(/mode is off/);
     expect(rows[0]?.subject).toBe("Your RIVET payment receipt");
   });
 
@@ -72,6 +75,15 @@ describe("durable operational email", () => {
     const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "mandatory-platform-invoice")).unique());
     expect(row?.status).toBe("queued");
     expect(row?.suppressionReason).toBeUndefined();
+  });
+
+  it("describes the invoice reminder as issued, without claiming payment is due three days later", async () => {
+    const { t, organizationId } = await seed();
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "platform_invoice_reminder", templateVersion: "platform-invoice-reminder-v1", recipientReference: "email-owner", recipientEmail: "owner@example.test", dedupeKey: "invoice-reminder-copy" });
+    const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "invoice-reminder-copy")).unique());
+    expect(row?.subject).toBe("Your RIVET invoice is ready");
+    expect(row?.text).toContain("Payment is due on the date shown.");
+    expect(row?.text).not.toContain("due in three days");
   });
 
   it("sends a confirmed enabled category through Resend and persists only provider-safe outcome data", async () => {
@@ -113,6 +125,18 @@ describe("durable operational email", () => {
     expect(row?.nextAttemptAt).toBeGreaterThanOrEqual(before + 60_000);
   });
 
+  it("routes terminal delivery failures to the email settings instead of deferred automation UI", async () => {
+    enableLiveWorker();
+    const { t, organizationId } = await seed();
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "payment_receipt", templateVersion: "receipt-v1", recipientReference: "member-1", recipientEmail: "member@example.test", dedupeKey: "receipt-terminal" });
+    const leased = await t.mutation(internal.operationalEmail.leaseDue, { limit: 1 });
+    const delivery = leased[0] as { _id: string; leaseToken?: string };
+    expect(delivery?.leaseToken).toBeTruthy();
+    await t.mutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id as Id<"operationalEmailDeliveries">, leaseToken: delivery.leaseToken!, accepted: false, retryable: false, statusCode: 550, errorCode: "provider_terminal" });
+    const notifications = await t.run((ctx) => ctx.db.query("operationalNotifications").collect());
+    expect(notifications).toEqual([expect.objectContaining({ kind: "operational_email_failed", href: "/settings?section=email" })]);
+  });
+
   it("suppresses a queued category if the gym disables it before the worker leases it", async () => {
     enableLiveWorker();
     const fetchMock = vi.fn();
@@ -138,5 +162,125 @@ describe("durable operational email", () => {
     const state = await t.run(async (ctx) => ({ deliveries: await ctx.db.query("operationalEmailDeliveries").collect(), events: await ctx.db.query("operationalEmailWebhookEvents").collect() }));
     expect(state.deliveries[0]).toMatchObject({ status: "delivered", providerEventAt: 200 });
     expect(state.events).toHaveLength(2);
+  });
+});
+
+describe("operational email go-live modes", () => {
+  it("redirects every message to the sandbox inbox with the real recipient in the subject", async () => {
+    process.env.RIVET_EMAIL_MODE = "sandbox";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "platform_invoice_issued";
+    process.env.RIVET_EMAIL_SANDBOX_TO = "inbox@rivetjo.com";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-sandbox" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await enqueueOperationalEmail(ctx, { kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "invoice-1", recipientEmail: "owner@gym.jo", dedupeKey: "sandbox-1", subject: "Invoice issued" });
+    });
+    await t.action(internal.operationalEmail.processDue, {});
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as { to: string[]; subject: string; reply_to?: string };
+    expect(body.to).toEqual(["inbox@rivetjo.com"]);
+    expect(body.subject).toBe("[sandbox → owner@gym.jo] Invoice issued");
+    expect(body.reply_to).toBeUndefined();
+    const delivery = await t.run(async (ctx) => (await ctx.db.query("operationalEmailDeliveries").collect())[0]);
+    expect(delivery?.attempts[0]).toMatchObject({ outcome: "accepted", mode: "sandbox", deliveredTo: "inbox@rivetjo.com" });
+    delete process.env.RIVET_EMAIL_MODE;
+    delete process.env.RIVET_EMAIL_SANDBOX_TO;
+  });
+
+  it("gives public applicants a RIVET reply address without changing gym member mail", async () => {
+    process.env.RIVET_EMAIL_MODE = "sandbox";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "gym_application_received_applicant";
+    process.env.RIVET_EMAIL_SANDBOX_TO = "inbox@rivetjo.com";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-application" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await enqueueOperationalEmail(ctx, { kind: "gym_application_received_applicant", templateVersion: "gym-application-received-v1", recipientReference: "owner@example.test", recipientEmail: "owner@example.test", dedupeKey: "application-reply-to", subject: "Application received", html: "<p>received</p>", text: "received" });
+    });
+    await t.action(internal.operationalEmail.processDue, {});
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body)) as { reply_to?: string };
+    expect(body.reply_to).toBe("sales@rivetjo.com");
+  });
+
+  it("suppresses recipients outside the allowlist with a readable reason and never calls the provider for them", async () => {
+    process.env.RIVET_EMAIL_MODE = "allowlist";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "platform_invoice_issued";
+    process.env.RIVET_EMAIL_ALLOWLIST = "@rivetjo.com, pilot@gym.jo";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-allowed" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await enqueueOperationalEmail(ctx, { kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "invoice-2", recipientEmail: "pilot@gym.jo", dedupeKey: "allow-1", subject: "Invoice issued" });
+      await enqueueOperationalEmail(ctx, { kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "invoice-3", recipientEmail: "member@gmail.com", dedupeKey: "allow-2", subject: "Invoice issued" });
+    });
+    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 2, disabled: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const rows = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
+    expect(rows.find((row) => row.recipientEmail === "pilot@gym.jo")).toMatchObject({ status: "provider_accepted" });
+    expect(rows.find((row) => row.recipientEmail === "member@gmail.com")).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/allowlist/) });
+    delete process.env.RIVET_EMAIL_MODE;
+    delete process.env.RIVET_EMAIL_ALLOWLIST;
+  });
+
+  it("in allowlist mode, serves a subscribed gym's team and members without a list entry, and holds everything else back", async () => {
+    process.env.RIVET_EMAIL_MODE = "allowlist";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_EMAIL_ALLOWLIST = "@rivetjo.com";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "provider-trusted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const active = await ctx.db.insert("organizations", { publicId: "org-active", name: "Active Gym", slug: "active-gym", status: "active", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
+      const suspended = await ctx.db.insert("organizations", { publicId: "org-suspended", name: "Suspended Gym", slug: "suspended-gym", status: "suspended", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
+      const owner = await ctx.db.insert("users", { publicId: "u-owner", authSubject: "clerk-trusted-owner", email: "hashem.owner@gmail.com", fullName: "Gym Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      const other = await ctx.db.insert("users", { publicId: "u-other", authSubject: "clerk-suspended-owner", email: "other.owner@gmail.com", fullName: "Other Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: active, userId: owner, role: "owner", branchIds: [], branchScope: "all", active: true, createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: suspended, userId: other, role: "owner", branchIds: [], branchScope: "all", active: true, createdAt: now, updatedAt: now });
+      // The active gym has switched member service email on.
+      await ctx.db.insert("operationalEmailSettings", { organizationId: active, enabledKinds: ["pt_booking_confirmation"], ownerConfirmedAt: now, ownerConfirmedByUserId: owner, reason: "Pilot", createdAt: now, updatedAt: now, updatedByUserId: owner });
+      // Member-facing, to a member of the active gym: served, no list entry.
+      await enqueueOperationalEmail(ctx, { organizationId: active, kind: "pt_booking_confirmation", templateVersion: "v1", recipientReference: "member-1", recipientEmail: "samira.member@gmail.com", dedupeKey: "trust-4", subject: "Your PT session is booked" });
+      // Member-facing, to a member of the suspended gym: held back.
+      await ctx.db.insert("operationalEmailSettings", { organizationId: suspended, enabledKinds: ["pt_booking_confirmation"], ownerConfirmedAt: now, ownerConfirmedByUserId: other, reason: "Pilot", createdAt: now, updatedAt: now, updatedByUserId: other });
+      await enqueueOperationalEmail(ctx, { organizationId: suspended, kind: "pt_booking_confirmation", templateVersion: "v1", recipientReference: "member-2", recipientEmail: "lapsed.member@gmail.com", dedupeKey: "trust-5", subject: "Your PT session is booked" });
+      // Gym-facing, to the active gym's owner: trusted.
+      await enqueueOperationalEmail(ctx, { organizationId: active, kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "inv-a", recipientEmail: "hashem.owner@gmail.com", dedupeKey: "trust-1", subject: "Invoice issued" });
+      // Gym-facing, to the suspended gym's owner: not subscribed, held back.
+      await enqueueOperationalEmail(ctx, { organizationId: suspended, kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "inv-b", recipientEmail: "other.owner@gmail.com", dedupeKey: "trust-2", subject: "Invoice issued" });
+      // Gym-facing, to an address that is not on the active gym's team: held back.
+      await enqueueOperationalEmail(ctx, { organizationId: active, kind: "subscription_agreement_copy", templateVersion: "v1", recipientReference: "copy", recipientEmail: "someone.else@gmail.com", dedupeKey: "trust-3", subject: "Copy" });
+    });
+    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 5, disabled: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const rows = await t.run(async (ctx) => await ctx.db.query("operationalEmailDeliveries").collect());
+    expect(rows.find((row) => row.recipientEmail === "hashem.owner@gmail.com")).toMatchObject({ status: "provider_accepted" });
+    expect(rows.find((row) => row.recipientEmail === "samira.member@gmail.com")).toMatchObject({ status: "provider_accepted" });
+    expect(rows.find((row) => row.recipientEmail === "lapsed.member@gmail.com")).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/subscribed gym/) });
+    expect(rows.find((row) => row.recipientEmail === "other.owner@gmail.com")).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/subscribed gym/) });
+    expect(rows.find((row) => row.recipientEmail === "someone.else@gmail.com")).toMatchObject({ status: "suppressed" });
+    delete process.env.RIVET_EMAIL_MODE;
+    delete process.env.RIVET_EMAIL_ALLOWLIST;
+  });
+
+  it("keeps everything suppressed when the mode is off even if the provider is configured", async () => {
+    process.env.RIVET_EMAIL_MODE = "off";
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.RESEND_FROM_EMAIL = "RIVET <noreply@rivetjo.com>";
+    process.env.RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES = "platform_invoice_issued";
+    const t = convexTest(schema, modules);
+    const delivery = await t.run(async (ctx) => await enqueueOperationalEmail(ctx, { kind: "platform_invoice_issued", templateVersion: "v1", recipientReference: "invoice-4", recipientEmail: "owner@gym.jo", dedupeKey: "off-1" }));
+    expect(delivery).toMatchObject({ status: "suppressed", suppressionReason: expect.stringMatching(/mode is off/) });
+    expect(await t.action(internal.operationalEmail.processDue, {})).toEqual({ processed: 0, disabled: true });
+    delete process.env.RIVET_EMAIL_MODE;
   });
 });

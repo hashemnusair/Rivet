@@ -1,19 +1,15 @@
-import type { Locale } from "./config";
-import { DEFAULT_LOCALE } from "./config";
+import { DEFAULT_LOCALE, type Locale } from "./config";
 
 /**
  * Message catalogue plumbing.
  *
- * Leaves are plain strings, except where a count changes the wording — those
- * are CLDR plural groups. Arabic genuinely uses all six categories (١ عضو,
- * عضوان, ٣ أعضاء, ١١ عضوًا …), so the selection goes through `Intl.PluralRules`
- * rather than the `n === 1` check an English-only codebase gets away with.
- *
- * Those groups are branded rather than detected by shape: structural detection
- * ("has an `other` string") misfires on real vocabulary, where
- * `leadSource.other` and `paymentMethod.other` are ordinary enum values.
+ * Leaves are plain strings, except where a count changes the wording; those are
+ * plural groups. Arabic uses all six CLDR categories (zero, one, two, few, many,
+ * other), so selection goes through `Intl.PluralRules` rather than an `n === 1`
+ * check. Plural groups are branded, not detected by shape, because ordinary
+ * vocabulary such as `leadSource.other` also has an `other` key.
  */
-declare const PLURAL_BRAND: unique symbol;
+const PLURAL_BRAND: unique symbol = Symbol("rivet.plural");
 
 export interface PluralCategories {
   zero?: string;
@@ -21,7 +17,7 @@ export interface PluralCategories {
   two?: string;
   few?: string;
   many?: string;
-  /** Required — the form used when no more specific category matches. */
+  /** Required: the form used when no more specific category matches. */
   other: string;
 }
 
@@ -31,16 +27,18 @@ export type MessageLeaf = string | PluralForms;
 
 /**
  * Marks a plural group so its inferred type is the full `PluralForms` rather
- * than just the categories English happens to use. Without this, an English
- * catalogue with `{ one, other }` would forbid Arabic's `zero/two/few/many`.
+ * than just the categories English happens to use. Usage: `plural({ one: "{count} member", other: "{count} members" })`.
  */
 export function plural(forms: PluralCategories): PluralForms {
-  return forms as PluralForms;
+  return Object.defineProperty({ ...forms }, PLURAL_BRAND, { value: true }) as PluralForms;
 }
 
 export interface MessageTree {
   [key: string]: MessageLeaf | MessageTree;
 }
+
+/** An Arabic catalogue may lag English; the Vitest parity check enforces completeness. */
+export type DeepPartial<T> = T extends string | PluralForms ? T : { [K in keyof T]?: DeepPartial<T[K]> };
 
 type Join<K extends string, Rest extends string> = Rest extends "" ? K : `${K}.${Rest}`;
 
@@ -55,6 +53,10 @@ export type MessagePath<T> = T extends string
 
 export type MessageVars = Record<string, string | number>;
 
+export function isPluralForms(node: unknown): node is PluralForms {
+  return typeof node === "object" && node !== null && (node as Record<symbol, unknown>)[PLURAL_BRAND] === true;
+}
+
 function resolve(tree: MessageTree, path: string): MessageLeaf | undefined {
   let node: MessageLeaf | MessageTree | undefined = tree;
   for (const segment of path.split(".")) {
@@ -63,10 +65,8 @@ function resolve(tree: MessageTree, path: string): MessageLeaf | undefined {
   }
   if (node === undefined) return undefined;
   if (typeof node === "string") return node;
-  // A branch reached instead of a leaf — `t()` was handed a partial path.
-  return "other" in node && typeof (node as PluralCategories).other === "string"
-    ? (node as PluralForms)
-    : undefined;
+  // A branch reached instead of a leaf means `t()` was handed a partial path.
+  return isPluralForms(node) ? node : undefined;
 }
 
 const pluralRulesCache = new Map<string, Intl.PluralRules>();
@@ -74,24 +74,26 @@ const pluralRulesCache = new Map<string, Intl.PluralRules>();
 function pluralRules(locale: Locale): Intl.PluralRules {
   let rules = pluralRulesCache.get(locale);
   if (!rules) {
-    rules = new Intl.PluralRules(locale === "ar" ? "ar" : "en");
+    rules = new Intl.PluralRules(locale);
     pluralRulesCache.set(locale, rules);
   }
   return rules;
 }
 
-function selectForm(forms: PluralCategories, locale: Locale, count: number): string {
+export function selectPluralForm(forms: PluralCategories, locale: Locale, count: number): string {
   const category = pluralRules(locale).select(count);
   return forms[category] ?? forms.other;
 }
 
-/** `{name}` placeholders. Unknown placeholders are left visible rather than
- *  blanked, so a missing variable shows up in review instead of shipping. */
-function interpolate(template: string, vars: MessageVars | undefined): string {
+/** `{name}` placeholders. A missing variable stays visible so review catches it. */
+export function interpolate(template: string, vars: MessageVars | undefined): string {
   if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in vars ? String(vars[name]) : match,
-  );
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match));
+}
+
+/** Names of the `{param}` placeholders in one template. */
+export function placeholdersOf(template: string): string[] {
+  return [...template.matchAll(/\{(\w+)\}/g)].map((m) => m[1] as string);
 }
 
 export interface TranslateOptions {
@@ -102,24 +104,32 @@ export interface TranslateOptions {
   locale: Locale;
 }
 
-export function translate(
-  { messages, fallback, locale }: TranslateOptions,
-  path: string,
-  vars?: MessageVars,
-): string {
-  const leaf = resolve(messages, path) ?? (locale === DEFAULT_LOCALE ? undefined : resolve(fallback, path));
+const warned = new Set<string>();
+
+export function translate({ messages, fallback, locale }: TranslateOptions, path: string, vars?: MessageVars): string {
+  let leaf = resolve(messages, path);
+  let leafLocale = locale;
+
+  if (leaf === undefined && locale !== DEFAULT_LOCALE) {
+    leaf = resolve(fallback, path);
+    leafLocale = DEFAULT_LOCALE;
+    if (leaf !== undefined && process.env.NODE_ENV !== "production") {
+      const id = `${locale}:${path}`;
+      if (!warned.has(id)) {
+        warned.add(id);
+        console.warn(`[i18n] missing "${locale}" message "${path}"; showing English`);
+      }
+    }
+  }
 
   if (leaf === undefined) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(`[i18n] missing message "${path}" for locale "${locale}"`);
-    }
-    // The path itself is the least-bad visible fallback: it is obviously wrong
-    // in review but never renders as an empty region in production.
+    if (process.env.NODE_ENV !== "production") console.warn(`[i18n] unknown message key "${path}"`);
+    // The key is obviously wrong in review but never renders as an empty region.
     return path;
   }
 
   if (typeof leaf === "string") return interpolate(leaf, vars);
 
   const count = typeof vars?.count === "number" ? vars.count : 0;
-  return interpolate(selectForm(leaf, locale, count), vars);
+  return interpolate(selectPluralForm(leaf, leafLocale, count), vars);
 }

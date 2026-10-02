@@ -1,0 +1,290 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
+const navigation = vi.hoisted(() => ({ search: "" }));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => router,
+  usePathname: () => "/operations",
+  useSearchParams: () => new URLSearchParams(navigation.search),
+}));
+
+import { OperationsCommandCenter } from "./operations-command-center";
+import { renderWithApp, resetApiForTests } from "@/test/harness";
+
+afterEach(() => resetApiForTests());
+
+beforeEach(() => {
+  navigation.search = "";
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  HTMLElement.prototype.releasePointerCapture = vi.fn();
+});
+
+
+async function selectBranch(user: ReturnType<typeof userEvent.setup>, branchName?: string) {
+  await screen.findByTestId("operations-command-center");
+  const picker = screen.getByRole("combobox", { name: "Branch" });
+  await user.click(picker);
+  const options = await screen.findAllByRole("option");
+  const option = branchName ? options.find((candidate) => candidate.textContent === branchName) : options.find((candidate) => candidate.textContent !== "All branches");
+  if (!option) throw new Error("No concrete branch option was rendered.");
+  await user.click(option);
+  await waitFor(() => expect(picker).not.toHaveTextContent("All branches"));
+}
+
+describe("OperationsCommandCenter", () => {
+  it("keeps the selected purchasing tab in the URL", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />);
+    await screen.findByTestId("operations-command-center");
+    await user.click(screen.getByRole("tab", { name: "Purchase orders" }));
+    expect(router.replace).toHaveBeenCalledWith("/operations?tab=orders", { scroll: false });
+    expect(screen.getByRole("tab", { name: "Purchase orders" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("starts with a clear all-branches view and compact stock actions", async () => {
+    await renderWithApp(<OperationsCommandCenter />);
+
+    expect(await screen.findByTestId("operations-command-center")).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual(["Stock", "Purchase orders", "Suppliers", "Supplier bills", "Machines"]);
+    expect(screen.getByRole("tab", { name: /Stock/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Machines/ })).toHaveAttribute("aria-selected", "false");
+    expect(screen.queryByRole("tab", { name: /Checkout|Maintenance/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Checkout/ })).toHaveAttribute("href", "/checkout");
+    expect(screen.getByRole("link", { name: /Maintenance/ })).toHaveAttribute("href", "/maintenance");
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent("All branches");
+    expect(screen.getByText(/Showing all branches/)).toBeInTheDocument();
+    expect(await screen.findByRole("columnheader", { name: "Available" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Selling price" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Running low" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/How Operations works|Refill to|Delivery time|Supplier unit cost|projected at delivery/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Choose a branch above to add items/)).toBeInTheDocument();
+  });
+
+  it("uses the selected branch for independent inventory and links checkout to that branch", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />);
+    const listInventory = vi.spyOn(api, "listInventory");
+
+    await selectBranch(user);
+    const session = await api.getSession();
+    const selectedBranch = session.activeBranchId;
+    expect(selectedBranch).toBeTruthy();
+    await waitFor(() => expect(listInventory).toHaveBeenCalledWith(expect.objectContaining({ branchId: selectedBranch })));
+    expect(screen.getByRole("link", { name: /Checkout/ })).toHaveAttribute("href", `/checkout?branchId=${encodeURIComponent(selectedBranch!)}`);
+    expect(screen.getByRole("button", { name: "Add item" })).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(session.branches.find((branch) => branch.id === selectedBranch)?.name ?? "branch");
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("opens a centered transfer dialog and submits the selected source and destination branches", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />);
+    await selectBranch(user, "Forge — Abdoun");
+    const transferMutation = vi.spyOn(api, "transferInventory");
+
+    await user.click(screen.getByRole("button", { name: "Move stock" }));
+    const dialog = await screen.findByRole("dialog", { name: "Move stock to another branch" });
+    expect(dialog).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("combobox", { name: "Move to" }));
+    await user.click(await screen.findByRole("option", { name: "Forge — Sweifieh" }));
+    await user.clear(within(dialog).getByRole("spinbutton", { name: "Quantity to move" }));
+    await user.type(within(dialog).getByRole("spinbutton", { name: "Quantity to move" }), "2");
+    await user.type(within(dialog).getByRole("textbox", { name: "Reason for moving" }), "Balance the Abdoun branch");
+    await user.click(within(dialog).getByRole("button", { name: "Move stock" }));
+
+    await waitFor(() => expect(transferMutation).toHaveBeenCalledWith(expect.objectContaining({ sourceBranchId: expect.any(String), destinationBranchId: expect.any(String), quantity: 2, reason: "Balance the Abdoun branch", idempotencyKey: expect.stringMatching(/^inventory-transfer-/) })));
+    expect(transferMutation.mock.calls[0]?.[0].sourceBranchId).toBe((await api.getSession()).activeBranchId);
+  });
+
+  it("switches between stock and machines without leaving the page", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />);
+    await selectBranch(user);
+
+    await user.click(screen.getByRole("tab", { name: /Machines/ }));
+    expect(await screen.findByTestId("operations-equipment")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Machines" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Machine problems" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Repair jobs" })).toBeInTheDocument();
+    expect(screen.getByText("Commercial treadmill")).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("tab", { name: /Stock/ }));
+    expect(await screen.findByTestId("operations-inventory")).toBeInTheDocument();
+  });
+
+  it("keeps machine writes in centered dialogs and records problem and repair-job changes", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await selectBranch(user);
+    await user.click(screen.getByRole("tab", { name: /Machines/ }));
+
+    await user.click(await screen.findByRole("button", { name: "Edit Commercial treadmill" }));
+    expect(screen.getByRole("dialog", { name: "Edit machine" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Machine name" })).toHaveValue("Commercial treadmill");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    const issueMutation = vi.spyOn(api, "reportEquipmentIssue");
+    await user.click(screen.getByRole("button", { name: "Report problem" }));
+    expect(screen.getByRole("dialog", { name: "Report a machine problem" })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "What is wrong?" }), "Display flickers");
+    await user.click(screen.getByRole("button", { name: "Report problem" }));
+    await waitFor(() => expect(issueMutation).toHaveBeenCalledWith(expect.objectContaining({ title: "Display flickers", branchId: expect.any(String), assetId: expect.any(String) })));
+    // The report now appears in the machine problems list and as the machine's current problem in its repair history.
+    await waitFor(() => expect(screen.getAllByText("Display flickers").length).toBeGreaterThanOrEqual(1));
+
+    const orderMutation = vi.spyOn(api, "upsertEquipmentWorkOrder");
+    await user.click(screen.getByRole("button", { name: "Add repair job" }));
+    expect(screen.getByRole("dialog", { name: "Add repair job" })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "What needs doing?" }), "Inspect display wiring");
+    await user.click(screen.getByRole("button", { name: "Add repair job" }));
+    await waitFor(() => expect(orderMutation).toHaveBeenCalledWith(expect.objectContaining({ description: "Inspect display wiring", status: "draft" })));
+    await waitFor(() => expect(screen.getByText("Inspect display wiring")).toBeInTheDocument());
+    const draftOrder = screen.getByText("Inspect display wiring").parentElement?.parentElement?.parentElement;
+    expect(draftOrder).toBeTruthy();
+    expect(within(draftOrder as HTMLElement).getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(within(draftOrder as HTMLElement).queryByRole("button", { name: "Start work" })).not.toBeInTheDocument();
+    expect(within(draftOrder as HTMLElement).getByRole("button", { name: "Cancel job" })).toBeInTheDocument();
+  });
+
+  it("allows managers to move a machine problem through checking and fixing", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await selectBranch(user);
+    await user.click(screen.getByRole("tab", { name: /Machines/ }));
+    const issueMutation = vi.spyOn(api, "updateEquipmentIssue");
+
+    expect(screen.getByRole("button", { name: "Mark active" })).toBeDisabled();
+    expect(screen.getByText(/Fix the “Do not use” problem below first/i)).toBeInTheDocument();
+    const resolve = await screen.findByRole("button", { name: "Mark fixed" });
+    await user.click(resolve);
+    await waitFor(() => expect(issueMutation).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ status: "resolved", safetyStatus: "safe_to_operate" })));
+  });
+
+  it("opens item, supplier, and purchase-order workflows only after a branch is selected", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await screen.findByRole("columnheader", { name: "Available" });
+    expect(screen.getByRole("button", { name: "Add item" })).toBeDisabled();
+    await selectBranch(user);
+
+    await user.click(screen.getByRole("tab", { name: /Suppliers/ }));
+    expect(await screen.findByTestId("operations-suppliers")).toBeInTheDocument();
+    expect(screen.getByText("Jordan Sports Supply")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Bills/ })).toHaveAttribute("href", expect.stringMatching(/^\/operations\/payables\?supplier=/));
+    await user.click(screen.getByRole("button", { name: "Add supplier" }));
+    expect(screen.getByRole("dialog", { name: "Add supplier" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("tab", { name: /Stock/ }));
+    await user.click(await screen.findByRole("button", { name: "Add item" }));
+    expect(screen.getByRole("dialog", { name: "Add stock item" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Available quantity" })).toHaveValue(0);
+    expect(screen.getByRole("spinbutton", { name: /Selling price/ })).toBeInTheDocument();
+    expect(screen.queryByText(/Refill to|Delivery time|Supplier unit cost|Preferred supplier/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("tab", { name: /Purchase orders/ }));
+    expect(await screen.findByTestId("operations-orders")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "New purchase order" }));
+    expect(screen.getByRole("dialog", { name: "Create purchase order" })).toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Bought from" }));
+    await user.click(await screen.findByRole("option", { name: /Somewhere else/ }));
+    expect(screen.getByText(/No supplier name is saved/i)).toBeVisible();
+  });
+
+  it("filters stock by search and keeps row actions to sell, reorder, and edit", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await selectBranch(user);
+
+    await screen.findByRole("button", { name: "Edit Creatine monohydrate" });
+    expect(screen.queryByRole("button", { name: /^Delete /i })).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Search stock items" }), "creatine");
+    expect(screen.getByText("Creatine monohydrate")).toBeInTheDocument();
+    expect(screen.queryByText("Protein bar")).not.toBeInTheDocument();
+    await user.clear(screen.getByRole("textbox", { name: "Search stock items" }));
+    expect(await screen.findByText("Protein bar")).toBeInTheDocument();
+  });
+
+  it("sends an inventory row's Sell action to the one checkout with that item preselected", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />);
+    await selectBranch(user);
+
+    await user.click(await screen.findByRole("button", { name: "Sell Protein bar" }));
+    expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/checkout\?branchId=.+&productId=.+$/));
+  });
+
+  it("opens a reorder draft with the row's product preselected", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await selectBranch(user);
+
+    await user.click(await screen.findByRole("button", { name: "Reorder Protein bar" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create purchase order" });
+    expect(within(dialog).getByRole("combobox", { name: "Item" })).toHaveTextContent(/Protein bar/);
+  });
+
+  it("edits selected-branch availability without sending removed product fields", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<OperationsCommandCenter />, { role: "manager" });
+    await selectBranch(user);
+    const upsertProduct = vi.spyOn(api, "upsertProduct");
+    await user.click(await screen.findByRole("button", { name: "Edit Creatine monohydrate" }));
+    const available = screen.getByRole("spinbutton", { name: "Available quantity" });
+    await user.clear(available);
+    await user.type(available, "24");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(upsertProduct).toHaveBeenCalledWith(expect.objectContaining({ branchId: expect.any(String), availableQuantity: 24 })));
+    const submitted = upsertProduct.mock.calls.at(-1)?.[0];
+    expect(submitted).not.toHaveProperty("targetLevel");
+    expect(submitted).not.toHaveProperty("supplierLeadTimeDays");
+    expect(submitted).not.toHaveProperty("defaultUnitCost");
+  });
+
+  it("keeps destructive and management actions hidden for read-only staff", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<OperationsCommandCenter />, { role: "receptionist" });
+    await selectBranch(user);
+    expect(await screen.findByText(/You can only view this page/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add item" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Suppliers/ }));
+    expect(await screen.findByTestId("operations-suppliers")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add supplier" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /Machines/ }));
+    expect(await screen.findByText(/You can only view this page/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Report problem" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add repair job" })).not.toBeInTheDocument();
+  });
+
+  it("forwards old checkout and maintenance deep links to their own pages", async () => {
+    navigation.search = "tab=checkout";
+    await renderWithApp(<OperationsCommandCenter />);
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/checkout"));
+    resetApiForTests();
+    router.replace.mockReset();
+    navigation.search = "tab=facilities&branch=10000000-0000-4a00-8a00-000000000002&zone=zone-1&action=new-task";
+    await renderWithApp(<OperationsCommandCenter />);
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/maintenance?branch=10000000-0000-4a00-8a00-000000000002&zone=zone-1&action=new-task"));
+  });
+
+  it("opens the Supplier bills tab inside Stock & purchasing and highlights a deep-linked order", async () => {
+    const user = userEvent.setup();
+    navigation.search = "tab=payables";
+    await renderWithApp(<OperationsCommandCenter />);
+    expect(await screen.findByRole("tab", { name: /Supplier bills/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByTestId("payables-workspace")).toBeInTheDocument();
+    expect((await screen.findAllByTestId("payable-row")).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("tab", { name: /Purchase orders/ }));
+    expect(await screen.findByTestId("operations-orders")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect((await screen.findAllByTestId("purchase-order-row")).length).toBeGreaterThan(0);
+  });
+});

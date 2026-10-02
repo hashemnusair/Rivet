@@ -11,8 +11,18 @@ import {
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { getApi } from "@/lib/api/client";
-import { isApiError } from "@/lib/api/errors";
+import { ERR, isApiError } from "@/lib/api/errors";
 import { INVALIDATE_ALL } from "@/lib/api/keys";
+
+/**
+ * A denied or signed-out answer is final for this session: the server has
+ * re-checked the actor's role, branch and membership and refused. Unlike a
+ * network failure, no retry changes it, and a snapshot loaded before access
+ * was revoked must not stay on screen behind a "could not refresh" notice.
+ */
+export function isAccessDenied(error: unknown): boolean {
+  return isApiError(error) && (error.code === ERR.FORBIDDEN || error.code === ERR.UNAUTHENTICATED);
+}
 
 export function useApiQuery<TData>(
   key: QueryKey,
@@ -38,11 +48,15 @@ export function useApiQuery<TData>(
   // TanStack Query can retain a useful snapshot while a background refetch
   // fails. Treat that as a stale-data warning rather than replacing a working
   // table/card with a full-page error; initial failures still remain errors.
+  // A refusal (revoked role, branch or membership, or a signed-out account)
+  // is not a refresh problem: the snapshot is withdrawn and the denial shown.
   const hasRenderedData = query.data !== undefined;
+  const denied = query.isError && isAccessDenied(query.error);
   return {
     ...query,
-    isError: query.isError && !hasRenderedData,
-    isBackgroundError: query.isError && hasRenderedData,
+    data: denied ? undefined : query.data,
+    isError: query.isError && (!hasRenderedData || denied),
+    isBackgroundError: query.isError && hasRenderedData && !denied,
   };
 }
 
@@ -71,22 +85,38 @@ export function useApiMutation<TData, TVariables = void>(
     successMessage?: string | ((data: TData) => string);
   },
 ) {
-  const { successMessage, ...rest } = options ?? {};
+  // onSuccess/onError must be destructured out: leaving them in the spread
+  // would overwrite these wrappers and silently drop the toasts whenever a
+  // caller passes both a successMessage and its own callback.
+  const { successMessage, onSuccess, onError, ...rest } = options ?? {};
   return useMutation<TData, Error, TVariables>({
     mutationFn: (variables) => fn(getApi(), variables),
-    onSuccess: (data, variables, onMutateResult, context) => {
+    // TanStack awaits this callback before the mutation leaves its pending
+    // state, so the caller's follow-up work (cache invalidation, navigation,
+    // closing a dialog) is awaited too: a Submit button stays disabled until
+    // the refreshed data is in place instead of re-enabling on the bare
+    // network response. A failure inside that follow-up must not be reported
+    // as a failed write, though: the server already committed the change,
+    // and a retry toast would invite a second submission. Log it and tell
+    // the operator that the screen, not the record, is what needs a refresh.
+    onSuccess: async (data, variables, onMutateResult, context) => {
       if (successMessage) {
         toast.success(typeof successMessage === "function" ? successMessage(data) : successMessage);
       }
-      options?.onSuccess?.(data, variables, onMutateResult, context);
+      try {
+        await onSuccess?.(data, variables, onMutateResult, context);
+      } catch (followUpError) {
+        console.error("Mutation follow-up failed after the change was saved", followUpError);
+        toast.warning("Saved, but this screen could not refresh. Reload to see the latest data.");
+      }
     },
-    onError: (error, variables, onMutateResult, context) => {
+    onError: async (error, variables, onMutateResult, context) => {
       if (isApiError(error)) {
         toast.error(error.message);
       } else {
         toast.error("Something went wrong. Please try again.");
       }
-      options?.onError?.(error, variables, onMutateResult, context);
+      await onError?.(error, variables, onMutateResult, context);
     },
     ...rest,
   });

@@ -1,13 +1,16 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
-import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
-import { ArrowRight, ChevronDown, Home, LogOut, Menu, MessageSquare, Search, UserRound, X } from "lucide-react";
+
+import { useClerk } from "@clerk/nextjs";
+import { ChevronDown, GraduationCap, Home, LogOut, MessageSquare, ReceiptText, Search, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
 import { AuthTransition } from "@/components/auth/auth-transition";
+import { PublicDocumentPage } from "@/components/public/public-document-page";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,250 +20,80 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Monogram } from "@/components/ui/misc";
-import { LanguageToggle } from "@/components/shared/language-toggle";
-import { useT } from "@/lib/i18n/provider";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp } from "@/lib/providers/app-providers";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
-
-const MARKETING_NAV = [
-  { href: "/#product", key: "product" },
-  { href: "/#member", key: "forMembers" },
-  { href: "/#pricing", key: "pricing" },
-  { href: "/customer/discover", key: "findGym" },
-] as const;
+import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
+import { MemberPwaManager } from "@/components/pwa/member-pwa";
 
 // ---------------------------------------------------------------------------
-// Marketing header — the public site
-// ---------------------------------------------------------------------------
-export function PublicHeader() {
-  const pathname = usePathname();
-  const t = useT();
-  const [open, setOpen] = useState(false);
-
-  return (
-    <header className="sticky top-0 z-50 border-b border-ink/10 bg-paper/90 backdrop-blur-md">
-      <div className="mx-auto flex h-[68px] max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
-        <Link href="/" className="flex items-center" aria-label={t("marketing.nav.home")}>
-          <Image src="/brand/rivet-lockup.png" alt="RIVET" width={132} height={34} style={{ height: "auto" }} priority />
-        </Link>
-
-        <nav className="hidden items-center gap-8 lg:flex" aria-label={t("marketing.nav.primary")}>
-          {MARKETING_NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "text-[13.5px] font-medium text-ink-2 transition-colors hover:text-ink",
-                pathname === item.href && "text-ink",
-              )}
-            >
-              {t(`marketing.nav.${item.key}`)}
-            </Link>
-          ))}
-        </nav>
-
-        {/* Sign-in lives at /login and nowhere else — no modal, so there is one
-            place to authenticate and one place that decides which portal. */}
-        <div className="hidden min-w-[246px] items-center justify-end gap-2 lg:flex">
-          <LanguageToggle />
-          {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions /> : <ClerkMarketingActions />}
-        </div>
-
-        <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen((value) => !value)} aria-label={t("marketing.nav.toggleNav")}>
-          {open ? <X /> : <Menu />}
-        </Button>
-      </div>
-
-      {open ? (
-        <div className="border-t border-line bg-paper px-5 py-4 lg:hidden">
-          <nav className="grid gap-0.5" aria-label={t("marketing.nav.mobile")}>
-            {MARKETING_NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className="rounded-md px-3 py-2.5 text-[14px] font-medium hover:bg-sunken"
-              >
-                {t(`marketing.nav.${item.key}`)}
-              </Link>
-            ))}
-          </nav>
-          <div className="mt-3 grid gap-2 border-t border-line pt-3">
-            <LanguageToggle variant="secondary" className="w-full justify-center" />
-            {DEMO_AUTH_BYPASS ? <PreviewMarketingSignedOutActions mobile onClose={() => setOpen(false)} /> : <ClerkMarketingActions mobile onClose={() => setOpen(false)} />}
-          </div>
-        </div>
-      ) : null}
-    </header>
-  );
-}
-
-function PreviewMarketingSignedOutActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
-  const t = useT();
-  return (
-    <>
-      <Button asChild variant={mobile ? "secondary" : "ghost"} size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/login">{t("marketing.actions.signIn")}</Link>
-      </Button>
-      <Button asChild variant="signal" size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/signup">{mobile ? t("marketing.actions.applyShort") : <>{t("marketing.actions.applyShort")} <ArrowRight /></>}</Link>
-      </Button>
-    </>
-  );
-}
-
-function ClerkMarketingActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
-  const t = useT();
-  const { isLoaded, isSignedIn } = useAuth();
-  const identity = useRivetIdentity();
-
-  // Paint the public actions on the server and first client frame. Clerk's
-  // previous <Show> boundary painted nothing until hydration, which pulled the
-  // entire navbar sideways on every refresh.
-  if (!isLoaded || !isSignedIn) {
-    return <MarketingSignedOutActions mobile={mobile} onClose={onClose} />;
-  }
-
-  const resolving = identity.status === "loading" || identity.status === "pending";
-  const destination = identity.status === "ready" ? destinationFor(identity).href : "/login";
-
-  if (mobile) {
-    return (
-      <>
-        <Button asChild={!resolving} variant="signal" onClick={onClose} disabled={resolving}>
-          {resolving ? <span>{t("marketing.actions.preparingAccountLong")}</span> : <Link href={destination}>{t("marketing.actions.openRivet")}</Link>}
-        </Button>
-        <div className="flex justify-center py-2">
-          <UserButton />
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <Button asChild={!resolving} variant="signal" size="sm" disabled={resolving}>
-        {resolving ? (
-          <span>{t("marketing.actions.preparingAccount")}</span>
-        ) : (
-          <Link href={destination}>
-            {t("marketing.actions.openRivet")} <ArrowRight />
-          </Link>
-        )}
-      </Button>
-      <UserButton />
-    </>
-  );
-}
-
-function MarketingSignedOutActions({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
-  const t = useT();
-  return (
-    <>
-      <Button asChild variant={mobile ? "secondary" : "ghost"} size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/login">{t("marketing.actions.signIn")}</Link>
-      </Button>
-      <Button asChild variant="signal" size={mobile ? "default" : "sm"} onClick={onClose}>
-        <Link href="/signup">{mobile ? t("marketing.actions.applyShort") : <>{t("marketing.actions.applyShort")} <ArrowRight /></>}</Link>
-      </Button>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Marketing footer — the site map lives here, so every area is one click away
-// ---------------------------------------------------------------------------
-export function PublicFooter() {
-  const t = useT();
-  return (
-    <footer className="night-surface bg-night text-night-ink">
-      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.5fr_1fr_1fr_1fr] lg:px-12">
-        <div>
-            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={140} height={35} style={{ height: "auto" }} />
-          <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
-            {t("marketing.footer.blurb")}
-          </p>
-          <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.18em] text-night-ink-3">{t("marketing.footer.madeIn")}</p>
-        </div>
-        <FooterColumn
-          title={t("marketing.footer.product")}
-          links={[
-            [t("marketing.footer.overview"), "/#product"],
-            [t("marketing.nav.forMembers"), "/#member"],
-            [t("marketing.nav.pricing"), "/#pricing"],
-            [t("marketing.actions.applyShort"), "/signup"],
-          ]}
-        />
-        <FooterColumn
-          title={t("marketing.footer.members")}
-          links={[
-            [t("marketing.nav.findGym"), "/customer/discover"],
-            [t("marketing.footer.createMemberAccount"), "/login/member/create"],
-            [t("marketing.footer.myDashboard"), "/customer/my-gyms"],
-          ]}
-        />
-        <FooterColumn
-          title={t("marketing.footer.signIn")}
-          links={[
-            [t("marketing.actions.signInToRivet"), "/login"],
-          ]}
-        />
-      </div>
-      <div className="border-t border-night-line px-5 py-5 sm:px-8 lg:px-12">
-        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 font-mono text-[9.5px] uppercase tracking-[0.14em] text-night-ink-3">
-          <span>{t("marketing.footer.copyright")}</span>
-          <span>{t("common.brand.tagline")}</span>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-function FooterColumn({ title, links }: { title: string; links: Array<[string, string]> }) {
-  return (
-    <nav>
-      <p className="font-mono text-[10px] uppercase tracking-[0.17em] text-night-ink-3">{title}</p>
-      <div className="mt-4 grid gap-3">
-        {links.map(([label, href]) => (
-          <Link key={href + label} href={href} className="text-[13px] text-night-ink-2 transition-colors hover:text-night-ink">
-            {label}
-          </Link>
-        ))}
-      </div>
-    </nav>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Member shell — the signed-in member area and the gym marketplace
+// Member shell — the signed-in member area; signed out, the marketplace and a
+// gym's page are public-site pages and wear the site's chrome instead.
 // ---------------------------------------------------------------------------
 const MEMBER_NAV = [
-  { href: "/customer/my-gyms", key: "home", icon: Home, requiresAuth: true },
-  { href: "/customer/discover", key: "exploreGyms", icon: Search, requiresAuth: false },
-] as const;
+  { href: "/customer/my-gyms", label: "Home", shortLabel: "Home", icon: Home, requiresAuth: true },
+  { href: "/customer/finance", label: "Payments", shortLabel: "Payments", icon: ReceiptText, requiresAuth: true },
+  { href: "/customer/discover", label: "Explore gyms", shortLabel: "Explore", icon: Search, requiresAuth: false },
+];
+
+const PROTECTED_MEMBER_PREFIXES = ["/customer/my-gyms", "/customer/finance", "/customer/receipts", "/customer/profile", "/customer/getting-started"];
+
+function isProtectedMemberRoute(pathname: string) {
+  return PROTECTED_MEMBER_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+/**
+ * One account menu for the desktop header and the phone dock. Everything the
+ * navigation already offers stays out of it, so the menu is only what a member
+ * cannot reach elsewhere: profile, the guide, communication choices, sign out.
+ */
+function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: string; email: string; onSignOut: () => void; touch?: boolean }) {
+  const t = useT();
+  const itemClass = touch ? "min-h-11 py-2.5 text-[13.5px]" : undefined;
+  return (
+    <>
+      <DropdownMenuLabel>
+        <span className="block text-[13px] font-semibold text-ink">{name}</span>
+        <span className="mt-0.5 block truncate text-[12px] font-normal text-ink-3">{email}</span>
+      </DropdownMenuLabel>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem asChild className={itemClass}>
+        <Link href="/customer/profile"><UserRound />{" "}{t("marketing.memberShell.profile")}</Link>
+      </DropdownMenuItem>
+      <DropdownMenuItem asChild className={itemClass}>
+        <Link href="/customer/getting-started"><GraduationCap /> Getting started</Link>
+      </DropdownMenuItem>
+      <DropdownMenuItem asChild className={itemClass}>
+        <Link href="/customer/profile#communication"><MessageSquare /> Offers and news</Link>
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem className={itemClass} onClick={onSignOut}>
+        <LogOut />{" "}{t("common.action.signOut")}</DropdownMenuItem>
+    </>
+  );
+}
 
 export function CustomerShell({ children }: { children: ReactNode }) {
   const t = useT();
   const pathname = usePathname();
   const router = useRouter();
   const { session } = useApp();
-  const { customerSignedIn, platformAdminSignedIn, signOutCustomer } = useExperience();
+  const { customerSignedIn, platformAdminSignedIn, previewSessionReady, signOutCustomer } = useExperience();
   const identity = useRivetIdentity();
   const { signOut: signOutClerk } = useClerk();
   const customer = useCustomerPersona();
   const [signingOut, setSigningOut] = useState(false);
   const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
 
-  const protectedMemberRoute = pathname === "/customer/my-gyms" || pathname.startsWith("/customer/my-gyms/") || pathname === "/customer/profile";
+  const protectedMemberRoute = isProtectedMemberRoute(pathname);
   const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
   const mockGymRole = DEMO_AUTH_BYPASS ? session?.roles[0] : undefined;
   const elevatedDestination = protectedMemberRoute
     ? platformAdminSignedIn || identity.platformAdmin
       ? "/platform"
-      : identityDestination?.area === "gym"
+      : identityDestination && identityDestination.area !== "member"
         ? identityDestination.href
         : mockGymRole
           ? mockGymRole === "receptionist" ? "/reception" : "/dashboard"
@@ -291,25 +124,41 @@ export function CustomerShell({ children }: { children: ReactNode }) {
     }
   };
 
-  if (signingOut) return <AuthTransition title={t("marketing.memberShell.signingOut")} detail={t("marketing.memberShell.signingOutDetail")} />;
-  if (elevatedDestination) return <AuthTransition title={t("marketing.memberShell.openingWorkspace")} detail={t("marketing.memberShell.openingWorkspaceDetail")} />;
+  // A cold preview restores its member from sessionStorage after hydration.
+  // Mounting the public layout first would replace the page when that finishes,
+  // discarding an early tab selection or input focus along with its subtree.
+  if (!previewSessionReady) return <AuthTransition title="Loading your account" detail="Just a moment…" />;
+
+  if (signingOut) return <AuthTransition title={t("marketing.memberShell.signingOut")} detail="Returning to secure sign in…" />;
+  if (elevatedDestination) return <AuthTransition title="Opening your account" detail="Taking you to the right page…" />;
+
+  // A visitor who is not signed in as a member is on the public site: the
+  // marketplace and a gym's page wear the site's own bar and footer, with the
+  // member door and account creation where the site otherwise offers the
+  // gym application.
+  if (!customerSignedIn) {
+    return (
+      <PublicDocumentPage path={pathname} audience="member">
+        {children}
+      </PublicDocumentPage>
+    );
+  }
+
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <div className={cn("flex min-h-dvh flex-col bg-paper", customerSignedIn && "member-app-shell sm:pb-0")}>
-      <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-md">
+    <div className="member-app-shell flex min-h-dvh flex-col bg-paper sm:pb-0">
+      <MemberPwaManager />
+      <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
-          <Link href={customerSignedIn ? "/customer/my-gyms" : "/"} className="flex shrink-0 items-center gap-3" aria-label="RIVET">
-            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={29} style={{ height: "auto" }} priority />
-            {customerSignedIn ? (
-              <span className="hidden border-s border-line-2 ps-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.16em] text-ink-3 sm:block">
-                {t("marketing.memberShell.member")}
-              </span>
-            ) : null}
+          <Link href="/customer/my-gyms" className="flex shrink-0 items-center gap-3" aria-label={t("common.brand.name")}>
+            <Image src="/brand/rivet-lockup.png" alt={t("common.brand.name")} width={112} height={29} priority />
+            <span className="hidden border-s border-line-2 ps-3 text-[12px] font-medium text-ink-3 sm:block">{t("marketing.memberShell.member")}</span>
           </Link>
 
           <nav className="hidden items-center gap-1 sm:flex" aria-label={t("marketing.memberShell.navigation")}>
             {nav.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = isActive(item.href);
               return (
                 <Link
                   key={item.href}
@@ -321,15 +170,14 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   aria-current={active ? "page" : undefined}
                 >
                   <item.icon className="size-3.5" aria-hidden />
-                  <span>{t(`marketing.memberShell.${item.key}`)}</span>
+                  <span>{item.label}</span>
                 </Link>
               );
             })}
           </nav>
 
           <div className="ms-auto flex items-center gap-2">
-            <LanguageToggle showLabel={false} />
-            {customerSignedIn && customer ? (
+            {customer ? (
               <div className="hidden sm:block">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -344,111 +192,60 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuLabel>
-                      <span className="block text-[12.5px] font-semibold text-ink">{customer.name}</span>
-                      <span className="mt-0.5 block truncate text-[10.5px] font-normal text-ink-3">{customer.email}</span>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link href="/customer/profile">
-                        <UserRound /> {t("marketing.memberShell.profile")}
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/customer/my-gyms#communication">
-                        <MessageSquare /> {t("marketing.memberShell.communicationSettings")}
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => void handleSignOut()}>
-                      <LogOut /> {t("common.action.signOut")}
-                    </DropdownMenuItem>
+                    <AccountMenuItems name={customer.name} email={customer.email} onSignOut={() => void handleSignOut()} />
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-            ) : (
-              <>
-                <Button asChild variant="ghost" size="sm">
-                  <Link href="/login">{t("marketing.actions.signIn")}</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link href="/login/member/create">{t("marketing.actions.createAccount")}</Link>
-                </Button>
-              </>
-            )}
+            ) : null}
           </div>
         </div>
       </header>
 
+      {customer ? <OnboardingBanner audience="member" /> : null}
+
       <div className="flex-1">{children}</div>
 
-      {!customerSignedIn ? (
-        <footer className="border-t border-line bg-surface">
-          <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-4 py-5 text-[12px] text-ink-3 sm:px-6 lg:px-8">
-            <span className="font-mono text-[9.5px] uppercase tracking-[0.14em]">{t("marketing.footer.copyrightShort")}</span>
-            <nav className="flex flex-wrap items-center gap-5">
-              <Link href="/" className="transition-colors hover:text-ink">{t("marketing.footer.rivetForGyms")}</Link>
-              <Link href="/customer/discover" className="transition-colors hover:text-ink">{t("marketing.nav.findGym")}</Link>
-            </nav>
-          </div>
-        </footer>
-      ) : null}
-
-      {customerSignedIn && customer ? (
+      {customer ? (
         <nav
-          className="member-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 backdrop-blur-md sm:hidden"
+          className="member-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 backdrop-blur-sm sm:hidden"
           aria-label={t("marketing.memberShell.navigation")}
         >
-          <div className="mx-auto grid h-16 max-w-md grid-cols-3 px-3">
+          <div className="mx-auto grid h-16 max-w-md grid-cols-4 px-3">
             {nav.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const active = isActive(item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-1 text-[10.5px] font-medium transition-colors",
+                    "flex flex-col items-center justify-center gap-1 rounded-md text-[12px] font-medium transition-colors",
                     active ? "text-ink" : "text-ink-3",
                   )}
                   aria-current={active ? "page" : undefined}
                 >
-                  <span className={cn("flex size-8 items-center justify-center rounded-md", active && "bg-sunken")}>
-                    <item.icon className="size-[17px]" aria-hidden />
+                  <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", active && "bg-sunken")}>
+                    <item.icon className="size-[18px]" aria-hidden />
                   </span>
-                  <span>{item.key === "exploreGyms" ? t("marketing.memberShell.explore") : t("marketing.memberShell.home")}</span>
+                  <span>{item.shortLabel}</span>
                 </Link>
               );
             })}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="flex flex-col items-center justify-center gap-1 text-[10.5px] font-medium text-ink-3" aria-label={t("marketing.memberShell.accountMenu")}>
-                  <span className="flex size-8 items-center justify-center rounded-md">
-                    <UserRound className="size-[17px]" aria-hidden />
+                <button
+                  type="button"
+                  className={cn("flex flex-col items-center justify-center gap-1 rounded-md text-[12px] font-medium transition-colors", isActive("/customer/profile") || isActive("/customer/getting-started") ? "text-ink" : "text-ink-3")}
+                  aria-label={t("marketing.memberShell.accountMenu")}
+                >
+                  <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", (isActive("/customer/profile") || isActive("/customer/getting-started")) && "bg-sunken")}>
+                    <UserRound className="size-[18px]" aria-hidden />
                   </span>
                   <span>{t("marketing.memberShell.account")}</span>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-64">
-                <DropdownMenuLabel>
-                  <span className="block text-[12.5px] font-semibold text-ink">{customer.name}</span>
-                  <span className="mt-0.5 block truncate text-[10.5px] font-normal text-ink-3">{customer.email}</span>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/customer/profile">
-                    <UserRound /> {t("marketing.memberShell.profile")}
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/customer/my-gyms#communication">
-                    <MessageSquare /> {t("marketing.memberShell.communicationSettings")}
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => void handleSignOut()}>
-                  <LogOut /> {t("common.action.signOut")}
-                </DropdownMenuItem>
+              <DropdownMenuContent align="end" side="top" sideOffset={10} className="w-64">
+                <AccountMenuItems name={customer.name} email={customer.email} onSignOut={() => void handleSignOut()} touch />
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

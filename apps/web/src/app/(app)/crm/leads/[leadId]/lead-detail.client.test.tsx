@@ -9,6 +9,7 @@ import LeadDetailPageClient from "./lead-detail.client";
 
 const navigation = vi.hoisted(() => ({
   leadId: "",
+  search: "",
   push: vi.fn(),
   replace: vi.fn(),
 }));
@@ -17,7 +18,7 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ leadId: navigation.leadId }),
   useRouter: () => ({ push: navigation.push, replace: navigation.replace, refresh: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => `/crm/leads/${navigation.leadId}`,
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(navigation.search),
 }));
 
 Object.assign(HTMLElement.prototype, {
@@ -31,6 +32,7 @@ afterEach(() => {
   setApiForTests(null);
   window.sessionStorage.clear();
   navigation.leadId = "";
+  navigation.search = "";
   navigation.push.mockReset();
   navigation.replace.mockReset();
 });
@@ -57,6 +59,38 @@ function renderLead(api: MockGymOSApi) {
 }
 
 describe("CRM lead workflow language and transitions", () => {
+  it("opens the contact log straight from a ?action=contact link and clears the flag when closed", async () => {
+    const api = new MockGymOSApi();
+    api.setBehavior({ latencyMs: 0 });
+    const leadId = await prepareLead(api);
+    navigation.search = "action=contact";
+    renderLead(api);
+
+    expect(await screen.findByRole("dialog", { name: "Log contact" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Contact outcome" })).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith(`/crm/leads/${leadId}`, { scroll: false }));
+  });
+
+  it("opens trial scheduling in a centered dialog", async () => {
+    const api = new MockGymOSApi();
+    window.sessionStorage.setItem("rivet.demo.persona", "owner");
+    const session = await api.getSession();
+    const branchId = session.activeBranchId ?? session.branches[0]!.id;
+    window.sessionStorage.setItem("rivet.demo.branch", branchId);
+    const lead = await api.createLead({ fullName: "Dialog Trial Lead", phone: "+962790000098", branchId, source: "walk_in" });
+    navigation.leadId = lead.id;
+    renderLead(api);
+
+    await screen.findByRole("heading", { name: "Dialog Trial Lead" });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Schedule trial" }));
+
+    expect(screen.getByRole("dialog", { name: "Schedule trial" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
   it("exposes separate no-show and cancelled trial outcomes", async () => {
     const api = new MockGymOSApi();
     const leadId = await prepareLead(api);
@@ -75,6 +109,28 @@ describe("CRM lead workflow language and transitions", () => {
     await waitFor(async () => expect((await api.getLead(leadId)).trialBooking?.status).toBe("cancelled"));
   });
 
+  it("edits contact identity without changing the lead stage and reports unsaved state", async () => {
+    const api = new MockGymOSApi();
+    const leadId = await prepareLead(api);
+    await api.updateLeadContact(leadId, { fullName: "Original Contact", phone: "+962790000097", email: "original@example.com" });
+    renderLead(api);
+
+    await screen.findByRole("heading", { name: "Original Contact" });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Edit contact" }));
+    await screen.findByRole("dialog", { name: "Edit lead contact" });
+    await user.clear(screen.getByRole("textbox", { name: "Full name" }));
+    await user.type(screen.getByRole("textbox", { name: "Full name" }), "Corrected Contact");
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent("Changes not saved yet");
+    await user.clear(screen.getByRole("textbox", { name: "Email" }));
+    await user.type(screen.getByRole("textbox", { name: "Email" }), "  UPDATED@EXAMPLE.COM ");
+    await user.click(screen.getByRole("button", { name: "Save contact" }));
+
+    await waitFor(async () => expect(await api.getLead(leadId)).toMatchObject({ fullName: "Corrected Contact", email: "updated@example.com", stage: "trial_booked" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit lead contact" })).not.toBeInTheDocument());
+    expect((await api.getLead(leadId)).activities).toContainEqual(expect.objectContaining({ type: "lead_contact_updated" }));
+  });
+
   it("uses the selected sale language and navigates directly with a stable pending state", async () => {
     const api = new MockGymOSApi();
     await prepareLead(api, "completed");
@@ -85,6 +141,7 @@ describe("CRM lead workflow language and transitions", () => {
     await user.click(screen.getByTestId("sell-membership"));
     await screen.findByRole("dialog", { name: "Complete membership sale" });
 
+    await user.selectOptions(screen.getByRole("combobox", { name: "Gender" }), "female");
     await user.selectOptions(screen.getByRole("combobox", { name: "Preferred language" }), "ar");
     await waitFor(() => expect(screen.getByTestId("confirm-membership-sale")).not.toBeDisabled());
     await user.click(screen.getByTestId("confirm-membership-sale"));

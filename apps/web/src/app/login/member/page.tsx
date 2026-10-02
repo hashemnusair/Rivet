@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
+import { pageTitle } from "../page-title";
 import { PortalSignIn } from "../portal-sign-in.client";
 
-export const metadata: Metadata = { title: "Member sign-in" };
+export const generateMetadata = (): Promise<Metadata> => pageTitle("auth.pageTitle.member");
 
 export default function MemberLoginPage() {
-  if (!DEMO_AUTH_BYPASS) redirect("/login");
   return <PortalSignIn audience="member" />;
 }

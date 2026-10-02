@@ -1,125 +1,162 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
+
 
 import {
   ArrowRight,
-  Banknote,
   Check,
   Dumbbell,
   MapPin,
-  ScanLine,
-  ShieldCheck,
-  Users,
 } from "lucide-react";
 import Link from "next/link";
-import { DecorativeQr } from "@/components/marketing/decorative-qr";
+import { useState } from "react";
+import { CinematicHeader } from "@/components/marketing/cinematic-header";
 import { HeroDevices } from "@/components/marketing/hero-devices";
+import styles from "@/components/marketing/landing-cinematic.module.css";
+import { LandingMotionController } from "@/components/marketing/landing-motion";
+import { EntryPassCard } from "@/components/marketing/product-screens";
+import {
+  AccountabilityLedger,
+  OperationalDay,
+  RegionProof,
+  SheetUnder,
+  StackStory,
+  StoryMarker,
+} from "@/components/marketing/landing-story";
 import { Reveal } from "@/components/marketing/reveal";
-import { RivetLoopMachine } from "@/components/marketing/rivet-loop-machine";
 import { ScrollProgress } from "@/components/marketing/scroll-progress";
-import { VocabularyMarquee } from "@/components/marketing/vocabulary-marquee";
-import { PublicFooter, PublicHeader } from "@/components/public/public-shell";
+import { PublicFooter } from "@/components/public/public-footer";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
+import { SignedInGuard } from "@/components/public/signed-in-guard";
 import { Button } from "@/components/ui/button";
-import { useExperience } from "@/lib/providers/experience-provider";
-import { useT } from "@/lib/i18n/provider";
-import { useFormat } from "@/lib/i18n/format";
+import { usePublicViewer } from "@/lib/auth/public-viewer";
+import { cn } from "@/lib/utils/cn";
+import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import {
+  ANNUAL_DISCOUNT_PERCENT,
+  calculatePlanPrice,
+  formatJodMinor,
+  pricingSignupHref,
+  publicPlanFeatures,
+  resolvePublicPricingPlans,
+  type BillingInterval,
+} from "@/lib/public/pricing";
 
-/** Hero entrance order, in ms — one cascade from eyebrow to the stat rail. */
+/** Hero entrance order, in ms — one cascade from the headline to the fact rail. */
 const HERO_STEP = {
-  eyebrow: 0,
-  line1: 70,
-  line2: 140,
-  line3: 210,
-  copy: 300,
-  actions: 380,
-  note: 440,
-  stats: 500,
+  line1: 0,
+  line2: 70,
+  line3: 140,
+  copy: 240,
+  actions: 320,
+  note: 380,
+  facts: 440,
 } as const;
 
 export default function LandingPage() {
-  const { marketplaceGyms, saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
   const t = useT();
-  const format = useFormat();
-  return (
-    <div className="marketing-body min-h-screen bg-paper text-ink">
-      <ScrollProgress />
-      <PublicHeader />
+  const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
+  const marketplaceGyms = useMarketplaceGyms();
+  const pricingPlans = resolvePublicPricingPlans(saasPlans);
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
+  const liveGyms = experienceStatus === "ready" ? marketplaceGyms : [];
 
+  // Signed in, every call to action on the page leads to the visitor's own
+  // area and nothing offers them a sign-in or an application. Above the fold
+  // the buttons wait for the answer; further down the signed-out set stands
+  // in until it arrives.
+  const viewer = usePublicViewer();
+  const signedIn = viewer.status === "signed-in" ? viewer.destination : null;
+  const signedOut = viewer.status === "signed-out";
+
+  return (
+    <div className={`${styles.pageShell} marketing-body min-h-screen bg-paper text-ink`}>
+      <SignedInGuard />
+      <LandingMotionController />
+      <ScrollProgress />
+      <CinematicHeader />
+
+      <div data-landing-sheet className={styles.pageSheet}>
       <main>
         {/* ---------------------------------------------------------------- Hero */}
-        <section className="relative overflow-hidden border-b border-ink/10">
+        <section
+          id="top"
+          data-landing-hero
+          data-landing-theme="paper"
+          className={`${styles.coverSheet} ${styles.layer1} ${styles.snapStart} relative overflow-hidden bg-paper lg:min-h-[100svh]`}
+        >
           {/* Ruled backdrop, faded out at the edges so it never competes with
               the headline. Texture only — no painted colour. */}
           <div aria-hidden className="pointer-events-none absolute inset-0">
             <div className="marketing-grid-sm absolute inset-0 [mask-image:radial-gradient(115%_85%_at_72%_18%,black,transparent_72%)]" />
           </div>
 
-          <div className="relative mx-auto grid max-w-[1440px] items-center gap-12 px-5 py-16 sm:px-8 lg:grid-cols-[1fr_1fr] lg:gap-14 lg:px-12 lg:py-20">
+          <div className={`${styles.heroMotion} relative mx-auto grid max-w-[1440px] items-center gap-10 px-5 pb-10 pt-[calc(4.25rem+2.5rem)] sm:px-8 sm:pb-14 lg:min-h-[100svh] lg:grid-cols-[1fr_1fr] lg:gap-12 lg:px-12 lg:pb-20 lg:pt-28`}>
             <div>
-              <p
-                className="flex animate-rise-in items-center gap-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.18em] text-ink-3"
-                style={{ animationDelay: `${HERO_STEP.eyebrow}ms` }}
-              >
-                <span className="h-px w-10 origin-left animate-underline bg-signal [animation-delay:250ms]" />
-                {t("marketing.hero.eyebrow")}
-              </p>
-
-              <h1 className="marketing-display mt-7 text-[clamp(2.7rem,5vw,4.7rem)] leading-[0.9]">
+              <h1 className="marketing-display text-[clamp(1.9rem,9.2vw,4.7rem)] leading-[0.9] lg:text-[clamp(2.6rem,4.7vw,4.7rem)] xl:text-[clamp(2.6rem,5vw,4.7rem)]">
                 <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>{t("marketing.hero.line1")}</span>
                 <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>{t("marketing.hero.line2")}</span>
                 <span className="block animate-rise-in text-signal" style={{ animationDelay: `${HERO_STEP.line3}ms` }}>
                   {/* The rule is measured off the words, not a guessed width. */}
-                  <span className="relative inline-block">{t("marketing.hero.line3")}
-                    <span className="absolute inset-x-0 -bottom-1 h-[3px] origin-left animate-underline bg-signal [animation-delay:620ms] rtl:origin-right" />
+                  <span className="relative inline-block">{t("marketing.hero.line3")}<span className="absolute inset-x-0 -bottom-1 h-[3px] origin-left animate-underline bg-signal [animation-delay:620ms] rtl:origin-right" />
                   </span>
                 </span>
               </h1>
 
               <p
-                className="mt-8 max-w-xl animate-rise-in text-[16px] leading-[1.65] text-ink-2 sm:text-[17px]"
+                className="mt-7 max-w-xl animate-rise-in text-[16px] leading-[1.65] text-ink-2 sm:text-[17px]"
                 style={{ animationDelay: `${HERO_STEP.copy}ms` }}
               >
-                {t("marketing.hero.body")}
+                One record for the sales desk, reception, the cash drawer and the member&rsquo;s phone. Every trial, membership,
+                payment and check-in is logged under the person who handled it.
               </p>
 
               <div
-                className="mt-8 flex animate-rise-in flex-wrap gap-3"
+                className="mt-8 flex min-h-12 animate-rise-in flex-wrap gap-3"
                 style={{ animationDelay: `${HERO_STEP.actions}ms` }}
               >
-                <Button asChild variant="signal" size="lg" className="group">
-                  <Link href="/signup">
-                    {t("marketing.actions.apply")}{" "}
-                    <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                  </Link>
-                </Button>
+                {signedIn ? (
+                  <Button asChild variant="signal" size="lg" className="group">
+                    <Link href={signedIn.href}>
+                      {signedIn.verb}{" "}
+                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                    </Link>
+                  </Button>
+                ) : signedOut ? (
+                  <Button asChild variant="signal" size="lg" className="group">
+                    <Link href="/signup">{t("marketing.actions.apply")}{" "}
+                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                    </Link>
+                  </Button>
+                ) : null}
                 <Button asChild variant="secondary" size="lg">
                   <Link href="#product">{t("marketing.actions.seeHow")}</Link>
                 </Button>
               </div>
 
-              <p
-                className="mt-4 animate-rise-in text-[12.5px] text-ink-3"
-                style={{ animationDelay: `${HERO_STEP.note}ms` }}
-              >
-                {t("marketing.hero.accessNote")}
-              </p>
+              {signedIn ? null : (
+                <p
+                  className="mt-4 animate-rise-in text-[12.5px] text-ink-3"
+                  style={{ animationDelay: `${HERO_STEP.note}ms` }}
+                >{t("marketing.hero.accessNote")}</p>
+              )}
 
               <dl
-                className="mt-12 grid max-w-2xl animate-rise-in grid-cols-2 gap-x-8 gap-y-6 border-t border-ink/10 pt-8 xl:grid-cols-4"
-                style={{ animationDelay: `${HERO_STEP.stats}ms` }}
+                className="mt-10 grid max-w-2xl animate-rise-in grid-cols-2 gap-x-8 gap-y-5 border-t border-ink/10 pt-7 xl:grid-cols-4"
+                style={{ animationDelay: `${HERO_STEP.facts}ms` }}
               >
-                {([
-                  ["tenderTerm", "tenderDetail"],
-                  ["branchTerm", "branchDetail"],
-                  ["localeTerm", "localeDetail"],
-                  ["qrTerm", "qrDetail"],
-                ] as const).map(([term, detail]) => (
+                {[
+                  ["Cash, card, CliQ", "A receipt for every payment"],
+                  ["Multi-branch", "One ledger across every floor"],
+                  ["Arabic and English", "Right-to-left ready"],
+                  ["Member QR", "One scan at the door"],
+                ].map(([term, detail]) => (
                   <div key={term} className="group relative">
-                    <span className="absolute -top-8 left-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
-                    <dt className="font-mono text-[9.5px] font-medium uppercase tracking-[0.12em] text-ink transition-colors duration-300 group-hover:text-signal">
-                      {t(`marketing.hero.stats.${term}`)}
+                    <span className="absolute -top-7 left-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
+                    <dt className="text-[13px] font-semibold tracking-[-0.01em] text-ink transition-colors duration-300 group-hover:text-signal">
+                      {term}
                     </dt>
-                    <dd className="mt-1.5 text-[11.5px] leading-snug text-ink-3">{t(`marketing.hero.stats.${detail}`)}</dd>
+                    <dd className="mt-1 text-[12px] leading-snug text-ink-3">{detail}</dd>
                   </div>
                 ))}
               </dl>
@@ -129,279 +166,317 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ---------------------------------------------------------- Vocabulary */}
-        <VocabularyMarquee />
+        {/* ------------------------------------------------------------- The stack */}
+        <SheetUnder tone="paper" />
+        <StackStory />
 
-        {/* ------------------------------------------------------------- Numbers */}
-        <section className="border-b border-ink/10 bg-sunken">
-          <div className="mx-auto grid max-w-[1440px] divide-y divide-ink/10 px-5 sm:px-8 md:grid-cols-4 md:divide-x md:divide-y-0 lg:px-12">
-            {([
-              ["liveValue", "liveLabel"],
-              ["oneValue", "oneLabel"],
-              ["auditedValue", "auditedLabel"],
-              ["scopedValue", "scopedLabel"],
-            ] as const).map(([value, label], index) => (
-              <Reveal key={label} delay={index * 90} className={index === 0 ? "py-8 md:pe-6" : "py-8 md:px-6"}>
-                <div className="group">
-                  <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-4 transition-colors duration-300 group-hover:text-signal">
-                    {String(index + 1).padStart(2, "0")}
+        {/* --------------------------------------------------------- A day on RIVET */}
+        <SheetUnder tone="stack" />
+        <OperationalDay />
+
+        {/* ---------------------------------- Accountability, then where it is built
+            The region sheet slides over the pinned accountability sheet; the pair
+            shares one wrapper so the pin releases once the region has passed. */}
+        <div className={cn(styles.coverPair, styles.snapStart)}>
+          <AccountabilityLedger />
+          <RegionProof />
+        </div>
+
+        {/* ------------------------------------------------------------- Members */}
+        <section
+          id="member"
+          data-landing-theme="paper"
+          aria-labelledby="member-title"
+          className={`${styles.coverSheet} ${styles.layer7} ${styles.memberSection} ${styles.snapStart} bg-paper px-5 sm:px-8 lg:px-12`}
+        >
+          <div className="mx-auto max-w-[1344px]">
+            {/* The text and the Entry QR card start on the same line. Centring
+                the shorter column against the taller card left a blank stage
+                above the heading and floated the card above it. */}
+            <div className="grid gap-10 lg:grid-cols-[1fr_0.85fr] lg:items-start lg:gap-14">
+              <div>
+                <Reveal still>
+                  <StoryMarker label={t("marketing.nav.forMembers")} drawn />
+                </Reveal>
+                <SectionIntro
+                  id="member-title"
+                  stacked
+                  title={t("marketing.member.title")}
+                  description="One account finds gyms, books a free trial and holds every membership. At the door the member opens a short-lived entry QR, reception scans it, and the visit is on the record."
+                />
+                <ul className="mt-7 grid gap-3">
+                  {[
+                    "Membership status, expiry, visits and balance at a glance",
+                    "An entry QR that expires on its own and refreshes in one tap",
+                    "Receipts that survive a lost phone, in Arabic or English",
+                  ].map((item, index) => (
+                    <li key={item}>
+                      <Reveal delay={index * 80} className="group flex items-start gap-3 text-[14px] text-ink-2">
+                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-success/30 transition-colors duration-300 group-hover:border-success group-hover:bg-success-bg">
+                          <Check className="size-3 text-success" />
+                        </span>
+                        {item}
+                      </Reveal>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-8 flex min-h-12 flex-wrap gap-3">
+                  {signedIn ? (
+                    <Button asChild size="lg" className="group">
+                      <Link href={signedIn.href}>
+                        {signedIn.verb}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      </Link>
+                    </Button>
+                  ) : signedOut ? (
+                    <Button asChild size="lg" className="group">
+                      <Link href="/login/member/create">{t("marketing.actions.createFreeAccount")}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      </Link>
+                    </Button>
+                  ) : null}
+                  {!signedIn || signedIn.area === "member" ? (
+                    <Button asChild variant="secondary" size="lg">
+                      <Link href="/customer/discover">{t("marketing.actions.findGym")}</Link>
+                    </Button>
+                  ) : null}
+                </div>
+                {signedOut ? (
+                  <p className="mt-4 text-[13px] text-ink-3">
+                    Already a member?{" "}
+                    <Link href="/login/member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">{t("marketing.footer.signIn")}</Link>
                   </p>
-                  <p className="mt-2 text-[34px] font-semibold leading-none tabular transition-transform duration-500 ease-out group-hover:-translate-y-0.5">
-                    {t(`marketing.numbers.${value}`)}
-                  </p>
-                  <p className="mt-2 text-[12.5px] text-ink-3">{t(`marketing.numbers.${label}`)}</p>
+                ) : null}
+              </div>
+
+              <MemberCard />
+            </div>
+
+            {/* Gyms that are live on RIVET, when there are any. The directory
+                page carries the full loading, empty and error states; the
+                landing simply does not advertise a listing it cannot show. */}
+            {liveGyms.length > 0 ? (
+              <Reveal still className={styles.gymsPanel}>
+                {/* A stone panel framed at its corners, the way a QR carries its finders. */}
+                <span className={cn(styles.gymsCorner, styles.gymsCornerTl)} aria-hidden />
+                <span className={cn(styles.gymsCorner, styles.gymsCornerTr)} aria-hidden />
+                <span className={cn(styles.gymsCorner, styles.gymsCornerBl)} aria-hidden />
+                <span className={cn(styles.gymsCorner, styles.gymsCornerBr)} aria-hidden />
+                <div className="flex flex-wrap items-end justify-between gap-4">
+                  <h3 className="text-[19px] font-semibold tracking-tight">Gyms on RIVET</h3>
+                  <Link href="/customer/discover" className="text-[13.5px] font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">
+                    See every gym
+                  </Link>
+                </div>
+                <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {liveGyms.map((gym, index) => (
+                    <Reveal key={gym.id} delay={index * 80} className="h-full">
+                      <Link
+                        href={`/customer/gyms/${gym.id}`}
+                        className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-[border-color,box-shadow] duration-300 ease-out hover:border-ink hover:shadow-pop"
+                      >
+                        <div className="relative h-24 overflow-hidden px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
+                          <div className="absolute inset-0 opacity-20 marketing-grid" />
+                          <span className="relative flex items-center justify-between text-[12.5px] font-semibold tracking-[-0.01em]">
+                            {gym.shortName}
+                            <span className="flex items-center gap-1 text-[11.5px] font-medium">
+                              <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0} PT
+                            </span>
+                          </span>
+                          <Dumbbell
+                            className="absolute bottom-3 end-4 size-8 opacity-30 transition-transform duration-500 ease-out group-hover:-rotate-12 group-hover:scale-110"
+                            strokeWidth={1.4}
+                          />
+                        </div>
+                        <div className="flex flex-1 flex-col p-5">
+                          <p className="text-[12px] font-medium text-ink-3">{gym.category}</p>
+                          <h4 className="mt-1.5 text-[19px] font-semibold tracking-tight">{gym.name}</h4>
+                          <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-ink-2">{gym.tagline}</p>
+                          <div className="mt-auto flex items-center justify-between border-t border-line pt-4">
+                            <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                              <MapPin className="size-3.5" /> {gym.areas.join(" · ")}
+                            </span>
+                            <span className="flex items-center gap-1.5 text-[12px] font-medium">
+                              JD {gym.fromPriceMinor / 1000}+
+                              <ArrowRight className="size-3.5 -translate-x-1 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
+                            </span>
+                          </div>
+                        </div>
+                      </Link>
+                    </Reveal>
+                  ))}
                 </div>
               </Reveal>
-            ))}
-          </div>
-        </section>
-
-        {/* ---------------------------------------------------------------- Loop */}
-        <RivetLoopMachine />
-
-        {/* ----------------------------------------------------------------- Ops */}
-        <section className="night-surface bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24">
-          <div className="mx-auto max-w-[1344px]">
-            <SectionIntro
-              dark
-              eyebrow={t("marketing.ops.eyebrow")}
-              title={t("marketing.ops.title")}
-              description={t("marketing.ops.description")}
-            />
-            <div className="mt-12 grid gap-px overflow-hidden rounded-lg border border-night-line bg-night-line md:grid-cols-2 lg:grid-cols-4">
-              <DarkFeature
-                index={0}
-                icon={<Users />}
-                label={t("marketing.ops.member360.label")}
-                title={t("marketing.ops.member360.title")}
-                copy={t("marketing.ops.member360.copy")}
-              />
-              <DarkFeature
-                index={1}
-                icon={<ScanLine />}
-                label={t("marketing.ops.reception.label")}
-                title={t("marketing.ops.reception.title")}
-                copy={t("marketing.ops.reception.copy")}
-              />
-              <DarkFeature
-                index={2}
-                icon={<Banknote />}
-                label={t("marketing.ops.drawer.label")}
-                title={t("marketing.ops.drawer.title")}
-                copy={t("marketing.ops.drawer.copy")}
-              />
-              <DarkFeature
-                index={3}
-                icon={<ShieldCheck />}
-                label={t("marketing.ops.accountability.label")}
-                title={t("marketing.ops.accountability.title")}
-                copy={t("marketing.ops.accountability.copy")}
-              />
-            </div>
-            <div className="mt-10">
-              <Button asChild variant="night" size="lg" className="group">
-                <Link href="/login">
-                  {t("marketing.actions.signInToRivet")}{" "}
-                  <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </section>
-
-        {/* -------------------------------------------------------------- Member */}
-        <section id="member" className="scroll-mt-20 border-b border-ink/10 px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
-          <div className="mx-auto grid max-w-[1344px] gap-14 lg:grid-cols-[1fr_0.85fr] lg:items-center">
-            <div>
-              <SectionIntro
-                stacked
-                eyebrow={t("marketing.member.eyebrow")}
-                title={t("marketing.member.title")}
-                description={t("marketing.member.description")}
-              />
-              <ul className="mt-8 grid gap-3.5">
-                {(["status", "qr", "receipts", "language"] as const).map((item, index) => (
-                  <li key={item}>
-                    <Reveal delay={index * 80} className="group flex items-start gap-3 text-[14px] text-ink-2">
-                      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-success/30 transition-colors duration-300 group-hover:border-success group-hover:bg-success-bg">
-                        <Check className="size-3 text-success" />
-                      </span>
-                      {t(`marketing.member.benefits.${item}`)}
-                    </Reveal>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Button asChild size="lg" className="group">
-                  <Link href="/login/member/create">
-                    {t("marketing.actions.createFreeAccount")}{" "}
-                    <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                  </Link>
-                </Button>
-                <Button asChild variant="secondary" size="lg">
-                  <Link href="/customer/discover">{t("marketing.actions.findGym")}</Link>
-                </Button>
-              </div>
-            </div>
-
-            <MemberCard />
-          </div>
-        </section>
-
-        {/* --------------------------------------------------------- Marketplace */}
-        <section className="border-b border-ink/10 px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
-          <div className="mx-auto max-w-[1344px]">
-            <SectionIntro
-              eyebrow={t("marketing.network.eyebrow")}
-              title={t("marketing.network.title")}
-              description={t("marketing.network.description")}
-            />
-            {experienceStatus !== "ready" || marketplaceGyms.length === 0 ? (
-              <div className="mt-12">
-                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle={t("marketing.network.emptyTitle")} emptyDescription={t("marketing.network.emptyDescription")} />
-              </div>
-            ) : (
-              <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {marketplaceGyms.map((gym, index) => (
-                <Reveal key={gym.id} delay={index * 80} className="h-full">
-                <Link
-                  href={`/customer/gyms/${gym.id}`}
-                  className="group flex h-full flex-col overflow-hidden rounded-lg border border-line bg-surface transition-[transform,border-color,box-shadow] duration-300 ease-out hover:-translate-y-1.5 hover:border-ink hover:shadow-pop"
-                >
-                  <div className="relative h-24 overflow-hidden px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
-                    <div className="absolute inset-0 opacity-20 marketing-grid" />
-                    <span className="relative flex items-center justify-between font-mono text-[9.5px] uppercase tracking-[0.16em]">
-                      {gym.shortName}
-                      <span className="flex items-center gap-1">
-                        <Dumbbell className="size-3" /> {t("marketing.network.ptCount", { count: gym.trainers?.length ?? 0 })}
-                      </span>
-                    </span>
-                    <Dumbbell
-                      className="absolute bottom-3 end-4 size-8 opacity-30 transition-transform duration-500 ease-out group-hover:-rotate-12 group-hover:scale-110"
-                      strokeWidth={1.4}
-                    />
-                  </div>
-                  <div className="flex flex-1 flex-col p-5">
-                    <p className="eyebrow">{gym.category}</p>
-                    <h3 className="mt-1.5 text-[19px] font-semibold tracking-tight">{gym.name}</h3>
-                    <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-ink-2">{gym.tagline}</p>
-                    <div className="mt-auto flex items-center justify-between border-t border-line pt-4">
-                      <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
-                        <MapPin className="size-3.5" /> {gym.areas.join(" · ")}
-                      </span>
-                      <span className="flex items-center gap-1.5 text-[12px] font-medium">
-                        {t("marketing.network.fromPrice", { price: format.number(gym.fromPriceMinor / 1000) })}
-                        <ArrowRight className="size-3.5 -translate-x-1 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-                </Reveal>
-                ))}
-              </div>
-            )}
+            ) : null}
           </div>
         </section>
 
         {/* ------------------------------------------------------------- Pricing */}
-        <section id="pricing" className="scroll-mt-20 border-b border-ink/10 bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24">
+        <section
+          id="pricing"
+          data-landing-theme="paper"
+          aria-labelledby="pricing-title"
+          className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer8} ${styles.snapStart} bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+        >
           <div className="mx-auto max-w-[1344px]">
-            <SectionIntro
-              eyebrow={t("marketing.pricing.eyebrow")}
-              title={t("marketing.pricing.title")}
-              description={t("marketing.pricing.description")}
-            />
-            {experienceStatus !== "ready" || saasPlans.length === 0 ? (
-              <div className="mt-12">
-                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle={t("marketing.pricing.emptyTitle")} emptyDescription={t("marketing.pricing.emptyDescription")} />
+            <StoryMarker label={t("marketing.pricing.eyebrow")} />
+            <div className="mt-8">
+              <SectionIntro
+                id="pricing-title"
+                title="One branch or every branch. Same system."
+                description="Every plan includes the member app, staff permissions, audit history and the full revenue loop. Pay monthly, or once a year at 20% off."
+              />
+            </div>
+            {experienceStatus === "error" && saasPlans.length === 0 ? (
+              <div className="mt-8">
+                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Showing launch pricing" emptyDescription="The live catalog is temporarily unavailable. These prices are the approved launch defaults." />
               </div>
-            ) : (
-              <div className="mt-12 grid gap-4 lg:grid-cols-3">
-                {saasPlans.map((plan, index) => (
+            ) : null}
+            <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-[13.5px] font-semibold tracking-[-0.01em]">Billing</p>
+                <p className="mt-1 text-[12px] text-ink-3">Same features either way. Annual is paid once and saves {ANNUAL_DISCOUNT_PERCENT}%.</p>
+              </div>
+              <div role="tablist" aria-label="Billing interval" className="inline-flex rounded-md border border-line bg-surface p-1 shadow-sm">
+                {(["monthly", "annual"] as const).map((interval) => {
+                  const selected = billingInterval === interval;
+                  return (
+                    <button
+                      key={interval}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls="pricing-plans"
+                      onClick={() => setBillingInterval(interval)}
+                      className={`min-h-10 rounded px-4 py-2 text-[12.5px] font-medium transition-colors ${selected ? "bg-ink text-paper" : "text-ink-3 hover:text-ink"}`}
+                    >
+                      {interval === "monthly" ? "Monthly" : "Annual · Save 20%"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div id="pricing-plans" role="tabpanel" className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {pricingPlans.map((plan, index) => {
+                  const price = calculatePlanPrice(plan, billingInterval);
+                  const features = publicPlanFeatures(plan);
+                  const isEnterprise = plan.name === "Enterprise";
+                  const isNight = plan.tone === "night";
+                  const isSignal = plan.tone === "signal";
+                  return (
                 <Reveal key={plan.name} delay={index * 90} className="h-full">
                   <div
-                    className={`h-full transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1.5 hover:shadow-pop ${
-                      plan.tone === "night"
-                        ? "night-surface rounded-lg bg-night p-6 text-night-ink"
-                        : plan.tone === "signal"
-                          ? "rounded-lg border-2 border-signal bg-surface p-6 shadow-pop"
-                          : "rounded-lg border border-line bg-surface p-6"
-                    }`}
+                    className={cn(
+                      "rounded-lg",
+                      styles.tier,
+                      isNight ? styles.tierNight : isSignal ? styles.tierSignal : styles.tierPaper,
+                      isNight && "night-surface",
+                    )}
                   >
-                  <div className="flex items-center justify-between">
-                    <p className={plan.tone === "night" ? "eyebrow-night" : "eyebrow"}>{plan.name}</p>
-                    {plan.tone === "signal" ? (
-                      <span className="rounded-sm bg-signal px-2 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-white">
-                        {t("marketing.pricing.mostPopular")}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-6">
-                    <span className="text-[38px] font-semibold tabular">
-                      {t("marketing.pricing.price", { amount: format.number(plan.priceMinor / 1000) })}
-                    </span>
-                    <span className={plan.tone === "night" ? "text-night-ink-3" : "text-ink-3"}>
-                      {" "}
-                      {t("marketing.pricing.perMonth")}
-                    </span>
-                  </p>
-                  <ul className={`mt-7 grid gap-2.5 text-[13px] ${plan.tone === "night" ? "text-night-ink-2" : "text-ink-2"}`}>
-                    {[
-                      t("marketing.pricing.branches", { count: plan.branches }),
-                      // `count` drives CLDR plural selection; `formatted` is what
-                      // the reader sees, with thousands separators.
-                      t("marketing.pricing.staff", { count: plan.staff, formatted: format.number(plan.staff) }),
-                      t("marketing.pricing.members", { count: plan.members, formatted: format.number(plan.members) }),
-                      t("marketing.pricing.included"),
-                    ].map((line) => (
-                      <li key={line} className="flex items-start gap-2.5">
-                        <Check className={`mt-0.5 size-3.5 shrink-0 ${plan.tone === "night" ? "text-success" : "text-success"}`} />
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    asChild
-                    variant={plan.tone === "night" ? "night" : plan.tone === "signal" ? "signal" : "secondary"}
-                    className="mt-8 w-full"
-                  >
-                    <Link href="/signup">{t("marketing.actions.applyShort")}</Link>
-                  </Button>
+                    <div className={styles.tierBody}>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[15px] font-semibold tracking-[-0.01em]">{plan.name}</p>
+                        {isSignal ? (
+                          <span className="rounded-sm bg-signal px-2 py-1 text-[11px] font-medium leading-none text-white">{t("marketing.pricing.mostPopular")}</span>
+                        ) : isEnterprise ? (
+                          <span className="rounded-sm border border-night-line px-2 py-1 text-[11px] font-medium leading-none text-night-ink-2">
+                            Multi-site
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-6">
+                        <span className="text-[34px] font-semibold tabular">JD {formatJodMinor(price.effectiveMonthlyMinor)}</span>
+                        <span className={isNight ? "text-night-ink-3" : "text-ink-3"}>{" "}{t("marketing.pricing.perMonth")}</span>
+                      </p>
+                      {billingInterval === "annual" ? (
+                        <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>
+                          JD {formatJodMinor(price.annualTotalMinor)} billed annually · <strong className={isNight ? "text-night-ink-2" : "text-ink-2"}>{t("common.action.save")}{" "}{ANNUAL_DISCOUNT_PERCENT}%</strong>
+                        </div>
+                      ) : (
+                        <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>Billed monthly · cancel before renewal</div>
+                      )}
+                      <ul className={`mt-7 grid gap-2.5 text-[13px] ${isNight ? "text-night-ink-2" : "text-ink-2"}`}>
+                        {features.map((line) => (
+                          <li key={line} className="flex items-start gap-2.5">
+                            <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                      {signedIn ? null : (
+                        <div className="mt-auto pt-8">
+                          <Button
+                            asChild
+                            variant={isNight ? "night" : isSignal ? "signal" : "secondary"}
+                            size="lg"
+                            className="w-full"
+                          >
+                            <Link href={pricingSignupHref(plan.name, billingInterval)}>{t("marketing.actions.applyShort")}</Link>
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </Reveal>
-                ))}
-              </div>
-            )}
+                  );
+                })}
+            </div>
           </div>
         </section>
 
-        {/* ----------------------------------------------------------------- CTA */}
-        <section className="marketing-grid relative overflow-hidden px-5 py-24 sm:px-8 lg:px-12">
-          <div className="relative mx-auto max-w-3xl text-center">
-            <Reveal>
-              <p className="eyebrow">{t("marketing.cta.eyebrow")}</p>
-              <h2 className="marketing-display mt-5 text-[clamp(2.6rem,5.2vw,4.4rem)] leading-[0.92]">
-                {t("marketing.cta.title")}
-              </h2>
-              <p className="mx-auto mt-6 max-w-xl text-[15.5px] leading-relaxed text-ink-2">
-                {t("marketing.cta.body")}
-              </p>
-              {/* One action here — the header already carries sign-in, and the ops
-                  section owns the demo link. */}
-              <div className="mt-8 flex flex-wrap justify-center gap-3">
-                <Button asChild variant="signal" size="lg" className="group">
-                  <Link href="/signup">
-                    {t("marketing.actions.apply")}{" "}
-                    <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
-                  </Link>
-                </Button>
-              </div>
-            </Reveal>
+        {/* ----------------------------------------------------------- Next step */}
+        <SheetUnder tone="sunken" />
+        <section
+          id="contact"
+          data-landing-theme="dark"
+          aria-labelledby="contact-title"
+          className={`${styles.coverSheet} ${styles.inkSheet} ${styles.layer9} ${styles.snapStart} night-surface relative overflow-hidden bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24`}
+        >
+          <div className="pointer-events-none absolute inset-0 opacity-[0.06]" aria-hidden>
+            <div className="absolute inset-y-0 start-[68%] w-px bg-night-ink" />
+            <div className="absolute inset-y-0 start-[72%] w-px bg-night-ink" />
+            <div className="absolute inset-y-0 start-[76%] w-px bg-night-ink" />
+          </div>
+          <div className="relative mx-auto max-w-[1344px]">
+            <StoryMarker label="Next step" dark />
+            <div className="mt-10 grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-20">
+              <Reveal>
+                <div>
+                  <h2 id="contact-title" className="max-w-xl text-[clamp(2.4rem,4.6vw,4.1rem)] font-semibold leading-[0.95] tracking-[-0.03em] text-night-ink [font-family:var(--font-marketing-display)]">
+                    Bring RIVET to your gym.
+                  </h2>
+                  <p className="mt-6 max-w-md text-[15px] leading-[1.7] text-night-ink-2">
+                    Send an application with your branches and how you run the desk. We review it, then set up your workspace with you.
+                  </p>
+                </div>
+              </Reveal>
+              <Reveal delay={120}>
+                <div className="flex flex-wrap items-center gap-5 lg:justify-end">
+                  {signedIn ? (
+                    <Button asChild variant="signal" size="lg" className="group">
+                      <Link href={signedIn.href}>
+                        {signedIn.verb}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button asChild variant="signal" size="lg" className="group">
+                      <Link href="/signup">{t("marketing.actions.apply")}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </Reveal>
+            </div>
           </div>
         </section>
       </main>
 
-      <PublicFooter />
+      <div data-landing-theme="dark" className={styles.snapEnd}>
+        <PublicFooter />
+      </div>
+      </div>
     </div>
   );
 }
@@ -409,117 +484,42 @@ export default function LandingPage() {
 // ---------------------------------------------------------------------------
 
 /**
- * The member app as a card — the same surfaces the phone in the hero shows,
- * at reading size. Values stay non-numeric: this is the shape of the record,
- * not a claim about anyone's membership.
+ * The member's Entry QR, exactly as the app shows it at reception — the
+ * product's own dialog at reading size, with a sample code in place of a
+ * signed pass.
  */
 function MemberCard() {
-  const t = useT();
   return (
-    <Reveal>
-      <div className="night-surface mx-auto w-full max-w-sm rounded-lg bg-night p-6 text-night-ink shadow-[0_24px_70px_rgb(27_26_21/0.22)]">
-        <div className="flex items-center justify-between border-b border-night-line pb-4 font-mono text-[9px] uppercase tracking-[0.15em] text-night-ink-3">
-          <span>{t("marketing.member.card.badge")}</span>
-          <span className="flex items-center gap-1.5 text-success">
-            <span className="relative flex size-1.5">
-              <span className="absolute inset-0 animate-pulse-ring rounded-full bg-current" />
-              <span className="relative size-1.5 rounded-full bg-current" />
-            </span>
-            {t("marketing.member.card.live")}
-          </span>
-        </div>
-        <p className="mt-6 eyebrow-night">{t("marketing.member.card.eyebrow")}</p>
-        <h3 className="mt-1.5 text-[27px] font-semibold tracking-tight">{t("marketing.member.card.title")}</h3>
-        <p className="mt-1 font-mono text-[10px] text-night-ink-3">{t("marketing.member.card.meta")}</p>
-        <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-md bg-night-line">
-          <div className="bg-night-2 p-4 transition-colors duration-300 hover:bg-night-3">
-            <p className="eyebrow-night">{t("marketing.member.card.membershipLabel")}</p>
-            <p className="mt-2 text-[14px] font-semibold">{t("marketing.member.card.membershipValue")}</p>
-          </div>
-          <div className="bg-night-2 p-4 transition-colors duration-300 hover:bg-night-3">
-            <p className="eyebrow-night">{t("marketing.member.card.visitsLabel")}</p>
-            <p className="mt-2 text-[14px] font-semibold">{t("marketing.member.card.visitsValue")}</p>
-          </div>
-        </div>
-
-        {/* The entry code, with the desk's scan sweeping it — decorative only. */}
-        <div className="mt-5 rounded-md bg-night-2 p-4">
-          <div className="relative mx-auto w-full max-w-[168px] overflow-hidden rounded-sm bg-night-ink p-3 text-night">
-            <DecorativeQr />
-            <span className="pointer-events-none absolute inset-x-0 top-0 h-[2px] animate-qr-scan bg-signal" aria-hidden />
-          </div>
-          <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-[12px] font-semibold">
-            <ScanLine className="size-3.5 text-signal" /> {t("marketing.member.card.qrTitle")}
-          </p>
-          <p className="mt-1 text-center text-[10px] text-night-ink-3">
-            {t("marketing.member.card.qrNote")}
-          </p>
-        </div>
-
-        <p className="mt-3 text-center font-mono text-[9px] uppercase tracking-[0.14em] text-night-ink-3">
-          {t("marketing.member.card.footer")}
-        </p>
+    <Reveal className="flex justify-center lg:justify-end">
+      <div className="w-full max-w-sm" aria-hidden>
+        <EntryPassCard />
       </div>
     </Reveal>
   );
 }
 
 function SectionIntro({
-  eyebrow,
+  id,
   title,
   description,
-  dark = false,
   stacked = false,
 }: {
-  eyebrow: string;
+  id?: string;
   title: string;
   description: string;
-  dark?: boolean;
   stacked?: boolean;
 }) {
   return (
-    <Reveal className={stacked ? "max-w-xl" : "grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"}>
-      <div>
-        <p className={`font-mono text-[10px] font-medium uppercase tracking-[0.18em] ${dark ? "text-signal" : "text-ink-3"}`}>{eyebrow}</p>
-        <h2
-          className={`marketing-display mt-4 text-[clamp(2.3rem,4vw,3.7rem)] leading-[0.95] ${dark ? "text-night-ink" : "text-ink"}`}
-        >
-          {title}
-        </h2>
-      </div>
-      <p className={`text-[14.5px] leading-[1.7] ${dark ? "text-night-ink-2" : "text-ink-2"} ${stacked ? "mt-5" : "lg:pb-2"}`}>
+    <Reveal className={stacked ? "mt-7 max-w-xl" : "grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"}>
+      <h2
+        id={id}
+        className="text-[clamp(2rem,3.4vw,3.1rem)] font-semibold leading-[1.02] tracking-[-0.025em] text-ink [font-family:var(--font-marketing-display)]"
+      >
+        {title}
+      </h2>
+      <p className={`text-[14.5px] leading-[1.7] text-ink-2 ${stacked ? "mt-5" : "lg:pb-2"}`}>
         {description}
       </p>
-    </Reveal>
-  );
-}
-
-function DarkFeature({
-  icon,
-  label,
-  title,
-  copy,
-  index,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  title: string;
-  copy: string;
-  index: number;
-}) {
-  return (
-    <Reveal delay={index * 90}>
-      <div className="group relative h-full bg-night-2 p-6 transition-colors duration-300 hover:bg-night-3">
-        {/* A signal rule draws across the cell on hover — the same accent the
-            product uses to mark the active surface. */}
-        <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-signal transition-transform duration-500 ease-out group-hover:scale-x-100 rtl:origin-right" />
-        <span className="flex size-10 items-center justify-center rounded-md border border-night-line text-signal transition-colors duration-300 group-hover:border-signal group-hover:bg-signal group-hover:text-white [&_svg]:size-4">
-          {icon}
-        </span>
-        <p className="mt-7 eyebrow-night">{label}</p>
-        <h3 className="mt-2.5 text-[19px] font-semibold tracking-tight">{title}</h3>
-        <p className="mt-3 text-[12.5px] leading-relaxed text-night-ink-2">{copy}</p>
-      </div>
     </Reveal>
   );
 }

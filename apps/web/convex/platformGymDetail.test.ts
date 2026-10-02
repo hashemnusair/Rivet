@@ -55,6 +55,17 @@ describe("platform gym detail projection", () => {
     expect(JSON.stringify(beta)).not.toContain("Alpha");
   });
 
+  it("passes through only the already-validated logo URL and keeps missing media explicit", () => {
+    const withLogo = buildPlatformGymDetail(source({ logoUrl: "https://storage.example/alpha-logo.png" }));
+    expect(withLogo.logoUrl).toEqual({ state: "available", value: "https://storage.example/alpha-logo.png" });
+
+    const withoutLogo = buildPlatformGymDetail(source());
+    expect(withoutLogo.logoUrl).toEqual({ state: "not_configured" });
+
+    const directoryOnly = buildPlatformGymDetail(source({ organization: undefined, logoUrl: "https://storage.example/should-not-leak.png" }));
+    expect(directoryOnly.logoUrl).toEqual({ state: "not_available" });
+  });
+
   it("does not borrow tenant facts when a directory row has no target organization", () => {
     const detail = buildPlatformGymDetail(source({
       gym: { ...source().gym, id: "directory-only", name: "Directory Only" },
@@ -74,6 +85,15 @@ describe("platform gym detail projection", () => {
     expect(detail.activity).toEqual({ state: "not_available" });
   });
 
+  it("does not present a stale public toggle for a suspended tenant", () => {
+    const detail = buildPlatformGymDetail(source({
+      gym: { ...source().gym, isPublic: true },
+      organization: { ...source().organization!, status: "suspended" },
+    }));
+
+    expect(detail.controls).toMatchObject({ status: "suspended", plan: "Growth", isPublic: false });
+  });
+
   it("does not expose an invented health score and keeps missing billing providers explicit", () => {
     const detail = buildPlatformGymDetail(source());
 
@@ -82,5 +102,16 @@ describe("platform gym detail projection", () => {
     expect(detail.subscription.renewalDate).toEqual({ state: "not_configured" });
     expect(detail.subscription.paymentMethod).toEqual({ state: "not_configured" });
     expect(detail.subscription.invoices).toEqual({ state: "not_configured" });
+  });
+
+  it("surfaces the derived recurring amount and scoped invoices when the caller provides them", () => {
+    const detail = buildPlatformGymDetail({
+      ...source(),
+      recurringAmountMinor: 143_200,
+      invoices: [{ id: "INV-1", status: "paid" }, { id: "INV-2", status: "open" }],
+    });
+
+    expect(detail.subscription.recurringAmount).toEqual({ state: "available", value: { amount: 143_200, currency: source().organization!.currency } });
+    expect(detail.subscription.invoices).toEqual({ state: "available", value: [{ id: "INV-1", status: "paid" }, { id: "INV-2", status: "open" }] });
   });
 });

@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale } from "@/lib/i18n/provider";
+
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { RefreshCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -14,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import { getApi } from "@/lib/api/client";
+import { bumpApiScope } from "@/lib/api/scope";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { ERR, isApiError } from "@/lib/api/errors";
 import type { MockBehavior } from "@/lib/api/GymOSApi";
@@ -25,7 +28,16 @@ import { UnsavedChangesProvider } from "@/lib/providers/unsaved-changes-provider
 import { getAppQueryDefaults } from "@/lib/providers/query-policy";
 
 /** Error codes where retrying cannot change the outcome. */
-const TERMINAL_ERROR_CODES: string[] = [ERR.FORBIDDEN, ERR.NOT_FOUND, ERR.VALIDATION, ERR.UNAUTHENTICATED];
+const TERMINAL_ERROR_CODES: string[] = [
+  ERR.FORBIDDEN,
+  ERR.NOT_FOUND,
+  ERR.VALIDATION,
+  ERR.UNAUTHENTICATED,
+  ERR.ORGANIZATION_SELECTION_REQUIRED,
+  ERR.INVITATION_NOT_ACCEPTED,
+  ERR.INVITATION_REVOKED,
+  ERR.IDENTITY_EMAIL_CONFLICT,
+];
 
 interface AppContextValue {
   session: Session | undefined;
@@ -45,6 +57,9 @@ interface AppContextValue {
   behavior: MockBehavior;
   setBehavior: (b: Partial<MockBehavior>) => void;
   resetDemo: () => Promise<void>;
+  dir: "ltr" | "rtl";
+  setDir: (dir: "ltr" | "rtl") => void;
+  toggleDir: () => void;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
 }
@@ -122,7 +137,7 @@ function QueryRefreshNotice() {
 
   return (
     <div
-      className="fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[11.5px] text-warning-deep shadow-sm"
+      className="fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[12px] text-warning-deep shadow-sm"
       role="status"
       aria-live="polite"
     >
@@ -145,6 +160,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [signedIn, setSignedIn] = useState(false);
   const [behavior, setBehaviorState] = useState<MockBehavior>({ ...DEFAULT_BEHAVIOR });
+  const { dir, setLocale } = useLocale();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState<Session | undefined>(undefined);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -152,11 +168,11 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const convexSessionKey = useRef<string | undefined>(undefined);
   const convexMode = isConvexMode();
   const identity = useRivetIdentity();
+  const workspacePresent = Boolean(session?.workspace);
 
   // UI preferences are local presentation state in both modes. Identity and
   // workspace sessions are deliberately not restored from browser storage in
-  // Convex mode. Direction is not here: it derives from the language chosen in
-  // LocaleProvider, so there is one switch rather than two that can disagree.
+  // Convex mode.
   useEffect(() => {
     const collapsed = window.localStorage.getItem(STORAGE_KEYS.sidebar);
     if (collapsed === "1") setSidebarCollapsed(true);
@@ -203,11 +219,26 @@ function SessionProvider({ children }: { children: ReactNode }) {
     convexSessionKey.current = key;
     setSessionLoading(true);
 
-    void getApi()
-      .getSession()
+    const api = getApi();
+    const rememberedBranch = window.sessionStorage.getItem(STORAGE_KEYS.branch) as UUID | null;
+    const loadSession = async () => {
+      if (!rememberedBranch) return await api.getSession();
+      try {
+        // The branch is presentation context, never an authorization claim.
+        // Convex validates it against the signed-in membership on every call.
+        return await api.setActiveBranch(rememberedBranch);
+      } catch (error) {
+        if (!isApiError(error) || (error.code !== ERR.FORBIDDEN && error.code !== ERR.NOT_FOUND)) throw error;
+        window.sessionStorage.removeItem(STORAGE_KEYS.branch);
+        return await api.getSession();
+      }
+    };
+
+    void loadSession()
       .then((nextSession) => {
         setSession(nextSession);
         setSignedIn(true);
+        bumpApiScope();
       })
       .catch(() => {
         setSession(undefined);
@@ -215,6 +246,36 @@ function SessionProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => setSessionLoading(false));
   }, [convexMode, identity.email, identity.memberships, identity.platformAdmin, identity.status, identity.userId]);
+
+  // A platform subscription mutation updates the tenant organization and its
+  // entitlement snapshot. Keep the active gym session in sync with that
+  // server-owned projection so plan changes unlock/lock navigation and
+  // feature requests immediately without a full reload. Convex uses its
+  // native query watch; the mock emits the same event after each mutation.
+  useEffect(() => {
+    if (!signedIn || !workspacePresent) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    const api = getApi();
+    if (typeof api.subscribeWorkspaceAccess !== "function") return;
+    const handleError = () => {
+      // Preserve the last known session/workspace while a background watch is
+      // unavailable. The existing stale-data notice covers query failures.
+    };
+    void api.subscribeWorkspaceAccess((workspace) => {
+      if (cancelled) return;
+      setSession((current) => current ? { ...current, workspace } : current);
+      queryClient.setQueryData(qk.workspaceAccess, workspace);
+      queryClient.invalidateQueries({ queryKey: qk.settings });
+    }, handleError).then((disposer) => {
+      if (cancelled) disposer();
+      else unsubscribe = disposer;
+    }).catch(handleError);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [queryClient, session?.organization.id, signedIn, workspacePresent]);
 
   const setBehavior = useCallback((b: Partial<MockBehavior>) => {
     setBehaviorState((prev) => {
@@ -227,10 +288,18 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (role: RoleKey, branchId?: UUID, identity?: { name: string; email: string }) => {
       if (convexMode) {
-        const s = await getApi().getSession();
+        // A selected-branch membership must carry its concrete branch into
+        // the first session query. Calling getSession() with no branch would
+        // correctly fail closed for a multi-branch selected-scope user, but
+        // the login handoff would then remain stuck on the transition screen.
+        // All-branch memberships intentionally omit this value: their initial
+        // all-branches session is read-only until the user chooses a branch
+        // from the shell selector.
+        const s = branchId ? await getApi().setActiveBranch(branchId) : await getApi().getSession();
         setSession(s);
         setSignedIn(true);
         queryClient.clear();
+        bumpApiScope();
         return;
       }
       const api = getApi();
@@ -242,6 +311,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       setSession(s);
       setSignedIn(true);
       queryClient.clear();
+      bumpApiScope();
     },
     [convexMode, queryClient],
   );
@@ -253,6 +323,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
     setSignedIn(false);
     setSession(undefined);
     queryClient.clear();
+    bumpApiScope();
   }, [queryClient]);
 
   const switchRole = useCallback(
@@ -264,6 +335,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       window.sessionStorage.removeItem(STORAGE_KEYS.branch);
       setSession(s);
       queryClient.clear();
+      bumpApiScope();
       router.push(role === "receptionist" ? "/reception" : "/dashboard");
     },
     [convexMode, queryClient, router],
@@ -272,21 +344,22 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const setBranch = useCallback(
     async (branchId: UUID | undefined) => {
       const s = await getApi().setActiveBranch(branchId);
-      if (!convexMode) {
-        if (branchId) window.sessionStorage.setItem(STORAGE_KEYS.branch, branchId);
-        else window.sessionStorage.removeItem(STORAGE_KEYS.branch);
-      }
+      if (branchId) window.sessionStorage.setItem(STORAGE_KEYS.branch, branchId);
+      else window.sessionStorage.removeItem(STORAGE_KEYS.branch);
       setSession(s);
       queryClient.invalidateQueries();
+      bumpApiScope();
     },
-    [convexMode, queryClient],
+    [queryClient],
   );
 
   const selectOrganization = useCallback(async (organizationId: UUID) => {
     if (!convexMode) return;
     const nextSession = await getApi().selectOrganization(organizationId);
+    window.sessionStorage.removeItem(STORAGE_KEYS.branch);
     setSession(nextSession);
     queryClient.clear();
+    bumpApiScope();
   }, [convexMode, queryClient]);
 
   const refreshSession = useCallback(async () => {
@@ -302,8 +375,14 @@ function SessionProvider({ children }: { children: ReactNode }) {
     const s = await getApi().getSession();
     setSession(s);
     queryClient.clear();
+    bumpApiScope();
     queryClient.invalidateQueries({ queryKey: qk.session });
   }, [convexMode, queryClient]);
+
+  // Compatibility for existing preview controls: direction always follows the
+  // single UI locale and must never overwrite the server's first-paint choice.
+  const setDir = useCallback((next: "ltr" | "rtl") => setLocale(next === "rtl" ? "ar" : "en"), [setLocale]);
+  const toggleDir = useCallback(() => setLocale(dir === "rtl" ? "en" : "ar"), [dir, setLocale]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => {
@@ -328,13 +407,20 @@ function SessionProvider({ children }: { children: ReactNode }) {
       behavior,
       setBehavior,
       resetDemo,
+      dir,
+      setDir,
+      toggleDir,
       sidebarCollapsed,
       toggleSidebar,
     }),
-    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, refreshSession, behavior, setBehavior, resetDemo, sidebarCollapsed, toggleSidebar],
+    [session, identity.memberships, sessionLoading, signedIn, signIn, signOut, switchRole, setBranch, selectOrganization, refreshSession, behavior, setBehavior, resetDemo, dir, setDir, toggleDir, sidebarCollapsed, toggleSidebar],
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
 export function useApp(): AppContextValue {

@@ -45,17 +45,31 @@ export interface MarketplaceGym {
   featured: boolean;
   subscriptionStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
   rivetPlan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  billingInterval?: "monthly" | "annual";
   joinedAt: string;
   lastActiveAt: string;
   monthlyRevenueMinor: number;
+  /** Platform-only safe URL for the published gym logo. Public marketplace
+   * responses continue to use the scoped `logo` media object instead. */
+  logoUrl?: string;
   /** Platform-only visibility flag; public API responses omit it. */
   isPublic?: boolean;
+  /**
+   * Platform-only linkage flag. A false value identifies a legacy directory
+   * row without a provisioned tenant; public API responses omit it.
+   */
+  isProvisioned?: boolean;
   /** Platform-only subscription lifecycle facts. */
   trialEndsAt?: string;
   subscriptionStartedAt?: string;
   currentPeriodEndsAt?: string;
   cancelledAt?: string;
   subscriptionStatusReason?: string;
+  /** Platform-only archive marker. Archived tenants remain auditable but are
+   * excluded from public discovery and normal admin directory views. */
+  isArchived?: boolean;
+  archivedAt?: string;
+  archiveReason?: string;
   branches: MarketplaceBranch[];
 }
 
@@ -138,6 +152,31 @@ export interface CustomerMembership {
   lastCheckInAt: string;
   visitHistory: CustomerVisit[];
   activity?: CustomerActivity[];
+  referral?: CustomerReferralProgram;
+}
+
+export interface CustomerReferralProgram {
+  membershipId: string;
+  enabled: boolean;
+  rewardDays: number;
+  maxRewardDaysPerWindow: number;
+  windowDays: number;
+  earnedDays: number;
+  remainingDays: number;
+  successfulReferrals: number;
+  recordedReferrals: number;
+  sharePath?: string;
+  /** Dated, member-safe reward history — never names the referred person. */
+  history: CustomerReferralRewardEvent[];
+}
+
+export type CustomerReferralRewardStatus = "applied" | "capped" | "ineligible" | "pending";
+
+export interface CustomerReferralRewardEvent {
+  id: string;
+  occurredAt: string;
+  days: number;
+  status: CustomerReferralRewardStatus;
 }
 
 export interface CustomerVisit {
@@ -155,12 +194,15 @@ export interface CustomerActivity {
   type: "check_in" | "membership" | "payment" | "pt";
   title: string;
   detail?: string;
+  href?: string;
   occurredAt: string;
 }
 
 export interface TrialBooking {
   id: string;
   customerId?: string;
+  /** Stable client retry key for the durable customer trial mutation. */
+  idempotencyKey?: string;
   gymId: string;
   branchId: string;
   fullName: string;
@@ -186,10 +228,14 @@ function previewTrialSchedule(slots: string[]): Record<WeekdayKey, TrialSchedule
 }
 
 export const MARKETPLACE_GYMS: MarketplaceGym[] = [
+  // These rows are explicit preview fixtures. They are only loaded by the
+  // mock adapter/provider; production Convex mode starts with an empty live
+  // snapshot and never falls back to this catalog.
   {
     id: "forge-fitness",
     name: "Forge Fitness Club",
     shortName: "FORGE",
+    contactPhone: "+962 79 555 0100",
     tagline: "Strength, conditioning, and a floor that remembers your name.",
     description:
       "A serious but welcoming training club with two Amman branches, coached small groups, open gym, and practical plans for people who train consistently.",
@@ -210,6 +256,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     joinedAt: "2026-04-18",
     lastActiveAt: "2026-07-31T13:42:00+03:00",
     monthlyRevenueMinor: 48_750_000,
+    isPublic: true,
     branches: [
       {
         id: "forge-abdoun",
@@ -255,6 +302,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     joinedAt: "2026-05-06",
     lastActiveAt: "2026-07-31T12:18:00+03:00",
     monthlyRevenueMinor: 29_400_000,
+    isPublic: true,
     branches: [
       {
         id: "pulse-dabouq",
@@ -290,6 +338,7 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     joinedAt: "2026-03-11",
     lastActiveAt: "2026-07-31T13:51:00+03:00",
     monthlyRevenueMinor: 62_900_000,
+    isPublic: true,
     branches: [
       {
         id: "her-khalda",
@@ -330,9 +379,11 @@ export const MARKETPLACE_GYMS: MarketplaceGym[] = [
     featured: false,
     subscriptionStatus: "trial",
     rivetPlan: "Starter",
+    trialEndsAt: "2026-09-30T20:59:59.999Z",
     joinedAt: "2026-07-22",
     lastActiveAt: "2026-07-31T11:04:00+03:00",
     monthlyRevenueMinor: 13_850_000,
+    isPublic: true,
     branches: [
       {
         id: "district-jabal-amman",
@@ -382,6 +433,22 @@ export const INITIAL_CUSTOMER_MEMBERSHIPS: CustomerMembership[] = [
     balanceMinor: 0,
     qrValue: "rivet://entry/forge-fitness/ABD-2214/customer-lina",
     lastCheckInAt: "2026-07-30T19:12:00+03:00",
+    // The mock provider paints this fixture synchronously before its API
+    // subscriptions start. Keep the preview projection aligned with the
+    // seeded operational policy; the mock API replaces it with live reward
+    // progress and a generated share path after the member takes an action.
+    referral: {
+      membershipId: "membership-lina-forge",
+      enabled: true,
+      rewardDays: 7,
+      maxRewardDaysPerWindow: 30,
+      windowDays: 90,
+      earnedDays: 0,
+      remainingDays: 30,
+      successfulReferrals: 0,
+      recordedReferrals: 0,
+      history: [],
+    },
     visitHistory: [
       { id: "visit-lina-3", memberName: "Lina Haddad", branchId: "forge-abdoun", branchName: "Forge — Abdoun", occurredAt: "2026-07-30T19:12:00+03:00", decision: "allowed", checkedInByName: "Front desk" },
       { id: "visit-lina-2", memberName: "Lina Haddad", branchId: "forge-abdoun", branchName: "Forge — Abdoun", occurredAt: "2026-07-28T18:46:00+03:00", decision: "allowed", checkedInByName: "Front desk" },
@@ -418,12 +485,6 @@ export const INITIAL_TRIAL_BOOKINGS: TrialBooking[] = [
     createdAt: "2026-07-31T12:35:00+03:00",
   },
 ];
-
-export const SAAS_PLANS = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-] as const;
 
 export function gymById(id: string) {
   return MARKETPLACE_GYMS.find((gym) => gym.id === id);

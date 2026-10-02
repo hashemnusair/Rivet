@@ -24,3 +24,7 @@ This is a documentation checkpoint on **`arabic-localisation`**, built directly 
 Do not silently refresh v1 from a mutable live room. New jointly approved wording becomes a new version with a decision diff and explicit supersession. A changed draft in the room does not by itself replace this approved checkpoint. Preserve old snapshots and their checksums.
 
 The original main-branch review-room README and downloadable implementation prompt describe the questionnaire workflow. During integration, preserve that operational documentation under a review-room section or separate file, and update both the repository prompt and its public download to point to this approved standard. Preserve the public name picker, saved choices and collaborative behavior.
+
+## Current integration
+
+The integration also preserves the newer local `arabic-foundation` history at `9fbd53c`. Its typed catalogs, translated member/auth flows and tests extend the older Arabic work; draft wording is being aligned with v1. See [REVIEW_ROOM.md](REVIEW_ROOM.md) for the current public review-room operation and [COVERAGE.md](COVERAGE.md) for implementation status.

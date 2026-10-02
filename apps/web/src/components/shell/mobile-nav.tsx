@@ -8,11 +8,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils/cn";
-import { useApp, usePermissions } from "@/lib/providers/app-providers";
+import { useApp } from "@/lib/providers/app-providers";
+import { useT } from "@/lib/i18n/provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { navIsActive } from "./sidebar";
-import { NAV_SECTIONS } from "./nav-config";
-import { useT } from "@/lib/i18n/provider";
+import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
+import { ContextLabel } from "@/components/ui/typography";
 
 /**
  * Off-canvas primary navigation for viewports below lg, where the fixed
@@ -20,10 +21,11 @@ import { useT } from "@/lib/i18n/provider";
  * Escape handling and scroll lock; styled as a drawer, not a modal.
  */
 export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const t = useT();
   const pathname = usePathname();
-  const { canAny } = usePermissions();
+  const t = useT();
   const { session, setBranch } = useApp();
+  const brandLogo = session?.organization.brand?.logoUrl;
+  const brandName = session?.organization.name ?? "RIVET";
 
   // Close once a navigation lands (covers both drawer links and programmatic nav).
   const previousPath = useRef(pathname);
@@ -35,7 +37,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
   }, [pathname, onOpenChange]);
 
   const role = session?.roles[0];
-  const canPickBranch = role === "owner" || role === "manager" || role === "auditor";
+  const canPickBranch = role === "owner" || role === "manager";
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -43,31 +45,34 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 backdrop-blur-[2px] data-[state=open]:animate-fade-in lg:hidden" />
         <DialogPrimitive.Content
           className="night-surface fixed inset-y-0 start-0 z-50 flex w-[280px] max-w-[85vw] flex-col bg-night text-night-ink shadow-dialog outline-none data-[state=open]:animate-fade-in lg:hidden"
-          aria-label={t("nav.chrome.navigationMenu")}
+          aria-label={t("nav.drawer.menu")}
         >
           <VisuallyHidden>
-            <DialogPrimitive.Title>{t("nav.chrome.navigationMenu")}</DialogPrimitive.Title>
+            <DialogPrimitive.Title>{t("nav.drawer.menu")}</DialogPrimitive.Title>
           </VisuallyHidden>
 
           {/* Brand + close */}
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-night-line px-4">
-            <Image src="/brand/rivet-lockup-rev.png" alt="RIVET" width={110} height={28} style={{ height: "auto" }} priority />
+            <div className="flex min-w-0 flex-col">
+              <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} priority unoptimized={Boolean(brandLogo)} />
+              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] text-night-ink-3">{t("nav.sidebar.operatedBy")}</span> : null}
+            </div>
             <DialogPrimitive.Close
               className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"
-              aria-label={t("nav.chrome.closeNavigation")}
+              aria-label={t("nav.drawer.closeMenu")}
             >
               <X className="size-4" />
             </DialogPrimitive.Close>
           </div>
 
           {/* Nav — same sections and permission filtering as the desktop sidebar */}
-          <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label={t("nav.aria.primary")}>
+          <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label={t("nav.sidebar.primary")}>
             {NAV_SECTIONS.map((section) => {
-              const visible = section.items.filter((item) => !item.anyPermission || canAny(item.anyPermission));
+              const visible = section.items.filter((item) => navItemIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
               if (visible.length === 0) return null;
               return (
                 <div key={section.labelKey} className="mb-4">
-                  <p className="eyebrow-night px-2.5 pb-1.5">{t(`nav.section.${section.labelKey}`)}</p>
+                  <ContextLabel tone="night" className="px-2.5 pb-1.5">{t(section.labelKey)}</ContextLabel>
                   <ul className="space-y-0.5">
                     {visible.map((item) => {
                       const active = navIsActive(item.href, pathname);
@@ -77,20 +82,17 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                             href={item.href}
                             aria-current={active ? "page" : undefined}
                             className={cn(
-                              "relative flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-[13.5px] transition-colors duration-100",
+                              "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-[13.5px] transition-colors duration-100",
                               active
                                 ? "bg-night-3 text-night-ink font-medium"
                                 : "text-night-ink-2 hover:bg-night-2 hover:text-night-ink",
                             )}
                           >
-                            {active ? (
-                              <span aria-hidden className="absolute start-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-signal" />
-                            ) : null}
                             <item.icon
                               className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3")}
                               aria-hidden
                             />
-                            <span className="truncate">{t(`nav.item.${item.labelKey}`)}</span>
+                            <span className="truncate">{t(item.labelKey)}</span>
                           </Link>
                         </li>
                       );
@@ -110,7 +112,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                   value={session.activeBranchId ?? "all"}
                   onValueChange={(v) => setBranch(v === "all" ? undefined : v)}
                 >
-                  <SelectTrigger sizeVariant="sm" className="w-full" aria-label={t("nav.aria.activeBranch")}>
+                  <SelectTrigger sizeVariant="sm" className="w-full" aria-label={t("nav.drawer.activeBranch")}>
                     <div className="flex items-center gap-2 truncate">
                       <Building2 className="size-3.5 text-ink-3 shrink-0" aria-hidden />
                       <SelectValue />
@@ -128,7 +130,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
               ) : (
                 <p className="flex items-center gap-2 px-1 text-[12.5px] text-night-ink-2">
                   <Building2 className="size-3.5 text-night-ink-3" aria-hidden />
-                  {session.branches.find((b) => b.id === session.activeBranchId)?.name ?? session.branches[0]?.name}
+                  {session.branches.find((b) => b.id === session.activeBranchId)?.name ?? t("nav.drawer.branchUnavailable")}
                 </p>
               )}
             </div>

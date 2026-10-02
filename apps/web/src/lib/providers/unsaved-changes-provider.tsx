@@ -8,6 +8,10 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 export interface UnsavedChangesGuard {
   save: () => Promise<void>;
   discard: () => Promise<void>;
+  title?: string;
+  description?: string;
+  detail?: string;
+  saveDisabledReason?: string;
 }
 
 interface UnsavedChangesContextValue {
@@ -59,6 +63,16 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("click", intercept, true);
   }, [guard, requestNavigation, router]);
 
+  useEffect(() => {
+    if (!guard) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [guard]);
+
   const continueNavigation = useCallback(() => {
     const navigate = pendingNavigation;
     setPendingNavigation(null);
@@ -90,16 +104,16 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
       <Dialog open={pendingNavigation !== null} onOpenChange={(open) => { if (!open && !resolving) setPendingNavigation(null); }}>
         <DialogContent hideClose onEscapeKeyDown={(event) => { if (resolving) event.preventDefault(); }} onPointerDownOutside={(event) => event.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Unsaved public profile changes</DialogTitle>
-            <DialogDescription>Save the draft before leaving, discard the local edits and unreferenced uploads, or stay on this page.</DialogDescription>
+            <DialogTitle>{guard?.title ?? "Unsaved public profile changes"}</DialogTitle>
+            <DialogDescription>{guard?.description ?? "Save the draft before leaving, discard the local edits and unreferenced uploads, or stay on this page."}</DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <p className="text-[12.5px] text-ink-2">Publishing remains unavailable until these edits are saved.</p>
+            <p className="text-[12.5px] text-ink-2">{guard?.detail ?? "Publishing remains unavailable until these edits are saved."}</p>
           </DialogBody>
           <DialogFooter className="flex-wrap">
             <Button type="button" variant="ghost" disabled={Boolean(resolving)} onClick={() => setPendingNavigation(null)}>Stay</Button>
             <Button type="button" variant="secondary" loading={resolving === "discard"} disabled={Boolean(resolving)} onClick={() => void resolve("discard")}>Discard and leave</Button>
-            <Button type="button" loading={resolving === "save"} disabled={Boolean(resolving)} onClick={() => void resolve("save")}>Save and leave</Button>
+            <Button type="button" loading={resolving === "save"} disabled={Boolean(resolving) || Boolean(guard?.saveDisabledReason)} title={guard?.saveDisabledReason} onClick={() => void resolve("save")}>Save and leave</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

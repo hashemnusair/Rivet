@@ -1,11 +1,29 @@
 import type {
   AuditCategory,
   AuditEvent,
+  AtRiskMemberItem,
+  AtRiskMemberQuery,
+  AccountingAccount,
+  AccountingJournalEntryDetail,
+  AccountingJournalEntrySummary,
+  AccountingJournalQuery,
+  AccountingPeriod,
+  AccountingSourcePosting,
+  AccountingSourcePostingQuery,
+  RefreshAccountingSourceQueueInput,
+  RefreshAccountingSourceQueueResult,
+  AccountingTrialBalance,
+  BalanceSheet,
+  CashflowStatement,
+  PostAccountingSourceInput,
+  ReviewAccountingSourceInput,
+  PostManualJournalInput,
   AutomationExecution,
   AutomationExecutionDetail,
   AutomationRule,
   AutomationRunPreview,
   Branch,
+  BrandKit,
   CancelMembershipInput,
   CashShift,
   CheckInPreview,
@@ -20,6 +38,8 @@ import type {
   CreateCheckInInput,
   CreateLeadInput,
   CreateMemberInput,
+  CreateMemberMembershipSaleInput,
+  CreateMemberMembershipSaleResult,
   CreateMemberResult,
   CreateMembershipSaleInput,
   ChangeMembershipPlanInput,
@@ -27,6 +47,8 @@ import type {
   CreatePlanInput,
   CreateTaskInput,
   DashboardData,
+  DeleteProductInput,
+  DeleteProductResult,
   DuplicateMatch,
   ExtendMembershipInput,
   FreezeMembershipInput,
@@ -61,6 +83,8 @@ import type {
   PaymentStatus,
   ReconciliationReport,
   ReceiptDetail,
+  RetailCheckoutInput,
+  RefundRetailSaleInput,
   RefundPaymentInput,
   RenewalQueueItem,
   RenewMembershipInput,
@@ -79,14 +103,52 @@ import type {
   UpdateLeadInput,
   UpdateMemberInput,
   UpdateOrganizationSettingsInput,
+  UpdateBrandKitInput,
+  UpdateWorkspaceModulePreferencesInput,
+  WorkspaceAccess,
+  OrganizationEntitlements,
+  GeneralManagerAnalysis,
+  IncomeStatement,
+  ManagementReportInput,
+  WorkspaceModulePreferences,
+  WorkspaceModuleKey,
+  WorkspaceModuleStatus,
+  Zone,
+  UpsertZoneInput,
   UpdatePlanInput,
   UpdateRolePermissionsInput,
   UpdateUserAccessInput,
+  UpdateUserProfileInput,
+  UserProfile,
   VoidPaymentInput,
+  VoidRetailSaleInput,
   ISODate,
   UUID,
 } from "@/lib/domain/types";
-import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type { CustomerMembership, CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import type {
+  CustomerFinancialSummary,
+  CustomerReceipt,
+  CustomerTransaction,
+  CustomerTransactionQuery,
+  BulkOperationInput,
+  BulkOperationJob,
+  SavedView,
+  SavedViewSurface,
+  DuplicateCase,
+  DuplicateCaseQuery,
+  MergeMemberInput,
+  OnboardingAudience,
+  OnboardingExperience,
+  PushSubscriptionInput,
+  PushSubscriptionSummary,
+  AutomationMonitoringSummary,
+  ExportJob,
+  ExportRequestInput,
+  WorkspaceSearchResult,
+  RecentWorkspaceItem,
+  PinnedWorkspaceItem,
+} from "@/lib/domain/qol";
 
 // ---------------------------------------------------------------------------
 // Query inputs
@@ -124,6 +186,9 @@ export interface LeadListQuery extends ListQuery {
 export interface TaskListQuery extends ListQuery {
   status?: "open" | "completed" | "cancelled";
   ownerId?: UUID;
+  /** Only tasks about this member / lead; the member record must never list the whole gym's work. */
+  memberId?: UUID;
+  leadId?: UUID;
   dueBefore?: string;
   overdueOnly?: boolean;
 }
@@ -163,6 +228,7 @@ export interface ExecutionQuery extends ListQuery {
 
 export interface AuditQuery extends ListQuery {
   category?: AuditCategory;
+  approvalStatus?: "pending" | "approved" | "rejected";
   actorId?: UUID;
   entityId?: UUID;
   branchId?: UUID;
@@ -179,11 +245,54 @@ export interface MemberImportRow {
   rowNumber: number;
   fullName: string;
   phone: string;
+  gender?: "male" | "female";
   email?: string;
   status: "valid" | "duplicate" | "invalid" | "committed" | "skipped";
   errors: string[];
   duplicateMemberIds: string[];
   memberId?: string;
+  sourcePlanName?: string;
+  planId?: UUID;
+  planName?: string;
+  membershipStartDate?: string;
+  membershipEndDate?: string;
+  remainingVisits?: number;
+  freezeStartDate?: string;
+  freezeEndDate?: string;
+  openingBalanceMinor?: number;
+  historicalPaidMinor?: number;
+  historicalPaymentDate?: string;
+  historicalPaymentReference?: string;
+}
+
+export type MemberImportField =
+  | "fullName"
+  | "phone"
+  | "gender"
+  | "email"
+  | "sourcePlanName"
+  | "membershipStartDate"
+  | "membershipEndDate"
+  | "remainingVisits"
+  | "freezeStartDate"
+  | "freezeEndDate"
+  | "openingBalance"
+  | "historicalPaidTotal"
+  | "historicalPaymentDate"
+  | "historicalPaymentReference";
+export type MemberImportColumnMapping = Partial<Record<MemberImportField, number>>;
+export type MemberImportPlanMapping = Record<string, UUID>;
+export type MemberImportStatus = "preview" | "processing" | "completed" | "undoing" | "undone";
+
+export interface MemberImportPreviewInput {
+  csv: string;
+  branchId: UUID;
+  sourceFileName?: string;
+  sourceKind?: "csv" | "xlsx" | "pasted";
+  sourceHeaders?: string[];
+  columnMapping?: MemberImportColumnMapping;
+  migrationCutoffDate?: string;
+  planMappings?: MemberImportPlanMapping;
 }
 
 export interface MemberImportPreview {
@@ -194,8 +303,30 @@ export interface MemberImportPreview {
   duplicateRows: number;
   errorRows: number;
   rows: MemberImportRow[];
+  status?: MemberImportStatus;
+  cursor?: number;
+  committedCount?: number;
+  skippedCount?: number;
+  sourceFileName?: string;
+  sourceKind?: "csv" | "xlsx" | "pasted";
+  sourceHeaders?: string[];
+  columnMapping?: MemberImportColumnMapping;
+  migrationCutoffDate?: string;
+  planMappings?: MemberImportPlanMapping;
+  membershipRows?: number;
+  openingBalanceRows?: number;
+  historicalEvidenceRows?: number;
+  currency?: string;
+  undoExpiresAt?: string;
   createdAt: string;
+  completedAt?: string;
+  undoneAt?: string;
+  undoCursor?: number;
+  undoArchivedCount?: number;
+  undoSkippedCount?: number;
 }
+
+export type MemberImportSummary = Omit<MemberImportPreview, "rows">;
 
 export interface MemberImportCommitInput {
   importId: string;
@@ -216,10 +347,31 @@ export interface MemberImportCommitResult {
   errors: Array<{ rowNumber: number; message: string }>;
 }
 
+export interface MemberImportUndoInput {
+  importId: string;
+  cursor?: number;
+  chunkSize?: number;
+  idempotencyKey: string;
+  reason: string;
+}
+
+export interface MemberImportUndoResult {
+  importId: string;
+  status: "undoing" | "undone";
+  cursor: number;
+  totalCreated: number;
+  archivedCount: number;
+  skippedCount: number;
+}
+
 export interface DashboardQuery {
   branchId?: UUID;
   from: string;
   to: string;
+}
+
+export interface OperatingBriefQuery {
+  branchId?: UUID;
 }
 
 export interface PlatformBillingInvoice {
@@ -234,12 +386,23 @@ export interface PlatformBillingInvoice {
   dueAt?: string;
   periodStart?: string;
   periodEnd?: string;
+  /** Deterministic subscription cycle key; prevents duplicate automation invoices. */
+  cycleKey?: string;
+  billingInterval?: BillingInterval;
+  /** The term at list price, before any credit is applied. */
+  subtotalMinor?: number;
+  /** What the unfinished part of a replaced term was worth, deducted from the amount. */
+  creditMinor?: number;
+  /** Unused paid days behind that credit. */
+  creditDays?: number;
   paymentReference?: string;
   paidAt?: string;
   pastDueAt?: string;
   voidedAt?: string;
   status: "draft" | "open" | "paid" | "past_due" | "void" | "failed" | "trial";
 }
+
+export type BillingInterval = "monthly" | "annual";
 
 export interface CreatePlatformInvoiceInput {
   gymId: string;
@@ -248,6 +411,8 @@ export interface CreatePlatformInvoiceInput {
   dueAt: string;
   periodStart: string;
   periodEnd: string;
+  billingInterval?: BillingInterval;
+  cycleKey?: string;
 }
 
 export interface RecordPlatformInvoicePaymentInput {
@@ -271,6 +436,33 @@ export interface PlatformGymDetailBranch {
   address?: string;
   phone?: string;
   status: "active" | "inactive";
+}
+
+export interface PlatformGymMember {
+  id: string;
+  memberNumber: string;
+  name: string;
+  status: "active" | "inactive" | "archived";
+  branchId?: string;
+  branchName?: string;
+  membershipStatus?: string;
+  planName?: string;
+  membershipEndDate?: string;
+  joinedAt?: string;
+}
+
+export interface PlatformGymStaff {
+  id: string;
+  name: string;
+  /** Sign-in identifier for operationally distinguishing same-name invitees. */
+  email: string;
+  role: string;
+  status: "active" | "invited" | "deactivated";
+  branchScope: "all" | "selected";
+  branchIds: string[];
+  branchNames: string[];
+  invitationStatus?: "pending" | "accepted" | "revoked";
+  joinedAt?: string;
 }
 
 export interface PlatformGymOwner {
@@ -297,10 +489,16 @@ export interface PlatformGymDetail {
   name: string;
   shortName: string;
   accent: string;
+  /** Safe URL for the published gym logo; unavailable/configured states stay
+   * explicit so the admin surface can fall back to initials. */
+  logoUrl?: PlatformData<string>;
   controls: {
     status: MarketplaceGym["subscriptionStatus"];
     plan: MarketplaceGym["rivetPlan"];
     isPublic: boolean;
+    isArchived?: boolean;
+    archivedAt?: string;
+    archiveReason?: string;
   };
   organization: PlatformData<{
     id: UUID;
@@ -308,10 +506,21 @@ export interface PlatformGymDetail {
     status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
     currency: string;
     timezone: string;
+    archivedAt?: string;
+    archiveReason?: string;
   }>;
+  /** Public-page review state: the live version plus any tenant draft
+   * awaiting the platform team's publish. */
+  publicPage: PlatformData<{ publishedVersion: number; draftVersion?: number; draftStatus?: string; draftUpdatedAt?: string }>;
   joinedAt: PlatformData<string>;
   branches: PlatformData<PlatformGymDetailBranch[]>;
+  /** Complete tenant-scoped directory rows; the detail UI paginates these
+   * client-side while retaining access to the full result. */
+  members: PlatformData<PlatformGymMember[]>;
+  staff: PlatformData<PlatformGymStaff[]>;
   owner: PlatformData<PlatformGymOwner>;
+  /** The active subscription agreement; not_configured until the owner signs. */
+  agreement: PlatformData<import("@/lib/domain/types").PlatformAgreementSummary>;
   usage: {
     memberCount: PlatformData<number>;
     activeStaffCount: PlatformData<number>;
@@ -322,6 +531,7 @@ export interface PlatformGymDetail {
   };
   subscription: {
     plan: PlatformData<MarketplaceGym["rivetPlan"]>;
+    billingInterval?: PlatformData<BillingInterval>;
     status: PlatformData<MarketplaceGym["subscriptionStatus"]>;
     startedAt: PlatformData<string>;
     trialEndsAt: PlatformData<string>;
@@ -357,6 +567,10 @@ export interface PlatformSupportCase {
   updatedAt?: string;
   resolvedAt?: string;
   resolutionSummary?: string;
+  /** Structured metadata for workflows such as a plan-change request. */
+  requestType?: "general" | "plan_upgrade";
+  requestedPlan?: PlatformSaasPlan["name"];
+  billingInterval?: "monthly" | "annual";
   messages?: PlatformSupportMessage[];
 }
 
@@ -376,6 +590,9 @@ export interface CreateSupportCaseInput {
   subject: string;
   body: string;
   priority: PlatformSupportCase["priority"];
+  requestType?: PlatformSupportCase["requestType"];
+  requestedPlan?: PlatformSupportCase["requestedPlan"];
+  billingInterval?: PlatformSupportCase["billingInterval"];
 }
 
 export interface PlatformOperatorQueueItem {
@@ -412,6 +629,8 @@ export interface PlatformOverview {
     outstanding: Money;
     overdue: Money;
   };
+  /** Count of legacy/invalid invoices excluded from JOD monetary totals. */
+  billingCurrencyMismatches: number;
   trialRequests: number;
   trialConversions: number;
   pendingApplications: number;
@@ -430,33 +649,47 @@ export interface PlatformOverview {
 }
 
 export interface PlatformSaasPlan {
-  name: "Starter" | "Growth" | "Pro";
+  name: "Starter" | "Growth" | "Pro" | "Enterprise";
   priceMinor: number;
   branches: number;
   staff: number;
   members: number;
   tone: "paper" | "signal" | "night";
+  /** Server-owned workspace modules included in this tier. */
+  entitledModules?: WorkspaceModuleKey[];
 }
 
 export interface SubmitGymApplicationInput {
   gymName: string;
+  /** Physical address where the applicant's gym operates. */
+  gymAddress: string;
   ownerName: string;
   email: string;
   contactNumber: string;
   plan: PlatformSaasPlan["name"];
+  /** Defaults to monthly for legacy clients. */
+  billingInterval?: BillingInterval;
+  /** Client retry key; never used as an authorization credential. */
+  idempotencyKey?: string;
+  /** Deliberately invisible browser honeypot. Bots filling it receive a generic success. */
+  website?: string;
 }
 
 export type GymApplicationStatus = "pending" | "under_review" | "approved" | "rejected";
 export type GymApplicationNotificationStatus = "pending" | "sent" | "failed" | "not_configured";
 export type GymProvisioningStatus = "not_started" | "in_progress" | "completed" | "failed";
+export type GymProvisioningOutcome = "complete" | "partial" | "retryable" | "permanent";
 
 export interface PlatformGymApplication {
   id: UUID;
   gymName: string;
+  /** Required for new applications; optional for historical rows created before address capture. */
+  gymAddress?: string;
   ownerName: string;
   email: string;
   contactNumber: string;
   plan: PlatformSaasPlan["name"];
+  billingInterval?: BillingInterval;
   status: GymApplicationStatus;
   notificationStatus: GymApplicationNotificationStatus;
   notificationError?: string;
@@ -468,6 +701,12 @@ export interface PlatformGymApplication {
   reviewedBy?: string;
   reviewNotes?: string;
   provisioningStatus?: GymProvisioningStatus;
+  provisioningCheckpoint?: "claimed" | "organization_recorded" | "workspace_ready" | "invitation_recorded" | "completed";
+  provisioningOutcome?: GymProvisioningOutcome;
+  provisioningAttemptCount?: number;
+  provisioningLastCorrelationId?: string;
+  provisioningProviderStatus?: number;
+  provisioningProviderCode?: string;
   provisioningStartedAt?: string;
   provisioningError?: string;
   provisionedAt?: string;
@@ -475,6 +714,7 @@ export interface PlatformGymApplication {
   provisionedBranchId?: UUID;
   clerkOrganizationId?: string;
   clerkInvitationId?: string;
+  clerkInvitationStatus?: "pending" | "accepted" | "revoked" | "expired" | "failed";
 }
 
 export interface ReviewGymApplicationInput {
@@ -501,6 +741,7 @@ export interface GymProvisioningResult {
   branchId: UUID;
   branchName: string;
   plan: PlatformSaasPlan["name"];
+  billingInterval?: BillingInterval;
   ownerName: string;
   ownerEmail: string;
   clerkOrganizationId: string;
@@ -567,11 +808,24 @@ export interface UpdatePlatformGymInput {
   gymId: string;
   status?: import("@/lib/public/experience-data").MarketplaceGym["subscriptionStatus"];
   plan?: import("@/lib/public/experience-data").MarketplaceGym["rivetPlan"];
-  isPublic?: boolean;
-  trialEndsAt?: string;
-  subscriptionStartedAt?: string;
+  billingInterval?: BillingInterval;
+  /** Optional override for the paid membership boundary. When omitted on a
+   * change that activates or re-prices the subscription, the server derives
+   * the new term (today + interval + unused-day credit) and issues the term
+   * invoice. Trial ends remain server-derived from onboarding. */
   currentPeriodEndsAt?: string;
-  cancelledAt?: string;
+  isPublic?: boolean;
+  reason: string;
+}
+
+/**
+ * Archives a gym from the platform directory while retaining its financial
+ * and audit history. This is an archive-only operation: no tenant records are
+ * deleted and the platform detail route remains available for audit review.
+ */
+export interface ArchivePlatformGymInput {
+  gymId: string;
+  confirmation: string;
   reason: string;
 }
 
@@ -581,6 +835,8 @@ export interface UpdatePlatformPlanInput {
   branches?: number;
   staff?: number;
   members?: number;
+  entitledModules?: WorkspaceModuleKey[];
+  reason: string;
 }
 
 export interface EntryPass {
@@ -620,6 +876,8 @@ export interface GymOSApi {
   // Public directory, customer identity, and platform snapshots
   listMarketplaceGyms(): Promise<MarketplaceGym[]>;
   subscribeMarketplaceGyms(onValue: (gyms: MarketplaceGym[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  getPublicOffer(token: string): Promise<import("@/lib/domain/types").PublicOffer>;
+  respondToPublicOffer(token: string, input: { outcome: OfferOutcome; reason?: string }): Promise<import("@/lib/domain/types").PublicOffer>;
   getCustomerExperience(): Promise<CustomerExperience>;
   /**
    * Subscribe to identity-scoped member changes. The disposer is returned in
@@ -631,13 +889,50 @@ export interface GymOSApi {
   updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona>;
   /** The optional customerId is used only by the deterministic mock; Convex derives identity from Clerk. */
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona>;
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string }): Promise<TrialBooking>;
+  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking>;
+  ensureCustomerReferralLink(membershipId: UUID): Promise<CustomerReferralProgram>;
+
+  // --- Read-only operational analytics (Reports area) ---
+  getPeakHoursReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").PeakHoursReport>;
+  getClassUtilizationReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").ClassUtilizationReport>;
+  getRetentionReport(input: import("@/lib/domain/types").AnalyticsBranchInput): Promise<import("@/lib/domain/types").RetentionReport>;
+  getRenewalForecastReport(input: import("@/lib/domain/types").AnalyticsBranchInput): Promise<import("@/lib/domain/types").RenewalForecastReport>;
+  getCollectionsReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").CollectionsReport>;
+  getCrmFunnelReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").CrmFunnelReport>;
+  getControlTrendsReport(input: import("@/lib/domain/types").AnalyticsReportInput): Promise<import("@/lib/domain/types").ControlTrendsReport>;
+
+  // --- Daily branch checklists ---
+  listChecklistAssignees(branchId: UUID): Promise<Array<{ id: UUID; name: string }>>;
+  assignChecklistRun(input: { templateId: UUID; date?: string; assignedUserId?: UUID }): Promise<import("@/lib/domain/types").ChecklistRun>;
+  listChecklistTemplates(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").ChecklistTemplate[]>;
+  upsertChecklistTemplate(input: import("@/lib/domain/types").UpsertChecklistTemplateInput): Promise<import("@/lib/domain/types").ChecklistTemplate>;
+  getChecklistDay(input: { branchId: UUID; date?: string }): Promise<import("@/lib/domain/types").ChecklistDay>;
+  setChecklistItem(input: import("@/lib/domain/types").SetChecklistItemInput): Promise<import("@/lib/domain/types").ChecklistRun>;
+  createChecklistMaintenanceTask(input: import("@/lib/domain/types").CreateChecklistTaskInput): Promise<import("@/lib/domain/types").ChecklistRun>;
   getEntryPass(membershipId: string): Promise<EntryPass>;
+  getCustomerFinancialSummary(): Promise<CustomerFinancialSummary>;
+  listCustomerTransactions(query: CustomerTransactionQuery): Promise<Page<CustomerTransaction>>;
+  getCustomerReceipt(receiptId: UUID): Promise<CustomerReceipt>;
+  listSavedViews(surface: SavedViewSurface): Promise<SavedView[]>;
+  saveSavedView(input: { id?: UUID; surface: SavedViewSurface; name: string; state: Record<string, unknown>; isDefault?: boolean }): Promise<SavedView>;
+  deleteSavedView(viewId: UUID): Promise<void>;
+  runBulkOperation(input: BulkOperationInput): Promise<BulkOperationJob>;
+  listBulkOperationJobs(): Promise<BulkOperationJob[]>;
+  listDuplicateCases(query?: DuplicateCaseQuery): Promise<Page<DuplicateCase>>;
+  getDuplicateCase(caseId: UUID): Promise<DuplicateCase>;
+  ignoreDuplicateCase(caseId: UUID, reason: string): Promise<DuplicateCase>;
+  mergeDuplicateMembers(input: MergeMemberInput): Promise<DuplicateCase>;
+  getOnboardingExperience(audience: OnboardingAudience): Promise<OnboardingExperience>;
+  updateOnboardingProgress(input: { audience: OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<OnboardingExperience>;
+  listPushSubscriptions(): Promise<PushSubscriptionSummary[]>;
+  savePushSubscription(input: PushSubscriptionInput): Promise<PushSubscriptionSummary>;
+  revokePushSubscription(subscriptionId: UUID): Promise<void>;
   getPlatformSnapshot(): Promise<PlatformSnapshot>;
   subscribePlatformSnapshot(onValue: (snapshot: PlatformSnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
   getPlatformGymDetail(gymId: string): Promise<PlatformGymDetail>;
   subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
+  subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
   subscribePlatformApplications(onValue: (applications: PlatformGymApplication[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
@@ -645,7 +940,12 @@ export interface GymOSApi {
   saveGymApplicationReviewNote(input: SaveGymApplicationReviewNoteInput): Promise<PlatformGymApplication>;
   provisionGym(input: ProvisionGymInput): Promise<GymProvisioningResult>;
   updatePlatformGym(input: UpdatePlatformGymInput): Promise<import("@/lib/public/experience-data").MarketplaceGym>;
+  archivePlatformGym?(input: ArchivePlatformGymInput): Promise<void>;
+  /** Reviews and publishes the tenant's saved public-page draft. */
+  publishPlatformGymProfile(input: { gymId: string; reason: string }): Promise<{ id: string; publishedVersion: number }>;
   updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformSaasPlan>;
+  /** The gym's own platform invoices, newest first; drafts are not shown. */
+  listMyPlatformInvoices(): Promise<PlatformBillingInvoice[]>;
   createPlatformInvoice(input: CreatePlatformInvoiceInput): Promise<PlatformBillingInvoice>;
   issuePlatformInvoice(invoiceId: string): Promise<PlatformBillingInvoice>;
   markPlatformInvoicePastDue(invoiceId: string, reason: string): Promise<PlatformBillingInvoice>;
@@ -668,6 +968,8 @@ export interface GymOSApi {
 
   // Dashboard
   getDashboard(query: DashboardQuery): Promise<DashboardData>;
+  /** The evidence-backed daily operating brief for the caller's own scope: exact queues, figures, sources and mandatory items, read on open or explicit refresh only. */
+  getOperatingBrief(query: OperatingBriefQuery): Promise<import("@/lib/domain/types").OperatingBrief>;
   subscribeDashboard(query: DashboardQuery, onValue: (dashboard: DashboardData) => void, onError?: (error: unknown) => void): Promise<() => void>;
 
   // Members
@@ -675,6 +977,7 @@ export interface GymOSApi {
   getMember(memberId: UUID): Promise<MemberDetail>;
   subscribeMember(memberId: UUID, onValue: (member: MemberDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createMember(input: CreateMemberInput): Promise<CreateMemberResult>;
+  createMemberMembershipSale(input: CreateMemberMembershipSaleInput): Promise<CreateMemberMembershipSaleResult>;
   updateMember(memberId: UUID, input: UpdateMemberInput): Promise<MemberDetail>;
   archiveMember(memberId: UUID, input: { reason: string }): Promise<void>;
   deleteMember(memberId: UUID, input: { reason: string; confirmation: string }): Promise<void>;
@@ -682,6 +985,8 @@ export interface GymOSApi {
   listMemberTimeline(memberId: UUID, query?: TimelineQuery): Promise<Page<TimelineEvent>>;
   addMemberNote(memberId: UUID, input: { body: string }): Promise<TimelineEvent>;
   logMemberContactAttempt(memberId: UUID, input: ContactAttemptInput): Promise<TimelineEvent>;
+  /** The deterministic follow-up context for one member: renewal target, journey status, consent and suppression, quiet hours, queued reminders with truthful wording, recorded evidence and open work. */
+  getMemberFollowUpContext(memberId: UUID): Promise<import("@/lib/domain/types").MemberFollowUpContext>;
 
   // Plans
   listPlans(query: PlanListQuery): Promise<Page<MembershipPlan>>;
@@ -734,6 +1039,12 @@ export interface GymOSApi {
   renewMembership(membershipId: UUID, input: RenewMembershipInput): Promise<MembershipSaleResult>;
   changeMembershipPlan(membershipId: UUID, input: ChangeMembershipPlanInput): Promise<MembershipSaleResult>;
   freezeMembership(membershipId: UUID, input: FreezeMembershipInput): Promise<MembershipDetail>;
+  /** Member self-service freeze requests, decided by staff under the gym's policy. */
+  requestMembershipFreeze(input: import("@/lib/domain/types").RequestMembershipFreezeInput): Promise<import("@/lib/domain/types").MembershipFreezeRequest>;
+  getCustomerFreezePolicy(membershipId: UUID): Promise<import("@/lib/domain/types").CustomerFreezePolicy>;
+  listCustomerFreezeRequests(membershipId: UUID): Promise<import("@/lib/domain/types").MembershipFreezeRequest[]>;
+  listFreezeRequests(query?: { status?: import("@/lib/domain/types").FreezeRequestStatus }): Promise<import("@/lib/domain/types").MembershipFreezeRequest[]>;
+  decideFreezeRequest(input: import("@/lib/domain/types").DecideFreezeRequestInput): Promise<import("@/lib/domain/types").MembershipFreezeRequest>;
   unfreezeMembership(membershipId: UUID, input: { reason: string }): Promise<MembershipDetail>;
   extendMembership(membershipId: UUID, input: ExtendMembershipInput): Promise<MembershipDetail>;
   cancelMembership(membershipId: UUID, input: CancelMembershipInput): Promise<MembershipDetail>;
@@ -746,6 +1057,7 @@ export interface GymOSApi {
   subscribeLead(leadId: UUID, onValue: (lead: LeadDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createLead(input: CreateLeadInput): Promise<LeadDetail>;
   updateLead(leadId: UUID, input: UpdateLeadInput): Promise<LeadDetail>;
+  updateLeadContact(leadId: UUID, input: import("@/lib/domain/types").UpdateLeadContactInput): Promise<LeadDetail>;
   logContactAttempt(leadId: UUID, input: ContactAttemptInput): Promise<LeadDetail>;
   updateTrialBooking(
     bookingId: UUID,
@@ -762,6 +1074,9 @@ export interface GymOSApi {
   completeLeadSale(leadId: UUID, input: CompleteLeadSaleInput): Promise<CompleteLeadSaleResult>;
   listRenewalQueue(query: RenewalQueueQuery): Promise<Page<RenewalQueueItem>>;
   subscribeRenewalQueue(query: RenewalQueueQuery, onValue: (page: Page<RenewalQueueItem>) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  listAtRiskMembers(query: AtRiskMemberQuery): Promise<Page<AtRiskMemberItem>>;
+  subscribeAtRiskMembers(query: AtRiskMemberQuery, onValue: (page: Page<AtRiskMemberItem>) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  snoozeAtRiskMember(input: import("@/lib/domain/types").SnoozeAtRiskMemberInput): Promise<void>;
 
   // Check-in
   previewCheckIn(input: { branchId: UUID; query: string }): Promise<CheckInPreview>;
@@ -779,6 +1094,9 @@ export interface GymOSApi {
   refundPayment(paymentId: UUID, input: RefundPaymentInput): Promise<ReceiptDetail>;
   voidPayment(paymentId: UUID, input: VoidPaymentInput): Promise<ReceiptDetail>;
   getReceipt(receiptId: UUID): Promise<ReceiptDetail>;
+  checkoutRetail(input: RetailCheckoutInput): Promise<ReceiptDetail & { receiptId: UUID; retailSale: import("@/lib/domain/types").RetailSale }>;
+  refundRetailSale(saleId: UUID, input: RefundRetailSaleInput): Promise<ReceiptDetail & { retailSale: import("@/lib/domain/types").RetailSale }>;
+  voidRetailSale(saleId: UUID, input: VoidRetailSaleInput): Promise<ReceiptDetail & { retailSale: import("@/lib/domain/types").RetailSale }>;
   openCashShift(input: OpenCashShiftInput): Promise<CashShift>;
   getCurrentCashShift(branchId: UUID): Promise<CashShift | null>;
   getCurrentShiftTotals(branchId: UUID): Promise<{ shift: CashShift; totals: import("@/lib/domain/types").ShiftTotals } | null>;
@@ -789,7 +1107,32 @@ export interface GymOSApi {
   reviewVariance(shiftId: UUID, input: { decision: "approved" | "rejected"; note: string }): Promise<CashShift>;
   getDailyReconciliation(query: { branchId: UUID; date: ISODate }): Promise<ReconciliationReport>;
 
+  // Immutable management-accounting ledger (Pro finance workspace)
+  listAccountingAccounts(query?: { search?: string }): Promise<AccountingAccount[]>;
+  listAccountingPeriods(query?: { status?: import("@/lib/domain/types").AccountingPeriodStatus }): Promise<AccountingPeriod[]>;
+  listAccountingJournalEntries(query?: AccountingJournalQuery): Promise<Page<AccountingJournalEntrySummary>>;
+  getAccountingJournalEntry(entryId: UUID): Promise<AccountingJournalEntryDetail>;
+  getAccountingTrialBalance(query?: { branchId?: UUID; periodId?: UUID }): Promise<AccountingTrialBalance>;
+  postManualJournal(input: PostManualJournalInput): Promise<AccountingJournalEntryDetail>;
+  listAccountingSourcePostings(query?: AccountingSourcePostingQuery): Promise<Page<AccountingSourcePosting>>;
+  refreshAccountingSourceQueue(input?: RefreshAccountingSourceQueueInput): Promise<RefreshAccountingSourceQueueResult>;
+  postAccountingSource(input: PostAccountingSourceInput): Promise<AccountingSourcePosting>;
+  /** Owner/manager review: permanently exclude a never-postable fact from the books (audited). */
+  excludeAccountingSource(input: ReviewAccountingSourceInput): Promise<AccountingSourcePosting>;
+  /** Reverses a review exclusion; the row returns to what the operational fact says. */
+  reconsiderAccountingSource(input: ReviewAccountingSourceInput): Promise<AccountingSourcePosting>;
+  reverseAccountingEntry(entryId: UUID, input: { reason: string; idempotencyKey: string }): Promise<AccountingJournalEntryDetail>;
+  closeAccountingPeriod(periodId: UUID, reason: string): Promise<AccountingPeriod>;
+  reopenAccountingPeriod(periodId: UUID, reason: string): Promise<AccountingPeriod>;
+
+  // Management statements and general-manager analysis (Pro reporting workspace)
+  getIncomeStatement(input: ManagementReportInput): Promise<IncomeStatement>;
+  getBalanceSheet(input: ManagementReportInput): Promise<BalanceSheet>;
+  getCashflowStatement(input: ManagementReportInput): Promise<CashflowStatement>;
+  getGeneralManagerAnalysis(input: ManagementReportInput): Promise<GeneralManagerAnalysis>;
+
   // Automations
+  getAutomationMonitoringSummary(): Promise<AutomationMonitoringSummary>;
   listAutomationRules(): Promise<AutomationRule[]>;
   getAutomationRule(id: UUID): Promise<AutomationRule>;
   createAutomationRule(input: CreateAutomationRuleInput): Promise<AutomationRule>;
@@ -804,11 +1147,34 @@ export interface GymOSApi {
   listOperationalEmailDeliveries(query?: ListQuery): Promise<Page<OperationalEmailDelivery>>;
   subscribeOperationalEmailDeliveries(query: ListQuery, onValue: (page: Page<OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void>;
 
+  // Data portability
+  requestExport(input: ExportRequestInput): Promise<ExportJob>;
+  listExportJobs(): Promise<ExportJob[]>;
+  requestMemberPersonalDataExport(idempotencyKey: string): Promise<ExportJob>;
+  searchWorkspace(query: string): Promise<WorkspaceSearchResult[]>;
+  listRecentWorkspaceItems(): Promise<RecentWorkspaceItem[]>;
+  recordRecentWorkspaceItem(item: Omit<RecentWorkspaceItem, "viewedAt">): Promise<void>;
+  clearRecentWorkspaceItems(): Promise<void>;
+  listPinnedWorkspaceItems(): Promise<PinnedWorkspaceItem[]>;
+  pinWorkspaceItem(item: Omit<PinnedWorkspaceItem, "id" | "position" | "createdAt"> & { position?: number }): Promise<PinnedWorkspaceItem>;
+  unpinWorkspaceItem(id: UUID): Promise<void>;
+
   // Audit
   listAuditEvents(query: AuditQuery): Promise<Page<AuditEvent>>;
 
   // Settings & users
+  getMyProfile(): Promise<UserProfile>;
+  updateMyProfile(input: UpdateUserProfileInput): Promise<UserProfile>;
   getOrganizationSettings(): Promise<OrganizationSettings>;
+  getBrandKit(): Promise<BrandKit>;
+  updateBrandKit(input: UpdateBrandKitInput): Promise<BrandKit>;
+  /** Tenant entitlement/preferences boundary. These are not role permissions. */
+  getWorkspaceAccess(): Promise<WorkspaceAccess>;
+  subscribeWorkspaceAccess(onValue: (access: WorkspaceAccess) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  getOrganizationEntitlements(): Promise<OrganizationEntitlements>;
+  getWorkspaceModulePreferences(): Promise<WorkspaceModulePreferences>;
+  getWorkspaceModuleStatus(moduleKey: WorkspaceModuleKey): Promise<WorkspaceModuleStatus>;
+  updateWorkspaceModulePreferences(input: UpdateWorkspaceModulePreferencesInput): Promise<WorkspaceAccess>;
   updateOrganizationSettings(input: UpdateOrganizationSettingsInput): Promise<OrganizationSettings>;
   updatePaymentMethods(input: PaymentMethod[]): Promise<OrganizationSettings>;
   updateNotificationSettings(input: NotificationSettings): Promise<OrganizationSettings>;
@@ -817,9 +1183,98 @@ export interface GymOSApi {
   updateOperationalEmailSettings(input: { enabledKinds: string[]; reason: string }): Promise<import("@/lib/domain/types").OperationalEmailActivationSettings>;
   listBranches(): Promise<Branch[]>;
   upsertBranch(input: { id?: UUID; name: string; code: string; address: string; phone: string; capacity: number; status: "active" | "inactive" }): Promise<Branch>;
+  listZones(input?: { branchId?: UUID; includeArchived?: boolean }): Promise<Zone[]>;
+  upsertZone(input: UpsertZoneInput): Promise<Zone>;
+  archiveZone(zoneId: UUID): Promise<Zone>;
+
+  // Daily operations (Growth+ workspace module)
+  listProducts(query?: { search?: string; includeArchived?: boolean }): Promise<import("@/lib/domain/types").Product[]>;
+  upsertProduct(input: import("@/lib/domain/types").UpsertProductInput): Promise<import("@/lib/domain/types").Product>;
+  deleteProduct(input: DeleteProductInput): Promise<DeleteProductResult>;
+  archiveProduct(productId: UUID, reason: string): Promise<import("@/lib/domain/types").Product>;
+  listSuppliers(query?: { search?: string; includeArchived?: boolean }): Promise<import("@/lib/domain/types").Supplier[]>;
+  upsertSupplier(input: import("@/lib/domain/types").UpsertSupplierInput): Promise<import("@/lib/domain/types").Supplier>;
+  archiveSupplier(supplierId: UUID, reason: string): Promise<import("@/lib/domain/types").Supplier>;
+  listInventory(input?: { branchId?: UUID; productId?: UUID }): Promise<import("@/lib/domain/types").InventoryBalance[]>;
+  recordStockMovement(input: { branchId: UUID; productId: UUID; type: import("@/lib/domain/types").StockMovementType; quantity: number; unitCost?: import("@/lib/domain/types").Money; reason?: string; referenceType?: string; referenceId?: UUID; idempotencyKey: string }): Promise<import("@/lib/domain/types").StockMovement>;
+  transferInventory(input: import("@/lib/domain/types").InventoryTransferInput): Promise<import("@/lib/domain/types").InventoryTransferResult>;
+  listStockMovements(query?: { branchId?: UUID; productId?: UUID; page?: number; pageSize?: number }): Promise<import("@/lib/domain/types").Page<import("@/lib/domain/types").StockMovement>>;
+  listLowStockAlerts(input?: { branchId?: UUID; includeDismissed?: boolean }): Promise<import("@/lib/domain/types").LowStockAlert[]>;
+  refreshLowStockAlerts(input?: { branchId?: UUID }): Promise<import("@/lib/domain/types").LowStockAlert[]>;
+  dismissLowStockAlert(input: { alertId: UUID; reason: string }): Promise<import("@/lib/domain/types").LowStockAlert>;
+  createPurchaseOrder(input: import("@/lib/domain/types").CreatePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  updatePurchaseOrderDeliveryDate(input: { purchaseOrderId: UUID; expectedDeliveryDate?: string }): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  approvePurchaseOrder(purchaseOrderId: UUID, reason?: string): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  listPurchaseOrders(query?: { branchId?: UUID; status?: import("@/lib/domain/types").PurchaseOrderStatus }): Promise<import("@/lib/domain/types").PurchaseOrder[]>;
+  receivePurchaseOrder(input: import("@/lib/domain/types").ReceivePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
+  notifyPurchaseOrderSupplier(input: { purchaseOrderId: UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<import("@/lib/domain/types").SupplierNotificationResult>;
+
+  // Outbound messaging (WhatsApp / SMS)
+  getMessagingStatus(): Promise<import("@/lib/domain/types").MessagingStatus>;
+  listMessageTemplateCatalogue(): Promise<import("@/lib/domain/types").MessageTemplateCatalogueEntry[]>;
+
+  // Subscription agreement (e-signature at onboarding)
+  getSubscriptionAgreementContext(): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
+  signSubscriptionAgreement(input: import("@/lib/domain/types").SignSubscriptionAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+  listPlatformAgreements(): Promise<import("@/lib/domain/types").PlatformAgreementSummary[]>;
+  getPlatformAgreement(agreementId: UUID): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+  revealPlatformAgreementId(input: import("@/lib/domain/types").RevealAgreementIdInput): Promise<import("@/lib/domain/types").RevealAgreementIdResult>;
+  /** The last hundred operational emails across every gym, with what happened to each. */
+  listPlatformEmailDeliveries(): Promise<import("@/lib/domain/types").PlatformEmailDelivery[]>;
+  /** Re-queue the emailed copies of a signed agreement, rendered as the record stands now. */
+  resendPlatformAgreementCopies(input: import("@/lib/domain/types").ResendAgreementCopiesInput): Promise<import("@/lib/domain/types").ResendAgreementCopiesResult>;
+  countersignPlatformAgreement(input: import("@/lib/domain/types").CountersignAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+  /** Retire a signed agreement with a reason; the owner is asked to sign again. */
+  voidPlatformAgreement(input: import("@/lib/domain/types").VoidAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+  /** Fill in the printable twin of a drawn signature stored before the PDF existed. */
+  attachAgreementPrintSignature(input: import("@/lib/domain/types").AttachPrintSignatureInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
+
+  // Supplier payables and supplier payments (Growth+ operations module)
+  listPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesPage>;
+  exportPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesExport>;
+  listPayablesReconciliation(query?: { branchId?: UUID }): Promise<import("@/lib/domain/types").PayablesReconciliation>;
+  listSupplierPayments(query?: import("@/lib/domain/types").SupplierPaymentsQuery): Promise<Page<import("@/lib/domain/types").SupplierPayment>>;
+  getSupplierPayment(paymentId: UUID): Promise<import("@/lib/domain/types").SupplierPaymentDetail>;
+  recordSupplierPayment(input: import("@/lib/domain/types").RecordSupplierPaymentInput): Promise<import("@/lib/domain/types").SupplierPaymentDetail>;
+  reverseSupplierPayment(input: import("@/lib/domain/types").ReverseSupplierPaymentInput): Promise<import("@/lib/domain/types").SupplierPaymentDetail>;
+
+  listFacilityTasks(query?: { branchId?: UUID; zoneId?: UUID; status?: import("@/lib/domain/types").FacilityTaskStatus; kind?: import("@/lib/domain/types").FacilityTaskKind }): Promise<import("@/lib/domain/types").FacilityTask[]>;
+  /** Fixed weekly class schedule for one branch. */
+  listClassSessions(query: import("@/lib/domain/types").ClassSessionQuery): Promise<import("@/lib/domain/types").ClassSession[]>;
+  upsertClassSession(input: import("@/lib/domain/types").UpsertClassSessionInput): Promise<import("@/lib/domain/types").ClassSession>;
+  deleteClassSession(input: { sessionId: UUID; reason: string }): Promise<{ id: UUID }>;
+  addClassAttendee(input: import("@/lib/domain/types").ClassRosterInput): Promise<import("@/lib/domain/types").ClassSession>;
+  removeClassAttendee(input: import("@/lib/domain/types").ClassRosterInput): Promise<import("@/lib/domain/types").ClassSession>;
+  setClassAttendance(input: import("@/lib/domain/types").ClassAttendanceInput): Promise<import("@/lib/domain/types").ClassSession>;
+  listClassOccurrences(query: import("@/lib/domain/types").ClassOccurrenceQuery): Promise<import("@/lib/domain/types").ClassOccurrence[]>;
+  getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }>;
+  getCustomerClassExperience(membershipId: UUID): Promise<import("@/lib/domain/types").CustomerClassExperience>;
+  bookCustomerClass(input: { membershipId: UUID; occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassBookingResult>;
+  cancelCustomerClass(input: { membershipId: UUID; occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassBookingResult>;
+  addClassOccurrenceAttendee(input: import("@/lib/domain/types").ClassOccurrenceRosterInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  removeClassOccurrenceAttendee(input: { occurrenceId: UUID; bookingId: UUID; reason?: string }): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  setClassOccurrenceAttendance(input: import("@/lib/domain/types").ClassOccurrenceAttendanceInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  cancelClassOccurrence(input: { occurrenceId: UUID; reason: string }): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  finalizeClassOccurrenceAttendance(input: { occurrenceId: UUID }): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  substituteClassOccurrenceCoach(input: import("@/lib/domain/types").SubstituteClassCoachInput): Promise<import("@/lib/domain/types").ClassOccurrence>;
+  listClassCoaches(): Promise<import("@/lib/domain/types").ClassCoach[]>;
+  upsertClassCoach(input: import("@/lib/domain/types").UpsertClassCoachInput): Promise<import("@/lib/domain/types").ClassCoach>;
+  removeClassCoach(coachId: UUID): Promise<{ id: UUID }>;
+  upsertFacilityTask(input: import("@/lib/domain/types").UpsertFacilityTaskInput): Promise<import("@/lib/domain/types").FacilityTask>;
+  listEquipmentAssets(query?: { branchId?: UUID; status?: import("@/lib/domain/types").EquipmentAssetStatus }): Promise<import("@/lib/domain/types").EquipmentAsset[]>;
+  upsertEquipmentAsset(input: import("@/lib/domain/types").UpsertEquipmentAssetInput): Promise<import("@/lib/domain/types").EquipmentAsset>;
+  reportEquipmentIssue(input: { branchId: UUID; assetId: UUID; title: string; description?: string; severity: import("@/lib/domain/types").EquipmentIssueSeverity; downtimeDays?: number; safetyStatus?: import("@/lib/domain/types").EquipmentIssue["safetyStatus"] }): Promise<import("@/lib/domain/types").EquipmentIssue>;
+  updateEquipmentIssue(issueId: UUID, input: import("@/lib/domain/types").UpdateEquipmentIssueInput): Promise<import("@/lib/domain/types").EquipmentIssue>;
+  listEquipmentIssues(query?: { branchId?: UUID; assetId?: UUID; status?: import("@/lib/domain/types").EquipmentIssueStatus }): Promise<import("@/lib/domain/types").EquipmentIssue[]>;
+  upsertEquipmentWorkOrder(input: import("@/lib/domain/types").UpsertEquipmentWorkOrderInput): Promise<import("@/lib/domain/types").EquipmentWorkOrder>;
+  listEquipmentWorkOrders(query?: { branchId?: UUID; assetId?: UUID; status?: import("@/lib/domain/types").EquipmentWorkOrder["status"] }): Promise<import("@/lib/domain/types").EquipmentWorkOrder[]>;
+  getEquipmentRecommendation(assetId: UUID): Promise<import("@/lib/domain/types").EquipmentRecommendation>;
   listUsers(query: UserListQuery): Promise<Page<StaffUser>>;
-  previewMemberImport(input: { csv: string; branchId: UUID }): Promise<MemberImportPreview>;
+  previewMemberImport(input: MemberImportPreviewInput): Promise<MemberImportPreview>;
   commitMemberImport(input: MemberImportCommitInput): Promise<MemberImportCommitResult>;
+  listMemberImports(): Promise<MemberImportSummary[]>;
+  getMemberImport(importId: UUID): Promise<MemberImportPreview>;
+  undoMemberImport(input: MemberImportUndoInput): Promise<MemberImportUndoResult>;
   inviteUser(input: InviteUserInput): Promise<StaffUser>;
   updateUserAccess(userId: UUID, input: UpdateUserAccessInput): Promise<StaffUser>;
   updateRolePermissions(role: RoleKey, input: UpdateRolePermissionsInput): Promise<RoleDefinition>;
@@ -840,12 +1295,17 @@ export interface MockBehavior {
   latencyMs: number;
   /** fail the next request with FORCED_FAILURE */
   failNextRequest: boolean;
+  /** fail the next public catalog or marketplace subscription */
+  failNextPublicSubscription: boolean;
   /** return empty pages for list endpoints */
   forceEmptyLists: boolean;
+  /** Preview/test seam: pretend the demo gym has not signed its subscription agreement yet. */
+  agreementUnsigned?: boolean;
 }
 
 export const DEFAULT_BEHAVIOR: MockBehavior = {
   latencyMs: 120,
   failNextRequest: false,
+  failNextPublicSubscription: false,
   forceEmptyLists: false,
 };

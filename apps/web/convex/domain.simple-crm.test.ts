@@ -50,13 +50,18 @@ describe("simple CRM membership sale", () => {
       leadId: "simple-crm-lead-existing",
       homeBranchId: "simple-crm-branch",
       preferredLanguage: "en",
+      gender: "female",
       marketingOptIn: true,
       startDate: "2026-08-13",
       idempotencyKey: "simple-crm-existing-sale",
       membership: { mode: "existing", planId: "simple-crm-plan" },
-    })) as { member: { id: string }; plan: { id: string }; membership: { memberId: string; planId: string }; charge: { membershipId: string } };
+    })) as { member: { id: string; marketingOptIn: boolean; marketingPreference: { optedIn: boolean; status: string; source: string } }; plan: { id: string }; membership: { memberId: string; planId: string }; charge: { membershipId: string } };
 
     expect(result.plan.id).toBe("simple-crm-plan");
+    expect(result.member).toMatchObject({
+      marketingOptIn: true,
+      marketingPreference: { optedIn: true, status: "unknown", source: "system_default" },
+    });
     expect(result.membership).toMatchObject({ memberId: result.member.id, planId: "simple-crm-plan" });
     expect(result.charge.membershipId).toBeTruthy();
     const lead = await sales.query(api.domain.query, operation("leads.get", { leadId: "simple-crm-lead-existing" })) as { stage: string; convertedMemberId?: string; trialBooking?: { status: string } };
@@ -71,6 +76,7 @@ describe("simple CRM membership sale", () => {
       leadId: "simple-crm-lead-custom",
       homeBranchId: "simple-crm-branch",
       preferredLanguage: "en",
+      gender: "female",
       startDate: "2026-08-13",
       idempotencyKey: "simple-crm-custom-sale",
       membership: { mode: "custom", name: "Eight week transformation", price: { amount: 150_000, currency: "JOD" }, durationDays: 56, includedPtSessions: 4 },
@@ -91,6 +97,7 @@ describe("simple CRM membership sale", () => {
       leadId: "simple-crm-lead-reused",
       homeBranchId: "simple-crm-branch",
       preferredLanguage: "en",
+      gender: "female",
       startDate: "2026-08-13",
       idempotencyKey: "simple-crm-reused-sale",
       membership: { mode: "existing", planId: "simple-crm-plan" },
@@ -146,6 +153,7 @@ describe("simple CRM membership sale", () => {
       leadId: "simple-crm-lead-unfinished",
       homeBranchId: "simple-crm-branch",
       preferredLanguage: "en",
+      gender: "female",
       startDate: "2026-08-13",
       idempotencyKey: "simple-crm-unfinished-sale",
       membership: { mode: "existing", planId: "simple-crm-plan" },

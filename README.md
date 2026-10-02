@@ -78,13 +78,13 @@ pnpm build
 
 `pnpm test:e2e` runs seeded preview journeys. The trusted Clerk-to-Convex smoke is opt-in and requires `PLAYWRIGHT_CONVEX_SMOKE=1` plus a storage-state file outside Git.
 
-The trusted smoke is the production-shaped check: Playwright reuses a signed-in Clerk development/preview session, starts Next.js with `NEXT_PUBLIC_DATA_MODE=convex` and demo auth disabled, opens `/dashboard`, and verifies that the authenticated tenant workspace is read from Convex. It is intentionally not part of the normal mock suite. For GitHub Actions, add `CONVEX_DEPLOY_KEY`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and a `PLAYWRIGHT_CLERK_STORAGE_STATE` JSON session for a dedicated non-production Clerk account, then manually run the `GymOS CI` workflow. Locally, point `PLAYWRIGHT_CLERK_STORAGE_STATE` at that JSON file and run:
+The trusted smoke is the production-shaped check: Playwright reuses a signed-in Clerk development/preview session, starts Next.js with `NEXT_PUBLIC_DATA_MODE=convex` and demo auth disabled, opens `/dashboard`, and verifies that the authenticated tenant workspace is read from Convex. It is intentionally not part of the normal mock suite or GitHub Actions/Vercel production builds. Locally, point `PLAYWRIGHT_CLERK_STORAGE_STATE` at that JSON file and run:
 
 ```bash
 PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-smoke.spec.ts
 ```
 
-The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026, and the five CI secrets are configured; manual GitHub Actions run `31257271522` passed all jobs on `main`.
+The session file is a Playwright browser state artifact, not a credential to commit or paste into chat. The isolated Development Clerk + Convex staging smoke passed locally on 8 August 2026. The regular credential-free mock browser suite runs in GitHub Actions; trusted Clerk/Convex smoke and mutating staging journeys remain local-only and credential-gated.
 
 The full operational write check is separate and explicitly mutating: it creates one disposable member in the isolated staging deployment, verifies member → membership → card payment → check-in → timeline/audit, and archives that member in cleanup. Run it only when you intend to exercise staging writes:
 
@@ -92,7 +92,7 @@ The full operational write check is separate and explicitly mutating: it creates
 PLAYWRIGHT_CONVEX_SMOKE=1 PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW=1 PLAYWRIGHT_CLERK_STORAGE_STATE=/absolute/path/clerk-storage-state.json pnpm --filter web exec playwright test e2e/convex-operational-flow.spec.ts
 ```
 
-The same check is available as the optional `run_operational_flow` input on a manually dispatched `GymOS CI` workflow. It is never part of push, pull-request, or ordinary preview runs.
+This mutating check is local-only and is never part of push, pull-request, manual GitHub Actions, or Vercel production builds.
 
 ## Convex deployment, seed, and rollback
 
@@ -166,6 +166,8 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 | `CLERK_SECRET_KEY` | server-only Clerk key for invitations |
 | `CLERK_FRONTEND_API_URL` | Clerk JWT issuer configured in Convex |
 | `ENTRY_PASS_SIGNING_SECRET` | Convex-only HMAC secret |
+| `RIVET_PUBLIC_REQUEST_PEPPER` | Private pepper required by public application/trial throttling; set in Convex and Vercel Production |
+| `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` | Local/test-only fallback switch; keep unset or `0` in Production |
 | `RIVET_SITE_URL` | Convex-only origin used for owner invitation links |
 | `RESEND_API_KEY` | Convex-only email delivery secret for gym applications |
 | `RESEND_FROM_EMAIL` | Verified sender, normally `noreply@rivetjo.com` |
@@ -175,9 +177,9 @@ Set the names in `apps/web/.env.example` in the Vercel project and the Convex de
 | `PLAYWRIGHT_CONVEX_OPERATIONAL_FLOW` | explicit staging write-flow switch |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | local path to trusted Playwright state |
 
-Vercel's root directory is `apps/web`. The target is a Next.js server deployment; static export is not supported because Clerk's request proxy needs a server runtime. Do not set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on any deployment. The demo bypass is refused in production builds. The Vercel production build also fails before Next.js starts when `NEXT_PUBLIC_CONVEX_URL` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is missing, preventing a public bundle from silently shipping without its identity/data clients.
+Vercel's root directory is `apps/web`. The target is a Next.js server deployment; static export is not supported because Clerk's request proxy needs a server runtime. Do not set `NEXT_PUBLIC_RIVET_DEMO_AUTH` on any deployment. The demo bypass is refused in production builds. The Vercel production build fails before Next.js starts when `NEXT_PUBLIC_CONVEX_URL` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is missing, preventing a public bundle from silently shipping without its identity and data clients.
 
-The repository pins Vercel's application build command to `pnpm build`. Convex schema/function deployment is intentionally separate: run `pnpm convex:deploy` from a trusted operator environment with `CONVEX_DEPLOY_KEY`, then deploy the Next.js application. Do not make Vercel Preview builds depend on a production Convex deploy key.
+The repository pins Vercel's application build command to `pnpm build`. In the Vercel Production scope, that command validates the runtime variables and then builds Next.js with Webpack. Convex schema/function deployment is intentionally separate: run `pnpm convex:deploy` from a trusted operator environment with `CONVEX_DEPLOY_KEY`, then deploy the Next.js application. Do not make Vercel Preview builds depend on a production Convex deploy key.
 
 `www.rivetjo.com` is the live public origin and `rivetjo.com` redirects to it. The production Clerk instance, DNS records, and first production test user are now configured. The isolated staging Clerk-to-Convex smoke passes, but the deployment remains on release hold until the Vercel Production and Convex environment values are verified against the production Clerk instance and a production-shaped pilot check is completed. Follow the ordered domain-specific checklist in `docs/09_DECISIONS_AND_OPEN_QUESTIONS.md` before inviting a real gym.
 
@@ -195,9 +197,9 @@ Outbound automation delivery is sandbox/log based until an approved provider is 
 
 ## CI
 
-`.github/workflows/ci.yml` has visible jobs for frozen install, web and Convex typecheck, lint, unit/component tests, production build, Playwright preview journeys, Convex code generation, and a manually dispatched trusted Clerk-to-Convex smoke. Codegen reports an explicit notice when its deploy key is unavailable. The manually dispatched smoke fails with the exact missing secret instead of silently skipping. Secrets remain unavailable to forked pull requests.
+`.github/workflows/ci.yml` has visible jobs for frozen install, web and Convex typecheck, lint plus secret-output audit, unit/component tests, production build, production dependency audit, diff/clean-worktree checks, the credential-free mock Playwright suite, and credential-gated Convex code generation. Codegen reports an explicit notice when its deploy key is unavailable. The 14 staging/Convex journeys remain skipped unless their explicit isolated credentials and switches are set; no staging writes or Production deploy step is present.
 
-After CI is enabled in GitHub, protect `main` with pull requests, up-to-date branches, and the static/browser checks as required statuses. This repository deploys to Vercel from `main`; verify the production deployment after merge. Application deployment remains separate from Convex data migrations.
+After CI is enabled in GitHub, protect `main` with pull requests, up-to-date branches, and the repository plus credential-free browser/codegen checks as required statuses. This repository deploys to Vercel from `main`; verify the production deployment against the exact pushed SHA. Application deployment remains separate from Convex data migrations.
 
 ## Product boundaries
 

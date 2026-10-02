@@ -4,17 +4,23 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { domainError, publicUserId, requirePlatformAdmin } from "./security";
 import { notifyPlatformAdmins } from "./notificationDelivery";
+import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 
-const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"));
+const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"));
+const billingInterval = v.union(v.literal("monthly"), v.literal("annual"));
 const notificationStatus = v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"), v.literal("not_configured"));
 const reviewDecision = v.union(v.literal("under_review"), v.literal("approved"), v.literal("rejected"));
 
 const applicationArgs = {
   gymName: v.string(),
+  gymAddress: v.string(),
   ownerName: v.string(),
   email: v.string(),
   contactNumber: v.string(),
   plan,
+  billingInterval: v.optional(billingInterval),
+  idempotencyKey: v.optional(v.string()),
+  website: v.optional(v.string()),
 };
 
 const applicationResult = v.object({
@@ -27,10 +33,14 @@ const applicationResult = v.object({
 
 type ApplicationInput = {
   gymName: string;
+  gymAddress: string;
   ownerName: string;
   email: string;
   contactNumber: string;
-  plan: "Starter" | "Growth" | "Pro";
+  plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  billingInterval?: "monthly" | "annual";
+  idempotencyKey?: string;
+  website?: string;
 };
 
 type ApplicationResult = {
@@ -44,9 +54,11 @@ type ApplicationResult = {
 type ReviewResult = {
   applicationId: string;
   gymName: string;
+  gymAddress?: string;
   ownerName: string;
   email: string;
-  plan: "Starter" | "Growth" | "Pro";
+  plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  billingInterval: "monthly" | "annual";
   status: "under_review" | "approved" | "rejected";
   reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
   reviewNotificationError?: string;
@@ -57,9 +69,9 @@ type ReviewResult = {
   reviewNotes?: string;
 };
 
-function clean(value: string, label: string, maxLength: number): string {
+function clean(value: string, label: string, maxLength: number, minLength = 2): string {
   const result = value.trim().replace(/\s+/g, " ");
-  if (result.length < 2 || result.length > maxLength) throw new Error(`INVALID_${label.toUpperCase()}`);
+  if (result.length < minLength || result.length > maxLength) throw new Error(`INVALID_${label.toUpperCase()}`);
   return result;
 }
 
@@ -76,6 +88,20 @@ function cleanPhone(value: string): string {
   return phone;
 }
 
+/**
+ * Formatting is presentation; throttling must use one stable phone identity.
+ * Preserve a leading international `+`, accept `00` as its E.164 equivalent,
+ * and otherwise retain digits only because a local number has no safe country
+ * code to infer here.
+ */
+function canonicalPhone(value: string): string {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (trimmed.startsWith("+")) return `+${digits}`;
+  if (digits.startsWith("00")) return `+${digits.slice(2)}`;
+  return digits;
+}
+
 function slug(value: string): string {
   return value
     .toLowerCase()
@@ -88,10 +114,11 @@ function slug(value: string): string {
 
 function inputValues(args: ApplicationInput) {
   const gymName = clean(args.gymName, "gym_name", 120);
+  const gymAddress = clean(args.gymAddress, "gym_address", 300, 5);
   const ownerName = clean(args.ownerName, "owner_name", 160);
   const email = cleanEmail(args.email);
   const contactNumber = cleanPhone(args.contactNumber);
-  return { gymName, ownerName, email, contactNumber, plan: args.plan };
+  return { gymName, gymAddress, ownerName, email, contactNumber, canonicalContactNumber: canonicalPhone(contactNumber), plan: args.plan, billingInterval: args.billingInterval ?? "monthly" };
 }
 
 /**
@@ -111,6 +138,42 @@ export const create = internalMutation({
   }),
   handler: async (ctx, args) => {
     const values = inputValues(args);
+    const requestHash = await privacyFingerprint({
+      scope: "gym_application",
+      gymName: slug(values.gymName),
+      gymAddress: values.gymAddress,
+      ownerName: values.ownerName,
+      email: values.email,
+      contactNumber: values.canonicalContactNumber,
+      plan: values.plan,
+      billingInterval: values.billingInterval,
+    });
+    const idempotencyKey = args.idempotencyKey?.trim();
+    if (idempotencyKey) {
+      if (idempotencyKey.length > 200) domainError("VALIDATION_ERROR", "The application request could not be processed.");
+      const existingRequests = await ctx.db.query("publicRequestIdempotency").withIndex("by_scope_key", (q) => q.eq("scope", "gym_application").eq("key", idempotencyKey)).collect();
+      const existingRequest = existingRequests.find((row) => row.expiresAt > Date.now());
+      if (existingRequest) {
+        if (existingRequest.requestHash !== requestHash) domainError("CONFLICT", "This application request has already been used.");
+        const previous = existingRequest.result as { applicationDocumentId: Id<"gymApplications">; applicationId: string; status: ApplicationResult["status"]; notificationStatus: ApplicationResult["notificationStatus"]; submittedAt: number };
+        // Remove stale rows left by an older non-unique implementation while
+        // retaining the active replay record.
+        await Promise.all(existingRequests.filter((row) => row._id !== existingRequest._id && row.expiresAt <= Date.now()).map((row) => ctx.db.delete(row._id)));
+        return { ...previous, duplicate: true };
+      }
+      if (existingRequests.length > 0) {
+        // Delete expired rows before a replacement insert. Convex indexes are
+        // not unique constraints, so leaving the old row would make the next
+        // lookup ambiguous after enough retries.
+        await Promise.all(existingRequests.map((row) => ctx.db.delete(row._id)));
+      }
+    }
+    await enforcePublicRateLimit(ctx, {
+      scope: "gym_application",
+      fingerprint: await privacyFingerprint({ email: values.email, contactNumber: values.canonicalContactNumber }),
+      maxRequests: 5,
+      windowMs: 60 * 60 * 1000,
+    });
     const baseKey = `${values.email}::${slug(values.gymName)}`;
     const matches = await ctx.db
       .query("gymApplications")
@@ -133,7 +196,13 @@ export const create = internalMutation({
     const applicationDocumentId = await ctx.db.insert("gymApplications", {
       publicId,
       applicationKey: matches.length > 0 ? `${baseKey}::${now}` : baseKey,
-      ...values,
+      gymName: values.gymName,
+      gymAddress: values.gymAddress,
+      ownerName: values.ownerName,
+      email: values.email,
+      contactNumber: values.contactNumber,
+      plan: values.plan,
+      billingInterval: values.billingInterval,
       status: "pending",
       notificationStatus: "pending",
       submittedAt: now,
@@ -146,6 +215,16 @@ export const create = internalMutation({
       href: `/platform/applications?application=${publicId}`,
       dedupeKey: `gym-application:${publicId}`,
     });
+    if (idempotencyKey) {
+      await ctx.db.insert("publicRequestIdempotency", {
+        scope: "gym_application",
+        key: idempotencyKey,
+        requestHash,
+        result: { applicationDocumentId, applicationId: publicId, status: "pending", notificationStatus: "pending", submittedAt: now },
+        createdAt: now,
+        expiresAt: now + 365 * 86_400_000,
+      });
+    }
     return { applicationDocumentId, applicationId: publicId, status: "pending" as const, notificationStatus: "pending" as const, submittedAt: now, duplicate: false };
   },
 });
@@ -188,7 +267,15 @@ export const reviewRecord = internalMutation({
       .withIndex("by_public_id", (q) => q.eq("publicId", args.applicationId))
       .unique();
     if (!application) domainError("NOT_FOUND", "Gym application not found.", { correlationId: args.correlationId });
-    if (application.status === "approved" || application.status === "rejected") {
+    // An approved application whose provisioning failed permanently and
+    // created no workspace is a dead end; rejecting it is the only way to
+    // clear it from the operator queue. Every other finalized state stays
+    // immutable.
+    const provisioningDeadEnd = application.status === "approved"
+      && args.decision === "rejected"
+      && application.provisioningStatus === "failed"
+      && !application.provisionedOrganizationId;
+    if ((application.status === "approved" && !provisioningDeadEnd) || application.status === "rejected") {
       domainError("VALIDATION_ERROR", "This gym application has already been finalized.", { correlationId: args.correlationId });
     }
 
@@ -210,6 +297,15 @@ export const reviewRecord = internalMutation({
       reviewedAt: args.decision === "under_review" ? undefined : now,
       reviewedBy: admin.user.fullName,
       reviewNotes: nextReviewNotes,
+      // Rejecting a provisioning dead end clears the failure so the operator
+      // queue and overview stop flagging an application that can never ship.
+      ...(provisioningDeadEnd ? {
+        provisioningStatus: undefined,
+        provisioningCheckpoint: undefined,
+        provisioningOutcome: undefined,
+        provisioningError: undefined,
+        provisioningStartedAt: undefined,
+      } : {}),
       updatedAt: now,
     });
     await ctx.db.insert("platformAuditEvents", {
@@ -233,9 +329,11 @@ export const reviewRecord = internalMutation({
       applicationDocumentId: application._id,
       applicationId: application.publicId,
       gymName: application.gymName,
+      gymAddress: application.gymAddress,
       ownerName: application.ownerName,
       email: application.email,
       plan: application.plan,
+      billingInterval: application.billingInterval ?? "monthly",
       status: args.decision,
       reviewNotificationStatus,
       reviewNotificationError: undefined,
@@ -278,14 +376,15 @@ function escapeHtml(value: string): string {
 function detailsHtml(values: ApplicationInput): string {
   return `<table style="border-collapse:collapse;width:100%;max-width:560px;font-family:Arial,sans-serif;font-size:14px">
     <tr><td style="padding:8px 0;color:#777">Gym name</td><td style="padding:8px 0;font-weight:600">${escapeHtml(values.gymName)}</td></tr>
+    <tr><td style="padding:8px 0;color:#777">Gym address</td><td style="padding:8px 0">${escapeHtml(values.gymAddress)}</td></tr>
     <tr><td style="padding:8px 0;color:#777">Owner name</td><td style="padding:8px 0;font-weight:600">${escapeHtml(values.ownerName)}</td></tr>
     <tr><td style="padding:8px 0;color:#777">Email</td><td style="padding:8px 0"><a href="mailto:${encodeURIComponent(values.email)}">${escapeHtml(values.email)}</a></td></tr>
     <tr><td style="padding:8px 0;color:#777">Contact number</td><td style="padding:8px 0">${escapeHtml(values.contactNumber)}</td></tr>
-    <tr><td style="padding:8px 0;color:#777">Chosen plan</td><td style="padding:8px 0">${escapeHtml(values.plan)}</td></tr>
+    <tr><td style="padding:8px 0;color:#777">Chosen plan</td><td style="padding:8px 0">${escapeHtml(values.plan)} (${escapeHtml(values.billingInterval ?? "monthly")} billing)</td></tr>
   </table>`;
 }
 
-function reviewEmail(values: { gymName: string; ownerName: string; plan: "Starter" | "Growth" | "Pro" }, decision: "approved" | "rejected") {
+function reviewEmail(values: { gymName: string; ownerName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise" }, decision: "approved" | "rejected") {
   const approved = decision === "approved";
   const heading = approved ? "Your RIVET application is approved" : "An update on your RIVET application";
   const message = approved
@@ -313,6 +412,12 @@ export const submit = action({
   args: applicationArgs,
   returns: applicationResult,
   handler: async (ctx, args): Promise<ApplicationResult> => {
+    // A hidden field catches unsophisticated automated form submissions. It
+    // intentionally returns the same generic success shape without creating
+    // a lead, logging raw input, or revealing which field was detected.
+    if (args.website?.trim()) {
+      return { applicationId: crypto.randomUUID(), status: "pending", notificationStatus: "pending", submittedAt: new Date().toISOString(), duplicate: false };
+    }
     const created = await ctx.runMutation(internal.gymApplications.create, args);
     if (created.duplicate && created.notificationStatus === "sent") return { applicationId: created.applicationId, status: created.status, notificationStatus: created.notificationStatus, submittedAt: new Date(created.submittedAt).toISOString(), duplicate: true };
 
@@ -329,7 +434,7 @@ export const submit = action({
       relatedEntityPublicId: created.applicationId,
       subject: "RIVET gym application received",
       html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>Application received</h2><p>Thanks for applying to bring <strong>${escapeHtml(values.gymName)}</strong> onto RIVET.</p><p>Our team will review your application and contact you soon. There is no gym account to create yet; approved gyms receive access directly from RIVET.</p>${summary}</div>`,
-      text: `Application received for ${values.gymName}. Our team will review it and contact you soon.\n\nGym: ${values.gymName}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}`,
+      text: `Application received for ${values.gymName}. Our team will review it and contact you soon.\n\nGym: ${values.gymName}\nAddress: ${values.gymAddress}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}`,
     });
     const internalRecipients = recipients.length > 0 ? recipients : [undefined];
     const internalNotifications = await Promise.all(internalRecipients.map((recipient, index) => ctx.runMutation(internal.operationalEmail.enqueue, {
@@ -342,7 +447,7 @@ export const submit = action({
       relatedEntityPublicId: created.applicationId,
       subject: `New RIVET gym application · ${values.gymName}`,
       html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>New gym application</h2><p>A gym owner submitted an application through rivetjo.com.</p>${summary}<p style="color:#777;font-size:12px">Review the applicant before provisioning a gym workspace or sending access.</p></div>`,
-      text: `New RIVET gym application\n\nGym: ${values.gymName}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}\n\nReview before provisioning access.`,
+      text: `New RIVET gym application\n\nGym: ${values.gymName}\nAddress: ${values.gymAddress}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}\n\nReview before provisioning access.`,
     })));
     const results = [applicant, ...internalNotifications];
     const notificationStatus = results.some((result) => result.status === "suppressed") ? "not_configured" as const : "pending" as const;
@@ -367,9 +472,11 @@ export const review = action({
       applicationDocumentId: Id<"gymApplications">;
       applicationId: string;
       gymName: string;
+      gymAddress?: string;
       ownerName: string;
       email: string;
-      plan: "Starter" | "Growth" | "Pro";
+      plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+      billingInterval: "monthly" | "annual";
       status: "under_review" | "approved" | "rejected";
       reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
       reviewNotificationError?: string;

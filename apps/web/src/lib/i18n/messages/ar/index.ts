@@ -1,21 +1,34 @@
-import type { Messages } from "../en";
-import { common } from "./common";
+import { reception } from "./reception";
+import { marketing } from "./marketing";
 import { crm } from "./crm";
+import type { Messages } from "../en";
+import { auth } from "./auth";
+import { common } from "./common";
 import { dashboard } from "./dashboard";
 import { domain } from "./domain";
-import { marketing } from "./marketing";
+import { memberProfile } from "./memberProfile";
 import { members } from "./members";
 import { nav } from "./nav";
-import { reception } from "./reception";
+import { palette } from "./palette";
+import { renewFlow } from "./renewFlow";
+import { shell } from "./shell";
 
-/** Typed against the English catalogue — a missing key is a build error. */
+/**
+ * Typed against the English catalogue, so a missing or extra key is a build
+ * error. All wording follows docs/arabic/GLOSSARY.md: one Arabic term per concept.
+ */
 export const ar: Messages = {
+  auth,
   common,
+  reception,
+  marketing,
   crm,
   dashboard,
   domain,
-  marketing,
+  memberProfile,
   members,
   nav,
-  reception,
+  palette,
+  renewFlow,
+  shell,
 };

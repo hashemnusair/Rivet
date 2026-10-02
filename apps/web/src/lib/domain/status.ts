@@ -54,6 +54,8 @@ export interface CheckInDecisionInput {
     planBranchAccess: "all" | "selected";
     planBranchIds: string[];
     remainingVisits?: number;
+    /** Needed to explain a term that has not begun yet. */
+    startDate?: string;
     endDate: string;
   };
   checkInBranchId: string;
@@ -99,7 +101,19 @@ export function evaluateCheckIn(input: CheckInDecisionInput): CheckInDecisionOut
     };
   }
 
-  if (ms.status === "expired" || ms.status === "scheduled" || ms.status === "cancelled") {
+  if (ms.status === "scheduled") {
+    // A future term is not an expired one: the desk must not be told to renew
+    // a membership the member has already bought.
+    return {
+      decision: "blocked",
+      reasonCodes: ["MEMBERSHIP_NOT_STARTED"],
+      message: ms.startDate
+        ? `Membership starts on ${ms.startDate}. Entry before then needs a manager override.`
+        : "Membership has not started yet. Entry before the start date needs a manager override.",
+    };
+  }
+
+  if (ms.status === "expired" || ms.status === "cancelled") {
     return {
       decision: "blocked",
       reasonCodes: ["MEMBERSHIP_EXPIRED"],
@@ -157,4 +171,39 @@ export function evaluateCheckIn(input: CheckInDecisionInput): CheckInDecisionOut
   }
 
   return { decision: "allowed", reasonCodes: ["OK"], message: "Membership valid. Welcome in." };
+}
+
+// ---------------------------------------------------------------------------
+// Which term is "current" — identical to the server's projection rank
+// ---------------------------------------------------------------------------
+
+const CURRENT_MEMBERSHIP_RANK: Record<MembershipEffectiveStatus, number> = {
+  active: 0,
+  expiring: 0,
+  frozen: 0,
+  depleted: 1,
+  scheduled: 2,
+  expired: 3,
+  cancelled: 4,
+};
+
+/**
+ * The term the API treats as the member's current one: a usable term first,
+ * then a depleted pass, then a term that has not started, then history. The
+ * member record must rank the same way or its header contradicts the status
+ * chip the server derived.
+ */
+export function pickCurrentMembership<T extends Pick<Membership, "status" | "endDate">>(memberships: readonly T[]): T | undefined {
+  return [...memberships].sort(
+    (a, b) => CURRENT_MEMBERSHIP_RANK[a.status] - CURRENT_MEMBERSHIP_RANK[b.status] || b.endDate.localeCompare(a.endDate),
+  )[0];
+}
+
+/**
+ * The term a renewal chains from: the latest one that was not cancelled. A
+ * renewal of an earlier term would overlap a successor already sold, which
+ * the server rejects, and would break the renewal lineage.
+ */
+export function pickRenewalTarget<T extends Pick<Membership, "status" | "endDate">>(memberships: readonly T[]): T | undefined {
+  return [...memberships].filter((m) => m.status !== "cancelled").sort((a, b) => b.endDate.localeCompare(a.endDate))[0];
 }

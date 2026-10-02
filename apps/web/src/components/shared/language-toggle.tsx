@@ -1,7 +1,7 @@
 "use client";
 
 import { Languages } from "lucide-react";
-import { LOCALE_LABELS, otherLocale } from "@/lib/i18n/config";
+import { LOCALE_LABELS } from "@/lib/i18n/config";
 import { useLocale } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
@@ -21,12 +21,14 @@ export function LanguageToggle({
   showLabel?: boolean;
   className?: string;
 }) {
-  const { locale, setLocale, t } = useLocale();
-  const next = otherLocale(locale);
+  const { locale, setLocale, switchEnabled, t } = useLocale();
+  if (!switchEnabled) return null;
+  const next = locale === "ar" ? "en" : "ar";
   const label = LOCALE_LABELS[next].native;
 
   return (
     <Button
+      type="button"
       variant={variant}
       size={showLabel ? "sm" : "icon"}
       onClick={() => setLocale(next)}

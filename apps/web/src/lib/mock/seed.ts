@@ -16,8 +16,21 @@ import type {
   Task,
   TimelineEvent,
   UUID,
+  EquipmentAsset,
+  EquipmentIssue,
+  EquipmentWorkOrder,
+  FacilityTask,
+  InventoryBalance,
+  InventoryTransfer,
+  LowStockAlert,
+  Product,
+  PurchaseOrder,
+  StockMovement,
+  Supplier,
 } from "@/lib/domain/types";
 import { defaultRoleDefinitions } from "@/lib/domain/permissions";
+import { entitledModulesForPlan, defaultWorkspacePreferences, WORKSPACE_MODULE_CATALOG_VERSION } from "@/lib/domain/workspace-modules";
+import { BRAND_PALETTE_PRESETS, deriveBrandTokens } from "@/lib/domain/brand";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import type { LeadRecord, MemberRecord, MembershipRecord, MockDb } from "./store";
@@ -66,7 +79,6 @@ export const U = {
   rana: seedUuid(17), // reception SWF
   tarek: seedUuid(18), // reception ABD
   fadi: seedUuid(19), // trainer
-  mona: seedUuid(20), // auditor
   sanad: seedUuid(21), // invited receptionist
   rania: seedUuid(22), // deactivated sales
 } as const;
@@ -92,6 +104,18 @@ const RULE_IDS = {
   leadUntouched: seedUuid(63),
   followUpOverdue: seedUuid(64),
   outstanding: seedUuid(65),
+} as const;
+
+const OPS_IDS = {
+  creatine: seedUuid(70),
+  protein: seedUuid(71),
+  supplier: seedUuid(72),
+  zone: seedUuid(73),
+  asset: seedUuid(74),
+  issue: seedUuid(75),
+  workOrder: seedUuid(76),
+  facility: seedUuid(77),
+  purchaseOrder: seedUuid(81),
 } as const;
 
 interface Gen {
@@ -134,10 +158,28 @@ function hoursAgo(now: Date, hours: number, extraMinutes = 0): Date {
   return new Date(now.getTime() - hours * 3_600_000 - extraMinutes * 60_000);
 }
 
+/** Add calendar months without allowing dates such as January 31 to roll into
+ * the following month. Subscription periods are calendar-based, so this is
+ * intentionally different from adding a fixed number of milliseconds. */
+function addCalendarMonths(timestamp: number, months: number): Date {
+  const source = new Date(timestamp);
+  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + months, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(source.getUTCDate(), lastDay));
+  return target;
+}
+
 export function buildSeed(now: Date = new Date()): MockDb {
   resetUuidCounter();
   const g = makeGen();
   const today = todayISODate("Asia/Amman", now);
+  // Forge is an already-converted demo tenant. Keep its lifecycle facts
+  // realistic so admin detail and platform snapshot screens never fall back
+  // to "Not configured" for the canonical active tenant.
+  const subscriptionStartedAt = new Date(now);
+  subscriptionStartedAt.setUTCDate(subscriptionStartedAt.getUTCDate() - 12);
+  subscriptionStartedAt.setUTCHours(7, 0, 0, 0);
+  const currentPeriodEndsAt = addCalendarMonths(subscriptionStartedAt.getTime(), 1);
 
   // -------------------------------------------------------------------------
   // Organization, branches, config
@@ -179,7 +221,6 @@ export function buildSeed(now: Date = new Date()): MockDb {
     { id: U.rana, organizationId: ORG_ID, name: "Rana Issa", email: "rana@forgefitness.jo", phone: "+962 77 577 2256", role: "receptionist", branchScope: "selected", branchIds: [BRANCH_SWF], status: "active", lastActiveAt: iso(hoursAgo(now, 1)) },
     { id: U.tarek, organizationId: ORG_ID, name: "Tarek Azar", email: "tarek@forgefitness.jo", phone: "+962 78 588 7742", role: "receptionist", branchScope: "selected", branchIds: [BRANCH_ABD], status: "active", lastActiveAt: iso(hoursAgo(now, 26)) },
     { id: U.fadi, organizationId: ORG_ID, name: "Fadi Khoury", email: "fadi@forgefitness.jo", phone: "+962 79 599 1187", role: "trainer", branchScope: "selected", branchIds: [BRANCH_ABD], status: "active", lastActiveAt: iso(hoursAgo(now, 8)) },
-    { id: U.mona, organizationId: ORG_ID, name: "Mona Barakat", email: "mona@forgefitness.jo", phone: "+962 77 610 3359", role: "auditor", branchScope: "all", branchIds: [], status: "active", lastActiveAt: iso(hoursAgo(now, 50)) },
     { id: U.sanad, organizationId: ORG_ID, name: "Sanad Khries", email: "sanad@forgefitness.jo", phone: "+962 78 621 9924", role: "receptionist", branchScope: "selected", branchIds: [BRANCH_SWF], status: "invited", invitedAt: iso(daysAgo(now, 2)) },
     { id: U.rania, organizationId: ORG_ID, name: "Rania Hijazi", email: "rania@forgefitness.jo", phone: "+962 79 632 5508", role: "salesperson", branchScope: "selected", branchIds: [BRANCH_ABD], status: "deactivated", lastActiveAt: iso(daysAgo(now, 34)) },
   ];
@@ -1562,7 +1603,7 @@ export function buildSeed(now: Date = new Date()): MockDb {
     {
       id: TEMPLATE_IDS.payment,
       name: "Outstanding balance",
-      channel: "sms",
+      channel: "whatsapp",
       bodyEn: "{{gym_name}}: Hi {{member_name}}, a balance of JOD {{amount}} is outstanding on your account. You can settle it at the {{branch_name}} desk. Thank you!",
       bodyAr: "{{gym_name}}: مرحباً {{member_name}}، يوجد رصيد متبقٍ بقيمة {{amount}} دينار على حسابك. يمكنك تسديده في فرع {{branch_name}}. شكراً لك!",
       variables: ["member_name", "amount", "branch_name", "gym_name"],
@@ -1839,6 +1880,59 @@ export function buildSeed(now: Date = new Date()): MockDb {
   // -------------------------------------------------------------------------
   // Organization settings
   // -------------------------------------------------------------------------
+  const operationsZone: import("@/lib/domain/types").Zone = {
+    id: OPS_IDS.zone,
+    organizationId: ORG_ID,
+    branchId: BRANCH_ABD,
+    code: "MAIN-FLOOR",
+    name: "Main floor",
+    nameAr: "الطابق الرئيسي",
+    kind: "floor",
+    capacity: 80,
+    status: "active",
+    createdAt: iso(daysAgo(now, 30)),
+    updatedAt: iso(daysAgo(now, 30)),
+  };
+  const products: Product[] = [
+    { id: OPS_IDS.creatine, organizationId: ORG_ID, sku: "SUP-CREATINE", name: "Creatine monohydrate", unit: "serving", reorderPoint: 20, preferredSupplierId: OPS_IDS.supplier, retailPrice: money(1_500, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
+    { id: OPS_IDS.protein, organizationId: ORG_ID, sku: "SUP-PROTEIN", name: "Protein bar", unit: "each", reorderPoint: 12, retailPrice: money(1_000, "JOD"), status: "active", createdAt: iso(daysAgo(now, 45)), updatedAt: iso(daysAgo(now, 2)) },
+  ];
+  const suppliers: Supplier[] = [{ id: OPS_IDS.supplier, organizationId: ORG_ID, name: "Jordan Sports Supply", contactName: "Maya Haddad", email: "orders@jss.example", phone: "+962 79 700 1000", terms: "Net 15", branchIds: [BRANCH_ABD, BRANCH_SWF], preferredProductIds: [OPS_IDS.creatine, OPS_IDS.protein], status: "active", createdAt: iso(daysAgo(now, 60)), updatedAt: iso(daysAgo(now, 7)) }];
+  const inventoryBalances: InventoryBalance[] = [
+    { id: seedUuid(78), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.creatine, quantityOnHand: 16, committedQuantity: 0, availableQuantity: 16, lastMovementAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) },
+    { id: seedUuid(79), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.protein, quantityOnHand: 42, committedQuantity: 0, availableQuantity: 42, lastMovementAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) },
+  ];
+  const stockMovements: StockMovement[] = [{ id: seedUuid(80), organizationId: ORG_ID, branchId: BRANCH_ABD, productId: OPS_IDS.creatine, type: "receive", quantityDelta: 40, quantity: 40, unitCost: money(650, "JOD"), referenceType: "opening_balance", idempotencyKey: "seed-opening-creatine", financialPostingStatus: "not_posted", occurredAt: iso(daysAgo(now, 30)), createdAt: iso(daysAgo(now, 30)), createdById: U.omar }];
+  const inventoryTransfers: InventoryTransfer[] = [];
+  const lowStockAlerts: LowStockAlert[] = [];
+  // A fully received supplier order is the one payable the demo gym owes:
+  // JOD 1,650.000 to Jordan Sports Supply, aged from its receiving date.
+  const purchaseOrders: PurchaseOrder[] = [{
+    id: OPS_IDS.purchaseOrder,
+    organizationId: ORG_ID,
+    branchId: BRANCH_ABD,
+    sourceType: "supplier",
+    supplierId: OPS_IDS.supplier,
+    supplierName: "Jordan Sports Supply",
+    lines: [
+      { productId: OPS_IDS.creatine, sku: "SUP-CREATINE", productName: "Creatine monohydrate", orderedQuantity: 100, receivedQuantity: 100, unitCost: money(6_500, "JOD"), lineTotal: money(650_000, "JOD") },
+      { productId: OPS_IDS.protein, sku: "SUP-PROTEIN", productName: "Protein bar", orderedQuantity: 200, receivedQuantity: 200, unitCost: money(5_000, "JOD"), lineTotal: money(1_000_000, "JOD") },
+    ],
+    status: "received",
+    currency: "JOD",
+    total: money(1_650_000, "JOD"),
+    supplierInvoiceReference: "JSS-INV-2026-0147",
+    notes: "Monthly supplement restock.",
+    approvedAt: iso(daysAgo(now, 24)),
+    approvedById: U.omar,
+    receivedAt: iso(daysAgo(now, 20)),
+    createdAt: iso(daysAgo(now, 25)),
+    updatedAt: iso(daysAgo(now, 20)),
+  }];
+  const facilityTasks: FacilityTask[] = [{ id: OPS_IDS.facility, organizationId: ORG_ID, branchId: BRANCH_ABD, zoneId: OPS_IDS.zone, zoneName: operationsZone.name, kind: "cleaning", severity: "medium", status: "open", title: "Main floor inspection", notes: "Check supplies and wipe high-touch surfaces.", assigneeId: U.hala, trafficContext: { checkInsLastHour: 18, occupancyPercent: 72, capturedAt: iso(hoursAgo(now, 1)) }, financialPostingStatus: "not_posted", createdAt: iso(daysAgo(now, 1)), updatedAt: iso(daysAgo(now, 1)) }];
+  const equipmentAssets: EquipmentAsset[] = [{ id: OPS_IDS.asset, organizationId: ORG_ID, branchId: BRANCH_ABD, zoneId: OPS_IDS.zone, code: "TREAD-01", name: "Commercial treadmill", manufacturer: "Life Fitness", model: "Integrity 95Ti", serialNumber: "LF-AB-001", purchaseDate: iso(daysAgo(now, 900)).slice(0, 10), purchaseCost: money(2_900_000, "JOD"), warrantyEndDate: iso(daysAgo(now, 170)).slice(0, 10), status: "maintenance", expectedServiceIntervalDays: 90, expectedUsefulLifeMonths: 84, createdAt: iso(daysAgo(now, 900)), updatedAt: iso(daysAgo(now, 4)) }];
+  const equipmentIssues: EquipmentIssue[] = [{ id: OPS_IDS.issue, organizationId: ORG_ID, branchId: BRANCH_ABD, assetId: OPS_IDS.asset, title: "Belt slipping under load", description: "Reported by front desk during evening peak.", severity: "high", status: "in_progress", reportedAt: iso(daysAgo(now, 4)), downtimeDays: 2, safetyStatus: "out_of_service", createdById: U.hala }];
+  const equipmentWorkOrders: EquipmentWorkOrder[] = [{ id: OPS_IDS.workOrder, organizationId: ORG_ID, branchId: BRANCH_ABD, assetId: OPS_IDS.asset, issueId: OPS_IDS.issue, status: "approved", description: "Inspect belt and motor; quote replacement.", assigneeId: U.layla, vendorName: "Life Fitness service", partsCost: money(220_000, "JOD"), laborCost: money(80_000, "JOD"), totalCost: money(300_000, "JOD"), replacementEstimate: money(1_900_000, "JOD"), financialPostingStatus: "pending", openedAt: iso(daysAgo(now, 4)), updatedAt: iso(daysAgo(now, 3)) }];
   const db: MockDb = {
     organization: {
       id: ORG_ID,
@@ -1847,14 +1941,39 @@ export function buildSeed(now: Date = new Date()): MockDb {
       currency: "JOD",
       timezone: "Asia/Amman",
       locale: "en-JO",
+      phoneCountryCallingCode: "962",
       defaultLanguage: "en",
       taxRatePercent: 0,
       receiptPrefix: "R-",
       nextReceiptNumber: receiptCounter,
       receiptFooter: "Thank you for training with Forge. Follow @forgefitness.jo",
       status: "active",
+      subscriptionPlan: "Pro",
+      billingInterval: "monthly",
+      subscriptionStartedAt: iso(subscriptionStartedAt),
+      currentPeriodEndsAt: iso(currentPeriodEndsAt),
+    },
+    brand: {
+      organizationId: ORG_ID,
+      paletteKey: "rivet",
+      primaryColor: BRAND_PALETTE_PRESETS.rivet,
+      tokens: deriveBrandTokens(BRAND_PALETTE_PRESETS.rivet),
+      version: 0,
     },
     branches,
+    zones: [operationsZone],
+    products,
+    productTombstones: [],
+    suppliers,
+    inventoryBalances,
+    stockMovements,
+    inventoryTransfers,
+    lowStockAlerts,
+    purchaseOrders,
+    facilityTasks,
+    equipmentAssets,
+    equipmentIssues,
+    equipmentWorkOrders,
     users,
     roles: defaultRoleDefinitions(),
     paymentMethods: [
@@ -1866,9 +1985,25 @@ export function buildSeed(now: Date = new Date()): MockDb {
     ],
     notificationSettings: {
       managerAlerts: { cashVariance: true, refundOrVoid: true, checkinOverride: true, discountApproval: true },
+      renewalRecoveryEnabled: false,
       automationDeliveryMode: "sandbox",
       quietHoursStart: "22:00",
       quietHoursEnd: "07:00",
+    },
+    organizationEntitlements: {
+      organizationId: ORG_ID,
+      catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+      subscriptionPlan: "Pro",
+      entitledModules: entitledModulesForPlan("Pro"),
+      source: "subscription_plan",
+      updatedAt: iso(now),
+    },
+    workspaceModulePreferences: {
+      organizationId: ORG_ID,
+      catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
+      enabledModules: defaultWorkspacePreferences(entitledModulesForPlan()),
+      updatedAt: iso(now),
+      updatedById: U.omar,
     },
     operationalPolicies: {
       entry: {
@@ -1884,6 +2019,31 @@ export function buildSeed(now: Date = new Date()): MockDb {
         maximumExtensionDays: 365,
       },
       personalTraining: { sessionDurationMinutes: 60, bookingHorizonDays: 30, cancellationCutoffHours: 12 },
+      classBooking: {
+        enabled: true,
+        eligibilityMode: "all_active_memberships",
+        eligiblePlanIds: [],
+        bookingHorizonDays: 30,
+        cancellationCutoffHours: 2,
+        maxActiveBookingsPerMember: 8,
+        waitlistEnabled: true,
+        waitlistSize: 12,
+        noShowTracking: true,
+      },
+      retention: { inactivityDays: 14, expiredWinBackDays: 90, defaultSnoozeDays: 7 },
+    referrals: {
+      enabled: true,
+      rewardDays: 7,
+      maxRewardDaysPerWindow: 30,
+      windowDays: 90,
+    },
+    memberFreezes: {
+      requestsEnabled: true,
+      freeFreezesPerWindow: 1,
+      extraFreezeFeeMinor: 10_000,
+      maxDaysPerFreeze: 30,
+      windowDays: 365,
+    },
       operatingHours: [],
       trialSchedules: [],
     },
@@ -1893,7 +2053,38 @@ export function buildSeed(now: Date = new Date()): MockDb {
     charges,
     payments,
     receipts,
+    retailSales: [],
     shifts,
+    supplierPayments: [],
+    // Forge signed its agreement when it was onboarded, so the demo owner is
+    // not gated. Previews simulate an unsigned gym with the
+    // `rivet.demo.agreement=required` session flag.
+    subscriptionAgreements: [{
+      id: seedUuid(82),
+      reference: "RVT-20260815-FORGE",
+      version: "1.2 · 4 September 2026",
+      status: "countersigned",
+      organizationId: ORG_ID,
+      organizationName: "Forge Fitness Club",
+      customer: { legalName: "Forge Fitness Club LLC", tradeName: "Forge Fitness Club", registrationNumber: "200123456", address: "Abdoun Circle, Amman", city: "Amman", branches: 2 },
+      signatory: { name: "Omar Al-Khatib", title: "Owner", idType: "national", idNumber: "9871234567", phone: "+962 79 555 0101", email: "omar@forgefitness.jo" },
+      subscription: { plan: "Pro", startDate: "2026-08-15", termMonths: 12, quote: "Q-1042" },
+      consents: { agreement: true, authority: true, electronic: true, accurate: true },
+      signature: { method: "typed", typedName: "Omar Al-Khatib" },
+      client: { userAgent: "Mozilla/5.0 (demo)", language: "en-JO", viewport: "1440x900" },
+      placeOfSigning: "Amman",
+      signedAt: iso(daysAgo(now, 19)),
+      signedAtLocal: "15 August 2026, 11:20",
+      timezone: "Asia/Amman",
+      signedByName: "Omar Al-Khatib",
+      documentSha256: "seeded-agreement-hash",
+      clientDocumentSha256: "seeded-agreement-hash",
+      hashMatch: true,
+      countersign: { at: iso(daysAgo(now, 18)), byName: "Elias Hreish", title: "Co-founder", typedName: "Elias Hreish" },
+      idRevealCount: 0,
+      createdAt: iso(daysAgo(now, 19)),
+      updatedAt: iso(daysAgo(now, 18)),
+    }],
     checkIns: checkIns.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)),
     leads,
     offers,

@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/input";
+import { RadioCard, RadioGroup } from "@/components/ui/radio-group";
 import type { PtBooking } from "@/lib/domain/types";
-import { ptBookingCreditConsequence, type PtBookingOutcomeAction } from "@/lib/domain/personal-training";
+import { PT_DEFAULT_CANCELLATION_CUTOFF_HOURS, ptBookingCreditConsequence, type PtBookingOutcomeAction } from "@/lib/domain/personal-training";
 import { formatDateTime } from "@/lib/utils/dates";
 
 const TITLE: Record<PtBookingOutcomeAction, string> = {
@@ -27,6 +28,8 @@ export function BookingOutcomeConfirmation({
   open,
   pending,
   cancelledByGym = false,
+  cutoffHours = PT_DEFAULT_CANCELLATION_CUTOFF_HOURS,
+  allowCancellationChoice = false,
   onOpenChange,
   onConfirm,
 }: {
@@ -34,30 +37,42 @@ export function BookingOutcomeConfirmation({
   action?: PtBookingOutcomeAction;
   open: boolean;
   pending?: boolean;
+  /** Initial answer to "who is cancelling"; staff may change it when allowCancellationChoice is set. */
   cancelledByGym?: boolean;
+  /** The gym's PT cutoff, so the stated ledger consequence matches what the server will do. */
+  cutoffHours?: number;
+  /** Let staff record a member-requested cancellation, which follows the cutoff rule. */
+  allowCancellationChoice?: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (input: { booking: PtBooking; action: PtBookingOutcomeAction; reason?: string }) => void;
+  onConfirm: (input: { booking: PtBooking; action: PtBookingOutcomeAction; reason?: string; cancelledByGym: boolean }) => void;
 }) {
   const [reason, setReason] = useState("");
-  useEffect(() => { if (open) setReason(""); }, [open, booking?.id, action]);
+  const [byGym, setByGym] = useState(cancelledByGym);
+  useEffect(() => { if (open) { setReason(""); setByGym(cancelledByGym); } }, [open, booking?.id, action, cancelledByGym]);
   if (!booking || !action) return null;
-  const consequence = ptBookingCreditConsequence({ action, startsAt: booking.startsAt, cancelledByGym });
+  const consequence = ptBookingCreditConsequence({ action, startsAt: booking.startsAt, cutoffHours, cancelledByGym: byGym });
   const reasonRequired = action === "no_show" || action === "cancelled";
   const reasonId = `pt-outcome-reason-${booking.id}`;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{TITLE[action]}</DialogTitle><DialogDescription>Review the member, trainer, time, and ledger impact before recording this audited outcome.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{TITLE[action]}</DialogTitle><DialogDescription>Check the details, then confirm.</DialogDescription></DialogHeader>
         <DialogBody className="space-y-4">
           <dl className="grid gap-3 rounded-md border border-line bg-sunken p-3 text-[12px] sm:grid-cols-2">
-            <div><dt className="eyebrow">Member</dt><dd className="mt-1 font-medium text-ink">{booking.memberName}</dd></div>
-            <div><dt className="eyebrow">Trainer</dt><dd className="mt-1 font-medium text-ink">{booking.trainerName}</dd></div>
-            <div className="sm:col-span-2"><dt className="eyebrow">Session time</dt><dd className="mt-1 font-medium text-ink">{formatDateTime(booking.startsAt)} · {booking.branchName}</dd></div>
+            <div><dt className="context-label">Member</dt><dd className="mt-1 font-medium text-ink">{booking.memberName}</dd></div>
+            <div><dt className="context-label">Trainer</dt><dd className="mt-1 font-medium text-ink">{booking.trainerName}</dd></div>
+            <div className="sm:col-span-2"><dt className="context-label">Session time</dt><dd className="mt-1 font-medium text-ink">{formatDateTime(booking.startsAt)} · {booking.branchName}</dd></div>
           </dl>
-          <p className={consequence.effect === "consume" ? "rounded-md border border-warning/30 bg-warning-bg p-3 text-[12px] text-warning-deep" : "rounded-md border border-success/30 bg-success-bg p-3 text-[12px] text-success-deep"}>{consequence.text}</p>
-          {reasonRequired ? <Field label={action === "no_show" ? "No-show reason" : "Cancellation reason"} htmlFor={reasonId} required hint="This explanation is included in the immutable audit history."><Textarea id={reasonId} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={action === "no_show" ? "What happened?" : "Why is the gym cancelling this session?"} /></Field> : <p className="text-[12px] text-ink-3">Routine completion stays fast: no reason is required.</p>}
+          {action === "cancelled" && allowCancellationChoice ? (
+            <RadioGroup aria-label="Who is cancelling" value={byGym ? "gym" : "member"} onValueChange={(value) => setByGym(value === "gym")}>
+              <RadioCard value="gym"><span className="block text-[13px] font-medium text-ink">The gym is cancelling</span><span className="mt-0.5 block text-[12px] text-ink-2">The member gets the credit back.</span></RadioCard>
+              <RadioCard value="member"><span className="block text-[13px] font-medium text-ink">The member asked to cancel</span><span className="mt-0.5 block text-[12px] text-ink-2">The member gets the credit back if they cancel at least {cutoffHours} hours before the session.</span></RadioCard>
+            </RadioGroup>
+          ) : null}
+          <p className={consequence.effect === "consume" ? "rounded-md border border-warning/30 bg-warning-bg p-3 text-[12px] text-warning-deep" : "rounded-md border border-success/30 bg-success-bg p-3 text-[12px] text-success-deep"} role="status">{consequence.text}</p>
+          {reasonRequired ? <Field label={action === "no_show" ? "No-show reason" : "Cancellation reason"} htmlFor={reasonId} required><Textarea id={reasonId} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={action === "no_show" ? "What happened?" : byGym ? "Why is the gym cancelling this session?" : "What did the member say?"} /></Field> : <p className="text-[12px] text-ink-3">No reason is needed to complete a session.</p>}
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Back</Button><Button variant={action === "completed" ? "primary" : action === "cancelled" ? "danger" : "secondary"} loading={pending} disabled={reasonRequired && reason.trim().length < 3} onClick={() => onConfirm({ booking, action, reason: reason.trim() || undefined })}>{ACTION[action]}</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>Back</Button><Button variant={action === "completed" ? "primary" : action === "cancelled" ? "danger" : "secondary"} loading={pending} disabled={reasonRequired && reason.trim().length < 3} onClick={() => onConfirm({ booking, action, reason: reason.trim() || undefined, cancelledByGym: action === "cancelled" && byGym })}>{ACTION[action]}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

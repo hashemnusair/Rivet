@@ -298,7 +298,7 @@ export const marketing: typeof EnMarketing = {
 
   footer: {
     blurb: "نظام الإيرادات والعمليات للأندية الرياضية — وأبسط طريقة للأعضاء ليجدوها وينضموا إليها ويدخلوها.",
-    madeIn: "صُنع في عمّان · Made in Amman",
+    madeIn: "صُنع في عمّان",
     product: "المنتج",
     overview: "نظرة عامة",
     members: "الأعضاء",

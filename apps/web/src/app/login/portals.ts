@@ -1,8 +1,8 @@
 import { Building2, Dumbbell, LogIn, Lock, type LucideIcon } from "lucide-react";
 
 /**
- * RIVET has one sign-in address (`/login`) with three portals beneath it. The
- * portals never share an account list: gym staff, members and platform
+ * RIVET has a generic account sign-in (`/login`) plus three audience-specific
+ * portals beneath it. The portals never share an account list: gym staff, members and platform
  * administrators each authenticate into their own surface. Gym access is
  * issued by RIVET after an application is reviewed; it is never self-created.
  */
@@ -30,26 +30,26 @@ export const PORTALS: Record<Audience, Portal> = {
     href: "/login",
     icon: LogIn,
     title: "Sign in to RIVET",
-    blurb: "Use your account once. RIVET will open the workspace assigned to you.",
+    blurb: "Choose gym team or gym member.",
     audience: "Members · Gym teams · Platform administrators",
     destination: "/login",
     signUpUrl: "/login/member/create",
   },
   staff: {
     id: "staff",
-    href: "/login",
+    href: "/login/gym",
     icon: Building2,
     title: "Gym team",
-    blurb: "Run the floor, the sales desk and the cash drawer.",
+    blurb: "For gym owners and staff.",
     audience: "Owners · Managers · Sales · Reception",
     destination: "/dashboard",
   },
   member: {
     id: "member",
-    href: "/login",
+    href: "/login/member",
     icon: Dumbbell,
     title: "Gym member",
-    blurb: "Your memberships, visits, receipts and entry QR.",
+    blurb: "See your memberships, visits, receipts and entry code.",
     audience: "Anyone training at a RIVET gym",
     destination: "/customer/my-gyms",
     signUpUrl: "/login/member/create",
@@ -57,10 +57,10 @@ export const PORTALS: Record<Audience, Portal> = {
   },
   admin: {
     id: "admin",
-    href: "/login",
+    href: "/login/admin",
     icon: Lock,
     title: "Platform administration",
-    blurb: "Tenants, subscriptions, billing and support across the network.",
+    blurb: "Gyms, plans, billing and support. For RIVET staff.",
     audience: "RIVET staff only",
     destination: "/platform",
   },

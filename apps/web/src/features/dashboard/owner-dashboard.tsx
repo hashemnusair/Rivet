@@ -1,31 +1,35 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, ArrowUpRight, Clock3, Info, OctagonAlert, UsersRound, WalletCards, type LucideIcon } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
-import type { DashboardData } from "@/lib/domain/types";
 import { qk } from "@/lib/api/keys";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
+import { useFormat } from "@/lib/i18n/format";
+import { useLocale } from "@/lib/i18n/provider";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
-import { MoneyText, RelativeText } from "@/components/shared/data-display";
-import { PageHeader, Stat } from "@/components/shared/chrome";
+import { MoneyText } from "@/components/shared/data-display";
+import { PageHeader } from "@/components/shared/chrome";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { ErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/utils/cn";
+import { NeedsAttention } from "@/features/brief/needs-attention";
 import { BranchRevenueBars, RevenueChart } from "./charts";
-import { dashboardScope } from "./dashboard-scope";
-import { useT } from "@/lib/i18n/provider";
-import { useFormat } from "@/lib/i18n/format";
+import { useDashboardScopeText, useGreeting } from "./dashboard-scope";
+import { TodayQueue } from "./today-queue";
+import { ContextLabel } from "@/components/ui/typography";
 
 export function OwnerDashboard() {
-  const t = useT();
-  const format = useFormat();
   const { session } = useApp();
+  const { t, isolateLtr } = useLocale();
+  const format = useFormat();
   const branchId = session?.activeBranchId;
   const today = todayISODate();
+  const greeting = useGreeting(session?.user.name.split(" ")[0] ?? "");
+  const scopeText = useDashboardScopeText(session?.branches ?? [], branchId);
 
   const dashboardQuery = { branchId, from: addDays(today, -29), to: today };
   const { data, isLoading, isError, refetch } = useRealtimeApiQuery({
@@ -48,12 +52,9 @@ export function OwnerDashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow={format.date(today)}
-        title={t("dashboard.greeting.withName", { greeting: t(`dashboard.greeting.${greetingKey()}`), name: session?.user.name.split(" ")[0] ?? "" })}
-        description={(() => {
-          const scope = dashboardScope(session?.branches ?? [], branchId);
-          return t(`dashboard.scope.${scope.key}`, scope.vars);
-        })()}
+        sectionLabel={format.date(today)}
+        title={greeting}
+        description={scopeText}
       />
 
       {/* KPI strip — one ruled panel, not six cards */}
@@ -62,95 +63,55 @@ export function OwnerDashboard() {
           <MoneyText money={kpis?.revenueToday ?? money(0)} />
         </KpiCell>
         <KpiCell
-          label={t("dashboard.owner.thisMonth")}
+          label={t("dashboard.owner.collectedThisMonth")}
           loading={isLoading}
           context={
             monthDelta !== undefined ? (
               <span className={cn("inline-flex items-center gap-0.5", monthDelta >= 0 ? "text-success-deep" : "text-danger")}>
-                <ArrowUpRight className={cn("size-3", monthDelta < 0 && "rotate-90")} />
-                {t("dashboard.owner.vsLastMonth", { percent: format.number(Math.abs(monthDelta)) })}
+                <ArrowUpRight className={cn("size-3", monthDelta < 0 && "rotate-90")} aria-hidden />
+                {t(monthDelta >= 0 ? "dashboard.owner.monthUp" : "dashboard.owner.monthDown", { percent: isolateLtr(`${Math.abs(monthDelta)}%`) })}
               </span>
             ) : undefined
           }
         >
           <MoneyText money={kpis?.revenueThisMonth ?? money(0)} compact />
         </KpiCell>
-        <KpiCell label={t("dashboard.owner.outstanding")} loading={isLoading} tone={kpis && kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context={t("dashboard.owner.unpaidBalances")}>
+        <KpiCell label={t("dashboard.owner.unpaid")} loading={isLoading} tone={kpis && kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context={t("dashboard.owner.owedByMembers")}>
           <MoneyText money={kpis?.outstandingTotal ?? money(0)} compact />
         </KpiCell>
-        <KpiCell label={t("dashboard.owner.newMembers")} loading={isLoading} context={t("dashboard.owner.thisMonthContext")}>
+        <KpiCell label={t("dashboard.owner.newMembers")} loading={isLoading} context={t("dashboard.owner.joinedThisMonth")}>
           {kpis?.newMembersThisMonth ?? 0}
         </KpiCell>
-        <KpiCell label={t("dashboard.owner.renewals7d")} loading={isLoading} tone={kpis && kpis.renewalsDueNext7Days > 0 ? "warning" : undefined} context={t("dashboard.owner.expiredContext", { count: kpis?.expiredUnactioned ?? 0 })}>
+        <KpiCell label={t("dashboard.owner.endingThisWeek")} loading={isLoading} tone={kpis && kpis.renewalsDueNext7Days > 0 ? "warning" : undefined} context={t("dashboard.owner.memberships")}>
           {kpis?.renewalsDueNext7Days ?? 0}
         </KpiCell>
-        <KpiCell label={t("dashboard.owner.checkInsToday")} loading={isLoading} context={t("dashboard.owner.openLeadsContext", { count: kpis?.activeLeads ?? 0 })}>
+        <KpiCell label={t("dashboard.owner.checkInsToday")} loading={isLoading} context={t("dashboard.owner.openLeads", { count: kpis?.activeLeads ?? 0 })}>
           {kpis?.checkInsToday ?? 0}
         </KpiCell>
       </section>
 
-      {/* Alerts rail */}
-      {data && data.alerts.length > 0 ? (
-        <section aria-label={t("dashboard.owner.needsAttention")} className="panel overflow-hidden">
-          <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="flex items-center gap-2 text-[13px] font-semibold">
-              <OctagonAlert className="size-4 text-signal" aria-hidden />
-              {t("dashboard.owner.needsAttention")}
-              <span className="rounded-sm bg-signal-bg px-1.5 py-0.5 text-[11px] font-medium text-signal-deep tabular">
-                {data.alerts.length}
-              </span>
-            </h2>
-            <Link href="/audit" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-              {t("dashboard.owner.fullAuditTrail")} <ArrowRight className="size-3" />
-            </Link>
-          </header>
-          <ul className="divide-y divide-line">
-            {data.alerts.slice(0, 5).map((alert) => (
-              <li key={alert.id}>
-                <Link href={alert.href} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-sunken/40">
-                  {alert.severity === "critical" ? (
-                    <OctagonAlert className="size-4 shrink-0 text-signal" aria-hidden />
-                  ) : alert.severity === "warning" ? (
-                    <AlertTriangle className="size-4 shrink-0 text-warning" aria-hidden />
-                  ) : (
-                    <Info className="size-4 shrink-0 text-ink-3" aria-hidden />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium">{alert.title}</span>
-                    <span className="block truncate text-[12px] text-ink-3">{alert.detail}</span>
-                  </span>
-                  {alert.actorName ? <span className="hidden shrink-0 text-[12px] text-ink-3 sm:block">{alert.actorName}</span> : null}
-                  <span className="shrink-0 text-[11.5px] text-ink-3">
-                    <RelativeText iso={alert.occurredAt} />
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <NeedsAttention branchId={branchId} />
 
-      {/* Revenue + branch/operating priorities */}
+      <TodayQueue data={data?.todayQueue} loading={isLoading || !data} initialVisible={4} />
+
+      {/* Revenue + branch context */}
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
         <section className="panel p-4">
-          {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} />}
+          {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} currency={session?.organization.currency} />}
         </section>
-        <div className="grid gap-5">
-          <section className="panel p-4">
-            <p className="eyebrow mb-3">{t("dashboard.owner.revenueByBranch")}</p>
-            {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
-          </section>
-          <OperatingPriorities kpis={data?.kpis} loading={isLoading || !data} />
-        </div>
+        <section className="panel p-4">
+          <ContextLabel className="mb-3">{t("dashboard.owner.collectedByBranch")}</ContextLabel>
+          {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
+        </section>
       </div>
 
       {/* Leaderboard + activity */}
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
         <section className="panel overflow-hidden">
           <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">{t("dashboard.owner.salesThisMonth")}</h2>
+            <h2 className="text-[13px] font-semibold">{t("dashboard.owner.salesTeam")}</h2>
             <Link href="/crm/pipeline" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-              {t("nav.chrome.pipeline")} <ArrowRight className="size-3" />
+              {t("dashboard.owner.leads")} <ArrowRight className="size-3" aria-hidden />
             </Link>
           </header>
           {isLoading || !data ? (
@@ -162,20 +123,20 @@ export function OwnerDashboard() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-line text-start">
-                    <th className="px-4 py-2 text-start font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.rep")}</th>
-                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.collected")}</th>
-                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.newCol")}</th>
-                    <th className="px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.renewalsCol")}</th>
-                    <th className="whitespace-nowrap px-3 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.followUpsCol")}</th>
-                    <th className="px-4 py-2 text-end font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-3">{t("dashboard.owner.overdueCol")}</th>
+                    <th className="px-4 py-2 text-start text-[11.5px] font-semibold text-ink-3">{t("dashboard.owner.salesperson")}</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">{t("dashboard.owner.collected")}</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">{t("dashboard.owner.newMembers")}</th>
+                    <th className="px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">{t("dashboard.owner.renewals")}</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-end text-[11.5px] font-semibold text-ink-3">{t("dashboard.owner.followUpsDone")}</th>
+                    <th className="whitespace-nowrap px-4 py-2 text-end text-[11.5px] font-semibold text-ink-3">{t("dashboard.owner.lateFollowUps")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.leaderboard.map((rep, i) => (
                     <tr key={rep.userId} className="border-b border-line/70 last:border-0">
                       <td className="whitespace-nowrap px-4 py-2.5">
-                        <span className="me-2 text-[11px] text-ink-4 tabular [unicode-bidi:isolate]">{String(i + 1).padStart(2, "0")}</span>
-                        <span className="font-medium">{rep.name}</span>
+                        <span className="me-2 text-[12px] text-ink-4 tabular">{String(i + 1).padStart(2, "0")}</span>
+                        <bdi className="font-medium">{rep.name}</bdi>
                       </td>
                       <td className="px-3 py-2.5 text-end">
                         <MoneyText money={rep.revenueCollected} />
@@ -207,87 +168,6 @@ export function OwnerDashboard() {
   );
 }
 
-export function OperatingPriorities({
-  kpis,
-  loading,
-}: {
-  kpis?: DashboardData["kpis"];
-  loading: boolean;
-}) {
-  const t = useT();
-  const priorities: Array<{
-    label: string;
-    detail: string;
-    href: string;
-    icon: LucideIcon;
-    value: React.ReactNode;
-    tone?: "warning" | "danger";
-  }> = [
-    {
-      label: t("dashboard.owner.renewalsDue"),
-      detail: t("dashboard.owner.renewalsDueDetail", { count: kpis?.expiredUnactioned ?? 0 }),
-      href: "/crm/queues",
-      icon: Clock3,
-      value: kpis?.renewalsDueNext7Days ?? 0,
-      tone: (kpis?.renewalsDueNext7Days ?? 0) > 0 ? "warning" : undefined,
-    },
-    {
-      label: t("dashboard.owner.outstandingBalances"),
-      detail: t("dashboard.owner.outstandingBalancesDetail"),
-      href: "/payments",
-      icon: WalletCards,
-      value: <MoneyText money={kpis?.outstandingTotal ?? money(0)} compact />,
-      tone: (kpis?.outstandingTotal.amount ?? 0) > 0 ? "warning" : undefined,
-    },
-    {
-      label: t("dashboard.owner.openLeadFollowUp"),
-      detail: t("dashboard.owner.openLeadFollowUpDetail", { count: kpis?.overdueFollowUps ?? 0 }),
-      href: "/crm/pipeline",
-      icon: UsersRound,
-      value: kpis?.activeLeads ?? 0,
-      tone: (kpis?.overdueFollowUps ?? 0) > 0 ? "danger" : undefined,
-    },
-  ];
-
-  return (
-    <section className="panel overflow-hidden" aria-labelledby="operating-priorities-title">
-      <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
-        <div>
-          <p className="eyebrow">{t("dashboard.owner.operatingPriorities")}</p>
-          <h2 id="operating-priorities-title" className="mt-1 text-[15px] font-semibold">{t("dashboard.owner.moveTheNumbers")}</h2>
-        </div>
-        <Link href="/crm/queues" className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-          {t("nav.chrome.openQueues")} <ArrowRight className="size-3" />
-        </Link>
-      </header>
-      <div className="divide-y divide-line">
-        {priorities.map((priority) => {
-          const Icon = priority.icon;
-          return (
-            <Link key={priority.label} href={priority.href} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-sunken/40">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken text-ink-3">
-                <Icon className="size-3.5" aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] font-medium">{priority.label}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-ink-3">{priority.detail}</span>
-              </span>
-              {loading ? (
-                <Skeleton className="h-5 w-12 shrink-0" />
-              ) : (
-                <span className={cn("shrink-0 text-[18px] font-medium leading-none tabular", priority.tone === "warning" && "text-warning-deep", priority.tone === "danger" && "text-danger")}>
-                  {priority.value}
-                </span>
-              )}
-              <ArrowRight className="size-3.5 shrink-0 text-ink-4" aria-hidden />
-            </Link>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function KpiCell({
   label,
   children,
@@ -303,7 +183,7 @@ function KpiCell({
 }) {
   return (
     <div className="px-4 py-3.5">
-      <p className="eyebrow">{label}</p>
+      <ContextLabel>{label}</ContextLabel>
       {loading ? (
         <Skeleton className="mt-2 h-7 w-20" />
       ) : (
@@ -311,18 +191,7 @@ function KpiCell({
           {children}
         </div>
       )}
-      {context ? <div className="mt-1 text-[11.5px] text-ink-3">{context}</div> : null}
+      {context ? <div className="mt-1 text-[12px] text-ink-3">{context}</div> : null}
     </div>
   );
-}
-
-function greetingKey(): "morning" | "afternoon" | "evening" {
-  const h = new Date().getHours();
-  if (h < 12) return "morning";
-  if (h < 17) return "afternoon";
-  return "evening";
-}
-
-export function DashboardStatPlaceholder() {
-  return <Stat label="—" value="—" />;
 }

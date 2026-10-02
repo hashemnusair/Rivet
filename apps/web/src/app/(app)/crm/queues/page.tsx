@@ -1,41 +1,226 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
-import { PhoneCall, RefreshCw, RotateCcw, UserPlus, X } from "lucide-react";
+
+import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+
+import { Activity, ArrowUpRight, Banknote, CalendarClock, PhoneCall, RefreshCw, RotateCcw, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
+import { describeContactOutcome } from "@/lib/crm/contact-outcomes";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import type { RenewalQueueItem } from "@/lib/domain/types";
+import type { AtRiskMemberItem, RenewalQueueItem, RetentionRiskKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
 import { DaysUntilText, MoneyText, RelativeText } from "@/components/shared/data-display";
-import { PageHeader } from "@/components/shared/chrome";
+import { DataPagination, PageHeader } from "@/components/shared/chrome";
 import { MembershipStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
-import { LogContactForm } from "@/features/crm/contact-work-panel";
-import { useT } from "@/lib/i18n/provider";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LogContactDialog } from "@/features/crm/contact-work-panel";
+import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
+import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
+import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
+import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 
 type RenewalBucket = "expiring" | "expired";
 
 const BUCKETS: Array<{ value: RenewalBucket; label: string; hint: string }> = [
-  { value: "expiring", label: "Expiring", hint: "Memberships ending soon." },
-  { value: "expired", label: "Expired", hint: "Memberships that ended recently." },
+  { value: "expiring", label: "Ending soon", hint: "Memberships that end soon." },
+  { value: "expired", label: "Ended", hint: "Memberships that ended recently." },
 ];
 
 export default function QueuesPage() {
+  return <Suspense><WorkspaceModuleBoundary moduleKey="revenue"><RetentionWorkspace /></WorkspaceModuleBoundary></Suspense>;
+}
+
+function useRetentionParams() {
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const update = (changes: Record<string, string | undefined>) => {
+    const next = new URLSearchParams(params.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value); else next.delete(key);
+    }
+    router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
+  };
+  return { params, update };
+}
+
+function RetentionWorkspace() {
+  const t = useT();
+  const { params, update } = useRetentionParams();
+  const view = params.get("view") === "renewals" ? "renewals" : "at-risk";
+  const setView = (next: string) => update({ view: next, page: undefined, member: undefined });
+  return <div className="space-y-4">
+    <PageHeader title={t("crm.queues.title")} description="Call members who stopped coming or need to renew." />
+    <div className={tabListClassName} role="group" aria-label="Follow-up lists">
+      <button type="button" aria-pressed={view === "at-risk"} onClick={() => setView("at-risk")} className={tabTriggerClassName}><Activity className="size-3.5" /> At risk</button>
+      <button type="button" aria-pressed={view === "renewals"} onClick={() => setView("renewals")} className={tabTriggerClassName}><CalendarClock className="size-3.5" />{" "}{t("dashboard.owner.renewalsCol")}</button>
+    </div>
+    {view === "at-risk" ? <AtRiskQueuePage /> : <RenewalQueuePage />}
+  </div>;
+}
+
+const RISK_FILTERS: Array<{ value: RetentionRiskKind | "all"; label: string; hint: string }> = [
+  { value: "all", label: "All", hint: "Members who stopped coming, or whose membership ends soon or has ended. Most urgent first." },
+  { value: "inactive", label: "Not visiting", hint: "Members with a membership who stopped coming." },
+  { value: "expiring", label: "Ending soon", hint: "Memberships that end soon." },
+  { value: "expired", label: "Win back", hint: "Membership ended recently and they have not renewed." },
+];
+
+function AtRiskQueuePage() {
   const t = useT();
   const { session } = useApp();
-  const [bucket, setBucket] = useState<RenewalBucket>("expiring");
-  const [days, setDays] = useState("14");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [selectedId, setSelectedId] = useState<string>();
+  const { params, update } = useRetentionParams();
+  const requestedReason = params.get("reason");
+  const reason = RISK_FILTERS.find((item) => item.value === requestedReason)?.value ?? "all";
+  const search = params.get("q") ?? "";
+  const selectedId = params.get("member") ?? undefined;
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const setReason = (value: RetentionRiskKind | "all") => update({ reason: value === "all" ? undefined : value, page: undefined, member: undefined });
+  const setSearch = (value: string) => update({ q: value || undefined, page: undefined, member: undefined });
+  const setSelectedId = (value: string | undefined) => update({ member: value });
   const panelRef = useRef<HTMLElement | null>(null);
-  const today = todayISODate();
+  const query = useMemo(() => ({ branchId: session?.activeBranchId, reason, search: search.trim() || undefined, page, pageSize: 25 }), [reason, search, page, session?.activeBranchId]);
+  const risks = useRealtimeApiQuery({
+    queryKey: qk.atRisk(query),
+    query: (api) => api.listAtRiskMembers(query),
+    subscribe: (api, onValue, onError) => api.subscribeAtRiskMembers(query, onValue, onError),
+  });
+  const items = risks.data?.items ?? [];
+  const selectedItem = items.find((item) => item.member.id === selectedId);
+
+  useEffect(() => {
+    if (selectedItem && window.innerWidth < 1536) panelRef.current?.scrollIntoView?.({ behavior: "instant", block: "nearest" });
+  }, [selectedItem]);
+
+  return <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+    <aside className="panel h-fit self-start lg:sticky lg:top-20" aria-label="At-risk filters">
+
+      <div className="space-y-4 p-4">
+        <label htmlFor="risk-search" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Find a member<div className="relative"><Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-4" /><Input id="risk-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, phone or member number" className="ps-9" /></div></label>
+        <div className="border-t border-line pt-4">
+          <p className="text-[12px] font-medium text-ink-2">{t("common.label.reason")}</p>
+          <div className="mt-2 grid grid-cols-2 gap-1 lg:grid-cols-1" role="group" aria-label="At-risk reason">
+            {RISK_FILTERS.map((option) => <button key={option.value} type="button" aria-pressed={reason === option.value} onClick={() => { setReason(option.value); }} className={cn("rounded-sm px-3 py-2.5 text-start text-[12.5px] font-medium transition-colors", reason === option.value ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}>{option.label}</button>)}
+          </div>
+          <p className="mt-2 text-[12px] leading-relaxed text-ink-3">{RISK_FILTERS.find((option) => option.value === reason)?.hint}</p>
+        </div>
+        <p className="hidden text-[12px] leading-relaxed text-ink-2 lg:block">Frozen and new members are not shown. An owner or manager can change these day limits in Settings.</p>
+      </div>
+    </aside>
+
+    <div className={cn("grid gap-4", selectedItem && "2xl:grid-cols-[minmax(0,1fr)_340px]")}>
+      {selectedId && !selectedItem && risks.data && !risks.isLoading ? <MissingSelectionNotice memberId={selectedId} onClear={() => setSelectedId(undefined)} /> : null}
+      <section className="panel min-h-[420px] overflow-hidden self-start" aria-labelledby="risk-results-title">
+        <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div><h2 id="risk-results-title" className="mt-1 text-[15px] font-semibold">Members to contact</h2><p className="mt-0.5 text-[12px] text-ink-3">Most urgent first.</p></div><div className="flex shrink-0 items-center gap-2"><span className="text-[12px] tabular text-ink-3">{risks.data?.totalItems ?? "…"}</span><Button type="button" variant="ghost" size="icon-sm" onClick={() => void risks.refetch()} aria-label="Refresh at-risk members"><RefreshCw className="size-3.5" /></Button></div></header>
+        {risks.isBackgroundError ? <ErrorState layout="inline" title="List could not refresh" onRetry={() => void risks.refetch()} /> : null}
+        {risks.isLoading && !risks.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : risks.isError && !risks.data ? <ErrorState className="m-4" title="At-risk members could not be loaded" onRetry={() => void risks.refetch()} /> : items.length === 0 ? <EmptyState title="No members found" description="Try another reason or search." compact className="m-4" icon={Activity} action={(search || reason !== "all") ? <Button type="button" variant="secondary" size="sm" onClick={() => { update({ q: undefined, reason: undefined, page: undefined, member: undefined }); }}>{t("common.action.clearFilters")}</Button> : undefined} /> : <ul className="divide-y divide-line">{items.map((item) => <AtRiskRow key={item.member.id} item={item} selected={selectedItem?.member.id === item.member.id} onClick={() => setSelectedId(item.member.id)} />)}</ul>}
+        {risks.data && risks.data.totalPages > 1 ? <DataPagination page={risks.data} onPage={(next) => update({ page: String(next), member: undefined })} className="border-t border-line p-4" /> : null}
+      </section>
+      {selectedItem ? <AtRiskPanel ref={panelRef} item={selectedItem} onClose={() => setSelectedId(undefined)} /> : null}
+    </div>
+  </div>;
+}
+
+/**
+ * A Today link names a member who is not on this page of the queue (another
+ * page, a filter, or no longer at risk). Say so and offer the record instead
+ * of opening nothing.
+ */
+function MissingSelectionNotice({ memberId, onClear }: { memberId: string; onClear: () => void }) {
+  const t = useT();
+  return <aside className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3 animate-fade-in" data-testid="at-risk-missing-selection" aria-label="Selected member not in this view">
+    <div className="min-w-0">
+      <p className="text-[13px] font-medium">That member is not in this view</p>
+      <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-3">They may be on another page, hidden by a filter or by “Remind me later”, or no longer at risk. Open their record to see everything.</p>
+    </div>
+    <div className="flex flex-wrap gap-2">
+      <Button asChild size="sm"><Link href={`/members/${memberId}`}>{t("crm.queues.openMemberRecord")}{" "}<ArrowUpRight /></Link></Button>
+      <Button type="button" variant="ghost" size="sm" onClick={onClear}>Clear selection</Button>
+    </div>
+  </aside>;
+}
+
+function AtRiskRow({ item, selected, onClick }: { item: AtRiskMemberItem; selected: boolean; onClick: () => void }) {
+  return <li><button type="button" aria-pressed={selected} onClick={onClick} className={cn("flex w-full items-center gap-3 px-4 py-3 text-start transition-colors", selected ? "bg-sunken/70" : "hover:bg-sunken/40")}><Monogram name={item.member.fullName} size="sm" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="break-words text-[13px] font-medium">{item.member.fullName}</span><span className={cn("rounded-sm px-2 py-0.5 text-[12px] font-medium capitalize", item.priority === "urgent" ? "bg-danger-soft text-danger" : item.priority === "high" ? "bg-warning-soft text-warning-deep" : "bg-sunken text-ink-3")}>{item.priority}</span></span><span className="mt-1 block text-[12px] text-ink-3">{item.reasons.map((risk) => risk.label).join(" · ")}</span></span><span className="hidden shrink-0 text-end sm:block"><span className="block text-[12px] font-medium">{item.membership.planName}</span><span className="block text-[12px] text-ink-3">{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : "not contacted"}</span></span><PhoneCall className="size-3.5 shrink-0 text-ink-4" /></button></li>;
+}
+
+function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: () => void; ref: React.Ref<HTMLElement> }) {
+  const t = useT();
+  const { session } = useApp();
+  const today = todayISODate(session?.organization?.timezone);
+  const canSell = (session?.permissions ?? []).includes("memberships.sell");
+  const canCollect = (session?.permissions ?? []).includes("payments.collect");
+  const needsRenewal = item.reasons.some((reason) => reason.kind === "expired" || reason.kind === "expiring");
+  const lapsedSnooze = item.snoozedUntil && item.snoozedUntil < today ? item.snoozedUntil : undefined;
+  const initialMessage = item.reasons.some((reason) => reason.kind === "expired")
+    ? `Hi ${item.member.fullName.split(/\s+/)[0]}, we have missed seeing you at the gym. If you would like to return, reply here and we will help you find the right membership.`
+    : item.reasons.some((reason) => reason.kind === "expiring")
+      ? `Hi ${item.member.fullName.split(/\s+/)[0]}, your membership is ending soon. Reply here and we will make renewal easy for you.`
+      : `Hi ${item.member.fullName.split(/\s+/)[0]}, we have not seen you at the gym lately. Is everything okay? Reply here if we can help.`;
+  return <aside ref={ref} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="at-risk-panel">
+    <FollowUpHeader member={item.member} onClose={onClose} />
+    <div className="space-y-4 px-4 py-4">
+      <div className="space-y-1">{item.reasons.map((reason) => <p key={reason.kind} className="text-[13px] font-medium">{reason.label}</p>)}</div>
+      {lapsedSnooze ? <p className="rounded-md border border-line bg-sunken px-3 py-2 text-[12px] leading-relaxed text-ink-2" data-testid="at-risk-lapsed-snooze">Hidden until {formatDate(lapsedSnooze)}, and back on this list since then. The note is on the timeline.</p> : null}
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]">
+        <ContextRow label={t("crm.lead.membership.plan")}>{item.membership.planName}</ContextRow>
+        <ContextRow label="Membership ends">{formatDate(item.membership.endDate)}</ContextRow>
+        <ContextRow label="Last visit">{item.lastVisitAt ? <RelativeText iso={item.lastVisitAt} /> : "No visits recorded"}</ContextRow>
+        <ContextRow label={t("crm.queues.lastContact")}>{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">Not contacted yet</span>}</ContextRow>
+        {item.membership.outstanding.amount > 0 ? <ContextRow label="Owes"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}
+      </dl>
+    </div>
+    <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3" aria-label="Follow-up actions">
+      <Button asChild variant="secondary" size="sm"><a href={`tel:${item.member.phone}`}><PhoneCall /> Call</a></Button>
+      <WhatsAppHandoff subject="member" subjectId={item.member.id} recipientName={item.member.fullName} phone={item.member.phone} initialMessage={initialMessage} onLogged={onClose} />
+      <LogContactDialog subject="member" memberId={item.member.id} onLogged={onClose} />
+      {needsRenewal && canSell ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=renew`}><RotateCcw /> Renew</Link></Button> : null}
+      {item.membership.outstanding.amount > 0 && canCollect ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${item.member.id}?action=collect`}><Banknote /> Collect payment</Link></Button> : null}
+      <SnoozeRiskDialog item={item} onSnoozed={onClose} />
+    </footer>
+  </aside>;
+}
+
+function SnoozeRiskDialog({ item, onSnoozed }: { item: AtRiskMemberItem; onSnoozed: () => void }) {
+  const t = useT();
+  const { session } = useApp();
+  const invalidate = useInvalidate();
+  const today = todayISODate(session?.organization?.timezone);
+  const [open, setOpen] = useState(false);
+  const [until, setUntil] = useState(addDays(today, item.recommendedSnoozeDays));
+  const [reason, setReason] = useState("");
+  useEffect(() => {
+    setUntil(addDays(today, item.recommendedSnoozeDays));
+    setReason("");
+  }, [item.member.id, item.recommendedSnoozeDays, today]);
+  const snooze = useApiMutation((api) => api.snoozeAtRiskMember({ memberId: item.member.id, until, reason: reason.trim() || undefined }), { onSuccess: async () => { toast.success(`Hidden until ${formatDate(until)}.`); setOpen(false); await invalidate(); onSnoozed(); }, onError: () => toast.error("Not saved. Try again.") });
+  return <><Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}><CalendarClock /> Remind me later</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Remind me later</DialogTitle><DialogDescription>{item.member.fullName} leaves this list until the date you choose. This is noted on their timeline.</DialogDescription></DialogHeader><DialogBody className="space-y-3"><label htmlFor="risk-snooze-until" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Show again on<Input id="risk-snooze-until" type="date" min={addDays(today, 1)} max={addDays(today, 90)} value={until} onChange={(event) => setUntil(event.target.value)} /></label><label htmlFor="risk-snooze-reason" className="grid gap-1.5 text-[12px] font-medium text-ink-2">Note <span className="font-normal text-ink-4">{t("common.state.optional")}</span><Input id="risk-snooze-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Travelling, asked us to call next week…" /></label></DialogBody><DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t("common.action.cancel")}</Button><Button type="button" loading={snooze.isPending} disabled={!until} onClick={() => snooze.mutate()}>Hide until then</Button></DialogFooter></DialogContent></Dialog></>;
+}
+
+function RenewalQueuePage() {
+  const t = useT();
+  const { session } = useApp();
+  const { params, update } = useRetentionParams();
+  const bucket: RenewalBucket = params.get("bucket") === "expired" ? "expired" : "expiring";
+  const fromDate = params.get("from") ?? "";
+  const toDate = params.get("to") ?? "";
+  const days = params.get("days") ?? (fromDate || toDate ? "" : bucket === "expired" ? "45" : "14");
+  const selectedId = params.get("member") ?? undefined;
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const setSelectedId = (value: string | undefined) => update({ member: value });
+  const panelRef = useRef<HTMLElement | null>(null);
+  const today = todayISODate(session?.organization?.timezone);
   const oldestDate = addDays(today, -365);
   const latestDate = bucket === "expired" ? today : addDays(today, 365);
 
@@ -45,8 +230,8 @@ export default function QueuesPage() {
     days: Number.isInteger(Number(days)) && Number(days) > 0 ? Math.min(Number(days), 365) : undefined,
     fromDate: fromDate || undefined,
     toDate: toDate || undefined,
-    pageSize: 100,
-  }), [bucket, days, fromDate, session?.activeBranchId, toDate]);
+    page, pageSize: 25,
+  }), [bucket, days, fromDate, session?.activeBranchId, toDate, page]);
   const renewals = useRealtimeApiQuery({
     queryKey: qk.renewalQueue(query),
     query: (api) => api.listRenewalQueue(query),
@@ -56,99 +241,93 @@ export default function QueuesPage() {
   const selectedItem = items.find((item) => item.membership.id === selectedId);
 
   useEffect(() => {
-    if (selectedItem && window.innerWidth < 1280) panelRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+    if (selectedItem && window.innerWidth < 1536) panelRef.current?.scrollIntoView?.({ behavior: "instant", block: "nearest" });
   }, [selectedItem]);
 
-  const reset = () => {
-    setDays(bucket === "expiring" ? "14" : "45");
-    setFromDate("");
-    setToDate("");
-    setSelectedId(undefined);
-  };
+  const reset = () => update({ days: undefined, from: undefined, to: undefined, member: undefined, page: undefined });
+  const changeBucket = (next: RenewalBucket) => update({ bucket: next, days: undefined, from: undefined, to: undefined, member: undefined, page: undefined });
 
-  const changeBucket = (next: RenewalBucket) => {
-    setBucket(next);
-    setDays(next === "expiring" ? "14" : "45");
-    setFromDate("");
-    setToDate("");
-    setSelectedId(undefined);
-  };
-
-  return <div className="space-y-4">
-    <PageHeader eyebrow={t("crm.eyebrow")} title={t("crm.queues.title")} description={t("crm.queues.description")} />
-
-    <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="panel h-fit self-start lg:sticky lg:top-4" aria-label={t("crm.queues.filtersLabel")} data-testid="follow-up-filters">
+  return <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="panel h-fit self-start lg:sticky lg:top-20" aria-label={t("crm.queues.filtersLabel")} data-testid="follow-up-filters">
         <header className="border-b border-line px-4 py-3">
-          <p className="eyebrow">{t("crm.queues.filterWork")}</p>
+
           <h2 className="mt-1 text-[15px] font-semibold">{t("crm.queues.membershipsToReview")}</h2>
         </header>
         <div className="space-y-4 p-4">
           <div>
-            <p className="text-[11px] font-medium text-ink-2">{t("crm.queues.status")}</p>
-            <div className="mt-2 grid gap-1 rounded-md border border-line-2 bg-surface p-1" role="group" aria-label={t("crm.queues.statusLabel")}>
-              {BUCKETS.map((option) => <button key={option.value} type="button" aria-pressed={bucket === option.value} onClick={() => changeBucket(option.value)} className={cn("rounded-sm px-3 py-2.5 text-start text-[12.5px] font-medium transition-colors", bucket === option.value ? "bg-ink text-paper" : "text-ink-2 hover:bg-sunken")}>{option.label}</button>)}
+            <p className="text-[12px] font-medium text-ink-2">{t("crm.queues.status")}</p>
+            <div className="mt-2 grid grid-cols-2 gap-1 lg:grid-cols-1" role="group" aria-label={t("crm.queues.statusLabel")}>
+              {BUCKETS.map((option) => <button key={option.value} type="button" aria-pressed={bucket === option.value} onClick={() => changeBucket(option.value)} className={cn("rounded-sm px-3 py-2.5 text-start text-[12.5px] font-medium transition-colors", bucket === option.value ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}>{option.label}</button>)}
             </div>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-3">{BUCKETS.find((option) => option.value === bucket)?.hint}</p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-ink-3">{BUCKETS.find((option) => option.value === bucket)?.hint}</p>
           </div>
 
           <div className="border-t border-line pt-4">
-            <p className="text-[11px] font-medium text-ink-2">{t("crm.queues.window")}</p>
+            <p className="text-[12px] font-medium text-ink-2">Time period</p>
             <div className="mt-2 space-y-3">
-              <label htmlFor="follow-up-days" className="grid gap-1.5 text-[11px] font-medium text-ink-2">
+              <label htmlFor="follow-up-days" className="grid gap-1.5 text-[12px] font-medium text-ink-2">
                 Days
-                <Input id="follow-up-days" type="number" min={1} max={365} value={days} onChange={(event) => { setDays(event.target.value); setFromDate(""); setToDate(""); }} aria-label={t("crm.queues.daysLabel")} />
+                <Input id="follow-up-days" type="number" min={1} max={365} value={days} onChange={(event) => { update({ days: event.target.value, from: undefined, to: undefined, page: undefined, member: undefined }); }} aria-label={t("crm.queues.daysLabel")} />
               </label>
-              <p className="text-[10.5px] text-ink-4">{t("crm.queues.useExactRange")}</p>
+              <p className="text-[12px] text-ink-4">Or choose exact dates below.</p>
             </div>
           </div>
 
-          <div className="border-t border-line pt-4">
-            <p className="text-[11px] font-medium text-ink-2">{t("crm.queues.exactRange")}</p>
+          <details className="border-t border-line pt-4" open={Boolean(fromDate || toDate) || undefined}>
+            <summary className="min-h-9 cursor-pointer text-[12px] font-medium text-ink-2">Exact end dates</summary>
             <div className="mt-2 space-y-3">
-              <label htmlFor="follow-up-from-date" className="grid gap-1.5 text-[11px] font-medium text-ink-2">
+              <label htmlFor="follow-up-from-date" className="grid gap-1.5 text-[12px] font-medium text-ink-2">
                 From date
-                <Input id="follow-up-from-date" type="date" min={oldestDate} max={toDate || latestDate} value={fromDate} onChange={(event) => { setFromDate(event.target.value); setDays(""); }} aria-label={t("crm.queues.fromLabel")} />
+                <Input id="follow-up-from-date" type="date" min={oldestDate} max={toDate || latestDate} value={fromDate} onChange={(event) => { update({ from: event.target.value, days: undefined, page: undefined, member: undefined }); }} aria-label={t("crm.queues.fromLabel")} />
               </label>
-              <label htmlFor="follow-up-to-date" className="grid gap-1.5 text-[11px] font-medium text-ink-2">
+              <label htmlFor="follow-up-to-date" className="grid gap-1.5 text-[12px] font-medium text-ink-2">
                 To date
-                <Input id="follow-up-to-date" type="date" min={fromDate || oldestDate} max={latestDate} value={toDate} onChange={(event) => { setToDate(event.target.value); setDays(""); }} aria-label={t("crm.queues.toLabel")} />
+                <Input id="follow-up-to-date" type="date" min={fromDate || oldestDate} max={latestDate} value={toDate} onChange={(event) => { update({ to: event.target.value, days: undefined, page: undefined, member: undefined }); }} aria-label={t("crm.queues.toLabel")} />
               </label>
             </div>
-          </div>
+          </details>
 
-          <Button type="button" variant="secondary" onClick={reset} className="w-full"><RotateCcw /> {t("crm.queues.resetFilters")}</Button>
+          <Button type="button" variant="secondary" onClick={reset} className="w-full"><RotateCcw />{" "}{t("crm.queues.resetFilters")}</Button>
         </div>
-        <footer className="border-t border-line px-4 py-3 text-[10.5px] leading-relaxed text-ink-3">{t("crm.queues.rangeNote")}</footer>
+        <footer className="border-t border-line px-4 py-3 text-[12px] leading-relaxed text-ink-3">Dates can go back one year.</footer>
       </aside>
 
-      <div className={cn("grid gap-4", selectedItem && "xl:grid-cols-[minmax(0,1fr)_340px]")}>
+      <div className={cn("grid gap-4", selectedItem && "2xl:grid-cols-[minmax(0,1fr)_340px]")}>
         <section className="panel min-h-[420px] overflow-hidden self-start" aria-labelledby="follow-up-results-title" data-testid="follow-up-results">
           <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
             <div>
-              <p className="eyebrow">{t("crm.queues.renewalQueue")}</p>
-              <h2 id="follow-up-results-title" className="mt-1 text-[15px] font-semibold">{t("crm.queues.foundMatches")}</h2>
-              <p className="mt-0.5 text-[12px] text-ink-3">{BUCKETS.find((option) => option.value === bucket)?.label} memberships · {fromDate || toDate ? `${fromDate || oldestDate} → ${toDate || today}` : `${days || "—"} day window`}</p>
+
+              <h2 id="follow-up-results-title" className="mt-1 text-[15px] font-semibold">Memberships found</h2>
+              <p className="mt-0.5 text-[12px] text-ink-3">{BUCKETS.find((option) => option.value === bucket)?.label} · {fromDate || toDate ? `${formatDate(fromDate || oldestDate)} to ${formatDate(toDate || today)}` : days ? `${bucket === "expired" ? "last" : "next"} ${days} days` : "—"}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <span className="font-mono text-[11px] text-ink-3 tabular">{renewals.data?.totalItems ?? 0}</span>
-              <Button type="button" variant="ghost" size="icon-sm" onClick={() => { void renewals.refetch(); }} aria-label={t("crm.queues.refreshLabel")} title={t("crm.queues.refresh")}><RefreshCw className="size-3.5" /></Button>
+              <span className="text-[12px] text-ink-3 tabular">{renewals.data?.totalItems ?? "…"}</span>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => { void renewals.refetch(); }} aria-label="Refresh list" title="Refresh list"><RefreshCw className="size-3.5" /></Button>
             </div>
           </header>
-          {renewals.isLoading ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div> : renewals.isError ? <ErrorState className="m-4" title={t("crm.queues.loadFailed")} onRetry={() => { void renewals.refetch(); }} /> : items.length === 0 ? <EmptyQueue text={bucket === "expiring" ? "No memberships match this expiring filter." : "No memberships match this expired filter."} description={t("crm.queues.loadFailedDetail")} onReset={reset} /> : <ul className="divide-y divide-line">{items.map((item) => <RenewalRow key={item.membership.id} item={item} selected={selectedItem?.membership.id === item.membership.id} onClick={() => setSelectedId(item.membership.id)} />)}</ul>}
+          {renewals.isBackgroundError ? <ErrorState layout="inline" title="Renewals could not refresh" onRetry={() => void renewals.refetch()} /> : null}
+          {renewals.isLoading && !renewals.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div> : renewals.isError && !renewals.data ? <ErrorState className="m-4" title="Renewals could not be loaded" onRetry={() => { void renewals.refetch(); }} /> : items.length === 0 ? <EmptyQueue text={bucket === "expiring" ? "No memberships end in this period." : "No memberships ended in this period."} description="Try more days or other dates." onReset={reset} /> : <ul className="divide-y divide-line">{items.map((item) => <RenewalRow key={item.membership.id} item={item} selected={selectedItem?.membership.id === item.membership.id} onClick={() => setSelectedId(item.membership.id)} />)}</ul>}
+          {renewals.data && renewals.data.totalPages > 1 ? <DataPagination page={renewals.data} onPage={(next) => update({ page: String(next), member: undefined })} className="border-t border-line p-4" /> : null}
         </section>
 
         {selectedItem ? <aside ref={panelRef} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="follow-up-panel">
-        <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div className="min-w-0"><p className="eyebrow">{bucket === "expiring" ? "Expiring membership" : "Expired membership"}</p><h3 className="truncate font-display text-[16px] font-semibold">{selectedItem.member.fullName}</h3><p className="font-mono text-[11.5px] text-ink-3" dir="ltr">{selectedItem.member.phone}</p></div><button type="button" onClick={() => setSelectedId(undefined)} aria-label={t("crm.queues.closePanel")} className="rounded-sm p-1 text-ink-3 hover:bg-sunken hover:text-ink"><X className="size-4" /></button></header>
-        <div className="space-y-4 px-4 py-3.5"><RenewalContext item={selectedItem} /><div className="border-t border-line pt-3.5"><p className="eyebrow mb-2.5">{t("crm.queues.logContact")}</p><LogContactForm subject="member" memberId={selectedItem.member.id} compact onLogged={() => setSelectedId(undefined)} /></div><div className="border-t border-line pt-3"><Button asChild variant="secondary" size="sm" className="w-full"><Link href={`/members/${selectedItem.member.id}`}>{t("crm.queues.openMemberRecord")}</Link></Button></div></div>
+        <FollowUpHeader member={selectedItem.member} onClose={() => setSelectedId(undefined)} />
+        <div className="px-4 py-4"><RenewalContext item={selectedItem} /></div>
+        <div className="border-t border-line px-4 py-4"><FollowUpContextPanel memberId={selectedItem.member.id} variant="renewal" /></div>
+        <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3" aria-label="Follow-up actions">
+          <Button asChild variant="secondary" size="sm"><a href={`tel:${selectedItem.member.phone}`}><PhoneCall /> Call</a></Button>
+          <WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} />
+          <LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} />
+          {(session?.permissions ?? []).includes("memberships.sell") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=renew`}><RotateCcw /> Renew</Link></Button> : null}
+          {selectedItem.membership.outstanding.amount > 0 && (session?.permissions ?? []).includes("payments.collect") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=collect`}><Banknote /> Collect payment</Link></Button> : null}
+        </footer>
         </aside> : null}
       </div>
-    </div>
-  </div>;
+    </div>;
 }
 
 function RenewalRow({ item, selected, onClick }: { item: RenewalQueueItem; selected: boolean; onClick: () => void }) {
-  return <li><button type="button" aria-pressed={selected} onClick={onClick} className={cn("flex w-full items-center gap-3 px-4 py-3 text-start transition-colors", selected ? "bg-sunken/70" : "hover:bg-sunken/40")}><Monogram name={item.member.fullName} size="sm" /><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">{item.member.fullName}</span><span className="mt-0.5 flex flex-wrap items-center gap-2 text-[11.5px] text-ink-3"><MembershipStatusChip status={item.membership.status} />{item.membership.planName} · ends {formatDate(item.membership.endDate)}</span></span><span className="shrink-0 text-end"><span className="block text-[12px]"><DaysUntilText date={item.membership.endDate} /></span><span className="block text-[11px] text-ink-3">{item.lastContactAt ? <>called <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">not contacted</span>}</span></span><PhoneCall className="size-3.5 shrink-0 text-ink-4" aria-hidden /></button></li>;
+  return <li><button type="button" aria-pressed={selected} onClick={onClick} className={cn("flex w-full items-center gap-3 px-4 py-3 text-start transition-colors", selected ? "bg-sunken/70" : "hover:bg-sunken/40")}><Monogram name={item.member.fullName} size="sm" /><span className="min-w-0 flex-1"><span className="block break-words text-[13px] font-medium">{item.member.fullName}</span><span className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] text-ink-3"><MembershipStatusChip status={item.membership.status} />{item.membership.planName} · ends {formatDate(item.membership.endDate)}</span></span><span className="shrink-0 text-end"><span className="block text-[12px]"><DaysUntilText date={item.membership.endDate} /></span><span className="block text-[12px] text-ink-3">{item.lastContactAt ? <>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></> : <span className="font-medium text-warning-deep">not contacted</span>}</span></span><PhoneCall className="size-3.5 shrink-0 text-ink-4" aria-hidden /></button></li>;
 }
 
 function EmptyQueue({ text, description, onReset }: { text: string; description: string; onReset: () => void }) {
@@ -158,7 +337,20 @@ function EmptyQueue({ text, description, onReset }: { text: string; description:
 
 function RenewalContext({ item }: { item: RenewalQueueItem }) {
   const t = useT();
-  return <dl className="space-y-1.5 text-[12.5px]"><ContextRow label={t("crm.queues.plan")}>{item.membership.planName}</ContextRow><ContextRow label={t("crm.queues.ends")}><span className="tabular">{item.membership.endDate}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label={t("crm.queues.balance")}><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label={t("crm.queues.lastContact")}><RelativeText iso={item.lastContactAt} /> {item.lastContactOutcome ? `· ${item.lastContactOutcome.replace(/_/g, " ")}` : ""}</ContextRow> : <ContextRow label={t("crm.queues.lastContact")}><span className="font-medium text-warning-deep">never contacted</span></ContextRow>}</dl>;
+  return <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-[12.5px]"><ContextRow label={t("crm.lead.membership.plan")}>{item.membership.planName}</ContextRow><ContextRow label={t("crm.queues.ends")}><span className="tabular">{formatDate(item.membership.endDate)}</span> <DaysUntilText date={item.membership.endDate} /></ContextRow>{item.membership.outstanding.amount > 0 ? <ContextRow label="Owes"><MoneyText money={item.membership.outstanding} className="text-warning-deep" /></ContextRow> : null}{item.lastContactAt ? <ContextRow label={t("crm.queues.lastContact")}>{describeContactOutcome(item.lastContactOutcome) ?? "Contacted"} · <RelativeText iso={item.lastContactAt} /></ContextRow> : <ContextRow label={t("crm.queues.lastContact")}><span className="font-medium text-warning-deep">Not contacted yet</span></ContextRow>}</dl>;
 }
 
-function ContextRow({ label, children }: { label: string; children: React.ReactNode }) { return <div className="flex items-center justify-between gap-3"><dt className="text-ink-3">{label}</dt><dd className="text-end">{children}</dd></div>; }
+function FollowUpHeader({ member, onClose }: { member: { id: string; fullName: string; phone: string }; onClose: () => void }) {
+  const t = useT();
+  return <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
+    <div className="min-w-0">
+      <h3 className="text-[16px] font-semibold"><Link href={`/members/${member.id}`} aria-label={`Open member record: ${member.fullName}`} className="inline-flex min-h-9 items-center gap-2 hover:underline underline-offset-4"><span className="break-words">{member.fullName}</span><ArrowUpRight className="size-4 shrink-0 text-ink-3" aria-hidden /></Link></h3>
+      <p className="text-[12px] text-ink-3" dir="ltr">{member.phone}</p>
+    </div>
+    <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("crm.queues.closePanel")}><X /></Button>
+  </header>;
+}
+
+function ContextRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return <><dt className="text-ink-3">{label}</dt><dd className="min-w-0 break-words text-ink-2">{children}</dd></>;
+}

@@ -2,22 +2,23 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
-import { useT } from "@/lib/i18n/provider";
 import { Button } from "@/components/ui/button";
+import { ContextLabel } from "@/components/ui/typography";
 import { usePermissions } from "@/lib/providers/app-providers";
+import { useT } from "@/lib/i18n/provider";
 import type { Page } from "@/lib/domain/types";
 
-/** Page title block: eyebrow + display title + actions. */
+/** Page title block: optional human context + display title + actions. */
 export function PageHeader({
-  eyebrow,
+  sectionLabel,
   title,
   description,
   actions,
   className,
 }: {
-  eyebrow?: string;
+  sectionLabel?: string;
   title: string;
   description?: string;
   actions?: ReactNode;
@@ -26,13 +27,13 @@ export function PageHeader({
   return (
     <div className={cn("flex flex-wrap items-end justify-between gap-3", className)}>
       <div className="min-w-0">
-        {eyebrow ? <p className="eyebrow mb-1.5">{eyebrow}</p> : null}
+        {sectionLabel ? <ContextLabel className="mb-1.5">{sectionLabel}</ContextLabel> : null}
         <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight text-ink">
           {title}
         </h1>
-        {description ? <p className="mt-1 text-[13px] text-ink-2 max-w-2xl">{description}</p> : null}
+        {description ? <p className="mt-1 max-w-2xl text-[13.5px] text-ink-2">{description}</p> : null}
       </div>
-      {actions ? <div className="flex items-center gap-2 shrink-0">{actions}</div> : null}
+      {actions ? <div className="flex max-w-full flex-wrap items-center justify-end gap-2">{actions}</div> : null}
     </div>
   );
 }
@@ -74,33 +75,39 @@ export function DataPagination<T>({
   className?: string;
 }) {
   const t = useT();
+  // A page number past the end (a stale link, or filters that narrowed the
+  // set after the page was chosen) would otherwise show an empty page that
+  // reads like "no matches". Move to the last real page instead.
+  const pastEnd = page.totalItems > 0 && page.page > page.totalPages;
+  const lastPage = page.totalPages;
+  useEffect(() => {
+    if (pastEnd) onPage(Math.max(1, lastPage));
+    // onPage is a fresh closure on every render; the page facts are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastEnd, lastPage]);
   if (page.totalItems === 0) return null;
-  const from = (page.page - 1) * page.pageSize + 1;
   const to = Math.min(page.totalItems, page.page * page.pageSize);
+  const from = Math.min((page.page - 1) * page.pageSize + 1, to);
   return (
     <div className={cn("flex items-center justify-between gap-3 pt-3 text-[12.5px] text-ink-3", className)}>
-      {/* The range reads in the page's own direction — it is a sentence with a
-          word in it. Only the bare from–to pair is pinned LTR so bidi cannot
-          reverse the two numbers around the dash. */}
+      {/* The sentence follows the page direction; only the bare numbers are
+          isolated by the catalogue text itself, so bidi cannot reorder them. */}
       <span className="tabular">
-        {t("common.states.pageRange", {
-          range: `\u2066${from}\u2013${to}\u2069`,
-          total: page.totalItems,
-        })}
+        {t("common.pagination.showing", { from, to, total: page.totalItems })}
       </span>
       <div className="flex items-center gap-1">
-        <Button variant="secondary" size="icon-sm" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)} aria-label={t("common.states.previousPage")}>
+        <Button variant="secondary" size="icon-sm" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)} aria-label={t("common.pagination.previous")}>
           <ChevronLeft />
         </Button>
-        <span className="px-2 tabular" dir="ltr">
-          {page.page} / {page.totalPages}
+        <span className="px-2 tabular">
+          {t("common.pagination.page", { page: page.page, total: page.totalPages })}
         </span>
         <Button
           variant="secondary"
           size="icon-sm"
           disabled={page.page >= page.totalPages}
           onClick={() => onPage(page.page + 1)}
-          aria-label={t("common.states.nextPage")}
+          aria-label={t("common.pagination.next")}
         >
           <ChevronRight />
         </Button>
@@ -109,7 +116,7 @@ export function DataPagination<T>({
   );
 }
 
-/** Stat block — label above, mono figure, optional delta/context line. */
+/** Stat block — readable label, tabular figure, optional delta/context line. */
 export function Stat({
   label,
   value,
@@ -125,7 +132,7 @@ export function Stat({
 }) {
   return (
     <div className={cn("min-w-0", className)}>
-      <p className="eyebrow">{label}</p>
+      <ContextLabel>{label}</ContextLabel>
       <div
         className={cn(
           "mt-1.5 text-[26px] font-semibold leading-none tabular tracking-[-0.02em]",

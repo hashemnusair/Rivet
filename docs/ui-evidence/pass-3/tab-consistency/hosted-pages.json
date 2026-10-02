@@ -1,0 +1,59 @@
+{
+  "source": "fd46c0c",
+  "target": "protected mock Preview",
+  "evidence": [
+    {
+      "name": "stock",
+      "route": "/operations",
+      "navigation": true,
+      "overflow": false
+    },
+    {
+      "name": "retention",
+      "route": "/crm/queues",
+      "navigation": true,
+      "overflow": false
+    },
+    {
+      "name": "reports",
+      "route": "/reports",
+      "navigation": true,
+      "overflow": false
+    },
+    {
+      "name": "payments",
+      "route": "/payments",
+      "navigation": true,
+      "overflow": false
+    },
+    {
+      "name": "ledger",
+      "route": "/finance/controls",
+      "navigation": true,
+      "overflow": false
+    },
+    {
+      "name": "classes",
+      "route": "/classes",
+      "navigation": true,
+      "overflow": false
+    },
+    {
+      "name": "member-record",
+      "route": "/members",
+      "navigation": true,
+      "overflow": false
+    },
+    {
+      "name": "member-account",
+      "route": "/customer/my-gyms/membership-lina-forge",
+      "navigation": true,
+      "overflow": false
+    },
+    {
+      "name": "member-class-history",
+      "navigation": true
+    }
+  ],
+  "pageErrors": []
+}

@@ -4,6 +4,8 @@ import { keepPreviousData, useQuery, useQueryClient, type QueryKey } from "@tans
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getApi } from "@/lib/api/client";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
+import { useApiScopeEpoch } from "@/lib/api/scope";
+import { isAccessDenied } from "@/lib/hooks/use-api";
 
 type StreamState = "connecting" | "live" | "fallback";
 
@@ -25,6 +27,11 @@ export function useRealtimeApiQuery<T>(options: {
   const fallbackIntervalMs = options.fallbackIntervalMs ?? 15_000;
   const convexMode = isConvexMode();
   const queryClient = useQueryClient();
+  // The branch, organization or signed-in identity behind the API client.
+  // A watch opened under one scope must not keep feeding a screen after the
+  // operator switches to another, even when the query key itself does not
+  // name the branch.
+  const scopeEpoch = useApiScopeEpoch();
   const [streamState, setStreamState] = useState<StreamState>("connecting");
   const subscribeRef = useRef(options.subscribe);
   const queryRef = useRef(options.query);
@@ -59,6 +66,11 @@ export function useRealtimeApiQuery<T>(options: {
     let stop: (() => void) | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
+    // A new key or scope means the cached "live" state belonged to another
+    // watch. Drop back to connecting so the ordinary query fetches the new
+    // record under the new scope instead of leaving the previous snapshot
+    // presented as current until the fresh stream delivers.
+    setStreamState("connecting");
     const scheduleReconnect = () => {
       if (disposed || retryTimer) return;
       setStreamState("fallback");
@@ -116,15 +128,21 @@ export function useRealtimeApiQuery<T>(options: {
       window.removeEventListener("online", handleOnline);
     };
     // Query keys are serialized so tenant, branch, route, and record changes
-    // dispose the previous Convex watch without relying on caller memoization.
+    // dispose the previous Convex watch without relying on caller memoization;
+    // the scope epoch covers switches the key does not carry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, fallbackIntervalMs, queryClient, stableKey]);
+  }, [enabled, fallbackIntervalMs, queryClient, scopeEpoch, stableKey]);
 
+  // As in useApiQuery: a refusal after the watch or its fallback fetch is
+  // re-checked by the server withdraws the snapshot instead of leaving stale
+  // data behind a "could not refresh" notice.
   const hasRenderedData = query.data !== undefined;
+  const denied = query.isError && isAccessDenied(query.error);
   return {
     ...query,
+    data: denied ? undefined : query.data,
     streamState,
-    isError: query.isError && !hasRenderedData,
-    isBackgroundError: query.isError && hasRenderedData,
+    isError: query.isError && (!hasRenderedData || denied),
+    isBackgroundError: query.isError && hasRenderedData && !denied,
   };
 }

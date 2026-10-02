@@ -1,5 +1,7 @@
 "use client";
 
+import { ChecklistHandover } from "@/features/checklists/checklist-handover";
+
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -7,15 +9,17 @@ import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import type { CashShift, UUID } from "@/lib/domain/types";
+import { useApp } from "@/lib/providers/app-providers";
+import type { CashShift, ShiftTotals, UUID } from "@/lib/domain/types";
 import { formatDateTime } from "@/lib/utils/dates";
-import { money, parseMoneyInput, toMajor } from "@/lib/utils/money";
+import { exponentFor, money, parseMoneyInput, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
+import { ErrorState } from "@/components/ui/states";
 
 // ---------------------------------------------------------------------------
 // Open shift
@@ -24,11 +28,11 @@ export const openShiftSchema = z.object({
   float: z
     .string()
     .trim()
-    .min(1, "Opening float is required")
+    .min(1, "Enter the starting cash")
     .refine((value) => {
       const parsed = parseMoneyInput(value);
       return parsed !== null && parsed.amount >= 0;
-    }, "Enter a valid non-negative amount"),
+    }, "Enter an amount of zero or more"),
 });
 type OpenValues = z.infer<typeof openShiftSchema>;
 
@@ -44,7 +48,12 @@ export function OpenShiftDialog({
   onOpened?: (shift: CashShift) => void;
 }) {
   const [serverError, setServerError] = useState<string | null>(null);
+  const { session } = useApp();
+  // The drawer is counted in the gym's currency at its own precision.
+  const currency = session?.organization.currency ?? "JOD";
   const form = useForm<OpenValues>({ resolver: zodResolver(openShiftSchema), defaultValues: { float: "" } });
+  const floatRead = readMoneyInput(form.watch("float") ?? "", currency);
+  const floatProblem = !floatRead.ok && floatRead.problem !== "empty" && (form.formState.touchedFields.float || form.formState.isSubmitted) ? floatRead.message : undefined;
   useEffect(() => {
     if (open) {
       form.reset({ float: "" });
@@ -55,8 +64,8 @@ export function OpenShiftDialog({
 
   const mutation = useApiMutation(
     (api, v: OpenValues) => {
-      const openingFloat = parseMoneyInput(v.float);
-      if (!openingFloat) throw new Error("Opening float is required.");
+      const openingFloat = parseMoneyInput(v.float, currency);
+      if (!openingFloat) throw new Error("Enter the starting cash.");
       return api.openCashShift({ branchId, openingFloat });
     },
     {
@@ -73,12 +82,12 @@ export function OpenShiftDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Open cash shift</DialogTitle>
-          <DialogDescription>Count the drawer float before the first payment of the day.</DialogDescription>
+          <DialogDescription>Count the cash in the drawer before the first payment.</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody>
-            <Field label="Opening float (JOD)" required error={form.formState.errors.float?.message}>
-              <Input inputMode="decimal" autoFocus placeholder="e.g. 50.000" data-testid="opening-float" {...form.register("float")} />
+            <Field label={`Starting cash (${currency})`} required error={form.formState.errors.float?.message ?? floatProblem}>
+              <Input inputMode="decimal" dir="ltr" autoFocus placeholder={`For example: ${toMajorString(money(50 * 10 ** exponentFor(currency), currency))}`} data-testid="opening-float" aria-invalid={Boolean(form.formState.errors.float || floatProblem) || undefined} {...form.register("float")} />
             </Field>
             {serverError ? <p role="alert" className="mt-2 text-[12.5px] text-danger">{serverError}</p> : null}
           </DialogBody>
@@ -107,6 +116,14 @@ const DENOMS: Array<{ label: string; minor: number }> = [
   { label: "0.10", minor: 100 },
 ];
 
+export function authoritativeExpectedCash(
+  shift: CashShift,
+  current: { shift: CashShift; totals: ShiftTotals } | null | undefined,
+): number | undefined {
+  if (!current || current.shift.id !== shift.id || current.shift.status !== "open") return undefined;
+  return shift.openingFloat.amount + current.totals.cashPayments.amount - current.totals.cashRefunds.amount - current.totals.supplierCashPayments.amount + current.totals.supplierCashReversals.amount;
+}
+
 export function CloseShiftDialog({
   open,
   onOpenChange,
@@ -119,6 +136,7 @@ export function CloseShiftDialog({
   onClosed?: (shift: CashShift) => void;
 }) {
   const invalidate = useInvalidate();
+  const currency = shift.openingFloat.currency;
   const [serverError, setServerError] = useState<string | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [explanation, setExplanation] = useState("");
@@ -139,17 +157,13 @@ export function CloseShiftDialog({
     () => DENOMS.reduce((sum, d) => sum + (counts[d.label] ?? 0) * d.minor, 0),
     [counts],
   );
-  const expected = useMemo(() => {
-    const totals = totalsQuery.data?.totals;
-    if (!totals) return shift.openingFloat.amount;
-    return shift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount;
-  }, [totalsQuery.data, shift.openingFloat.amount]);
-  const variance = counted - expected;
+  const expected = useMemo(() => authoritativeExpectedCash(shift, totalsQuery.data), [shift, totalsQuery.data]);
+  const variance = expected === undefined ? undefined : counted - expected;
 
   const mutation = useApiMutation(
     (api) =>
       api.closeCashShift(shift.id, {
-        countedCash: money(counted),
+        countedCash: money(counted, currency),
         varianceExplanation: explanation || undefined,
       }),
     {
@@ -162,7 +176,8 @@ export function CloseShiftDialog({
     },
   );
 
-  const totals = totalsQuery.data?.totals;
+  const totals = expected === undefined ? undefined : totalsQuery.data?.totals;
+  const totalsUnavailable = !totalsQuery.isLoading && !totalsQuery.isError && expected === undefined;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -170,19 +185,24 @@ export function CloseShiftDialog({
         <DialogHeader>
           <DialogTitle>Close shift</DialogTitle>
           <DialogDescription>
-            Opened {formatDateTime(shift.openedAt)} by {shift.openedByName}. Count the drawer, explain any difference.
+            Opened {formatDateTime(shift.openedAt)} by {shift.openedByName}. Count the cash in the drawer. If it does not match, explain why.
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
+          {open ? <ChecklistHandover branchId={shift.branchId} /> : null}
           {/* Expected story */}
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
-            <ExpectCell label="Float" minor={shift.openingFloat.amount} />
-            <ExpectCell label="Cash in" minor={totals?.cashPayments.amount ?? 0} sign="+" />
-            <ExpectCell label="Cash refunds" minor={totals?.cashRefunds.amount ?? 0} sign="−" />
-            <ExpectCell label="Expected" minor={expected} strong />
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-5">
+            <ExpectCell currency={currency} label="Starting cash" minor={expected === undefined ? undefined : shift.openingFloat.amount} />
+            <ExpectCell currency={currency} label="Cash taken" minor={totals?.cashPayments.amount} sign="+" />
+            <ExpectCell currency={currency} label="Cash refunds" minor={totals?.cashRefunds.amount} sign="−" />
+            <ExpectCell currency={currency} label="Paid to suppliers" minor={totals === undefined ? undefined : totals.supplierCashPayments.amount - totals.supplierCashReversals.amount} sign="−" />
+            <ExpectCell currency={currency} label="Expected" minor={expected} strong />
           </div>
+          {totalsQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">Loading the shift totals…</p> : null}
+          {totalsQuery.isError ? <ErrorState title="Could not load the shift totals" description="You can close the shift once they load." onRetry={() => { void totalsQuery.refetch(); }} /> : null}
+          {totalsUnavailable ? <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2.5 text-[12.5px] text-warning-deep">This is no longer the open shift at this branch. Close this window and refresh the page.</p> : null}
           {totals ? (
-            <p className="text-[11.5px] text-ink-3 tabular">
+            <p className="text-[12px] text-ink-3 tabular">
               {totals.paymentCount} payments this shift · card <MoneyText money={totals.cardPayments} hideCurrency /> · transfers{" "}
               <MoneyText money={totals.transferPayments} hideCurrency /> · {totals.refundCount} refunds
             </p>
@@ -190,11 +210,11 @@ export function CloseShiftDialog({
 
           {/* Denominations */}
           <div>
-            <p className="eyebrow mb-2">Count the drawer</p>
+            <p className="context-label mb-2">Count the drawer</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {DENOMS.map((d) => (
                 <label key={d.label} className="block">
-                  <span className="mb-1 block text-[11px] text-ink-3 tabular">{d.label}</span>
+                  <span className="mb-1 block text-[12px] text-ink-3 tabular">{d.label}</span>
                   <Input
                     type="number"
                     min={0}
@@ -202,7 +222,7 @@ export function CloseShiftDialog({
                     placeholder="0"
                     value={counts[d.label] ?? ""}
                     onChange={(e) => setCounts((c) => ({ ...c, [d.label]: Math.max(0, Number(e.target.value) || 0) }))}
-                    aria-label={`${d.label} JOD notes/coins count`}
+                    aria-label={`Number of ${d.label} JOD notes or coins`}
                     data-testid={`denom-${d.label}`}
                   />
                 </label>
@@ -214,28 +234,28 @@ export function CloseShiftDialog({
           <div
             className={cn(
               "flex items-center justify-between rounded-md border px-4 py-3",
-              variance === 0 ? "border-success/40 bg-success-bg/60" : "border-warning/50 bg-warning-bg/60",
+              variance === undefined ? "border-line bg-sunken/40" : variance === 0 ? "border-success/40 bg-success-bg/60" : "border-warning/50 bg-warning-bg/60",
             )}
             data-testid="variance-panel"
           >
             <div>
               <p className="text-[12px] text-ink-2">
-                Counted <MoneyText money={money(counted)} className="font-semibold" /> against expected{" "}
-                <MoneyText money={money(expected)} className="font-semibold" />
+                Counted <MoneyText money={money(counted, currency)} className="font-semibold" /> · expected{" "}
+                {expected === undefined ? <strong className="font-semibold">loading…</strong> : <MoneyText money={money(expected, currency)} className="font-semibold" />}
               </p>
-              <p className={cn("mt-0.5 text-[15px] font-semibold tabular", variance === 0 ? "text-success-deep" : "text-warning-deep")}>
-                {variance === 0 ? "Balanced — no variance" : `${variance > 0 ? "+" : "−"}${toMajor(money(Math.abs(variance))).toFixed(3)} JOD ${variance > 0 ? "over" : "short"}`}
+              <p className={cn("mt-0.5 text-[15px] font-semibold tabular", variance === undefined ? "text-ink-3" : variance === 0 ? "text-success-deep" : "text-warning-deep")}>
+                {variance === undefined ? "Waiting for the shift totals" : variance === 0 ? "The cash matches" : `${variance > 0 ? "+" : "−"}${toMajorString(money(Math.abs(variance), currency))} ${currency} ${variance > 0 ? "over" : "short"}`}
               </p>
             </div>
           </div>
 
-          {variance !== 0 ? (
-            <Field label="Variance explanation" required hint="Goes to the manager's approval queue with the audit event.">
+          {variance !== undefined && variance !== 0 ? (
+            <Field label="Why is the cash different?" required hint="A manager will review this.">
               <Textarea
                 rows={2}
                 value={explanation}
                 onChange={(e) => setExplanation(e.target.value)}
-                placeholder="e.g. Gave JOD 5 extra change at 19:40, member will return it tomorrow"
+                placeholder="For example: Gave JOD 5 extra change at 19:40, member will return it tomorrow"
                 data-testid="variance-explanation"
               />
             </Field>
@@ -249,17 +269,22 @@ export function CloseShiftDialog({
           <Button
             onClick={() => {
               setServerError(null);
+              if (expected === undefined || variance === undefined) {
+                setServerError("Wait for the shift totals to load.");
+                return;
+              }
               if (variance !== 0 && explanation.trim().length < 5) {
-                setServerError("Explain the variance before closing (min 5 characters).");
+                setServerError("Explain the cash difference first (at least 5 characters).");
                 return;
               }
               mutation.mutate();
             }}
             loading={mutation.isPending}
+            disabled={expected === undefined}
             variant={variance === 0 ? "primary" : "signal"}
             data-testid="confirm-close-shift"
           >
-            Close shift — counted {toMajor(money(counted)).toFixed(3)} JOD
+            Close shift — counted {toMajorString(money(counted, currency))} {currency}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -267,13 +292,12 @@ export function CloseShiftDialog({
   );
 }
 
-function ExpectCell({ label, minor, sign, strong }: { label: string; minor: number; sign?: string; strong?: boolean }) {
+function ExpectCell({ label, minor, sign, strong, currency }: { label: string; minor?: number; sign?: string; strong?: boolean; currency: string }) {
   return (
     <div className="bg-surface px-3 py-2.5">
-      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">{label}</p>
+      <p className="context-label">{label}</p>
       <p className={cn("mt-0.5 text-[14px] tabular", strong && "font-semibold")}>
-        {sign}
-        {toMajor(money(minor)).toFixed(3)}
+        {minor === undefined ? "—" : <>{sign}{toMajorString(money(minor, currency))}</>}
       </p>
     </div>
   );

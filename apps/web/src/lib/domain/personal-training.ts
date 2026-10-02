@@ -1,4 +1,4 @@
-import type { PtEntitlement, PtPackage } from "./types";
+import type { PtBooking, PtEntitlement, PtPackage, PtTrainerProfile } from "./types";
 
 export type PtBookingOutcomeAction = "completed" | "no_show" | "cancelled";
 
@@ -6,11 +6,41 @@ export const PT_SESSION_DURATION_MINUTES = 60;
 export const PT_DEFAULT_BOOKING_HORIZON_DAYS = 30;
 export const PT_DEFAULT_CANCELLATION_CUTOFF_HOURS = 12;
 
+type PtBookingTiming = Pick<PtBooking, "status" | "startsAt">;
+
+/** A booking that still holds a credit: nothing has been recorded against it yet. */
+export function ptBookingIsOpen(booking: Pick<PtBooking, "status">): boolean {
+  return booking.status === "reserved" || booking.status === "confirmed";
+}
+
+/**
+ * An open booking whose session has begun. The credit stays reserved until a
+ * trainer or manager records the outcome, so these must remain visible to
+ * whoever can record it; they are never inferred as completed or missed.
+ */
+export function ptBookingAwaitsOutcome(booking: PtBookingTiming, now: number = Date.now()): boolean {
+  return ptBookingIsOpen(booking) && Date.parse(booking.startsAt) <= now;
+}
+
+/** The next open booking that has not started, if any. */
+export function ptNextBooking<T extends PtBookingTiming>(bookings: T[], now: number = Date.now()): T | undefined {
+  return bookings
+    .filter((booking) => ptBookingIsOpen(booking) && Date.parse(booking.startsAt) > now)
+    .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))[0];
+}
+
+/** True while a member may still cancel or move the booking without consuming the credit. */
+export function ptBookingBeforeCutoff(booking: Pick<PtBooking, "startsAt">, cutoffHours: number = PT_DEFAULT_CANCELLATION_CUTOFF_HOURS, now: number = Date.now()): boolean {
+  return Date.parse(booking.startsAt) - now >= cutoffHours * 3_600_000;
+}
+
 /**
  * The gym's reference PT pricing ladder.  The total price remains editable,
  * but these anchors make the intended volume discount visible and give new
  * packages a sensible starting price.
  */
+/** The ladder is a JOD reference. Gyms in another currency see it labelled as such and get no converted suggestion. */
+export const PT_PACKAGE_PRICE_GUIDE_CURRENCY = "JOD";
 export const PT_PACKAGE_PRICE_GUIDE = [
   { sessionCount: 12, totalPriceMinor: 240_000 },
   { sessionCount: 20, totalPriceMinor: 300_000 },
@@ -106,8 +136,8 @@ export function ptBookingCreditConsequence(input: {
   cutoffHours?: number;
   cancelledByGym?: boolean;
 }): { effect: "consume" | "return"; text: string } {
-  if (input.action === "completed") return { effect: "consume", text: "One reserved PT credit will be consumed." };
-  if (input.action === "no_show") return { effect: "consume", text: "One reserved PT credit will be consumed for this no-show." };
+  if (input.action === "completed") return { effect: "consume", text: "One reserved PT credit will be used." };
+  if (input.action === "no_show") return { effect: "consume", text: "One reserved PT credit will be used for this no-show." };
   const result = ptCancellationResult({
     startsAt: input.startsAt,
     cancelledAt: input.cancelledAt ?? Date.now(),
@@ -116,7 +146,7 @@ export function ptBookingCreditConsequence(input: {
   });
   return result.restoreCredit
     ? { effect: "return", text: "The reserved PT credit will be returned to the member." }
-    : { effect: "consume", text: "This is after the cancellation cutoff, so one reserved PT credit will be consumed." };
+    : { effect: "consume", text: "This is after the cancellation cutoff, so one reserved PT credit will be used." };
 }
 
 export function ptIntervalsOverlap(left: { startsAt: number; endsAt: number }, right: { startsAt: number; endsAt: number }): boolean {
@@ -132,4 +162,24 @@ export function selectPtEntitlement<T extends Pick<PtEntitlement, "source" | "ex
       if (left.source === right.source) return 0;
       return left.source === "included" ? -1 : 1;
     })[0];
+}
+
+export type PtTrainerSetupState =
+  | { kind: "no_profile" }
+  | { kind: "unpublished"; profile: PtTrainerProfile }
+  | { kind: "no_hours"; profile: PtTrainerProfile }
+  | { kind: "ready"; profile: PtTrainerProfile };
+
+/**
+ * What still stands between a trainer account and a bookable schedule, in the
+ * order it has to be resolved: the gym links a profile, publishes it, and the
+ * trainer (or a manager) saves weekly hours. Bookings are impossible until all
+ * three are done, so each state names who can fix it.
+ */
+export function ptTrainerSetupState(trainers: PtTrainerProfile[], userId: string | undefined): PtTrainerSetupState {
+  const profile = userId ? trainers.find((trainer) => trainer.userId === userId) : undefined;
+  if (!profile) return { kind: "no_profile" };
+  if (profile.status !== "published") return { kind: "unpublished", profile };
+  if (!profile.availabilityRules?.some((rule) => rule.active)) return { kind: "no_hours", profile };
+  return { kind: "ready", profile };
 }

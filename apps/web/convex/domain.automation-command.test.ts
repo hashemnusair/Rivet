@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
 import { api } from "./_generated/api";
 import schema from "./schema";
@@ -7,6 +7,16 @@ declare global { interface ImportMeta { glob(pattern: string): Record<string, ()
 const modules = import.meta.glob("./**/*.ts");
 const operation = (name: string, input: Record<string, unknown> = {}) => ({ operation: name, input, correlationId: `cor-test-${name}` });
 const expectCode = async (request: Promise<unknown>, code: string) => { await expect(request).rejects.toMatchObject({ data: expect.objectContaining({ code }) }); };
+const previousAutomationLive = process.env.RIVET_AUTOMATIONS_LIVE;
+
+beforeEach(() => {
+  process.env.RIVET_AUTOMATIONS_LIVE = "true";
+});
+
+afterAll(() => {
+  if (previousAutomationLive === undefined) delete process.env.RIVET_AUTOMATIONS_LIVE;
+  else process.env.RIVET_AUTOMATIONS_LIVE = previousAutomationLive;
+});
 
 async function seed(t: TestConvex<typeof schema>) {
   await t.run(async (ctx) => {
@@ -27,6 +37,17 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("exported Convex automation command center", () => {
+  it("reports provider readiness and rejects writes while the global pause is active", async () => {
+    delete process.env.RIVET_AUTOMATIONS_LIVE;
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-a" });
+    const summary = await owner.query(api.domain.query, operation("automations.monitoring")) as { globallyPaused: boolean; ruleCount: number; persistedEnabledCount: number; failureCount: number; providers: Array<{ key: string; live: boolean }> };
+    expect(summary).toMatchObject({ globallyPaused: true, ruleCount: 1, persistedEnabledCount: 1, failureCount: 1 });
+    expect(summary.providers).toEqual(expect.arrayContaining([expect.objectContaining({ key: "internal_tasks", live: false }), expect.objectContaining({ key: "sms_whatsapp", live: false })]));
+    await expectCode(owner.mutation(api.domain.mutate, operation("automations.run", { ruleId: "rule-a", reason: "Should remain paused" })), "FEATURE_NOT_AVAILABLE");
+  });
+
   it("previews, reason-gates, executes, deduplicates, and audits a forced run", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

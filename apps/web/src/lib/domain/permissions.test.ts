@@ -6,8 +6,9 @@ import {
   canAny,
   defaultRoleDefinitions,
   discountNeedsApproval,
+  effectiveRolePermissions,
   hasPermission,
-  type Permission,
+
 } from "./permissions";
 import type { RoleKey } from "./types";
 
@@ -16,7 +17,7 @@ const byKey = (key: RoleKey) => roles.find((r) => r.key === key)!;
 
 describe("role catalogue", () => {
   it("defines every system role with a label", () => {
-    const keys: RoleKey[] = ["owner", "manager", "salesperson", "receptionist", "trainer", "auditor"];
+    const keys: RoleKey[] = ["owner", "manager", "salesperson", "receptionist", "trainer"];
     for (const key of keys) {
       expect(byKey(key)).toBeDefined();
       expect(ROLE_LABELS[key]).toBeTruthy();
@@ -35,6 +36,8 @@ describe("role catalogue", () => {
     expect(manager).toContain("payments.refund");
     expect(manager).toContain("reconciliation.approve_variance");
     expect(manager).toContain("audit.read");
+    expect(manager).toContain("operations.manage");
+    expect(manager).toContain("accounting.post");
   });
 });
 
@@ -63,14 +66,6 @@ describe("least privilege per role", () => {
     expect(reception).not.toContain("reconciliation.approve_variance");
   });
 
-  it("keeps the auditor read-only", () => {
-    const auditor = byKey("auditor").permissions;
-    expect(auditor).toContain("audit.read");
-    expect(auditor).toContain("reports.financial.read");
-    for (const write of ["members.write", "memberships.sell", "payments.collect", "payments.refund"] as Permission[]) {
-      expect(auditor).not.toContain(write);
-    }
-  });
 
   it("limits the trainer to member lookup and their own PT schedule/outcomes", () => {
     expect(byKey("trainer").permissions).toEqual(["members.read", "pt.schedule.self", "pt.outcome.self"]);
@@ -84,6 +79,14 @@ describe("least privilege per role", () => {
 });
 
 describe("permission helpers", () => {
+  it("restores post-seed PT capabilities only for legacy role definitions", () => {
+    expect(effectiveRolePermissions("manager", ["members.read"])).toEqual(expect.arrayContaining(["pt.manage", "pt.refund", "pt.reports.read"]));
+    expect(effectiveRolePermissions("salesperson", ["members.read"])).toContain("pt.book_for_member");
+    expect(effectiveRolePermissions("receptionist", ["members.read"])).toContain("pt.book_for_member");
+    expect(effectiveRolePermissions("trainer", ["members.read"])).toEqual(expect.arrayContaining(["pt.schedule.self", "pt.outcome.self"]));
+    expect(effectiveRolePermissions("trainer", ["members.read"], 2)).toEqual(["members.read"]);
+  });
+
   it("checks a single permission", () => {
     expect(hasPermission(["members.read"], "members.read")).toBe(true);
     expect(hasPermission(["members.read"], "members.write")).toBe(false);

@@ -3,6 +3,10 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
+import { parseEmailAllowlist, resolveEmailMode, routeEmail, sandboxSubject } from "./emailMode";
+import { attachmentSizeLabel, renderBrandedEmail, type BrandedEmail, type EmailAudience } from "./emailTemplate";
+import { resolveBrandColor } from "./brand";
+import { BRAND_CONTACT } from "./brandTokens";
 
 const RETRY_MINUTES = [1, 5, 30] as const;
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -11,14 +15,15 @@ const LEASE_MS = 2 * 60 * 1000;
 type Language = "en" | "ar";
 type MessageClass = "service" | "marketing";
 type Delivery = Doc<"operationalEmailDeliveries">;
-const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled"]);
+const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"]);
 
 function providerConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
 }
 
-function liveDeliveryEnabled(): boolean {
-  return process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true" && providerConfigured();
+/** The worker runs in every mode except off, and only with a configured provider. */
+function deliveryEnabled(): boolean {
+  return resolveEmailMode().mode !== "off" && providerConfigured();
 }
 
 export interface QueueOperationalEmailInput {
@@ -37,6 +42,7 @@ export interface QueueOperationalEmailInput {
   subject?: string;
   html?: string;
   text?: string;
+  attachments?: Array<{ filename: string; contentType: string; contentBase64: string }>;
 }
 
 function utcIso(value: number): string {
@@ -49,6 +55,18 @@ function cleanEmail(value: string | undefined): string | undefined {
 }
 
 const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: string }; ar: { subject: string; body: string } }>> = {
+  subscription_agreement_signed: {
+    en: { subject: "Your signed RIVET subscription agreement", body: "Thank you for signing your RIVET subscription agreement. Your copy, with your ID number masked, is available in RIVET under Settings → Agreement. RIVET will countersign and confirm the completed agreement." },
+    ar: { subject: "اتفاقية اشتراك RIVET الموقّعة", body: "شكرًا لتوقيع اتفاقية اشتراك RIVET. نسختك، مع إخفاء رقم الهوية، متاحة داخل RIVET ضمن الإعدادات ← الاتفاقية. ستوقّع RIVET بدورها وتؤكد الاتفاقية النهائية." },
+  },
+  subscription_agreement_copy: {
+    en: { subject: "A gym signed its RIVET subscription agreement", body: "A gym owner signed the RIVET subscription agreement. The full record, with the signature, is in the platform console under Agreements." },
+    ar: { subject: "وقّع نادٍ اتفاقية اشتراك RIVET", body: "وقّع مالك نادٍ اتفاقية اشتراك RIVET. السجل الكامل مع التوقيع متاح في لوحة المنصة ضمن الاتفاقيات." },
+  },
+  subscription_agreement_countersigned: {
+    en: { subject: "RIVET countersigned your subscription agreement", body: "RIVET has countersigned your subscription agreement. The completed agreement, with both signatures, is available in RIVET under Settings → Agreement." },
+    ar: { subject: "وقّعت RIVET اتفاقية اشتراككم", body: "وقّعت RIVET اتفاقية الاشتراك الخاصة بكم. الاتفاقية المكتملة بالتوقيعين متاحة داخل RIVET ضمن الإعدادات ← الاتفاقية." },
+  },
   trial_request_confirmation: {
     en: { subject: "Your RIVET trial request", body: "Your trial request was received. Sign in to RIVET to see its current status and the gym's response." },
     ar: { subject: "طلب التجربة في RIVET", body: "تم استلام طلب التجربة. سجّل الدخول إلى RIVET للاطلاع على حالته الحالية ورد النادي." },
@@ -84,6 +102,10 @@ const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: strin
   platform_invoice_issued: {
     en: { subject: "A RIVET invoice was issued", body: "A platform invoice was issued for your gym. Sign in to RIVET to view the amount, billing period, and due date." },
     ar: { subject: "تم إصدار فاتورة RIVET", body: "تم إصدار فاتورة منصة للنادي. سجّل الدخول إلى RIVET لعرض المبلغ وفترة الفوترة وتاريخ الاستحقاق." },
+  },
+  platform_invoice_reminder: {
+    en: { subject: "Your RIVET invoice is ready", body: "Your next RIVET platform invoice has been issued. Sign in to review the amount, billing period, and due date. Payment is due on the date shown." },
+    ar: { subject: "فاتورة RIVET جاهزة", body: "تم إصدار فاتورة منصة RIVET القادمة. سجّل الدخول لمراجعة المبلغ وفترة الفوترة وتاريخ الاستحقاق. يستحق الدفع في التاريخ الموضح." },
   },
   platform_invoice_paid: {
     en: { subject: "Your RIVET invoice was marked paid", body: "An offline payment was recorded against your platform invoice. Sign in to RIVET to view the reference and status." },
@@ -123,23 +145,66 @@ const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: strin
   },
 };
 
-function fallbackContent(kind: string, language: Language) {
+/**
+ * Who each message is written for, and where its one action goes. A member
+ * reads about their own gym, so the gym leads and its accent colours the
+ * button; a gym owner reads about their RIVET account.
+ */
+const KIND_AUDIENCE: Readonly<Record<string, { audience: EmailAudience; path: string; action?: string; actionAr?: string; status?: BrandedEmail["status"] }>> = {
+  subscription_agreement_signed: { audience: "gym", path: "/settings?section=agreement", action: "View the agreement", actionAr: "عرض الاتفاقية" },
+  subscription_agreement_copy: { audience: "gym", path: "/platform/agreements", action: "Open in the console", actionAr: "فتح في اللوحة" },
+  subscription_agreement_countersigned: { audience: "gym", path: "/settings?section=agreement", action: "View the agreement", actionAr: "عرض الاتفاقية" },
+  platform_invoice_issued: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
+  platform_invoice_reminder: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
+  platform_invoice_paid: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
+  platform_invoice_past_due: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة", status: { label: "Past due", tone: "danger" } },
+  platform_subscription_suspended: { audience: "gym", path: "/settings?section=subscription", action: "View the account", actionAr: "عرض الحساب", status: { label: "Suspended", tone: "danger" } },
+  platform_subscription_cancelled: { audience: "gym", path: "/settings?section=subscription", action: "View the account", actionAr: "عرض الحساب" },
+  support_acknowledgement: { audience: "gym", path: "/support", action: "View the case", actionAr: "عرض الطلب" },
+  support_reply: { audience: "gym", path: "/support", action: "Read the reply", actionAr: "قراءة الرد" },
+  support_resolved: { audience: "gym", path: "/support", action: "View the case", actionAr: "عرض الطلب" },
+  trial_request_confirmation: { audience: "member", path: "/customer/my-gyms", action: "View in RIVET", actionAr: "عرض في RIVET" },
+  trial_status: { audience: "member", path: "/customer/my-gyms", action: "View in RIVET", actionAr: "عرض في RIVET" },
+  payment_receipt: { audience: "member", path: "/customer/receipts", action: "View the receipt", actionAr: "عرض الإيصال" },
+  renewal_reminder: { audience: "member", path: "/customer/my-gyms", action: "View the membership", actionAr: "عرض العضوية" },
+  membership_expiry: { audience: "member", path: "/customer/my-gyms", action: "View the membership", actionAr: "عرض العضوية" },
+  pt_package_paid: { audience: "member", path: "/customer/my-gyms", action: "View the sessions", actionAr: "عرض الجلسات" },
+  pt_booking_confirmation: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
+  pt_booking_update: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
+  pt_booking_reminder: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
+  pt_low_balance: { audience: "member", path: "/customer/my-gyms", action: "View the balance", actionAr: "عرض الرصيد" },
+};
+
+interface BrandContext {
+  gymName?: string;
+  accent?: string;
+  siteUrl?: string;
+}
+
+/**
+ * The branded body for a kind that does not supply its own. The subject is
+ * also the headline: one sentence that says what happened.
+ */
+function fallbackContent(kind: string, language: Language, context: BrandContext = {}, attachments?: QueueOperationalEmailInput["attachments"]) {
   const localized = SERVICE_COPY[kind]?.[language];
   const label = kind.replaceAll("_", " ");
   const subject = localized?.subject ?? (language === "ar" ? "تحديث خدمة من RIVET" : "A service update from RIVET");
   const body = localized?.body ?? (language === "ar" ? `لديك تحديث جديد بخصوص ${label}. سجّل الدخول إلى RIVET للاطلاع على التفاصيل.` : `There is a new update about ${label}. Sign in to RIVET to view the authoritative details.`);
-  if (language === "ar") {
-    return {
-      subject,
-      text: body,
-      html: `<div dir="rtl" style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.7"><h2>${subject}</h2><p>${body}</p></div>`,
-    };
-  }
-  return {
-    subject,
-    text: body,
-    html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>${subject}</h2><p>${body}</p></div>`,
-  };
+  const meta = KIND_AUDIENCE[kind] ?? { audience: "gym" as EmailAudience, path: "/dashboard" };
+  const siteUrl = (context.siteUrl ?? process.env.RIVET_SITE_URL ?? "https://www.rivetjo.com").replace(/\/$/, "");
+  const attachment = attachments?.[0];
+  return renderBrandedEmail(subject, {
+    language,
+    audience: meta.audience,
+    headline: subject,
+    paragraphs: [body],
+    gymName: meta.audience === "member" ? context.gymName : undefined,
+    accent: context.accent,
+    siteUrl,
+    status: meta.status,
+    button: { label: (language === "ar" ? meta.actionAr : meta.action) ?? (language === "ar" ? "عرض في RIVET" : "View in RIVET"), href: `${siteUrl}${meta.path}` },
+    attachment: attachment ? { filename: attachment.filename, sizeLabel: attachmentSizeLabel(attachment.contentBase64.length) } : undefined,
+  });
 }
 
 async function mirrorDelivery(ctx: MutationCtx, delivery: Delivery) {
@@ -164,7 +229,10 @@ async function mirrorDelivery(ctx: MutationCtx, delivery: Delivery) {
       outcome: attempt.outcome,
       statusCode: attempt.statusCode,
       errorCode: attempt.errorCode,
+      mode: attempt.mode,
+      deliveredTo: attempt.deliveredTo,
     })),
+    attachments: delivery.attachments?.map((attachment) => ({ filename: attachment.filename, contentType: attachment.contentType, bytes: Math.floor((attachment.contentBase64.length * 3) / 4) })),
     retryPolicy: { maxAttempts: MAX_ATTEMPTS, backoffMinutes: [...RETRY_MINUTES] },
     nextAttemptAt: delivery.nextAttemptAt ? utcIso(delivery.nextAttemptAt) : undefined,
     status: delivery.status,
@@ -188,12 +256,16 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
   const existing = await ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", input.dedupeKey)).unique();
   if (existing) return existing;
   const now = Date.now();
-  const language = input.language ?? "en";
-  const content = fallbackContent(input.kind, language);
+  const organization = input.organizationId ? await ctx.db.get(input.organizationId) : null;
+  // Member-facing mail names the member's language explicitly; anything
+  // else addressed to a gym follows the language the gym chose in settings.
+  const language: Language = input.language ?? (organization?.defaultLanguage === "ar" ? "ar" : "en");
+  const brand = organization ? resolveBrandColor(organization.brandPaletteKey, organization.brandPrimaryColor) : undefined;
+  const content = fallbackContent(input.kind, language, { gymName: organization?.name, accent: brand?.primaryColor, siteUrl: process.env.RIVET_SITE_URL }, input.attachments);
   const recipientEmail = cleanEmail(input.recipientEmail);
   let suppressionReason = input.suppressionReason ?? (!recipientEmail ? "A valid recipient email is not available" : undefined);
   if (!suppressionReason) {
-    if (!liveDeliveryEnabled()) suppressionReason = "External operational email delivery is disabled or the provider is not configured";
+    if (!deliveryEnabled()) suppressionReason = resolveEmailMode().mode === "off" ? "Operational email mode is off (RIVET_EMAIL_MODE)" : "The email provider is not configured";
     else if (input.organizationId && !MANDATORY_PLATFORM_KINDS.has(input.kind)) {
       const settings = await ctx.db.query("operationalEmailSettings").withIndex("by_organization", (q) => q.eq("organizationId", input.organizationId!)).unique();
       if (!settings?.ownerConfirmedAt) suppressionReason = "The gym owner has not confirmed operational email preferences";
@@ -218,6 +290,7 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
     subject: input.subject ?? content.subject,
     html: input.html ?? content.html,
     text: input.text ?? content.text,
+    attachments: input.attachments,
     dedupeKey: input.dedupeKey,
     attempts: [],
     status: suppressionReason ? "suppressed" : "queued",
@@ -283,6 +356,27 @@ export const enqueue = internalMutation({
   },
 });
 
+/**
+ * Whether the message belongs to a subscribed gym: one in trial, active or
+ * past-due status. Mail addressed to the gym must go to an active member of
+ * its team; mail addressed to a member goes to whatever address the gym's own
+ * records hold for that person. Such mail goes out in allowlist mode without
+ * a list entry, so a subscribed gym and its members are served from day one
+ * while nothing else is.
+ */
+async function belongsToSubscribedGym(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
+  const email = delivery.recipientEmail?.trim().toLowerCase();
+  if (!email || !delivery.organizationId) return false;
+  const organization = await ctx.db.get(delivery.organizationId);
+  if (!organization || !["trial", "active", "past_due"].includes(organization.status)) return false;
+  const audience = KIND_AUDIENCE[delivery.kind]?.audience ?? "gym";
+  if (audience === "member") return true;
+  const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).first();
+  if (!user || user.status === "deactivated") return false;
+  const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", delivery.organizationId!)).collect();
+  return memberships.some((membership) => membership.active && String(membership.userId) === String(user._id));
+}
+
 async function kindEnabled(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
   if (MANDATORY_PLATFORM_KINDS.has(delivery.kind)) return true;
   if (!delivery.organizationId) {
@@ -315,7 +409,8 @@ export const leaseDue = internalMutation({
       }
       const leaseToken = crypto.randomUUID();
       await ctx.db.patch(delivery._id, { status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
-      leased.push({ ...delivery, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
+      const trusted = await belongsToSubscribedGym(ctx, delivery);
+      leased.push({ ...delivery, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now, trusted } as Delivery);
     }
     return leased;
   },
@@ -330,20 +425,26 @@ export const recordAttempt = internalMutation({
     providerId: v.optional(v.string()),
     statusCode: v.optional(v.number()),
     errorCode: v.optional(v.string()),
+    mode: v.optional(v.string()),
+    deliveredTo: v.optional(v.string()),
+    suppressionReason: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const delivery = await ctx.db.get(args.deliveryId);
     if (!delivery || delivery.status !== "leased" || delivery.leaseToken !== args.leaseToken) return null;
     const now = Date.now();
+    const suppressed = Boolean(args.suppressionReason);
     const attempts = [...delivery.attempts, {
       attemptedAt: now,
-      outcome: args.accepted ? "accepted" as const : args.retryable ? "retryable_failure" as const : "terminal_failure" as const,
+      outcome: suppressed ? "suppressed" as const : args.accepted ? "accepted" as const : args.retryable ? "retryable_failure" as const : "terminal_failure" as const,
       statusCode: args.statusCode,
       errorCode: args.errorCode,
+      mode: args.mode,
+      deliveredTo: args.deliveredTo,
     }];
     const exhausted = attempts.length >= MAX_ATTEMPTS;
-    const status = args.accepted ? "provider_accepted" as const : args.retryable && !exhausted ? "retrying" as const : "failed" as const;
+    const status = suppressed ? "suppressed" as const : args.accepted ? "provider_accepted" as const : args.retryable && !exhausted ? "retrying" as const : "failed" as const;
     const nextAttemptAt = status === "retrying" ? now + (RETRY_MINUTES[Math.min(attempts.length - 1, RETRY_MINUTES.length - 1)] ?? RETRY_MINUTES[RETRY_MINUTES.length - 1] ?? 30) * 60_000 : undefined;
     await ctx.db.patch(delivery._id, {
       attempts,
@@ -353,6 +454,7 @@ export const recordAttempt = internalMutation({
       leaseToken: undefined,
       leaseExpiresAt: undefined,
       lastErrorCode: args.errorCode,
+      ...(suppressed ? { suppressionReason: args.suppressionReason } : {}),
       updatedAt: now,
     });
     const updated = (await ctx.db.get(delivery._id))!;
@@ -363,9 +465,11 @@ export const recordAttempt = internalMutation({
         organizationId: delivery.organizationId,
         branchId: delivery.branchId,
         kind: "operational_email_failed",
-        title: "An operational email needs attention",
-        body: `${delivery.kind.replaceAll("_", " ")} could not be delivered after ${attempts.length} attempts.`,
-        href: "/automations",
+        title: "A gym email could not be delivered",
+        body: `An email could not be delivered after ${attempts.length} attempts. Check email settings.`,
+        // The automation workspace is intentionally deferred. Email delivery
+        // failures belong with the authoritative activation/provider controls.
+        href: "/settings?section=email",
         dedupeKey: `operational-email-failed:${delivery.publicId}`,
       });
     }
@@ -400,9 +504,9 @@ export const recordWebhook = internalMutation({
         organizationId: delivery.organizationId,
         branchId: delivery.branchId,
         kind: "operational_email_failed",
-        title: "An operational email needs attention",
-        body: `${delivery.kind.replaceAll("_", " ")} received a terminal provider event.`,
-        href: "/automations",
+        title: "A gym email could not be delivered",
+        body: `The email service could not deliver an email. Check email settings.`,
+        href: "/settings?section=email",
         dedupeKey: `operational-email-failed:${delivery.publicId}`,
       });
     }
@@ -414,13 +518,27 @@ export const processDue = internalAction({
   args: {},
   returns: v.object({ processed: v.number(), disabled: v.boolean() }),
   handler: async (ctx) => {
-    if (!liveDeliveryEnabled()) return { processed: 0, disabled: true };
+    if (!deliveryEnabled()) return { processed: 0, disabled: true };
+    const { mode } = resolveEmailMode();
+    const sandboxTo = process.env.RIVET_EMAIL_SANDBOX_TO;
+    const allowlist = parseEmailAllowlist(process.env.RIVET_EMAIL_ALLOWLIST);
     const apiKey = process.env.RESEND_API_KEY!.trim();
     const from = process.env.RESEND_FROM_EMAIL!.trim();
     const deliveries = await ctx.runMutation(internal.operationalEmail.leaseDue, { limit: 25 }) as Delivery[];
     let processed = 0;
     for (const delivery of deliveries) {
       if (!delivery.leaseToken || !delivery.recipientEmail) continue;
+      // The mode decides where the message may go. Sandbox never reaches the
+      // real inbox; allowlist drops with a reason the gym can read; both are
+      // recorded on the attempt so an audit shows exactly what happened.
+      const route = routeEmail({ mode, kind: delivery.kind, recipient: delivery.recipientEmail, sandboxTo, allowlist, trusted: (delivery as Delivery & { trusted?: boolean }).trusted === true });
+      if (route.decision === "drop") {
+        await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted: false, retryable: false, mode, suppressionReason: route.reason });
+        processed += 1;
+        continue;
+      }
+      const to = route.to;
+      const subject = route.decision === "redirect" ? sandboxSubject(delivery.subject, route.originalRecipient) : delivery.subject;
       let accepted = false;
       let retryable = true;
       let providerId: string | undefined;
@@ -430,7 +548,19 @@ export const processDue = internalAction({
         const response = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": delivery.dedupeKey },
-          body: JSON.stringify({ from, to: [delivery.recipientEmail], subject: delivery.subject, html: delivery.html, text: delivery.text }),
+          body: JSON.stringify({
+            from,
+            to: [to],
+            subject,
+            html: delivery.html,
+            text: delivery.text,
+            ...(delivery.kind.startsWith("gym_application_") ? {
+              // Keep applicant replies with the RIVET team even when this
+              // message is sent from the provider-managed noreply identity.
+              reply_to: process.env.RESEND_REPLY_TO_EMAIL?.trim() || BRAND_CONTACT.email,
+            } : {}),
+            ...(delivery.attachments?.length ? { attachments: delivery.attachments.map((attachment) => ({ filename: attachment.filename, content: attachment.contentBase64, content_type: attachment.contentType })) } : {}),
+          }),
         });
         statusCode = response.status;
         accepted = response.ok;
@@ -447,7 +577,7 @@ export const processDue = internalAction({
       } catch {
         errorCode = "provider_network_error";
       }
-      await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted, retryable, providerId, statusCode, errorCode });
+      await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted, retryable, providerId, statusCode, errorCode, mode, deliveredTo: to });
       processed += 1;
     }
     return { processed, disabled: false };

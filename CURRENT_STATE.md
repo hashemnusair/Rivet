@@ -1,5 +1,9 @@
 # GymOS / RIVET current implementation state
 
+## 2 October 2026 — Arabic integration in progress
+
+Integrating `901150a` (approved Arabic history), `7cd509e` (current main) and `9fbd53c` (newer local foundation) in `codex/complete-arabic-support`. The saved revision-607 standard passes checksum and 247-agreement verification. Work packages A–H remain in progress; no deployment or full-support claim is made. The foundation wording below is historical draft evidence and is superseded by `docs/arabic/STANDARD.md`.
+
 ## Arabic standard and implementation handoff — 1 October 2026
 
 - Documentation checkpoint on `arabic-localisation`, directly following Elias’s `f98e324`. Application code and his 11 Arabic commits are preserved. This checkpoint does not integrate main, implement remaining translations, or deploy a runtime.
@@ -9,11 +13,3299 @@
 - Verification for this documentation pass: snapshot/registry validation and documentation consistency checks; no application tests or deployment are claimed. Use `python3 docs/arabic/verify-lock.py` and `git diff --check`.
 - Remaining work is A–H in the plan. The review room remains open; approved v1 is versioned in Git rather than frozen by a database mutation. Future jointly approved changes must explicitly supersede the saved standard.
 
-### Historical branch handoff below
 
-The following August state is retained for history. For current production truth, consult `origin/main`’s latest `CURRENT_STATE.md` and release runbook before integration; do not use the old release record below as a current deployment claim.
+## Historical foundation checkpoint — superseded wording
 
-Updated 2026-08-17 after the simplified Core CRM Pilot release. This is the living implementation and release-status handoff. The historical frontend-only pass is preserved separately in `FRONTEND_HANDOFF.md`.
+1 October 2026 — Arabic foundation and first translated flow (branch `arabic-foundation`, not pushed)
+
+Founder decision (Elias): start Arabic now, without waiting for the review-room answers. The production export (`arabicReview:exportForImplementation --prod`) was read once: 247 questions, 0 answered, 0 approvals, `readyForImplementation: false`, so nothing is agreed and every term is a draft. Drafts are clear Modern Standard Arabic (staff: neutral or plural-polite; members: simple and friendly; no dialect), Western digits, Gregorian dates with Arabic month names, money stays `JOD 25.000`. The founders' terminology list will be applied by search-and-replace using `docs/arabic/GLOSSARY.md` (132 terms, each row says whether it came from the old branch, was changed from it, or is new).
+
+- **Hidden from real customers.** The language switch and the cookie are active only when `NEXT_PUBLIC_RIVET_ARABIC=1` or in mock/demo mode (`DEMO_AUTH_BYPASS` or no Convex URL, the same condition as the demo controls). Otherwise `getRequestLocale()` never reads the request, the root layout stays static and everything is English exactly as before. When the gate is open, the root layout reads the `rivet_locale` cookie, so those builds render dynamically.
+- **Turn it on locally:** `NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1 pnpm --dir apps/web exec next dev --webpack -p <port>` (mock mode already opens the gate; add `NEXT_PUBLIC_RIVET_ARABIC=1` to open it elsewhere). Sign in, open the account menu, choose "العربية". Member app: Profile page.
+- **Foundation** (`apps/web/src/lib/i18n/`): typed catalogues `messages/{en,ar}/<area>.ts` (English is the source of truth; `ar` is typed against it, so a missing key is a compile error), `{param}` interpolation, `plural()` with the six Arabic categories via `Intl.PluralRules`, dev warning and English fallback for a missing key, `provider.tsx` (`useT`, `useLocale` with `isolate`/`isolateLtr`), `format.ts` (`useFormat`), `labels.ts` (status/method/role lookups), `server.ts` (cookie to `<html lang dir class>` before paint). Arabic font: IBM Plex Sans Arabic behind Manrope so Latin digits and names keep Manrope; letter-spacing is zeroed in Arabic. Radix Tabs/Select/Dropdown receive `dir`. Ported and adapted from `origin/arabic-localisation` (see GLOSSARY "Source"); nothing was merged.
+- **Checks:** `messages.test.ts` fails on key mismatch, placeholder mismatch, missing plural counts, raw English in Arabic (brand allowlist) or a glossary term that is no longer used.
+- **Translated (about 1,450 keys):** app shell (sidebar, drawer, top bar, account menu, language switch, global search, notification bell, shortcuts, module lock), sign-in pages, members list and saved views, member profile (header, all tabs, side panels, follow-up and timeline chrome), renew membership, collect payment, receipt, freeze/extend/transfer/cancel/plan-change dialogs, owner dashboard with Needs attention and Today, shared status chips, dates, money, pagination and state panels.
+- **Still English (server or data text):** Today items with free-text titles/details and the lead/task/approval/maintenance/support lines (`convex/domain.ts` around 12148-12367, 11925-11969, `convex/branchChecklists.ts` 450/462, mock builders in `MockGymOSApi.ts` 4620-5016); member timeline event titles/bodies (`convex/domain.ts` 7347+, `convex/followupAssist.ts` 354-494); server error messages shown in dialogs (`convex/domain.ts` 6598-6623, 7265-7322, 8073, 11201/11246 and the freeze/extend/transfer/cancel/refund/void errors); Clerk's own error text on the sign-in forms; `readMoneyInput` messages (Arabic maps the problem code instead); default WhatsApp hand-off message; notification titles/bodies; search result titles; demo controls and the demo-role blurbs; receipt PDF/email text. Convert these by adding `messageId` + `params` to the server items, then reading them in the client with a fallback to the English text.
+- **Follow-ups not done:** per-user saved language (no schema change made: staff profile has none; the member profile `preferredLanguage` is the language of messages, not of the screen, and could seed the screen language later); language of messages, receipts and emails by recipient; Clerk `localization`; metadata/OG text; the other dashboards, reception console, payments list/shifts, CRM pages, settings, operations, reports, platform console, marketing; `origin/arabic-localisation` catalogues for crm, reception and marketing still match old English and were not ported (harvest with `git show origin/arabic-localisation:apps/web/src/lib/i18n/messages/ar/<file>.ts`). Known cosmetic leftover: the stray list bullet before "Total" in the sale summary exists in English too.
+- **Validation:** `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint` pass; unit suite 276 files, 1,735 tests pass (was 266/1,686), English tests and screenshots untouched. Visual check of the translated screens in Arabic at 1280px and 390px on a mock dev server (port 3620): no horizontal overflow outside scroll containers, no console or i18n warnings. The full Playwright suite was not run. Nothing was pushed or deployed; no Convex command was run.
+- **Read first:** `docs/arabic/GLOSSARY.md`, `apps/web/src/lib/i18n/` (especially `provider.tsx`, `format.ts`, `messages.test.ts`), `components/shared/data-display.tsx`, and one translated area such as `features/membership-actions/renew-flow-format.tsx`.
+
+
+## 1 October 2026 — public Arabic review
+
+- Hashem explicitly requested a standalone, unauthenticated room with an Elias/Hashem picker. Canonical route is now `https://www.rivetjo.com/arabic-room`; old `/platform/arabic-room` links redirect before the platform shell mounts and preserve the question parameter. The name picker appears on opening/reload; a Switch name action is available after saving drafts.
+- Review endpoints deliberately accept only the self-selected keys `elias` and `hashem`. Anyone with the link can read and edit either review identity. This is not account authentication and grants no access to gym/platform data. Shared server persistence, live queries, history, presence/following, conflicts, exports and dual approvals remain. Public mutations are rate-limited.
+- Review-table identity validators now accept strings, retaining compatibility with legacy user IDs. The internal idempotent `arabicReview:migrateNamedReviewers` function remaps only review data and preserves answers, comments, history and approvals; it refuses duplicate answer conflicts and validates the old founder accounts. The pre-change production export showed zero answers, but migration is still run at release to catch intervening edits. No account permissions are changed.
+- Updated the implementation prompt and review-room guide for the public route and self-declared identities. The questionnaire/version and all 247 questions are unchanged. An unrelated mock subscription test had a fixed September 30 expiry that failed on October 1; its asserted future boundaries now use relative dates.
+- Verified locally: all 1,688 tests in 266 files, 14 CLI/environment guards, both typechecks, lint, production build and the updated browser journey pass. The browser journey covers old-link redirect, name selection/switching, keyboard answers, saving, export and 360/390/768/1440 layouts. Recheck with `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, and `pnpm --filter web exec playwright test e2e/arabic-review.spec.ts`.
+- Released runtime `83efaef043e6f125f783b8a47711647496c38f58` to `main`. Guarded Convex Production dry run/deploy passed with no index deletions; the internal migration completed (zero existing answers/history/rooms) and health returned `ok` at `1790844996513`. Anonymous production snapshot queries return the two fixed reviewer names. Vercel Production `dpl_9VHkXjinxQJcCnrjf3HWkcHcYJyU` is READY at that exact runtime SHA. A signed-out hosted browser followed the old link to the new public route, chose both names and showed connected live data without a login prompt or page errors. The hosted prompt download matches the committed file. [CI run 36839515858](https://github.com/hashemnusair/Rivet/actions/runs/36839515858) passed all 13 jobs, including all eight browser shards. No deployment commands remain owed.
+- Read `docs/arabic/README.md`, `docs/arabic/IMPLEMENTATION_PROMPT.md`, and `apps/web/convex/arabicReview.ts` first.
+
+## 30 September 2026 — Arabic review room
+
+- Added the internal `/platform/arabic-room` with 247 multiple-choice questions across 13 sections, contextual Arabic drafts, optional custom wording/comments, searchable categories and saved progress. The repository-wide inventory covers 414 source files and 13,179 candidate strings; the questions guide voice/terminology rather than pretending to translate every string.
+- Choices are persisted per authenticated platform administrator in Convex and shared live. Added disagreement/agreement views, append-only answer history, approximate presence, optional following, stale-tab protection, explicit server-save status and approvals bound to the complete current answer revision. Any answer/comment edit invalidates approvals. Every browser endpoint requires active platform-admin access; no account privileges were changed.
+- Added a JSON preference export, internal read-only export query, downloadable whole-product implementation prompt, and `docs/arabic/README.md`. The later agent must load the founders' current approved preferences and cover frontend, backend, messages, documents, formatting, input and RTL. The old Arabic branch remains unmerged; this release does not translate the product itself.
+- Local validation: 1,686 unit/component tests in 266 files and 14 CLI/environment guards passed. The 14 focused review tests pass after final UI edits. Both typechecks, zero-warning lint/secret-output audit, production build and diff check pass. The new browser journey passes at 360/390/768/1440 widths, keyboard selection, save/advance, search and downloads. Arabic desktop/mobile captures were visually inspected; agent-browser reported no page errors, error overlay or overflow. Real founder choices were not fabricated for testing.
+- Read first: `docs/arabic/README.md`, `docs/arabic/IMPLEMENTATION_PROMPT.md`, `convex/arabicReview.ts`, `convex/arabicReviewModel.ts`, and `src/features/arabic-review/review-room.tsx` (app paths under `apps/web`). Recheck with `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, and `pnpm --filter web exec playwright test e2e/arabic-review.spec.ts`.
+- Existing untracked `docs/audits/` and `outputs/` are preserved; `FRONTEND_HANDOFF.md` is unchanged.
+
+**Release verified:** runtime commit `5d3e562b13c0e822615486177744d8c5384df524` is pushed to `main`. Guarded Convex Production deployment to `descriptive-meerkat-589` succeeded after a clean dry run; the four review tables and six indexes (including the admin lookup index) are additive, with no index deletions. Health returned `ok` at `1790790287551`. The production export confirms exactly two reviewers (Elias Hreish Admin and Hashem Nusair admin), all 247 questions, revision 0 and no fabricated votes. An anonymous production query is rejected with `UNAUTHENTICATED`. Vercel Production `dpl_FxwPYGWd4JJ7eQEbRW1Rqx1poYT7` is READY at the same runtime SHA on all canonical domains. The review page and prompt download return HTTP 200; the downloaded prompt exactly matches the committed file. [GitHub CI run 36753603971](https://github.com/hashemnusair/Rivet/actions/runs/36753603971) passed all 13 jobs, including all eight browser shards. The founders can begin at https://platform.rivetjo.com/platform/arabic-room. No server deploy remains owed.
+
+## 30 September 2026 — plain-language follow-up
+
+Synced Elias’s committed pass `0970df0`. Follow-up scope covers his remaining
+English wording, helper sizes, screenshot references, paused-automation staging
+coverage and coordinated server release. Arabic localization is excluded.
+The historical frontend handoff and existing untracked audits/outputs stay intact.
+
+- Simplified server access/payment/repair errors, repair advice, supplier-bill
+  explanations, search labels and new delivery-failure notifications. Existing
+  stored audit and notification text is historical and is not rewritten.
+- Aligned staff access names, offline recovery, demo sign-in and marketing
+  product previews. Helper copy is at least 12px; short technical metadata and
+  dense table headings retain the documented DESIGN.md exceptions.
+- Replaced the obsolete staging automation create/run scenario with owner and
+  manager checks of the paused, view-only monitor and history. Its manifest now
+  identifies this supported journey as implemented; live automation stays paused.
+- Updated browser selectors for Elias’s new greeting, report labels, access
+  wording and attention-panel order. Screenshot thresholds remain unchanged.
+- Assumptions: preserve API identifiers, permissions, data and money behavior.
+  CSV column contracts remain stable.
+- Validation: all 1,667 tests in 264 unit/component suites and all 14 CLI/env
+  guards passed. Web and Convex typechecks, lint/secret-output audit, normal
+  production build, approved preview build, dependency audit and diff check
+  passed. All 174 credential-free browser journeys passed; 14 live staging
+  journeys were skipped because they require explicitly isolated credentials.
+- Production Convex deployed through the guarded wrapper from `2636398` after
+  the dry run selected `descriptive-meerkat-589`, with schema validation and
+  no index deletions. This includes Elias’s Needs attention response change.
+  Health returned `ok` at `1790784838755`.
+- Frontend Production `dpl_CxJtxLfQ5k2kSPMnT881YDTsppr1` is READY at exact
+  `8027f36a6bf1f94dd82b7f84dee82c79d4f45f93` on all canonical RIVET domains.
+  Signup and gym/member/platform sign-in doors each returned HTTP 200.
+  The backend runtime source is unchanged between `2636398` and `8027f36`.
+- Screenshot references were recaptured on macOS and Linux without changing
+  comparison thresholds. The temporary capture workflow was removed. The
+  complete Linux preview run `36741949907` passed 174 tests; the all-reference
+  capture run `36742081904` passed 173 and exposed an ambiguous Settings text
+  selector. That selector now targets the exact heading; its local rerun
+  passes. All 23 local screenshot journeys pass in ordinary comparison mode.
+  Final standard CI passed all 13 jobs; see the closure record below.
+- Read first: this section, docs/22, docs/12, `convex/operations.ts`,
+  `convex/payables.ts`, `convex/security.ts`, and `e2e/staging-automation.spec.ts`.
+  Recheck with `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`,
+  `pnpm --filter web exec vitest run --maxWorkers=3`, `pnpm build`, and
+  `pnpm test:e2e`. Use the approved preview environment for browser tests.
+
+**Release-gate follow-up:** standard CI `36743388036` built successfully but
+its dependency audit detected newly indexed Next.js advisory
+[GHSA-vcvr-r3jv-pc5j](https://github.com/advisories/GHSA-vcvr-r3jv-pc5j).
+Next.js and its ESLint packages are patched from 16.3.3 to 16.3.6 with the
+lockfile updated. This small security update is required to close the release
+gate; it does not change the product scope. The application has no `next/og`
+`ImageResponse` usage. The patched local production audit reports no known
+vulnerabilities. The patched production build, lint and all 1,667 unit/component
+tests pass. All eight browser shards passed in the standard `b7cb6e3` run;
+its only failure was the dependency audit. Patched hosted verification passed
+all 13 jobs in [run 36744034609](https://github.com/hashemnusair/Rivet/actions/runs/36744034609)
+at exact `8027f36a6bf1f94dd82b7f84dee82c79d4f45f93`.
+
+**Closed:** every requested English follow-up is implemented and released.
+All 13 standard CI jobs pass at `8027f36`; Vercel is READY at that exact SHA,
+and Production Convex is healthy on the matching backend source. No server
+command remains to run. The repaired staging automation test has not been run
+against a live isolated staging gym; it remains credential-gated, along with
+the other 13 live browser journeys. Hashem’s deferred manual walkthrough and
+separate email-provider investigation are unchanged. Arabic is excluded.
+No production account, money or messaging mutation was used as a test.
+The frozen frontend handoff and original untracked audits/outputs are preserved.
+
+## 30 Sep 2026 — plain-language pass
+
+What changed (committed as `0970df0`; the wording rules are in `docs/22_PLAIN_LANGUAGE_GUIDE.md`):
+
+- The member-page Resolve section was removed as redundant. This also removed
+  `convex/resolutionAssist.ts`, `src/features/resolution` and the API methods.
+- The dashboard "Operating brief" was replaced by a short "Needs attention"
+  panel (`src/features/brief/needs-attention.tsx`), backed by
+  `convex/operatingBrief.ts`, which now returns attention, missing and
+  totals.urgent. The panel shows the load error when an older server sends the
+  old shape.
+- The owner/manager "Ending this week" count no longer counts memberships that
+  were already renewed (`convex/domain.ts` and the mock).
+- Wording across the gym workspace, member app and sign-in now follows the new
+  guide. Tests and e2e specs were updated to match.
+
+Checks (Playwright was not run locally): `pnpm typecheck`,
+`pnpm convex:typecheck`, `pnpm lint` and `git diff --check` passed. Unit tests
+(`pnpm exec vitest run --maxWorkers=3 --testTimeout=60000` in `apps/web`): 264
+files, 1,667 tests passed.
+
+Release notes:
+
+- The Convex changes need `pnpm convex:deploy -- --yes`. Until then, Needs
+  attention in production shows "This could not be loaded" and the Today list
+  keeps its old wording.
+- Screenshot references were not refreshed. The visual specs are expected to
+  fail in CI until they are regenerated, and the `-linux.png` references need
+  the throwaway CI workflow.
+
+Original handoff list (English items are addressed by the follow-up above):
+
+- Server-generated error and notification text was not reworded.
+- Permission labels in `src/lib/domain/permissions.ts`, such as "Approve cash
+  variances", "Override check-in blocks" and "Inventory".
+- The member offline banner "Showing the last known RIVET data…" in
+  `src/lib/providers/experience-provider.tsx`.
+- The "asset"/"issue" repair reasons in `convex/operations.ts` and
+  `convex/payables.ts`. "Same gym space" in `convex/branchOpsAssist.ts`.
+- Helper text below 12px in 14 files. The demo sign-in button "Open Omar's
+  workspace".
+- `e2e/staging-automation.spec.ts`, which was already stale.
+- An Arabic interface is a possible next step. The old `arabic-localisation`
+  branch has a bilingual foundation.
+
+## Walkthrough follow-up and release closure, 28 September 2026
+
+Hashem and Elias already performed an exploratory Production walkthrough on
+27 September. The Codex chat **Fix gym signup protection** records both
+platform-admin sign-ins, the successful application/approval/provisioning
+retry, an owner invitation arriving in spam, member-signup/profile blockers
+fixed during testing, and the failed live Jev check. The requested synthetic
+CSV was supplied; its import outcome and the payment, drawer, QR, class and
+PT outcomes are not recorded in that chat. Unrecorded is not a failed test
+or a claim that the users did not try it.
+
+Hashem will personally retest the feedback fixes later. Do not list a fresh
+full walkthrough as an unstarted prerequisite or run account/financial
+mutations on his behalf for this release pass.
+
+- Synced the checkout to `c39590e`, preserving the local 27 September Jev
+  failure notes here and in the archived docs/21 walkthrough section. The
+  frozen `FRONTEND_HANDOFF.md`, untracked audits and user outputs are preserved.
+- Released repairs: trainer browser coverage now permits personal
+  Settings while explicitly denying organization and staff settings; reduced
+  Settings group gaps to fit the added Account group at desktop height.
+  Failed CI browser results are retained for three days so Linux screenshot
+  differences can be inspected without weakening comparison thresholds.
+- Production backup including file storage saved outside Git at
+  `~/.local/share/rivet/backups/production-before-jev-retirement-2026-09-28.zip`
+  (6,311,296 bytes, owner-only permissions). Guarded dry run selected exactly
+  `descriptive-meerkat-589`, passed schema validation and proposed only seven
+  retired Jev index removals. Existing Jev documents are not purged.
+- Email investigation: Production names-only inspection confirms the Resend
+  key, sender, recipients, mode and allowlist names; `RESEND_WEBHOOK_SECRET`
+  is absent. Public DNS has Resend DKIM and the SES return-path SPF/MX;
+  root DMARC remains `p=none`. These are configuration observations, not
+  evidence about the actual invitation's authentication or spam placement.
+  The available Resend browser account has no RIVET domain/team, and the
+  Convex dashboard session has expired. No email was sent, retried or enabled.
+  Provider ownership/access and the affected invitation's authentication
+  headers remain needed to close delivery. Do not blindly tighten DMARC or
+  replace the existing production sender/key with an unrelated account.
+- Convex Production deployed successfully from `c310a9c` through the guarded
+  wrapper. Health returned `ok` at `1790605964359`. Only the seven retired
+  Jev indexes were removed. Post-release read-only checks matched the backup
+  IDs for all four populated retired tables (3 control rows, 1 request,
+  1 usage row, 1 tenant preference); no retained documents were purged.
+- The latest 16 operational-email records contain 8 provider-accepted sends
+  whose attempts record allowlist mode and 8 suppressed deliveries, including
+  owner preferences not confirmed, email types disabled, and a historical
+  provider-not-configured result. Provider acceptance is not inbox delivery.
+  This supersedes the blanket impression that no operational mail can send;
+  the missing webhook secret still prevents authenticated delivery callbacks.
+- Local validation: 1,676 unit/component tests in 266 files and 14 CLI/environment
+  guard tests passed; both typechecks, lint/secret-output audit, production
+  build and diff check passed. All 40 targeted browser journeys passed on the
+  built preview, including trainer access, Settings sizing, feedback flows
+  and branch operations at six viewport widths. Hosted run `36436717162` passed 12 of 13 jobs, including both repaired
+  trainer/Settings shards; only the equipment screenshot baseline remains.
+  Its Linux artifact was visually reviewed: the old reference omits the
+  retained manual issue-intake form. Equipment references now show that form
+  at 390/1440px, with a Linux 390px reference for native font metrics. The
+  browser test waits for repair details and asserts the manual machine picker
+  and disabled empty-report action. Screenshot tolerance remains 0.04. Both
+  affected local snapshot journeys pass.
+- Vercel Production `dpl_2EBmR1Lct5uUNmiZ3KP2NFwZWN8p` is READY at exact
+  `c310a9cdeb97295cf65389a3054a026abc0eb9e5`, assigned to all canonical domains.
+  The one-hour project 5xx log-count query returned no entries.
+
+
+**Closure:** [GitHub Actions run 36437542914](https://github.com/hashemnusair/Rivet/actions/runs/36437542914)
+passed all 13 jobs at exact `c2866dc119f936da282bfe83afa529278db168c1`,
+including both unit shards, all eight browser shards, static/safety checks,
+production build/audit and credentialed Convex codegen. Vercel Production
+`dpl_9tSuRKWHxDXgbE3cuwLALxcZPPJ3` is READY at that exact SHA on all canonical
+domains. The deployed Convex source is `c310a9c`; Git confirms no changes to
+`apps/web/convex` or `apps/web/src` between that release and `c2866dc`.
+Signup and all three sign-in doors return HTTP 200. Subsequent handoff-only
+commits do not change this verified runtime. No further backend deploy is owed
+for the feedback pass. Original untracked `docs/audits/` and `outputs/` remain
+untouched; the temporary reconciliation stash was removed after its findings
+were committed. The historical frontend handoff is unchanged.
+
+Remaining: Hashem's deferred manual retests, the provider-access/header work
+for email delivery, and any business-day outcomes the users choose to record.
+Run `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`,
+`pnpm --filter web test --maxWorkers=2`, and `pnpm build` for a new code change.
+Read this section, docs/12, and the current docs/13 backlog first.
+
+## Consolidated feedback pass: access, workspace controls, onboarding, platform visibility, signup and Jev retirement, 28 September 2026
+
+**Release status:** this feedback pass is being published through `main` in this release step. It does not run a Convex deployment; the backend changes still require the coordinated, guarded Convex release described in the runbook. A push may trigger the repository's normal frontend automation, but this document does not claim a Vercel deployment without provider evidence.
+
+- **Authentication and profile access.** Password fields across the sign-in, invitation and account flows now have an accessible eye toggle. Invitation hydration distinguishes a preexisting authenticated session from sign-in still in progress, removing the brief “already signed in” state during a normal sign-in. Every gym team member, including managers and employees, can open the settings surface allowed for their role and edit their own profile details. The server accepts only self-scoped profile changes, writes an audit event for the change, and leaves privileged settings behind their existing permissions.
+- **Platform visibility.** The platform admin gym detail now exposes full member and staff-team directories. Both directories have client-side search and twenty-row paging so operators can inspect the complete tenant without an oversized first render.
+- **Getting started.** Role, navigation and security checklist links now target real pages/sections instead of a missing `#role` anchor. A ref guard restores a late-loading target anchor once without scrolling on every refetch, so a checklist update does not strand the user at the top of the page.
+- **Selection and visual polish.** Shared positioned text and panel surfaces constrain native selection painting. A native Brave selection on the changed local `http://127.0.0.1:3100/signup` stayed with the selected helper line rather than painting the card. Safari/WebKit verification is unavailable in this environment.
+- **Jev retirement.** Jev runtime modules and assist surfaces, the `ai` dependency and lockfile entries, Jev/AI Gateway environment setup, active rollout instructions, and active Jev schema definitions were removed. Deterministic/manual workflows remain available, historical design material is preserved and marked archived/superseded, and persisted production Jev rows or other deployment data were not purged. Retained historical rows may be cleaned only through a separately scoped retention operation.
+- **Signup and subscriptions.** New gym applications require a physical address of at least five characters, which persists through the application, operator view, confirmation/internal emails, first branch and marketplace projection. Historical rows keep the field optional, and duplicate submissions never backfill or mutate a legacy row. The placeholder phone number is gone. Plan cards use the existing catalog's differentiated limits and modules so Growth operations and Pro finance/reporting are visible; prices and tier limits remain unchanged.
+- **Application email and billing.** Confirmation copy distinguishes sent, queued and unavailable delivery. The optional `RESEND_REPLY_TO_EMAIL` override applies only to `gym_application_*` mail and defaults to `sales@rivetjo.com`; member and platform billing mail keep their normal routing. Spam placement is not claimed as fixed: SPF/DKIM records and DMARC `p=none` are authentication evidence, while actual message headers, provider events and Resend Deliverability Insights are still needed. Signed billing terms remain unchanged: invoice issuance is three days before the term boundary and payment is due fourteen days after invoice issue; reminder copy points to the displayed due date.
+- **Validation status.** Settled `pnpm typecheck`, `pnpm convex:typecheck`, full lint/secret-output audit, additional lint for the final cleanup, and `pnpm build` pass. The build required network access to fetch the project's Google Fonts. The bounded full unit run covered 264 files: 1,661 tests passed, three billing/platform cases timed out during concurrent compilation, one notification fixture had equal timestamps despite expecting newest-first ordering, and the receipt suite exposed one missed import of the removed reason helper. The fixture and receipt import are corrected; targeted reruns passed all 23 billing/platform cases, 13 deterministic branch/resolution/navigation cases and three receipt cases. This accounts for 1,668 unit tests across the full run and reruns, plus 14 passing CLI/environment guard tests. The earlier unbounded run was stopped for resource contention. Nine focused local browser journeys passed: the five new feedback regressions (including profile save and 390px overflow checks), reception Settings restrictions, public application receipt, CSV member import and manual equipment resolution. The operations journey initially stalled on a cold development-route navigation; its warmed rerun passed without a routing change. Added/updated E2E specs pass ESLint. No real invitation, provider email delivery or production mutation was exercised; invitation races are covered by component regressions. The isolated browser preview was stopped after verification.
+- **Read first / verification commands.** Read the changed auth invitation and password components, `apps/web/src/features/settings/my-profile-section.tsx`, the platform gym detail and directory components, the getting-started page, `apps/web/src/app/globals.css`, `apps/web/convex/gymApplications.ts`, `apps/web/convex/operationalEmail.ts`, `apps/web/convex/platformProvisioning.ts`, and the current Jev retirement note in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`. Commands: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm --filter web test --maxWorkers=2`, `pnpm build`; targeted cold-start reruns used `--maxWorkers=1 --testTimeout=20000`. For the new browser coverage, run `PLAYWRIGHT_PORT=3137 PLAYWRIGHT_DIST_DIR=.next-playwright/feedback pnpm --filter web exec playwright test e2e/feedback-regressions.spec.ts --workers=1`.
+
+- **Main reconciliation.** Rebased this pass onto `9888954`, preserving the newer signed-in member recovery, Clerk phone-disabled signup and CI fixes. Removed the newer Jev smoke script and obsolete hook tests along with the retired implementation. The merged version passes 79 focused auth/schema/ownership tests, web and Convex typechecks, full lint/secret-output audit, production build, and the settings keyboard browser regression. That regression now verifies the personal-profile entry and the remaining settings tab order. Temporary browser-generated TypeScript paths were removed after verification.
+
+## Signup confirmation selection painting, 27 September 2026
+
+- Positioned the application-received confirmation paragraph so WebKit keeps its native `::selection` highlight within the confirmation card instead of painting the selected line across the viewport. Safari-specific visual verification remains unavailable in this environment; Chromium local preview showed the paragraph rendering and selection within the card.
+- Validation: scoped signup lint and `git diff --check` pass.
+
+## Live walkthrough: member recovery and Jev activation, 27 September 2026
+
+- Released `da91930`: an authenticated member with no RIVET profile now gets
+  a profile-completion form. Query/auth failures still show an error instead
+  of creating a profile. Registration remains identity-scoped and excludes
+  staff/admin accounts server-side. Signup keeps its profile retry visible
+  when Clerk becomes signed in. Vercel `dpl_5eaouMV2xnSNorUsbq5pikRHLcU9`
+  is READY at the exact commit and assigned to the canonical domains.
+  The screenshot matches the former generic failure; the user's specific
+  account has not been inspected and its live retry remains pending.
+- Validation: 49 focused signup, identity, profile-completion, provider and
+  backend ownership tests passed; typecheck, lint, build and diff checks passed.
+  Earlier commit `03d264b` CI failed in an unrelated class-calendar browser
+  journey waiting for “Add a member at the desk” (`classes.spec.ts:22`).
+  Do not describe full CI as green. Current release CI is still in progress.
+- Released paid-pilot code `8ea316e` through the guarded Convex dry run and
+  actual deploy to Production `descriptive-meerkat-589`; schema validation
+  succeeded with no deleted indexes. Post-deploy `health:check` returned ok.
+  The previous full test run covered this pilot implementation (1,896 passed).
+  Vercel `dpl_8GTiRr2ZQSb4aPaEpnoVi5Lzdt1S` is also READY at exact
+  `8ea316e6cc2ee3f9cc0cef75a8257d6db10e7fd6` on the canonical domains.
+- User added a Vercel card. Dashboard confirms $5 credit and auto-reload off.
+  RIVET API-key budget was $3/never; reduced to $1/never to leave margin below
+  the user's $3 maximum. Saved state verified; no credit purchase was made.
+- Production now has live mode, all nine feature groups, global/gym caps of
+  50 requests per UTC day, a $1 lifetime app allowance, and paid pilot expiry
+  `2026-09-27` (03:00 Amman on 28 September). Only Test Gym organization
+  `0b1e7029-dd30-4345-8bd6-1dbf175ba8c5` is allowed; this ID was verified in
+  the Production organizations table (the public listing ID uses `abd6`).
+  Mode was set live last, after the budget and other settings were saved.
+- Elias enabled Settings → Jev assistance: Production now has an enabled
+  tenant preference saved at 20:57:43 Amman. The first foundation request at
+  20:59:18 failed with Gateway HTTP 403 (`auth_error`), correlation
+  `web-5d083f1f-46dd-44c5-8894-4e83481aa743`. Gateway generation
+  `gen_01M3J0AXVDCCWNW4A3P0Z1ZD0A` confirms the RIVET key and $0 charged.
+  The authenticated Jev model page says this team's plan excludes the model;
+  both providers show Free Tier: No. The $5 balance is free credit. Adding
+  a card alone has not enabled Jev. The Buy Credit form rejects a $3 custom
+  top-up with “Minimum amount is $10”, above the user's authorized budget.
+  No purchase was made. Await the user's funding decision.
+- The failed response lacked cost metadata, so RIVET's breaker is tripped.
+  Lifetime admission allowance used is $0.01; that is not a provider charge.
+  After model eligibility is resolved, reset only the breaker with an audited
+  reason, preserve all budget counters, and ask the owner to run one check.
+  No successful live inference or model accuracy has been verified.
+- Read first: this section, `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`,
+  `apps/web/src/app/login/member-profile-completion.tsx`, and
+  `apps/web/convex/jevMode.ts`. Walkthrough checklist and budget screenshot
+  are under `outputs/`. Historical frontend handoff remains unchanged.
+
+## Member signup and paid Jev walkthrough preparation, 27 September 2026
+
+- Released signup fix: commit `03d264bc40993f97e8910ceff58001945017efb1`
+  was pushed to `main`. Vercel Production deployment
+  `dpl_8QYC6EfzvVPJ9jGhwjanR8XBMgrX` is READY at that exact SHA and
+  assigned to `app.rivetjo.com` and the canonical RIVET domains. GitHub CI
+  run `36337476466` is still running at this check. Account creation awaits
+  the user's live retry; no account was created by the agent.
+  The initial Clerk password signup no longer unconditionally
+  sends `phoneNumber`, which Production rejects while phone signup is disabled.
+  Mobile remains required and is saved through authenticated RIVET profile
+  registration. If Clerk returns `phone_number` in `missingFields`, the existing
+  update and SMS verification flow still handles it. Email verification is
+  unchanged. No Clerk setting was weakened or changed.
+- The user authorized $1–3 total for Jev testing. Added an explicit paid pilot
+  with a budget capped at $3, UTC expiry, public gym-ID allowlist, lifetime
+  atomic admission debits of $0.01, and cost enforcement on successful and
+  failed responses. Unknown or over-allowance cost trips the breaker. Duplicate
+  callbacks no longer double-count. Existing free-only behavior remains the
+  default, along with per-gym opt-in, role checks, feature allowlists and daily
+  caps. Settings labels the paid allowance separately from free terms.
+- Proposed walkthrough configuration is $1 in the app and a $1 non-resetting
+  Gateway API-key budget, leaving margin below $3. Gateway budgets are soft
+  caps and the one-cent admission debit is not a price guarantee. Setup and
+  limitations are documented at the top of the release runbook.
+- At preparation time, Production names-only inspection confirmed the Gateway key existed; mode,
+  features and paid-pilot settings were absent. No live inference, payment,
+  environment change or Jev release had been performed. Then-pending prerequisites:
+  saved Gateway budget/usable credit, exact test gym public ID, pilot expiry,
+  release and owner opt-in. No model accuracy or live connection is claimed.
+- Read first: `apps/web/src/app/customer/signup/customer-signup.client.tsx`,
+  `apps/web/convex/jevMode.ts`, `apps/web/convex/jev.ts`, and
+  `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`. Historical frontend handoff is
+  unchanged.
+- Validation: `pnpm test` passed 1,896 tests (289 files), with one opt-in live
+  test skipped. `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`,
+  `pnpm build` and `git diff --check` passed. The seven signup tests include
+  phone-disabled email signup and required-phone verification. The 47 focused
+  Jev tests include paid admission races, expiry/configuration, tenant scope,
+  completion/failure idempotency and cost breaker behavior. The guarded
+  `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --dry-run --yes` selected exact
+  Production `descriptive-meerkat-589`, validated the schema and reported no
+  index deletions. This was a dry run, not a release.
+
+## Walkthrough blocker: gym application protection, 27 September 2026
+
+- Walkthrough follow-up: user confirmed submission now works; supplied screenshot shows application approved and workspace provisioned. The received owner email landed in Gmail spam. Sender and message authentication results are pending, so the cause is unconfirmed. Invitation delivery uses Clerk independently of the Resend operational-email queue; the screenshot still shows application confirmation and decision emails as `Not configured`. Track deliverability and suppressed application notifications separately. No email settings were changed.
+
+- Elias reported `Public request protection is not configured` when submitting the public gym application. `convex/gymApplications.ts` calls `privacyFingerprint` before saving the application; `convex/publicAbuse.ts` throws this error when the runtime pepper is absent or fails validation. Browser profiles and platform roles do not participate in this check.
+- `CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` succeeded and lists `RIVET_PUBLIC_REQUEST_PEPPER`. The plain command and an unset-only override selected the local deploy key's Development deployment instead; those results are not Production evidence. No secret values were read.
+- Remaining: owner must check the pepper in the Production dashboard for `descriptive-meerkat-589`: at least 32 characters after trimming and at least three of lowercase, uppercase, digits, symbols. A lowercase hexadecimal value fails this implementation's character-class check. Presence alone does not prove validity; the current live browser's backend target and pepper validity have not been independently verified. Retry Elias's submission after configuration is corrected.
+- No code, configuration, or application data changed. No application was submitted by the agent and no automated tests were run for this diagnostic pass. Read `apps/web/convex/publicAbuse.ts`, `apps/web/convex/gymApplications.ts`, and the deployment-selection guidance at the top of `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` first.
+
+## Jev release verification and initial import pilot gate, 23 September 2026
+
+- **Implemented and pushed.** `57b9c61` makes the PT-credit conservation/race test choose actual trainer working slots within its booking window; the missing slot was a date-dependent test fixture, not a credit accounting defect. `b67ba55` passes Playwright's shard flag correctly and updates two browser expectations for the Jev-era Settings rail and support case selection. `b65e34e` with `97f0e2b` withholds live judgments when Gateway cost is missing or nonzero, records usage and trips the breaker even if the caller's role changed while the response was in flight; simulated fixture failures do not falsely trip it. All four commits were pushed directly to `main` with the configured Git author. The historical `FRONTEND_HANDOFF.md` and untracked `docs/audits/` were untouched.
+- **Local checks.** `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm audit --prod` and `git diff --check` pass on the code revision: 1,886 tests passed, one opt-in live smoke skipped, no known vulnerabilities. The two import Playwright journeys pass against a built mock preview: ordinary alias mapping/preview and fixture-suggested `Tel` acceptance/preview. The updated Settings keyboard and support 360/390px journeys also pass locally. These fixture results are workflow evidence, not Jev model-quality evidence.
+- **CI and frontend.** GitHub Actions [run 35842276609](https://github.com/hashemnusair/Rivet/actions/runs/35842276609) passed all 13 jobs for exact SHA `97f0e2b8b8ea0a7b5f2cb02e4a08a87b684ca41a`, including both unit shards, eight real Playwright shards, build/audit, safety checks and credentialed Convex codegen. Vercel Production deployment `dpl_GuvW1auSrRZ7JJjztr196HYPsaoU` is Ready and assigned to the canonical RIVET domains. GitHub deployment `6610598859` ties its URL to the same source SHA. This frontend evidence is independent of the backend release.
+- **Convex deployed.** The local `.env.local` deploy-key override made a plain `--prod` names query inspect Development; suppressing that override for the command established Production target `rivet:rivet:production` / `descriptive-meerkat-589` (`https://descriptive-meerkat-589.eu-west-1.convex.cloud`). `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --dry-run --yes` then `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --yes` succeeded from source SHA `97f0e2b8b8ea0a7b5f2cb02e4a08a87b684ca41a`, with schema validation and no index deletion. Post-deploy `CONVEX_DEPLOY_KEY='' pnpm --filter web exec convex run health:check --prod` returned `ok` at server time `1790155478129` (23 September 2026 09:24:38 UTC). The Convex History page is unavailable on this team's plan, so the guarded deploy output, target and source checkout are the release evidence; no Git SHA is inferred from the dashboard.
+- **Jev configuration.** Production's approved names-only query and dashboard show `AI_GATEWAY_API_KEY` present by name. After deployment, explicit `RIVET_JEV_DAILY_CAP=0` and `RIVET_JEV_TENANT_DAILY_CAP=0` were saved in Production and their names verified through the approved wrapper. `RIVET_JEV_MODE`, `RIVET_JEV_FEATURES` and `RIVET_JEV_FREE_UNTIL` remain absent: runtime mode defaults to `off`, the feature allowlist is empty, and no free-until date is set. The code's otherwise-applicable defaults are 200 global / 50 per gym per UTC day; the configured zeros now block every live request even if mode were accidentally changed. The Production `jevControlState`, `jevRequests` and `jevTenantPreferences` tables are empty: there is no stored breaker trip, recorded request or opted-in gym. The code's default gym preference is off. A key in Production Convex does not provide a local Vitest credential; Development `fleet-otter-621` has no Gateway key by name. No fixture mode was enabled in Production.
+- **Live verification and pilot.** No Gateway request was made. Vercel's official Jev announcement advertises free access through 25 September 2026, but the model page shows a nonzero token price, and this account's Gateway overview asks for a card to unlock free credits. Account-specific zero-cost eligibility is unconfirmed, so `RIVET_JEV_FREE_UNTIL` remains unset and no synthetic live smoke, deployed action request or Jev model-quality import evaluation can safely run. No synthetic import was committed to a backend gym, and no real customer data was sent or changed. The import pilot matrix, caps, allowed metadata, roles and rollback are prepared in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`. Customer-facing AI remains off everywhere inspected. The next external prerequisites are account-specific written/dashboard confirmation of zero-cost access and a dedicated non-production gym/runtime with a securely configured Gateway key; a real-gym pilot additionally needs the named gym's data-processing authorization.
+- **Read first / commands.** Read this section, `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` (23 September pilot gate), `docs/21_JEV_ASSIST_FOUNDATION.md`, `apps/web/convex/jevMode.ts`, `jev.ts`, `jevAdapter.ts`, `jevInference.ts`, and `apps/web/scripts/jev-smoke.ts`. Re-run `pnpm typecheck && pnpm convex:typecheck && pnpm lint && pnpm test && pnpm build && pnpm audit --prod` for a new code revision. Use only `pnpm convex:deploy` with its guarded dry run after proving the target. Do not run live smoke until account-specific zero-cost access is confirmed.
+
+## Jev smoke cost checks and final regression verification, 23 September 2026
+
+- Synthetic live smoke now validates each response before the next request, stops on unknown/nonzero cost or errors, rechecks eligibility per request and never runs in CI. Shared adapter SDK retries are disabled so retries cannot bypass the guarded request entry point. Six offline smoke regressions and an adapter retry-setting regression make no external calls. Read `apps/web/scripts/jev-smoke.ts`, `apps/web/convex/jevSmoke.test.ts` and `jev.smoke.live.test.ts` first.
+- Final validation across the three fixes: frontend and Convex typechecks pass; full suite 1,883 passed, one live smoke skipped, and only the already-known PT last-credit test fails at `MockGymOSApi.test.ts:3251` (undefined slot). Relevant UI, server and regression tests pass. No live inference, deployment or production flag changes. Existing audit documents remain untracked and untouched.
+- Commands: `pnpm --filter web typecheck`, `pnpm --filter web convex:typecheck`, `pnpm --filter web lint`, `RIVET_JEV_LIVE_SMOKE=0 pnpm --filter web test`. Live connectivity and model accuracy remain unverified; the PT test failure remains outside these three fixes.
+
+## Jev Choice review semantics fix, 23 September 2026
+
+- Profile claims, bilingual comparisons, unanswered support requests and support claims now display only the selected Choice passage. Alternative probabilities are not independent findings. Invalid selected IDs never imply an all-clear. UI copy explicitly limits each check to one suggestion and avoids claiming complete verification.
+- Validation: 23 profile/support logic tests and 11 existing UI tests pass, including near-tied alternatives and invalid selections. No API/schema changes or extra inference calls. Read `apps/web/convex/profileAssist.ts`, `supportAssist.ts` and their tests first.
+
+## Jev scope isolation fix, 23 September 2026
+
+- Suggestion request deduplication and status queries now include the API scope epoch and platform gym. Workspace changes invalidate pending results and retries; unmounts invalidate callbacks. Reuses the existing scope notifications for organization, branch and session changes.
+- Validation: the two new hook regression cases and eight existing suggestion tests pass (10 tests). No deployment or live inference. Read `src/features/assist/use-assist-judgment.ts` and its test first (under apps/web).
+
+## Jev review and validation: all eight feature batches wired end to end, hardened and re-verified, 22 September 2026
+
+- **What this stage did.** Read the foundation and every feature batch (commits `068aad2`, `aba2824` and the brief working tree) against the contract in `docs/21_JEV_ASSIST_FOUNDATION.md`, ran four independent read-only audits (foundation controls; import, navigation and follow-up; resolution, support and profile; branch operations and the brief) and verified each finding by hand before changing anything. Every audit finding that was a real gap is fixed below; the rest are recorded as limitations. The brief stage below and this review stage are committed together and pushed to `origin/main` at the end of this stage (the sections below that say "uncommitted" describe the tree as it was when each stage finished).
+- **Fixes made (foundation).** `jev.ts` `complete` re-checks the question's permission for the caller, so a role downgraded while the model was answering never receives the judgment (`request_invalid`, row `failed`). A loader that throws inside `complete` (a case resolved, a draft expired, a machine retired meanwhile) now reads as `stale` instead of leaving the lease pending. `fail` records the tokens and cost the gateway reported for a response RIVET then rejected (wrong model, unusable answer) and trips the breaker on a billed live failure exactly as `complete` does; the adapter keeps that usage on its failure outcomes and sends the page generic copy (the model's answer text stays in the request log only). `prepare` refuses a candidate list the request cannot honour (too many, too few, duplicate ids) and counts candidates in the state-size limit before the cache is read and before `begin` counts the request. `judge` answers a simulated failure from the fixture in every mode, so the Settings synthetic check never reaches the gateway in `live`. `statusViewFor` warns about a `RIVET_JEV_FEATURES` key that is not registered instead of silently disabling it. The adapter accepts only Jev's own model ids (`typesafe-ai/jev`, `jev`, or a versioned `typesafe-ai/jev-…`).
+- **Fixes made (features).** The suggestion card now says why an explicit ask was refused (cap reached, breaker tripped, gym switched off meanwhile) instead of going quiet; "Book with <trainer>" from the resolution workspace works while the PT tab is already open (keyed mount) and opens the booking dialog only once the record shows a usable credit; import assist drafts are bound to the person who loaded the file (Convex and preview); the equipment intake files the text currently in the box, not the text that was asked about, and the issue form re-mounts per filing so a second filing is prefilled correctly; the brief's low-stock links point at the inventory tab's attention view (`?tab=inventory&stock=attention`, the previous `tab=stock` fell back to the default tab); the support page follows a later `?case=` change; the preview's platform questions and `getPlatformAssistStatus` apply the case's gym's switch (only the demo tenant has one) instead of the demo gym's switch for every gym; the preview brief names a branch in its scope only when one was requested, as Convex does.
+- **Tests added.** Foundation: role lost between prepare and complete, a billed rejected live response counted and tripping the breaker, a simulated failure in live mode never reaching the gateway, an unregistered feature key warned about, the adapter keeping usage on a discarded answer, model-id acceptance. Features: an explicit ask refused as blocked shown on the card; a note and a maintenance description carrying instructions to the model handled as text with only offered outcomes selectable and nothing applied before a person accepts; forged option ids for every branch-operations reading; the profile "Review saved draft" disabled while the editor is dirty; the brief's related-pair check de-flaked (`findByTestId`).
+- **Feature status.** Implemented and verified in the preview and against Convex with convex-test, with live connectivity and model accuracy unverified for every one: shared Gateway/Convex connection and free-only controls (`jev.test.ts`, `jevMode.test.ts`, `jevAdapter.test.ts`, `jevRegistry.test.ts`); spreadsheet column and legacy-plan suggestions (`jevImportState.test.ts`, `domain.member-import-assist.test.ts`, `import-assist.test.tsx`, `e2e/member-import.spec.ts`); search, navigation, setup next step and report finder (`navigationCatalogue.test.ts`, `jev.navigation.test.ts`, `command-palette.assist.test.tsx`, `navigation-assist.test.tsx`, `e2e/assist-foundation.spec.ts`); contact notes, related tasks, renewal context, reminder templates and reason checks (`followupAssist.test.ts`, `jev.followup.test.ts`, the `src/features/followup/*.test.tsx` suites, `e2e/assist-followup.spec.ts`); the member resolution workspace with plan, class and trainer comparisons (`resolutionAssist.test.ts`, `jev.resolution.test.ts`, `resolution-workspace.test.tsx`, `e2e/assist-resolution.spec.ts`); support triage, pre-closure checks and public-profile draft review (`supportAssist.test.ts`, `profileAssist.test.ts`, `jev.support.test.ts`, `jev.profile.test.ts`, `support-review.test.tsx`, `profile-draft-review.test.tsx`, `e2e/assist-support-review.spec.ts`); handovers, maintenance intake, repair history and notification grouping (`branchOpsAssist.test.ts`, `jev.branchops.test.ts`, `branch-ops.test.tsx`, `e2e/assist-branch-ops.spec.ts`); the owner operating brief (`operatingBrief.test.ts`, `jev.brief.test.ts`, `operating-brief.test.tsx`, `e2e/assist-operating-brief.spec.ts`). Nothing is blocked in code. **Unvalidated for every feature:** any live call to AI Gateway and the model's accuracy on real gym records; the synthetic checks and the preview resolvers prove wiring, authorization and fallbacks, not judgment quality. The live smoke (`convex/jev.smoke.live.test.ts`) was not run: no `AI_GATEWAY_API_KEY` exists on this machine or the development deployment and no zero-cost terms are confirmed.
+- **Boundary checks re-verified.** Tenant and role boundaries (foreign gym `NOT_FOUND`, permission per question, branch scope per subject, platform admin only for `support.*`, a gym with Jev off never sent anywhere even by the platform team); changed permissions mid-request; fabricated candidate ids rejected by the validator and read as none by every feature reading; prompt injection in notes, descriptions, cases and drafts carried as data only (instructions and options are the registry's, actions require a person); state size and candidate limits enforced before counting; stale records rejected at `complete`; model timeouts and malformed answers classified with generic copy; a missing key, unconfirmed or expired free terms, a tripped breaker and reached caps each refuse before any tenant read; fixture mode never calls out; disabled features make zero inference calls (no request row, no counter); only `typesafe-ai/jev` is referenced and the gateway is pinned to the TypeSafe provider, so there is no paid fallback, purchase or recharge path. CI (`.github/workflows/ci.yml`) runs typecheck, lint, the Vitest shards, the production build and the credential-free Playwright suite keyless; only the Convex codegen check is gated on `CONVEX_DEPLOY_KEY`.
+- **Known limitations kept.** The preview adapter never produces `in_progress`, `stale`, `state_too_large`, `breaker_tripped` or `key_missing` and skips the platform-admin identity (the console's own sign-in gates it), so those branches are proven by the Convex tests only. Live responses without explicit zero-cost metadata are now withheld and trip the breaker; this cannot prevent a first request from being charged, so account-specific zero-cost confirmation is still mandatory before any live call. The brief's low-stock and machine sources need the operations module and `operations.manage`. Related pairs in the brief are proposed by wording only. Keyboard coverage in tests is per surface (Enter on the intake and bell, Escape on the brief dialog); RTL and phone width are checked by the Playwright overflow assertions on each assist journey.
+- **Runbook.** `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` gains "Jev suggestions: controlled rollout and immediate disable, 22 September 2026": what must be true before the first live call (deploy, confirmed free terms dated in `RIVET_JEV_FREE_UNTIL`, key present by name, low caps, `foundation` only, never `fixture` in Production), the pilot order, and the disable levers (`RIVET_JEV_MODE=off`, feature removal, free-terms removal, cap `0`, the gym's own switch, the self-tripping breaker and its CLI reset). Production Convex still lists only `AI_GATEWAY_API_KEY` by name and no `RIVET_JEV_*` variable: inference is off.
+- **Checks run (22 September 2026):** `pnpm typecheck`, `pnpm convex:typecheck` and `pnpm lint` (with the secret-output audit) pass. `pnpm test` runs 288 files / 1,874 tests with 286 files and 1,872 tests passing, 1 skipped (the opt-in live smoke) and the 1 pre-existing, date-dependent failure (`MockGymOSApi.test.ts` "race for the last credit", identical on the committed tree). Playwright in start mode on the freshly built mock preview bundle (`PLAYWRIGHT_SERVER_MODE=start PLAYWRIGHT_DIST_DIR=.next-playwright pnpm --filter web exec playwright test e2e/assist-foundation.spec.ts e2e/assist-followup.spec.ts e2e/assist-resolution.spec.ts e2e/assist-support-review.spec.ts e2e/assist-branch-ops.spec.ts e2e/assist-operating-brief.spec.ts e2e/member-import.spec.ts`): 9 journeys pass in 34 s, each ending at 390 px in the manual RTL layout where the surface has one (foundation synthetic check, palette ask, note review, resolution workspace, support triage and closure with the profile draft review, branch operations, the operating brief, and both member-import journeys). `pnpm --filter web build` (production) passes; `git diff --check` is clean. `pnpm convex:env:names -- --prod` lists `AI_GATEWAY_API_KEY` by name and no `RIVET_JEV_*` variable. No live call was made and no codegen was needed (no new Convex module).
+- **Remaining steps (operator).** Deploy the Convex modules (`pnpm convex:deploy -- --yes` after the guarded dry run; every module after `068aad2` is still owed on Production, including this stage's `jev.ts`, `jevInference.ts`, `jevAdapter.ts`, `jevAnswers.ts`, `jevLoaders.ts` and `domain.ts` changes); follow the runbook's rollout section; measure accuracy on the pilot gym before widening.
+
+## Daily operating brief: evidence-backed queues, prepared emphasis and same-matter checks on the dashboard, 22 September 2026 (working-tree update)
+
+- Eighth Jev stage on the shared foundation, on `main` and uncommitted (the first seven stages are commits `068aad2` and `aba2824`). One pure module (`apps/web/convex/operatingBrief.ts`) holds the authored sections and headings, every figure and overdue or stale condition, the mandatory rule, source status and coverage, the deterministic order, the nine prepared emphases with their preconditions, related-pair proposals, both states, resolvers and readings. `jevQuestionsBrief.ts` declares the `brief` feature (`brief.emphasis`, candidate-based on the applicable emphases; `brief.related_matter`, static options; both `members.read`); `jevLoaders.ts` gains two loaders that rebuild the brief for the caller. `domain.ts` exports `operatingBriefData` and adds the `dashboard.brief` query; `dashboardData` accepts an internal `{ complete: true }` option (no page limit, no at-risk sample, every open maintenance task) that the public `dashboard` query never sets. Client: `getOperatingBrief()` on the API boundary (Convex and mock), the brief types re-exported in `types.ts` with three new queue kinds (`equipment_issue`, `low_stock`, `support_case`), `qk.operatingBrief(viewer, branchId)`, `src/features/brief/operating-brief.tsx` mounted on `owner-dashboard.tsx` and `manager-dashboard.tsx` above the Today queue, `today-queue.tsx` now exporting `TodayQueueRow` (with an `extra` slot) and the shared `useTodayQueueCompletion` flow, and the gym support page honouring `?case=` so a brief row opens its case. Read docs/21 ("Daily operating brief") first.
+- **What is computed where.** Every balance, count, overdue condition, date range and branch scope is computed in `buildOperatingBrief` from the complete Today queue plus four separately read sources (lapsed memberships within 30 days, open machine reports, low stock, the gym's open RIVET cases). A source that throws, a module that is off or a role that may not see one is listed by status with its read time and the brief reads as partial coverage; a queue cut at 2,000 items is partial too. Sections keep an authored order; items keep the Today queue's own order; urgent items are mandatory and stay on top and in their sections, unaffected by dismissing a suggestion. Rows are the Today queue's rows with the server's own action, so every action returns to its original workflow (member record, renewal, collect, the shared "What happened?" completion dialog, the equipment or stock tab, the case).
+- **Scope and freshness.** The header names the branch scope (selected branch, all branches, or the caller's assigned branches), the generation time and the tenant-local date; the page reads on open or on the explicit Refresh only and caches under the viewer, their role and their branch list, so a restricted manager never reads an owner's brief; a failed refresh keeps the last brief and says when it was generated. On the server the brief is rebuilt per caller and a branch outside their scope is not found.
+- **Jev.** `brief.emphasis` sends counts and amounts only (no names or record text) with the applicable prepared emphases as candidates; the page shows the chosen authored heading with the figures of the sections it points at. Without Jev, on a model failure or on an unoffered answer the first applicable emphasis by rank leads as the standard order. `brief.related_matter` is an explicit "Same matter?" check on same-branch operational pairs with overlapping wording (at most six); a strong same-matter answer adds a line to both rows and nothing else, and conflicting descriptions ("fixed" against "out of service") read as unclear with both rows kept and the recorded safety status untouched.
+- **Preview parity.** `MockGymOSApi.getOperatingBrief` builds the same projection from the seeded records through `dashboardSync({ complete: true })` and the four sources with the same permission and module gates, and answers both questions through the deterministic resolvers.
+- **Configuration.** No new environment variable. Enable with `RIVET_JEV_FEATURES=brief` (plus the existing mode, free-terms date, key presence and the gym's own switch). Production inference stays off; nothing was deployed and nothing was committed in this stage.
+- **Checks run (22 September 2026):** `pnpm typecheck`, `pnpm convex:typecheck` and `pnpm lint` (with the secret-output audit) pass; `pnpm convex:codegen` regenerated `_generated/api.d.ts` for `operatingBrief` and `jevQuestionsBrief` and pushed the bundle to the development deployment only. New suites: `convex/operatingBrief.test.ts` (8: every figure per section, queue order, mandatory items, stale days and evidence links, partial coverage for unavailable, disabled and forbidden sources, a cut queue and the empty scope, emphasis preconditions with counts-and-amounts-only state and per-scope keys, fixture readings and fallbacks, related pairs limited to one branch, same matter, conflicting and separate descriptions), `convex/jev.brief.test.ts` (4: owner figures across both branches against a manager restricted to one branch with a refused branch and another tenant not found, per-caller emphasis states with different hashes and a cache hit, related pairs inside the caller's scope with conflicting descriptions reading unclear and the safety status unchanged, a Starter plan and a desk role reading as partial coverage) and `src/features/brief/operating-brief.test.tsx` (8: exact figures, mandatory rows with the server's actions, section previews, the complete queue in server order, stale badges, the shared completion dialog and the sources list, the standard order with Jev off and nothing asked, Jev's emphasis with evidence and a dismissal that changes nothing, a model failure, partial coverage with the operations module off, the selected-branch scope, a conflicting pair reading unclear with both rows kept, and the empty state). `pnpm test` runs 288 files / 1,862 tests with 286 files and 1,860 tests passing, 1 skipped (the opt-in live smoke) and the 1 pre-existing, date-dependent failure (`MockGymOSApi.test.ts` "race for the last credit", which fails identically on the committed tree); `src/app/(app)/support/page.test.tsx` now mocks `next/navigation` for the `?case=` deep link. Playwright in start mode on the freshly built mock preview bundle (`PLAYWRIGHT_SERVER_MODE=start`): `e2e/assist-operating-brief.spec.ts` passes in 3.2 s (owner reads the brief with complete coverage, the consolidated scope, the generation time and the standard order with Jev off, opens the complete queue with the exact count, follows a mandatory row to the person's record and back, enables the switch, reads Jev's emphasis with its evidence, dismisses it with every mandatory item still listed, refreshes explicitly, and fits at 390 px in the manual RTL layout). `pnpm --filter web build` (production) passes; `git diff --check` is clean. `pnpm convex:env:names -- --prod` still lists only `AI_GATEWAY_API_KEY` among the Jev-related names and no `RIVET_JEV_*` variable, so Production inference stays off.
+- **Not verified / limitations.** No live Jev call was made; both readings ran only through the deterministic preview resolvers, so model accuracy on real figures and wording is unmeasured. The brief lives on the owner and manager dashboards only (sales, reception and trainer dashboards are unchanged). Low stock and machine reports need the operations module and `operations.manage`, RIVET cases are owner or manager only, and other roles see those sources as "not for your role". Related pairs are proposed by wording overlap only (record links between a checklist item and its maintenance task are not yet used to suppress a pair). Emphasis is one prepared heading; nothing in the brief is written by a model. The pre-existing, date-dependent failure in `MockGymOSApi.test.ts` ("race for the last credit") is unrelated to this stage.
+- **Owed Convex release.** The Production Convex deployment now also needs `operatingBrief.ts`, `jevQuestionsBrief.ts`, the loader additions and the `dashboard.brief` query, together with the modules of the seven stages already committed (`pnpm convex:deploy -- --yes` after review).
+
+## Branch-operations assistance: filing descriptions, related repair history, handover groups and notification groups, 22 September 2026 (working-tree update)
+
+- Seventh Jev stage on the shared foundation, on `main` and uncommitted with the two stages below (the first four are commit `068aad2`). One pure module (`apps/web/convex/branchOpsAssist.ts`) holds the existing report kinds with bilingual patterns, branch-only machine/space candidates, related repair history by record, handover items and record-relationship groups, notification entities and groups, the five states/resolvers/readings and `evaluateGrouping`. `jevQuestionsBranchOps.ts` declares the `branchops` feature (`branchops.report_category`, `branchops.report_target`, `branchops.same_fault`, `branchops.handover_related`, `branchops.notification_topic`, all `members.read`); `jevLoaders.ts` gains five loaders (the equipment ones behind `requireOperations`, the notification one limited to the caller's own notifications in the organization). No new domain query: the pages already hold the records. Client: the types re-exported in `types.ts`, `src/features/branch-ops/` (report intake, repair history, handover groups, notification groups), `EquipmentIssueForm` accepting an initial filing, the intake and history mounted in `equipment-tab.tsx`, `checklist-handover.tsx` rendering the grouped/flat views, and `notification-center.tsx` gaining a Grouped/List toggle with one shared row renderer. Read docs/21 ("Branch operations") first.
+- **Filing a description.** "Describe what you found" (equipment tab, write access, switch on) sends the typed text with the branch's registered machines and spaces. Jev suggests one existing report kind (machine issue, cleaning, inspection, incident, or unclear) and one machine, one space or none; two equally plausible machines split the answer and the page says "uncertain" with the alternatives. A same-named machine at another branch is never offered. Filing goes through the existing issue form prefilled (severity Medium and safety "Needs assessment" left to the person) or the maintenance page's existing zone shortcut. The ordinary "Report issue" and "New task" buttons are unchanged.
+- **Related repair history.** For the selected machine: every other report on that one machine with its linked work orders, newest first, and a disclosure of the history's reach. Similar wording only proposes "Compare with Jev"; the loader refuses pairs that are not on the same machine. Verdicts are same fault (a strong answer counts as recurrence), similar but separate, or unclear; the recurrence line states it changes nothing by itself. Severity, safety status, `getEquipmentRecommendation` and the asset status rules are untouched; Jev never declares a machine safe.
+- **Handover.** Unresolved work in the existing seven-day window (failed items and required pending items; completed, skipped and optional items are not obligations), grouped by the same item on several days, the same linked task, then the same space, with "All items" one click away; both views show every item with checklist, date, responsible person, status, overdue and task-linked flags. Wording overlap proposes a comparison; a strong same-problem answer adds a "Same problem as" line to both rows and nothing else. Nothing completes, closes, reassigns or re-dates an item.
+- **Notifications.** The bell offers a Grouped reading when a group would form. Mandatory kinds (`MANDATORY_NOTIFICATION_KINDS`) stay individually visible on top and outside every group; groups form from the record a notification is about (its own link or dedupe key) or from its kind family; singles stay single with an explicit "Suggest a group" whose answer is shown as a suggested placement only. Rows are the plain list's rows with their own open and read/unread controls, counts are sums, the badge is unchanged, and grouping never marks anything read.
+- **Refresh.** Every ask is a button, cached by state hash; pages re-read through their existing queries and subscriptions only. No polling was added.
+- **Preview parity.** `MockGymOSApi` answers all five questions through the deterministic resolvers from the seeded machines, spaces, checklist runs and notifications; the owner persona now has seven seeded notifications (two about one PT booking, two member follow-ups, a support reply, a maintenance escalation, an access denial) so the bell has something to group. The receptionist persona is unchanged.
+- **Measurement.** `evaluateGrouping` reports useful, false and missed pairs and hidden items separately. On the synthetic fixtures: handover 2 useful / 0 false / 0 missed / 0 hidden; notifications every item shown exactly once with the mandatory alert outside every group; the tied-machine case reads as uncertain rather than a guess.
+- **Configuration.** No new environment variable. Enable with `RIVET_JEV_FEATURES=branchops` (plus the existing mode, free-terms date, key presence and the gym's own switch). Production inference stays off; nothing was deployed and nothing was committed in this stage.
+- **Checks run (22 September 2026):** `pnpm typecheck`, `pnpm convex:typecheck` and `pnpm lint` (with the secret-output audit) pass; `pnpm convex:codegen` regenerated `_generated/api.d.ts` for `branchOpsAssist` and `jevQuestionsBranchOps` and pushed the bundle to the development deployment only; `pnpm test` runs 285 files / 1,842 tests with 283 files and 1,840 tests passing, 1 skipped (the opt-in live smoke) and 1 pre-existing, date-dependent failure (`MockGymOSApi.test.ts` "race for the last credit", which fails identically on the committed tree). New suites: `convex/branchOpsAssist.test.ts` (10: report kinds in English and Arabic with unclear, branch-only candidates, tied machines read as uncertain, spaces and none, history by record with similar wording as a proposal, recurring versus separate versus unclear with severity untouched, handover obligations, recurring and space groups, a checked pair grouping only on a strong answer, notification entities, mandatory alerts outside groups with unread sums, stray placement or none, and useful/false/missed/hidden scoring), `convex/jev.branchops.test.ts` (4: branch-only candidates with the same-named Sweifieh machine excluded and a Sweifieh manager refused, same-machine comparisons only with other-machine and other-branch pairs refused and severity and safety unchanged plus a cache hit, related checklist items across persisted and not-yet-persisted runs with completed items refused, notifications visible to their recipient only with nothing marked read) and `src/features/branch-ops/branch-ops.test.tsx` (7: intake by keyboard with the prefilled filing, cleaning routed to maintenance, nothing while the switch is off, repair history with an explicit comparison and the current report's severity and safety unchanged, handover groups with identical items in both views and a checked pair, the bell's grouped reading with the same rows, the mandatory alert, collapsed counts, an unchanged badge and no read call, and a suggestion-only placement); `operations-command-center.test.tsx` now tolerates the report title appearing in both the issue history and the repair history. Playwright on the built preview bundle (`PLAYWRIGHT_SERVER_MODE=start`): `e2e/assist-branch-ops.spec.ts` passes (owner enables the switch, picks Abdoun on the equipment tab, describes the fault, files it through the prefilled form with severity and safety left neutral, compares the earlier report, reads the grouped bell with the badge unchanged and the access-denial alert visible, and fits at 390 px in the manual RTL layout). `pnpm --filter web build` (production) passes; `git diff --check` is clean.
+- **Not verified / limitations.** No live Jev call was made; every reading ran only through the deterministic preview resolvers, so model accuracy on real descriptions, reports, checklist notes and notifications (English and Arabic) is unmeasured. Repair history is limited to one machine's own reports; same-model machines are not compared. Handover comparisons are bounded to six wording-similar pairs, each checked on request; the checklists page itself is unchanged. Notification groups are computed on the client from the loaded list (at most the newest 100) and placements are per session. The intake lives on the equipment tab only; the maintenance page's task dialog does not carry the typed description, only the space. A pre-existing, date-dependent failure in `MockGymOSApi.test.ts` ("race for the last credit": no PT slot two days ahead on this weekday) fails on the committed tree as well and is unrelated to this stage.
+- **Owed Convex release.** The Production Convex deployment now also needs `branchOpsAssist.ts`, `jevQuestionsBranchOps.ts` and the loader additions, together with the resolution, support and profile modules below.
+
+## Support and content review: platform inbox triage, pre-closure checks and public-page draft review, 21 September 2026 (working-tree update)
+
+- Sixth Jev stage on the shared foundation, on `main` and uncommitted with the resolution workspace below (the first four stages are commit `068aad2`). Two separate feature modules share new review infrastructure: `apps/web/convex/assistPassages.ts` (verbatim sentence passages with stable ids, `locatePassage`, script-aware normalisation, digit and count parsing, token overlap), `supportAssist.ts` (case passages, categories with existing console destinations, recorded billing facts, the review context, five states/resolvers/readings and `supportClaimEvidence`) and `profileAssist.ts` (draft passages per field and language, recorded services, bilingual concept families, claim-conflict and language-gap states/resolvers/readings, `profileClaimEvidence`, `languageGapEvidence`, `profileUncheckedClaims`). `jevQuestionsSupport.ts` declares the platform-scoped `support` feature (`support.category`, `support.invoice_match`, `support.clarification`, `support.unanswered`, `support.claim_check`); `jevQuestionsProfile.ts` declares `profile` (`profile.claim_check`, `profile.language_gap`, `profiles.manage`). Foundation changes: `JevQuestion.scope` ("tenant" | "platform", validated in the registry), `JEV_PLATFORM_STATE_LOADERS` in `jevLoaders.ts`, a platform path in `jev.prepare`/`jev.complete` and the read-only `api.jev.platformStatus` query; `domain.ts` exports `supportReviewSource` and `gymProfileReviewContextData` and adds the `platform.support.review` and `profiles.gym.review` queries. Client: `getPlatformSupportReviewContext`, `getGymProfileReviewContext`, `getPlatformAssistStatus` on the API boundary (Convex and mock), the types re-exported in `types.ts`, `qk.platformSupportReview` / `qk.gymProfileReview` / `qk.platformAssistStatus`, the hook's `platformGymId` option, `src/features/support-review/` (triage panel, closure check, highlighted bodies) wired into `platform/support/page.tsx`, the `?case=` banner on `platform/billing/page.tsx`, and `src/features/profile-review/profile-draft-review.tsx` mounted in `gym-public-profile-section.tsx` (inputs now carry `data-profile-field`). Read docs/21 ("Support and content review") first.
+- **Platform scope.** A `support.*` question is answered for a platform administrator only: `prepare` checks the environment switches, lets the loader find the case across tenants and name its gym, then applies that gym's own Jev switch, daily cap, cache and request rows. A gym that keeps Jev off is never sent anywhere, not even by the support team; requesters and other tenants get `FORBIDDEN` from the review query and every question; `complete` re-runs the loader under the administrator who prepared the request and refuses another user's request. The console reads the gym's status through `platformStatus` (`canManage: false`) and can never change the switch.
+- **Support inbox.** "Triage with Jev" (explicit) suggests one category (invoice dispute, billing-schedule request, feature or plan upgrade, public page, account or access, technical issue, other; a structured plan request reads as an upgrade; a straddling case shows its alternatives) with an existing destination only: the gym record, the ledger with the invoice focused (`/platform/billing?invoice=<id>&case=<caseId>`, after `support.invoice_match` picks among the gym's recorded invoices or none) or Billing for the gym (`?bill=<gymId>&case=<caseId>`); the billing page shows which case sent the operator and the way back. At most one prepared clarification is offered (or none when the case already answers it); "Insert into reply" appends to the reply draft and nothing is sent until the operator presses Send. Inside the Resolve dialog, "Check before closing" (explicit) quotes the gym's explicit requests no reply or summary draft addressed and the passages whose assertions the recorded facts do not support, each with a deterministic evidence note from the ledger, subscription or public-page state ("a reply alone does not show the fix happened" when nothing recorded covers it); "Show in conversation" marks the passage in the thread only where its exact text is still found. Resolved cases are refused by the closure loaders. Urgency, assignment, the required summary and the Resolve button are unchanged; nothing changes a subscription.
+- **Public page draft review.** "Review saved draft" on the profile editor is disabled while edits are unsaved (the review reads the saved draft; a draft that changed since the review reads as stale). The panel lists what the records say (active branches, published trainers, active PT packages, active plans with freeze and every-branch terms, scheduled classes, amenities, audience) and asks two questions over the draft's own passages: which the records contradict (branch and trainer counts, women-only or men-only against the audience, freezing and every-branch access against plan terms; anything the records do not cover is listed by code as unknown, never false) and which passage states a concept or number the other language does not (paraphrases are not differences; with no Arabic text the loader refuses and the panel says so). Findings quote the passage with its evidence and "Locate in editor" focuses and selects it. Nothing is rewritten, translated or published, and no finding blocks Save draft, Publish draft or Send to RIVET.
+- **Preview parity.** `MockGymOSApi` builds both contexts from the seeded records, answers all seven questions through the deterministic resolvers, skips the tenant role check only for platform questions (the preview has no separate platform identity), seeds one Forge case (`SUP-219`) with a real conversation, and persists the gym's Jev switch in the preview behaviour seam (`assistEnabled`) so it survives the full navigation into the console.
+- **Configuration.** No new environment variable. Enable with `RIVET_JEV_FEATURES=support,profile` (plus the existing mode, free-terms date, key presence and each gym's own switch, which also governs the platform team's reads of that gym's cases). Production inference stays off; nothing was deployed and nothing was committed in this stage.
+- **Checks run (21 September 2026):** `pnpm typecheck`, `pnpm convex:typecheck` and `pnpm lint` (with the secret-output audit) pass; `pnpm convex:codegen` regenerated `_generated/api.d.ts` for the five new modules and pushed the bundle to the development deployment only; `pnpm test` passes with 281 files / 1,819 tests (+ 1 skipped: the opt-in live smoke). New suites: `convex/supportAssist.test.ts` (12: passages and location in both scripts, categories kept apart in English and Arabic with alternatives for a straddling case, existing destinations only, invoice matching by id, amount and month, one clarification or none, unanswered requests including a reply written before the request and the closing summary, claims against the ledger, subscription and public page, contradictory replies, silence never a contradiction), `convex/profileAssist.test.ts` (9: passages and bilingual concepts including verb forms and "Amman" not reading as MMA, contradicted counts, audience and plan terms with unknown claims listed, agreeing drafts, dropped ids, a legitimate paraphrase, concept and number gaps, the no-Arabic refusal), `convex/jev.support.test.ts` (6: the review context for administrators only with requesters and other tenants refused, read-only platform status, category, invoice and clarification for the platform team with cache hits, unanswered and unsupported readings clearing as replies and summaries land, resolved cases, a gym with no invoices and a gym with Jev off refused, staleness and another user's request refused), `convex/jev.profile.test.ts` (4: the context for profile managers only with inactive branches, archived plans and draft trainers excluded and other tenants reading their own text, claim findings with evidence and every passage offered, the language gap without the paraphrase and the no-Arabic refusal, cache, miss after a new draft and staleness), `src/features/support-review/support-review.test.tsx` (6: triage by keyboard with the ledger deep link and the matched invoice, one clarification inserted only into the reply with the case untouched, nothing while the switch is off, closure findings quoted by passage id with "Show in conversation" and the case still waiting, the summary counting as an answer, highlights only where text still matches) and `src/features/profile-review/profile-draft-review.test.tsx` (4: findings with evidence, unknown claims listed, a language gap located and selected in the editor, the action disabled while edits are unsaved with Save draft untouched, a paraphrase reading aligned and clear, no Arabic to compare, nothing while the switch is off); the existing `platform/support/page.test.tsx` now renders inside a QueryClient with the review reads stubbed. Playwright on the built preview bundle (`PLAYWRIGHT_SERVER_MODE=start`): `e2e/assist-support-review.spec.ts` passes (owner enables the switch, saves a draft claiming six branches, reviews it with the finding and the unknown parking claim shown, the draft and the Send action untouched, the panel fitting at 390 px in the manual RTL layout; then the platform console triages `SUP-219` to "Invoice dispute" with the `RV-1046` ledger link, checks it before closing with the unanswered billing-date request and the unsupported Enterprise-plan claim quoted, highlights the passage in the thread with Resolve still disabled without a summary, fits at phone width, and follows the destination to the ledger banner with the way back). `pnpm --filter web build` (production) passes; `git diff --check` is clean.
+- **Not verified / limitations.** No live Jev call was made; every category, invoice, clarification, unanswered-request, claim, contradiction and language-gap reading ran only through the deterministic preview resolvers, so model accuracy on real cases and drafts (English and Arabic) is unmeasured. Evidence for claims is limited to what the platform records: the subscription plan and cadence, the invoice ledger and the public page's versions; a "fixed" reply about a product issue is reported as not evidenced, never as false. The claim rules are deliberately narrow (counts, audience, freezing, every-branch access), so many contradictions stay in the unknown list for a person to judge. Prepared clarifications are English only. The requester's own support page gained no assistance; the gym-side compose flow is unchanged. The preview's platform gate relies on the console's demo sign-in rather than a separate platform identity.
+- **Owed Convex release.** The Production Convex deployment now also needs `assistPassages.ts`, `supportAssist.ts`, `profileAssist.ts`, `jevQuestionsSupport.ts`, `jevQuestionsProfile.ts`, the registry scope, loader and core changes, and the two new `domain.ts` queries (`pnpm convex:deploy -- --yes` after review), together with the resolution modules below.
+
+## Member resolution workspace: goal-selected panels, training-payment evidence, plan comparison, class and trainer suggestions, 21 September 2026 (working-tree update)
+
+- Fifth Jev stage on the shared foundation, on `main` and uncommitted (the four earlier stages are commit `068aad2`). One pure module (`apps/web/convex/resolutionAssist.ts`) holds the approved panels and clarifications with their permission rules, the context types, service derivation for charges and payments, the training-payment reading, typed evidence selection, class eligibility, plan attributes and comparison, and the four preview resolvers. `jevQuestionsResolution.ts` declares the `resolution` feature (`resolution.intent`, `resolution.plan_priority`, `resolution.class_pick`, `resolution.trainer_pick`); `jevLoaders.ts` gains four loaders; `domain.ts` exports `memberResolutionContextData` and adds the `members.resolution` query. Client: `getMemberResolutionContext()` on the API boundary (Convex and mock), `MemberResolutionContext` and its parts re-exported in `types.ts`, `qk.memberResolution`, `src/features/resolution/resolution-workspace.tsx` and `resolution-panels.tsx`, the area mounted under the member header in `member-detail.client.tsx`, and `PersonalTrainingTab` accepting a preselected trainer (`?tab=pt&trainer=<id>&book=1`). Read docs/21 ("Member resolution workspace") first.
+- **The area.** "Resolve" sits between the header and the tabs. It shows the deterministic unresolved facts (balance, PT packages awaiting payment, a term ending or ended, frozen, open tasks), a goal input once the gym's Jev switch is on, "Find panels", "Show all", chips for every panel the server allows, and "Standard view", which folds it away (remembered in session storage). The typed goal is never rewritten, focus never moves, and no panel executes anything by itself. Jev opens the one panel it names, once; a clarification shows its question with the two real options; no match says so; a model failure leaves every chip usable.
+- **Server-decided panels.** `members.resolution` returns `panels` and `access` from the actor's permissions: payment rows only with `reports.financial.read` (the Payments tab's rule; charges and PT orders still come from the member record), open work only with `crm.read`, the roster action only with `members.write` or `pt.book_for_member`. Anything a judgment names outside the permitted list reads as no match. Foreign or branch-hidden members are not found.
+- **"I already paid for training."** Charges carry a service derived from their own links (a charge behind a PT package order is personal training; a charge on a term is membership; never the amount). The panel puts the PT payments and orders beside the membership charges still open, each with dates, receipt and timeline links, under the sentence that a payment settles only the charge it was recorded against. Nothing is netted, no balance is written, and the only actions are the existing "Collect payment" deep link and the Payments and PT tabs. Evidence is read from the whole timeline by type, so a payment behind newer notes is still shown.
+- **Plans, classes, trainers.** A stated priority maps to one plan attribute (branch access, freezing, included training, visits, duration, price) that the person can accept as emphasis; the comparison always shows every attribute and price for every plan with the current plan first, and changing the plan stays in the header's audited dialog. Classes at the member's branch for the next 14 days pass through `classEligibility` (booking policy, membership usable on the date, plan branch cover, audience against the recorded gender, active-booking limit, capacity and waitlist room, schedule); only joinable ones are offered, "Add to class" re-reads the context and refuses a class that filled or was cancelled since the suggestion, then calls the existing roster mutation, which enforces the rules again. Trainers are the published profiles at the branch with an open slot in the next 14 days, described by what the profile records; an empty language list is "not recorded" and never matched, and booking goes through the PT tab's own dialog only when a usable PT credit exists. With no joinable class or no available trainer the loader refuses and the page shows the deterministic none.
+- **Open work.** The panel lists the open tasks with their follow-on links and the recent task events, and opens the existing create-task dialog (with its related-work check) rather than adding another task path.
+- **Preview parity.** `MockGymOSApi.getMemberResolutionContext` builds the same projection from the seeded records, including materialised class occurrences and trainer hours (the slot loop is now shared with `listPtAvailableSlots`), applies the same permission gates and answers the four questions through the deterministic resolvers.
+- **Configuration.** No new environment variable. Enable with `RIVET_JEV_FEATURES=resolution` (plus the existing mode, free-terms date, key presence and the gym's own switch). Production inference stays off; nothing was deployed and nothing was committed in this stage.
+- **Checks run (21 September 2026):** `pnpm typecheck`, `pnpm convex:typecheck` and `pnpm lint` (with the secret-output audit) pass; `pnpm convex:codegen` regenerated `_generated/api.d.ts` for `resolutionAssist` and `jevQuestionsResolution` and pushed the bundle to the development deployment only. New suites: `convex/resolutionAssist.test.ts` (13: panel access, the brief's intent examples, plan priority and comparison, every class-eligibility rule, class and trainer matching without inferring a language from a name, payment-to-charge linkage without netting, whole-record evidence), `convex/jev.resolution.test.ts` (6: services and evidence for an owner, restricted roles and foreign members, per-actor candidates, plan priority, a class cancelled since the suggestion missing the cache, a trainer whose recorded language was removed reading as none) and `src/features/resolution/resolution-workspace.test.tsx` (7: the brief's goal opening the training-payment panel with the draft kept and the payment found behind eight newer notes, clarification, no match and show all, model failure with every panel reachable, a trainer-role user, plan emphasis with the full table, a stale class refused, "languages: not recorded"). `pnpm test` passes with 275 files / 1,777 tests (+ 1 skipped: the opt-in live smoke). Playwright in start mode on the freshly built mock preview bundle passed 4 journeys: the new `e2e/assist-resolution.spec.ts` (owner enables the switch, opens a member record, writes "I already paid for training", the training-payment panel opens with the service sentence while the draft and the tabs stay, then the manual RTL layout at 390 px shows the area and the panel with no horizontal overflow, and "Standard view" folds it away), the follow-up journey and both foundation journeys. `pnpm build` (Vercel environment validation plus the production Next.js build) passes, and `git diff --check` is clean.
+- **Not verified / limitations.** No live Jev call was made; the intent, priority, class and trainer readings ran only through the deterministic preview resolvers, so model accuracy on real goals (English and Arabic) is unmeasured. The active-booking count for class eligibility uses the 14-day window the panel reads, while the roster mutation counts every future booking; the mutation remains the authority. The plan comparison reads plan terms only, not per-member discounts. Trainer availability is checked at the member's home branch only. Leads have no resolution area. The "I already paid" panel lists payment rows only for actors with financial-report access, matching the Payments tab.
+- **Owed Convex release.** The Production Convex deployment needs `resolutionAssist.ts`, `jevQuestionsResolution.ts`, the loader additions, the `domain.ts` export and the `members.resolution` query (no schema change); until then Production pages get a missing-function error for the resolution query, which the area shows as a retryable load error while the tabs keep working.
+
+## Connected staff follow-up assistance: note review, related work, renewal context, reminder templates and reason checks, 21 September 2026 (working-tree update)
+
+- Fourth Jev stage on the shared foundation, on `main`. One pure module (`apps/web/convex/followupAssist.ts`) holds every deterministic rule and every preview resolver; `jevQuestionsFollowup.ts` declares the `followup` feature (`followup.contact_outcome`, `followup.related_task`, `followup.renewal_context`, `followup.reminder_template`, `followup.reason_check`); `jevLoaders.ts` gains five loaders; `domain.ts` exports `tenantToday`, `followUpRelatedTasks` and `memberFollowUpContextData`, adds the `members.followup_context` query and accepts an optional `relatedTaskId` on `tasks.create`. Client: `getMemberFollowUpContext()` on the API boundary (Convex and mock), `Task.relatedTaskId` / `relatedTaskTitle`, `CreateTaskInput.relatedTaskId`, `MemberFollowUpContext` and its parts re-exported from the shared module, `qk.memberFollowUpContext`, and `src/features/followup/` (`contact-note-review.tsx`, `related-task-check.tsx`, `follow-up-context.tsx`, `reason-check.tsx`). The member workspace's task dialog moved to `src/features/members/create-task-dialog.tsx`. Read docs/21 ("Connected staff follow-up assistance") first.
+- **Contact note review.** The contact form (member and lead records, the queues, Today, the member tasks panel) has an explicit "Review note" button once the gym's switch is on. Jev chooses among the outcomes that form offers (trial outcomes for leads only) plus third party, contradictory and unclear; "Spoke to her brother" reads as a third-party conversation with no outcome to apply. For a supported outcome the card previews the consequences with the same helper the mutation uses: the stage the form would send, the next follow-up date (suggested, or the typed date kept), which open tasks move or close, which stay untouched (owned by someone else, or due later) and whether a follow-up task is created. Accepting sets only the outcome; the note, a typed date and a chosen stage stay as typed, and editing the note drops the review.
+- **Related open work.** The task dialog always lists the person's open tasks (no model involved). "Is this the same work?" offers those tasks with their owners and `none`. The only ways forward are explicit: keep the existing task, create the new one as a follow-on linked to it, or create it separately; nothing is closed, merged or rescheduled. The link is the new optional `relatedTaskId` (server-validated: open, about the same person; stored with the title and written to the timeline as "Follow-on to: …", shown in the Open tasks panel). A task that changed owner, date or status since the suggestion is refused on the page, and the server's candidates carry the owner so a cached answer never survives an ownership change. **Assumption recorded:** RIVET had no task-link entity, so this explicit follow-on link is the one supported linking action; it is additive and optional.
+- **Follow-up context for the member workspace and the renewal queue.** `members.followup_context` is one deterministic projection: the renewal target, whether the automated renewal journey stops and why (`renewalStopReason`), consent read from the record (`consentForRenewalChannel`, never inferred) with the suppression reason, quiet hours now and when they end, every `renewalDeliveries` row for the term with truthful wording ("queued · not delivered", "accepted by the provider · delivery not confirmed", "prepared in sandbox · not sent", "deferred · quiet hours"), the last contact, an agreed callback with the open task that holds its date, the recorded evidence (calls, notes, messages, freezes, snoozes; ≤ 12) each keyed by its timeline event id with deterministic tags for recorded callbacks, travel and complaints, and the open work. Timeline items now carry `id="timeline-event-<id>"`, so `/members/<id>?tab=timeline#timeline-event-<id>` is the reusable evidence reference. The panel renders in the member workspace aside ("Follow-up context") and under the renewal queue's selected member.
+- **Renewal conversation context and reminder templates.** "Highlight what matters" asks Jev which recorded item most changes the conversation (candidates are the evidence items plus none; the card lists the choice and the next two above 15 %, each with its evidence link). "Suggest a message" offers only the approved utility template that fits the term's timing (4–14 days → 7-day reminder, 1–3 → 3-day, 0 → ends today, ended ≤ 45 days ago → after expiry) plus staff review; an explicit opt-out, or no fitting template, is refused by the loader and hidden by the page before any question exists; unknown consent shows the suppression beside the suggestion; quiet hours are named. "Use in WhatsApp" opens the existing handoff with the rendered text (member's language, values from the record only); the handoff logs an opened handoff and never claims a send. Nothing on these surfaces sends a message, and queued is never called delivered.
+- **Reason checks.** The refund, void, check-in override, freeze, end-freeze, extend, cancel, transfer and change-plan dialogs have an optional "Check reason". The score (four levels) is read against the audit criterion for that action; the card asks for the missing fact (what happened; who confirmed it and when) with authored prompts, never proposes wording, never authorises anything and never blocks submit. The loader reads no tenant data and requires the action's own permission (refund → `payments.refund`, override → `checkins.override`, …), so the check reveals nothing a person may not do.
+- **Preview parity.** `MockGymOSApi` builds the same context from the seeded records (no reminder deliveries exist in the preview), answers all five questions through the deterministic resolvers (English and Arabic note patterns, type-and-title task matching, callback/complaint/travel ranking, timing-based templates, placeholder/generic/specific reason levels), validates `relatedTaskId` like Convex and applies the same opt-out refusal.
+- **Configuration.** No new environment variable. Enable with `RIVET_JEV_FEATURES=followup` (plus the existing mode, free-terms date, key presence and the gym's own switch). Production inference stays off: `RIVET_JEV_MODE` is not set anywhere and no key exists on this machine or the development deployment.
+- **Checks run (21 September 2026):** `pnpm typecheck`, `pnpm convex:typecheck` and `pnpm lint` (with the secret-output audit) pass; `pnpm test` passes with 272 files / 1,751 tests (+ 1 skipped: the opt-in live smoke), including the new `convex/followupAssist.test.ts` (19), `convex/jev.followup.test.ts` (6) and four `src/features/followup/*.test.tsx` files (12) covering third-party and contradictory notes, changed task ownership and status, unrelated similar tasks, future callbacks, opt-outs, vague reasons and stale suggestions; `pnpm convex:codegen` regenerated `_generated/api.d.ts` for `followupAssist` and `jevQuestionsFollowup` and pushed the bundle to the development deployment only. Playwright in start mode on the freshly built mock preview bundle passed 5 journeys: the new `e2e/assist-followup.spec.ts` (owner enables the switch, opens a member record, reviews a third-party note with no outcome offered, reviews a clear note, accepts "No answer" and logs the contact), both `assist-foundation` journeys and both `member-import` journeys. `pnpm build` (Vercel environment validation plus the production Next.js build) passes, and `git diff --check` is clean.
+- **Not verified / limitations.** No live Jev call was made in this stage either; the note, task, context, template and reason readings were exercised only through the deterministic preview resolvers, so the model's accuracy on real notes (English and Arabic) is unmeasured. The deterministic topic tags (callback, travel, complaint) are keyword heuristics shown beside the recorded text, never instead of it. The sale dialog's price-override reason and the lead "Not sold" reason are declared as reason actions but not wired to a "Check reason" button. Lead records get the note review and the task-link validation but no follow-up context panel (the projection is member-only). The mock preview holds no `renewalDeliveries`, so delivery wording is exercised in unit and convex tests only.
+- **Owed Convex release.** The Production Convex deployment now also needs `followupAssist.ts`, `jevQuestionsFollowup.ts`, the loader additions, the three `domain.ts` exports, the `members.followup_context` query and the `tasks.create` change (no schema change) alongside the earlier Jev modules; until `pnpm convex:deploy -- --yes` runs, Production pages that read `api.jev.status` or the new query get a missing-function error that the hooks treat as "unavailable" (the surfaces stay hidden and every normal workflow keeps working). Everything from the four Jev stages was committed on `main` and pushed to `origin/main` at the end of this stage, as asked; that push deploys only the Vercel web app, never Convex.
+
+## Intent-aware navigation: catalogue, palette ask, next step and report finder, 21 September 2026 (working-tree update)
+
+- Third Jev stage on the shared foundation, on `main` and uncommitted with the two stages below. One permission-filtered catalogue (`apps/web/convex/navigationCatalogue.ts`) now describes every destination, report view, form entry point and Settings section with a stable id, an authored description, its route and the sidebar's own permission and workspace-module rules; five prepared clarifications name real alternatives (member or supplier payment, what to change for a member, report or ledger, people or permissions, check someone in or review check-ins). A test proves every route exists, every Settings id matches the rail and every permission is server-owned.
+- Fast search unchanged, plus places: the command palette keeps the server workspace search and adds a "Places" group from the catalogue's keyword search on every keystroke, filtered by the session. Jev is asked only when the person selects "Ask where to go for …" (or "Ask again"); the typed draft and the input focus stay where they were, keyboard navigation is the palette's own, and nothing opens until the person selects the suggestion. Results are a permitted destination (with the confidence band), a clarification question with its two or three real options, or "no page, report, form or setting matches". A model failure shows a note and leaves keyword results in place.
+- Server-side filtering: the `navigation.intent` loader resolves the actor, applies `workspaceAccessData` for the module boundary and offers only the permitted entries, the clarifications that still have two permitted options, and `no_match`; the page re-checks the outcome against the session and treats anything outside the permitted lists as no-match. Cached answers are keyed by the offered candidates, so a role or plan change is never served an old answer (convex-test covers a receptionist gaining `users.manage` and a Starter gym moving to Pro). Foundation change: `JEV_MAX_CANDIDATES` is 120 so the full permitted catalogue fits one request; `workspaceAccessData` and `onboardingExperience` are exported from `domain.ts` for the loaders.
+- Next step and reports reuse the catalogue: `OnboardingNextStep` (owner and staff checklists, not members) asks `navigation.next_step` with the actor's own open steps as candidates and lifts one while every step stays listed; `ReportFinder` on the Reports page asks `navigation.report_view` on submit with only the permitted report views as candidates, and its link keeps the page's current branch and date scope. Report calculations, dates and branch filters stay explicit and deterministic on the page; opening a form never submits it.
+- Preview parity: the mock adapter builds the same candidates from the demo role's permissions and module preferences, and the deterministic resolvers reproduce the brief's examples ("Where do I change who can refund?" → Settings: Roles & permissions for an owner and no match for reception; "Record a payment" → the member-or-supplier clarification for an owner and the member payment form for reception; "Move her to another branch next month" → the member-change clarification).
+- Verified locally: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint` (with the secret-output audit) and `pnpm test` (266 files / 1,714 tests plus the 14 script tests; the opt-in live smoke skipped by design) pass; `pnpm convex:codegen` regenerated the bindings and pushed to the development deployment; `pnpm build` passes. New suites: `convex/navigationCatalogue.test.ts` (integrity, permission and module filtering, clarification availability, keyword search, no permission list in the state, the brief's examples, foreign ids become no-match, next step and report finder), `convex/jev.navigation.test.ts` (per-role candidates, Starter versus Pro entitlement, permission change and cache, unknown and empty requests, report permission, owner and staff next steps), `src/components/shell/command-palette.assist.test.tsx` (off by default apart from Places, deliberate ask with the draft preserved, clarification, receptionist and no-match, model failure with keyword fallback and ask again) and `src/features/navigation/navigation-assist.test.tsx` (next step lifted with every step listed, report finder link keeps scope, both absent while off). Playwright on the built preview bundle: the new palette journey (owner asks where to change who can refund and opens Roles & permissions), the Jev foundation, both import journeys and the Settings rail test pass.
+- Not verified: any live Jev call and the model's accuracy on real requests, including Arabic ones; the gate is unchanged. No deploy; the owed Convex release grows by `navigationCatalogue.ts`, `jevQuestionsNavigation.ts`, the loader additions and the two domain exports (no schema change).
+- Read first: `docs/21_JEV_ASSIST_FOUNDATION.md` (navigation section), `apps/web/convex/navigationCatalogue.ts`, `apps/web/convex/jevQuestionsNavigation.ts`, `apps/web/convex/jevLoaders.ts`, `apps/web/src/components/shell/command-palette.tsx`, `apps/web/src/features/navigation/navigation-assist.tsx`, `apps/web/convex/jev.navigation.test.ts`.
+
+## Jev-assisted member import: column and plan suggestions, 21 September 2026 (working-tree update)
+
+- Second Jev stage, built on the foundation below without changing its contracts beyond two additive seams: a question may now carry a `fixtureResolver` (used only in fixture mode and by the preview adapter to answer from the request's actual state and candidates through the real builder and validator; registry validation requires one for every candidate-based, non-synthetic question), and subject values are bounded to 512 characters instead of 200. The foundation suites still pass unchanged.
+- Import assistance (`docs/21`, section "Member import assistance"): on the import page's mapping step, after the unchanged exact and English/Arabic alias matching, each column that is still unmatched gets an explicit "Suggest mapping" action and each legacy plan label without a RIVET plan gets "Suggest plan". Both surfaces exist only while assistance is ready for the gym (mode, feature `import` in `RIVET_JEV_FEATURES`, the gym's switch), and the page is byte-for-byte the manual import otherwise.
+- What Jev sees: an assist draft saved by the new `members.import.draft` mutation (`members.write`, branch access, 24-hour expiry, one per person, pruned on save) holding the headings, a value-shape summary per column (filled, empty and distinct counts plus shares of numeric, date-like, phone-like, email-like, alphabetic and Arabic-script cells; never a cell value) and the legacy plan labels with row counts. Member rows never leave the browser before the normal preview. The draft is a `memberImportDraft` domain record, tenant-scoped like every other record and covered by the purge.
+- Column suggestions (`import.column_target`): the server loader offers only the RIVET fields that are still unassigned and compatible with the column's shape (`convex/jevImportState.ts`: a numeric column is never offered as email or name, a date column only as a date field), plus `leave_unmapped` and `unclear`. A field is filled only through "Use as …"; a field that is already matched is never overwritten (the person clears it first); a pending answer is discarded when the matches change meanwhile because the subject changed; "Leave unmapped" hides the column with a way to show it again.
+- Plan suggestions (`import.plan_match`): candidates are the gym's active plans available at the draft's branch, described by their exact terms, plus `no_equivalent` and `needs_review`. The label's stated duration, visits, price and currency are parsed deterministically (English and Arabic wording, Arabic digits, "12 months" as a year) and compared with the picked plan: a kind or currency contradiction is incompatible and cannot be applied, a duration, visit or price difference needs review ("Use anyway" with the differences listed), otherwise it matches. The card shows the source label beside the proposed plan's exact terms with a chip per term. A changed or archived plan changes the source version, so cached answers are not reused, and the page re-checks that the plan is still current before applying; the unchanged server preview validates the mapped plan again.
+- Provenance and unchanged rules: the preview input carries `assist: { draftId, columns, plans }` (accepted suggestions only), stored on the import record and in the `member.import_preview` audit entry. Required fields, duplicate checks, row validation, batching, idempotency keys, audit history and undo are untouched (`domain.member-import.test.ts` unchanged and passing).
+- Preview adapter: `MockGymOSApi` keeps drafts in memory, answers both questions from the seeded plans through the resolvers, honours the gym switch and `setBehavior({ assistMode: "off" })`, and records provenance on the preview; the seeded catalogue yields a needs-review tie for "شهري" (Monthly Standard against Student Monthly), a match for "10 visits", incompatible for "Monthly 40 USD" and no equivalent for an unknown label.
+- Verified locally: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint` (with the secret-output audit) and `pnpm test` (262 files / 1,692 tests, plus the 14 script tests; the opt-in live smoke skipped by design) pass; `pnpm convex:codegen` regenerated the bindings for the two new modules and pushed to the development deployment; `pnpm build` passes. New suites: `convex/jevImportState.test.ts` (summaries carry no values, compatibility, no duplicate targets, ambiguous, Arabic and abbreviated headings, label parsing, term comparison, changed plans, resolvers), `convex/domain.member-import-assist.test.ts` (draft permission and bounds, real candidates, Arabic labels, no equivalent, cache invalidated by a changed plan, tenant isolation and expiry of drafts, provenance in the record and audit), the page suite `src/app/(app)/members/import/import-assist.test.tsx` (nothing extra while off, accept, discard on changed matches then re-ask, late answer after a manual match, plan card with exact terms and the incompatible and ambiguous outcomes, mapping-to-preview with provenance and unchanged validation). Playwright on the built preview bundle: the original import journey, the new assisted journey (owner switches the gym on, uploads a "Tel" heading, accepts the phone suggestion, reaches the review step), the Jev foundation spec and the Settings rail test pass. The assisted journey navigates inside the app because a hard navigation recreates the preview runtime and drops the switch.
+- Not verified: any live Jev call, the model's accuracy on real spreadsheets (including Arabic headings and labels), and the gateway's reported cost; the gate is unchanged from the foundation section below. No deploy was made; the Convex release owed grows by `jevImportState.ts`, `jevQuestionsImport.ts`, the loader and domain changes (no schema change in this stage).
+- Read first: `docs/21_JEV_ASSIST_FOUNDATION.md` (import section), `apps/web/convex/jevImportState.ts`, `apps/web/convex/jevQuestionsImport.ts`, `apps/web/convex/jevLoaders.ts`, `apps/web/src/features/members/import-assist.tsx`, `apps/web/src/app/(app)/members/import/page.tsx`, `apps/web/convex/domain.member-import-assist.test.ts`.
+
+## Jev-assisted workflows: shared foundation, 21 September 2026 (working-tree update)
+
+- Built the shared foundation for Jev-assisted suggestions, directly on `main`, uncommitted at the time of writing. Jev (TypeSafe AI's evaluation model, `typesafe-ai/jev` through Vercel AI Gateway, called with the AI SDK 7 `experimental_evaluate` API; `ai@7.0.107` added to `apps/web`) supplies bounded choice, score and boolean judgments; application code loads the state server-side, validates the answer, decides what is shown and keeps every action behind its normal permission-checked mutation. Nothing in a product workflow depends on a judgment: with Jev off, blocked or unavailable every page renders as before.
+- Server (Convex): pure contract modules `convex/jevRegistry.ts` (question/judgment/result/status shapes, limits, registry validation, `JEV_REGISTRY_VERSION`), `jevQuestionsFoundation.ts` (four synthetic questions, one per kind plus a candidate-based choice, each with a fixture) aggregated by `jevQuestions.ts`, `jevAnswers.ts` (SDK request building, per-request scoped candidate ids so the model never sees an entity id, strict answer validation, canonical JSON, SHA-256 state hashing, fixture evaluation) and `jevMode.ts` (switches and gate); `jevLoaders.ts` (server-side state loaders keyed by question); `jev.ts` (public `status` query and audited owner `updateTenantPreference` mutation, internal `prepare`/`begin`/`complete`/`fail`/`resetBreaker`/`cleanupExpired`); `jevAdapter.ts` and `jevInference.ts` under `"use node"` (the only model call: one question per request, abort timeout, `maxRetries: 1`, gateway pinned to the TypeSafe provider, answers from any other model discarded, reported cost read, provider text never surfaced). Schema adds `jevJudgments` (tenant-scoped cache keyed by state hash plus question, registry and model versions and mode), `jevRequests` (in-flight leases that deduplicate identical requests, then the request log), `jevUsage` (per gym per UTC day), `jevTenantPreferences` (the gym's switch) and the platform-wide `jevControlState` (breaker, global daily counter); the four tenant tables are in `tenantPurge.TENANT_TABLES`. An hourly cron drops expired cache rows and day-old request rows. `convex.json` pins Node 22 for Node actions because the SDK requires it.
+- Switches, all off by default: `RIVET_JEV_MODE` (`off` | `fixture` = synthetic answers with no external call | `live`), `RIVET_JEV_FEATURES` (feature keys allowed to call live), the gym's own switch (Settings → Jev assistance, `settings.manage`, audited as `settings.assist.update`), `AI_GATEWAY_API_KEY` presence (Convex dashboard only; the code never reads the value, CI never needs it), `RIVET_JEV_FREE_UNTIL` (last UTC day on which an operator confirmed free terms; live calls stop when missing, malformed or past), `RIVET_JEV_DAILY_CAP` (200) and `RIVET_JEV_TENANT_DAILY_CAP` (50), optional `RIVET_JEV_ZERO_DATA_RETENTION=1`, and a zero-cost breaker that trips on any cost the gateway reports for a live request and stays tripped until `jev:resetBreaker` is run with a reason. Only Jev is allowed: no paid model, fallback, purchase or recharge exists in code.
+- Client: `GymOSApi.getAssistStatus`/`updateAssistPreference`/`requestAssistJudgment` in both adapters (the preview adapter answers from fixtures, keeps the switch, usage and cache in memory, and honours `setBehavior({ assistMode: "off" })`); the reusable pattern `useAssistJudgment` (reads status first, shares in-flight calls, ignores superseded answers, bounded `in_progress` retries) and `AssistSuggestion` (fallback while off, quiet loading line, inline unavailable/stale note with retry, ready card with confidence band, source badge, feature actions and dismiss) in `src/features/assist/`; a new Settings section "Jev assistance" (group Assistance) showing the environment status, the gym's switch, every registered question and a synthetic check that runs a foundation question through the same hook and card with an optional simulated failure. Types are re-exported from the registry into `src/lib/domain/types.ts`.
+- Free-eligibility check, 21 September 2026: Vercel's model page, changelog, pricing page and FAQ show list pricing ($0.042 per million input tokens, output free) and no promotion; only a third-party guide states Vercel listed Jev as free under a promotion ending 25 September 2026. The gateway free tier is a monthly credit on a subset of models that needs a card on file and refuses with 402 when the balance is not positive. Free terms therefore cannot be confirmed from official sources, `RIVET_JEV_FREE_UNTIL` stays unset, and no live call was made. The development deployment holds no `AI_GATEWAY_API_KEY` (names-only check) and this machine has none.
+- Verified locally: `pnpm typecheck` and `pnpm convex:typecheck` pass; `pnpm lint` (with the secret-output audit) passes; `pnpm test` passes 259 files / 1,671 tests plus the 14 script tests, with one file skipped by design (`convex/jev.smoke.live.test.ts`, the opt-in live smoke). New suites: registry and answer validation (`jevRegistry.test.ts`), switches and the free-terms date (`jevMode.test.ts`), the adapter against the SDK's mock evaluation model (`jevAdapter.test.ts`: success for every kind, candidate scoping, invalid output, timeout, rate limit, foreign model, cost metadata), the action path with convex-test (`jev.test.ts`: unauthenticated and foreign-gym refusals, permission, gym switch and audit, fixture answers with request and usage rows, cache served only to the same gym, simulated invalid output and outage, lease deduplication, stale rejection on a changed state hash, foreign-request refusal, the live gate sequence key → free terms → expired → breaker → cap, breaker trip on reported cost, cleanup), the preview adapter, the hook and card, the Settings section, and the surface guard, schema and purge tests updated for the new functions and tables. `pnpm convex:codegen` regenerated the bindings and pushed the bundle, including the Node 22 action bundle with the AI SDK, to the development deployment. Playwright: the new `e2e/assist-foundation.spec.ts` (owner switches the gym on, saves, runs the synthetic check, sees the shared card with the fixture answer, then a simulated outage) passes on the built preview bundle in start mode. A first run accidentally executed the whole credential-free suite on the dev server (43 minutes): 161 passed, 14 credential-gated skips, 9 failed; eight of those were dev-server timeouts that pass on the bundle, and one was a real regression from this change: the desktop Settings rail no longer fit its height once a new "Assistance" group was added (`happy-path.spec.ts` settings navigation, 772 px against 753 px). The entry now lives at the end of the Operations group instead of a group of its own, and the rail test, the Jev spec and the phone-width settings pass all pass on the rebuilt bundle. `pnpm build` (production configuration, with the Vercel environment validator) passes; the mock preview bundle build passes as well. `git diff --check` is clean.
+- Not verified, and the exact gate: no live call to AI Gateway, no measurement of the model's accuracy on RIVET questions, and no observation of whether the gateway reports a non-zero cost during a promotion (which would trip the breaker on the first live request). To verify connectivity, an operator confirms the free terms in the Vercel dashboard, sets `RIVET_JEV_FREE_UNTIL`, exports `AI_GATEWAY_API_KEY` in a local shell only, and runs `RIVET_JEV_LIVE_SMOKE=1 pnpm --filter web exec vitest run convex/jev.smoke.live.test.ts` (synthetic fixtures only; prints token usage and reported cost; fails on any cost above zero).
+- Convex release owed, not executed and not to be switched on: the new `jev*` modules, the schema change (five new tables, no index deletions expected), the cron and `convex.json`; guarded `pnpm convex:deploy -- --dry-run --yes` must accept the Node 22 setting, then deploy. Production inference stays off because `RIVET_JEV_MODE` is absent there.
+- Limitations for the next stage: only synthetic foundation questions exist; feature questions and loaders are added per `docs/21_JEV_ASSIST_FOUNDATION.md` (question module, registry entry, loader with access checks, fixture, tests, then `RIVET_JEV_FEATURES`). Zero-data-retention routing needs a Pro or Enterprise gateway team. The breaker is conservative by design and may stop live use immediately if the gateway reports market cost even while credits cover it; that is the moment to read the bill, not to loosen the gate.
+- Read first: `docs/21_JEV_ASSIST_FOUNDATION.md`, `apps/web/convex/jevRegistry.ts`, `apps/web/convex/jev.ts`, `apps/web/convex/jevInference.ts`, `apps/web/convex/jevAdapter.ts`, `apps/web/src/features/assist/use-assist-judgment.ts`, `apps/web/src/features/assist/assist-suggestion.tsx`, `apps/web/convex/jev.test.ts`.
+
+## Convex Production release, snapshot and pre-purge inventory, 17 September 2026
+
+- On Elias's instruction, this session released `0d938f5` (the WhatsApp-only worker, the `tenantPurge` functions and the public-surface guard test) to Convex Production `descriptive-meerkat-589` through the guarded wrapper: the dry run reported the exact Production target, "No indexes are deleted" and "Schema validation complete" with only the Node.js server-version note, the deploy succeeded, and the read-only `health:check` returned `status: ok` afterwards. No schema or index change. The frontend was already at this commit on Vercel.
+- Snapshot taken before any purge: `convex export --prod --include-file-storage` wrote `~/rivet-backups/rivet-production-2026-09-17.zip` (3.1 MB) at 18:56 local time on Elias's machine. It is outside the repository and is the way back if the purge removes something wanted.
+- Read-only inventory of Production (`tenantPurge:listOrganizations`, `inventory`, `listResidue`): five organizations exist, all test or demo tenants: `forge-fitness` (the seeded demo tenant, 15 rows, no Clerk organization), `elias-gym-aa87cea8990b` (suspended, 13 rows), `rivet-qa-gym-20260808-8dcc74222ced` (suspended, 10 rows), `hashem-test-5fb83293ee76` (active, 54 rows) and `elias-test-gym-1-2159fbd31f08` (active, 979 rows across 37 tables, including 2 media files and 4 subscription agreements). Each provisioned tenant has one linked approved application; one rejected application ("Test 123") is unlinked. Two platform-administrator accounts exist and are protected by the purge; five other accounts are attached to these tenants and will appear in the residue after the purges; there are no orphan accounts today.
+- Purge executed by Elias the same evening, from the commands the session filled in. All five tenants were removed with `clerk: "delete"`: Forge Fitness Club (15 rows), elias gym (13 rows, 1 linked application), RIVET QA Gym 20260808 (10 rows, 1), Hashem Test (54 rows, 1) and elias test gym 1 (979 rows, 2 stored files, 1); every Clerk outcome was `completed`. The residue step then deleted the five accounts left without a gym (two placeholders that never signed in, three Clerk logins) and the one rejected application. `platformAuditEvents` holds the start, completion and Clerk events for each purge and the residue event.
+- Verified afterwards, read-only: `listOrganizations` is `[]`; `listResidue` shows no orphan accounts, no applications, no attached accounts and 2 platform administrators; an inline query counted 0 rows in organizations, branches, memberships, domain records, audit events, renewal deliveries, PT bookings, media assets, subscription agreements, entry passes and applications, and exactly 2 users, both active platform administrators. Left in place on purpose: 3 unreferenced image files in Convex storage from 13–14 August (about 320 KB, deletable from the dashboard's Files page if wanted), 12 notifications addressed to the administrators about the old applications and agreements, 4 suppressed platform email ledger rows, and the platform audit trail. Production now has no gym; the first real gym arrives through an application, review and provisioning.
+- Read first: the "Fresh start" section in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` and `apps/web/convex/tenantPurge.ts`.
+
+## Operator decisions, WhatsApp-only messaging and the tenant purge tool, 14 September 2026
+
+- Decisions Elias recorded today: RIVET sends WhatsApp only, from its own business number (+962 77 837 8608, the number already printed in the footers and legal pages), and no SMS; every operational email goes from `noreply@rivetjo.com` while Clerk keeps sending its own sign-in and invitation emails; Convex capacity is in order; the Production test gym is to be deleted and Production started fresh. docs/19 carries the decision block and docs/13's open gates are reconciled to it.
+- Still open, unchanged by today: who pays WhatsApp message costs per tier, the Friday prayer window, the pricing table (docs/19 section 4), and the WhatsApp Business Platform steps for the number: Meta business verification, template approval, and the inbound STOP webhook, which is now required before `live` because WhatsApp is the only channel. One caution is recorded in docs/19: registering the number as an API sender moves it off the WhatsApp Business app on the phone unless Meta's coexistence option is available to the account.
+- WhatsApp-only in code (`d38b6c1`): the provider seam has no SMS sender or readiness flag; `routeMessage` refuses any non-WhatsApp channel with "SMS was retired on 14 September 2026; RIVET sends WhatsApp only" before every other check; rows still queued on `sms` are leased and drained with that reason on the row and the member's timeline, and no provider call is made for them; the catalogue templates are WhatsApp-only; the renewal journey always picks WhatsApp or the one-day staff call task. The Settings status line, the integrations panel (which now reports the configured WhatsApp sender and the messaging mode instead of a fixed "not connected"), the shared status type, the preview adapter and the demo seed follow. The privacy policy and terms drafts are 1.1 · 14 September 2026 with WhatsApp-only wording, and `.env.example` documents the messaging variables. Tests: the retired channel is refused in every mode, the worker drains an SMS row without calling Twilio, WhatsApp parameters come from the RIVET sender, and every catalogue template lists WhatsApp only.
+- Email evidence from public DNS today, read-only: Resend's DKIM selector and the `send.rivetjo.com` return-path records are published, the root SPF points at the mailbox provider, and DMARC is `p=none`; docs/19 asks for `p=quarantine` before `live`. The Clerk custom-domain CNAME is present. Phase A in docs/12 records the sender confirmation and the DNS note.
+- Tenant purge tool (`34c37a3`), built and tested, not executed: internal Convex functions in `convex/tenantPurge.ts` that the web app cannot reach. `listOrganizations` and `inventory` are read-only. `purge` needs the slug, the organization's exact name, a written reason and the acknowledgement sentence; it deletes every table that carries an `organizationId` (59 tables, and the test derives that list from the schema so a new tenant table cannot be forgotten) in bounded pages, the stored media files, the applications that provisioned the gym, then the organization row last so a stopped run resumes; with `clerk: "delete"` it removes the Clerk organization and revokes the pending invitations that named it, and it never deletes a user. `listResidue` and `deleteResidue` handle the accounts left without a gym and the leftover applications, re-checking every id, and platform administrators are never deleted. Every purge leaves start, completion (per-table counts) and Clerk-outcome events in `platformAuditEvents`. Eight tests cover the schema coverage, a two-row-page purge of the seeded demo tenant beside an intact second gym, the guards, the residue flow, and the Clerk calls and failure reporting against a stubbed provider. The procedure is the "Fresh start" section at the top of `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`.
+- Not done, and the exact gate: nothing was deleted anywhere, and Production still holds the Elias and Hashem test gyms. Before the purge can run, `main` must be released to Convex Production through the guarded flow (the purge functions and the WhatsApp-only worker are unreleased backend changes with no schema or index change), a snapshot export must be taken, and the operator runs the procedure, keeping the accounts the runbook says to keep. No agent session should run the purge against Production.
+- Verification: full suite 253 files / 1,603 tests, both typechecks, canonical lint with the secret-output audit, and `git diff --check` passed. No browser run: the visible changes are copy in Settings and on the legal pages.
+- Convex release owed: `convex/messagingMode.ts`, `messagingWorker.ts`, `messagingQueue.ts`, `messagingTemplates.ts`, `renewalJobs.ts` and `domain.ts` (WhatsApp-only) plus the new `tenantPurge.ts`; guarded `pnpm convex:deploy` dry run, then deploy. No schema or index change.
+- Read first: the decisions block in `docs/19_GO_LIVE_MESSAGING_EMAIL_LEGAL_PRICING.md`, the "Fresh start" section in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, `apps/web/convex/tenantPurge.ts` and `apps/web/convex/messagingMode.ts`.
+
+## Backdoor and hardening review, 14 September 2026
+
+- Reviewed the whole repository for backdoors and weak gates: every publicly callable Convex function, the domain dispatcher's 256 operations, HTTP routes and webhooks, the demo/mock/preview toggles, Clerk and Convex configuration, redirect handling, token generation and signing, injection sinks, secrets in the tree, the CI trust boundary and dependency advisories.
+- No backdoor found. Every public Convex entry establishes the caller: the dispatcher calls `requireActor`, `requireMember` or `requirePlatformAdmin` before any operation, the only public write (`public.offer.respond`) is bearer-token scoped and rate-limited, the application form is rate-limited with a honeypot, platform-admin promotion exists only as an internal CLI mutation, the Resend webhook verifies Svix signatures and answers 503 when unconfigured, entry passes use HMAC verification with expiry and tenant checks, offer links are 64-hex tokens from `crypto.randomUUID`, `safeInternalRedirect` refuses protocol-relative and control-character targets, the only `dangerouslySetInnerHTML` is the pre-paint guard whose sole interpolations are a JSON-encoded Frontend API URL derived from a validated publishable key and a JSON host list, the `?preview=unavailable-gym` fixture and the demo persona seam exist only behind `DEMO_AUTH_BYPASS` (refused in production builds and by the Vercel validator), the Convex adapter refuses persona switching and its `demo.reset` is a server no-op behind `settings.manage`, no `.env` or credential pattern is tracked, the workflow runs with `contents: read` and only `pull_request` (never `pull_request_target`), and every `NEXT_PUBLIC_` value is public by design. The `agreementReference` helper uses `Math.random` for a human-facing document number only.
+- Hardening shipped. A repository guard test (`convex/security.surface.test.ts`) now fails when a public Convex function appears without an auth or abuse call unless it is listed as intentionally public with its reason (`3e2963c`). The production Content-Security-Policy no longer allows `unsafe-eval`; the dev server keeps it for Next's runtime. A console probe over the sign-in doors and the workspace on the built bundle, with Clerk's development script loading under the production policy, recorded no CSP violations, and the full credential-free suite passed on that bundle under the production policy (169 journeys, 14 credential-gated skips, no violations logged). Workspace overrides pin patched `brace-expansion` and `js-yaml` releases in the lint tree, taking `pnpm audit` from four high and two moderate advisories to two moderate (`0362fd7`); production dependencies audit clean. The remaining two are vitest and its mocker, fixed only in the vitest 4 major, which is a separate upgrade.
+- Recommendations not applied, because they need a real Clerk session to verify: nonce-based script loading so `unsafe-inline` can leave the CSP too (the pre-paint guard and Next hydration scripts are the inline users), and `auth.protect()` in the proxy for `/dashboard`, `/platform` and `/customer` as defense in depth over the existing client guards (data access is already server-gated). The `unsafe-eval` removal should be confirmed once on Production with a real sign-in; the header is easy to restore if Clerk's live script needs it.
+- Read first: `apps/web/convex/security.surface.test.ts`, `apps/web/src/lib/security/security-headers.mjs`, `apps/web/convex/security.ts`, and `apps/web/convex/publicAbuse.ts`.
+
+## Faster CI: browser suite on a built preview bundle, 14 September 2026
+
+- The credential-free Playwright job took 49 minutes on one runner (run 34786846171: static job 6m44s, browser 49m46s, of which 48 minutes were the suite itself). Per-spec timing from that log showed the cost was first-visit route compilation on `next dev`, not the tests: `workflow-pass-7` alone took 14 minutes for 30 cases.
+- The browser job now builds the mock preview once per shard as an approved preview bundle (`NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview`, which is exactly the marker `dataMode()` and `demoAuthBypassAllowed()` require before a production bundle may serve mock data, and which the Vercel build validator refuses on Production) and serves it with `next start`; `playwright.config.ts` switches on `PLAYWRIGHT_SERVER_MODE=start` and keeps the dev server as the local default. Four shards run in parallel. Measured locally: the whole suite took 8.5 minutes on the bundle against 48 on the dev server, and the two heaviest screenshot specs 6.0 minutes against about 17. With four shards and a 1.5 minute build each, the browser stage should land near 5 minutes of wall clock.
+- The dev-only design gallery (`/dev/design-system`) does not exist in a built bundle, so its three capture specs are ignored in start mode by the config and run in a separate small dev-server job (2.2 minutes locally). The static job gains a Next.js build cache keyed on the lockfile and sources.
+- The bundle run exposed three specs that only passed on the slow server: `member-import` and `operations-workflows` jumped to a deep route before the sign-in had stored the persona (now they wait for the dashboard), and `platform-subscription-entitlements` opened the admin door while a gym persona was signed in, which the doors now bounce; it enters the console through the preview's own session flag, which is the runtime-sharing situation the test is about. `workflow-pass-7` still expected the old "Create your owner account" heading. All 172 credential-free cases pass on the bundle (160 earlier plus the repaired 9 and 3 gallery cases on the dev server); 14 credential-gated cases skip as before.
+- Second pass, same day: the dev-server gallery job took 47 minutes on the runner (route compiles again), so it is gone. `designPreviewEnabled` now also opens the `/dev` gallery for a bundle built as an approved mock preview when `RIVET_DESIGN_PREVIEW=1` is set at serve time; Vercel Production and any production-class bundle stay closed, and an unclassified production build still refuses. The start-mode config sets that flag, so the three capture specs run on the bundle with everyone else; their dev-indicator helper accepts the bundle's 404 for that dev-only endpoint. The static gate is split into three parallel jobs (typecheck/lint/safety scripts; two Vitest shards; build with audit), the browser stage runs eight shards with two Playwright workers each (the full suite passed locally in 3.7 minutes at two workers with no failures), and the Playwright browser download is cached. Measured on the first run of that layout (GitHub Actions run for `5e1c8370`): 8m 23s start to finish, all thirteen jobs green; typecheck/lint 2m 09s, unit shards 1m 45s to 1m 49s, build 1m 15s, browser shards 7m 12s to 8m 19s. Inside a shard: 50s setup, 24s Chromium (a cache miss on the first run), 1m 33s bundle build, 5m 48s tests, so the two workers gained less on the two-core runners than locally and the tests are now the bulk. Sixteen shards would land near 5.5 minutes at roughly double the runner minutes; that trade is left to Elias.
+- Local commands: `PLAYWRIGHT_SERVER_MODE=start` needs a bundle first: `NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1 NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview NEXT_DIST_DIR=.next-playwright pnpm --filter web exec next build --webpack`, then `CI= PLAYWRIGHT_SERVER_MODE=start PLAYWRIGHT_WORKERS=2 pnpm --filter web exec playwright test`. Plain `pnpm test:e2e` still uses the dev server with one worker.
+- Read first: `.github/workflows/ci.yml` and `apps/web/playwright.config.ts`.
+
+## Release status reconciliation and business-day acceptance, 14 September 2026
+
+- Established revisions with evidence. `main` and `origin/main` are at `bef1656`. GitHub Actions run 34786846171 (`3aa4f0f`) passed all three jobs; runs 34789280363 (`6b290c0`), 34790668518 (`3894f1e`) and 34791188753 (`bef1656`) were still in progress at the last check. Vercel Production: the GitHub deployment for `3894f1e` reported success at 23:48 UTC on 13 September (the `6b290c0` and `3aa4f0f` deployments precede it), so the live frontend is the currency cleanup at `3894f1e` until the `bef1656` deployment completes. Convex Production: the last documented release remains `db43d7d` (11 September); the guarded `pnpm convex:deploy -- --dry-run --yes` from `bef1656` confirmed the target `descriptive-meerkat-589`, "Schema validation complete" and "No indexes are deleted". The eight backend commits after `db43d7d` are listed in the runbook walkthrough step 4; no deployment was executed by this session and none is claimed.
+- Convex Production release: Elias reported deploying the pending backend commits after this reconciliation on 14 September 2026. A read-only guarded dry run afterwards showed the same Production target, clean schema validation, no index deletions and only the Node.js actions server-version note, so the backend of `bef1656` is treated as released; the runbook walkthrough step 4 is updated accordingly.
+- Reconciled checklist: runbook walkthrough step 4 now names the unreleased backend commits and the dry-run evidence instead of "repeat for any later backend commit". The earlier notes that "audit/timeline/notification text still contains fixed JOD labels" and "the mock PT workspace cannot demonstrate the trainer workspace" are closed by the sections above. Phase A operator-only items (Clerk Production settings, Resend sender, fresh backup, Convex plan-limit warning) are unchanged and still open.
+- Business-day acceptance, demo verification only. The credential-free preview journeys that make up the day passed with retries disabled: 30 journeys across `happy-path` (salesperson renewal, plan change, reception balance collection with reachable receipt, desk lookup and check-in with the attendance log, unknown scan refusal, manager override in the audit log, reception finance refusal by URL), `checkout-and-payables` (desk cash sale, payable settled from the open drawer and reversed), `today-queue` and `trainer-journey` (owner books, trainer sees, records the outcome; trainer kept inside role and branch). Cross-tenant, cross-branch and role denial passed in the Convex handler suites (`domain.authorization`, `domain.money-staff-matrix`, `domain.customer-ownership`, `platform.authorization`, `domain.permission-hardening`: 33 tests).
+- Blocked, not attempted: the isolated-staging day across real owner, reception, trainer and member accounts (sale, collection, check-in, PT booking and outcome, cancellation and refund, shift close, report reconciliation). No `PLAYWRIGHT_CLERK_STORAGE_*` state files or staging guard variables exist on this machine; the exact gate is listed in the PT lifecycle section above. No disposable staging records were created and no credentials were read or written.
+- Failed journeys: none in the demo set. Defects fixed today are recorded in the sections above (trainer profile bookable after deactivation, preview never activating paid PT orders, staff list not refreshing after an invitation, currency text and forms).
+- Read first: the walkthrough checklist in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` and the two sections above.
+
+## PT lifecycle verification, 14 September 2026
+
+- Verified the whole credit lifecycle against the real Convex handlers in one test (`convex/domain.pt-lifecycle.test.ts`): package request, partial then full payment activation (nothing bookable before), introductory credits applied once, staff and member booking with idempotent replays, rescheduling, gym cancellation, late member cancellation inside the cutoff, no-show and completion with a second recording refused, unused-credit refunds with an over-refund refused, two members racing for one slot, two attempts on the final credit, expiry, and trainer deactivation. After every step the ledger rows must balance (granted = available + reserved + consumed + revoked) and the member projection must agree with them. A matching mock test proves the same conservation in the preview adapter.
+- Two defects found and fixed. Deactivating a trainer left their published profile bookable by members and on the public page; both adapters now archive the profile with the access change and audit it (`7948027`). The preview adapter never activated a PT package order after full payment, so purchased credits could not be booked in the preview; it now grants the dated entitlement and activates the order like Convex (`f7c3020`). Booking after the membership term ends is refused as `MEMBERSHIP_NOT_ACTIVE`, which the test accepts as the more precise answer than the credit check.
+- Repaired the credentialed `e2e/staging-personal-training.spec.ts` (`40874a2`): it no longer assumes the demo gym by name (first subscribed gym, or `PLAYWRIGHT_STAGING_PT_GYM_NAME`), keeps the trainer's `/pt` open from the start so the session must arrive and leave through the live subscription, drives the current "Cancel your PT session?" dialog and its credit statement, and cancels only the one booking article the run created. It compiles and lints but was not executed here.
+- Not verified, and the exact gate: no staging credentials exist on this machine. Running the journey needs `PLAYWRIGHT_STAGING_FULL_SUITE=1`, `PLAYWRIGHT_TARGET_CLASSIFICATION=staging`, `PLAYWRIGHT_STAGING_JOURNEYS` including `personal-training`, `PLAYWRIGHT_RUN_ID`, `PLAYWRIGHT_EXPECTED_CONVEX_URL`, `PLAYWRIGHT_PRODUCTION_CONVEX_URL`, `PLAYWRIGHT_PRODUCTION_HOSTS`, the `PLAYWRIGHT_CLERK_STORAGE_OWNER/MANAGER/TRAINER/MEMBER` state files, and `PLAYWRIGHT_STAGING_PT_TRAINER_NAME`, against the isolated staging deployment. No acceptance is claimed for real Clerk/Convex until that run passes.
+- Convex release owed for the deactivation change in `convex/domain.ts` (no schema or index change).
+- Read first: `apps/web/convex/domain.pt-lifecycle.test.ts`, the `PT credit conservation in the preview adapter` block in `apps/web/src/lib/mock/MockGymOSApi.test.ts`, and `apps/web/e2e/staging-personal-training.spec.ts`.
+
+## Currency text and amount-entry cleanup, 14 September 2026
+
+- Finished the cleanup the 12 September money commits left open. Audit summaries, timeline titles and supervisor notifications for member payments (collect, refund, void), membership sales (total, discount, price override, freeze fee), retail sales and refunds, PT credit refunds and cash-shift variances now format through the shared minor-unit helper in the record's own currency in both Convex and the mock adapter (`formatMinorUnits` server-side, `toMajorString` in the mock's new `amountText`). USD 4,000 minor units reads "USD 40.00"; JOD keeps three decimals. Historical events, stored amounts and business rules (pricing ladder, refund review threshold, cutoffs) are unchanged.
+- The mock adapter also stops minting new sale charges, payments, refunds, paid/outstanding balances and drawer amounts in JOD for a gym configured in another currency; new records carry the charge's or organization's currency, matching Convex.
+- Amount-entry forms now read typed values with `readMoneyInput` in the configured currency, name a malformed, over-precise, empty or negative amount beside the field while keeping the draft, and prefill from stored amounts with `toMajorString`: the PT package editor (`aaa7ab5`), the membership plan editor, the custom-plan and offer price fields, the discount-limit and freeze-fee settings, the opening float, and the supplier payment dialog and its confirmation table. The close-shift dialog renders cells, the variance line and its button from the shift's currency; the owner revenue chart scales by the currency exponent. Plan summaries and plan pickers render through `MoneyText`.
+- The PT reference ladder stays denominated in JOD: a gym in another currency sees it labelled JOD, gets no prefilled or converted suggestion and no guide comparison; nothing invents an exchange rate. The mock refuses a package priced in another currency as Convex already did.
+- Left alone on purpose, all RIVET-side JOD commercial pricing or illustration: platform plan catalogue, subscription reconciliation and billing wizard, public pricing page, marketing screens, the design gallery, the ledger tutorial chip, the seeded demo history in `src/lib/mock/seed.ts`, the receipt help sentence about the 25.000 review threshold (the rule itself is a minor-unit threshold shared by both adapters), and the mock's platform invoice labels.
+- Verification: new `convex/domain.currency-text.test.ts` runs the payment, sale, retail and shift workflows for a JOD and a USD gym and compares every written line with the stored amount; matching mock regressions cover plan, offer, sale, discount, override, payment, refund, void, retail and shift text plus USD package storage and order-snapshot safety; component tests cover the package editor's JOD/USD create and edit flows and its inline errors. Full suite 250 files / 1,572 tests, both typechecks, canonical lint, production build and `git diff --check` passed. The package dialog was inspected in the preview (JOD): guide, prefilled 240.000, Arabic-digit entry giving JOD 20.042 per session, and "1,2" held in the field with its inline message. USD forms are covered by component tests only; the mock preview has no currency setting to switch.
+- Convex release owed for `convex/domain.ts` and `convex/operations.ts` text changes (no schema or index change) through the guarded `pnpm convex:deploy` procedure; older text stays on historical events.
+- Read first: `apps/web/src/lib/utils/money.ts`, `apps/web/convex/domain.currency-text.test.ts`, the `adapter text follows the stored currency` block in `apps/web/src/lib/mock/MockGymOSApi.test.ts`, and `apps/web/src/app/(app)/pt/page.tsx` (`PackageDialog`).
+
+## Trainer account journey audit, 14 September 2026
+
+- Traced the gym-owned trainer journey end to end: owner invitation → Clerk acceptance → sign-in → workspace → profile setup and publication → availability and time off → assigned sessions → outcomes, across Convex, the mock adapter and the UI. Already correct on the server and left alone: branch-scoped staff invitations (`convex/invitations.ts`) that land on the branded `/login/accept-invitation` door and are claimed only after provider verification; `identity.current` routing a trainer to `dashboard`; `pt.workspace` scoped to the trainer's own profile and sessions with no packages, orders or revenue; self-only availability, outcome and cancellation rules with `pt.manage`/`pt.book_for_member` for anyone else; outcomes refused before the start; deactivation refused while future sessions exist; deactivated and invited accounts rejected by `requireAuthenticated`.
+- Broken transitions fixed. The preview adapter demanded `pt.reports.read` for the PT workspace, so the seeded trainer met "Not allowed for this role" on `/pt` and "Trainer dashboard could not be loaded" on `/dashboard`, and `workflow-pass-2` asserted that broken state; the mock also let any role cancel or reschedule a session, allowed hours at a branch the trainer does not work at, returned no schedule from an availability save and deactivated a trainer with upcoming sessions (`3c58988`). Leads by direct URL showed a generic retry to a trainer instead of the role wall; a sent invitation did not appear in the staff list until a reload, which the staging journey silently worked around (`994fded`). Convex accepted a trainer profile for an invited account that had never signed in, which the mock and the picker already refused; a deactivated account signing in saw "RIVET could not verify this account with Convex"; the invitation door called every invitee's account an owner account (`afc4c91`).
+- Setup guidance added (`0300366`). `ptTrainerSetupState` names the first missing step in order and `TrainerSetupNotice` renders it on both `/pt` and the trainer dashboard: no linked profile → the gym's step, draft or archived → publication is the gym's step while hours can be set now, published without hours → "Add your weekly hours" with a direct action. The workspace also lets a trainer cancel their own upcoming session (the server already allowed it as a gym cancellation), hides package and order panels from roles the server returns nothing to (this includes reception, which keeps collecting PT charges from the member record), explains an empty trainer picker with a link to Settings → Users, drops the "Organization settings" menu entry for roles the page turns away, and lists the trainer in the demo role switcher so the preview can hand a live workspace to the trainer without a reload.
+- Demo verification: mock adapter tests for own-versus-other trainer records, trainer self-cancellation with credit return and the deactivation guard; component tests for the three guidance states, own-session Cancel, hidden catalogue and the picker hint; a new `e2e/trainer-journey.spec.ts` with four credential-free journeys (invitation and refused picker; owner books, switch to trainer, assigned session, hours and time off, outcome after a fixed clock passes the start; draft-profile guidance into the availability editor; cold-start trainer kept inside role, branch and navigation by direct URL, with `/platform` resolving back to the dashboard). Browser run: all 24 journeys in `trainer-journey`, `role-routing` and `workflow-pass-2` passed with retries disabled (4.0 min, one worker), including the pass-2 PT screenshots. GitHub Actions [run 34786846171](https://github.com/hashemnusair/Rivet/actions/runs/34786846171) for `3aa4f0f` passed typecheck/lint/unit/build, the credential-free Playwright job and the credential-gated Convex generated-code check.
+- Real Clerk/Convex verification: Convex handler tests cover the invited-account refusal, another trainer's schedule and sessions staying out of reach, the trainer's own availability save, and the deactivated identity projection (`{ pending: false, deactivated: true, user: null, memberships: [] }`). Not exercised in this pass and still owed before the trainer path is called production-verified: a real Clerk staff invitation accepted by a fresh and by an existing identity, and the credentialed `staging-staff-authorization` and `staging-personal-training` journeys against isolated staging.
+- Convex release owed: `convex/domain.ts` (trainer profile linking) and `convex/identity.ts` (deactivated projection) changed. Both directions are compatible: an older backend still returns `null`, which the client maps to the previous generic message, and an older client treats the new projection as a verification error. Run the guarded `pnpm convex:deploy` dry run and deploy after the push; no schema or index change.
+- Observations left as product decisions, not changed: trainers can open Reception, Daily checklist, Classes, Stock & purchasing and Data exports through `members.read`; Reports shows its own in-page restriction instead of the shared wall; the `/login/gym` chooser still lists the four desk personas, so a cold trainer preview uses the switcher or the sessionStorage seam.
+- Commands: `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm test`; `CI= PLAYWRIGHT_PORT=3100 pnpm --filter web exec playwright test e2e/trainer-journey.spec.ts e2e/role-routing.spec.ts e2e/workflow-pass-2.spec.ts --retries=0`.
+- Read first: `apps/web/src/lib/mock/MockGymOSApi.ts` (`getPtWorkspace`, `cancelPtBooking`, `updateUserAccess`), `apps/web/src/lib/domain/personal-training.ts` (`ptTrainerSetupState`), `apps/web/src/features/personal-training/trainer-setup-notice.tsx`, `apps/web/src/app/(app)/pt/page.tsx`, `apps/web/convex/identity.ts`, `apps/web/e2e/trainer-journey.spec.ts`.
+## Supplier payment currency text, 12 September 2026
+
+- Replaced fixed division by 1,000 in supplier-payment and reversal audit summaries and overpayment errors in both Convex and the mock adapter. USD 4,000 minor units now reads USD 40.00; JOD still uses three decimal places. The code writes corrected text for new events and preserves historical audit events, stored amounts, allocation policy and authorization.
+- Added JOD/USD payment-and-reversal regressions for both adapters. They verify the overpayment message, persisted amount, both audit summaries and restored payable balance. Both payables suites passed all 15 tests after first reproducing the USD failures.
+- Final local validation for the currency and supplier-payment commits: full suite passed 248 files / 1,535 tests plus all 14 repository-safety tests; web and Convex typechecks, canonical lint/secret-output audit, production build and `git diff --check` passed. The earlier input/export push passed GitHub's static and generated-code jobs; its browser job was still running at the last check. Browser tests were not rerun locally for this pass.
+- Read `apps/web/convex/payables.ts`, `apps/web/src/lib/mock/MockGymOSApi.ts`, and their payables tests first. No schema change is required. The Convex function changes need the guarded backend release procedure before Production uses the new wording; this session only pushes repository commits.
+
+## Shared currency precision, 12 September 2026
+
+- Consolidated CSV amount formatting onto the shared money helper and retained the export currency set. IQD and TND inputs and UI formatting now use the same three decimal places as their exports. Explicit codes for the configured currency, including GBP, IQD and TND, no longer require an entry in the colloquial-alias list to parse successfully.
+- Added regressions for regional precision, configured-code prefixes/suffixes, embedded-label rejection, negative exported amounts, and unavailable export values. Read `apps/web/src/lib/utils/money.ts` and `apps/web/src/lib/exports/csv.ts` first. No stored amounts or currency settings change.
+- Moved the existing `Money` interface to `apps/web/src/lib/domain/money.ts` and re-exported it from the original domain-types module. This keeps the newly shared helper compatible with Convex's independent TypeScript project without changing consumer imports or the data contract.
+- Verification: money, CSV, member-import and Convex-export suites passed all 61 tests. Zero-warning ESLint for the changed code and `git diff --check` passed.
+
+## Repository review and input/export fixes, 12 September 2026
+
+- Fixed the shared money parser accepting embedded currency labels as thousands separators. `1JOD250`, its Arabic equivalent, and `1$250` now fail validation instead of becoming 1,250 major units. Currency prefixes and suffixes remain supported; the existing `US$` alias now parses as one token and still rejects a different target currency.
+- Extended CSV formula neutralization to all leading whitespace, including LF, CRLF and nonbreaking spaces. Ordinary multiline text and quote escaping remain intact. Added regressions for both helpers, first reproducing the failures against the original implementation.
+- Scope: focused code fixes after reviewing current handoffs, scripts, routing, imports, money helpers and export consumers. No visual redesign, dependency changes, schema changes, production data changes or deployment. `FRONTEND_HANDOFF.md` remains unchanged. Historical audit records are not rewritten.
+- Verification: after preserving six incoming commits through `661a8c5`, the integrated full suite passed 248 files / 1,525 tests plus all 14 repository-safety tests. Both TypeScript checks, canonical lint with the secret-output audit, production build and `git diff --check` passed. Pushed separate money-input (`9e87d41`) and CSV (`c62ad64`) commits to `main` without force. GitHub CI run 34680155561 was in progress at the first check. No Convex deployment was run in this session.
+- Remaining: audit/timeline/notification text in both adapters still contains fixed JOD labels or division by 1,000. Currency precision tables also differ between money and export helpers. Follow up through the canonical backlog before claiming consistent non-JOD output. Large adapter modules are candidates for incremental extraction with parity tests, not a wholesale rewrite.
+- Read first: `apps/web/src/lib/utils/money.ts`, `apps/web/src/lib/exports/csv.ts`, and their adjacent tests. Verification commands: `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, `git diff --check`. Browser checks were not rerun locally for these helpers.
+
+## Landing asks Clerk before it paints, 12 September 2026
+
+- The cookie-based pre-paint guard did not remove the flash: on a first visit to `www`, neither the middleware nor the inline script saw a session marker, and the earlier cookie regex also excluded the `-`/`_` characters a suffixed `__client_uat` name can carry. The guard now uses the signal Clerk's own browser script uses: `src/lib/auth/pre-paint-signed-in-guard.ts` builds a parser-blocking script that, on the landing only, hides the document, reads the Frontend API client resource (`/v1/client`, credentials included; the FAPI origin is decoded from the public publishable key) and replaces the location with `/login` when a session with status `active` exists, otherwise reveals the page. A visible marker cookie short-circuits the request; any error or a two-second delay reveals the page; a back/forward-cache restore reveals it too. The root layout renders the script only for a real Clerk build, never for the mock preview.
+- Live checks: the Frontend API answers `www` with `access-control-allow-origin` for that host and `allow-credentials`, and the existing CSP `connect-src` already permits `clerk.rivetjo.com`. Cost for a signed-out visitor is one Frontend API round trip before first paint.
+- Verification: two unit tests for the origin decoding and the script contract, web typecheck, canonical lint/secret-output audit, and the `public-experience` and `host-routing` browser journeys. The signed-in path itself needs a real Clerk session and is confirmed by opening `rivetjo.com` from a signed-in browser.
+
+## Landing pre-paint guard and handshake parameters, 11 September 2026
+
+- Elias still saw the landing for about three seconds when opening `rivetjo.com` signed in, so the middleware redirect had not fired for that request. Live probes show the middleware itself works: a request carrying Clerk's shared `__client_uat` marker receives the Clerk handshake redirect on `www` and `dashboard`. The Clerk SDK's production handshake path, however, falls through as signed-out (reason `session-token-missing`) whenever the handshake payload cannot be fetched or its token verified, and the landing then renders until Clerk's browser script notices the session. A stale `__clerk_handshake_nonce` replayed on the resolver redirect produced the same fall-through, so the middleware now strips `__clerk_*` parameters from that redirect while keeping `next`.
+- The root layout now carries a parser-blocking inline script that runs on the landing only (`/` on a host that is not `dashboard`, `app` or `platform`): when the readable `__client_uat` cookie is non-zero it hides the document and replaces the location with `/login`, so a signed-in visitor never sees the landing even if the server-side handshake fails. It restores visibility on a back/forward-cache restore, is a no-op for signed-out visitors and for the mock browser suite, and is permitted by the existing `script-src 'unsafe-inline'` policy.
+- Still to establish in a real session: whether the Production handshake resolves at all. If it does not, `auth()` in the middleware never sees a signed-in user on a first visit to any host, which also affects the signed-in door redirects. The likeliest causes are a Vercel `CLERK_SECRET_KEY` that does not belong to the same Production instance as the publishable key, or Clerk Backend API errors visible in Vercel runtime logs as "Clerk: HandshakeService: error getting handshake payload". Verify from a signed-in browser and the Vercel logs; no secret values are recorded here.
+- Verification: web typecheck, canonical lint/secret-output audit, proxy/page/routing unit suites (a new proxy test proves the handshake parameter is dropped and `next` kept), and the `public-experience`, `role-routing` and `host-routing` browser journeys with retries disabled.
+
+## One-hop landing handoff, 11 September 2026
+
+- Follow-up to the landing redirect: a signed-in account arriving at `www/login` from the landing was shown the sign-in chooser while Clerk loaded, then a second `/login` on its own host with a timed "Opening your workspace" transition, which read as signing in twice. `IdentityHostGate` now sends an account arriving from another host straight to its page there (`directEntryPath` in `src/app/login/identity-panels.client.tsx`): `/platform`, `/customer/my-gyms`, or `/dashboard`/`/reception` for all-branch staff, keeping an in-area `next` continuation. The gym, member and platform shells already hydrate a Clerk session from Convex on their own, so the resolver's browser bootstrap is not needed for those. Selected-branch staff, accounts with several gyms and unavailable gyms still open the resolver on the destination host, which asks or explains.
+- The account resolver no longer shows the "Sign in to RIVET" heading or the two doors before Clerk has answered: it shows the progress bar while Clerk loads, the doors only for a signed-out visitor, and the branded "You're signed in" transition for a signed-in one. The audience doors (`/login/gym`, `/login/member`, `/login/admin`) are unchanged.
+- Verification: web typecheck, canonical lint/secret-output audit, 11 unit files / 84 tests across the login, auth and routing suites (the host-handoff test now covers platform, all-branch gym, member, selected-branch gym and multi-gym identities), and all 22 `role-routing` and `public-experience` browser journeys with retries disabled. The one-hop path itself needs a real Clerk session and is proven by the unit test; confirm it once in a signed-in browser by opening `rivetjo.com`.
+
+## Landing closed to signed-in accounts, 11 September 2026
+
+- Decision by Elias: `rivetjo.com` and `www.rivetjo.com` never show the landing to a signed-in account. The apex still canonicalizes to `www`; the middleware then sends any signed-in visitor on `/` to the `/login` resolver, which opens `dashboard`, `app` or `platform` by role. `signedInRedirectTarget` in `src/lib/routing/signed-in-routing.ts` is now a plain path set (`/`, `/signup` and the four doors); the `?site` escape, the same-site-referer exception and the production-host exemption are removed. `SignedInGuard` lost its `directEntryOnly` mode and covers demo mode and cached client navigation with the same rule.
+- Terms, privacy, member discovery and gym pages remain readable when signed in. The "Public site" entries in the gym account menu and the platform sidebar are removed because they would only bounce back; `publicSiteHref` no longer appends `?site`, and sign-out still returns to the signed-out `www` landing. Marketing header and footer links that lead to the landing now resolve to the visitor's own area when signed in.
+- Verification: web typecheck, canonical lint/secret-output audit, 20 unit files / 97 tests across routing, proxy, public, shell and platform suites (the proxy suite now proves a signed-in `www/` request is redirected to `/login` and a signed-out one is not), and all 24 `public-experience`, `host-routing` and `role-routing` browser journeys with retries disabled. The two journeys that used the landing while signed in now sign out first and reach it from the sign-in page's brand link. No Convex or provider change is needed; Vercel deploys the frontend from `main`.
+
+## Convex Production release for the walkthrough, 11 September 2026
+
+- Elias released backend head `db43d7d` (local `main` fast-forwarded to `origin/main`, clean tree) to Convex Production `descriptive-meerkat-589` through the guarded `pnpm convex:deploy` path at 16:21 UTC. The `--dry-run --yes` pass first confirmed the exact Production target, clean schema validation and no index deletions; the deploy then added the four additive indexes `domainRecords.by_message_due`, `domainRecords.by_message_lease`, `messagingWorkerState.by_key` and `renewalDeliveries.by_status_channel_due`. No seed, import, restore or tenant-data mutation was run.
+- Pre-deploy and post-deploy read-only checks: `health:check` returned `status: ok` both times, and `renewalJobs.releaseAudit` returned zero deliveries, delivery events, member-timeline rows and staff call tasks both times, so no in-flight messaging needed draining. The Convex-scoped unit gate passed 525 tests. The previous documented Production release was `fdd6dac` (31 August); the deployed function catalogue already contained the messaging worker, so an undocumented intermediate release had occurred between `4d05085` and `776635b`.
+- Environment pairing, names only: Convex Production holds `CLERK_FRONTEND_API_URL`, `CLERK_SECRET_KEY`, `ENTRY_PASS_SIGNING_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RIVET_APPLICATION_RECIPIENTS`, `RIVET_EMAIL_ALLOWLIST`, `RIVET_EMAIL_MODE`, `RIVET_PUBLIC_REQUEST_PEPPER` and `RIVET_SITE_URL`; `RIVET_MESSAGING_MODE` is unset, so WhatsApp/SMS stays off, and `RIVET_PUBLIC_REQUEST_ALLOW_FALLBACK` is unset. The live bundle served identically by `www`, `dashboard`, `app` and `platform` targets `https://descriptive-meerkat-589.eu-west-1.convex.cloud` with a `pk_live` Clerk key on `clerk.rivetjo.com`; the Vercel build validator enforces live-class Clerk keys, and Hashem's real owner sign-in on the same day resolved the Convex identity, which requires the Production issuer to match.
+- Frontend: Vercel Production deployments for `a46a62d`, `2ea171c` and `db43d7d` all reported success; GitHub Actions run 34620573916 for `db43d7d` passed typecheck/lint/unit/build and the credential-gated Convex codegen job, with the credential-free browser job still running when this was recorded.
+- Still operator-only (see the Phase A checklist in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`): confirm the Convex `CLERK_FRONTEND_API_URL` value equals the Clerk Production Frontend API URL in the two dashboards, confirm Clerk Production settings (email/password, organizations and invitations, allowed subdomains if enabled), confirm Resend sender/recipients, create or confirm a fresh Production backup before pilot mutations, and resolve the Convex plan-limit warning recorded on 29 August.
+
+## Canonical application domains and login handoffs, 11 September 2026
+
+- Implemented the requested production domain split in the existing Next.js application: public landing on `www.rivetjo.com` with apex canonicalization, gym staff on `dashboard.rivetjo.com`, members on `app.rivetjo.com`, platform operators on `platform.rivetjo.com`. Root aliases retain their existing internal page paths; old deep URLs and audience-specific sign-in doors now redirect to their owning host with query strings intact. Member `/signup` has its own canonical account-creation redirect. All current gym route trees have an ownership coverage test.
+- Password sign-in always resolves the Convex identity, then changes hosts before initializing member, organization or branch state. Full-document cross-host navigation prevents the Next client router from retaining providers from the previous origin. Safe `next` links restore the requested page within the resolved role's area. Existing Convex authorization remains authoritative, including finance restrictions and platform-admin access.
+- Production `www` remains the landing page even for signed-in accounts. Public-site links in the login frame, marketing navigation, gym toolbar and platform sidebar explicitly return there. Added Clerk redirect-origin configuration for the existing root/subdomains; APIs and Clerk handshakes remain on their request origin. No DNS, Clerk-dashboard or Convex changes are needed by this code change.
+- Assumptions: trainers with gym staff roles remain on `dashboard`; member-facing PT discovery/booking remains on `app`. Unknown/local/preview hosts keep their existing single-origin behavior. The historical `FRONTEND_HANDOFF.md` is unchanged. Incoming `eb795ec` landing CSS changes were fast-forwarded and preserved.
+- Verification: full unit suite passed at 245 files / 1,503 tests; subsequent focused additions passed two host-router tests and three identity-before-bootstrap host cases. Web typecheck, canonical lint/secret-output audit and production build passed. Final local Playwright run passed all nine hostname/role-routing journeys, with retries disabled. An initial synthetic HTTPS browser fixture was replaced because Clerk development initialization did not complete on simulated production origins; the retained tests check actual Next Proxy responses, client document handoffs and localhost role journeys separately.
+- Released `a46a62d` through the existing GitHub/Vercel production integration. Vercel deployment `dpl_7TEhmBjdT26uj3kJiMw9TwuaoE5p` was Ready on all four canonical hosts. Live HTTP checks passed audience-door redirects, old deep URLs, apex canonicalization, public legal-page ownership and member signup with query preservation. The real browser displayed gym/member/platform password forms, followed a gym door from `www` to `dashboard`, and returned from platform login to the `www` landing. Clerk FAPI returned HTTP 200 and the matching CORS origin for all four hosts.
+- Additional verification: all 15 `public-experience.spec.ts` browser journeys passed. A live footer review found landing anchors and the gym-application link could retain the member host; a follow-up fixes them and sends public sign-out to `www`. Its production-host footer regression and 18 public/header tests passed, along with web typecheck and lint.
+- Final frontend correction released as `2ea171c`, Vercel deployment `dpl_DoKP4e6SKM6VTxnRZqNZyayXc12u` ([deployment](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/DoKP4e6SKM6VTxnRZqNZyayXc12u)). Its production build and lint passed. The live signed-out member discovery footer now links pricing/overview to `www` and gym applications to `www/signup`.
+- The user signed in as the existing pilot gym owner for live verification. Confirmed the owner dashboard on `dashboard`, an old `www/dashboard` URL reopening the authenticated workspace without a second sign-in, `www/` retaining the landing with the signed-in Dashboard action, and both `platform/platform` and `app/login` returning that owner to `dashboard/dashboard`. No credentials were read or transferred. Member and platform-admin identities, sign-out and multi-branch selection retain automated coverage but were not separately exercised with real production accounts in this pass.
+- CI for the main routing commit is [run 34619692700](https://github.com/hashemnusair/Rivet/actions/runs/34619692700). Its typecheck/lint/unit/build and credential-gated generated-code jobs passed; the full browser job was still running when recorded. No customer, financial or tenant data was changed.
+- Commands: `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`; `CI=1 PLAYWRIGHT_PORT=3123 pnpm --filter web exec playwright test e2e/host-routing.spec.ts e2e/role-routing.spec.ts --retries=0`.
+- Read first: `apps/web/src/lib/routing/host-routing.ts`, `apps/web/src/proxy.ts`, `apps/web/src/app/login/identity-panels.client.tsx`, and the domain routing release section in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`.
+
+## Member browser regression fixes — 10 September 2026 (`main`)
+
+- Resynchronized with GitHub at `c18f486` before this work; the incoming public-site and sign-in changes are preserved. The two consistent failures in [that commit's CI run](https://github.com/hashemnusair/Rivet/actions/runs/34362391999) were member class booking/cancellation and the mobile navigation dock yielding to focused search.
+- `CustomerShell` now waits for preview-session restoration before mounting page controls. Previously, a cold preview could mount the signed-out public layout and then replace its page subtree when the saved member loaded, losing an early tab selection or input focus. A regression test failed before the fix and passes afterward. This uses the existing readiness state; no new dependencies or booking-policy changes were needed.
+- The class browser test fixes the clock within the seeded membership's validity, waits for persona navigation to finish, and checks booking, cancellation and rebooking availability on the same dated-class card. The dock test now also checks that typed text and focus survive the search URL update, then verifies that the dock returns after blur.
+- Verification: both affected browser journeys passed three consecutive runs each with retries disabled (six passes). All 244 unit-test files / 1,480 tests, web typecheck, canonical lint/secret-output audit and the production build passed. The full browser suite was not rerun locally; its other flaky and skipped cases remain outside this verification.
+- Read `apps/web/src/components/public/public-shell.tsx`, its customer-shell regression test, and the two affected E2E files first. Reproduce with `CI=1 PLAYWRIGHT_PORT=3122 pnpm --filter web exec playwright test e2e/public-experience.spec.ts e2e/workflow-pass-4.spec.ts --grep 'lets a member book and cancel|the phone dock clears' --retries=0 --repeat-each=3`.
+- Deployment alignment remains unverified by this pass. Follow [Before Hashem and Elias's walkthrough](docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md#before-hashem-and-eliass-walkthrough) to establish the frontend SHA, Convex release and Clerk/Convex environment pairing before real-session acceptance. Live messaging remains deferred. `FRONTEND_HANDOFF.md` is unchanged.
+
+## Public sign-in doors and the signed-in site — 9 September 2026 (`main`)
+
+- **Two doors, one identity, one word.** `/login` signed out is the chooser: the gym team door (`/login/gym`) and the member door (`/login/member`), with platform administration as a quiet line; signed in it is still the resolver where the Convex role opens the right area (`IdentityPanel`, organization and branch selection unchanged). Each door carries RIVET's own email-and-password form (`PasswordSignIn`: both fields on screen with placeholders, show/hide password, the two-step verification path) instead of Clerk's boxed adaptive widget, which was rendering as a clipped rounded card; only the member door offers account creation. Every entry point simply says "Sign in": the bar, menu and footer lead to `/login`, while the member section, the gym page, the application and the next-step section go straight to the matching door.
+- **The signed-out pages are not shown to a signed-in visitor.** `signedInRedirectTarget` (`lib/routing/signed-in-routing.ts`) is the one rule: `/signup` and the doors always go to the resolver; the landing goes there only on a direct arrival — typed, bookmarked or linked from elsewhere — while a visit from inside RIVET (same-site referer, a Back/Forward step, a document loaded at another route) or one carrying `?site` keeps the site open. The Clerk middleware applies it after host routing (app and console hosts are never redirected); `SignedInGuard` applies it in the browser for the demo personas and only on arrival, never on a sign-in completed on the page itself, so a door's own hand-off still decides where that person goes.
+- **One answer to "who is looking".** `usePublicViewer` (`lib/auth/public-viewer.ts`) merges the Clerk session and the Convex role with the demo personas into `signed-out`, `loading` or `signed-in` plus a destination that carries the site's own words (Dashboard / Reception / My gyms / Platform; "Open your dashboard" …). The bar shows the doors or that one button; the menu and the footer add sign-out; the landing's hero, member, pricing and next-step actions all follow it (above the fold the buttons wait for the answer rather than show the wrong set). `PublicHeader`, its Clerk `UserButton` and the Clerk marketing actions are deleted; `/signup` and the signed-out member pages (`/customer/discover`, a gym's page) wear the site's bar and footer through `PublicDocumentPage` (member pages offer "Create account" in place of the application).
+- **CI's two landing failures.** The stale-data notice sticks below the landing's fixed bar (`[data-experience-notice]` in globals.css), so its Retry is clickable again; the recovery test asks for the site explicitly (`/?site`) because the signed-in owner would otherwise be sent to the dashboard. `role-routing.spec.ts` expects a signed-in persona sent away from the console to land in its own area rather than on `/login`, and each entry in its matrix starts signed out.
+- **Verification.** `pnpm typecheck`, `pnpm lint` (secret audit, zero-warning ESLint), the new `signed-in-routing` and `public-viewer` unit suites, the landing, header, signup and customer-shell suites (all green); headless Chromium against the mock server: the signed-out landing and menu, a member on `/?site` (bar, hero, member, next step, footer and menu all lead to My gyms, sign-out from the menu returns to the signed-out site), direct arrivals on `/`, `/signup`, `/login/gym`, `/login` and `/login/member/create` sent to My gyms, an owner reaching the site from the dashboard's "Public site" and being sent to the dashboard on a direct arrival, and the signed-out application, marketplace and gym pages in the site's chrome; `public-experience`, `role-routing` and `legal-agreement` (22 tests) and the pass-7 sign-in, public-route and application sweeps at 390 and 1440 against the mock server. Not covered here: a real Clerk session through the middleware (CI has no Clerk), so the production redirect path is verified by its unit test only.
+
+## Landing notes pass — 9 September 2026 (`main`)
+
+- **The stack is a machine you tap, not a scroll timeline.** `StackStory` (was `ScrollStackStory`) sits in the flow with no sticky stage, no 600svh track and no progress bar; the page lost about 4,500px of scroll height at 1440. Every plate is a `role="tab"` group in the SVG (the whole pitch answers a tap, arrow keys move and select, Home/End, Enter/Space) and the description column is the `tabpanel`, every state in one grid cell so the column never changes height. `createStackEngine` in `landing-story.tsx` runs one move at a time from a pure path planner: `pinPath(from, target)` withdraws until the rod is clear of every plate whose row it will cross, travels along that lane, inserts; choosing a plate mid-move re-plans from the pin's current position, so there are never two animations. After the pin seats, `STACK_DWELL_MS` (4 s) moves it on, 6 → 1 included (the return runs up the wide lane and inserts into Sales); a click or tap resets the dwell, keyboard focus in the section holds it, so does a hidden tab or an off-screen rig (IntersectionObserver), and `prefers-reduced-motion` makes every move instant with no auto-advance. Moves are paced by length (`STACK_PACE`: 0.42 units/ms, 380–1250 ms) with one eased sweep over the whole path.
+- **One screen, and the page snaps section by section.** The stack section is `min-height: calc(100svh − bar)` and centres its composition; the rig's width is capped by `calc((100svh − 19rem) × 0.946)` (36svh on phones, where the caps are hidden), so the machine, its title and the description always fit the screen it snaps into. The standing line about the six modules moved from the header to a small note under the description. `html.landing-motion-ready` carries `scroll-snap-type: y mandatory` (globals.css); every landing section, the cover pair wrapper (not the sticky accountability sheet itself) and the hero carry `.snapStart` with `scroll-snap-stop: always`, the footer `.snapEnd`, so a flick moves to the next section under the bar, a section taller than the screen can still be read through, and the footer is the last resting place. Measured at 1440×900, 1440×700, 1024×768 and 390×844.
+- **Retraction is measured from each plate's opening.** `clearTip(index) = plateRight(index) + clearance`: the withdrawn tip sits 14 units from the edge of a narrow plate and 14 units from the edge of a wide one, so the visible retraction is the same 70 units for both; a move that crosses between the groups (Payments ↔ Reception, or the loop's return) withdraws to the wide lane. The pin is one piece — the rod runs into the ring's stroke, the collar is gone — and both carry one vertical shade. Plates gained a hairline of light along the top edge, a soft blurred contact shadow on the plate beneath, and a rim gradient that makes the hole read as cut in; colours are unchanged and the depth is deliberately faint. `landing-story.test.ts` covers the seated poses, equal retraction, the wider lane across the groups, clear passage past every plate on six routes, mid-move re-planning, pacing and continuity.
+- **Pricing tiers bloom from the pointer.** `anchorBloom` in `page.tsx` records where the pointer entered (clamped to the card) and sizes two uneven blobs (`.tierBloom`, `.tierBloomEcho`) to reach the farthest corner; CSS transitions grow them with a slight overshoot and drain them back to the same point, so hover-out and rapid re-entry are interruption-safe, and the origin is only re-anchored once the last bloom has drained. Keyboard focus blooms from the centre. The bottom-up wave and its keyframes are gone.
+- **Lower-page transitions.** The one paper-to-paper boundary (Built for here → For members) is marked by `StoryMarker drawn`: on reveal the red rule draws across the full width, gathers into the marker's dash and drops beside the label (`markerDraw`, clip-path + transform; static under reduced motion). Gyms on RIVET sit on a stone panel (`.gymsPanel`, `#edece5`) framed by four corner marks that fade in one after another, a nod to the QR's finders; the panel still renders only when live gyms exist. `Reveal` gained a `still` prop for wrappers that only need the in-view state.
+- **Member sign-in.** The bar has a quieter "Member sign in" link to `/login/member` before "Apply for access" ("Sign in" on phones, aria-label unchanged); the member section adds "Already a member? Sign in" under its actions; the menu's general "Sign in" → `/login` stays for staff.
+- **Verification.** `pnpm typecheck`, zero-warning ESLint on every changed file, Vitest for `landing-story.test.ts` (7), `cinematic-header.test.tsx` (4) and `page.test.tsx` (4); headless Chromium on the mock server at 1440×900 and 390×844: the seated start pose, a 0 → 3 click (withdraw to the wide lane, travel, insert, description switch at the edge), auto-advance after the dwell, re-planning mid-move, keyboard arrows, the 6 → 1 return, reduced motion, phone taps and tap targets (41px per plate), the hero CTA landing `#product` under the bar, the menu's active mark, bloom frames on the paper and night tiers plus drain and re-entry, the marker draw, the gyms panel, the header at 1440/390/320. No page errors. Not covered: Safari, and real touch hardware beyond Chromium's emulation.
+
+## Public site continuity — 8 September 2026 (`3b4bf0c`, on `main`)
+
+- **The break before For members is one budget.** At 1440×900 the last "Branches" row was followed by 276px of bare paper before the "For members" label, with the Entry QR card starting 72px above it: the region sheet's `clamp(6rem, 12vh, 10rem)` bottom padding (108px), the member section's `py-24` (96px), and `lg:items-center` centring the shorter text column against the taller card (72px), on one paper surface with no sheet edge between them. The region now ends with `clamp(2.5rem, 5vh, 3.5rem)`, the member section opens with `clamp(3.5rem, 8vh, 5.5rem)` (`.memberSection`, 3rem on phones) and closes with `clamp(4rem, 9vh, 6rem)`, and the grid is top-aligned so the card's top edge sits on the marker's rule. Measured from the last row to the label: 117px at 1440×900 (was 276), 96px at 1440×700, 133px at 768×1024, 90px at 390×844. Accountability → region, members → pricing and pricing → next step were measured and left as they are: each has a sheet edge with 80–96px inside it.
+- **One public header.** `CinematicHeader` takes `page="document"` and `currentPath`: section links become `/#product`…`/#pricing` (Overview → `/`), the brand goes home, neither section tracking nor the landing's hash correction runs, the menu's Interface note gives way to a Legal group that marks the open document with `aria-current="page"`, and menu links close the menu so a link to the page already open does not leave it standing. The bar and menu carry `marketing-body` themselves. `PublicDocumentPage` (`components/public/public-document-page.tsx`) wraps `/terms` and `/privacy` with the page shell, the bar, the `[data-landing-sheet]` wrapper (dimmed, scaled and inert while the menu is open; released on close, Escape or route change) around a `main` that reserves the bar's height once (`.documentMain`), and the site footer. `PublicFooter` moved to `components/public/public-footer.tsx` (no hooks) so neither the landing nor a document imports the member shell for a footer; `PublicHeader` in `public-shell.tsx` still serves `/signup`.
+- **Documents unchanged, sheet a little narrower.** `LegalDocument` passes `max-w-[46rem]` to the shared `DocumentSheet` (its defaults are untouched) so a line of running text holds about 88 characters instead of 97; bodies, section IDs, versions, contents list, related links, the download button and `data-document-body` are as they were. `/terms#data-processing` and the contents links land 108px below the bar (the global `scroll-padding-top` plus the section's `scroll-mt-24`); no target or title sits under it.
+- **Verification.** `pnpm typecheck`, `pnpm lint` (secret audit, zero-warning ESLint), `git diff --check`; Vitest for the new `cinematic-header.test.tsx` (landing and document hrefs, current document, lock and release on Escape) plus `page.test.tsx`, `legal-pages.test.tsx`, `public-shell.test.tsx` and `landing-story.test.ts` (18 tests). Headless Chromium against the mock server: the region → member gap before and after at 1440×900, 1440×700, 1024×768, 768×1024 and 390×844 with a reduced-motion pass; the journey home footer → Terms → related link → Privacy → menu → `/#pricing` (lands 72px below the bar, locks released) → Back → Forward; direct `/terms#data-processing`, a contents link, a retired `/#modules` link from a document page; the phone menu (no sideways scroll, dismissal restores the page); the open menu at 1440, 1024, 768, 390 and 360; no page errors. Not covered: Safari, and printing, where the global print stylesheet still shows only receipts and schedules as before.
+## Repository workflow completion, 8 September 2026
+
+This entry is the current code-status handoff and supersedes earlier open-item descriptions for the eight tasks below. Work started from synchronized `main` at `555f114`; the existing frontend and partner changes are preserved. `FRONTEND_HANDOFF.md` remains frozen.
+
+| Task | Implemented behavior | Read first |
+| --- | --- | --- |
+| Identity backfill | Stable cursor, v2 checkpoint, skipped-record reasons/counts, idempotent completed runs | `apps/web/convex/qolMaintenance.ts` |
+| Messaging queue | Bounded nested-field indexes, fair source rotation even for one-message batches, disabled-gym deferral | `apps/web/convex/messagingQueue.ts`, `messagingWorker.ts` |
+| Onboarding | Completed required tasks hide the compact banner; success follows persistence | `apps/web/src/components/onboarding/onboarding-checklist.tsx` |
+| Dated class cancellation | Authorized, atomic booking/waitlist cancellation with reason, audit and timelines; staff/member UI | `apps/web/convex/classes.ts`, `src/features/classes/cancel-occurrence-dialog.tsx` |
+| Purchasing dates | Optional gym-local expected delivery date, audited updates, overdue approved/partially received orders | `apps/web/convex/operations.ts`, `src/lib/domain/purchase-orders.ts` |
+| Checklist ownership | Eligible active branch staff, template defaults, dated overrides, handover at daily checklist and shift close | `apps/web/convex/branchChecklists.ts`, `src/features/checklists/` |
+| Marketing | Removed family-account and installment-schedule claims; qualified Arabic support | `apps/web/src/components/marketing/landing-story.tsx` |
+| Backlog | Reconciled current code completion with historical UI-pass records | `docs/13_PRODUCT_AND_OPERATIONS_TODO.md`, `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` |
+
+Verification: both TypeScript checks, canonical lint/secret audit, Convex code generation, all 242 Vitest files / 1,463 tests, the canonical production build, and the production dependency audit passed (no known vulnerabilities). Six targeted browser journeys passed across the initial run and selector-corrected rerun, including dated cancellation, delivery-date updates and individual assignment. Visual-baseline verification is recorded below. Stale ignored Next route-type caches referencing the deleted customer-signup layout were moved outside the repo; no source route was restored.
+
+Visual verification, 9 September: the selected Linux run finished with 13 passing, four flaky and one failing journey; the remaining desktop operations journey passed in isolation with snapshot updates disabled and the original tolerance. The broad Mac run was not clean across the session interruption. Eighty-six populated common captures compared within the existing 4% tolerance; the Linux Users loading-only capture was rejected and that view was recaptured locally. Its readiness check now waits for the Users action and staff content inside main, rather than the account name in the shell. The final desktop Settings run also passed (all 16 sections). The broad browser suite still needs a clean uninterrupted run; no complete CI or hosted acceptance claim is made.
+
+Decisions and limits:
+
+- Gym cancellation is available before a class starts, without recorded attendance. It cancels confirmed and waitlisted bookings without late marks or promotion; repeat calls retain the first reason. Cancelled dates cannot be finalized into attendance. There is no fee or refund because this booking flow does not create a class charge. External messages remain deferred; members see the state/reason in Rivet.
+- Purchase delivery dates are separate from supplier invoice due dates. Past dates are accepted for recording overdue orders. Draft, received and cancelled orders are never overdue; completed orders cannot change their promised date. Date changes do not alter stock or financial records.
+- A responsible person supplements the role and must be active with access to that gym branch. A template edit affects future materialization; dated runs retain their snapshot and can be reassigned explicitly. Assignment does not restrict other authorized branch staff from helping. Handover includes persisted unresolved runs from active templates in the preceding seven local dates plus today's work. It is not an all-history exception report; no retention policy was added.
+- Queue scans read at most 100 candidates per status/channel index. Disabled or quiet-hour gyms move five minutes into the future so subsequent bounded runs reach later records. Invalid/noncanonical historical send timestamps still require a separate data review; producers write canonical UTC ISO timestamps. Provider calls are not exactly once.
+- Shared calendar validation, cancellation policy, due-work selection and small UI components keep the new logic out of page bodies and avoid separate mock/server business rules. No dependencies were added.
+- The full authenticated business-day walkthrough is deferred to Hashem and his partner. Live messaging, callbacks, opt-out webhooks and push delivery remain last. No live provider activation or historical financial repair was performed. Git push is not evidence that Convex is released; see docs/12 for additive schema/index ordering and backfill checks.
+
+
+
+## Backend integrity pass, 8 September 2026
+
+- Initial isolated baseline: `a81175b81a25978700d6ad0063b53f20ee2a6fd0`. At the owner's direction, fetched and fast-forwarded the clean main checkout to `25167d5afcfec3c77fd4092ed7d72d48201492a9`, then continued directly on main. Partner changes, including message outcome timelines and manager notifications, are preserved. Implementation commits: `c8a016c`, `ef41d9d`, `1a0f83d`, `bb3c2e5`, `6ff1bf9`.
+- `analyticsQuery` now rejects impossible calendar dates with the existing `VALIDATION_ERROR` before constructing database ranges. Non-leap February 29 previously returned a plausible empty report; valid leap days remain accepted.
+- `qolMaintenance.purgeExpiredExports` excludes absent expiry keys before its 100-row limit. Previously, 100 retained metadata rows could indefinitely prevent later expired CSV bodies from being purged. Metadata and existing retention periods remain intact.
+- `messagingWorker.leaseDue` applies the batch limit after gym eligibility, preventing disabled gyms from starving either queue. It excludes unavailable organizations, rechecks the existing marketing/renewal consent rules at leasing, and records suppression through the existing attempt/timeline path without calling a provider. The renewal due-time condition now uses its existing index.
+- `messagingWorker.recordAttempt` requires the stored renewal lease token and clears it on completion. A replaced worker or repeated completion can no longer overwrite a newer attempt or duplicate its events. Automation completion also requires leased status. This protects database outcomes; it does not make provider requests exactly once or prevent a consent change after leasing from racing an already-started send.
+- `media.cleanupExpired` selects dated, due assets through the existing index before limiting either status. Undated assets previously blocked expired pending/scheduled files. Published-reference checks and the 50-asset cleanup limit remain unchanged; future and undated files are retained.
+- Verification: 32 tests across messaging, renewal jobs, automation scheduling, media authorization/cleanup, export maintenance, and analytics passed. Seven regression cases were observed failing before their fixes. Web typecheck passed at `6ff1bf9` in the clean test worktree; the main checkout has stale ignored Next route types from earlier frontend work, which were left intact. Convex typecheck and canonical lint/secret audit passed. No build, live provider test, code synchronization, seed, import, backfill, or deployment was run.
+- Review covered dispatcher/authentication/permission boundaries and sampled source paths for collections/refunds/shifts, inventory/purchasing/payables, accounting/reversals, memberships/check-in/PT/classes, CRM/offers, checklists, reports/exports/import recovery, media, platform provisioning, subscription reconciliation, and cron workers. Existing recent financial, cancellation, weekday, PT-total, and import fixes were preserved. This is source-level coverage, not exhaustive verification of every operation. No Next API route handler was found; the Convex Resend endpoint retains Svix verification and internal webhook recording.
+- Limits: full historical scans in other workers and the legacy customer-identity backfill remain outside this bounded fix set. In particular, profile-only/unresolvable rows can keep that backfill's missing-user prefix occupied. No historical tenant data was inspected or repaired. Entitlement mapping, inbound messaging and commercial-policy decisions remain unchanged. There are no required frontend/mock/shared-file changes.
+- Release requirements: see the new entry in `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`. Git publication is not a Convex release. The additive optional `renewalDeliveries.leaseToken` requires schema/functions to deploy together; no new index, generated API artifact, migration or backfill is required. Begin review with this entry, `messagingWorker.ts`, its tests, and the runbook.
+
+## Landing editorial and motion polish — 8 September 2026 (`main`)
+
+- **Less page, one story.** The landing now runs hero → the stack → a day on RIVET → accountability → built for here → members → pricing → next step. The vocabulary marquee, the "Live / One / Audited / Scoped" strip, the Modules accordion (which repeated the stack's six plates), the accountability chain graphic and the standalone network section were cut; live gyms appear inside the members section only when there are any. Copy was rewritten in plain desk language, the day lost its module tags and its weakest moment, and the header link now reads "Apply for access" and goes to `/signup`, because no walkthrough booking exists. Retired anchors `#modules` and `#network` are redirected by `resolveLandingHash` in `cinematic-header.tsx`.
+- **The pin machine moves like a pin.** `stackPoseAt` in `landing-story.tsx` is a pure function of scroll progress: withdraw until the rod clears the widest plate, travel down that clear lane, insert, with time spread by distance so the three legs join without a jump. The description and the plate switch at the moment the rod tip meets the plate edge, in both directions. The lagging animation loop is gone (a 140 ms compositor transition rounds off wheel steps), only one description is on screen at a time, a reload mid-section lands on the exact pose without replaying, and `(prefers-reduced-motion: reduce), (max-height: 600px)` releases the stage into an in-flow list in both the stylesheet and the component.
+- **The machine is drawn as the mark.** The rig is one SVG in the glyph's proportions — upright, crossbar and return stub, a narrow group of plates over a wide group, every plate a solid slab with a lower face and a pin hole — and the pin's rod visibly disappears into the hole, which shows its red end only while the pin is home. Geometry is fixed viewBox units, so the pose function, the drawing and `landing-story.test.ts` share the same numbers and nothing is measured at runtime.
+- **The hero shows the product, not a sketch of it.** `product-screens.tsx` mirrors the owner dashboard (sidebar sections from `nav-config`, topbar, greeting, the six-cell KPI strip, the Today queue and Needs attention) and the member home with its Entry QR dialog open, using the real components' classes; `scaled-screen.tsx` renders each at native size (1440 × 900 and 390 × 787) and scales it into the device frame. The members section now shows the Entry QR dialog itself at reading size. Figures are demonstration values from the preview tenant, controls are drawn rather than wired, and the QR encodes a fixed sample string, never a signed pass.
+- **Phone menu, header and fit.** Menu type is sized to the longest label, so the plate no longer scrolls sideways at 320–390px (its scrollWidth now equals its clientWidth). The top bar is a persistent translucent paper surface with a dark wordmark that turns ink only while the menu is open, with a safe-area allowance, `scroll-padding-top` for anchors in `globals.css`, and the reading hairline on its bottom edge. Deep links are re-aimed once fonts settle; menu navigation cancels stale timers, leaves modified clicks to the browser, restores the body's own overflow and returns focus; header links are inert while the menu is open. The tablet day clock no longer clips, the Arabic headline has room for its diacritics, the accountability title keeps two lines, and the footer uses two columns on tablets.
+- **Verification.** Zero-warning lint with the secret audit, the web typecheck, Vitest for the landing plus the new `landing-story.test.ts` pose and anchor tests (24 tests across the touched suites), the landing pricing Playwright journey, and a headless Chromium pass at 320, 360, 390, 768 and 1440px plus 844×390 and 1440×700: menu overflow measurements, stack fit, deep links, reduced motion, the keyboard trap, rapid toggling, scrim dismissal, a touch tap on a pricing CTA, a mid-stack reload and a reverse day scroll, all without page errors. WebKit is not installed on this machine, so Safari behaviour was not checked.
+
+## Access safety, reliability, performance, accessibility and integration review — 7 September 2026 (working-tree update)
+
+- **Open items from the earlier passes are closed.** The member record's task circles no longer complete a follow-up blind: a `follow_up`, `renewal_call` or `trial_follow_up` task opens the same *What happened?* contact form Today uses (logging the contact resolves the task through the shared helper), with *Mark done without a contact* as the secondary action; other task types still complete directly (`member-tasks-panel.test.tsx`). Finalizing class attendance now requires `operations.manage` on Convex and the mock, matching the documented manager/owner policy and the UI that already hid the button from reception (the Convex test now proves reception is refused). Moving a class to another weekday is refused while members hold its upcoming dates (the error names them); once nobody does, an untouched date disappears and a date that only carries past cancellations becomes a cancelled record, in both adapters.
+- **Denied access is not a refresh problem.** `useApiQuery` and `useRealtimeApiQuery` now withdraw a loaded snapshot when the server answers `FORBIDDEN` or `UNAUTHENTICATED` (revoked role, branch or membership, deactivated account) and report it as an error, so pages show the denial state instead of stale data behind "could not refresh · Try again"; network and other failures keep the last snapshot as before (`isAccessDenied`, two new hook tests). The server already re-derives the actor on every request (`requireActor`: active membership, accepted invitation, organization status, branch scope), so revocation reaches an open session on its next call.
+- **Every dialog returns focus.** Radix returns focus only to a `DialogTrigger`, and every dialog in the product opens from state, so closing any dialog dropped keyboard focus to the page body. The shared `DialogContent` now records the element focused when it opens and returns focus there on close, falling back to the nearest still-open dialog when that element has left the document (`dialog.test.tsx` covers the nested roster → remove case). Verified in the mock server with DOM focus and keydown events: Class details → Escape returns to its button; the roster dialog opens on its first control, the nested removal dialog opens on its reason field with the tab order reason → Keep them → Close.
+- **Arabic layout keeps values readable.** With the document in RTL, values that begin with a digit split into separate bidi runs and read backwards ("Sept 2026 8", "PM 7:00", "booked 0/16"). `MoneyText`, `DateText`, `TimeText`, `DateTimeText` and `RelativeText` now isolate their direction, and the raw date, time and count sites on the classes agenda and roster dialog, the PT workspace rows, the trainer dashboard and the member portal's class cards and cancellation dialogs do the same; the agenda was re-captured in RTL showing "8 Sept 2026", "7:00 PM", "0 waiting", "0/16 booked" with no horizontal overflow. The English copy itself is not translated; that remains the deferred localization work.
+- **PT revenue and refunds.** `pt.workspace` scanned every payment the gym ever took on each realtime update to compute package revenue; it now sums the PT charges' `paidAmount` (one indexed lookup per order). That exposed a data gap: a PT package refund created the refund payment but never lowered the charge's `paidAmount`, unlike a membership refund, so the charge (and every export or view reading it) still showed the full amount collected; `pt.package.refund` now reduces `paidAmount` by the refunded minor units while leaving nothing outstanding, because the sessions are revoked with it (the PT lifecycle test asserts 200,000 after 240,000 paid and 40,000 refunded).
+- **One class cancellation rule.** Convex, the mock and the member-facing preview now share `classCancellationOutcome` in `src/lib/domain/class-booking.ts` (only a confirmed place can be late or frees a seat); `ClassBookingStatus` is defined there and re-exported from `types.ts` so the Convex bundle can import the rule without the client type graph.
+- **Inspected and left alone.** Customer receipt, entry-pass, class and PT operations resolve ownership through the authenticated customer's memberships; the public offer view exposes only recipient name, gym, plan, price, status and brand, and responses are rate-limited by token fingerprint; exports assert branch access and are capped server-side; list page sizes are clamped to 100; the mock adapter fails closed in Production builds and demo auth is refused outside approved previews; the only server log is the structured `[rivet.server.error]` line (operation, correlation id, error name and code). Provisioning reconciles metadata-tagged Clerk records after an ambiguous response and never repeats a create; the messaging worker leases work, records every attempt and stops at the retry budget. Workspace module entitlement is enforced at the route and `workspace.module` level while server operations enforce role permissions and tenancy; gating individual operations by plan module needs an operation-to-module map that does not exist yet and is a product decision, not something to invent here. The messaging worker retries a network error that may have followed an accepted provider request (Twilio offers no idempotency key); this is documented rather than changed because a missed reminder was judged worse than a rare duplicate when the policy was set.
+- **Verification.** Focused Vitest across the changed areas (class booking Convex and mock suites, PT lifecycle, hooks, dialog, member tasks panel, PT page, member portal, Today queue, payment and sale dialogs: 58 + 180 + 20 tests), `pnpm typecheck`, `pnpm convex:typecheck`, zero-warning lint on every changed file, and mock-mode browser checks in the classes workspace (focus return, RTL capture). The Browser pane was hidden for the focus walk, so keystrokes were emulated with DOM focus and keydown events rather than real key presses. Nothing was committed or pushed from the session; the `convex/classes.ts` and `convex/domain.ts` changes were deployed by Elias on 7 September 2026 (reported in session), so no Convex deploy is owed when this lands.
+
+## Workspace continuity and phone workflow pass — 7 September 2026 (`c8c570b`)
+
+- **List views keep their place.** `src/lib/hooks/use-url-state.ts` is the one URL-state helper for list screens: `useReplaceSearchParams` (replace-style writes that drop a stale `page`), `useUrlSearchText` (a debounced search box whose settled text lives in `?q=` and is refilled by an outside URL change such as Back/Forward or a saved view, with in-flight own writes remembered so they are never mistaken for navigation), and validated readers (`pageFromParams`, `choiceFromParams`, `isoDateFromParams`) that ignore unknown or malformed URL values instead of passing them to a query. Memberships (search, status, payment status, page), Plans (`?status=archived`), Shifts & cash (drawer branch, reconciliation date, history page; a branch outside the session's scope and a non-calendar date fall back) and the Daily checklist branch now live in the URL; Members, Payments and the Audit log already did, but their search boxes were seeded once and their audit-log effect rewrote the URL from stale component state, so Back/Forward on the same page was undone — the shared hook fixes both. Memberships and Members gained a "Clear filters" action, and their empty states now separate "no matches" (with the clear action) from "no records yet" (with the next action).
+- **A stale page number no longer reads as "no matches".** `DataPagination` moves a page past the end (an old link, or filters that narrowed the set) to the last real page and never prints a range that starts after it ends; the fix is shared by every paginated list (`src/components/shared/chrome.test.tsx`).
+- **The sidebar always names a destination.** `/memberships` and `/plans`, which have no entry of their own, keep **Members** selected; `/maintenance` keeps **Stock & purchasing** selected (its header links back there). The prefix guard that kept `/members` from lighting up on `/memberships` is preserved for genuinely unrelated routes (`sidebar.test.ts`).
+- **Controls, tables and copy.** The member record's payment rows no longer look clickable while doing nothing; the money-trail type column prints "Retail sale" instead of a raw `retail_sale`/capitalised key on the Payments page and the member record (`TRANSACTION_TYPE_LABELS`); the two `text-info` references (a token that does not exist, so the "upcoming invoice" note rendered unstyled) use the muted ink; audit approval badges and the desktop shift-history badges use sentence case like their phone counterparts; the timeline and plan-status filter groups no longer claim a `tablist` role for buttons that are not tabs.
+- **Phone dialogs.** `DialogContent` sizes itself with `dvh` instead of `vh`, so on a phone the Cancel/Submit footer of a tall dialog is not pushed below the visible area while the browser chrome or the keyboard is showing.
+- **Verification.** `pnpm typecheck` clean, zero-warning lint on every changed file, `git diff --check`, focused Vitest: the new `use-url-state`, `chrome` (pagination) and memberships URL-state suites plus sidebar, nav-config, checklists, pipeline, queues, member-header and finance-nav (49 tests). Mock-mode browser inspection through the `web-mock` server at 1280px: Members, Memberships, Plans, Maintenance, Audit, Payments and Shifts & cash opened from filtered URLs with the right controls, sidebar item and results; a Back/Forward-style URL change on the Audit page (popstate emulation) updated the filters without being rewritten; bogus branch and date values fell back safely. At 390px (touch emulation): the Members toolbar (44px controls, Clear filters in the grid), a member record (44px header actions, horizontally scrolling section tabs, no horizontal overflow) and the collect-payment dialog (488px tall, footer and Collect button inside the viewport, computed max-height 796px), then Memberships, Payments, Shifts & cash and Audit with no horizontal overflow. The Browser pane was hidden for part of the phone walk, so those steps were driven and measured with in-page JavaScript rather than pointer actions and screenshots. Playwright (mock server, credential-free): `workflow-pass-5.spec.ts` and `workflow-pass-1-visual.spec.ts`, the two suites whose screenshots cover the changed pages, ran 16 journeys; 12 passed first time and the 4 failures were rerun in isolation and passed: the audit journey's final URL assertion depended on a fixed key order that the shared writer no longer produces (the assertion now checks the same facts order-independently), the 768px oversight sweep and the Support journey were dev-server timing, and the phone "Add member" capture failed twice with an identical diff because the persistent `.next-playwright` webpack cache was serving Tailwind CSS that predated the new `dvh` class (the dialog rendered with no max-height at all); with that dist dir cleared the capture matches the committed reference, so no screenshot reference changed. The full suite was not run locally because a partner agent was editing the same checkout; CI remains the full-suite gate.
+- **Touch targets on the list toolbars (closed by the integration session).** The search inputs and filter selects on the Memberships, Payments and Audit toolbars, the Shifts & cash branch picker and its reconciliation date field now carry the shared `[data-touch-target]` attribute, so on a coarse-pointer device they meet the 44px target DESIGN.md requires while keeping their compact 32–36px look on a mouse; verified with touch emulation at 375px in the mock server (every control 44px, no horizontal overflow on the four pages). The committed 390px references are unchanged because the width sweeps that produce them run without touch emulation, so no Linux regeneration was needed. Timeline and check-in tab pagination inside the member record stays component state (it resets with the tab, by design). The member record's task circles still complete without an outcome (recorded as a deliberate limit by the sales pass). A partner agent's uncommitted work (reception page and dashboard, `use-api`, `use-realtime-api`, `app-providers`, a new `lib/api/scope.ts`, the member-portal membership detail) was present in the checkout and left untouched; this pass's files are `src/lib/hooks/use-url-state.ts` (+test), `src/components/shared/chrome.tsx` (+test), `src/components/shared/status-chip.tsx`, `src/components/shell/sidebar.tsx` (+test), `src/components/ui/dialog.tsx`, `src/features/members/member-tabs.tsx`, and the `members`, `memberships` (+test), `payments`, `payments/shifts`, `audit`, `plans` and `checklists` pages. No Convex file, authorization rule, money behavior or Production data changed in this pass.
+- **Release (integration session).** Committed by explicit path list as `c8c570b` (this pass, including the touch-target closure above) and `2df69b2` (the financial integrity pass below) on Elias's instruction, and pushed to `main` with the handoff. The integrated tree passed both TypeScript checks, the zero-warning lint with the secret audit, `git diff --check`, the full Vitest run (236 files / 1,425 tests), the Production build, and the pass-5 390/1440px sweeps plus the pass-1 phone captures (5 of 5, no reference rewritten). The tree had been quiet for more than ten minutes before the commits were cut, and a coverage check confirmed every changed or new path belonged to one of the two passes. `main` moved `51903ad..e89ecee`; GitHub Actions [run 34142708429](https://github.com/hashemnusair/Rivet/actions/runs/34142708429) passed every job for `e89ecee`, with the credential-free browser suite at 156 passed / 4 flaky / 14 skipped in 39.9 minutes (the flaky four were two width sweeps, the pass-4 360px sweep and the supplier-payment journey, all dev-server timing that passed on retry). Vercel Production for `e89ecee` (GitHub deployment 6312560343) reports `success` at the protected https://rivet-boljsm643-nusairhashem04-gmailcoms-projects.vercel.app; www.rivetjo.com and the app and dashboard login pages return 200, the root domain redirects with 308 and the Production design gallery returns 404. Convex for the financial pass was deployed by Elias before the push, so nothing is owed.
+
+## Financial integrity, stock and asynchronous correctness pass — 7 September 2026 (`2df69b2`)
+
+- **Cash refunds and voids of membership payments now follow the drawer.** Convex `payments.refund` refuses a cash (or drawer-affecting) refund with `NO_OPEN_SHIFT` unless the branch that took the payment has an open shift, and records the refund against that shift (one lookup, previously two and `shiftId` was simply left empty, so the cash outflow never reached a shift close). `payments.void` refuses to void a cash payment once the shift that counted it has closed (`NO_OPEN_SHIFT`, "Issue a refund instead"), the rule retail sales already applied; card, CliQ and transfer money never touched a drawer and is unchanged. The mock adapter applies the same two rules through one `methodAffectsCashDrawer` helper and now honours the refund/void `idempotencyKey` like Convex (identical retry replays the original receipt; the same key with different figures is a `CONFLICT`). New `convex/domain.cash-drawer.test.ts` and two mock tests cover both adapters.
+- **Refund and void dialogs mint one idempotency key per draft and per opening** (`receipt.client.tsx`), matching the collect-payment dialog: the dialogs stay mounted between uses and previously kept one key for the life of the page, so a second refund with the same amount and reason silently replayed the first receipt while reporting success. Each opening also starts from an empty form. The inventory transfer dialog uses the same per-draft key instead of minting one per click, so a retry after a lost response replays the transfer rather than moving the stock twice.
+- **Approving a purchase order no longer hides shelf stock.** Both adapters added the ordered quantity to `committedQuantity`, and `availableQuantity = onHand − committed` fed checkout, transfers, low-stock alerts and the product form's "Available quantity", so a product with an open order showed reduced or negative availability and could not be sold. Approval now touches no balance; receiving drains any legacy committed count left by orders approved before this fix (never below zero); product deletion relies on the direct open-order check that already existed. `InventoryBalance.committedQuantity` is documented as an outbound reservation only. Regression tests in `domain.operations.test.ts` and the mock suite approve a 50-unit order, sell from the 4 on hand, and receive.
+- **Checkout releases the sold units' cost from the running valuation.** Both adapters reduced `quantityOnHand` at sale time but left the balance's `totalCost` untouched, so the remaining stock's value inflated after every sale and a return (which does add cost back) double-counted it. The sale now takes its proportional share out (and records it on the sale movement); the mock's refund and void restore paths add the returned cost back through one `restoreBalanceCost` helper as Convex's movement path already did. Covered by the same tests (4 units at 500 → sell 3 → 500 left → return 3 → 2,000).
+- **Exports use the gym calendar for `from`/`to`.** Convex `exportMatchesFilters` compared the UTC timestamp with the date filter, so a late-evening Amman payment landed on the previous day's export; it now uses `instantFallsInTenantDateRange` like the transaction list (new test in `domain.exports.test.ts`). The mock export ignored date filters altogether and now applies them to members, leads and payments. The export center no longer toasts "Prepared 0 rows." and attempts a download for a job the server rejected as oversized; it shows the server's failure message instead.
+- **Shared mutation and realtime mechanics.** `useApiMutation` awaits the caller's `onSuccess`/`onError` (TanStack awaits the wrapper, but the wrapper dropped the caller's promise), so `isPending` and a dialog's Submit button now stay busy until the follow-up invalidation or navigation has finished; a failure inside that follow-up is logged and shown as "Saved, but this screen could not refresh" rather than as a failed write that invites a second submission. `useRealtimeApiQuery` drops to "connecting" when its key changes (previously a live Convex watch left the ordinary query disabled for the new key) and re-binds its watch on an API-scope change: new `src/lib/api/scope.ts` carries an epoch the providers bump after branch, organization, sign-in, sign-out and demo-role changes, because a Convex watch is bound to the organization and branch captured when it was opened and keys such as the PT workspace, "my leads" or the gym profile carry no branch. Four new hook tests cover pending-state ordering, follow-up failure, scope re-binding and key change.
+- **Query keys that invalidation could see.** The reception dashboard's shift totals, occupancy and check-in panels used ad-hoc keys (`current-shift-totals`, `checkins`) outside the central factory and outside `INVALIDATE_ALL`, so in mock mode they stayed stale after a payment or check-in; they now use `qk.shiftTotals`, `qk.occupancy` and `qk.checkIns`. The member portal's PT panel (`["customer", …]`) is invalidated explicitly after booking, cancelling and package requests. The reception shift strip's "expected" figure now comes from the same `authoritativeExpectedCash` formula as the Close shift dialog, including supplier cash out and returned.
+- **Member import stops honestly.** A failed or lost chunk previously left the page with a stale cursor (the next click hit "Import cursor is stale") and an unhandled rejection; the page now reloads the import from the server, shows "Import paused after row X of Y … N members have been created so far; rows after that point were not touched", and Resume import continues from the server's cursor. The undo loop refreshes its state the same way.
+- **Inspected and left alone.** Convex payment collection, retail refund/void, supplier payment record/reverse, payables projection, purchase-order receiving replay, member-import preview/commit/undo transactions, the staff export size cap and the finance overview's labelled 1,000-row cap were traced and found sound; the close-shift dialog already gates on authoritative server totals. Not examined: the management-statement figures beyond the forensic audit's coverage, the accounting posting queue, and the platform billing exports.
+- **Verification.** `pnpm typecheck`, `pnpm convex:typecheck`, zero-warning lint and `git diff --check` on every changed file; focused Vitest: the new cash-drawer suite, finance-lifecycle, money matrix, operations, inventory-transfer, payables, accounting and exports Convex suites (77 tests), the full mock adapter suite (167), the shared-hook suites (10), and the receipt, import page, checkout, shift dialog, payment/adjustment dialog, operations center, export presentation and keys suites (63). Mock-mode browser inspection through the new `web-mock-finops` launch entry (port 3510, `NEXT_DIST_DIR=.next-playwright/finops`; Next added the matching `tsconfig.json` include entries): the reception shift strip's expected 590.000 JOD matches the Close shift dialog's Expected with supplier cash on its own line; as Owner, receipt R-2477's Refund dialog reopens empty after a cancelled draft, a 20.000 partial refund produced linked receipt R-2482 with the Part-refunded status and the void action withdrawn; the export center with `from`/`to` in the URL prepared 17 payment rows. No Playwright suite was run. A partner agent's uncommitted URL-state and phone-workflow pass (its section above; `sidebar`, `chrome`, `dialog`, list pages, `use-url-state`, `member-tabs`, `payments/shifts`, `e2e/workflow-pass-5.spec.ts`) shares this checkout and was not staged or altered. **Convex changed** (`convex/domain.ts`, `convex/operations.ts`, no schema change): Elias deployed these on 7 September 2026 before they landed on `main` (reported in session; the deploy log and health check were not captured by a session). No Production data was touched.
+
+## Class and personal-training workflow pass — 7 September 2026 (`421c8c9`)
+
+- **Leaving a waitlist is never a late cancellation.** Convex `cancelBooking` applies the cutoff only to a confirmed place; leaving the waitlist inside the cutoff is recorded as `cancelled` without the "after the cutoff" timeline copy, and the mock's member cancel and staff removal now share one helper with the same rule. A seat freed by a late cancellation still goes to the first person waiting (the mock previously skipped promotion on late cancels, promoted when a *waitlisted* member was removed, and let staff overbook a full class with a reason). Staff additions to a full class join the bounded waitlist in both adapters; a staff removal requires the audit reason in both adapters and is idempotent on repeat.
+- **The timetable and the dated roster agree.** Editing a weekly class (name, capacity, audience, notes, photo, regular coach, and the time when the weekday is unchanged) flows into every upcoming dated class that has not started, in Convex and the mock; a reason-gated substitute coach stays in place and booking rows keep their indexed start time. Seats opened by a larger capacity are filled from the waitlist in FIFO order with the usual notice and timeline entry; shrinking below the people already booked is refused naming the date. A weekday change leaves existing dated bookings where they are, because moving commitments silently is a policy decision, not a sync.
+- **Availability is truthful before the tap.** The member timetable marks cancelled, ended and already-started classes as not bookable with the reason (the mock also reports a full class or waitlist instead of failing after the tap); a repeated member Cancel reports the cancellation already recorded instead of "booking not found". Staff adding a member at the desk see whether they were seated or waitlisted and at which position; removals open a reason dialog and the toast names who moved up from the waitlist; the agenda distinguishes ended-but-unfinalized and in-progress classes; the dated roster hides Add/Remove once the class has ended; "Who booked" and the timetable prefer the next date still to come.
+- **Members see what a cancellation will do first.** The class card shows the free-cancellation deadline or that cancelling now counts as late (no fee), and a confirmation dialog states the outcome before the request; leaving the waitlist is worded as such. One shared preview (`src/lib/domain/class-booking.ts`) drives the copy. The class timeline events Convex already wrote (`class_booked`, `class_waitlisted`, `class_waitlist_promoted`, `class_cancelled`, `class_cancelled_late`) are now in `TimelineEventType` and the feed's icon map, and the mock records them.
+- **PT sessions never lose their credit's context.** `PtMemberExperience.upcomingBookings` (staff member record and member portal, both adapters) now includes every reserved or confirmed booking, including a session that started without an outcome, and `PtMemberExperience` and `PtWorkspace` carry the gym's `cancellationCutoffHours` (additive contract fields). The staff PT page lists "Needs an outcome" above "Upcoming sessions", offers Complete and No-show only after the start (the server rule; the mock now refuses earlier outcomes as Convex does), and its cancel dialog lets staff record a gym cancellation (credit returned) or a member-requested one (the cutoff decides) with the ledger consequence stated and the toast repeating the server's result. The trainer dashboard carries earlier days' unrecorded sessions into its outcomes list; the member portal labels bookings awaiting an outcome, hides Reschedule inside the cutoff, and confirms a cancellation with the credit consequence; "Next booking" skips sessions awaiting an outcome.
+- **Verification.** Zero-warning lint on every changed file; `pnpm typecheck` and `pnpm convex:typecheck` are clean for this pass's files (the tree's remaining `tsc` errors are in the parallel front-desk pass's untracked `MockGymOSApi.follow-up-loop.test.ts`). Focused Vitest: the classBookings, classes and personal-training Convex suites, the mock adapter suite, the new class-booking and extended PT helper suites, and the PT page and member-portal component suites ran 207 passed / 1 failed; the failure (mock Today-queue follow-up count, 5 instead of 3) is produced by the parallel pass's uncommitted follow-up-loop work in the same mock file, not by this pass. Mock-mode browser inspection through the new `web-mock-classes-pt` launch entry (port 3410, own dist dir): staff "Who booked" desk add ("Yara Sweidan booked."), reason-gated removal and its toast at 1280px; member booking, the free-cancellation deadline, the confirmation dialog and cancellation at 1280px and 375px; a staff PT booking from the member record, the PT workspace row with outcome controls held back until the start, and the cancel dialog's gym-or-member choice ending in "Session cancelled. The credit was returned." (the mock database is per-tab memory, so those steps used in-app links rather than full page loads). Playwright (mock server, credential-free): `classes.spec.ts` plus the class agenda, attendance review and PT tests of `workflow-pass-2.spec.ts` passed 7 of 7 in 1.1 minutes; the full suite was not run because a partner agent was editing the same checkout. **Convex:** the changed `convex/classes.ts` and `convex/domain.ts` were deployed by Elias on 7 September 2026 (reported in session; the deploy log and health-check output were not captured here). No Production data was touched.
+- **Deliberate limits.** Attendance finalization stays reachable on the server for any roster-permission role while the UI shows it to managers only, as before (the documented policy names a manager/owner; changing the server rule is a permissions decision). The mock's customer class flows still resolve the member through the demo persona link. A PT session awaiting an outcome cannot be produced in the mock preview without time travel, so that grouping is covered by the PT page component test and the Convex/mock adapter tests.
+- **Release.** Pushed directly to `main` on Elias's instruction on 7 September 2026 as three commits: `7c23b3a` (the front-desk journey, sales and retention loop, and checkout and collect-payment passes below, plus the shared files that also carry this pass's PT-context hunks), `421c8c9` (this class and personal-training pass) and the handoff reconciliation. The integrated tree passed both TypeScript checks, the zero-warning lint with the secret audit, the full Vitest run (232 files / 1,400 tests), the 14 repository-safety tests, the Production build and `git diff --check`; no dependency manifest changed, so the earlier clean audit stands. The mock Today-queue test that failed mid-flight during this pass passes in the integrated tree. No files changed in the checkout for fifteen minutes before the commits were cut. GitHub Actions [run 34128871981](https://github.com/hashemnusair/Rivet/actions/runs/34128871981) for `90fa242` passed the static job (typechecks, lint, unit tests, build, audit, clean worktree) and the Convex generated-code check; its credential-free browser job ran 155 passed / 3 failed / 2 flaky / 14 skipped in 36.7 minutes. The two flaky tests were dev-server aborts that passed on retry. The three failures were the member-portal class spec, which clicked Cancel and expected the toast at once (this pass's confirmation dialog now sits in between, so the spec confirms in the dialog), and the pass-2 retention-detail captures at 390 and 1440px, which the sales and retention pass's taller at-risk panel (Renew shortcut, lapsed-snooze wording) outgrew by 26–27px; both references were regenerated locally at exactly the sizes the runner reported (358×341 and 912×302) and the three tests pass locally in 1.2 minutes. Fix commit `28df6a4`, pushed with the handoff as `7ee8818`; GitHub Actions [run 34132867599](https://github.com/hashemnusair/Rivet/actions/runs/34132867599) then passed every job for `7ee8818`, with the credential-free browser suite at 158 passed / 2 flaky / 14 skipped in 42.1 minutes and the worktree clean after Playwright. Vercel Production for `90fa242` (GitHub deployment 6309977972) and for `7ee8818` (deployment 6310713389) both report `success`, the latter at the protected https://rivet-q9325ai4l-nusairhashem04-gmailcoms-projects.vercel.app; www.rivetjo.com and the app and dashboard login pages return 200, the root domain redirects with 308 and the Production design gallery returns 404. The release is complete; the sessions that started editing this checkout afterwards (finance and operations surfaces, a URL-state hook, the `web-mock-finops` launch entry) are separate, unreleased work.
+
+## Checkout and collect-payment polish — 7 September 2026 (`7c23b3a`)
+
+- **One money-input policy, no silent reinterpretation.** `apps/web/src/lib/utils/money.ts` now exposes `readMoneyInput(raw, currency)` (and `moneyInputError`), which every typed amount goes through: Western digits with Arabic-Indic digits and the Arabic separators translated one-to-one, a dot for decimals, commas or spaces only as groups of three, at most the currency's own decimal places, no sign, and the gym's currency only. "1,2", "1.250,000", "1e3", "USD 40", "-40" and "40.0005" (JOD) are rejected with the rule they broke instead of becoming 12, 1.25, 13, JOD 40, a credit or a rounded amount; `parseMoneyInput` keeps its `Money | null` contract on top of the same rules. `toMajorString` prints minor units at the currency's precision with no grouping and replaces the hard-coded `toFixed(3)` in checkout, the collect-payment dialog, the sale dialog, the quick membership step and the staff receipt. The collect, sale, quick-membership and refund forms show the reason inline, keep the typed text, and no longer fall back to the full total, the base price or "no discount" when the text cannot be read.
+- **Collect payment confirms the stored fact and stays tied to the request.** The dialog names the invoice it is collecting even when there is only one, refuses to fall through to another invoice when the one it was opened for is no longer outstanding, labels amounts in the charge's currency, and keeps one idempotency key per unchanged draft so a retry after a failed request replays instead of paying twice (the key rotates when amount, method, reference, invoice or desk changes, and on every opening). While the request is in flight the Cancel button, Escape and the overlay are inert. On success the same dialog shows the server's receipt: number, time, desk, amount, method and reference, status chip, invoice, what is still owed and who recorded it, with an "Open receipt" link and Done; card, CliQ and bank-transfer collections say that RIVET recorded the payment and did not charge or confirm settlement. Reception, the member record, PT and the Payments page all keep the dialog open on that confirmation; the Payments-page picker now passes the operator's concrete branch as the desk taking the money. `onCollected` still fires as soon as the payment is recorded.
+- **Checkout.** Cart lines take a typed quantity (whole numbers only, clamped to the shelf, empty or zero keeps the line, Arabic digits read correctly) beside the existing +/− buttons; the completion screen adds the issue time, branch and stored status, and says when a CliQ or card payment was recorded rather than verified.
+- **Receipts.** The staff receipt prints amounts at the currency's precision, names the currency from the stored payment instead of a hard-coded "JOD · Jordanian Dinar" line, prints the stored void reason for retail sales too (previously "VOIDED — " with nothing after it), and states full or partial refunds on paper. The refund dialog reads its amount under the money policy in the payment's currency, rejects malformed text and over-refunds before calling the API, and the refund, retail-refund and void dialogs cannot be closed while their request is in flight.
+- Verification: focused Vitest runs (money policy, collect-payment dialog including retry-key reuse and the in-flight guard, checkout typed quantities, the new staff receipt test, reception, sale dialog, quick membership, member header, customer receipt), zero-warning lint on the changed files, and mock-mode browser inspection of the checkout (typed quantity, completion, receipt) and collect-payment flow. `pnpm typecheck` reports only errors in a partner agent's in-progress class/PT files (`MockGymOSApi.ts`, `booking-outcome-confirmation.tsx`); none are in the files of this pass. No Convex change, no deploy, no Production data touched. Audit and timeline summary strings still hard-code three decimals on both adapters; that is display text, not money storage, and was left for a dedicated pass.
+
+## Sales and retention loop pass — 7 September 2026 (`7c23b3a`)
+
+- **A logged contact is the follow-up.** `logMemberContactAttempt` / `members.contact` and `logContactAttempt` / `leads.contact` now resolve the actor's open `follow_up`, `renewal_call` and `trial_follow_up` tasks for that person through one shared helper (`apps/web/src/lib/crm/contact-outcomes.ts`): a next date moves the latest task and closes duplicates, no date closes them all with `Contact logged — <outcome>` (timeline `task_completed`), and a member task is created only when none exists. Owners and managers resolve anyone's task, matching who may complete it from Today. Before this every WhatsApp handoff and every "next follow-up" stacked another `Follow up — Name` task.
+- **Today shows every due follow-up once, with the person attached.** `TodayQueueItem.subject` (additive) carries the lead or member; open leads whose own `nextFollowUpAt` is due appear as `lead-follow-up:<id>` items when no task represents them, linking to `/crm/leads/<id>?action=contact`. "Done" on a follow-up about a person opens *What happened?* (the contact form) instead of closing blind; "Mark done without a contact" remains. **Convex defect fixed:** the dashboard filtered tasks by a branch field task records never carry, so a selected branch emptied the Today tasks and the overdue KPI; tasks now take the branch of their member or lead.
+- **Truthful contact language everywhere.** One label set (`describeContactOutcome`) replaces "called"/"contacted"/raw snake_case on at-risk rows and panel, renewal rows and panel, pipeline cards and the lead record; WhatsApp handoffs read "WhatsApp opened · not confirmed". The contact form makes the outcome an explicit choice (no default), suggests a visible retry date for no answer (2 days) and callbacks (1 day) without overriding a typed date, refuses past dates, and sends a stage only when the lead was reached, so "No answer" no longer pins a new lead to `new` or a booked trial to `attempted` (the pipeline no longer forces `stage: "attempted"` either).
+- **Wrong screens and dead ends.** The at-risk panel names a lapsed snooze and adds Renew / Collect shortcuts to the exact member dialogs; a Today link to a member outside the current at-risk page explains itself and links to the record instead of opening nothing; the reception "Trial follow-up queue" shortcut goes to Leads, not Retention; the member record's "Open tasks" panel asked for the whole gym's open tasks (`TaskListQuery.memberId`/`leadId` added; both adapters filter) and now also offers WhatsApp and Log contact, with `?action=contact` opening the dialog on both the lead and member records.
+- **Closing a lead leaves one trail.** `updateLead({ stage: "lost" })` (the lead record's "Not sold") now requires a reason, clears `nextFollowUpAt`, cancels open lead tasks and writes the `lead.lost` audit fact exactly like the pipeline path; the mock now requires `members.write` for member contacts as Convex does.
+- **WhatsApp and message truth.** A blocked popup logs nothing and offers a manual link that logs on click; a failed log keeps the draft with *Retry logging*; the timeline body keeps the prepared text. The offer panel records the channel actually used (WhatsApp handoff vs. shared by hand). The outbound worker writes a `message` timeline event for every terminal outcome (*accepted by the provider*, never "delivered"; *failed* after retries; *not sent* with the reason), renewal failures now notify owners/managers like automation failures, and failure notifications link to the person instead of Settings. Automation quiet hours defer in the sandbox ledger too instead of suppressing.
+- Verification: both TypeScript checks (the only remaining web errors are another agent's in-progress class-timeline and PT work), zero-warning lint on every touched file, `git diff --check`, and the focused Vitest files (new `convex/domain.follow-up-loop.test.ts`, `src/lib/mock/MockGymOSApi.follow-up-loop.test.ts`, `src/lib/crm/contact-outcomes.test.ts`; updated worker, contact form, WhatsApp, queues, pipeline, lead record and Today tests). Mock-mode browser inspection at 1280px and 390px covered the Today outcome dialog (choose an outcome, submit, the row leaves the queue), the at-risk row/panel labels and shortcuts, the relocated missing-member notice, the pipeline card labels, the member record's contact actions and `?action=contact`, and the lead `?action=contact` deep link; `e2e/today-queue.spec.ts` (updated for the dialog) passed both journeys at 390×844. No other Playwright suite was run for this pass. The Convex changes in `convex/domain.ts`, `messagingWorker.ts` and `automations.ts` were deployed by Elias on 7 September 2026 after this pass; the deploy was not run or verified from this session. No Production data was touched. Not done: the member record's task circles still complete without an outcome (the Log contact action beside them is the recovery), and the renewal/marketing consent split (utility templates that still require explicit opt-in) is a policy decision left as is.
+
+## Connected front-desk journey pass — 7 September 2026 (`7c23b3a`)
+
+- **Lookup can no longer act on the wrong person.** Both adapters resolve a reception query through one shared helper (`apps/web/src/lib/members/lookup.ts`): a complete member number, entry-pass token or complete phone number identifies one person; a shorter fragment must match exactly one record, otherwise the preview returns `candidates` and no decision, and the console shows a pick list whose choice fills the lane with that person's number. Profiles merged into another record are excluded from the Convex preview. `CheckInPreview.candidates?: MemberSummary[]` is an additive contract field.
+- **Decisions explain themselves.** A term that has not begun yet reports the new reason code `MEMBERSHIP_NOT_STARTED` with its start date instead of "expired, renew"; the reception facts cell reads Starts/Expired/Expires by status. A repeat scan inside the duplicate window renders as "Already checked in at HH:MM by <actor>. No second visit was recorded." from the live attendance log rather than as a red denial; managers keep a secondary "Record another entry" override. Override check-ins now carry their reason on the mock timeline as they already did on Convex.
+- **The recorded verdict stays truthful.** After collecting or renewing at the desk, the committed verdict keeps its time and decision but refreshes its balance, plan and visits from the server preview. A committed check-in leaves the lane text selected so the next scan replaces it; an Enter that arrives before the verdict commits only when the server matched one person by a complete number or pass, never a typed name.
+- **Cash goes into the right drawer.** `CreatePaymentInput.branchId` and the sale/renewal `payment.branchId` name the desk taking the money (default: the member's home branch; access asserted; cash still needs that branch's open shift). Reception passes its branch and the member record passes the operator's concrete branch. Reception no longer disables Collect when no shift is open: the payment and sale dialogs disable cash, preselect a non-cash method and say why.
+- **Record, reception and Today agree on renewal.** The member record ranks terms with the server's rank (`pickCurrentMembership`), renews from the latest non-cancelled term (`pickRenewalTarget`) so expired and depleted terms renew with lineage exactly as reception does, shows "ended N days ago" / "starts in N days", and names an already-sold successor ("Already renewed · next term …"). Reception sells a fresh membership instead of offering a doomed renewal when the only term is cancelled. The Today `?action=renew` link now opens the dialog for expired members.
+- **Freeze previews match what is persisted.** The freeze dialog proposes at most the remaining allowance, explains allowance, term-window, before-today and minimum-day violations before submitting (the server still decides), and previews the resulting status. "End freeze early" is offered only for a freeze already in progress; the header states "frozen until" or "freeze scheduled". A phone typed at reception that matches nobody prefills the new member's phone, not their name.
+- Verification: both TypeScript checks, zero-warning lint and secret audit, the full Vitest run (227 files / 1,329 tests, including the new lookup, reception, dialog, mock and Convex regression checks), `git diff --check`, and mock-mode browser inspection at desktop and 900px of the reception lane (candidates, scanner Enter, repeat scan) and the member record (expired renewal, freeze dialog, sold successor). No Playwright suite was run for this pass. **Convex:** the `convex/domain.ts` changes (preview candidates, merged-profile exclusion, `MEMBERSHIP_NOT_STARTED`, payment branch) were deployed by Elias on 7 September 2026 together with the later passes' Convex changes; the deploy was not run or verified from a session. No Production data was touched.
+
+## Platform, authentication and public product states UI pass — 6 September 2026
+
+- **Pass 7 is approved, merged and live at `4996a01`.** The merge was approved on 6 September 2026 with no correction batch, together with Pass 6. Work began from fetched `origin/main` at `b86f146` (the Pass 5 closure) after a clean-tree check; the two pre-existing stashes were left untouched. The Pass 6 Settings work ran in parallel in this same checkout, so every Pass 7 commit staged only its own paths and touched no shared component, Settings file or Pass 6 evidence. Scope is exactly the tracker's Pass 7 list: the nine platform console routes, the sign-in portals and invitation route, the gym application, the legacy sign-up and onboarding redirects, the owner's agreement and getting-started pages, the public offer link, the legal pages, and the offline, not-found and error states.
+- **The console is one product surface with one status language.** Every platform page shares `PlatformPage` (workspace padding, 1480px ceiling), the paper canvas, the 26px `PageHeader` and 8px hairline panels; the square panels, sunken canvas, 30px titles, "Network control" eyebrows, hover shadows, night-tinted facts and the four references to a non-existent `info` colour are gone. `platform-status.tsx` gives tenants, applications, invoices, support cases and email deliveries the same sentence-case badge vocabulary. Signal red is limited to one exceptional commit per screen (Bill a gym, Confirm & bill, Provision gym workspace); routine primaries are ink. The overview leads with "Needs attention" links into the console filters that resolve them; the gym directory (`?status=&q=`) and application queue (`?status=`) are URL-backed with pressed pills; Agreements and Email log sit inside the frame with real loading states; the gym record formats its renewal date and no longer stretches its columns; billing leads with the past-due notice and Outstanding; support cases carry mono IDs beside Manrope gym names and a labelled reply field.
+- **Sign-in, invitations, application and error states.** The auth chrome's footers and the night panel's signature are Manrope sentence case; the portal tile is one neutral mark (signal stays on the admin portal's single action); the verification card is flat; an invitation opened while signed out after its account exists says "This invitation was already accepted" with a Sign in action (new component test) instead of spinning; the gym application leaves the marketing grid, ink frame and shadow for one hairline panel with ink selection states and an ink submit; the not-found page offers Go back and Open RIVET (sign-in routes by role) instead of a dashboard link; the error boundary uses the page-title scale.
+- **Verification.** Both typechecks, the canonical zero-warning lint with the secret audit (the local run had to exclude the parallel session's untracked `.next-pass6` build output, which CI does not have), 225 Vitest files / 1,301 tests (5 new), 14 repository-safety tests, the 67-page Production build with no tracked file changed, the dependency audit and the diff check passed. The Pass 7 browser suite passed 29 of 29 in one run: four tests per width at 360, 390, 768, 820, 1280 and 1440px with 36 deterministic references, plus five journeys. The full credential-free suite ran 140 passed / 20 failed / 14 skipped in 45 minutes on a laptop shared with the Pass 6 session; every failure was a dev-server navigation abort or a click landing before hydration, and all 20 passed when their spec files were rerun alone, after `pass-4-login-member-390.png` was realigned for the shared sign-in chrome and the design-system checkpoint's `platform-gyms-desktop.png` was regenerated. GitHub Actions run 34047242595 generated and verified the eighteen `pass-7-*-390-linux.png` references and the realigned `pass-4-login-member-390-linux.png` on Ubuntu; its references for the earlier passes were byte-identical to the committed ones. GitHub Actions run 34048045890, dispatched on the review branch at `d88fdbb`, then passed every job on a clean runner, including the full credential-free browser suite (3 flaky,14 skipped,143 passed). The first runner attempt exposed that `/login/accept-invitation` crashed in a build without a Convex URL (the credential-free CI run), which `8358ac0` fixes by rendering the link states that need no identity service on their own.
+- **Deliberate limits.** A live public offer cannot be reached in the mock Preview (seeded offers carry no public token and the mock database is per-tab memory), so its states are covered by the offer component's fixtures while the browser suite checks the unavailable link; the shared onboarding checklist is left as Pass 4 approved it; the marketing header on `/signup` keeps its signal call to action, so the form submit is ink; seeded support cases have no timestamps or creator, so the inbox omits them rather than printing filler; the Impeccable skill is unavailable here, so an equivalent banned-pattern scan ran over the changed targets (remaining hits are mono references, the gym monogram, a pill count numeral, the floating search menu's popover shadow and a code comment) and the tracker's detector checkbox stays unticked. A `web-mock-pass7` launch entry (port 3310, `NEXT_DIST_DIR=.next-playwright/pass7`) lets a second session run its own mock server without sharing the default build directory; Next added the matching `tsconfig.json` include entries.
+- **Preview.** https://rivet-ebfqypj7c-nusairhashem04-gmailcoms-projects.vercel.app (GitHub deployment 6295612990, READY, built by the Vercel Git integration from review branch `review/ui-workflow-pass-7` at `8358ac0`, protected, synthetic mock data; the earlier deployment 6295389058 at `e94f004` is the same build without the invitation-route fix)
+- **Release verification.** `main` moved `b86f146..4996a01` on approval, carrying Pass 6 and Pass 7 in one fast-forward: the Pass 6 Settings branch tip `31f9bf7` was merged into the Pass 7 tip `e2871f5` in a separate worktree as `4996a01` (only `CURRENT_STATE.md` overlapped; both sections were kept). The integrated tree passed both typechecks, the canonical zero-warning lint with the secret audit, 225 Vitest files / 1,302 tests, the 67-page Production build with no tracked file changed and the diff check (neither pass changed a dependency manifest, so the earlier clean audit stands), and Actions [run 34053140586](https://github.com/hashemnusair/Rivet/actions/runs/34053140586) passed every job for `4996a01` on the integration branch, with 157 credential-free browser journeys passed, 3 flaky and 14 credential-gated skips in 51 minutes. Actions [run 34055955876](https://github.com/hashemnusair/Rivet/actions/runs/34055955876) passed every job for the pushed SHA, and Vercel Production (GitHub deployment 6297229775, https://rivet-jxjoqobfs-nusairhashem04-gmailcoms-projects.vercel.app) is READY: www, app and dashboard login return 200, the root domain redirects with 308, the Production design gallery returns 404, and the platform console and gym application routes return 200. Neither pass touched `apps/web/convex/**`, so no Convex deploy was owed. The review and integration branches are deleted. The tracker's Pass 6 and Pass 7 sections carry the same record. No further pass is started; the next one waits for explicit authorization.
+- Read `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` and `docs/ui-evidence/pass-7/README.md` first. No Convex schema, backend contract, authorization rule, money behavior, workflow policy or Production data changed in this pass.
+
+## Settings UI pass — 6 September 2026
+
+- **Pass 6 is approved, merged and live at `4996a01`.** The merge was approved on 6 September 2026 with no correction batch, together with Pass 7. Work began from fetched `origin/main` at `b86f146` (the Pass 5 closure) after a clean-tree check; the two pre-existing stashes ("codex-crm-support-member-pass", "codex: hold roadmap feature batch before syncing main") were left untouched. A partner agent worked on Pass 7 (platform, authentication and public product states) in this same checkout at the same time; its uncommitted platform files, the `docs/ui-evidence/pass-7` folder and its `web-mock-pass7` launch entry were preserved and never staged by this pass. Scope is exactly the tracker's Pass 6 list: the Settings shell and its sixteen sections.
+- **Every section starts the same way and saves the same way.** `src/features/settings/settings-layout.tsx` now owns `SettingsSection` (a 20px heading that matches the rail label and the phone picker, one sentence of context, the section's primary action), `SettingsPanel` (15px panel titles, optional control), `SettingsToggleRow` (a divided 44px switch row with a hint) and `SettingsUnitInput` (the unit inside the field), plus the shared save bar with a "Saving changes…" state and an inline failure line. The old eyebrows, framed icon, three heading sizes, framed switch cards and 11px labels are gone; raw `<select>` elements are the shared Select. Public profile, Payments and Notifications join the save bar: the public profile's draft saves from the bar while Publish draft / Send to RIVET for review stays in the section header with the status chip; payment methods and discount limits save as one draft (each part is its own server call, so a partial failure keeps only the failed part dirty and names it); manager alerts, renewal recovery, external delivery and quiet hours save together (the quiet-hour fields previously wrote to the server on every keystroke). The save bar also dismisses its "Changes saved" state on the next edit instead of leaving it on screen.
+- **The shell is keyboard operable, URL-backed and permission-aware.** The rail keeps its vertical tablist contract (the happy-path geometry journey is unchanged) and gains Arrow/Home/End focus movement with Enter to choose, a clear control and Escape for the search, an announced match count and a sentence naming the still-open section when the search hides it. Sections carry a server permission (`settings.manage`, `users.manage`, `profiles.manage`, `operations.manage`): the rail and phone picker list only the sections the signed-in role can save, and a deep link to another section shows a permission state naming the permission instead of a form that would be refused. Authorization itself is unchanged and still enforced by the server.
+- **Records work on phones and the matrix works everywhere.** Branches, Gym spaces, Users and Invoices render two-line lists below 768px with the same actions; the permission matrix becomes a role picker with one permission per row on phones, while the desktop matrix keeps a sticky permission column, 44px coarse-pointer cells, an `aria-busy` state while a change saves and keyboard operation. Every settings query has a section-level error state with Try again (Branches, Users, Roles, Payments and Notifications had none), empty states say what to do next, status chips use sentence case, Hours & trials opens on the session's branch, and the Brand Kit preview shows the gym's initials.
+- **Verification.** Both typechecks, the dependency audit, the diff check and the 67-page Production build passed; the canonical lint passed on the Settings feature and route files (the whole-tree run is recorded on the review branch by GitHub Actions because the local tree carried a temporary build directory while a partner agent worked in the same checkout); Vitest ran 225 files / 1,301 tests with 1,299 passing and the two 5-second timeouts (Settings gym spaces, operations command center) passing on rerun alone. The new `workflow-pass-6.spec.ts` passed 14 of 14 inside the full local run and its 390 and 1440 sweeps were verified again on their own; the full credential-free browser suite was not stable in this checkout because the Pass 7 agent's saves rebuilt the dev server mid-test (stack-less chunk errors, sign-in timeouts, one server restart under memory pressure), so its clean verdict is GitHub Actions on the review branch. The Pass 6 sweeps ignore only that stack-less "Invalid or unexpected token" chunk artifact; every other page error still fails them.
+- **Deliberate limits.** The seeded manager has neither staff nor settings permissions, so the partially permitted Settings cannot be shown in the Preview and is covered by `settings-permissions.test.tsx`; the credential-gated `staging-owner-settings.spec.ts` already used a "Rules & hours" tab and a "Save operational rules" button that stopped existing before this pass, so it is flagged for the staging owner rather than rewritten blind; the Pass 1 `settings-desktop.png` reference was refreshed in `38107b5` with `--update-snapshots=all` because the changed Roles section still sat within the 4% tolerance (Playwright's default update mode leaves such a reference alone), while the clock-dependent dashboard, members and reception captures that the same mode rewrote were restored; the Impeccable skill is unavailable here, so an equivalent banned-pattern scan ran over the changed targets (its only hits are the floating save bar's popover shadow, the mono uppercase branch-code field and 11.5px table headings, each allowed by DESIGN.md) and the tracker's detector checkbox stays unticked.
+- **Preview.** Protected Vercel Preview (GitHub deployment 6296300300) is READY at https://rivet-3shzu2ta3-nusairhashem04-gmailcoms-projects.vercel.app, built from review branch `review/ui-workflow-pass-6` at `38107b5`; the earlier deployments from `81c50e2` and `d6a101e` carry the same application code. GitHub Actions [run 34050912420](https://github.com/hashemnusair/Rivet/actions/runs/34050912420) passed every job for `38107b5`, including all 130 credential-free browser journeys ([run 34041097903](https://github.com/hashemnusair/Rivet/actions/runs/34041097903) had passed for `d6a101e`), and [run 34040531744](https://github.com/hashemnusair/Rivet/actions/runs/34040531744) generated and verified the Linux 390px references. Commits on the review branch: `726614d` (implementation), `eb67d40` (browser suite and references), `81c50e2` (evidence and handoff), `d6a101e` (Linux references), `8010986` (Preview and gate evidence), `38107b5` (refreshed Pass 1 Settings reference). Pass 7 is committed on this laptop's local `main` (nine commits, tip `e2871f5`) but not yet on `origin/main`; whichever pass releases second rebases onto the other, and the shared checkout was returned to Pass 7's tip with no Pass 6 files left in it. Hashem's review and one consolidated correction batch come next; `main` is pushed only after approval, after a final fetch and integration with the Pass 7 work.
+- **Release verification.** Merged into `main` with Pass 7 as `4996a01` on 6 September 2026 (fast-forward from `b86f146`); the integration branch's Actions [run 34053140586](https://github.com/hashemnusair/Rivet/actions/runs/34053140586) and the `main` [run 34055955876](https://github.com/hashemnusair/Rivet/actions/runs/34055955876) passed every job, Vercel Production (GitHub deployment 6297229775) is READY and the canonical domains answer as recorded in the Pass 7 section above. No Convex deploy was owed.
+- Read `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` and `docs/ui-evidence/pass-6/README.md` first. No Convex schema, backend contract, authorization rule, money behavior, workflow policy or Production data changed in this pass.
+
+
+## Owner, finance and oversight UI pass — 5 September 2026
+
+- **Pass 5 is approved, pushed and live at `5a42e45`.** Hashem reviewed the Preview and answered "merge to main" on 5 September 2026 with no correction batch; the final fetch before the push found `origin/main` still at `5356870`, so the release was a fast-forward with no integration work. Release verification is recorded at the end of this section. Work began from fetched `origin/main` at `5356870` (Pass 4 closure) after a clean-tree check; the two pre-existing stashes ("codex-crm-support-member-pass", "codex: hold roadmap feature batch before syncing main") were left untouched. Scope is exactly the tracker's Pass 5 list: owner and manager dashboards, Reports and its seven operational views, the finance hub, the three statements, Ledger controls, the owner oversight variants of Payments and Shifts, Audit, Exports, Automations and its rule page, and Support.
+- **Reports answer one question in one URL-backed scope.** The view, window, end date and branch live in `?view=&range=&to=&branchId=` (defaults stay out of the URL) and every report shares one scope bar (`src/features/reports/report-scope.tsx`: labelled Branch, pressed Date range pills, End date, Refresh, one sentence naming the coverage). The overview now reads every transaction in the range (`overview-totals.ts`, capped at 1,000 and flagged) instead of summing the visible 25 rows; its strip leads with Outstanding, Refunded and Voided before Collected, Net in range and This month; method, branch and receipt rows link into the Payments ledger with the matching filter when the window ends today. The CSV export contract is unchanged.
+- **Finance surfaces are flat, consistent and traceable.** The hub cards lost their resting shadow and hover-slide; statements use the same pressed pills, put the back link above the header like Ledger controls, show Ledger controls as a secondary button, and offer "View journal entries" per posted section (opens `/finance/controls?tab=journals&branchId=…`). Ledger controls read the tab and branch from the URL, lead the summary strip with the source queue (pending, unconfigured, failed) before the control totals, keep the empty trial balance from stretching, and use 12px helper copy with 11px mono references.
+- **Oversight surfaces distinguish their states.** Audit filters (search, category, actor, approval, page) round-trip through the URL and stack cleanly on phones. Exports is one dense list of datasets, and each recorded request carries a truthful state (queued, running, partial, completed, expired, failed, cancelled) with a matching download control (`export-job-presentation.ts`). Automations lead with Failed / retrying and Suppressed, name rule state as "enabled · held" or "paused" with an explicit Next run reason, label executions completed / suppressed · duplicate / pending / retrying / failed, and collapse to two-line lists on phones; the rule page follows suit and counts executions needing attention. Support uses shared badges for priority and status, shows the opening message or an honest "No replies yet" state instead of a blank pane, and uses real field labels everywhere. The manager metrics use the same warning tone as the owner strip; the Pass 1 dashboards are otherwise unchanged.
+- **Verification.** Both typechecks, the canonical zero-warning lint with the secret audit, 224 Vitest files / 1,297 tests (25 new), 14 repository-safety tests, the 67-page Production build with no tracked file changed, the dependency audit and the diff check passed on the implementation tip `4777d83`. The full credential-free browser suite ran 115 passed / 14 skipped; the stock-and-purchasing and Pass 2 360px specs timed out on page loads during the 24-minute run and passed when re-run alone, as the same class of timeout did in Pass 4. The new `workflow-pass-5.spec.ts` passes 13 of 13 with 28 references; its route visits recover once from a forced dev-server reload, which is what stranded the preview session gate on "Loading workspace" during earlier runs. Implementation commits: `d19edca`, `8f86c9e`, `4777d83`.
+- **Deliberate limits.** The seeded ledger has no posted entries, so statement sections stay empty in the Preview and the journal link appears only once a section has lines; the execution list has no server-side status filter, so none is offered; report rows link into Payments only when the window ends today because the ledger only understands rolling windows; the Impeccable skill is unavailable here, so an equivalent banned-pattern scan ran over the changed targets (no resting shadows, gradients, info tokens or sub-12px human copy remain in them; 10.5–11px mono is used only for references) and the tracker's detector checkbox stays unticked.
+- **Preview.** Protected Vercel Preview `dpl_43osRv5uKfvFk1zZ8HBw7uvjL4np` (GitHub deployment 6283660228) is READY at https://rivet-edeeusvew-nusairhashem04-gmailcoms-projects.vercel.app, built from review branch `review/ui-workflow-pass-5` at `e979991`. Hashem's review and one consolidated correction batch come next; `main` is pushed only after approval, after a final fetch and integration.
+- **Release verification.** `main` moved `5356870..e3f583d` on approval. The first CI run ([33980911846](https://github.com/hashemnusair/Rivet/actions/runs/33980911846)) failed only the credential-free browser job: the Pass 5 390px captures select `-linux.png` references on Linux and none existed yet. `5286414` gave the width checks CI headroom, `678d847` added fourteen inspected Linux references generated and verified by a temporary push-triggered workflow on a throwaway branch (deleted afterwards), and `5a42e45` made the statements journey's Ledger controls locator exact after the warning box's "Resolve in Ledger controls" link matched it on the runner. Actions [run 33984317062](https://github.com/hashemnusair/Rivet/actions/runs/33984317062) passed every job for `5a42e45`; Vercel Production `dpl_Bb4TAfwrL9rvJWXwav9NdGSdxAp8` (GitHub deployment 6284388820) is READY, with www, app and dashboard login at 200, the root domain at 308 and the Production design gallery at 404. No Convex deploy was needed (no `convex/**` change). Pass 6 has not been started and waits for explicit authorization.
+- Read `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` and `docs/ui-evidence/pass-5/README.md` first. No Convex schema, backend contract, authorization rule, money behavior, workflow policy or Production data changed in this pass.
+
+## Member mobile experience UI pass — 5 September 2026
+
+- **Pass 4 is approved and pushed.** Hashem reviewed the Preview and answered "merge to main" on 5 September 2026 with no correction batch. Release verification is recorded at the end of this section. Work began from fetched `origin/main` at `6b190d5` (the Pass 2 closure) and was integrated onto the Pass 3 closure `9caab72` before any commit; the member section tabs adopt the shared underline tab strip approved in Pass 3. Coherent implementation commits are `9f6a78f`, `5a556d6`, `1d2696d` and `816205a` (rebased onto `21788af`, which realigned the Pass 2 retention references). `main` is not pushed; Pass 5 onward is untouched.
+- **Members get one truthful home and one entry pass.** The home shows each membership as a pass with a dated status ("Ended 12 Aug 2026", "Valid until … · 40 days left"), the member number and two actions; the installed-app shortcuts for the entry QR and PT now work. The entry-pass dialog states its expiry, expires on time with a refresh, and explains failures. Membership detail uses quiet URL-backed section tabs, one summary panel with the gym's contact actions, labelled freeze fields, a compact referral panel and preserved class and PT contracts; background refresh failures keep loaded data on screen.
+- **Payments, receipts, discovery and gym pages follow the product system.** Payments read as one ledger strip with phone-sized filters behind a toggle and full-row receipt targets; the member receipt now prints (its id matched a stylesheet it never had) and reads in Manrope with the number in mono; discovery and gym pages drop the marketing hero, grid, scroll-reveal motion and per-card signal buttons, with URL-backed search and a phone-first booking panel. Profile, the member guide, offline and the preview signup notice are consistent, and the guide only offers install or notification controls that can work.
+- **Two member-facing defects in shared surfaces are fixed narrowly.** The account menus now link Communication settings to the profile section that exists, and the onboarding banner stops sending members to the staff getting-started route and calling their account "your workspace". The phone dock hides while a text field has focus and its menu items meet the 44px target.
+- **Verification.** Both typechecks, canonical zero-warning lint with the secret audit, 220 Vitest files / 1,284 tests, 14 repository-safety tests, the 67-page Production build, the dependency audit and the diff check passed on the integrated tree. Playwright: the full run on the integrated tree passed 100 credential-free journeys with 14 explicit credential-gated skips; the two navigation timeouts (operations workflow, Pass 2 at 360px) passed in an isolated rerun, and the two Pass 2 retention-detail capture failures were inherited from the Pass 3 tip (its own Actions run 33961660539 fails on them) and are realigned by `21788af`, onto which this pass was rebased. The Pass 4 suite (12 journeys, 20 references) passes deterministically. The Impeccable skill is not installed in this environment, so an equivalent banned-pattern scan over the changed targets is recorded instead of ticking that gate. The seeded preview member has no gym payment records, so the populated payments list and receipt are verified with component fixtures; the seed was left alone to protect approved Pass 1 screenshots.
+- **Cross-platform references.** The review commit's Actions run 33964187792 showed Linux Chromium crossing the 4% ceiling on the 390px sign-in capture, so `332973a` adds inspected Linux references for all ten 390px captures (generated on GitHub's Ubuntu runner, run 33970182948, corrected in run 33970396433 after the framework badge was excluded from the first capture) and verifies the full Pass 4 suite on Linux (12 journeys passed). The 1440px captures matched on both platforms.
+- **Preview.** Protected Vercel Preview `dpl_4NuGxbM5wLQAK1mEmRC2yKRz1MKh` is READY at https://rivet-11pgc2j6x-nusairhashem04-gmailcoms-projects.vercel.app (built from review branch `review/ui-workflow-pass-4` at `816205a`; sign in as Lina Haddad or Yousef Nasser). Hosted browser checks could not run from this session (protected host, no team browser here), so Hashem's review is the hosted check. A manual GitHub Actions dispatch for `816205a` is run 33964187792. `main` is not pushed; the review branch is deleted after the approved fast-forward.
+- **Release verification.** `main` was fast-forwarded to `affb49b` on 5 September 2026 after a final fetch found no partner advancement. GitHub Actions [run `33970837435`](https://github.com/hashemnusair/Rivet/actions/runs/33970837435) passed every job for that SHA; Vercel Production deployment `dpl_CJiusik3bL597A2akbXgKzgE4eaa` is READY for the exact commit and `www.rivetjo.com`, `app.rivetjo.com/login/member` and `dashboard.rivetjo.com/login/gym` returned HTTP 200, the root domain redirected (308) to www, `/dev/design-system` returned 404 and the new `/customer/signup` redirect answered 307 to the canonical signup. No Convex deploy was needed. The review and temporary branches are deleted. Pass 5 has not started and requires Hashem's separate confirmation.
+- Read `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` and `docs/ui-evidence/pass-4/README.md` first. `FRONTEND_HANDOFF.md` remains frozen. No Convex schema, backend contract, authorization rule, money behavior, workflow policy or Production data changed.
+
+## Pass 3 approved release — 5 September 2026
+
+- **Pass 3 is approved, pushed and live at integration finish `21788af`.** Hashem approved the final result, including the horizontal-scroll correction, and explicitly authorized release. Approved Preview: `dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg`, source `b413d08`; initial integration push: `9caab72`.
+- Actions [run `33963797469`](https://github.com/hashemnusair/Rivet/actions/runs/33963797469) passed every job for `21788af`: typechecks, lint, 1,259 unit/component tests, 14 repository-safety tests, build, audit, actual Convex code generation and all 92 credential-free browser journeys. One existing standalone member-navigation journey passed on retry; 14 staging-only journeys remain explicitly credential-gated.
+- Matching Vercel Production `dpl_CxpUz1qqaPueS3TLL1MjphuXseoS` is READY. Marketing returned HTTP 200 after its canonical redirect; both login entry points returned 200, and the Production design gallery returned 404. No Production data was changed.
+- The first CI run exposed stale retention screenshot crops and platform-dependent mobile wrapping references. They were inspected on macOS and Linux and corrected at `21788af`; application code and screenshot tolerances stayed unchanged. Exact evidence and the existing purchasing delivery-date / checklist-assignment limitations are recorded in `docs/ui-evidence/pass-3/README.md` and `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md`. Pass 3 completion is checked; the two unsupported workflow-contract outcomes remain unchecked.
+- Hashem reports that a partner agent is working on Pass 4 in parallel. GitHub was fetched before each push and again before closure; `origin/review/ui-workflow-pass-4` is present and untouched. This release does not claim or complete that separate work.
+
+## Pass 3 horizontal-scroll regression fix — 5 September 2026
+
+- Hashem reported severe flickering and a disappearing page when horizontally scrolling Stock & purchasing tabs after selecting the in-app browser’s iPhone 15 Pro preset. Earlier geometry and tab-selection checks missed continuous gestures and frame-rate behavior.
+- Reproduction found the root overscroll handler intercepted the small vertical component of a horizontal gesture. Its Euler spring diverged at a 30fps frame interval, producing page translations on the order of `10^23px`. Pointer mode was sampled only at mount, so switching a loaded desktop page to phone emulation could retain desktop handling.
+- Fix `b413d08` uses an exact critically damped spring solution with bounded movement, excludes horizontal wheel input, leaves touch gestures native and immediately responds to pointer-mode changes. This corrects scroll presentation only; domain, authorization and financial behavior remain unchanged.
+- Nine regression tests passed across 120/60/30fps and long frame delays, horizontal input, native touch and mode changes. The new browser journey passed slow-frame recovery, desktop-to-touch emulation, repeated swipes, stable selection, subsequent tab activation and branch-picker use. The existing desktop/mobile overscroll journey passed on retry after the known initial-navigation race. Typecheck and canonical lint passed. Corrected Preview is READY at `https://rivet-hf42gg007-nusairhashem04-gmailcoms-projects.vercel.app` (`dpl_3PMTE8eAVxv8hHbckgPQb9W9TKdg`, source `b413d08`). The same slow-frame/emulation-switch/native-swipe regression passed on the hosted build in 8.7 seconds. The Production build passed. Approval and push remain pending.
+
+## Pass 3 navigation consistency follow-up — 5 September 2026
+
+- Hashem liked the underline tab direction and explicitly extended it to in-page section navigation across the app. He also requested consistent Stock & purchasing control sizing and a better mobile tab arrangement.
+- Implementation `fd46c0c` moves Stock & purchasing tabs directly below the heading and ahead of the branch/action toolbar. Tabs stay on one scrollable row. The branch selector and actions are 44px high; phone actions have equal widths beneath the branch selector.
+- Shared tab components now own the semibold/ink-underline treatment and reveal the selected tab within the horizontal strip. The same visual classes cover Payments/Shifts, Reports, Retention, Classes, and member-account/class-history sections. Member records, ledger controls and the design gallery inherit the shared component update. Filters, billing choices, Board/List switches, guided steps, Settings’ vertical navigation and marketing keep their distinct patterns.
+- App typecheck, canonical lint and 31 focused component tests passed. Six-width browser checks passed for single-row geometry, selected-tab visibility, equal control heights, navigation order, keyboard tab switching, form validation and footer alignment. Updated Preview is READY at `https://rivet-4f7coe2a4-nusairhashem04-gmailcoms-projects.vercel.app` (`dpl_6wfmabQzysYNsg8mpgQMm1zrRMg6`, source `fd46c0c`). Hosted staff/member navigation checks and the six-width toolbar checks passed without page errors. Ten targeted browser journeys were verified, including four retries for the previously recorded local startup/navigation flakiness. This is an owner-authorized shared navigation extension, not the start of Pass 4 workflow work. Final approval and push remain pending.
+
+## Pass 3 owner review corrections — 5 September 2026
+
+- Hashem requested two corrections: align Cancel with Add machine, including on mobile, and make Stock & purchasing sections read as navigation tabs.
+- Correction commit `3ff4cd8` moves the machine form submit action into the shared footer immediately after Cancel. Native form association preserves required-field validation and submission. The same form handles adding and editing machines.
+- Stock & purchasing now uses an open, full-width tab strip with semibold labels and an ink underline. Tabs remain visible on narrow screens and retain URL state and keyboard navigation. `DESIGN.md` records this owner-directed adjustment.
+- All six supported widths passed footer alignment, required-field validation, cancellation, arrow-key tab navigation and page-overflow checks. All 15 operations component tests, app typecheck and canonical lint passed. The corrected Preview is READY at `https://rivet-dakpc272d-nusairhashem04-gmailcoms-projects.vercel.app` (`dpl_3GVNGnN9Wr11t2QQKEyRBR35BCE4`, source `3ff4cd8`). The same six-width checks passed on the hosted Preview with no browser errors. Phone/desktop references were refreshed. Approval and release remain pending; Pass 4 is untouched.
+
+## Branch operations UI pass — 5 September 2026
+
+- Hashem authorized Pass 3. Work started on main from fetched `origin/main` at `6b190d5`, with a clean worktree.
+- Implementation commits `bfc8521`, `ad82397`, `89ab1a4`, `36ccc33` and `ce264d3` refine stock, purchasing, suppliers, payables and payment confirmations, equipment, maintenance and checklists. Branch/filter links survive refresh; phone stock records and equipment actions are readable; checklist failures link directly to maintenance. Baseline captures are under `docs/ui-evidence/pass-3/before`.
+- The tracker now checks inspected routes and verified workflow outcomes. The existing lack of purchasing delivery dates and checklist assignment/attachments remains explicitly unchecked. Local verification passed: 1,250 unit tests, 14 repository-safety tests, both typechecks, canonical lint, dependency audit, Production build and detector. The full browser run verified 91 credential-free journeys (two existing tests needed a retry); 14 staging journeys remain credential-gated. Review Preview `dpl_DRjtRqumgNudQwXFapVFa1FE7b9g` is READY from `ce264d3` at `https://rivet-bk0xgsk9u-nusairhashem04-gmailcoms-projects.vercel.app`; authenticated hosted checks passed for all seven primary surfaces plus supplier payment confirmation, with no browser errors or page overflow. Pass 3 is ready for Hashem’s review; no push, Production release or approval is claimed. Pass 4 remains untouched.
+
+
+## Pass 2 owner review corrections — 5 September 2026
+
+- Hashem reviewed the first Preview and identified redundant Leads saved-view controls and stretched retention actions. The single consolidated correction batch is committed at `352d501`.
+- Leads now exposes search, Board/List and New lead. Both retention panels use a linked member heading, compact aligned facts and naturally sized action buttons; contact, WhatsApp, snooze and member navigation remain available.
+- Hashem approved Pass 2 and authorized pushing on 5 September 2026. The corrected Preview is READY at `https://rivet-hgn62dl9h-nusairhashem04-gmailcoms-projects.vercel.app` (`dpl_4tYNU78PJx1tRcRFxw5AgBhA6JJm`, source `352d501`). The pass is pushed at `4204613`; Vercel Production deployment `dpl_3XKWcQPh9c596AAuMeG1LfZ1Uikv` is READY for that exact commit. GitHub Actions [run `33954966139`](https://github.com/hashemnusair/Rivet/actions/runs/33954966139) passed every job for integration finish `4204613`. Pass 3 must wait for Hashem’s separate confirmation. The original pass gate and correction evidence remain in `docs/ui-evidence/pass-2/README.md`.
+
+## Sales, retention and scheduling UI pass — 5 September 2026
+
+- **Pass 2 is approved, pushed and live.** Hashem gave the green light after Pass 1. Work began from fetched `origin/main` at `b06292a`. Coherent implementation commits are `dbbae4d`, `59320ed` and `021a85f`; the correction batch is `352d501`. Pass 3 has not started.
+- **The primary paths are clearer.** Leads have explicit actions and readable mobile records; retention has compact reason filters, real pagination and shareable member/filter context. Classes starts with a dated agenda and requires review before attendance finalization. PT starts from member lookup and retains separate availability, credit, outcome and payment controls. Offer, trial, roster and PT recovery states preserve useful context.
+- **Product boundaries are preserved.** Reception, marketing, partner work, authorization rules, schemas, financial contracts and Production data are untouched. Existing class cancellation/payout omissions, legacy stage-only trial history and the mock trainer workspace limitation are documented instead of silently inventing behavior.
+- **Local and hosted preview checks passed.** Both typechecks, the Production build, 1,249 unit tests, 14 repository-safety tests, canonical zero-warning lint, dependency audit, one detector scan and diff checks passed. All 80 credential-free browser journeys were verified (two failures resolved by a visible-link selector correction and a targeted rerun); 14 staging tests remain explicitly credential-gated. Preview deployment `dpl_GdhT5j7xRJV1Tn6v7Z3iujyYuFcW` is READY at `https://rivet-5mcu0tj9t-nusairhashem04-gmailcoms-projects.vercel.app`; authenticated 390px route checks passed for Leads, Retention, Classes and PT. Hashem’s review and the consolidated correction batch are complete. The pass was pushed at `4204613`; Vercel Production is READY. Marketing, app and staff login returned HTTP 200; the Production design gallery returned 404. GitHub Actions run `33954966139` passed every job.
+- Read `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` and `docs/ui-evidence/pass-2/README.md` first for the exact route/state/role/device evidence and deliberate limits. `FRONTEND_HANDOFF.md` remains frozen.
+
+## Daily front-desk workflow UI pass — 5 September 2026
+
+- **Pass 1 is approved, integrated and live.** Hashem approved both the shift-command and member-to-sale portions after reviewing the mock-data Vercel Preview. The eight coherent commits were fast-forwarded to `main` without squashing at implementation finish `797ae99`; the separate landing-page worktree remained untouched.
+- **Daily work is clearer and more truthful.** Dashboard/Today, Reception, Checkout, Members, member creation/detail/duplicates/import, Memberships, Plans, Payments, cash shifts, receipts, the command palette, notifications and shared branch selection now use stronger next-action hierarchy, explicit loading/error/retry/stale states, responsive semantic records and URL-backed view state. Duplicate checking cannot be mistaken for an unavailable check, and shift closure waits for authoritative totals.
+- **Reception remains deliberately distinct.** Its dark, focused command-desk treatment was preserved while its branch, lookup, verdict, warning and recovery behavior was aligned with the RIVET product system. Mobile Checkout uses an accessible focus-trapped sheet; member and finance surfaces avoid squeezed desktop tables at phone and tablet widths.
+- **Release verification is green.** Local verification passed both TypeScript checks, zero-warning lint and secret audit, 1,240 Vitest tests plus 14 repository-safety tests, the 67-route Production build, 67 credential-free Playwright journeys with 14 explicit credential-gated skips, the Production dependency audit, the Impeccable detector and repository checks. GitHub Actions run `33925997793` passed all three jobs for `797ae99`.
+- **Production is healthy.** Vercel deployment `dpl_4P5CmBPkyWMGQTJQQxNY4ZHKcRWk` is `READY` and owns the canonical RIVET aliases. `rivetjo.com`, `app.rivetjo.com/login/gym` and `dashboard.rivetjo.com/login/gym` returned HTTP 200; `/dev/design-system` returned 404 in Production as required. This pass changed no Convex schema, backend contract, authorization rule, financial behavior or Production data.
+- The complete tickable evidence is in `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md`. Pass 2 has not started.
+
+## Product workflow UI refinement tracker — 4 September 2026
+
+- `docs/20_PRODUCT_UI_WORKFLOW_PASS_PLAN.md` is the living, tickable plan for
+  the seven workflow-focused UI passes and their final route/state/role/device
+  closure audit. Each pass records its baseline, implementation scope,
+  verification, preview, owner approval and final SHA. The tracker starts
+  unchecked; the approved product system in `DESIGN.md` remains the visual
+  authority. No Pass 1 interface changes were included with this planning
+  slice.
+
+## Product UI system refinement — 3 September 2026
+
+- **The approved RIVET product identity is now implemented across the app.**
+  The gym workspace, member portal, platform console, authentication,
+  onboarding, offers and public product surfaces use one quieter visual
+  language while the marketing/landing-page system remains untouched.
+  Manrope carries human language; IBM Plex Mono is limited to identifiers,
+  receipt numbers, codes and genuinely technical metadata. Repetitive
+  uppercase eyebrows, colored navigation rails, redundant panel nesting,
+  undersized operational copy and broad `transition-all` motion were removed.
+- **Shared primitives now own the result.** Page context, technical labels,
+  buttons, fields, tables, navigation, tabs and inline/section/page feedback
+  states share the same hierarchy, focus treatment, responsive behavior and
+  reduced-motion contract. Primary and Settings navigation use one tonal
+  active cue. The enclosed Stock & purchasing tabs use that same quiet tonal
+  state instead of the earlier heavy underline. Coarse pointers retain 44px
+  targets and logical-direction properties preserve the later RTL path.
+- **The product reference is reviewable and reproducible.** The gated
+  `/dev/design-system` gallery uses real product components and synthetic data;
+  it is available locally and in explicitly enabled previews and is forced to
+  404 in Production. Deterministic Playwright captures cover the owner
+  dashboard, Members, Settings permissions, Reception, member finance,
+  platform gyms and the gallery at representative phone, tablet and desktop
+  sizes. The product owner approved both the representative checkpoint and the
+  complete preview.
+- **The design source of truth is extracted.** Root `DESIGN.md` contains the
+  normative product tokens and usage rules; `.impeccable/design.json` adds
+  tonal metadata, motion, elevation, breakpoints and nine literal component
+  specimens. Two exact 3840×2400 boards under `docs/brand/` document the
+  identity and its owner/night/member applications. They use the existing
+  RIVET assets and deterministic synthetic product captures—no replacement
+  logo, invented interface or Production tenant data.
+- **Verification is green.** Both TypeScript checks, zero-warning lint and the
+  secret-output audit, 197 Vitest files / 1,175 tests plus 14 repository-safety
+  tests, the 66-route Production build, 64 credential-free Playwright
+  journeys with 14 explicit staging-only skips, the Production dependency
+  audit and `git diff --check` passed. The fresh Web Interface Guidelines
+  review passed the changed product surfaces. The Impeccable detector reported
+  only the pre-existing `marketing-grid` utility, which belongs to the
+  deliberately excluded landing-page system and was left untouched.
+- This was a frontend-only refinement: no Convex schema, domain contract,
+  authorization, money behavior, workflow policy, provider setting or
+  Production data changed. `FRONTEND_HANDOFF.md` remains frozen.
+
+## Legal pages, e-signature onboarding, email and messaging go-live — 3 September 2026
+
+- **Legal:** `/privacy` and `/terms` (with the data processing addendum) are
+  public app pages, version 1.0 · 3 September 2026, drafted for a Jordanian
+  lawyer's review. RIVET's contact details are one constant
+  (`src/lib/rivet-contact.ts`: Instagram @rivet.jo, 077 837 8608, WhatsApp)
+  and appear in the marketing, sign-in and member-portal footers; the gym
+  application form names the documents an applicant accepts.
+- **E-signature:** a gym owner who has not signed the subscription agreement
+  gets a blocking modal over the workspace (no close, Escape and outside
+  clicks ignored) until they sign; staff are never blocked. Three steps:
+  read (agree unlocks only once the end of the text is scrolled into view),
+  details (only the essentials: registered gym name, address, owner's name
+  as on ID, national ID or passport number, contract start date; the plan is
+  shown from the account), sign (drawn or typed signature, two declarations).
+  The agreement text is code-owned and versioned (1.1 · 3 September 2026);
+  the server publishes its SHA-256, the browser hashes what it displayed,
+  and a mismatch is flagged for review. The server clock is the time of
+  signing. A rendered copy (ID masked, full text, fingerprint) is queued to
+  the signer and to elias@rivetjo.com and hashem@rivetjo.com through the
+  operational email boundary, each carrying the signed agreement as a PDF.
+  The PDF comes from a dependency-free writer (`convex/pdfDocument.ts`) that
+  the server and the browser share, so the emailed attachment and the
+  "Download PDF" action produce the same file; a drawn signature is stored a
+  second time as an opaque JPEG so the PDF can embed it. The ID number is masked everywhere and
+  revealed only by a platform admin with a reason and an audit event;
+  platform admins countersign from the Agreements console; the owner views
+  or prints the record under Settings → Agreement. A platform admin can void
+  an agreement with a reason, which gates the owner into signing a fresh one;
+  `convex/communications.e2e.test.ts` exercises the full chain, invoices
+  included, and can dump every email and PDF for inspection. The demo gym is seeded as
+  countersigned; `rivet.demo.agreement=required` simulates an unsigned gym in
+  previews.
+- **Transactional branding:** email, PDF and invoice follow one identity
+  system. `convex/emailTemplate.ts` renders every operational email as a
+  600px column with the lockup, one headline, one action, an optional summary
+  card and a complete footer, with dark mode and Arabic mirroring built in;
+  member mail leads with the gym and uses its accent. `convex/pdfDocument.ts`
+  carries the page furniture (lockup, technical label, running header, status
+  chips, tables, panels, framed signatures) shared by the subscription
+  agreement and the new invoice document, which is attached to the invoice
+  emails. Facts RIVET has not registered, the legal entity and tax treatment,
+  are omitted until filled in (`BRAND_LEGAL` in `convex/brandTokens.ts`); nothing bracketed reaches a customer, and sales@rivetjo.com is the one address printed. On screen, the
+  privacy policy, the terms, the agreement reading view and the signed record
+  render on the same master page (`document-sheet.tsx`), and the legal pages
+  download a PDF built from what is rendered. Gyms choose a language for
+  emails and documents in Settings → Organization; Settings → Subscription &
+  invoices shows their RIVET invoices with the PDF, and the platform billing
+  console has the same button. The agreement PDF follows the designed
+  page-one / continuation / signature-page layout, with the text at 1.2 so
+  the clauses number 3 to 12 between Parties, Details and Signatures. Platform
+  → Email log shows the last hundred queued messages with their outcome.
+- **Operational email go-live flag:** `RIVET_EMAIL_MODE` = off | sandbox |
+  allowlist | live (default off; the legacy boolean is honoured as live only
+  while the new variable is unset). Sandbox redirects to
+  `RIVET_EMAIL_SANDBOX_TO`, allowlist suppresses non-listed recipients with a
+  reason, and every attempt records the mode and the address actually used.
+- **WhatsApp/SMS provider seam:** `RIVET_MESSAGING_MODE` plus Twilio
+  credentials form the global switch; each gym's "External delivery" setting
+  is the second. A minute worker sends due automation messages and renewal
+  reminders for live gyms, records provider ids, retries with backoff, and
+  defers quiet-hour sends to the end of the window. A bilingual utility
+  template catalogue (renewal, payment, class, entry pass) ships in code.
+- **Pricing:** Starter/Growth/Pro remain provisional; the platform pricing
+  page says so and docs/19 carries the sign-off sheet.
+- **Convex deployment owed to Production:** additive schema
+  (`subscriptionAgreements` table with four indexes; email attempt fields),
+  new cron for the messaging worker, new environment names (docs/12).
+
+## Auditor role retired, readable permission matrix — 2 September 2026
+
+- **The read-only auditor role is gone as a product concept.** It cannot be
+  invited or assigned, has no dashboard, persona, seeded user, navigation
+  branch-picker privilege or default permissions, and every role list in the
+  server, the frontend catalogue, the mock and the tests now names five gym
+  roles (owner, manager, sales, reception, trainer). Read-only finance
+  access is expressed the honest way: a manager whose `accounting.post` or
+  `operations.manage` capability is switched off in the matrix.
+- **Deploy safety:** the `auditor` literal stays in the stored-role
+  validators only so historical `organizationMemberships` and audit rows keep
+  validating on a Production deploy; `requireActor` refuses to build an actor
+  from such a membership with a clear "role retired" message, and the
+  permission helpers treat it as having no capabilities.
+- **Permission matrix copy:** each row now shows a plain-language name with a
+  one-line hint ("Collect payments — Take payments and run checkout") instead
+  of the raw permission code, and rows no longer highlight on hover. Codes
+  remain the server contract (`PERMISSION_LABELS` in
+  `src/lib/domain/permissions.ts`).
+- Convex deployment for this change is still owed to Production alongside the
+  payables/checkout sprint (additive schema; no index changes here).
+## Responsive desktop edge spring — 2 September 2026
+
+- Replaced the desktop shell's debounce-plus-transition overscroll return with
+  a frame-driven, critically damped spring. The content now starts returning
+  immediately while inertial trackpad events taper off instead of waiting for
+  the wheel stream to end.
+- The restrained seven-pixel desktop edge response remains, and the fixed
+  utility bar continues to stay aligned with the sidebar brand row. Touch-first
+  devices still use native browser elasticity and pull-to-refresh.
+- Browser coverage now verifies that the edge response visibly begins
+  returning within two animation frames and fully settles in under 400 ms.
+- Stabilized the CRM contact-edit test against the independent session and lead
+  query resolution order after the hosted gate exposed the race.
+
+## Anchored desktop utility bar — 2 September 2026
+
+- Synchronized the completed supplier-payables and Checkout release at
+  `939bdd8` before changing the shell. The damped desktop edge response now
+  moves only page content, so search, branch, notifications, and account
+  controls remain anchored while the document settles at a scroll boundary.
+- The desktop utility bar now uses the same 64px row as the fixed sidebar
+  brand. Their top and bottom borders stay aligned across expanded and
+  collapsed sidebar states. Smaller layouts retain the compact 56px bar.
+- Touch-first devices still use native browser elasticity and pull-to-refresh;
+  the restrained seven-pixel response remains limited to fine-pointer
+  devices. No page-specific layout or scroll behavior changed.
+- Verification passed TypeScript, zero-warning lint and secret-output audit,
+  185 Vitest files / 1,129 tests plus 14 repository-safety tests, the 62-page
+  Production build, 57 credential-free Playwright journeys with 14 explicit
+  staging-only skips, `git diff --check`, and the Impeccable detector with no
+  findings on the changed shell files.
+
+## Supplier payables, supplier payments, walk-in checkout, Stock & purchasing — 2 September 2026
+
+- **Accounts payable is now settleable.** A server-owned payables projection
+  (`convex/payables.ts`) derives what the gym owes from fully received
+  supplier purchase orders and recorded payment allocations: oldest-first,
+  cursor-paged, filtered by branch/supplier/status/search, with per-supplier
+  totals and aging from the receiving date. No due date is ever invented; a
+  payable shows one only when the supplier recorded it. Costs with no supplier
+  account (private purchases, stock received outside an order, facility
+  supplies, equipment purchases, repairs) are listed as reconciliation items
+  and never auto-assigned to a supplier.
+- **Supplier payments** (`operations.supplier_payment.record`): cash, bank
+  transfer or CliQ; one payment across several payables of the same supplier;
+  oldest-first suggested allocation the operator can edit; no overpayment,
+  credit balances, cross-supplier, cross-currency or cross-tenant
+  allocations; transfers require a searchable reference and are never claimed
+  as externally verified; cash requires the branch's open cash shift, counts
+  as a real drawer outflow in shift totals/close/reconciliation, and refuses a
+  stale shift. Replays are idempotent only after tenant, supplier and branch
+  access are established. **Reversal** (`…reverse`) is reason-gated,
+  single-shot, keeps the original immutable, reopens the allocations, and
+  returns cash to the currently open drawer. Reads need `operations.manage`
+  or `reports.financial.read`; writes need `operations.manage`.
+- **Accounting:** new source types `supplier_payment` (Dr 2100 / Cr 1100 cash,
+  Dr 2100 / Cr 1120 bank transfer and CliQ) and `supplier_payment_reversal`
+  (the opposite entries), each with stable per-method policy codes. A
+  reversal posts only after the original settlement is posted; a payment
+  reversed before posting is excluded on both sides. UI copy everywhere keeps
+  "recorded" and "posted to ledger" apart. Additive schema change:
+  `supplierPayments` table (five indexes) plus two source-type literals and a
+  `walk_in` customer literal. **Convex Production deployment is owed** to
+  `descriptive-meerkat-589`; not run in this sprint.
+- **Payables UI:** `/operations/payables` (also the Payables tab of Stock &
+  purchasing): outstanding/oldest/aging cards, per-supplier totals, the
+  oldest-first table, payment history per payable, a Record supplier payment
+  dialog, readable CSV export of the complete filtered result, and a
+  supplier payment confirmation (a remittance record, not a customer receipt)
+  with print, download, record-another, and reverse.
+- **Checkout:** one canonical `/checkout` in primary staff navigation;
+  `/operations/checkout` redirects with its parameters and the embedded
+  operations tab is gone. Walk-in is the default (the server accepts a sale
+  with no customer object and stores a `walk_in` snapshot; no member, lead or
+  disposable guest record is created); a member can be attached optionally;
+  receipt details sit behind a secondary action. Branch rules: the assigned
+  branch is preselected, owners choose, "All branches" is never a sale.
+  Dense scan-ready product rows, desktop side cart, phone bottom sheet with a
+  sticky total (390/360 px, 44 px targets, no sideways scroll), open-shift
+  check before cash, per-draft idempotency key with a double-submit guard,
+  and a completion screen (amount, method, receipt, stock updated, open
+  receipt, next sale, refund/void when authorized).
+- **Operations → Stock & purchasing:** Inventory, Purchase orders (status
+  filter, order deep links), Suppliers (payables links), Payables, Equipment;
+  Maintenance moved to `/maintenance` (QR shortcuts and old `?tab=facilities`
+  links forward there). The 82 KB command center is split into inventory,
+  purchasing, equipment and shared modules.
+- Tests: Convex (`domain.payables.test.ts`, accounting settlement policies,
+  walk-in checkout), mock parity (`payables.test.ts`, walk-in), pure helpers
+  (allocation, aging, CSV), component tests (payables workspace,
+  confirmation, checkout flow, Stock & purchasing tabs, maintenance page) and
+  Playwright journeys (desktop and 390/360 px checkout, payables
+  settle/reverse, tab and redirect coverage).
+
+## Whole-price membership revenue, review exclusions, classes booking truth — 1 September 2026
+
+- **Owner policy decision executed:** membership sales/renewals now post the
+  full net price as immediate revenue (`membership-sale.v2` /
+  `membership-renewal.v2`, 1200 → 4100) — no deferral, no service-day split,
+  no monthly recognition clicks, and no allocation fils on new sales. The
+  deferred v1 engine is legacy-only: recognition schedules exist solely for
+  terms already posted under v1 (queue rows projected under v1 stay pinned by
+  policy preservation), and a recognition attempt against an immediate sale
+  is honestly `unconfigured` ("posted as immediate revenue"). Recorded in
+  docs/09 and docs/18 §7 with accepted trade-offs (front-loaded revenue; no
+  automatic cancellation claw-back).
+- **Review exclusions clear the completeness warnings honestly:** new
+  owner/manager mutations `accounting.source.exclude` /
+  `accounting.source.reconsider` (audited reason; additive
+  `reviewExcludedAt`/`reviewExcludedByUserId` fields on
+  `accountingSourcePostings`) mark never-postable facts as deliberate
+  exclusions that survive queue refreshes and are superseded by an explicit
+  post. Statement warnings no longer count `excluded` rows, and
+  recognition/depreciation coverage ignores months whose tenant-anchored
+  month end has not passed — so the current month stops nagging before it is
+  completable. Ledger-controls queue rows gained Exclude/Reconsider buttons,
+  a reviewed marker, and a clearer status legend.
+- **Classes booking truth:** the event-details popup and the calendar chips
+  were reading the weekly template's standing roster (showing 0 for booked
+  events); both now read the upcoming dated class's real `bookedCount`, the
+  popup lists exactly who booked (with waitlist count), and its footer action
+  is "Manage bookings & attendance".
+- **Statement copy:** the fils note now explains that only legacy deferred
+  memberships carry service-day fils and that current-policy sales post their
+  whole price on the day of sale; the GM metric is labeled "Recorded
+  membership sales".
+- Tests reworked and extended: immediate-policy lifecycle across all three
+  statements; legacy deferred lifecycle via seeded v1 rows (recognition,
+  cancellation drift, reversal); no-schedule guarantee for v2 sales; review
+  exclusion persistence/reconsider in both adapters; direct
+  allocator/freeze-window unit tests replacing the mock integration path
+  that v2 made unreachable. Additive-only schema change (two optional
+  columns); Convex deploy owed after push per the deploy split.
+
+## Mobile-friendly member CSV correction — 1 September 2026
+
+- A hosted member download exposed that Production Convex was still serving
+  the pre-export-pass function bundle. Its CSV contained serialized records,
+  opaque identifiers, and raw metadata even though the corrected repository
+  code and Vercel frontend had already been pushed. The prior release stopped
+  before the required Convex deployment; this was a release gap, not a browser
+  or spreadsheet problem.
+- “Download my data (CSV)” now produces one UTF-8 spreadsheet file that opens
+  in mobile or desktop Numbers, Excel, and Google Sheets. Every record uses the
+  same nine columns: category, gym, branch, date, record, details, amount,
+  currency, and status. The export contains only recorded profile,
+  membership, balance, payment, check-in, activity, class, trial, and
+  marketing-preference facts. Empty profile fields are omitted; serialized
+  JSON, internal record ids, database metadata, and duplicate technical
+  columns are absent.
+- The temporary HTML member-report path and its generator were removed rather
+  than retained as a fallback. Production and mock adapters now generate the
+  same flat CSV contract. Arabic and other Unicode text remain intact, money
+  uses human major units, dates use the gym/member timezone, and spreadsheet
+  formula prefixes are neutralized.
+- The staff/owner CSV datasets remain spreadsheets, but the final opaque RIVET
+  member, lead, transaction, charge, audit, PT-order, and operations record-id
+  columns were removed. Names, member numbers, receipt numbers, SKUs, external
+  references, dates, money, statuses, branch context, and other operationally
+  useful fields remain.
+- Verification passed both TypeScript checks, zero-warning lint and the
+  secret-output audit, 177 Vitest files / 1,067 tests plus 14 repository-safety
+  tests, the 59-page Production build, the focused three-download browser
+  suite, and `git diff --check`.
+- Application commit `df3442b` is pushed to `main`. The guarded Convex dry run
+  explicitly printed Production `descriptive-meerkat-589`; schema validation
+  passed and no indexes were deleted. The exact backend then deployed
+  successfully and the read-only Production health check returned `status:
+  ok`. Vercel and GitHub checks were triggered by the pushed commit. No
+  Production tenant record, product data, provider setting, or environment
+  variable was mutated.
+
+## Human-readable exports and reliable downloads — 31 August 2026
+
+- Every user-facing export path was inventoried and moved onto shared,
+  spreadsheet-safe CSV and browser-download primitives. CSV files now include
+  a UTF-8 byte-order mark for Excel, CRLF rows, correct quoting, neutralized
+  spreadsheet formulas, sanitized filenames, and delayed object-URL cleanup so
+  Safari has time to finish downloading.
+- The staff Export center no longer puts serialized application objects into a
+  `data_json` cell. Member, lead, payment, membership-liability, audit,
+  personal-training, and operations exports now have explicit human-readable
+  columns, names instead of opaque identifiers where available, gym-local
+  dates and times, labelled statuses, major-unit money plus currency, branch
+  scope, applied filters, and a generated-at preamble. Empty exports retain
+  their useful column headings.
+- A member's “Download my data (CSV)” archive is one normalized table of
+  profile, memberships, charges and balances, payments and refunds, check-ins,
+  activity timeline, class bookings, trial bookings, and marketing-preference
+  history. It preserves Arabic and other Unicode text and omits the former raw
+  JSON blob and all opaque internal record identifiers.
+- Reports, operational analytics, platform billing, receipt text downloads,
+  import templates/rejected rows, and facility QR downloads now use the same
+  reliable download path. The finance overview export reads every bounded API
+  page in the selected date range instead of exporting only the visible first
+  25 transactions.
+- Production and mock adapters share the same export contract. The server
+  continues to enforce tenant, role, branch, row-count, and byte-size bounds;
+  no browser-side formatter can widen an actor's data scope.
+- New regression coverage verifies formula safety, Unicode, money/date/status
+  formatting, tenant isolation, row and byte limits, idempotency, all seven
+  staff datasets, and the complete member archive. Playwright downloads three
+  representative files to disk and inspects the real contents: staff member
+  directory, complete finance range, and member personal archive.
+- Verification passed both TypeScript checks, zero-warning lint and the
+  secret-output audit, 177 Vitest files / 1,067 tests plus 14 repository-safety
+  tests, the 59-page Production build, 53 credential-free Playwright journeys
+  with 14 isolated-staging journeys explicitly skipped, the Production
+  dependency audit, and `git diff --check`.
+- The member CSV correction was deployed through the normal exact-target
+  Production Convex gate. No Production data, provider setting, schema record,
+  or environment variable was changed by the deployment.
+
+## Management-statements forensic audit and corrections — 31 August 2026
+
+- A full forensic audit of the management ledger and statements system was
+  executed and recorded in the new living document
+  `docs/18_MANAGEMENT_STATEMENTS_FORENSIC_AUDIT.md` (accounting contract,
+  source-to-statement matrix, findings with severity/root cause/fix/test,
+  open policy decisions, limitations). The trigger question — fractional
+  fils on whole-dinar membership revenue — was proven correct by policy:
+  JOD's ISO exponent is 3 and the daily-weighted-largest-remainder
+  allocation always re-sums to the exact net sale price, now covered by 17
+  hand-calculated allocator regression tests
+  (`convex/accounting.allocation.test.ts`).
+- **Fixed (both adapters, high severity first):** a void of a never-posted
+  payment no longer fabricates a cash outflow — void facts require the
+  original payment source to be posted and are otherwise `excluded` with an
+  explicit reason; the balance sheet's misnamed `currentEarnings` is now
+  `cumulativeEarnings` (equal-valued deprecated alias retained for deploy
+  skew, UI copy/equation updated, "As of {date}" scope label);
+  `cashflow-classification.v2` excludes internal cash-to-cash transfers from
+  the classified sections, warns on mixed-activity compound entries, and
+  accurately documents the cash definition and priority rule; statements now
+  warn when a posted source's operational record changed after posting
+  (amount/currency/branch drift → review for owner reversal + corrected
+  posting); the mock adapter gained the missing 5900 account, recognition
+  now honors completed freeze history (not just the active flag), and the
+  GM cash-variance metric exposes drill-down ids.
+- **Statement UX:** the income statement explains why fils appear (naming
+  the allocation policy and its conservation guarantee) whenever recognition
+  candidates exist, and the net-income caption includes other income.
+- **New regression evidence** (each test fails against the pre-audit code):
+  full membership lifecycle with hand-derived statements (sale → payment →
+  two recognized months → refund → cancellation drift warning → reversal
+  restoring deferred revenue exactly), full retail lifecycle (PO receipt →
+  sale → COGS → refund → stock restoration across all three statements),
+  adversarial cash-flow classification (financing/investing/excluded
+  transfer/flagged mixed entry, zero reconciliation difference), and void
+  conservation (payment + void net to an empty trial balance) in
+  `convex/managementReports.forensic.test.ts`; mock parity for
+  classification v2, cumulative earnings, freeze history, account 5900, and
+  GM drill-downs in `src/lib/mock/managementReports.test.ts`.
+- Verified this working tree: full Vitest suite (178 files / 1,085 tests),
+  app + Convex typechecks, Convex codegen check, ESLint with secret-output
+  audit, production build, and `git diff --check` — all clean. Browser
+  evidence: the finance-relevant Playwright specs (happy-path +
+  role-routing, 27 tests) passed in a dedicated run; the full
+  credential-free suite then ran 48 passed / 14 credential-gated skipped
+  with two role-routing `page.goto` 60-second timeouts under full parallel
+  load — both green again on an isolated rerun, so they are load flakes,
+  not product failures. A mock-mode browser walkthrough covered the hub,
+  all three statements (desktop and mobile widths), and ledger controls
+  (100-fact queue refresh; the seeded never-posted void visibly `excluded`
+  with its new reason; 17-account chart in both modes). Two unrelated
+  fixed-date test fixtures that broke at the real Aug→Sep midnight rollover
+  were re-anchored to the tenant clock
+  (`domain.customer-ownership.test.ts` current-month check-in, mock GM
+  week-ago range). Convex functions changed with **no schema change**; the
+  backend deploy is owed via `pnpm convex:deploy -- --yes` per the deploy
+  split after these changes land on `main`.
+
+## Payout removal, event details, overlap guard, and branded print — 31 August 2026
+
+- Coach payout is gone end to end: the classes-page button, dialog, and CSV,
+  the `classes.coachPayout` operation, the coach pay-per-class fields in the
+  directory UI and both adapters, and the client types. It had no footprint in
+  Reports or the financial statements; the retired optional occurrence columns
+  stay in the schema so historical rows keep validating.
+- The timetable chip menu gained “View event details”: a popup with photo,
+  day, time, duration, coach, audience, booked count, and notes, plus a pen
+  Edit button that jumps straight into the editor and an Open-next-dated-class
+  action.
+- Two classes can no longer overlap on the same branch and weekday — both
+  backends reject the save naming the clashing class and its start time;
+  back-to-back classes remain fine.
+- Print got a real sheet: the run injects an A4-landscape page rule for just
+  that print (receipts keep their layout), and the output opens with the gym's
+  Brand Kit logo, gym and branch name, print date, and an "Operated by RIVET™"
+  credit, with crisp black grid lines and outline chips that survive printers
+  ignoring background graphics.
+
+## Settings workspace polish and Finance navigation — 31 August 2026
+
+- Settings now uses one intentional workspace: a contained, sticky section
+  rail on desktop and a compact section picker on tablet/mobile. The selected
+  section is stored in the URL, so refresh, Back, and shared links preserve
+  context without a second page scrollbar or an abandoned left column.
+- Operational rules were rebuilt as four aligned groups — Entry and access,
+  Class booking, Membership and retention, and Referrals and freeze requests.
+  Units sit inside their inputs, related switches live in their panel headers,
+  and disabled policy fields remain legible without nested cards.
+- Hours and free-trial windows now have a separate full-width, branch-specific
+  weekly editor. This removes the long rules stack beside the former narrow
+  schedule column and gives the schedule a responsive table/stack layout.
+- Editable Settings surfaces share a sticky change bar with Discard, Save,
+  saving/failure/success states, Cmd/Ctrl+S, validation-aware navigation
+  protection, and browser-unload protection. Organization, receipts, Brand
+  Kit, operational email, and the two operational editors use the common
+  treatment; modal-owned saves remain local to their dialogs.
+- Reports is a first-class Finance destination in the primary sidebar,
+  directly after Payments. It is no longer duplicated inside the Payments
+  switcher, and `/reports` no longer makes Payments appear active.
+- Desktop and 390px mobile browser reviews covered Operational rules, Hours &
+  trials, branch selection, dirty-state controls, field alignment, and the
+  Finance navigation. No application console error was observed; the only
+  warning was Clerk's expected local development-key notice.
+- Verification passed TypeScript, zero-warning lint and the secret-output
+  audit, 176 Vitest files / 1,059 tests plus 14 repository-safety tests, the
+  59-route Production build, 47 credential-free Playwright journeys with 14
+  isolated-staging journeys explicitly skipped, the Production dependency
+  audit, and `git diff --check`. This is frontend-only work and requires no
+  Convex deployment or Production data mutation.
+
+## Member login handoff regression fix, 31 August 2026
+
+- Member login now selects the authenticated member's existing Convex profile
+  through the read-only customer experience query. It no longer calls
+  `customer.register` during sign-in.
+- The prior handoff sent only email, name, and an empty phone to a profile
+  mutation. Once gender became mandatory for profile writes, that mutation
+  rejected and left signed-in members on the login recovery panel. Opening
+  RIVET from the public header appeared to fix the session because the direct
+  member route already used the read-only subscription.
+- Focused provider coverage now proves that member sign-in selects the existing
+  identity-scoped profile and never invokes the registration mutation. Member
+  signup remains the only account-entry path that creates the full profile,
+  including required gender.
+- Both TypeScript checks, zero-warning lint and secret-output audit, 176 Vitest
+  files / 1,057 tests, the 59-route Production build, the focused login/provider
+  tests, all 7 credential-free role-routing browser journeys, and
+  `git diff --check` passed. This frontend-only fix changes no Convex schema or
+  function and requires no Convex deploy.
+
+## Member week view, class history, and midnight guard — 31 August 2026
+
+- The member Classes tab became a one-day-at-a-time week view: arrows walk
+  from today to the end of the current week (Sunday-first, matching the gym
+  schedule), cards sit three across on desktop and stack on mobile, and the
+  copy says plainly that next week opens on Sunday. A "My history" view lists
+  past classes with Attended, No-show, and cancellation badges from the
+  member's own booking facts.
+- Classes can no longer cross midnight: Convex and the mock reject a start
+  time plus duration past 24:00 with a plain message, the staff editor
+  disables Save and explains why before the request is even sent, and the
+  timetable's hour window is clamped at midnight so an existing overnight
+  class renders clipped at 24:00 instead of stretching the grid and hiding at
+  the far right — which is how the "test" class vanished.
+- Left-clicking a timetable chip now opens the same three-option menu as
+  right-click (Edit class, Open next dated class, Remove from schedule);
+  right-click still works.
+
+## Dated classes, coach operations, retention, and integrated operations — 31 August 2026
+
+- A fresh GitHub fetch confirmed `main` and `origin/main` matched at `277aca4`
+  before implementation. No newer Elias commit was waiting. The separate
+  `codex/referral-analytics-checklists` branch was discovered after its seven
+  reviewable commits landed and was merged intact through `6a970cd`; neither
+  workstream's history was rewritten.
+- The weekly class timetable now produces dated occurrences for staff and
+  members. An authenticated member can view their branch schedule, book a
+  confirmed place, join a bounded FIFO waitlist, cancel, and receive an in-app
+  promotion notice. The server owns capacity, duplicate booking, booking
+  horizon, cancellation cutoff, active-booking limit, plan eligibility,
+  branch access, membership status, and Women/Men audience checks. Late
+  cancellations are recorded without a fee or membership penalty.
+- Class policy is configurable per gym. New profiles and imports require
+  `male` or `female`; legacy missing-gender members must correct their profile
+  before self-booking a restricted class. Staff may override an audience
+  mismatch only with a reason and immutable audit evidence.
+- Reception can open a dated roster, add or remove a member, and mark
+  attendance. A manager/owner finalizes attendance only after the class ends;
+  only then do unmarked confirmed bookings become no-shows. Per-member no-show
+  totals use a small projection instead of scanning class history for every
+  roster row.
+- Coaches have a filtered weekly view, an audited reason-gated substitution
+  flow, optional pay-per-class configuration, and a read-only monthly payout
+  report/CSV. Each delivered occurrence snapshots its applicable rate, so a
+  later rate change cannot rewrite a prior month. The report creates no charge,
+  payment, cash-shift, journal, or ledger record.
+- CRM gained a branch-safe At-risk queue for inactive, expiring, and recently
+  expired members. It excludes frozen/future/archived/ineligible records,
+  explains the exact risk, and exposes Call, manual WhatsApp, contact logging,
+  follow-up, configurable snooze, and member actions. Highest-priority risks
+  also enter Today; all outreach remains on the member timeline.
+- The parallel work adds privacy-safe member referral history and gym contact
+  actions, six bounded read-only operational reports, and daily branch
+  opening/closing checklists with template ownership, local due times,
+  one-tap tablet controls, reasoned failure/correction, Today escalation, and
+  conversion of failed items into existing maintenance tasks.
+- Commit `6cc54a6` closes the analytics dependency between the branches with a
+  branch-scoped Class utilization report and CSV. It includes untouched
+  zero-booking timetable dates as offered capacity, while reported bookings,
+  attendance, waitlists, cancellations, and no-shows come only from saved
+  roster facts. Cancelled classes are shown but excluded from fill capacity.
+- The merged code keeps Convex and mock contracts aligned, enforces reporting
+  and branch permissions server-side, and preserves `FRONTEND_HANDOFF.md` as
+  the frozen historical artifact.
+- The final combined static gate passed both TypeScript checks, zero-warning
+  lint and secret-output audit, 176 Vitest files / 1,054 tests plus 14
+  repository-safety tests, the 59-route Production build, the Production
+  dependency audit, and `git diff --check`.
+- The final clean-server credential-free Playwright gate passed 47 journeys,
+  skipped the 14 explicitly isolated-staging journeys, and failed none.
+- Application-bearing tip `fdd6dac` is pushed on matching `main` and
+  `origin/main`. GitHub Actions run `33349634901` passed all three jobs,
+  including generated-code consistency, the complete static/build gate, and
+  credential-free Playwright. Vercel's exact-SHA deployment
+  `A9RNZUP3tK2taFs2vU7VVD9Mho19` completed successfully.
+- The guarded Convex dry run and deploy explicitly targeted Production
+  `descriptive-meerkat-589`, completed schema validation, installed 21
+  additive class/checklist/reporting indexes, and deleted none. The read-only
+  `health:check` returned `status: ok`. No provider was enabled and no
+  Production tenant record, money record, import, seed, or restore was run.
+  Signed-in role acceptance of the new surfaces remains a release-verification
+  task, not unfinished implementation.
+
+## Referral polish, operational analytics, and daily branch checklists — 31 August 2026
+
+- Branch `codex/referral-analytics-checklists` (base `277aca4`) carried this
+  batch in seven reviewable commits before integration through `6a970cd`.
+- The member referral card gained a dated reward history built purely from
+  existing `referralReward` facts — applied, capped, and ineligible rewards
+  plus pending rows for attributed members awaiting a first sale — with
+  synthetic event ids so nothing keys back to the referred person, a clearer
+  pre-first-referral empty state, and manual WhatsApp/call actions from the
+  gym's published contact number. Convex and mock projections stay identical;
+  new ownership, privacy, parity, and component tests cover it.
+- A read-only analytics pack lives under Reports beside the existing overview:
+  Peak hours (accepted check-ins by gym-local weekday/hour with a heatmap and
+  accessible table), Retention cohorts (first-membership-month cohorts with
+  age-gated denominators), Renewal forecast (mutually exclusive 7/14/30-day
+  buckets excluding memberships with successor terms), Collection efficiency
+  (voided never counts as collected; outstanding-now is explicitly not a
+  period figure), CRM response and conversion (persisted call-attempt,
+  trial, and conversion facts; median first response), and Commercial
+  controls (refund/void/discount/override counts with money from payment and
+  charge facts and audit drill-down). All math sits in one pure library
+  (`src/lib/analytics/operational-reports`) called by both adapters, uses a
+  new `by_organization_type_created` index with timezone margins, enforces
+  `reports.financial.read` plus branch scope server-side, caps ranges at one
+  year, exports full filtered CSVs, and writes nothing.
+- Daily branch checklists are additive `checklistTemplates`/`checklistRuns`
+  tables: opening/closing templates per branch with local due times, a
+  responsible gym role, and up to 50 ordered items (optional gym-space links
+  and per-item maintenance offers). Runs snapshot the template per
+  branch-local date, are created idempotently inside one serializable
+  transaction, and mark due/overdue from the branch clock when the page
+  opens — no cron. One-tap completion records actor and time; failed or
+  skipped required items and any correction demand a reason and an immutable
+  audit row; failed items escalate into real facility tasks through the
+  existing operations contract. Owners/managers manage templates under
+  Settings → Daily checklists; staff run them from a new Daily checklist page
+  built for tablets (large targets, explicit states). The Today queue gains
+  role-safe `branch_checklist` entries (due, overdue, failed) via one
+  isolated helper call in each adapter's dashboard, kept as its own commit
+  for cheap re-merging against the parallel branch.
+- Deferred analytics integration notes: class utilization needs the dated
+  class-occurrence records (per-occurrence roster/capacity) the parallel
+  branch introduces; coach delivery/payout analytics need per-occurrence
+  attendance linked to coach ids and any pay-rate facts; At-risk recovery
+  reporting needs the At-risk queue's persisted outreach facts. No
+  placeholder reports were created for these.
+- Local gate for the batch: both TypeScript checks, zero-warning lint and
+  secret audit, 172 Vitest files / 1,039 tests, the Production build, the
+  credential-free Playwright suite, `pnpm audit --prod`, and
+  `git diff --check`. No Convex deployment, provider activation, Production
+  mutation, or push to `main` was performed from this branch.
+
+
+## Credentialed release verification — 31 August 2026
+
+- The isolated Development release pass exercised the owner-settings,
+  staff-authorization, membership-lifecycle, reception-entry,
+  finance-reconciliation, member-portal, isolation/audit, personal-training,
+  and realtime journeys with role-specific Clerk identities. Every created
+  finance, PT, and invitation artifact was cleaned up, and the shared staging
+  ledger now fails a journey when any planned cleanup remains incomplete.
+- Live verification exposed and fixed two contract defects: legacy role rows
+  now retain the later product-owned PT/operations/accounting capabilities
+  until an owner saves the current permission catalog, and staff invitations
+  call the dedicated Convex action with its actual validator shape instead of
+  the generic domain-operation envelope.
+- The trial/CRM and gym-provisioning public-write journeys remain blocked in
+  Development because `RIVET_PUBLIC_REQUEST_PEPPER` is absent from
+  `fleet-otter-621`; the fail-closed behavior is correct. The salesperson
+  browser state also expired and must be refreshed before the sales-specific
+  trial pass. Automation remains deliberately deferred and disabled.
+- Local verification passed both TypeScript checks, zero-warning lint and
+  secret-output audit, 169 Vitest files / 1,013 tests plus 14 repository-safety
+  tests, the 58-page Production build, a focused two-role class-calendar
+  browser regression, the Production dependency audit, and `git diff --check`.
+  The complete credential-free browser suite is left to the pushed GitHub gate
+  so it runs against a fresh mock server rather than the active credentialed
+  Development server on port 3100.
+- Release tip `b1da867` is pushed on matching `main` and `origin/main`.
+  Vercel completed the exact-SHA deployment, and the guarded Convex dry run and
+  deploy explicitly targeted Production `descriptive-meerkat-589`; schema
+  validation passed and no indexes were deleted. Production health returned
+  `status: ok`, the renewal aggregate audit returned zero records, and the
+  default-off subscription preview processed five organizations with two
+  eligible and zero invoice, past-due, or suspension writes.
+- A hard reload of the authenticated owner session cleared the stale cached-data
+  banner. Audit, Operations, Finance/Statements, and Settings loaded live with
+  no browser errors; Renewal recovery was unchecked and external delivery was
+  disabled. Vercel is green, and GitHub run `33341837875` passed all three
+  jobs, including the clean-server credential-free browser suite.
+
+## Membership migration and member referral sharing — 30 August 2026
+
+- The batch started by fetching GitHub and merging Elias's five Settings
+  follow-ups (`4fdde4f` through `3755f66`) into `main` without rewriting
+  partner history. Merge commit `d2a45e2` was pushed before feature work began.
+- Commit `d4a66c8` expands the existing file-first CSV/XLSX member importer into
+  the approved membership-migration contract. A gym can map source plans to
+  active RIVET plans and import active or scheduled terms, remaining visits,
+  a current freeze, an opening balance, and read-only historical payment
+  evidence at an explicit migration cutoff date. Profile-only imports remain
+  valid.
+- Migration never fabricates historical sales, payments, receipts, cash shifts,
+  or posted revenue. Imported terms use zero sale price; opening balances are
+  dated migration receivables marked ineligible for accounting-source posting;
+  historical paid totals are evidence records only. Source filename, row,
+  mapping, cutoff, batch progress, rejection, and audit provenance are retained
+  without storing the uploaded workbook body.
+- Resumable commit and seven-day undo now cover the exact untouched member,
+  membership, opening-receivable, freeze, and historical-evidence records made
+  by the batch. Any later operational or financial use makes that row ineligible
+  for undo and the skip is reported rather than silently deleting history.
+- Commit `24e3749` adds the member referral-sharing loop. Eligible members see
+  the gym's configured reward, rolling-window progress, and an on-demand
+  private share link in My Gyms. The URL contains only an opaque token and
+  survives real member signup before the referred visitor submits a trial.
+- Convex validates a referral against the exact target gym and a live referrer,
+  records the CRM lead as `source: referral`, carries attribution through the
+  completed-trial sale, and delegates the reward to the existing first-sale,
+  cap, active-membership, self-referral, and immutable-audit rules. The token is
+  not copied into the trial booking or exposed to gym staff.
+- Mock parity covers the same link → trial → CRM → member → first-sale reward
+  path. Its atomic trial-sale helper was corrected after the new integration
+  test found that it had dropped referral attribution while Production Convex
+  preserved it.
+- Commit `fe54838` aligns browser, mock, and Convex import-size validation at
+  5 MB (measured as UTF-8 bytes) while retaining the 10,000-row batch cap.
+- Commit `31eae98` aligns the synchronous member-preview fixture with the
+  enabled referral policy so the first browser paint and the live API
+  projection expose the same referral card.
+- The completed local gate passed both TypeScript checks, lint/secret audit,
+  169 Vitest files / 1,011 tests plus 14 repository-safety tests, the 58-page
+  Production build, `pnpm audit --prod`, `git diff --check`, and 46
+  credential-free Playwright journeys with 14 explicit staging-only skips and
+  zero failures. The Impeccable UI detector reported no flagged patterns in
+  the importer or member referral surfaces.
+- No Convex deployment, provider activation, or Production tenant-data import
+  was performed for the migration/referral commits. During the final sync,
+  Elias's commit `3c43829` recorded that Convex Production
+  `descriptive-meerkat-589` was deployed cleanly through merge `d2a45e2`
+  (schema valid; no index deletions). Current application code tip `31eae98`
+  still needs the normal exact-target backend/hosted release procedure after
+  the repository push.
+
+## Partner features, weekly timetable, and integration hardening — 30 August 2026
+
+- Classes moved from dated sessions to a fixed weekly template: `classSessions`
+  now stores `dayOfWeek`/`startMinute` (legacy dated rows are normalized on
+  read in the tenant timezone), the page renders a gantt-style grid (days down,
+  hours across, chips spanning their duration with lane packing for overlaps),
+  and each class carries a Women/Men/Mixed audience shown as a W/M badge.
+- The class scheduler gained a coach directory (`classes.coach.upsert/remove`,
+  entityType `coach`; renames sync every class's snapshot, removal keeps the
+  class), right-click Edit / Who is in / Remove-from-schedule (removal is
+  reason-gated and audited as `classes.session.delete`), press-a-slot creation
+  at 30-minute resolution, optional class photos (`class_image` assets), and a
+  Print button that prints only the schedule for a PDF via the browser.
+- The finance cluster is coherent again: the sidebar keeps Payments active
+  across `/payments/shifts` and `/reports` (and Leads active on lead detail
+  pages), and all three finance views share the same eyebrow, one-line
+  description, and tab-strip position so nothing jumps between tabs.
+- Settings became a ServiceTitan-style vertical rail — grouped sections with a
+  search box that filters by name and synonyms (e.g. "freeze" finds Rules &
+  hours, "whatsapp" finds Notifications) — replacing the horizontally
+  scrolling tab strip. After trialing an accordion of sub-sections, the rail
+  settled on plain buttons only: dropdowns are reserved for the day a section
+  splits into separate pages. The rail scrolls independently when tall and
+  uses pointer cursors.
+- A saved Brand Kit logo now replaces the RIVET lockup in the workspace
+  sidebar and mobile drawer with a quiet "Operated by RIVET™" credit beneath;
+  route changes across the staff, customer, and platform shells animate with a
+  240 ms rise-and-fade (`template.tsx` per shell, inert under reduced motion).
+- Commit `5772a9c` closes the referral and freeze integration gaps found during
+  review. Referrer selection now enforces branch scope, and a future scheduled
+  membership no longer qualifies for a reward. Freeze-request listing,
+  approval, and denial enforce the linked membership's branch boundary,
+  including legacy request rows without a branch key.
+- The member app now reads an identity-owned freeze-policy preview, hides the
+  action when requests are disabled, and shows the current limits and predicted
+  fee before submission. Loading and failure states do not masquerade as an
+  empty request history; the staff panel is equally explicit about retries and
+  approval-time fee recalculation.
+- The reconciled class UI preserves Reception's roster/attendance permission,
+  keeps scheduling and deletion manager-only, validates capacity before save,
+  and exposes honest retry states for the timetable, coach directory, and
+  member lookup.
+- A final fetch caught Elias's follow-up commits `25c73f9` and `c8cce1c` before
+  push. Merge commit `8e5adeb` preserves the fixed weekly timetable, workspace
+  shell, vertical Settings rail, and repaired browser selectors alongside the
+  earlier referral/freeze and UI hardening; no partner history was rewritten.
+- Verification at application tip `8e5adeb` passed both TypeScript checks,
+  zero-warning lint and secret-output audit, 169 Vitest files / 1,003 tests plus
+  14 repository-safety tests, the 58-route Production build, 45 credential-free
+  Playwright journeys with 14 explicit staging-only skips, a clean Production
+  dependency audit, and `git diff --check`.
+- This batch did not deploy Convex, enable a provider, or mutate Production
+  tenant data. Release `156f9b1` remains the last fully verified exact-target
+  backend and hosted pair. Do not infer backend parity from an automatic
+  frontend deployment; run the normal release procedure for this tip.
+
+## Migration and front-desk completion — 30 August 2026
+
+- A fresh GitHub fetch began this batch with clean, matching `main` and
+  `origin/main` at `bc3dfba`; no newer Elias/partner commit was waiting and the
+  frozen `FRONTEND_HANDOFF.md` remains unchanged.
+- Commit `f60a724` closes the remaining quality-of-life data boundaries:
+  complete-or-fail exports with expired payload cleanup, indexed customer
+  identity lookups, bounded duplicate detection with a 10,000-record fixture,
+  and deletion of revoked push-subscription credentials instead of indefinite
+  retention.
+- Commit `8726737` turns the member importer into a real migration tool. It
+  accepts CSV and XLSX files, recognizes English and Arabic-style headings,
+  lets the operator confirm column mapping, normalizes international contacts,
+  previews duplicates and invalid rows, saves batch provenance and progress,
+  resumes interrupted chunks, downloads rejected rows, and supports a
+  seven-day audited undo that archives only untouched records created by that
+  batch. Original uploaded file bodies are not persisted.
+- Commit `7f336c9` replaces the two-write **Create & sell membership**
+  continuation with one idempotent Convex transaction. Staff review the member,
+  choose a branch-eligible plan, collect a full/partial payment or deliberately
+  leave a balance, and receive one completion result with the member number,
+  term, balance, and receipt. A failed plan/payment step rolls back the member;
+  replay cannot charge twice. Contact matches require an explicit
+  different-person confirmation and create immutable override evidence.
+- The sale work also corrects an older response inconsistency: a successful
+  payment now returns the persisted post-payment charge and canonical receipt,
+  rather than a stale pre-payment balance in the immediate response.
+- Local verification for application tip `822f328` passed both TypeScript
+  checks, zero-warning lint and secret-output audit, 166 Vitest files / 990
+  tests plus 14 repository-safety tests, the 57-page Production build, 43
+  credential-free Playwright journeys / 14 explicit staging-only skips / 0
+  failures, `pnpm audit --prod` with no known vulnerabilities, and
+  `git diff --check`.
+- Release commit `156f9b1` was pushed directly to matching `main` and
+  `origin/main`; no partner commit arrived during the final fetch. GitHub
+  Actions run `33311009377` passed all three jobs for that exact SHA, including
+  the 43-pass credential-free browser suite. Vercel Production deployment
+  `dpl_HXZ7Qym8nDaaSiVkQMFTRUCxjngq` is `READY` for the same SHA and the
+  canonical origin returned HTTP 200.
+- Convex Production `descriptive-meerkat-589` passed the exact-target guarded
+  dry run and deploy. Schema validation completed, no indexes were deleted,
+  and four additive indexes were installed for bounded customer identity,
+  expired-export cleanup, and maintenance state. The read-only `health`
+  operation returned `status: ok`. Convex repeated the existing Free-plan
+  overage warning; no plan or PAYG change was made.
+- No Production tenant, member, membership, payment, import, or provider data
+  was created or changed by this release. The importer and guided sale are now
+  available for an authorized operator to exercise deliberately.
+- Membership terms, opening balances, historical payments, and financial
+  history are intentionally not accepted by the generic member importer. Their
+  accounting and migration rules remain an explicit product decision. Arabic
+  translation and the measured performance sprint remain last, as directed.
+
+## Customizable referrals + member freeze requests — 30 August 2026
+
+- **Referral rewards (Settings → Operational rules → Referral rewards):**
+  fully gym-customizable — enabled flag, free days per referral, a per-member
+  day cap, and the rolling window that resets it. Member creation gained a
+  "Referred by" member search; when the referred person completes their
+  first membership sale, the referrer's active membership is extended
+  automatically, the outcome (applied / cap reached / no active membership)
+  is recorded as an immutable `referralReward` fact with an audit event and
+  a membership adjustment, repeat sales and self-referrals grant nothing,
+  and the customer-app projection is kept in sync.
+- **Member freeze requests (Settings → Operational rules → Member freeze
+  requests):** members ask from the membership page in their app (dates,
+  days, reason, with the expected fee shown); gyms configure free freezes
+  per window, the fee after that (e.g. first free, then 10 JOD), the max
+  days per freeze, and the reset window. Requests cannot be gamed: policy
+  bounds, one pending request per membership, no overlap with an active
+  freeze, and the fee is **re-computed at approval**. Staff decide from a
+  panel on Memberships — approval applies the freeze through the existing
+  audited machinery and books an unpaid "Membership freeze fee" charge when
+  due; denial requires a reason the member sees.
+- Legacy settings normalize safely on both server and client; MockGymOSApi
+  mirrors both features (including a stable demo link from bundled customer
+  memberships to generated seed members). New Convex suites cover the
+  reward/cap/dedupe/disabled referral paths and the request → decide →
+  fee/charge freeze paths (suite now 997). Verified in the mock browser:
+  member "Request a freeze" → policy-checked submission → confirmation.
+
+## Group class calendar — 30 August 2026
+
+- New **Classes** workspace (nav: Workspace → Classes, all plan tiers): a
+  press-to-schedule weekly calendar with time across the top and dates down
+  the left, per the owner's spec. Pressing an open slot opens the create
+  dialog (name, coach from active staff, start, duration, capacity, notes,
+  optional photo); pressing a class opens roster management — "who is in" —
+  with live member search, one-tap add/remove, attendance checkboxes, edit,
+  and reason-gated cancellation.
+- Backend: dedicated `classSessions` table with a `(org, branch, startsAt)`
+  window index; `classes.*` operations routed through the domain seam;
+  scheduling/cancelling requires `operations.manage`, roster and attendance
+  accept `members.write` or reception's `pt.book_for_member`; capacity,
+  duration, window, branch-scope, and cancelled-state guards are
+  server-enforced with audit events for every action. Class photos are a new
+  `class_image` media type that uploads as an expiring draft and activates
+  when the session references it.
+- MockGymOSApi mirrors the contract with seeded demo classes. Covered by a
+  Convex suite (scheduling, window listing, roster capacity/dedupe,
+  attendance, reason-gated cancel, branch scope, receptionist permissions;
+  suite now 979) and verified in the mock browser end-to-end (slot → create
+  → save; roster attendance + live member add reaching 3/12 booked).
+
+## Quality-of-life program — 30 August 2026
+
+- The approved quality-of-life program is implemented on
+  `codex/qol-implementation` in focused application, audit-fix, and test
+  commits from `0c6ea31` through `6296fea`. The frozen
+  `FRONTEND_HANDOFF.md` remains
+  unchanged and no provider, deployment, environment, or Production data was
+  touched.
+- Members now have an ownership-scoped financial center with balances,
+  itemized transaction history, status explanations, receipt deep links,
+  printable/downloadable receipts, and a self-service personal-data export.
+  Receipt and export authorization is enforced from the authenticated member
+  identity rather than a caller-supplied customer ID.
+- Members and CRM now preserve filters in shareable URLs and support private
+  saved views with automatic personal defaults, rename/update, duplicate, and
+  delete controls. Members have selectable columns and bounded, idempotent bulk
+  tag, branch, follow-up, and reason-gated archive work; CRM has selectable
+  list/board records and bounded owner/follow-up actions. Every operation
+  rechecks tenant, branch, permission, and record eligibility and reports
+  succeeded, skipped, and failed records.
+- `/members/duplicates` provides a tenant-scoped candidate queue, match reasons,
+  field-by-field survivor choices, an impact preview, optimistic version check,
+  reason-gated ignore/merge decisions, and immutable merge evidence. Completed
+  receipts, payments, ledger facts, and audit history are not rewritten;
+  linked history remains visible from the surviving member. Records attached
+  to a member-owned account are deliberately blocked from automatic merge and
+  require supervised identity resolution.
+- New owners, invited staff, and members receive versioned, persisted,
+  resumable, dismissible, and replayable guidance. Owner readiness derives
+  required operating progress from real organization, branch, payment, plan,
+  invitation, import, reception, shift, and public-profile state. Staff tours
+  are permission/role aware, state-derived readiness cannot be manually
+  bypassed, and member guidance covers memberships, short-lived QR
+  entry, PT, profile ownership, finance, installation, and notifications.
+- The member app is installable. Its service worker caches only a versioned,
+  non-sensitive shell and offline assets; authenticated member, financial,
+  receipt, entry-decision, and QR requests are explicitly excluded. Install
+  prompting is user-initiated, notification subscription is explicit opt-in,
+  and the offline screen never claims a QR remains valid.
+- Automations now expose a read-only operational monitor with rules, global
+  pause state, provider readiness, expected next run, last result, and
+  suppressed/retried/failed activity. `RIVET_AUTOMATIONS_LIVE` must equal
+  `"true"` before create, update, run, or retry operations are permitted; this
+  batch did not enable it.
+- `/exports` provides audited, branch/permission-scoped CSV generation for
+  members, leads, payments/refunds/receipts/reconciliation, audit events,
+  membership liabilities, PT orders, and inventory/supplier operations.
+  Exports include filter/scope/timezone metadata, use idempotency keys, and
+  expire their inline download content after 24 hours. CSV text cells are
+  spreadsheet-formula neutralized and PT rows honor selected-branch scope.
+- Global navigation now searches permitted members, leads, receipts, pages,
+  and role actions, including phone fragments, receipt numbers, and external
+  references. It records bounded recent work, supports user-pinned quick
+  actions, and includes a keyboard-shortcuts reference opened with `?`.
+- Verification passed both TypeScript checks, zero-warning lint and the secret
+  audit, **161 Vitest files / 977 tests**, **14 repository-safety tests**, the
+  **57-route** Production build, **43 credential-free Playwright passes / 14
+  explicit staging-only skips / 0 failures**, `pnpm audit --prod` with no known
+  vulnerabilities, and `git diff --check`.
+- Intentionally deferred to the final pre-launch work: legal/commercial pages
+  and consent copy, full Arabic localization and language switching, and the
+  broad measured performance-optimization sprint. Online member payment,
+  renewal/purchase, live automation delivery, web-push delivery, and any
+  deployment/provider activation still require their separate policy and
+  operator gates.
+
+## File-first member import and plain-language maintenance — 29 August 2026
+
+- A fresh GitHub fetch started from clean matching `main` and `origin/main` at
+  `59ec0a5`; no newer Elias/partner commit or other non-Arabic slice was
+  waiting. The frozen `FRONTEND_HANDOFF.md` was not changed.
+- Member onboarding is now visibly file-first. The primary flow accepts a real
+  CSV through drag-and-drop or the native file chooser, shows the selected file
+  and size, chooses a sensible concrete branch when the global workspace is in
+  **All branches**, and proceeds through **Review members** and **Import
+  members** language. Raw CSV editing remains available as a secondary option;
+  the old dominant textarea, narrow `Import destination` rail, sample-import
+  trap, and internal `commit` wording are gone.
+- Operations now calls the physical-work surface **Maintenance**, describes it
+  as cleaning, inspections, and incidents, and asks employees **Where in the
+  gym?** instead of exposing facility/area jargon. Existing internal
+  `facilityTask` and `zone` identifiers remain unchanged so history, indexes,
+  authorization, accounting links, and QR URLs stay compatible.
+- Owners now have **Settings → Gym spaces**, which explains that spaces are
+  recognizable places inside one branch—Reception, Main floor, Studio, Locker
+  room, and similar. Owners can add, edit, classify, size, activate, or archive
+  these spaces through the already-audited `zones.upsert` boundary; managers
+  continue to create and complete branch-safe maintenance work.
+- Application commits `4ce9d24` and `234c62e` contain the importer and
+  maintenance slices. Both TypeScript checks, zero-warning lint and the secret
+  audit, **158 Vitest files / 961 tests**, **14 repository-safety tests**, the
+  **51-page** Production build, **43 Playwright passes / 14 explicit
+  credential-gated skips / 0 failures**, `pnpm audit --prod`, the Impeccable
+  pattern detector, rendered desktop inspection, and `git diff --check` passed.
+- This was a frontend and existing-contract release: no Convex schema/function
+  change, provider activation, environment mutation, or Production tenant-data
+  write was required. The next high-value code candidate is a flexible import
+  mapping and batch-report workflow for the messy spreadsheets real gyms will
+  provide. Importing live memberships, opening balances, and historical money
+  must remain behind explicit product/accounting decisions.
+
+## Clean-tenant engagement, offers, facilities, and scale — 29 August 2026
+
+- RIVET now treats each organization as a clean tenant rather than requiring
+  shared demo data. Staff can onboard an existing member book through a safe
+  CSV review flow: download a template, choose a file or paste CSV, preview
+  validation and duplicates, then explicitly commit. The server independently
+  enforces required headers, normalized contact identities, a 2 MB payload
+  limit, and a 10,000-row limit. Import is an onboarding path, not proof of
+  marketing consent; unknown imported preferences remain suppressed.
+- Contact handling is international by contract. Each organization owns a
+  configurable calling code, Jordan `962` is only the provisioning default,
+  and explicit `+` or `00` numbers preserve their supplied country. Search,
+  duplicates, lead/member capture, imports, and WhatsApp links share the same
+  canonical normalization.
+- Lead detail and renewal work now offer provider-free WhatsApp handoffs with
+  editable prefilled copy and a next-day follow-up. Opening WhatsApp records an
+  immutable handoff attempt; RIVET never claims that an external message was
+  delivered. The older provider-backed delivery fact remains distinct.
+- Staff can create branded, expiring offer links and share them through the
+  same truthful handoff. A tokenized public page supports available, expired,
+  accepted, and declined states. Responses are rate-limited, idempotent, and
+  persisted to the offer, lead, immutable response fact, and unified member/
+  lead timeline. Acceptance is an expression of intent only—it cannot collect
+  payment or activate a membership.
+- Operations now includes a signed-in Facilities workspace with active/history
+  views, critical/open/in-progress totals, quick task presets, status actions,
+  and downloadable zone QR shortcuts. A scan opens the authorized workspace,
+  selects branch/zone, and prepares a task; it is not an unauthenticated write
+  endpoint. Waivers and signed-document collection remain legal/pilot-gated.
+- The scale pass added status-aware facility indexes and relationship-scoped
+  member, membership, invoice, offer, and timeline reads. Today aggregation
+  remains bounded to 12 ranked results while computing truthful counts before
+  truncation. Automated fixtures cover 600 facility tasks and 25,000 Today
+  candidates, including deduplication and stable priority ordering.
+- The implementation was committed directly on `main` in five coherent slices:
+  `ea19e03`, `bf2cea8`, `8a05dcd`, `ffebf49`, and `0db74af`, followed by the
+  living-document reconciliation at `63d97de`. A final fetch found no newer
+  Elias/partner commit; `main` and `origin/main` matched at `63d97de` after the
+  push. `FRONTEND_HANDOFF.md` remains unchanged.
+- The full local gate passed both TypeScript checks, zero-warning lint and the
+  secret-output audit, **157 Vitest files / 958 tests**, **14 repository-safety
+  tests**, the **51-page** Production build, **41 Playwright passes / 14
+  explicit credential-gated skips / 0 failures**, `pnpm audit --prod` with no
+  known vulnerabilities, the Impeccable UI-pattern detector, and
+  `git diff --check`.
+- The guarded Convex dry run explicitly targeted Production
+  `descriptive-meerkat-589`, proposed no index deletion/destructive migration,
+  and only added `facilityTasks.by_organization_status`. The matching deploy
+  completed and the read-only health check returned `status: ok`; no gym data
+  was seeded, imported, rewritten, or deleted by the release.
+- GitHub Actions run
+  [33260137190](https://github.com/hashemnusair/Rivet/actions/runs/33260137190)
+  passed all three jobs. Exact-SHA Vercel Production deployment
+  [`dpl_F2BWHM7DQWmVEaJA8HtwnbUUauQm`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/F2BWHM7DQWmVEaJA8HtwnbUUauQm)
+  is `READY`; the canonical landing, directory, and invalid-token offer shell
+  returned HTTP 200.
+- Next product decisions are real message-provider activation, whether offer
+  acceptance may enter payment/membership activation, and approved waiver/
+  retention policy. Operator/staging closure remains separate. Arabic through
+  the chosen translation solution and final measured optimization remain last.
+
+## Unified Today queue — 29 August 2026
+
+- A fresh synchronization check started from clean `main`/`origin/main` at
+  `87080de`; no newer partner commit or non-Arabic partner slice was waiting.
+  `arabic-localisation` remains intentionally deferred and
+  `FRONTEND_HANDOFF.md` remains unchanged.
+- The dashboard contract now returns one deterministic, deduplicated and
+  role/branch-safe **Today** queue from the existing dashboard subscription.
+  It combines due CRM tasks, renewals, collectible balances, same-day access
+  denials, pending approvals, cash variances and due/high-severity facility
+  work without adding a client request waterfall. Full, priority, kind and
+  overdue counts remain truthful even when only the 12 highest-priority rows
+  are returned.
+- Owners, managers, sales staff and reception now share the same calm work
+  surface while retaining role-specific metrics and context. Auditors receive
+  a dedicated read-only review projection instead of the owner dashboard.
+  Trainers retain their PT-specific day. Server permissions decide whether an
+  item is navigational or may expose one-tap task completion.
+- The queue is placed immediately after the dashboard KPI strip, labels the
+  first item **Do this next**, expands without navigation, clearly discloses a
+  truncated highest-priority set, and removes completed tasks in place after
+  invalidation. Renewal and balance links open the exact permitted member
+  action; unauthorized or inapplicable deep links fail closed.
+- Desktop and 390px-phone browser inspection found no horizontal overflow,
+  framework overlay or console error. The shared panel stays within RIVET's
+  existing warm monochrome, ruled-panel, compact-type and signal-red design
+  language; the Impeccable detector reported no banned-pattern findings.
+- Verification at application tip `8c4be51` passed both TypeScript checks,
+  zero-warning lint and the secret-output audit, **155 Vitest files / 945
+  tests**, **14 repository-safety tests**, the **51-page** Production build,
+  **41 credential-free Playwright passes / 14 explicit credential-gated skips
+  / 0 failures**, `pnpm audit --prod` with no known vulnerabilities, and
+  `git diff --check`.
+- No Convex deployment, Production configuration/provider change or
+  Production data mutation was performed. The next product candidates are
+  provider-free WhatsApp handoffs, branded offer acceptance, and the
+  realistic-volume query/index/invalidation pass. Facilities QR tasks remain
+  demand-gated; Arabic/translation and measured optimization remain last.
+
+## Jordan-first workflow hardening — 29 August 2026
+
+- A fresh GitHub fetch found no newer partner work. `origin/main` remained at
+  `b04feecba95e447c5e023ec1d6a1bafe4426ee58`; the application and browser-test
+  tip for this sprint is `ea962fa`, nine coherent direct-main commits ahead.
+  `arabic-localisation` remains intentionally deferred and
+  `FRONTEND_HANDOFF.md` remains unchanged.
+- Marketing preferences now preserve their provenance through member creation,
+  profile edits, imports, lead conversion, mock data, and Convex. A system
+  default is no longer treated as explicit staff/member consent.
+- Jordanian phone variants (`079…`, `+96279…`, `0096279…`, punctuation and
+  spacing variants) resolve to the same canonical identity for validation,
+  lookup, duplicate prevention, and cross-adapter behavior.
+- Cash-shift closure waits for authoritative live totals, distinguishes loading
+  and failure from a legitimate zero, rejects a stale shift, and supports an
+  explicit retry. Transaction ranges and CRM follow-ups now use the tenant's
+  timezone rather than the browser or UTC day boundary.
+- Audit approval filtering is applied at the server boundary before pagination.
+  Command search and member duplicate checks now show real failures, retry, and
+  explicit safe-override behavior instead of presenting a failed lookup as an
+  empty result.
+- Lead capture is reduced to name and phone when a branch is already selected;
+  the remaining fields are optional and collapsed with walk-in/current-owner
+  defaults. Member capture offers an explicit **Create & sell membership**
+  continuation. Pipeline cards expose Call, No answer, Not sold, and Open as
+  separate keyboard/touch actions; terminal losses require and immutably audit
+  a real reason in both mock and Convex implementations.
+- Reception results no longer disappear on a timer. A recorded allowed,
+  warning, or overridden verdict remains until staff deliberately advances or
+  starts another lookup. Shared buttons reach a 44px target on coarse-pointer
+  devices without enlarging laptop layouts. Reception and CRM now expose later
+  pages instead of silently capping working sets.
+- Verification passed both TypeScript checks, lint and the secret-output audit,
+  **153 Vitest files / 937 tests**, **14 repository-safety tests**, the
+  **51-page** Production build, **39 Playwright passes / 14 explicit
+  credential-gated skips / 0 failures**, `pnpm audit --prod` with no known
+  vulnerabilities, and `git diff --check`. The first Playwright attempt was
+  interrupted when a disposable Next development cache exhausted local disk;
+  after that cache was removed, the full suite passed. No source or user data
+  was removed.
+- No Convex deployment, provider activation, Production configuration change,
+  or Production product-data mutation was part of this code sprint. The next
+  product candidates are the unified Today queue, truthful provider-free
+  WhatsApp handoffs, and branded offer acceptance. Operator setup, product and
+  provider decisions, isolated staging, Arabic, and final measured performance
+  work remain separate launch-closure gates.
+
+## Platform closure, QA-listing cleanup, and Production export — 29 August 2026
+
+- A fresh fetch found no newer partner work; `main` and `origin/main` matched at
+  `04b1f0ffa1c751af86d4d3d279b72a0dc5b819b8` before this release-record
+  update.
+- Current-head read-only platform-owner acceptance passed for Overview,
+  Applications, Gyms, Pricing & entitlements, Billing, and Support. All routes
+  loaded under the Production platform identity with no page or console
+  errors.
+- With explicit operator approval, the exact historical **Hashem Test** QA
+  tenant (`5fb83293-ee76-405e-a336-901347b600eb`) was removed from public
+  discovery through the audited listing control. The hidden state survived an
+  admin reload, the tenant disappeared from `/customer/discover`, and its
+  direct public URL returned **Gym not found** without exposing disposable QA
+  copy. Its organization, subscription, payment, audit, and other historical
+  records were preserved. **Elias Test** remained publicly visible and was not
+  mutated.
+- The obsolete Convex Production deploy key named `vercel-production` was
+  revoked after Vercel's deploy environment and build path had already been
+  decoupled from Convex deployment. The separate `rivet_prod_cli` operator key
+  remains. The GitHub `CONVEX_DEPLOY_KEY` is the documented non-Production
+  generated-code/staging credential and was not changed.
+- Convex disables **Backup Now** on the Free plan. The operator explicitly
+  declined a plan purchase for now, so no billing or PAYG change was made.
+  Instead, an exact-target snapshot export of Production
+  `descriptive-meerkat-589`, including file storage, was created through the
+  authenticated CLI and downloaded outside the repository to
+  `/Users/hashemnusair/Documents/RIVET Production Backups/rivet-production-descriptive-meerkat-589-2026-08-29.zip`.
+  The ZIP passed an integrity test, is mode `0600`, is 502,886 bytes, and has
+  SHA-256 `bd11a9f179bb3674164a4cb9c5f598d92ce38b76edad75b674105c08dc20cbb4`.
+- Remaining launch gates are Convex capacity/service-interruption risk (August
+  database I/O remains above the Free allowance), the 14 isolated credentialed
+  staging journeys and cleanup evidence, authenticated mobile verification,
+  monitoring/WAF/recovery ownership, Clerk signup/MFA policy, and the documented
+  product/provider decisions. Arabic and final measured performance work remain
+  last.
+
+## Active-owner Production acceptance and public-detail repair — 29 August 2026
+
+- A fresh fetch confirmed `main` and `origin/main` match at
+  `fb43a14cdcd65fc47c79f410c0b5aeb0949597d8`; no newer partner commit or
+  unmerged non-Arabic partner slice was present. `arabic-localisation` remains
+  deliberately deferred.
+- The authenticated active-owner session belongs to **Elias Test gym** and the
+  organization `elias test gym 1`, which is the intended pilot/test tenant.
+  Read-only Production acceptance passed for the dashboard, Operations and
+  inventory, retail checkout readiness, Finance and all three management
+  statements, finance controls, a completed retail receipt, Settings, and the
+  direct-forbidden `/platform` route. Balance-sheet and cash-flow equations
+  reconciled, Renewal recovery was visibly off, the checkout remained empty
+  and disabled, the owner was redirected away from `/platform`, and no browser
+  console errors were observed. No sale, refund, void, settings change, or
+  other Production product-data mutation was performed.
+- A cold direct visit to a valid public gym profile could briefly show **Gym
+  not found** before the marketplace subscription delivered its first
+  snapshot. Commit `fb43a14` now keeps the detail page in its shared loading or
+  recovery state until the live marketplace is ready, and only renders the
+  not-found state after a ready snapshot proves the ID is absent. The focused
+  regression increased the full suite to **148 files / 914 tests**.
+- Local verification passed both typechecks, lint and secret-output audit, all
+  914 tests, the 51-route Production build, **39 Playwright passes / 14
+  explicit isolated-staging skips / 0 failures**, `pnpm audit --prod` with no
+  known vulnerabilities, and `git diff --check`. GitHub Actions run
+  [33240389955](https://github.com/hashemnusair/Rivet/actions/runs/33240389955)
+  passed all three jobs for exact SHA `fb43a14`. Vercel Production deployment
+  [`dpl_Ep5eEmAYBdRrpyqH6Mf1hhvb29rj`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/Ep5eEmAYBdRrpyqH6Mf1hhvb29rj)
+  is `READY`; the canonical Elias Test profile loaded the live gym, branches,
+  plans, PT packages, and trial-request shell without console errors.
+- Production still publicly lists **Hashem Test**, whose profile exposes
+  disposable Production-QA copy and membership data. It is not the intended
+  current test tenant. Hiding it is a reversible platform-admin action that
+  still requires explicit operator approval; do not delete its historical
+  records.
+- The active Convex Production deployment is healthy, but August database I/O
+  is **1.65 GB against the 1 GB Free-plan allowance** and no current dashboard
+  backup exists. Plan/capacity ownership and a current backup remain launch
+  gates. Clerk is a live Production instance with password and email-code
+  sign-in, compromised-password rejection, and Device Trust; public sign-up is
+  open and MFA is not enabled, both of which remain explicit security/product
+  decisions.
+- Remaining closure work is the current-head platform-administrator read-only
+  pass, an approved hide of Hashem Test, isolated credentialed staging and
+  cleanup evidence, backup/capacity resolution, monitoring/WAF ownership, and
+  the documented provider/product decisions. The browser session used here
+  could not force a signed-in mobile viewport, so authenticated responsive
+  evidence remains open even though credential-free mobile/tablet Playwright
+  coverage passed. Arabic and final performance optimization remain last.
+
+## Production backend and deployment-path closure — 29 August 2026
+
+- `main` and `origin/main` matched at `d06021ebb2b013957efbc00127288c223be4ebb3`
+  after a fresh fetch. No new partner commit or unmerged non-Arabic partner
+  slice was found; Five Pillars and the landing refresh are already contained
+  in `main`. `arabic-localisation` remains deliberately unmerged.
+- Convex Production was selected explicitly as `descriptive-meerkat-589` with
+  the checkout's Development deploy key suppressed. The names-only check
+  reached the expected Production environment. The guarded dry run and deploy
+  both completed schema validation and reported no deleted indexes; the dry
+  run proposed no destructive migration. The current backend functions are
+  deployed to `https://descriptive-meerkat-589.eu-west-1.convex.cloud`.
+- Post-deploy `health:check` returned `status: ok`. The aggregate-only
+  `renewalJobs.releaseAudit` returned zero deliveries, delivery events,
+  renewal timeline facts, and staff call tasks. The read-only subscription
+  preview processed five organizations, found two eligible boundaries, and
+  projected zero invoices, past-due transitions, or suspensions. Reconciliation
+  reported `enabled: false`; `RIVET_OPERATIONAL_EMAIL_LIVE` and
+  `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` remain absent.
+- Vercel project `rivet-web` still had the legacy raw
+  `npx convex deploy ... --cmd 'pnpm build'` Build Command. It was replaced
+  with `pnpm build`, and the now-redundant Production `CONVEX_DEPLOY_KEY` was
+  removed from Vercel. The authenticated, exact-target operator flow through
+  `pnpm convex:deploy` is now the only tested Production backend release path.
+- A clean Production redeploy from exact repository head `d06021e` passed
+  without the Vercel Convex key. Deployment
+  [`dpl_8thJP5sjVUgH9YZREpQjgerpUbfh`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/8thJP5sjVUgH9YZREpQjgerpUbfh)
+  is `READY`; its build log shows `pnpm build`, 51 generated pages, and no
+  Convex deploy command. The canonical aliases return successfully, and the
+  first post-deploy error and HTTP-500 scans were empty.
+- Public read-only acceptance loaded the landing page, gym directory, and a
+  gym detail without console warnings or errors. Production currently exposes
+  two test gyms; the first includes disposable-verification copy and test
+  membership data. Those exact tenants must be unpublished, archived, or
+  converted to approved pilot content before public launch. No Production
+  product data was mutated during this closure.
+- Remaining release gates are the signed-in active-owner/platform acceptance,
+  isolated credentialed staging and cleanup evidence, a current backup,
+  resolution of the Convex above-Free-plan-limit warning, monitoring/WAF
+  ownership, and the documented product/provider decisions. Arabic and final
+  performance work remain deferred.
+
+## Current release summary — repository-hardening sprint — 28 August 2026
+
+- The final application/code verification tip for this sprint is `3c99fc7`.
+  The final pushed history also includes this documentation reconciliation.
+  It includes the
+  production Next dependency-chain repair, public experience retry/timeout
+  recovery, CRM identity/assignment and event-backed progression hardening,
+  permanent credential-free role-routing coverage, CI browser and repository
+  safety gates, deterministic billing deep-link focus, RIVET image warning
+  fixes, and the focused browser-assertion follow-up required by the first
+  hosted run.
+- The starting SHA was `e1cac31127a94659ad95f1e0f5f45f536678fa6f`, and no partner
+  commits arrived during the implementation pass before the final
+  synchronization check. `FRONTEND_HANDOFF.md` remains unchanged.
+- The verified credential-free local gate passed with frozen install, web and
+  Convex typechecks, lint plus secret-output audit, **148 Vitest files / 913
+  tests**, **14 repository safety tests**, the Next production build with **51
+  route entries**, **39 Playwright passes / 14 explicit credential-gated
+  skips / 0 failures**, `pnpm audit --prod` reporting **no known
+  vulnerabilities**, and `git diff --check`. The prior documented Vitest
+  baseline was 888 tests; no tests were silently removed.
+- The public retry path now recreates live listeners, bounds first snapshots,
+  keeps the last good data on later failures, and retains approved fallback
+  plans. CRM contact edits, owner assignment, immutable audit facts, and
+  persisted progression facts are aligned across Convex, mock, adapter, UI,
+  projections, and browser coverage. CI now runs the credential-free browser
+  suite without Production credentials and asserts a clean worktree.
+- The approved runtime is Next.js App Router + Clerk + Convex + Vercel behind
+  the `GymOSApi` boundary. Mock mode is explicit preview/test infrastructure;
+  Production remains Convex-backed and fail-closed. No Convex deployment,
+  Production provider/configuration change, credentialed staging run, or
+  Production data mutation is part of this sprint. GitHub Actions run
+  [33127740606](https://github.com/hashemnusair/Rivet/actions/runs/33127740606)
+  passed for the final application/code tip `3c99fc7`, and Vercel Production
+  deployment [`dpl_28TJU394KFMmiE1bxddpZj2TVMc5`](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/dpl_28TJU394KFMmiE1bxddpZj2TVMc5)
+  is `READY` for that exact tip; the canonical site returned HTTP 200.
+- Remaining gates are the exact-target Convex Production dry run/deploy,
+  Production health and aggregate checks, credentialed isolated staging,
+  provider/product decisions, operational-email and subscription-reconciliation
+  activation, capacity/backups/recovery/WAF/monitoring ownership, and the
+  deferred Arabic/final-performance and separately scoped feature work.
+
+See [HANDOFF_PLAN.md](HANDOFF_PLAN.md) for the current implementation, release, and owner-verification plan.
+
+## Dead-end applications + readable action errors — 27 August 2026
+
+- Retrying Test 123 revealed the real, current blocker is no longer Clerk:
+  provisioning refuses because **the applicant email belongs to a platform
+  administrator** (a correct guard — admin accounts cannot own gym
+  workspaces). Two defects fixed around it:
+  - Convex **action** failures used to surface as a raw "Uncaught
+    ConvexError {json} at …" blob rendered into the page;
+    `errorFromConvex` now extracts the embedded ConvexError JSON from action
+    error strings, so operators see the domain message.
+  - An approved application whose provisioning failed permanently (and
+    provisioned nothing) was stuck forever, pinning the overview's
+    provisioning-failure counter. `reviewRecord` (+ mock and UI) now allows
+    exactly that state to be **rejected**, clearing its provisioning flags;
+    successfully provisioned approvals stay immutable. Covered by a new
+    provisioning-retry test (suite 888).
+
+## Convex bandwidth pass + production config findings — 27 August 2026
+
+- **Indexed point lookups replace full-table scans.** `domainRecords` gained
+  a global `by_entity_type_public_id` index; every platform lookup that used
+  to `collect()` a whole entity table and `.find()` in JS now reads one row:
+  marketplace gyms by id (owner-recipient emails, gym.update, archive,
+  profile publish, invoice payment), platform invoices by id (issue /
+  past-due / payment / void), and customer memberships by id (two member-app
+  paths). The gym-detail invoice list and the manual-invoice cycle check now
+  scope by `by_organization_type` instead of scanning every tenant's
+  invoices. These scans grew with the invoice/membership tables, so this
+  directly cuts the DB-bandwidth overage seen on the Convex Starter usage
+  screen.
+- **Production config findings** (from a names-only env listing):
+  `RIVET_OPERATIONAL_EMAIL_LIVE` and
+  `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` are both unset in production.
+  All operational email is therefore suppressed (the Resend keys themselves
+  are present — this, not a provider regression, explains the Aug 8→11
+  SENT→NOT CONFIGURED flip), and the hourly renewal clock exits without
+  running, so T−3 invoices/grace/suspension have never executed live. Both
+  are owner decisions to enable (Convex dashboard → prod deployment →
+  Environment Variables).
+- Test 123's provisioning failure is a bare Clerk 403 on the
+  organization-creation POST with no error payload — an instance/plan-level
+  organizations restriction is the likely cause; a console retry is the
+  next diagnostic.
+
+## Reviewed public pages + console cleanup — 27 August 2026
+
+- **Public-page governance:** a gym's first publish stays self-serve; after
+  that the page locks. Tenants keep saving drafts, but `profiles.gym.publish`
+  rejects with a support pointer, `profiles.gym.unpublish` is tenant-blocked
+  entirely (the platform hides listings from the console), and the editor
+  swaps its Publish button for **"Send to RIVET for review"**, which files a
+  prefilled support case. The new `platform.gym.profile.publish` op (admin +
+  reason, shared `applyGymProfilePublish` core with the tenant path) lets the
+  platform team publish the saved draft in one click from the gym page's new
+  **Public page** card ("Live at v1 · Draft v2 awaiting your review →
+  Publish draft"). `GymPublicProfile.publishLocked` and the platform detail's
+  `publicPage` facts carry the state; MockGymOSApi mirrors all of it.
+- **Console cleanup ("simplicity and efficiency"):**
+  - Overview: hero card KPIs with short factual sublines, and the always-on
+    zero-count strip replaced by an **attention strip** that renders only
+    real work (e.g. "2 applications awaiting review") or a quiet "Nothing
+    needs your attention right now."; billing position lost its disclaimer
+    paragraph.
+  - Billing: the large automated-renewal-policy section is now a **Renewal
+    policy** button opening a centered dialog with the four steps; section
+    sublines shortened throughout.
+  - Gym detail: a proper hero (logo, name, status chip, "Pro · monthly ·
+    paid through …", Public page / Manage subscription actions) plus the
+    Public page review card; verbose explainer sentences trimmed.
+- Suite now 887 (profile lock + platform publish covered in Convex tests,
+  the review flow in the editor test, the admin publish card in the detail
+  test; mock media tests route second publishes through the review path).
+  Verified in the mock browser end-to-end on the gym side (locked editor →
+  save draft v2 → "Send to RIVET" support case + toast) and the console
+  side (attention strip, policy dialog, hero, review-card states).
+
+## Billing owns subscriptions; gym pages are informational — 27 August 2026
+
+- Per the owner's direction, every subscription action now lives on the
+  Billing page and the gym detail page is purely informational.
+  - Billing gained a **Gym subscriptions** section: every provisioned tenant
+    with live plan · cadence, status badge, and paid-through date, plus
+    per-row actions — **Change plan** / **Reactivate & bill** (opens the
+    billing wizard preselected on that tenant at the plan step) and
+    **Suspend** / **Cancel** (reasoned confirmation dialogs that promise "no
+    invoice is issued; the paid-through date stays on record").
+  - The gym detail page lost the plan/status/cadence editing card and the
+    Suspend header button. It keeps identity, branches, usage, owner, the
+    read-only subscription facts, the platform timeline, archiving, and a
+    standalone **Public directory listing** card (toggle + audited reason).
+    Both "Manage subscription" and the facts card's "Manage in Billing" link
+    deep-link to `/platform/billing?bill=<gymId>`, which auto-opens the
+    wizard on that tenant.
+- Unit suite still 886 (info-only detail tests, a Gym subscriptions suite,
+  wizard preselect, and the deep-link test replaced the removed editing
+  tests). The platform entitlements and public-experience Playwright specs
+  were rewritten to drive tier changes and suspension from the billing page;
+  the staging provisioning spec's cleanup helper now suspends from billing
+  too. Verified end-to-end in the mock browser: suspend from the table →
+  row flips to "Reactivate & bill" → wizard reactivation billed a fresh
+  month (paid through 27 Sept 2026, no credit from a suspended state) with
+  the Subscription change invoice in the ledger, and the gym page renders
+  info-only with working deep links.
+
+## "Bill a gym" guided walkthrough — 27 August 2026
+
+- The billing page gained a **Bill a gym** wizard (three steps: choose gym →
+  plan & billing → review & confirm) as the friendly front door over the
+  same `platform.gym.update` path the gym detail controls use — no new
+  backend, so every date, credit, and invoice stays server-derived.
+  - Step 1 lists only provisioned, unarchived gyms with their live status,
+    plan · cadence, and paid-through date, behind a search box.
+  - Step 2 shows the four catalog tiers (current one tagged) and the
+    monthly/annual cards with computed amounts.
+  - Step 3 adapts to the situation: reactivation ("starts a fresh paid term
+    today"), a change on an active tenant ("unused paid days carry over, so
+    there is no need to wait for the current term to end" — deliberately no
+    "schedule for later" option, since the day credit makes it financially
+    equivalent), or a no-op guard when the gym is already on exactly that
+    plan and cadence. It reuses the shared billing preview and requires the
+    audit reason.
+  - The billing-preview math moved to a shared module
+    (`src/lib/platform/subscription-billing.ts`) used by both the wizard and
+    the gym detail page; invoice-type badges now distinguish **Subscription
+    change** from **Automatic renewal** (CSV export too).
+- Covered by a wizard test suite (walkthrough payloads, reactivation with
+  explicit active status, provisioned-only listing, no-op guard), shared
+  billing-math tests, and a billing-page assertion (suite now 886). Verified
+  in the mock browser end-to-end: wizard → annual Pro → "JOD 2390.400 · 19
+  unused paid days" → confirm → invoice landed in the ledger tagged
+  Subscription change.
+
+## Subscription changes bill themselves — 27 August 2026
+
+- Release `f140edb` rebuilds the platform subscription-change flow around one
+  rule: **a material change that lands on an active subscription starts a new
+  paid term today, and the server does all the math.** This fixes the
+  monthly/annual asymmetry the owner reported (activating monthly appeared to
+  "add money" while switching to annual changed nothing) and adds the
+  requested compensation for mid-term switches.
+  - `platform.gym.update` now derives the new period end (today + 1 or 12
+    calendar months), credits every unused paid day from the outgoing active
+    term into the new one (e.g. 14 days into a monthly term → the remaining
+    days extend the new annual term), immediately issues an **open platform
+    invoice** at interval-correct pricing (annual = monthly × 12 × 0.8 via the
+    shared `annualPrice`), voids superseded unpaid cycle invoices so nothing
+    is billed twice, queues the invoice-issued email, and records the invoice
+    id + credit days in the audit event. Suspend/cancel no longer demand a
+    date and never bill. An explicit admin date remains a supported override.
+  - **Active MRR is now interval-aware**: annual tenants count at their
+    effective monthly rate (price × 0.8) instead of the headline monthly
+    price, which previously overstated them by 25%.
+  - The gym-detail controls lost the mandatory "Membership end date" field;
+    in its place a live **"What happens when you save"** preview shows the
+    exact invoice amount, carried-over days, and new term end before the
+    admin commits. Suspend/cancel drafts preview their consequences too.
+  - Billing page copy now covers both invoice sources ("Subscription
+    invoices": clock renewals + change term invoices).
+  - MockGymOSApi mirrors the whole derivation; `PlatformBillingInvoice`
+    gained `creditDays`.
+- Covered by new Convex tests (interval-correct amounts, 16-day credit roll,
+  supersede-void, no-invoice suspend; suite now 878), an interval-aware MRR
+  unit test, rewritten detail-component tests asserting the preview, and the
+  platform entitlements + public-experience Playwright specs (date-field
+  interactions removed; the Pro round now performs a real annual save).
+  Verified end-to-end in the mock browser: Pro monthly → annual showed
+  "JOD 2390.400 · 19 unused paid days carry over · runs until 15 Sept 2027",
+  and the save produced exactly that renewal date, the open invoice, and the
+  audit entry.
+
+## Platform admin console production pass — 27 August 2026
+
+- Release `034415f` (CI run `33062534767` green, Vercel deploy verified live
+  with an authenticated platform-admin session) makes the gym detail page
+  production-honest:
+  - **Archive dialog fixed.** The confirm UI was rendered without
+    `DialogContent`, so the header/body/footer painted inline on the page
+    permanently and the Archive button opened nothing. It is now a real
+    modal (typed gym-name confirmation + reason, danger action), and the
+    unit test asserts the closed→open→confirm flow instead of indexing
+    duplicate buttons.
+  - **Recurring amount is now derived**, not absent: the live plan catalog
+    price × the tenant's billing interval (annual = monthly × 12 × 0.8 via
+    the shared `annualPrice` helper exported from
+    `subscriptionReconciliation.ts`). Verified live: "Recurring amount
+    JOD 500.000" on elias test gym 1.
+  - **Invoices are now real**: platform invoices scoped to the tenant
+    replace the permanent "not configured" placeholder ("Invoices 0
+    recorded" live today, honestly empty).
+  - MockGymOSApi mirrors both derivations; `platformGymDetail.test.ts`
+    covers the new source fields.
+- Read-only production walk of the whole console with zero console errors:
+  overview KPIs live (MRR JOD 579.000, 4 gyms, audit trail), gyms
+  directory, gym detail, applications, billing (empty-honest ledger),
+  pricing catalog (annual math correct on all four tiers), support inbox
+  (real resolved case with thread).
+- Two open findings from the walk, not yet acted on:
+  - Application "Test 123" (Aug 8) shows **"Provisioning needs attention —
+    Clerk organization request failed (403)"** with a Retry provisioning
+    control. Retrying is a production write (creates the Clerk org and
+    emails the applicant) and awaits an owner decision.
+  - That Aug 8 application shows decision email **SENT**, while the Aug 11
+    application shows email **NOT CONFIGURED** — the Resend sender
+    configuration regressed between those dates and should be re-checked in
+    the Convex prod env / Resend dashboard.
+
+## Operations workspace simplification — 27 August 2026
+
+- Release `237dc71` (CI run `33025029459` green, Vercel deploy verified live
+  with an authenticated owner session) simplifies the operations surface
+  without changing any server contract, permission gate, or audit behavior:
+  - Inventory gains a search box; each row gains **Sell** (jumps into the
+    Checkout tab with the item already in the sale via the existing
+    preselect seam) and **Reorder** (opens a purchase-order draft with that
+    product preselected, emphasized on low-stock rows). The per-row
+    permanent-delete button was removed — deletion stays behind Edit where
+    the typed confirmation lives. The Purchase orders button shows its open
+    count.
+  - Checkout reorders to desk flow: items first with an autofocused search,
+    then customer, then payment.
+  - Equipment stats compress to one three-across row on every screen, and
+    open issues/work orders sort above closed history.
+- Covered by three new unit tests (suite now 875) plus the existing
+  operations Playwright spec; verified in mock-mode browser (Sell → checkout
+  preselection observed) and live on Production (search box, Sell/Reorder
+  row actions with a branch selected, row delete gone).
+
+## Ledger tutorial on the statements hub — 27 August 2026
+
+- `/finance` gained a "How the ledger works" button under the three
+  statement cards (release `21c13b9`, CI run `33023409096` green, Vercel
+  auto-deploy verified live). It opens a seven-step plain-language animated
+  walkthrough for non-accountant owners: the notebook concept, the
+  refresh/post queue loop, balanced posting, each of the three statements,
+  and the two-click monthly routine. Vignettes reuse the existing
+  settle-motion keyframes plus three new direction-neutral ones
+  (`ledger-tilt`, `ledger-fill`, `ledger-draw`), replay when a step mounts,
+  need no RTL mirroring, and flatten under the global reduced-motion rule.
+  Covered by a new hub test (full suite now 872); verified in mock-mode
+  browser and live on Production with an authenticated owner session.
+
+## Release and authenticated Production smoke — 27 August 2026
+
+- Application release `cb9f10c` (five commits over `4b8bcc4`: tenant-local
+  accounting dates + ledger read performance, demo-auth inlining repair,
+  consolidated source-queue refresh, browser-suite restoration, and docs)
+  pushed to `main`. GitHub Actions run `33019165155` passed (typecheck, lint,
+  unit tests, build, and the credential-gated Convex codegen check). The
+  only CI annotation is the known Node 20 deprecation on the pinned
+  `checkout@v4` / `setup-node@v4` / `pnpm-setup@v4` actions.
+- Vercel auto-deployed the web from the push; the live site serves the new
+  build (verified behaviorally: rebuilt operations command center, statement
+  URL scope canonicalization, consolidated Refresh queue with its banner).
+- The owner deployed Convex to exact Production `descriptive-meerkat-589`
+  through the guarded wrapper. First attempt did not take effect (live
+  statements still emitted pre-`4b8bcc4` warning copy — caught during the
+  smoke); after the owner re-ran the deploy, the live responses switched to
+  the current conditional completeness copy, confirming the new functions.
+- The owner set `RIVET_PUBLIC_REQUEST_PEPPER` in the Convex Production
+  environment; `pnpm convex:env:names -- --prod` now lists it (names only).
+  The 25 August pepper-strength blocker is closed.
+- Signed-in, read-first Production smoke with an active gym owner
+  (two-branch test gym), all passing: sign-in routes to the gym workspace;
+  dashboard KPIs live; `/operations` all-branches view read-only with
+  writes gated, per-branch inventory scoping correct (7/5 split), Checkout
+  loads members, stock, and Cash/CliQ/Visa options with no sale created,
+  Machines lists the branch asset with zero issues/work orders; all three
+  `/finance` statements render with the conditional completeness warnings,
+  single deduplicated panel, balance-sheet equation reconciling, cash-flow
+  reconciliation honestly `unproven` pending a queue refresh, and date/
+  branch scope changes updating figures and the canonical URL; ledger
+  controls show the 17-account chart and the consolidated refresh. No
+  writes were performed. Console: one 422 confined to the Clerk sign-in
+  handshake, no app errors; network all 200s; laptop and narrow-viewport
+  layouts clean.
+- With the owner's explicit approval, the accounting operating procedure was
+  then executed live on the owner's two-branch test gym (27 August 2026):
+  an organization-wide source-queue refresh discovered 46 facts
+  (15 pending / 31 unconfigured, month-scoped facts correctly anchored to
+  tenant-local Asia/Amman dates); all 15 originals were posted; a second
+  org-wide refresh surfaced 16 dependency-unlocked facts (STAIR-01
+  straight-line depreciation months and membership recognition schedules),
+  which were posted; a final org-wide refresh left 0 pending / 15 honestly
+  unconfigured and proved coverage. Result: trial balance JOD 2.4K = 2.4K
+  across 11 accounts; income statement with retail revenue 175.000, COGS
+  100.000, repairs 200.000, depreciation 20.000/month; balance sheet
+  reconciling to zero difference (equipment 1,200.000 gross, accumulated
+  depreciation −280.000 = 14 posted months, deferred membership revenue
+  210.000, negative AR −355.000 reflecting collections that predate the
+  ledger — the documented opening-balance responsibility); cash flow
+  proven (0 → +740.000 → 740.000, all operating); and a full-August range
+  showing earned membership revenue 18.924 recognized inside August by the
+  tenant-date anchoring. The consolidated coverage badge cleared on all
+  three statements.
+- The owner then posted the opening-balance manual journal (Main branch,
+  posting date 2025-06-01, memo "Opening balances at ledger cutover"):
+  Dr 1200 Accounts receivable 355.000 / Cr 3000 Owner equity 355.000,
+  derived from the trial-balance offset and the outstanding-balances record
+  of JOD 0.000. Verified after posting: receivables net to zero, owner
+  equity 355.000, and the balance sheet reconciles at 1,810.000 =
+  1,810.000 with difference 0.000. Remaining unconfigured queue rows are
+  the reviewed deliberate exclusions (cancelled test memberships and their
+  recognition schedules, stock adjustments without a posting policy, one
+  historical stock sale without a unit cost).
+
+## Management-ledger deep dive: tenant-date anchoring, demo-auth repair, consolidated refresh — 26 August 2026 (working-tree update)
+
+- **Tenant-local date anchoring (correctness fix, Convex + mock parity).**
+  Monthly recognition/depreciation facts were timestamped at the UTC month
+  end, so for tenants ahead of UTC (Asia/Amman) an August service month
+  resolved to a September tenant-local date: it posted into the September
+  period and fell out of any August-scoped statement and its coverage check.
+  Equipment purchase dates parsed at UTC midnight had the mirror-image drift
+  (previous local day) for tenants behind UTC. Both adapters now anchor these
+  facts to a timestamp whose tenant-local calendar date equals the stated
+  date. Regression tests cover Asia/Amman recognition (posts into the service
+  month's own period) and America/New_York acquisition (same calendar day).
+  Already-posted journals are immutable and keep their historical dates;
+  non-posted queue projections re-anchor on the next refresh.
+- **Demo-auth client bundle regression (repaired).** Commit `5ac4b59` moved
+  the demo-bypass environment reads behind a function parameter, which
+  Next.js cannot statically inline into browser bundles; every client bundle
+  therefore computed `DEMO_AUTH_BYPASS === false`. The demo persona picker
+  never rendered and the entire mock-mode Playwright contract was broken
+  (the repo's happy-path spec failed at sign-in). The constant is now built
+  from literal `process.env.*` member expressions; production remains
+  fail-closed because NODE_ENV inlines as "production" there. The happy-path
+  spec passes again.
+- **Consolidated queue refresh (functional gap closed).** The ledger-controls
+  UI offered "Refresh queue" only with a concrete branch selected, while a
+  consolidated statement's coverage can only be proven by an
+  organization-wide run — so consolidated statements could never reach proven
+  coverage through the product UI. A queue refresh is a projection scan, not
+  a posting write; it is now available in the consolidated view (posting a
+  source and manual journals remain branch-gated, and read-only roles are
+  unchanged). New workspace test covers the consolidated refresh.
+- **End-to-end verification.** Mock-mode browser walkthrough of the sign-in
+  personas, ledger hub, all three statement routes, and ledger controls
+  (org-wide refresh, branch-scoped pending queue, role gating), plus a new
+  integration test that drives queue refresh → deferred membership posting →
+  recognition posting → the income statement's account-4100 revenue line →
+  proven coverage for both branch and consolidated scope.
+- **Dead code removed** from `convex/security.ts`: `hashRequest` (its
+  JSON.stringify array-replacer silently dropped nested keys from the
+  fingerprint) and `branchIdFromPublic` — both unused.
+- `.claude/launch.json` gained a `web-mock` configuration encoding the
+  sanctioned mock + demo-auth local browser contract (mirrors the Playwright
+  webServer environment); the existing `gymos-web` entry is preserved.
+- Validation for this working tree: complete Vitest suite **142 files /
+  871 tests** (includes the four new regression tests), application and
+  Convex TypeScript checks, full ESLint with secret-output audit, Next.js
+  production build, `git diff --check`, and the mock-mode Playwright
+  happy-path spec — all passing.
+
+## Mock-mode browser suite restored — 26 August 2026 (working-tree update)
+
+- Running the full credential-free Playwright suite after the demo-auth
+  repair surfaced six failures that had been invisible while the whole suite
+  failed at sign-in. Diagnosis: **no product defects** — six specs had
+  fossilized against deliberate, documented, unit-tested product changes
+  while the browser contract was dark. The specs were updated to today's
+  product truth:
+  - Reception and Operations are fail-closed concrete-branch lanes; the
+    manager-override and operations specs now select a branch (and the
+    operations spec was rewritten for the rebuilt Inventory/Checkout/
+    Equipment command center — the old Facilities tab and "Add supplier"
+    button no longer exist; it now also asserts the read-only all-branches
+    gate and resolves the seeded equipment issue).
+  - Statement routes canonicalize their date/branch scope into the URL, so
+    `$`-anchored URL assertions were relaxed.
+  - Preview member signup deliberately refuses to imitate account creation;
+    the spec now asserts the Clerk notice and the seeded-persona entry point
+    instead of typing a fake password.
+  - Public/member trial requests are scheduled: the specs select a branch,
+    wait for the unlocked time window, and assert the enabled submit.
+  - The platform entitlement spec's fixed goBack choreography rotted (in-app
+    tours coalesce history entries and a back-restored document re-enters
+    the console root); tier rounds now return by reloading the gym record —
+    each round stays reload-free between the platform save and the
+    gym-workspace observation, which is the realtime contract being proved.
+  - The pricing spec additionally asserts the Starter card's
+    `?plan=&interval=` href (the carrying contract) before navigating.
+- Final browser verdict: **31 passed / 0 failed / 14 skipped** — the skips
+  are the credential-gated Convex smoke, operational-flow, and staging
+  journeys, which require Clerk storage-state files and the staging guard
+  environment documented in the release runbook.
+
+## Accounting query performance and release-gate evidence — 26 August 2026 (working-tree update)
+
+- Report/accounting read paths were optimized without changing behavior,
+  posting policy, amounts, or any authorization decision:
+  - `stockMovements` gained a `by_public_id` index. The stock-movement
+    source-fact resolver and the posted/reversed status writeback now use an
+    indexed unique lookup instead of collecting the entire movement table per
+    lookup. Source-queue coverage evaluation (which resolves every candidate
+    on each statement render) previously scanned all movements once per
+    stock-movement candidate.
+  - Cash-flow classification receives each journal bundle directly instead of
+    re-searching every period bundle for the line it already came from.
+  - The statement report context collects the organization's journal entries
+    once per request and shares that collection between the policy scan and
+    the statement builders, halving the entry-table scans per report.
+- The next Convex deploy will therefore propose exactly one additive schema
+  change: new index `by_public_id` on `stockMovements`. No table or index
+  deletion is expected; stop per the runbook if the dry run shows anything
+  destructive.
+- Local validation for this working tree (26 August 2026): complete Vitest
+  suite **142 files / 867 tests** passed; focused financial plus statement UI
+  tests (6 files / 39 tests) passed; application and Convex TypeScript checks;
+  full ESLint with secret-output audit; Next.js production build; and
+  `git diff --check` — all clean.
+- Value-free provider inspection: `pnpm convex:env:names -- --prod` resolved
+  through the configured operator context (project `rivet`) and returned the
+  Production variable names. **`RIVET_PUBLIC_REQUEST_PEPPER` is not among
+  them.** `convex/publicAbuse.ts` requires a strong pepper in a production
+  Convex runtime and otherwise fails closed with `CONFIGURATION_ERROR` on the
+  public application/trial/entry-pass/check-in protection paths. This is a
+  release stop-condition: the owner must set the variable in the Convex
+  Production deployment dashboard (never through chat, CLI arguments, or
+  logs). The 25 August pepper correction may have been applied to the Vercel
+  environment only.
+- No Convex Production deploy, no Vercel deployment verification, and no
+  authenticated owner smoke are claimed for this tree. The release remains
+  gated on the missing Convex variable above, exact-target confirmation
+  (`descriptive-meerkat-589`), and explicit Production authorization per
+  [HANDOFF_PLAN.md](HANDOFF_PLAN.md).
+
+## Management Ledger accounting completeness — 26 August 2026 (working-tree update)
+
+- The accounting source queue now persists a scoped refresh run, authoritative
+  candidate digest, and per-source projection fingerprint. A statement reports
+  queue coverage as proven only when a current complete scan represents every
+  in-scope source; legacy posted/reversed rows receive a safe fingerprint
+  backfill without changing journal amounts, policies, or status.
+- Time-based membership sales remain deferred on posting (Dr 1200 / Cr 2200).
+  After that sale or renewal is posted, earned monthly service can be posted
+  through `membership-revenue-recognition.v1` (Dr 2200 / Cr 4100). Allocation
+  uses exact integer minor units across persisted service days, excludes
+  active/completed freeze dates, stops future earning at cancellation, and
+  never recognizes more than the posted deferred amount. Future months,
+  unposted sales, mismatched branch/currency, and schedules over 120 months stay
+  explicitly unconfigured.
+- Equipment acquisition must be posted before depreciation. Eligible active
+  assets use `equipment-depreciation.v1`: straight-line monthly, installation
+  date falling back to purchase date, zero residual, deterministic final-unit
+  rounding, Dr 5600 / Cr 1550, and no cash-flow classification. Cost, date,
+  organization currency, and a 1–600 month useful life are required. Retired or
+  replaced assets remain unconfigured until an audited effective retirement/
+  disposal workflow exists; the system does not invent that date.
+- Statement warnings are now conditional and deduplicated. The UI renders one
+  completeness panel rather than repeating the same membership/depreciation
+  caveat. Missing inputs or unposted sources still produce a specific warning;
+  an honestly complete projection removes the blanket warning.
+
+## Management Ledger standalone reporting — 26 August 2026
+
+- `/finance` is the canonical, read-focused Management Ledger hub. It contains
+  three equal statement links—**Income statement**, **Balance sheet**, and
+  **Cash flow statement**—and no payment, shift, report, or journal controls.
+  The hub is intentionally a choice screen rather than another dense ledger
+  view; it does not display fabricated preview figures.
+- Each statement has its own focused route backed by the existing Convex/Mock
+  report projections: `/finance/income-statement` calls the income-statement
+  projection (including Net Income), `/finance/balance-sheet` calls the balance
+  sheet projection, and `/finance/cash-flow` calls the cash-flow projection.
+  These pages share one statement shell, so date and branch filters, loading,
+  retry, warnings, and stale-data behavior are consistent without duplicating
+  report logic.
+- Statement scope is reflected in the URL (`from`, `to`, and `branchId`) and is
+  preserved when opening a card or returning to the hub. Every hub and detail
+  route enforces the `reporting` workspace entitlement plus
+  `reports.financial.read`. The sidebar gives Management ledger its own section
+  with a single **Statements** entry; it is no longer grouped under Finance,
+  and the payment FinanceNav is not rendered on ledger pages.
+- `/reports/statements` is retained only as a compatibility redirect to the
+  `/finance` hub, preserving supported date/branch query parameters. Advanced
+  accounting maintenance remains at `/finance/controls`—journal entries,
+  source queue refresh/posting, periods, reversals, and close/reopen—and stays
+  behind the `finance` module and its existing mutation permissions.
+- Statement metadata keeps conditional completeness caveats visible. Reports
+  use posted or reversed management-ledger entries only; incomplete source
+  coverage and specific unconfigured facts remain visible, and background
+  refresh failures identify when the last successful data is being shown.
+  Opening balances remain an explicit operator responsibility. These are
+  management reports, not statutory or tax statements.
+- Financial mutations use centralized invalidation for both `finance` and
+  `managementReports`, so posting, reversal, period, and source-queue changes
+  refresh controls and statement projections together.
+- Final validation passed: `pnpm --dir apps/web test` (**142 files / 867
+  tests**), app and Convex TypeScript checks, the production build, full lint
+  and secret-output audit, and `git diff --check`. No Playwright run was
+  performed and no browser visual verification is claimed.
+
+## Production-readiness implementation slices — 25 August 2026 (working-tree update)
+
+The current local working tree includes the implemented P0/P1 slices from the
+readiness plan:
+
+- explicit tenant and branch scope for mutations, with **All branches** kept
+  read-only;
+- retail finance and accounting lifecycle hardening, including stock-cost,
+  refund/void, cash-shift, and journal invariants;
+- invitation acceptance, safe user projections, deterministic multi-org
+  selection, and related identity/security boundaries;
+- public media ownership/upload controls, abuse limits and idempotency, and
+  production fail-closed configuration/security headers;
+- provisioning retry and lease fencing that preserves authoritative tenant
+  state;
+- the real Clerk customer signup flow, including verification and safe return
+  context;
+- atomic branch-to-branch inventory transfers with valuation and audit parity;
+- truthful deferred handling for Facilities and Automations, with no dead-end
+  operator actions; and
+- the focused Operations scope of Inventory, Checkout, and Machines.
+
+The final independent security review also fixed required upload-intent and
+storage ownership checks, member-photo branch authorization, authorization
+before purchase-order and PT idempotent replay responses, and strict matching
+of Clerk invitation, application, and workspace metadata. External edge/IP/
+device rate limiting and provider-backed/Production verification remain open.
+
+Credential-free local validation for this working tree passed: **136 Vitest
+files / 828 tests**, **14 Node deployment-safety tests**, application and
+Convex TypeScript checks, full lint plus the secret-output audit, the
+production Next build, and `git diff --check`.
+
+This is local working-tree evidence only. No Playwright run was performed; no
+commit or push was made; and no Convex or Vercel Production deployment was
+performed. Live provider-backed invitation/signup verification and the
+Production smoke, rollback, capacity/headroom, and backup/recovery gates
+remain outstanding.
+
+## Deferred operational surfaces and truthful destinations — 25 August 2026 (working-tree update)
+
+- The supervised Operations scope is explicitly **Inventory, Checkout, and Machines**. Facilities/cleaning tasks are not being restored to the operator workspace in this slice; their backend records and accounting history remain preserved for a later product decision.
+- Automations remains deferred. Existing automation rules, executions, retries, notifications, and audit events remain intact, but deferred pages expose only a truthful paused state with links to automation audit history and RIVET Support. No rule creation, execution, or delivery controls are advertised.
+- Failure notifications no longer send operators to the paused automation route. Terminal operational-email failures open the real **Settings → Operational email** controls, while automation attention and exhausted-retry notices open immutable automation audit history when no member or lead record is available.
+- Navigation tests cover the absence of Facilities and Automations from the primary workspace, and Convex regressions cover the truthful notification destinations. This is a scope/dead-link cleanup; no provider activation, Production data mutation, or Convex deploy is implied.
+
+## Operations branch comparison and equipment restoration — 25 August 2026 (working-tree update)
+
+- The Operations workspace now treats inventory as branch-local data. A
+  concrete branch shows only that branch's available quantity, low-stock
+  state, checkout, and stock-management actions; the **All branches** view is
+  an explicit read-only comparison that totals availability and labels each
+  branch's quantity and alert state. It never silently substitutes the first
+  branch for an all-branches selection.
+- Checkout follows the same branch context as Inventory. Its branch selector
+  is synchronized with the global gym branch selector, valid deep links update
+  the shared selection, and a failed branch change is surfaced instead of
+  leaving the sale on an unselected branch. Mutating inventory and retail
+  checkout remain disabled until a concrete, visible branch is selected.
+- Inventory, Checkout, and Machines are now same-page tabs in one Operations
+  workspace. The branch comparison, compact low-stock summary, centered
+  dialogs, and simplified actions keep the primary operator flow focused on
+  what is available, what can be sold, and what needs attention.
+- The Machines tab restores the equipment register and its persisted repair
+  workflow: machine status, safety issues, issue resolution, work orders,
+  repair-versus-replace guidance, and historical activity. Equipment actions
+  remain branch-scoped and permission-gated. An out-of-service issue moves an
+  active machine into maintenance; resolving it requires an explicit
+  safe-to-operate confirmation and only returns it to active when no unsafe
+  unresolved issue remains. Work orders follow draft → approved → in progress
+  → completed (or cancellation) transitions, and terminal/retired machines
+  cannot receive new issues.
+- Convex and MockGymOSApi implement the same branch filtering, equipment
+  lifecycle, safety, assignee-scope, recommendation, and work-order rules.
+  Validation for this working tree passed: full Vitest coverage (**136 files /
+  828 tests**), app and Convex TypeScript checks, full ESLint and
+  secret-output audit, the production Next build, 14 Node deployment-safety
+  tests,
+  and `git diff --check`. A mock-mode in-app browser visual pass (not
+  Playwright) verified the All branches comparison, independent Sweifieh stock
+  with global branch synchronization, Abdoun machine issue/work-order UI, the
+  centered Add machine dialog, and no app console errors. Commit/push and
+  Convex Production deployment remain pending; this section makes no
+  production success claim.
+
+## Operations simplification and product-master deletion — 24 August 2026
+
+- The gym Operations surface is being reduced to two beginner-friendly,
+  same-page tabs: **Inventory** and **Checkout**. Inventory prioritizes what is
+  available now, with add-item, centered supplier and purchase-order dialogs,
+  and a simple low-stock alert when available stock is at or below its
+  threshold. The tutorial and the separate facilities/equipment
+  command-center presentation are removed from this primary flow; their
+  historical records remain intact in the backend.
+- The product editor has one canonical set of fields: SKU, name, unit,
+  current availability for the selected branch, low-stock threshold, and
+  selling price. Saving availability is an audited stock adjustment, not a
+  silent balance overwrite. Refill targets, delivery/lead-time forecasting,
+  and product default supplier cost are no longer part of the operator model.
+- A purchase order may use a saved supplier or the explicit
+  **Private / bought elsewhere** source. Actual unit cost on a purchase-order
+  line remains the recorded purchase cost; no WhatsApp or other supplier
+  provider is integrated, so the gym can keep procurement communication
+  outside RIVET until it supplies its own provider configuration.
+- Checkout remains the atomic retail-sale path for a member or guest: it
+  validates branch stock and payment details, creates the sale/receipt and
+  stock movement together, and supports Cash, CliQ, and Visa/card. Cash does
+  not require an external reference; CliQ/card do. Mock refund/void behavior
+  follows the same stock-restoration rules as the live path.
+- Product-master deletion is now a distinct, audited permanent action. It
+  removes the mutable product identity so a replacement can reuse the SKU,
+  while tombstone and snapshot evidence keeps stock movements, retail receipts,
+  purchase history, refunds/voids, and audit records understandable. Open
+  purchase-order or otherwise unsafe references remain guarded rather than
+  creating dangling operational records.
+- “Archive” remains the truthful action for gyms and other records whose
+  financial, audit, or operational history must remain intact. Archived zones
+  and equipment can reuse identifiers where the active-record constraints allow
+  it; historical issue and work-order evidence is retained.
+- Validation is clean: 738 Vitest tests, app and Convex TypeScript checks, full
+  ESLint, the secret-output audit, safe Convex CLI tests, and the Next production
+  build all pass. No Playwright suite was run. GitHub static CI, credentialed
+  Convex codegen, and Vercel Production passed for `3f6b787`.
+- Convex Production `descriptive-meerkat-589` was explicitly selected for the
+  matching `3f6b787` backend. The guarded dry run and deploy reported no index
+  deletions and completed schema validation; the three product-tombstone
+  history indexes were added. The read-only `health:check` returned `status:
+  ok`. No seed, import, restore, or tenant-data workflow was run.
+
+## Native Arabic and translation-service removal — 24 August 2026 (working-tree update)
+
+- Removed the paid translation provider, compiler, release publisher, runtime
+  provider boundary, environment variables, and provider-only tests/docs.
+  Vercel Production now validates the Convex and Clerk configuration and runs
+  the normal Next.js Webpack build without a translation-service dependency.
+- Preserved the IBM Plex Sans Arabic font, native Arabic fields, document
+  `dir`/`rtl-font` state, and the manual RTL layout switch. Manual direction
+  changes keep the document language as English until native Arabic copy is
+  intentionally added.
+- Validation passed: app and Convex TypeScript checks, **725 unit tests**,
+  zero-warning lint and secret-output audit, production environment validation,
+  the 47-route production build, `git diff --check`, and a repository-wide
+  search with no remaining translation-provider names or credentials.
+- No Convex or Vercel deployment is claimed by this handoff; the application
+  commit is being integrated and pushed through the normal GitHub path.
+
+## Subscription and retail release, 24 August 2026
+
+- The hourly platform-subscription reconciliation is now explicitly disabled
+  unless the Convex deployment sets
+  `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`. Missing values perform zero
+  writes. The internal `subscriptionReconciliation.preview` query remains
+  read-only and returns only aggregate invoice, past-due, suspension, and
+  boundary counts so an operator can inspect Production impact before enabling
+  the automation. Active subscriptions now prefer their paid-period boundary
+  instead of a stale trial end.
+- Retail receipts now support permission- and reason-gated item refunds and
+  same-business-day voids. Refund quantities cannot exceed the sold/remaining
+  quantity; both paths restore stock with durable return movements, update the
+  original retail payment lifecycle, create the appropriate negative refund
+  accounting fact, and append audit evidence. The receipt UI exposes remaining
+  item quantities, totals, pending/error states, and the current lifecycle.
+- The shell keeps native Arabic-ready direction state and manual RTL layout
+  coverage without a remote translation provider. The local server port can be
+  overridden with `PLAYWRIGHT_PORT` without reusing an unrelated process.
+- Local evidence: frontend and Convex typechecks, zero-warning lint and
+  secret-output audit, **128 test files / 725 tests**, and the 47-route
+  Production build passed. The UI detector reported no findings.
+- The previous release's backend commit `e7f8121337a30a02da56f61264c63bdc68efee5e`
+  was deployed through the guarded wrapper to exact Convex Production
+  `descriptive-meerkat-589`. The dry run and deploy validated the schema,
+  deleted no indexes, and added only the retail-sale indexes. The reconciliation
+  flag is absent. Production preview returned 5 processed subscriptions, 1
+  eligible boundary, and zero invoices to create, invoices to mark past due, or
+  organizations to suspend. The mutation returned `enabled: false` and zero
+  writes; `health:check` returned `status: ok`.
+- GitHub Actions [run 32744664588](https://github.com/hashemnusair/Rivet/actions/runs/32744664588)
+  passed for `ca7831a`, and Vercel Production deployment
+  [4z8ReyCXCZnEHhuLAymFV44NV974](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/4z8ReyCXCZnEHhuLAymFV44NV974)
+  completed. The public, platform, and gym custom domains returned HTTP 200.
+- The available Chrome sessions had expired. Platform billing and retail
+  checkout both rendered the Production sign-in route without console errors,
+  but authenticated acceptance was not claimed and no Production sale was
+  created. Remaining launch holds are the Convex capacity warning, an active
+  safe owner/admin acceptance session, credential-complete staging, and the
+  recorded product-policy decisions. Measured performance and final Arabic
+  work stay last.
+
+## Retail checkout and Operations workflow, released 24 August 2026
+
+- Operations now has a transactional retail checkout at
+  `/operations/checkout`. A sale validates the branch, member or guest,
+  product price, available stock, payment method, and idempotency key before
+  atomically creating the sale, receipt, payment projection, stock movement,
+  inventory decrement, and audit record. Member sales retain the member
+  context and timeline link; guest sales ask only for a name and phone number.
+- Checkout supports manually recorded Cash, CliQ, and Visa/card payments. A
+  printable receipt shows the customer, items, totals, method, and reference;
+  Cash uses the existing shift workflow and CliQ/card require an operator
+  reference. The checkout and catalog are protected by Operations entitlement,
+  workspace/module state, branch access, and the appropriate read/collect
+  permissions.
+- Retail sales now flow through transaction lists, cash shifts, daily
+  reconciliation, dashboard revenue, and accounting with method-specific
+  ledger accounts. Products expose a selling price, while purchase-order lines
+  retain the actual recorded purchase cost. “Delete item” is an audited
+  permanent product-master deletion with historical tombstone/snapshot
+  evidence; immutable movements, receipts, and ledger facts remain intact.
+- Operations terminology and layout now keep the useful primary jobs together:
+  **Inventory** (available stock, low-stock alerts, suppliers, and purchase
+  orders) and **Checkout** (retail sales). The product editor uses only SKU,
+  name, unit, current availability, low-stock threshold, and selling price;
+  alerts are based on available stock reaching the threshold, without a
+  delivery-time projection.
+- Validation passed: app and Convex TypeScript checks, **176 relevant tests**,
+  targeted ESLint, `git diff --check`, and the production build. The checkout
+  shipped in `40b9bc9`; refund/void recovery and its Production backend deploy
+  shipped in `e7f8121`.
+
+Known scope: payments are manual and no external provider is connected;
+purchase orders record either a saved supplier or a private/elsewhere source;
+and supplier communication, including WhatsApp, remains outside the product
+until a gym configures an approved provider.
+
+## Admin interaction, Brand Kit, and native Arabic layout, released 24 August 2026
+
+- Platform gym archive and subscription updates now use a platform-scoped
+  mutation boundary, so a stale selected gym workspace cannot make an admin
+  archive fail with a tenant-membership error. Convex authorization coverage
+  includes archiving a foreign gym without tenant membership.
+- Selected gym dashboard creation workflows now open centered, accessible
+  dialogs: Operations supplier, stock, movement, purchase-order, facility,
+  equipment, and issue forms; CRM contact/trial workflows; member creation;
+  and PT booking. Successful submissions close the dialog and preserve the
+  underlying route context.
+- Brand Kit save now persists the palette, derived tokens, logo asset, and
+  alt text through the server and immediately updates the settings cache and
+  authenticated gym shell. Logo lifecycle, owner authorization, and reload
+  behavior are covered end to end.
+- The inline `styled-jsx` loading animation that caused a reload crash after
+  Brand Kit changes was moved to global CSS. Native Arabic fields, the IBM Plex
+  Sans Arabic font, and the manual RTL layout switch remain available without a
+  paid translation service.
+- Validation: **710/710 unit tests**, frontend and Convex typechecks,
+  zero-warning lint and secret-output audit, the 46-route Webpack build,
+  focused Operations and suspended-gym E2E journeys, and Brand Kit
+  save/reload browser verification passed.
+
+These changes are now on `main`. Convex Production received the platform and
+retail backend changes through the guarded `e7f8121` deploy. This follow-up
+removes the paid translation integration from the application build while
+retaining native Arabic fields and manual RTL layout. Final Arabic acceptance
+remains separate. Secret values are intentionally not recorded here.
+
+## Integrated admin operations, ledger, and provisioning pass — 23 August 2026
+
+- Gym application provisioning now treats the durable application row as
+  authoritative after external-provider work. Completion is idempotent,
+  invitation bookkeeping is finalized with the workspace, and a delayed
+  provider response cannot regress a completed gym into a false failure or
+  leave an actionable failure alert behind.
+- The admin Gyms directory defaults to Active gyms, keeps the remaining
+  lifecycle filters to the right, and sorts the all-gyms view active-first.
+  Operations now has working inventory, supplier, stock movement, purchase
+  order, facility-task, equipment, issue-resolution, and retry flows, with a
+  typed `updateEquipmentIssue` API across Convex and Mock adapters.
+- Management Ledger fixes cover real calendar-date validation, tenant-local
+  posting periods, local-timezone source filtering/period closure, accurate
+  journal poster identity, and public account/branch identifiers.
+- Validation: **703/703 unit tests**, app and Convex typechecks, lint, and the
+  secret-output audit passed. The production webpack build had previously
+  passed; the final rebuild was blocked only by sandbox DNS resolution for
+  `fonts.googleapis.com`. The full final Playwright rerun was blocked before
+  launch by desktop execution allowance; focused Operations and suspended-gym
+  E2E journeys passed.
+
+## Four-tier Production release and unavailable-owner recovery — 23 August 2026
+
+- Application commit `7e6ae92b9861892efa06f6d0d780d025fba3746d`
+  is deployed on Vercel Production (`H3DKcGPaGmr8Nzn28qJ7P6TZW1YD`) and
+  passed GitHub Actions run `32639554231`. This release carries Elias's
+  four-tier subscription and live-entitlement work from `6c43147` together
+  with the owner-login recovery below.
+- The guarded dry run and deploy targeted exact Convex Production deployment
+  `descriptive-meerkat-589`. Schema validation completed, no indexes were
+  deleted, and the post-deploy `health:check` returned `status: ok`. Convex
+  again warned that the project is above the Free-plan limits.
+- Root cause of the failed owner sign-in was an active gym membership whose
+  organization is suspended or cancelled. The identity projection correctly
+  hid that organization from routable workspaces, but the client mistook the
+  empty routable list for a consumer account and called the member-registration
+  mutation. The server rejected that mutation because the account still has a
+  gym membership.
+- Identity projection now distinguishes unavailable gym access from a true
+  member-only identity. It neither initializes member APIs nor exposes the
+  suspended workspace. The login page explains that the gym is inactive and
+  provides a real Clerk sign-out action instead of linking back to the same
+  route.
+- Production browser verification on the affected owner session showed
+  **Your gym workspace is unavailable** and **Sign out and use another
+  account**, with no page or console errors. The account is valid; restoring
+  its gym subscription is a separate reasoned platform-admin mutation and was
+  not performed by this release.
+- Local gates passed: frontend and Convex typechecks, zero-warning lint and
+  secret-output audit, **122 test files / 660 tests**, the 46-route Production
+  build, and Playwright (**30 passed / 14 credential-gated staging tests
+  skipped / 0 failed**). `FRONTEND_HANDOFF.md` remains frozen and Arabic plus
+  measured performance work remain deferred to the final pass.
+
+## Production backend release closure — 23 August 2026
+
+- `main` and `origin/main` were synchronized at
+  `2323dd6841741c9763983a2e3dac43cb5a11f10f` before this documentation
+  update. That head includes Elias's platform-admin hardening in addition to
+  the Five Pillars application and renewal-safety work. GitHub Actions run
+  `32412787941` passed for that application commit, and its Vercel Production
+  deployment is `READY` (`CEFfosE9hcTLkkwNNFBoL8kvCqb7`).
+- The guarded dry run and deploy both targeted exact Convex Production
+  deployment `descriptive-meerkat-589`. Schema validation completed, no
+  indexes were deleted, and the current functions were deployed through
+  `pnpm convex:deploy`; the Development deployment `fleet-otter-621` was not
+  targeted.
+- The post-deploy `health:check` returned `status: ok`. The internal
+  aggregate-only `renewalJobs.releaseAudit` returned zero renewal deliveries,
+  delivery events, member-timeline records, and staff call tasks, with empty
+  status/type groups and no first/last timestamps. No cleanup was required.
+- The authenticated Production platform-admin session loaded `/platform`,
+  `/platform/applications`, `/platform/billing`, `/platform/subscriptions`,
+  and `/platform/support` without page or console errors. The same identity
+  was correctly routed away from `/operations`, `/finance`,
+  `/reports/statements`, and `/settings` to `/platform`; a separate active
+  gym-owner session is still required for the signed-in Five Pillars workspace
+  acceptance pass.
+- Convex reported that the projects are above the Free-plan limits during the
+  Production dry run and deploy. Resolve capacity/billing before pilot launch
+  to avoid service interruption; no plan purchase or provider-setting change
+  was made by this release.
+- Credential-complete isolated-staging journeys remain open because the
+  documented role identities are unavailable. The deployment, health query,
+  and release audit did not create, edit, delete, seed, import, or restore
+  Production product data. Renewal recovery remains default-off, live outbound
+  providers remain disabled, `FRONTEND_HANDOFF.md` remains frozen, and the
+  `arabic-localisation` branch remains unmerged for the final Arabic and
+  measured-performance pass.
+- Final local gates passed on the deployed application code and this handoff:
+  frontend and Convex typechecks, zero-warning lint and secret-output audit,
+  118 test files / 630 tests, the 46-route Production build, 28 Playwright
+  passes with 14 credential-gated staging journeys skipped, and
+  `git diff --check`.
+
+## Four-tier catalog and annual pricing — 23 August 2026 (working-tree update)
+
+- RIVET now has one end-to-end four-tier catalog: Starter (JOD 79/month),
+  Growth (JOD 149/month), Pro (JOD 249/month), and Enterprise (JOD 500/month).
+  Enterprise is accepted by organization, application, provisioning, platform
+  admin, entitlement, seed, mock, and public catalog contracts instead of being
+  a UI-only option.
+- The landing pricing section has an accessible monthly/annual switch. Annual
+  prices are derived from the monthly catalog at a 20% discount and show both
+  effective monthly and annual billed totals. The chosen plan/cadence carries
+  into signup; the application remains a non-charging provisioning request and
+  does not claim an external recurring billing integration.
+- Dashboard access follows the implemented module model: Starter includes
+  foundation and revenue; Growth adds operations; Pro adds finance and
+  management reporting; Enterprise includes all five at higher capacity limits.
+  Desktop/mobile navigation, Finance subnavigation, direct route gates, and
+  backend Operations/Accounting/Management Reporting checks use authoritative
+  organization-plan access and cannot be reopened by stale entitlement rows.
+- Local validation passed: frontend and Convex TypeScript checks, zero-warning
+  lint, **122 test files / 656 tests**, the 46-route Production build, focused
+  landing pricing Playwright coverage, and a live-session four-tier entitlement
+  journey. The corrected focused browser journeys pass; a subsequent full-suite
+  rerun lost its preview server and produced cascading connection-refused
+  failures, so it is not claimed as a product pass. No Convex/Vercel Production
+  deploy or Production product-data mutation is claimed by this working-tree
+  update.
+
+## Admin platform overhaul — 23 August 2026 (working-tree update)
+
+- Platform Overview is now an operational surface rather than a placeholder:
+  live snapshot data feeds the KPIs, invoice/support/trial queues are scoped to
+  provisioned tenants, suspended/cancelled tenants cannot inflate active usage,
+  stale entitlement plans cannot override the authoritative organization plan
+  for MRR, and unlinked cleanup fixtures fail closed. The fake Marketplace
+  Views, payment-provider placeholder, and unrelated marketing migration panel
+  were removed; the former Overview operator-queue panel was also removed in
+  favor of concise KPI counts and direct gym, application, and billing links.
+- The admin gym directory is leaner and active-first. Provisioned gyms appear
+  before trial, past-due, suspended, and cancelled rows; unprovisioned/archived
+  cleanup records remain available only for audited operator cleanup and do not
+  appear in the active tenant preview.
+- Subscription catalog and landing pricing stay canonical across Starter,
+  Growth, Pro, and Enterprise. Upgrade requests are support-only; a gym cannot
+  self-upgrade from the dashboard. Monthly and annual cadence remain aligned
+  with the landing page and drive the subscription lifecycle.
+- Trial and renewal lifecycle is server-derived: onboarding starts a one-month
+  calendar trial with a fixed end date; an invoice is created automatically at
+  T-3 days and is due at period end; a two-day grace window follows the end
+  date, then unpaid access is suspended and the public listing is hidden.
+  Recording a verified payment reactivates the gym and restores its period;
+  subscription dates are not manually selectable in the admin controls.
+- The subscriptions surface is simplified around the gym directory and billing
+  ledger. Duplicate management controls and current-subscription summaries are
+  removed from the standalone subscriptions view; gym detail remains the place
+  to manage a tenant, while billing exposes invoice state, due dates, and
+  payment/reconciliation actions.
+- Billing remains intentionally manual: there is no external payment provider,
+  card auto-charge, or automatic card verification. Payment confirmation uses a
+  bank-transfer/reference entry or another operator-verified manual record;
+  email delivery for invoices and lifecycle notices depends on a configured
+  external provider and is not claimed when that provider is unavailable.
+
+This is a local working-tree update only. No Convex/Vercel Production deploy or
+Production product-data mutation is claimed here.
+
+## Subscription tier activation repair — 22 August 2026 (working-tree update)
+
+- Platform plan changes now treat the provisioned organization as the billing
+  authority and immediately synchronize its entitlement projection. Newly
+  purchased modules are enabled on upgrade; downgrades are enforced at read
+  time while retaining prior preferences for a later upgrade.
+- Active gym sessions subscribe to workspace-access changes, update the shared
+  query cache, and filter desktop/mobile navigation by both role permission and
+  entitled/enabled module. Admin subscription rows reconcile transiently stale
+  platform snapshots instead of visually reverting a successful save.
+- The subscription editor now states the exact access granted by each tier:
+  Starter provides foundation and revenue, Growth adds operations, and Pro adds
+  finance and management reporting. Mock and Convex implementations share the
+  same behavior and regression coverage.
+- Local validation passed: frontend and Convex TypeScript checks, zero-warning
+  lint, **118 test files / 639 tests**, the 46-route Production build,
+  `git diff --check`, and Playwright (**29 passed / 14 credential-gated staging
+  tests skipped**). The browser journey keeps a gym session open across Pro →
+  Starter → Pro and verifies that premium navigation/routes lock and unlock
+  without reload or logout. No Convex/Vercel Production deploy or Production
+  product-data mutation is claimed by this working-tree update.
+
+
+## Platform admin hardening pass — 20 August 2026 (working-tree update)
+
+This additive entry records the platform-operations hardening completed after
+the earlier platform-console work. It preserves the historical release notes
+below and makes no deployment, Production-verification, or merge claim.
+
+### Subscription, tenant, and authorization integrity
+
+- Platform subscription controls now use reason-gated lifecycle updates with
+  server validation for status, plan, trial/started/current-period/cancelled
+  dates, future trial ends, date ordering, and configured-plan boundaries.
+  Suspended, overdue, and cancelled states force the public listing hidden;
+  only active/trial tenants can remain discoverable.
+- For a linked tenant, the organization and its subscription entitlement are
+  authoritative. A platform change synchronizes the organization lifecycle,
+  subscription plan, entitlement catalog/modules, and directory projection;
+  before/after snapshots, actor, reason, and correlation ID are retained in an
+  immutable platform audit event. Stale directory lifecycle values cannot
+  silently overwrite the tenant record.
+- Directory-only, mismatched, unprovisioned, or otherwise fake legacy rows are
+  retained privately for audit and cleanup, but are not treated as tenants:
+  lifecycle/plan mutation is unavailable, the safe cleanup action is hide, and
+  their public listing is suppressed. Suspended/overdue/cancelled rows remain
+  visible to platform operators for recovery or cleanup only.
+- Public marketplace projections, direct gym detail, and trial creation now
+  require the persisted public/listing and operational tenant/branch boundary;
+  private, suspended, overdue, cancelled, unprovisioned, and inactive-branch
+  records do not leak through direct routes or member discovery.
+- Platform authorization is identity-backed: the Clerk/RIVET identity record
+  must be an active platform administrator, and server-side platform guards
+  remain authoritative. Deactivated/invited users and suspended/cancelled
+  tenant memberships are not advertised as routable access; client session
+  flags cannot grant platform access.
+
+### Platform surfaces hardened
+
+- Overview uses the complete platform snapshot/tenant directory rather than
+  the independently updating public marketplace stream, and invoice queue
+  links preserve the invoice ID for ledger deep-linking.
+- The platform search combobox now supports active-option highlighting,
+  ArrowUp/ArrowDown/Home/End navigation, Enter selection, and correct
+  `aria-selected`/`aria-activedescendant` semantics. Applications, billing,
+  and support react to same-route query changes from header search. Application
+  initial reads are sequence-guarded against live-subscription races; review,
+  provisioning, and stale/error states retain actionable recovery paths.
+- Billing focuses and scrolls to an invoice only after its row is loaded;
+  invoice entry rejects malformed, scientific-notation, zero-rounding, and
+  unsafe values before converting to a positive safe minor-unit integer.
+  Support now has explicit loading/empty/search/deep-link states and keeps
+  persisted operator actions visible after local updates.
+- Platform billing integrity is JOD-only for platform totals: eligible
+  invoices are resolved from explicit/legacy labels, mismatches are excluded
+  from monetary totals and counted, and the UI remains a manual ledger rather
+  than implying card charging, settlement, or payout capability.
+
+### Final local validation
+
+- Mock/live adapter parity and focused platform regression coverage are in
+  place for subscription synchronization, authorization, directory privacy,
+  billing currency classification, platform navigation/search, applications,
+  billing, support, and gym detail.
+- Final root gates: **116 test files / 626 tests** passed; both TypeScript
+  checks, lint, and the production build passed. Playwright recorded **28
+  passed / 14 staged-credential tests skipped**.
+- In-app browser validation covered a reason-gated Pro → Growth plan change
+  with live MRR refresh and an audit toast, unprovisioned cleanup-only
+  controls, keyboard global search, and zero page errors. The only observed
+  console warning was the expected Clerk development warning.
+
+### External provider limitations and release follow-up
+
+- External SaaS billing/card charging, payout, settlement, and provider-backed
+  storage remain unavailable; the platform surface intentionally exposes
+  manual JOD ledger behavior and explicit `Not configured` states.
+- Clerk remains the external identity/invitation provider; invitation flows
+  have a protected implementation, while fresh/existing-owner credentialed
+  acceptance remains release follow-up. Resend/WhatsApp/SMS delivery still
+  depends on configured external credentials, templates, allowlists, and
+  staging acceptance; operational messages remain suppressed where those
+  boundaries are not enabled.
+- This pass is a local working-tree update only. No Convex or Vercel deploy,
+  Production product-data mutation, seed/import/restore/delete operation, or
+  external-provider activation is claimed here.
+
+## Five-pillar release closure status — 20 August 2026
+
+- The closure attempt started from `7a1237dc719bfb4c767aa824ca73cf93410c2d8d`, which matched `origin/main`; this is a subsequent direct-main documentation update. The Five Pillars application/release commit remains `1e01163d25cc6f9123001329877a45e33e5670ea`, and the hand-written `arabic-localisation` branch remains separate at `f98e324`.
+- The five implementation pillars are present on `main`: shared tenant/capability foundation, renewal recovery, daily operations, immutable management ledger, and management reporting. The implementation remains additive and locally validated; no future marketplace, autonomous purchasing/replacement, statutory-accounting, Arabic, or optimization work was added here.
+- GitHub Actions run `32391568593` passed for this exact commit, and the matching Vercel Production status is `READY` (`ER5WksGThgB9BiBupZNZAxUsig85`). The local production build includes 46 routes, including `/operations`, `/finance`, and `/reports/statements`.
+- The intended Production Convex target is `descriptive-meerkat-589`. `CONVEX_DEPLOYMENT` is unset and the configured deployment context selected by the safe wrapper is Development `fleet-otter-621`; the required dry run targeted that Development deployment, passed schema validation, and reported no deleted indexes. The Production deploy was not attempted with the wrong context, so `1e01163`'s renewal gate is not verified as deployed to Production.
+- `notifications.renewalRecoveryEnabled` defaults to false by omission and by explicit false. The scheduler cannot create renewal deliveries, delivery events, member timeline entries, or renewal call tasks while disabled. An authorized settings user with `settings.manage` can enable it explicitly; the owner path is covered by the server test, and WhatsApp/SMS remain sandboxed independently.
+- An internal read-only `renewalJobs.releaseAudit` query now returns only aggregate counts, status/type buckets, and first/last timestamps for renewal deliveries, renewal events, renewal timelines, and renewal call tasks. It was not deployed or run against Production because the context was Development and no authenticated Convex operator session was available; no Production pre-gate count is claimed.
+- The existing Chrome profile had no authenticated Production GymOS or Convex session. `/operations`, `/finance`, `/reports/statements`, and `/settings` each redirected to `/login`; no browser console errors were observed. Authenticated workspace visibility, authorization failures, loading/error states, drill-downs, failed-request review, and laptop/mobile layout checks remain unverified.
+- No staging role storage states or connected staging variables were available in the environment. No accounting journey was run, no staging records were created, and no cleanup evidence is claimed.
+- No Production data was seeded, created, edited, deleted, or archived. Live WhatsApp, SMS, email, supplier messaging, and other providers remain disabled. `FRONTEND_HANDOFF.md` is unchanged.
+
+### Five-pillar implementation summary
+
+- Foundation: server-owned entitlements, workspace preferences, Brand Kit, typed zones, consent/event primitives, tenant/branch/role enforcement, audit, and mock/Convex parity.
+- Renewal recovery: exact 14/7/3-day sandbox reminders, one-day staff call task, consent/quiet-hours/deduplication/stop rules, truthful delivery state, append-only events, and timeline records behind the opt-in gate.
+- Daily operations: typed inventory, suppliers, purchasing, facilities, equipment, work orders, alerts, recorded-input recommendations, protected writes, and `/operations` workflows.
+- Management ledger: code-owned accounts and posting policies, balanced immutable journals, source postings, reversals, periods, reconciliation, and `/finance` controls.
+- Reporting: income statement, balance sheet, cashflow, GM analysis, scope/policy metadata, bounded drill-downs, completeness warnings, and management-accounting disclaimer in `/reports/statements`.
+
+### Local validation for this release
+
+- `pnpm typecheck` — passed.
+- `pnpm convex:typecheck` — passed.
+- `pnpm lint` — passed with no warnings; secret-output audit passed.
+- `pnpm test` — **557 tests across 109 files passed**.
+- `pnpm build` — passed; Next.js generated **46 routes**.
+- `pnpm test:e2e` — **27 passed, 14 skipped, 0 failed**. Skips are credential-gated staging journeys; no Production target was used.
+- `git diff --check` — passed.
+- Required Production dry run — safely blocked from Production because the verified context selected Development `fleet-otter-621`.
+
+### Remaining release evidence
+
+- Provide an existing Production deployment context that targets exactly `descriptive-meerkat-589`; then rerun the required dry run and deploy through `pnpm convex:deploy` only, followed by the approved read-only health check.
+- After the exact Production deployment, run the internal count-only renewal audit and record aggregate counts/timestamps. Do not expose member, phone, tenant, or message details.
+- Run the signed-in Production read-only route checks and one isolated Development staging journey only when the documented role identities are available. Preserve cleanup evidence for every disposable staging record.
+
+### Migration and compatibility notes
+
+- Five-pillar schema additions are typed/additive; no destructive migration, seed, import, restore, or Production write was run in this release.
+- Permission catalog v2 remains additive for legacy roles; explicit current-version role edits can omit permissions intentionally.
+- Reports do not invent opening balances, historical snapshots, unsupported source postings, cancellation proceeds, or retirement dates. Revenue recognition and depreciation post only from their validated, dependency-backed schedules. Cashflow remains unproven while source-queue coverage is incomplete.
+- Preserve `FRONTEND_HANDOFF.md` as the frozen historical artifact; this file is the living implementation and release-status handoff.
+
+Primary files for orientation:
+
+- `docs/16_FIVE_PILLAR_EXPANSION_PLAN.md`
+- `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`
+- `apps/web/convex/renewalJobs.ts`
+- `apps/web/convex/renewalJobs.test.ts`
+- `apps/web/convex/domain.renewal-settings.test.ts`
+- `apps/web/convex/operations.ts`
+- `apps/web/convex/accounting.ts`
+- `apps/web/convex/managementReports.ts`
+- `apps/web/src/features/operations/operations-command-center.tsx`
+- `apps/web/src/features/finance/management-ledger-workspace.tsx`
+- `apps/web/src/features/reports/management-statements-workspace.tsx`
+
+Updated 2026-08-20 after the Production closure attempt. The historical frontend-only pass remains preserved separately in `FRONTEND_HANDOFF.md`.
 
 ## Simplified Core CRM Pilot — released 17 August 2026
 
@@ -368,9 +3660,9 @@ Vercel should use `apps/web` as the root directory and the Next.js server runtim
 
 ## External deferrals
 
-The owner-selected modular workspace is currently a product plan, not shipped behavior. `docs/14_MODULAR_WORKSPACE_PLAN.md` defines a staged page-preference system, first-owner onboarding survey, future dashboard-block controls, and non-interactive premium placeholders. Product steering is required before implementation, especially around always-visible pages, existing-tenant rollout, dependency behavior, background automations, and future plan entitlements.
+The five-pillar release now includes server-owned workspace entitlements and owner-controlled module preferences. `docs/14_MODULAR_WORKSPACE_PLAN.md` still owns the unimplemented first-owner survey, later dashboard-block preferences, and premium-placeholder behavior. Final tier packaging, limits, grandfathering, downgrade behavior, and existing-tenant rollout still require product steering.
 
-The Production Clerk instance, custom-domain DNS, Vercel environment split, Production Convex environment/deployment, Resend application mail, first platform administrator, invited-owner identity/workspace handoff, and supervised single-cash-path operating loop have been verified. TODO-006's code-shaped money/staff matrix is complete at integrated code `1f29af3`, carried by the aligned `main`/branch handoff at `d200ba5`; realistic-volume/concurrency reconciliation evidence remains under TODO-007 and must be demonstrated in staging later, not fabricated from Production. The dedicated invited-owner route and platform tenant-directory visibility fix are implemented locally; before onboarding a real gym, run the two credentialed Production invitation cases and the hidden/suspended/cancelled directory check, then complete the remaining workflow/provider coverage in the canonical backlog. The platform gym detail now shows only authorized target-scoped facts; external SaaS billing and storage remain explicit `Not configured` capabilities until their providers are integrated, and no health score is exposed without an approved model. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Email-template polish/deliverability and live WhatsApp/SMS delivery remain provider-bound follow-ups. No unapproved marketplace, mobile, inventory, accounting, biometric, or billing surface was added.
+The Production Clerk instance, custom-domain DNS, Vercel environment split, Resend application mail, first platform administrator, invited-owner identity/workspace handoff, and supervised single-cash-path operating loop have been verified. The Production Convex public health query is active, but this checkout has only a Development deploy key. Deploy the renewal opt-in gate with the exact Production credential before treating the scheduled journey as safe. TODO-006's code-shaped money/staff matrix is complete at integrated code `1f29af3`, carried by the aligned `main`/branch handoff at `d200ba5`; realistic-volume/concurrency reconciliation evidence remains under TODO-007 and must be demonstrated in staging later, not fabricated from Production. The dedicated invited-owner route and platform tenant-directory visibility fix are implemented locally; before onboarding a real gym, run the two credentialed Production invitation cases and the hidden/suspended/cancelled directory check, then complete the remaining workflow/provider coverage in the canonical backlog. The platform gym detail now shows only authorized target-scoped facts; external SaaS billing and storage remain explicit `Not configured` capabilities until their providers are integrated, and no health score is exposed without an approved model. Google sign-in is intentionally deferred and is not required for email/password accounts. This repository deploys to Vercel only from `main`, so verify the production deployment after each configuration change. Email-template polish/deliverability and live WhatsApp/SMS delivery remain provider-bound follow-ups. No unapproved marketplace, mobile, biometric, or provider-backed billing surface was added.
 
 ## Files another agent should read first
 
