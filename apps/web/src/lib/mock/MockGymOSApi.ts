@@ -1,3 +1,4 @@
+import { describeStatementText, statementWarningMessages } from "../domain/statement-messages";
 import { describeAccountingReason } from "../domain/accounting-messages";
 import { describeEquipmentRationale } from "../domain/equipment-rationale";
 import { describeMemberImportError } from "@/lib/imports/member-import-errors";
@@ -8661,7 +8662,7 @@ export class MockGymOSApi implements GymOSApi {
     const policyVersions = [...new Map(this.accountingEntries
       .filter((entry) => (entry.status === "posted" || entry.status === "reversed") && entry.postingDate >= range.fromDate && entry.postingDate <= range.toDate && this.managementBranchVisible(entry.branchId, range.branchId) && entry.policyCode && entry.policyVersion)
       .map((entry) => [`${entry.policyCode}:${entry.policyVersion}`, { code: entry.policyCode!, version: entry.policyVersion! }])).values()];
-    return { organizationId: this.db.organization.id, branchId: range.branchId, fromDate: range.fromDate, toDate: range.toDate, timezone: this.db.organization.timezone, currency: this.db.organization.currency, generatedAt: nowISO(), policyVersions, sourcePostingCounts, queueCoverage: queueCoverage.status, lastQueueProjectionAt: queueCoverage.lastQueueProjectionAt, warnings: [...warnings], membershipRevenueRecognition, depreciationCoverage, disclaimer: "Management accounting projection for operational decision support. This is not statutory, tax, audit, or jurisdiction-specific financial reporting." };
+    return { organizationId: this.db.organization.id, branchId: range.branchId, fromDate: range.fromDate, toDate: range.toDate, timezone: this.db.organization.timezone, currency: this.db.organization.currency, generatedAt: nowISO(), policyVersions, sourcePostingCounts, queueCoverage: queueCoverage.status, lastQueueProjectionAt: queueCoverage.lastQueueProjectionAt, warnings: [...warnings], warningMessages: statementWarningMessages([...warnings]), disclaimerMessage: describeStatementText("Management accounting projection for operational decision support. This is not statutory, tax, audit, or jurisdiction-specific financial reporting."), membershipRevenueRecognition, depreciationCoverage, disclaimer: "Management accounting projection for operational decision support. This is not statutory, tax, audit, or jurisdiction-specific financial reporting." };
   }
 
   getIncomeStatement(input: T.ManagementReportInput): Promise<T.IncomeStatement> {
@@ -8762,6 +8763,7 @@ export class MockGymOSApi implements GymOSApi {
           : undefined;
       return {
         ...metadata,
+        warningMessages: statementWarningMessages(metadata.warnings),
         openingCash: money(openingCash),
         operating,
         investing,
@@ -8776,9 +8778,10 @@ export class MockGymOSApi implements GymOSApi {
           asOfCash: money(asOfCash),
           difference: money(expectedClosingCash - asOfCash),
           note: reconciliationNote,
+          noteMessage: reconciliationNote ? describeStatementText(reconciliationNote) : undefined,
         },
         balanced: reconciliationStatus === "proven" && expectedClosingCash === asOfCash,
-        classificationPolicy: { code: "cashflow-classification.v2", version: 2, description: "Cash on hand and card/bank-transfer clearing accounts are treated as cash. Each posted entry's cash movement is classified by its non-cash counterpart lines: investing when any counterpart is a non-current asset, otherwise financing when any counterpart is equity or a non-current liability, otherwise operating. Entries that only move money between cash accounts are internal transfers and are excluded from the classified sections." },
+        classificationPolicy: { code: "cashflow-classification.v2", version: 2, descriptionMessage: { key: "statements.cashPolicy" }, description: "Cash on hand and card/bank-transfer clearing accounts are treated as cash. Each posted entry's cash movement is classified by its non-cash counterpart lines: investing when any counterpart is a non-current asset, otherwise financing when any counterpart is equity or a non-current liability, otherwise operating. Entries that only move money between cash accounts are internal transfers and are excluded from the classified sections." },
       };
     });
   }

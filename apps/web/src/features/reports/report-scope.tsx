@@ -1,6 +1,8 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
 
+import { createTranslator, type TFunction } from "@/lib/i18n/core";
+import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 import { RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +10,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils/cn";
-import { addDays, formatDate, todayISODate } from "@/lib/utils/dates";
+import { addDays, todayISODate } from "@/lib/utils/dates";
 
 /**
  * One scope model for every owner report: a rolling window that ends on a
@@ -36,25 +38,25 @@ export function parseReportRange(value: string | null | undefined, fallback: Rep
 }
 
 /** Reads a scope from URL params, falling back to the actor's active branch. */
-export function parseReportScope(params: ParamSource, options: { branches: readonly ScopeBranch[]; defaultBranchId?: string }): ReportScope {
+export function parseReportScope(params: ParamSource, options: { branches: readonly ScopeBranch[]; defaultBranchId?: string; timeZone?: string }): ReportScope {
   const requested = params.get("branchId");
   const known = (id: string | null | undefined) => Boolean(id) && options.branches.some((branch) => branch.id === id);
   const branchId = requested === "all" ? "all" : known(requested) ? (requested as string) : known(options.defaultBranchId) ? (options.defaultBranchId as string) : "all";
   return {
     rangeDays: parseReportRange(params.get("range")),
-    to: validISODate(params.get("to")) ?? todayISODate(),
+    to: validISODate(params.get("to")) ?? todayISODate(options.timeZone),
     branchId,
   };
 }
 
 /** Builds a report URL that only carries the parts that differ from the defaults. */
-export function reportScopeHref(pathname: string, view: string, scope: ReportScope, options: { defaultBranchId?: string; defaultView?: string } = {}): string {
+export function reportScopeHref(pathname: string, view: string, scope: ReportScope, options: { defaultBranchId?: string; defaultView?: string; timeZone?: string } = {}): string {
   const params = new URLSearchParams();
   const defaultView = options.defaultView ?? "overview";
   const defaultBranchId = options.defaultBranchId ?? "all";
   if (view !== defaultView) params.set("view", view);
   if (scope.rangeDays !== 30) params.set("range", String(scope.rangeDays));
-  if (scope.to !== todayISODate()) params.set("to", scope.to);
+  if (scope.to !== todayISODate(options.timeZone)) params.set("to", scope.to);
   if (scope.branchId !== defaultBranchId) params.set("branchId", scope.branchId);
   const query = params.toString();
   return query ? `${pathname}?${query}` : pathname;
@@ -64,8 +66,8 @@ export function reportScopeFrom(scope: ReportScope): string {
   return addDays(scope.to, -(scope.rangeDays - 1));
 }
 
-export function scopeBranchName(branches: readonly ScopeBranch[], branchId: string): string {
-  return branchId === "all" ? "All your branches" : branches.find((branch) => branch.id === branchId)?.name ?? "Selected branch";
+export function scopeBranchName(branches: readonly ScopeBranch[], branchId: string, t: TFunction = createTranslator("en")): string {
+  return branchId === "all" ? t("statements.allBranches") : branches.find((branch) => branch.id === branchId)?.name ?? t("statements.selectedBranch");
 }
 
 /**
@@ -117,16 +119,18 @@ export function ReportScopeBar({
   refreshing?: boolean;
   note?: ReactNode;
 }) {
-  const t = useT();
+  const { t, locale } = useLocale();
+  const f = useFormat();
+  const timeZone = useFormattingTimeZone();
   const from = reportScopeFrom(scope);
   return (
-    <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Report filters">
+    <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label={t("statements.filters")}>
       {branches.length > 1 ? (
         <Field label={t("common.label.branch")} className="w-full sm:w-52">
           <Select value={scope.branchId} onValueChange={(branchId) => onChange({ branchId })}>
-            <SelectTrigger aria-label="Branch filter"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label={t("statements.branchFilter")}><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All your branches</SelectItem>
+              <SelectItem value="all">{t("statements.allBranches")}</SelectItem>
               {branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -134,18 +138,18 @@ export function ReportScopeBar({
       ) : null}
       {ranged ? (
         <>
-          <Field label="Date range" className="w-auto">
-            <ScopePills label="Date range" value={scope.rangeDays} items={REPORT_RANGES.map((days) => ({ value: days, label: `${days} days` }))} onChange={(rangeDays) => onChange({ rangeDays })} className="min-h-9 items-center" />
+          <Field label={t("statements.dateRange")} className="w-auto">
+            <ScopePills label={t("statements.dateRange")} value={scope.rangeDays} items={REPORT_RANGES.map((days) => ({ value: days, label: t("statements.days", { count: days }) }))} onChange={(rangeDays) => onChange({ rangeDays })} className="min-h-9 items-center" />
           </Field>
           <Field label={t("renewFlow.adjust.extend.endDate")} className="w-full sm:w-44">
-            <Input type="date" dir="ltr" value={scope.to} max={todayISODate()} onChange={(event) => { const to = validISODate(event.target.value); if (to) onChange({ to }); }} />
+            <Input type="date" lang={locale} dir="ltr" value={scope.to} max={todayISODate(timeZone)} onChange={(event) => { const to = validISODate(event.target.value); if (to) onChange({ to }); }} />
           </Field>
         </>
       ) : null}
       <Button variant="ghost" size="sm" className="ms-auto" onClick={onRefresh} disabled={refreshing}><RefreshCw className={refreshing ? "animate-spin" : undefined} />{" "}{t("common.action.refresh")}</Button>
       <p className="basis-full text-[12px] text-ink-3" dir="auto">
-        {ranged ? <><span dir="ltr">{formatDate(from)} – {formatDate(scope.to)}</span> · gym local time · </> : null}
-        {scopeBranchName(branches, scope.branchId)}
+        {ranged ? <><span>{f.date(from)} – {f.date(scope.to)}</span> {" "}{t("statements.localTime")}{" "}</> : null}
+        {scopeBranchName(branches, scope.branchId, t)}
         {note ? <> · {note}</> : null}
       </p>
     </section>

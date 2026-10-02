@@ -2965,7 +2965,9 @@ export interface ManagementReportCompleteness {
   queueCoverage: ManagementQueueCoverage;
   lastQueueProjectionAt?: ISODateTime;
   warnings: string[];
+  warningMessages?: Array<import("./statement-messages").StatementTextMessage & { original: string }>;
   disclaimer: string;
+  disclaimerMessage?: import("./statement-messages").StatementTextMessage;
 }
 
 export interface ManagementStatementLine {
@@ -3039,6 +3041,7 @@ export interface CashflowReconciliation {
   /** expectedClosingCash - asOfCash; zero is arithmetic agreement only. */
   difference: Money;
   note?: string;
+  noteMessage?: import("./statement-messages").StatementTextMessage;
 }
 
 export interface CashflowStatement extends ManagementReportCompleteness {
@@ -3052,7 +3055,7 @@ export interface CashflowStatement extends ManagementReportCompleteness {
   reconciliationStatus: ManagementReconciliationStatus;
   reconciliation: CashflowReconciliation;
   balanced: boolean;
-  classificationPolicy: { code: string; version: number; description: string };
+  classificationPolicy: { code: string; version: number; description: string; descriptionMessage?: import("./statement-messages").StatementTextMessage };
 }
 
 export interface ManagementAnalysisMetric {

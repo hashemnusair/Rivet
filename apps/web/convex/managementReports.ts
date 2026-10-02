@@ -1,3 +1,4 @@
+import { describeStatementText, statementWarningMessages } from "../src/lib/domain/statement-messages";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertBranchAccess, domainError, publicBranchId, publicOrganizationId, requirePermission, type ActorContext } from "./security";
@@ -262,7 +263,9 @@ function reportMeta(actor: ActorContext, report: ReportContext): JsonObject {
     lastQueueProjectionAt: report.lastQueueProjectionAt,
     depreciationCoverage: report.depreciationCoverage,
     warnings: report.warnings,
+    warningMessages: statementWarningMessages(report.warnings),
     disclaimer: DISCLAIMER,
+    disclaimerMessage: describeStatementText(DISCLAIMER),
   };
 }
 
@@ -469,9 +472,10 @@ async function cashflowStatement(ctx: QueryCtx, actor: ActorContext, input: Json
       asOfCash: money(asOfCash, currency),
       difference: money(difference, currency),
       note: reconciliationNote,
+      noteMessage: reconciliationNote ? describeStatementText(reconciliationNote) : undefined,
     },
     balanced: reconciliationStatus === "proven" && difference === 0,
-    classificationPolicy: CASHFLOW_POLICY,
+    classificationPolicy: { ...CASHFLOW_POLICY, descriptionMessage: describeStatementText(CASHFLOW_POLICY.description) },
   };
 }
 

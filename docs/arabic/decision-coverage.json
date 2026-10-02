@@ -4635,11 +4635,14 @@
     {
       "id": "profit-loss",
       "keys": [
-        "ledgerWorkspace.incomeStatement"
+        "ledgerWorkspace.incomeStatement",
+        "statements.income"
       ],
       "rules": [
         "apps/web/src/features/finance/ledger-arabic.test.tsx",
-        "apps/web/src/lib/i18n/accounting.test.ts"
+        "apps/web/src/lib/i18n/accounting.test.ts",
+        "apps/web/src/features/reports/management-statements-arabic.test.tsx",
+        "apps/web/src/lib/domain/statement-messages.test.ts"
       ],
       "candidateOccurrences": [
         {
@@ -4665,11 +4668,14 @@
     {
       "id": "balance-sheet",
       "keys": [
-        "ledgerWorkspace.balanceSheet"
+        "ledgerWorkspace.balanceSheet",
+        "statements.balance"
       ],
       "rules": [
         "apps/web/src/features/finance/ledger-arabic.test.tsx",
-        "apps/web/src/lib/i18n/accounting.test.ts"
+        "apps/web/src/lib/i18n/accounting.test.ts",
+        "apps/web/src/features/reports/management-statements-arabic.test.tsx",
+        "apps/web/src/lib/domain/statement-messages.test.ts"
       ],
       "candidateOccurrences": [
         {
@@ -4695,11 +4701,14 @@
     {
       "id": "cash-flow",
       "keys": [
-        "ledgerWorkspace.cashflow"
+        "ledgerWorkspace.cashflow",
+        "statements.cashflow"
       ],
       "rules": [
         "apps/web/src/features/finance/ledger-arabic.test.tsx",
-        "apps/web/src/lib/i18n/accounting.test.ts"
+        "apps/web/src/lib/i18n/accounting.test.ts",
+        "apps/web/src/features/reports/management-statements-arabic.test.tsx",
+        "apps/web/src/lib/domain/statement-messages.test.ts"
       ],
       "candidateOccurrences": [
         {
@@ -4726,11 +4735,14 @@
     {
       "id": "liabilities",
       "keys": [
-        "accountingMessages.accountType.liability"
+        "accountingMessages.accountType.liability",
+        "statements.liabilities"
       ],
       "rules": [
         "apps/web/src/features/finance/ledger-arabic.test.tsx",
-        "apps/web/src/lib/i18n/accounting.test.ts"
+        "apps/web/src/lib/i18n/accounting.test.ts",
+        "apps/web/src/features/reports/management-statements-arabic.test.tsx",
+        "apps/web/src/lib/domain/statement-messages.test.ts"
       ],
       "candidateOccurrences": [
         {
