@@ -27,8 +27,8 @@ export function OwnerDashboard() {
   const { t, isolateLtr } = useLocale();
   const format = useFormat();
   const branchId = session?.activeBranchId;
-  const today = todayISODate();
-  const greeting = useGreeting(session?.user.name.split(" ")[0] ?? "");
+  const today = todayISODate(session?.organization.timezone);
+  const greeting = useGreeting(session?.user.name.split(" ")[0] ?? "", undefined, session?.organization.timezone);
   const scopeText = useDashboardScopeText(session?.branches ?? [], branchId);
 
   const dashboardQuery = { branchId, from: addDays(today, -29), to: today };
@@ -69,7 +69,7 @@ export function OwnerDashboard() {
             monthDelta !== undefined ? (
               <span className={cn("inline-flex items-center gap-0.5", monthDelta >= 0 ? "text-success-deep" : "text-danger")}>
                 <ArrowUpRight className={cn("size-3", monthDelta < 0 && "rotate-90")} aria-hidden />
-                {t(monthDelta >= 0 ? "dashboard.owner.monthUp" : "dashboard.owner.monthDown", { percent: isolateLtr(`${Math.abs(monthDelta)}%`) })}
+                {t(monthDelta >= 0 ? "dashboard.owner.monthUp" : "dashboard.owner.monthDown", { percent: isolateLtr(format.percent(Math.abs(monthDelta))) })}
               </span>
             ) : undefined
           }
@@ -80,13 +80,13 @@ export function OwnerDashboard() {
           <MoneyText money={kpis?.outstandingTotal ?? money(0)} compact />
         </KpiCell>
         <KpiCell label={t("dashboard.owner.newMembers")} loading={isLoading} context={t("dashboard.owner.joinedThisMonth")}>
-          {kpis?.newMembersThisMonth ?? 0}
+          {format.number(kpis?.newMembersThisMonth ?? 0)}
         </KpiCell>
         <KpiCell label={t("dashboard.owner.endingThisWeek")} loading={isLoading} tone={kpis && kpis.renewalsDueNext7Days > 0 ? "warning" : undefined} context={t("dashboard.owner.memberships")}>
-          {kpis?.renewalsDueNext7Days ?? 0}
+          {format.number(kpis?.renewalsDueNext7Days ?? 0)}
         </KpiCell>
         <KpiCell label={t("dashboard.owner.checkInsToday")} loading={isLoading} context={t("dashboard.owner.openLeads", { count: kpis?.activeLeads ?? 0 })}>
-          {kpis?.checkInsToday ?? 0}
+          {format.number(kpis?.checkInsToday ?? 0)}
         </KpiCell>
       </section>
 
@@ -120,7 +120,7 @@ export function OwnerDashboard() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
+              <table className="w-full text-[13px]" aria-label={t("dashboard.owner.salesTeam")}>
                 <thead>
                   <tr className="border-b border-line text-start">
                     <th className="px-4 py-2 text-start text-[11.5px] font-semibold text-ink-3">{t("dashboard.owner.salesperson")}</th>
@@ -141,11 +141,11 @@ export function OwnerDashboard() {
                       <td className="px-3 py-2.5 text-end">
                         <MoneyText money={rep.revenueCollected} />
                       </td>
-                      <td className="px-3 py-2.5 text-end tabular">{rep.newSales}</td>
-                      <td className="px-3 py-2.5 text-end tabular">{rep.renewals}</td>
-                      <td className="px-3 py-2.5 text-end tabular">{rep.followUpsCompleted}</td>
+                      <td className="px-3 py-2.5 text-end tabular">{format.number(rep.newSales)}</td>
+                      <td className="px-3 py-2.5 text-end tabular">{format.number(rep.renewals)}</td>
+                      <td className="px-3 py-2.5 text-end tabular">{format.number(rep.followUpsCompleted)}</td>
                       <td className={cn("px-4 py-2.5 text-end tabular", rep.overdueFollowUps > 0 && "text-danger font-medium")}>
-                        {rep.overdueFollowUps}
+                        {format.number(rep.overdueFollowUps)}
                       </td>
                     </tr>
                   ))}

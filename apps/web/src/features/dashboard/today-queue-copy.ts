@@ -15,6 +15,7 @@ export interface TodayItemCopyOptions {
   t: TFunction;
   locale: string;
   isolate: (value: string | number) => string;
+  clock?: (value: string) => string;
 }
 
 const ACTION_KEYS: Record<string, TKey> = {
@@ -71,7 +72,8 @@ export function todayItemTitle({ t, locale, isolate }: TodayItemCopyOptions, ite
   return title;
 }
 
-export function todayItemDetail({ t, locale, isolate }: TodayItemCopyOptions, item: TodayQueueItem): string {
+export function todayItemDetail(options: TodayItemCopyOptions, item: TodayQueueItem): string {
+  const { t, locale, isolate, clock } = options;
   const { detail } = item;
   if (locale === "en") return detail;
 
@@ -94,6 +96,61 @@ export function todayItemDetail({ t, locale, isolate }: TodayItemCopyOptions, it
   if (item.kind === "low_stock") {
     const stock = /^(\d+) available · reorder at (\d+)$/.exec(detail);
     if (stock) return t("dashboard.today.item.stockAvailable", { available: stock[1]!, reorderAt: stock[2]! });
+  }
+
+  if (item.kind === "cash_variance" && item.id.startsWith("variance:")) {
+    const closedBy = /^Shift closed by (.+)$/.exec(detail);
+    if (closedBy) return t("deskCompletion.dashboard.queue.cashVarianceClosedBy", { actor: isolate(closedBy[1]!) });
+  }
+
+  if (item.kind === "branch_checklist" && item.id.startsWith("checklist-due:")) {
+    const progress = /^(.+) · (\d+)\/(\d+) done · due ((?:[01]\d|2[0-3]):[0-5]\d)$/.exec(detail);
+    if (progress) {
+      return t("deskCompletion.dashboard.queue.checklistProgress", {
+        branch: isolate(progress[1]!),
+        done: isolate(progress[2]!),
+        total: isolate(progress[3]!),
+        time: isolate(clock?.(progress[4]!) ?? progress[4]!),
+      });
+    }
+  }
+
+  if (item.kind === "facility_task" && item.id.startsWith("facility:")) {
+    const task = /^(.+) · (open|in progress|blocked)$/.exec(detail);
+    if (task) {
+      const statusKey: Record<string, TKey> = {
+        open: "deskCompletion.dashboard.queue.statusOpen",
+        "in progress": "deskCompletion.dashboard.queue.statusInProgress",
+        blocked: "deskCompletion.dashboard.queue.statusBlocked",
+      };
+      return t("deskCompletion.dashboard.queue.facilityStatus", {
+        zone: isolate(task[1]!),
+        status: t(statusKey[task[2]!]!),
+      });
+    }
+  }
+
+  if (item.kind === "equipment_issue" && item.id.startsWith("equipment:")) {
+    const equipment = detail.split(" · ");
+    const statusKeys: Record<string, TKey> = {
+      open: "deskCompletion.dashboard.queue.issueOpen",
+      "in progress": "deskCompletion.dashboard.queue.issueInProgress",
+    };
+    const safetyKeys: Record<string, TKey> = {
+      unknown: "deskCompletion.dashboard.queue.safetyUnknown",
+      "safe to operate": "deskCompletion.dashboard.queue.safetySafe",
+      "out of service": "deskCompletion.dashboard.queue.safetyOutOfService",
+    };
+    const safety = equipment[2] ? /^safety: (unknown|safe to operate|out of service)$/.exec(equipment[2]) : null;
+    const statusKey = statusKeys[equipment[1] ?? ""];
+    const safetyKey = safety ? safetyKeys[safety[1]!] : undefined;
+    if (equipment.length === 3 && statusKey && safetyKey) {
+      return t("deskCompletion.dashboard.queue.equipmentIssue", {
+        asset: isolate(equipment[0]!),
+        status: t(statusKey),
+        safety: t(safetyKey),
+      });
+    }
   }
   return detail;
 }

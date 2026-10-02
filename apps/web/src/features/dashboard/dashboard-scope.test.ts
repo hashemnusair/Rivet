@@ -43,4 +43,8 @@ describe("dashboard scope copy in English", () => {
     expect(timeOfDayGreeting(new Date(2026, 9, 1, 13))).toBe("Good afternoon");
     expect(timeOfDayGreeting(new Date(2026, 9, 1, 20))).toBe("Good evening");
   });
+
+  it("uses the gym timezone at its local day boundary", () => {
+    expect(timeOfDayPart(new Date("2026-10-03T21:30:00.000Z"), "Asia/Amman")).toBe("morning");
+  });
 });

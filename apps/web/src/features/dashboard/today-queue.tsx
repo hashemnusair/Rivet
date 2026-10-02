@@ -30,6 +30,7 @@ import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { translate } from "@/lib/i18n/dictionary";
 import { en } from "@/lib/i18n/messages/en";
 import { useLocale, type TFunction } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils/cn";
 import { todayActionLabel, todayItemDetail, todayItemTitle } from "./today-queue-copy";
 
@@ -122,6 +123,7 @@ export function TodayQueue({
   className?: string;
 }) {
   const { t } = useLocale();
+  const format = useFormat();
   const [expanded, setExpanded] = useState(false);
   const completion = useTodayQueueCompletion();
   const items = data?.items ?? [];
@@ -146,7 +148,7 @@ export function TodayQueue({
           <Skeleton className="h-8 w-24" />
         ) : (
           <div className="text-end" aria-live="polite">
-            <p className="text-[18px] font-semibold leading-none tabular">{data?.totalItems ?? 0}</p>
+            <p className="text-[18px] font-semibold leading-none tabular">{format.number(data?.totalItems ?? 0)}</p>
             <p className="mt-1 text-[12px] text-ink-3">
               {(data?.urgentItems ?? 0) > 0 ? t("dashboard.today.urgent", { count: data?.urgentItems ?? 0 }) : t("dashboard.today.itemsLeft")}
             </p>
@@ -223,7 +225,8 @@ export function TodayQueueRow({
   testId?: string;
 }) {
   const { t, locale, isolate } = useLocale();
-  const copy = { t, locale, isolate };
+  const format = useFormat();
+  const copy = { t, locale, isolate, clock: format.clock };
   const Icon = KIND_ICON[item.kind];
   const title = todayItemTitle(copy, item);
   const actionLabel = todayActionLabel(copy, item.action.label);

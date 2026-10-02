@@ -48,21 +48,23 @@ export function dashboardScopeDescription(branches: readonly DashboardBranchScop
 
 export type DayPart = "morning" | "afternoon" | "evening";
 
-export function timeOfDayPart(now: Date = new Date()): DayPart {
-  const hour = now.getHours();
+export function timeOfDayPart(now: Date = new Date(), timeZone?: string): DayPart {
+  const hour = timeZone
+    ? Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now))
+    : now.getHours();
   if (hour < 12) return "morning";
   if (hour < 17) return "afternoon";
   return "evening";
 }
 
 /** English only. Kept for dashboards that have not moved to `useGreeting` yet. */
-export function timeOfDayGreeting(now: Date = new Date()): string {
-  return translate({ messages: en, fallback: en, locale: "en" }, `dashboard.greeting.${timeOfDayPart(now)}`);
+export function timeOfDayGreeting(now: Date = new Date(), timeZone?: string): string {
+  return translate({ messages: en, fallback: en, locale: "en" }, `dashboard.greeting.${timeOfDayPart(now, timeZone)}`);
 }
 
 /** "Good morning, Dana" in the reader's language; the name is isolated so it cannot reorder the sentence. */
-export function useGreeting(firstName: string, now?: Date): string {
+export function useGreeting(firstName: string, now?: Date, timeZone?: string): string {
   const { t, isolate } = useLocale();
-  const part = timeOfDayPart(now);
+  const part = timeOfDayPart(now, timeZone);
   return useMemo(() => t("dashboard.greeting.withName", { greeting: t(`dashboard.greeting.${part}`), name: isolate(firstName) }), [t, isolate, part, firstName]);
 }

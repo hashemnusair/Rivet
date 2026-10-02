@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
 
 import { ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/input";
-import { REASON_CODE_LABELS } from "./reason-codes";
+import { checkInReasonLabel } from "./reason-codes";
 
 /**
  * Manual override. Deliberately heavy: the reason is required, the block
@@ -39,7 +39,7 @@ export function OverrideCheckInDialog({
   actorName: string;
   onOverridden: (result: CheckInResult) => void;
 }) {
-  const t = useT();
+  const { t, isolate } = useLocale();
   const invalidate = useInvalidate();
   const [reason, setReason] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export function OverrideCheckInDialog({
         onOverridden(result);
         onOpenChange(false);
       },
-      onError: (e) => setServerError(isApiError(e) ? e.message : "The check-in was not saved. Try again."),
+      onError: (e) => setServerError(isApiError(e) ? e.message : t("deskCompletion.reception.override.saveFailed")),
     },
   );
 
@@ -73,16 +73,16 @@ export function OverrideCheckInDialog({
           <DialogTitle className="flex items-center gap-2">
             <ShieldAlert className="size-4 text-signal" aria-hidden />{" "}{t("domain.checkInDecision.overridden")}</DialogTitle>
           <DialogDescription>
-            {member.fullName} · <span className="font-mono">{member.memberNumber}</span>
+            <bdi>{member.fullName}</bdi> · <bdi dir="ltr" className="font-mono">{member.memberNumber}</bdi>
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className="rounded-md border border-signal/30 bg-signal-bg px-3 py-2.5">
-            <p className="context-label text-signal-deep">Entry was refused because</p>
+            <p className="context-label text-signal-deep">{t("deskCompletion.reception.override.refusedBecause")}</p>
             <ul className="mt-1.5 space-y-0.5">
               {preview.reasonCodes.map((code) => (
                 <li key={code} className="text-[13px] text-signal-deep">
-                  · {REASON_CODE_LABELS[code] ?? code}
+                  · {checkInReasonLabel(code, t)}
                 </li>
               ))}
             </ul>
@@ -91,14 +91,14 @@ export function OverrideCheckInDialog({
           <Field
             label={t("common.label.reason")}
             required
-            hint={`Saved with your name, ${actorName}. Managers check these every day.`}
+            hint={t("deskCompletion.reception.override.auditHint", { actor: isolate(actorName) })}
           >
             <Textarea
               autoFocus
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="For example: Paid at Abdoun branch this morning, receipt shown"
+              placeholder={t("deskCompletion.reception.override.placeholder")}
               data-testid="override-reason"
             />
           </Field>

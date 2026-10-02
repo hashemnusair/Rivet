@@ -4,9 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MemberSummary } from "@/lib/domain/types";
 import { money } from "@/lib/utils/money";
 import { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
-import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
+import { checkInReasonLabel } from "@/features/reception/reason-codes";
+import { createTranslator } from "@/lib/i18n/core";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import ReceptionPage from "./page";
+
+const en = createTranslator("en");
 
 const routerMock = {
   push: vi.fn(),
@@ -28,7 +32,22 @@ afterEach(() => {
   vi.useRealTimers();
   resetApiForTests();
   vi.clearAllMocks();
+  document.documentElement.lang = "en";
+  document.documentElement.dir = "ltr";
+  document.documentElement.classList.remove("rtl-font");
+  window.localStorage.clear();
+  document.cookie = "rivet_locale=; path=/; max-age=0";
+  document.cookie = "rivet_ui_preference=; path=/; max-age=0";
 });
+
+function LocaleSwitcher() {
+  const { locale, setLocale } = useLocale();
+  return (
+    <button type="button" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>
+      Switch locale
+    </button>
+  );
+}
 
 /** Finds a seeded member at the receptionist's branch matching a predicate. */
 async function findMember(
@@ -49,7 +68,7 @@ async function findMember(
 async function expectedReasonLabel(probe: MockGymOSApi, branchId: string, query: string): Promise<string> {
   const preview = await probe.previewCheckIn({ branchId, query });
   const code = preview.reasonCodes.find((c) => c !== "OK")!;
-  return REASON_CODE_LABELS[code];
+  return checkInReasonLabel(code, en);
 }
 
 async function lookup(query: string) {
@@ -217,7 +236,7 @@ describe("reception console — warning", () => {
     expect(verdict).toHaveAttribute("data-decision", "warning");
     expect(within(verdict).getByText(/allowed, with a warning/i)).toBeInTheDocument();
     // The reason list spells the balance out (the Balance cell also shows it).
-    expect(within(verdict).getByText(REASON_CODE_LABELS.OUTSTANDING_BALANCE)).toBeInTheDocument();
+    expect(within(verdict).getByText(checkInReasonLabel("OUTSTANDING_BALANCE", en))).toBeInTheDocument();
     // Entry is still permitted…
     expect(screen.getByTestId("confirm-checkin")).toBeEnabled();
     // …and the money can be taken on the spot.
@@ -300,6 +319,92 @@ describe("reception console — override", () => {
     const audit = await api.listAuditEvents({ category: "checkins", pageSize: 10 });
     const event = audit.items.find((e) => e.action === "checkin.override" && e.entityId === member.id);
     expect(event?.reason).toBe("Renewing at the desk right now");
+  });
+
+  it("keeps the drafted reason when the locale changes and stores it verbatim", async () => {
+    const { member, branchId } = await findMember("manager", (m) => m.membershipStatus === "expired");
+
+    const { api } = await renderWithApp(
+      <LocaleProvider initialLocale="en"><LocaleSwitcher /><ReceptionPage /></LocaleProvider>,
+      { role: "manager", branchId },
+    );
+    const user = await lookup(member.memberNumber);
+    await user.click(await screen.findByTestId("override-checkin"));
+
+    const reason = "Paid at Abdoun this morning, receipt shown";
+    const reasonField = await screen.findByTestId("override-reason");
+    await user.type(reasonField, reason);
+    act(() => screen.getByText("Switch locale").click());
+
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(reasonField).toHaveValue(reason);
+    expect(screen.getByText(/سيُسجّل اسمك في سجل التغييرات/)).toBeInTheDocument();
+    await user.click(screen.getByTestId("confirm-override"));
+
+    const verdict = await screen.findByTestId("checkin-verdict");
+    expect(verdict).toHaveTextContent(reason);
+    const audit = await api.listAuditEvents({ category: "checkins", pageSize: 10 });
+    const event = audit.items.find((e) => e.action === "checkin.override" && e.entityId === member.id);
+    expect(event?.reason).toBe(reason);
+  });
+});
+
+describe("reception console — Arabic scan", () => {
+  it("commits the exact scanned member number and keeps it through an Arabic locale switch", async () => {
+    const { member } = await findMember(
+      "receptionist",
+      (m) => m.membershipStatus === "active" && m.outstanding.amount === 0,
+    );
+
+    const { api } = await renderWithApp(
+      <LocaleProvider initialLocale="en"><LocaleSwitcher /><ReceptionPage /></LocaleProvider>,
+      { role: "receptionist" },
+    );
+    const user = userEvent.setup();
+    const input = await screen.findByTestId("reception-search");
+    await user.type(input, member.memberNumber);
+    await user.keyboard("{Enter}");
+
+    const verdict = await screen.findByTestId("checkin-verdict");
+    await waitFor(() => expect(verdict).toHaveAttribute("data-decision", "allowed"));
+    await waitFor(async () => {
+      const recent = await api.listRecentCheckIns({ pageSize: 5 });
+      expect(recent.items[0]?.memberId).toBe(member.id);
+    });
+    expect(input).toHaveValue(member.memberNumber);
+
+    await user.click(screen.getByRole("button", { name: "Switch locale" }));
+
+    expect(document.documentElement.lang).toBe("ar");
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(input).toHaveValue(member.memberNumber);
+    expect(input).toHaveAttribute("placeholder", "امسح الرمز أو اكتب الاسم أو رقم الهاتف أو رقم المشترك");
+    expect(within(verdict).getByText(/تم تسجيل الدخول ·/)).toBeInTheDocument();
+    const recent = await api.listRecentCheckIns({ pageSize: 5 });
+    expect(recent.items[0]?.memberId).toBe(member.id);
+  });
+
+  it("shows the localized success message for an Arabic member-number scan", async () => {
+    const { member } = await findMember(
+      "receptionist",
+      (m) => m.membershipStatus === "active" && m.outstanding.amount === 0,
+    );
+
+    const { api } = await renderWithApp(
+      <LocaleProvider initialLocale="ar"><ReceptionPage /></LocaleProvider>,
+      { role: "receptionist" },
+    );
+    const input = await screen.findByTestId("reception-search");
+    const user = userEvent.setup();
+    await user.type(input, member.memberNumber);
+    await user.keyboard("{Enter}");
+
+    const verdict = await screen.findByTestId("checkin-verdict");
+    await waitFor(() => expect(verdict).toHaveAttribute("data-decision", "allowed"));
+    expect(within(verdict).getByText("الاشتراك فعّال. أهلًا بك في النادي.")).toBeInTheDocument();
+    expect(input).toHaveValue(member.memberNumber);
+    const recent = await api.listRecentCheckIns({ pageSize: 5 });
+    expect(recent.items[0]?.memberId).toBe(member.id);
   });
 });
 
@@ -429,7 +534,7 @@ describe("reception console — after collecting", () => {
     await waitFor(() => expect(screen.queryByTestId("quick-collect")).not.toBeInTheDocument());
     const verdict = screen.getByTestId("checkin-verdict");
     expect(within(verdict).getByText(/checked in ·/i)).toBeInTheDocument();
-    expect(within(within(verdict).getByTestId("checkin-facts")).getByText("0.000")).toBeInTheDocument();
+    expect(within(within(verdict).getByTestId("checkin-facts")).getByText(/0\.000/)).toBeInTheDocument();
   });
 });
 
