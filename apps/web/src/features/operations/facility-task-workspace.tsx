@@ -1,5 +1,9 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
+import { useFormattingTimeZone } from "@/lib/i18n/format";
+import { maintenanceDateTimeInput, maintenanceDueInstant } from "@/lib/i18n/operations";
+import { toast } from "sonner";
+import type { TKey } from "@/lib/i18n/core";
 
 import { isApiError } from "@/lib/api/errors";
 
@@ -23,31 +27,31 @@ import { downloadTextFile } from "@/lib/exports/download";
 
 const ACTIVE_STATUSES = new Set<FacilityTaskStatus>(["open", "in_progress", "blocked"]);
 
-const TASK_PRESETS: Array<{ label: string; title: string; kind: FacilityTaskKind; severity: FacilityTaskSeverity }> = [
-  { label: "Cleaning needed", title: "Cleaning needed", kind: "cleaning", severity: "medium" },
-  { label: "Inspect this area", title: "Inspect this area", kind: "inspection", severity: "medium" },
-  { label: "Report incident", title: "Incident in this area", kind: "incident", severity: "high" },
+const TASK_PRESETS: Array<{ label: TKey; title: TKey; kind: FacilityTaskKind; severity: FacilityTaskSeverity }> = [
+  { label: "operationsWorkspace.cleaningNeeded", title: "operationsWorkspace.cleaningNeeded", kind: "cleaning", severity: "medium" },
+  { label: "operationsWorkspace.inspectArea", title: "operationsWorkspace.inspectArea", kind: "inspection", severity: "medium" },
+  { label: "operationsWorkspace.reportIncident", title: "operationsWorkspace.incidentHere", kind: "incident", severity: "high" },
 ];
 
-const STATUS_LABELS: Record<FacilityTaskStatus, string> = {
-  open: "Open",
-  in_progress: "In progress",
-  blocked: "On hold",
-  completed: "Done",
-  cancelled: "Cancelled",
+const STATUS_LABELS: Record<FacilityTaskStatus, TKey> = {
+  open: "operationsWorkspace.open",
+  in_progress: "operationsWorkspace.inProgress",
+  blocked: "operationsWorkspace.blocked",
+  completed: "operationsWorkspace.done",
+  cancelled: "operationsWorkspace.cancelled",
 };
 
-const PRIORITY_LABELS: Record<FacilityTaskSeverity, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  critical: "Critical",
+const PRIORITY_LABELS: Record<FacilityTaskSeverity, TKey> = {
+  low: "operationsWorkspace.low",
+  medium: "operationsWorkspace.medium",
+  high: "operationsWorkspace.high",
+  critical: "operationsWorkspace.critical",
 };
 
-const KIND_LABELS: Record<FacilityTaskKind, string> = {
-  cleaning: "Cleaning",
-  inspection: "Inspection",
-  incident: "Incident",
+const KIND_LABELS: Record<FacilityTaskKind, TKey> = {
+  cleaning: "operationsWorkspace.cleaning",
+  inspection: "operationsWorkspace.inspection",
+  incident: "operationsWorkspace.incident",
 };
 
 function taskUpdate(task: FacilityTask, status: FacilityTaskStatus): UpsertFacilityTaskInput {
@@ -75,7 +79,8 @@ function statusVariant(status: FacilityTaskStatus): "neutral" | "success" | "war
 }
 
 function TaskDialog({ branchId, zones, task, initialZoneId, pending, onClose, onSubmit }: { branchId: string; zones: Zone[]; task?: FacilityTask; initialZoneId?: string; pending: boolean; onClose: () => void; onSubmit: (input: UpsertFacilityTaskInput) => void }) {
-  const t = useT();
+  const { t, locale } = useLocale();
+  const timeZone = useFormattingTimeZone();
   const [form, setForm] = useState(() => ({
     zoneId: task?.zoneId ?? (zones.some((zone) => zone.id === initialZoneId) ? initialZoneId! : zones[0]?.id ?? ""),
     kind: task?.kind ?? "cleaning" as FacilityTaskKind,
@@ -83,33 +88,35 @@ function TaskDialog({ branchId, zones, task, initialZoneId, pending, onClose, on
     status: task?.status ?? "open" as FacilityTaskStatus,
     title: task?.title ?? "",
     notes: task?.notes ?? "",
-    dueAt: task?.dueAt ? task.dueAt.slice(0, 16) : "",
+    dueAt: maintenanceDateTimeInput(task?.dueAt, timeZone),
   }));
+  const dueInstant = form.dueAt ? maintenanceDueInstant(form.dueAt, timeZone) : undefined;
+  const invalidDueTime = Boolean(form.dueAt && !dueInstant);
   const editing = Boolean(task);
-  const applyPreset = (preset: typeof TASK_PRESETS[number]) => setForm((current) => ({ ...current, title: preset.title, kind: preset.kind, severity: preset.severity }));
+  const applyPreset = (preset: typeof TASK_PRESETS[number]) => setForm((current) => ({ ...current, title: t(preset.title), kind: preset.kind, severity: preset.severity }));
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit maintenance job" : "Add maintenance job"}</DialogTitle>
-          <DialogDescription>{editing ? "Update this job so the team knows what to do next." : "Pick a shortcut or write what needs doing."}</DialogDescription>
+          <DialogTitle>{editing ? t("operationsWorkspace.editMaintenance") : t("operationsWorkspace.addMaintenance")}</DialogTitle>
+          <DialogDescription>{editing ? t("operationsWorkspace.updateJobHint") : t("operationsWorkspace.pickJobHint")}</DialogDescription>
         </DialogHeader>
         <DialogBody>
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
             event.preventDefault();
-            if (!form.zoneId || !form.title.trim()) return;
-            onSubmit({ id: task?.id, branchId, zoneId: form.zoneId, kind: form.kind, severity: form.severity, status: form.status, title: form.title.trim(), notes: form.notes.trim() || undefined, dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : undefined, assigneeId: task?.assigneeId, trafficContext: task?.trafficContext, suppliesCost: task?.suppliesCost });
+            if (!form.zoneId || !form.title.trim() || invalidDueTime) return;
+            onSubmit({ id: task?.id, branchId, zoneId: form.zoneId, kind: form.kind, severity: form.severity, status: form.status, title: form.title.trim(), notes: form.notes.trim() || undefined, dueAt: form.dueAt === maintenanceDateTimeInput(task?.dueAt, timeZone) ? task?.dueAt : dueInstant, assigneeId: task?.assigneeId, trafficContext: task?.trafficContext, suppliesCost: task?.suppliesCost });
           }}>
-            {!editing ? <div className="flex flex-wrap gap-2 sm:col-span-2" aria-label="Shortcuts">{TASK_PRESETS.map((preset) => <Button key={preset.label} type="button" size="xs" variant="secondary" onClick={() => applyPreset(preset)}>{preset.label}</Button>)}</div> : null}
-            <Field label="Where in the gym?" required><Select value={form.zoneId} onValueChange={(value) => setForm((current) => ({ ...current, zoneId: value }))}><SelectTrigger aria-label="Where in the gym?"><SelectValue placeholder="Choose an area" /></SelectTrigger><SelectContent>{zones.map((zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Type of job" required><Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value as FacilityTaskKind }))}><SelectTrigger aria-label="Type of job"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cleaning">Cleaning</SelectItem><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="incident">Incident</SelectItem></SelectContent></Select></Field>
-            <Field label="Priority" required><Select value={form.severity} onValueChange={(value) => setForm((current) => ({ ...current, severity: value as FacilityTaskSeverity }))}><SelectTrigger aria-label="Priority"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></Field>
-            {editing ? <Field label={t("common.label.status")} required><Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as FacilityTaskStatus }))}><SelectTrigger aria-label={t("common.label.status")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">{t("dashboard.today.action.open")}</SelectItem><SelectItem value="in_progress">In progress</SelectItem><SelectItem value="blocked">On hold</SelectItem><SelectItem value="completed">{t("common.action.done")}</SelectItem><SelectItem value="cancelled">{t("renewFlow.adjust.membershipStatus.cancelled")}</SelectItem></SelectContent></Select></Field> : null}
-            <Field label="What needs doing?" className="sm:col-span-2" required><Input autoFocus value={form.title} maxLength={160} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Wipe benches and refill sanitizer" required /></Field>
-            <Field label="Due by"><Input type="datetime-local" value={form.dueAt} onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))} /></Field>
-            <Field label={t("common.label.details")} className={editing ? "sm:col-span-2" : ""}><Textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Anything the next person should know" /></Field>
-            <DialogFooter className="px-0 pb-0 sm:col-span-2"><Button type="button" variant="secondary" onClick={onClose} disabled={pending}>{t("common.action.cancel")}</Button><Button type="submit" loading={pending} disabled={!form.zoneId || !form.title.trim()}><ClipboardCheck /> {editing ? "Save job" : "Add job"}</Button></DialogFooter>
+            {!editing ? <div className="flex flex-wrap gap-2 sm:col-span-2" aria-label={t("operationsWorkspace.shortcuts")}>{TASK_PRESETS.map((preset) => <Button key={preset.label} type="button" size="xs" variant="secondary" onClick={() => applyPreset(preset)}>{t(preset.label)}</Button>)}</div> : null}
+            <Field label={t("operationsWorkspace.whereGym")} required><Select value={form.zoneId} onValueChange={(value) => setForm((current) => ({ ...current, zoneId: value }))}><SelectTrigger aria-label={t("operationsWorkspace.whereGym")}><SelectValue placeholder={t("operationsWorkspace.chooseArea")} /></SelectTrigger><SelectContent>{zones.map((zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label={t("operationsWorkspace.jobKind")} required><Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value as FacilityTaskKind }))}><SelectTrigger aria-label={t("operationsWorkspace.jobKind")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cleaning">{t("operationsWorkspace.cleaning")}</SelectItem><SelectItem value="inspection">{t("operationsWorkspace.inspection")}</SelectItem><SelectItem value="incident">{t("operationsWorkspace.incident")}</SelectItem></SelectContent></Select></Field>
+            <Field label={t("operationsWorkspace.priority")} required><Select value={form.severity} onValueChange={(value) => setForm((current) => ({ ...current, severity: value as FacilityTaskSeverity }))}><SelectTrigger aria-label={t("operationsWorkspace.priority")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">{t("operationsWorkspace.low")}</SelectItem><SelectItem value="medium">{t("operationsWorkspace.medium")}</SelectItem><SelectItem value="high">{t("operationsWorkspace.high")}</SelectItem><SelectItem value="critical">{t("operationsWorkspace.critical")}</SelectItem></SelectContent></Select></Field>
+            {editing ? <Field label={t("common.label.status")} required><Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as FacilityTaskStatus }))}><SelectTrigger aria-label={t("common.label.status")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">{t("dashboard.today.action.open")}</SelectItem><SelectItem value="in_progress">{t("operationsWorkspace.inProgress")}</SelectItem><SelectItem value="blocked">{t("operationsWorkspace.blocked")}</SelectItem><SelectItem value="completed">{t("common.action.done")}</SelectItem><SelectItem value="cancelled">{t("renewFlow.adjust.membershipStatus.cancelled")}</SelectItem></SelectContent></Select></Field> : null}
+            <Field label={t("operationsWorkspace.jobQuestion")} className="sm:col-span-2" required><Input autoFocus value={form.title} maxLength={160} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder={t("operationsWorkspace.cleaningExample")} required /></Field>
+            <Field label={t("operationsWorkspace.dueBy")} error={invalidDueTime ? t("operationsWorkspace.invalidDueTime") : undefined}><Input type="datetime-local" dir="ltr" lang={locale} aria-invalid={invalidDueTime || undefined} value={form.dueAt} onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))} /></Field>
+            <Field label={t("common.label.details")} className={editing ? "sm:col-span-2" : ""}><Textarea value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} placeholder={t("operationsWorkspace.nextPersonExample")} /></Field>
+            <DialogFooter className="px-0 pb-0 sm:col-span-2"><Button type="button" variant="secondary" onClick={onClose} disabled={pending}>{t("common.action.cancel")}</Button><Button type="submit" loading={pending} disabled={!form.zoneId || !form.title.trim() || invalidDueTime}><ClipboardCheck /> {editing ? t("operationsWorkspace.saveJob") : t("operationsWorkspace.addJob")}</Button></DialogFooter>
           </form>
         </DialogBody>
       </DialogContent>
@@ -118,6 +125,7 @@ function TaskDialog({ branchId, zones, task, initialZoneId, pending, onClose, on
 }
 
 function ZoneQrDialog({ branchId, zones, selectedZoneId, onClose }: { branchId: string; zones: Zone[]; selectedZoneId?: string; onClose: () => void }) {
+  const t = useT();
   const [zoneId, setZoneId] = useState(zones.some((zone) => zone.id === selectedZoneId) ? selectedZoneId! : zones[0]?.id ?? "");
   const [copied, setCopied] = useState(false);
   const zone = zones.find((candidate) => candidate.id === zoneId);
@@ -128,19 +136,19 @@ function ZoneQrDialog({ branchId, zones, selectedZoneId, onClose }: { branchId: 
     const svg = document.getElementById("facility-zone-qr");
     if (!svg || !zone) return;
     const source = new XMLSerializer().serializeToString(svg);
-    downloadTextFile({ content: source, fileName: `rivet-${zone.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-task-qr.svg`, mimeType: "image/svg+xml;charset=utf-8" });
+    downloadTextFile({ content: source, fileName: `rivet-${zone.name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || zone.id}-task-qr.svg`, mimeType: "image/svg+xml;charset=utf-8" });
   };
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Area QR code</DialogTitle><DialogDescription>Put this code up in the area. Staff scan it to add a job there without choosing the area.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{t("operationsWorkspace.areaQr")}</DialogTitle><DialogDescription>{t("operationsWorkspace.areaQrHint")}</DialogDescription></DialogHeader>
         <DialogBody className="space-y-4">
-          <Field label="Area of the gym"><Select value={zoneId} onValueChange={(value) => { setZoneId(value); setCopied(false); }}><SelectTrigger aria-label="Area of the gym"><SelectValue /></SelectTrigger><SelectContent>{zones.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
-          {zone ? <div className="mx-auto w-fit rounded-lg border border-line bg-white p-4 text-[#171611]"><QRCodeSVG id="facility-zone-qr" value={url} size={208} level="M" marginSize={1} title={`QR code to add a job in ${zone.name}`} /></div> : null}
-          <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] leading-5 text-ink-2"><strong>{zone?.name ?? "Area"}</strong><br />Staff must still sign in to add a job. The code only picks the area for them.</div>
+          <Field label={t("operationsWorkspace.area")}><Select value={zoneId} onValueChange={(value) => { setZoneId(value); setCopied(false); }}><SelectTrigger aria-label={t("operationsWorkspace.area")}><SelectValue /></SelectTrigger><SelectContent>{zones.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
+          {zone ? <div className="mx-auto w-fit rounded-lg border border-line bg-white p-4 text-[#171611]"><QRCodeSVG id="facility-zone-qr" value={url} size={208} level="M" marginSize={1} title={t("operationsWorkspace.qrTitle", { name: zone.name })} /></div> : null}
+          <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] leading-5 text-ink-2"><strong>{zone?.name ?? t("operationsWorkspace.areaFallback")}</strong><br />{t("operationsWorkspace.qrSignInHint")}</div>
         </DialogBody>
-        <DialogFooter><Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(url).then(() => setCopied(true)); }}><Copy /> {copied ? "Link copied" : "Copy link"}</Button><Button onClick={download} disabled={!zone}><Download /> Download QR code</Button></DialogFooter>
+        <DialogFooter><Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(url).then(() => setCopied(true)).catch(() => toast.error(t("operationsWorkspace.qrCopyFailed"))); }}><Copy /> {copied ? t("operationsWorkspace.linkCopied") : t("operationsWorkspace.copyLink")}</Button><Button onClick={download} disabled={!zone}><Download /> {" "}{t("operationsWorkspace.downloadQr")}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -160,7 +168,7 @@ export function FacilityTaskWorkspace({ branchId, zones, writeEnabled }: { branc
   const [qrDialog, setQrDialog] = useState(false);
   const [shortcutHandled, setShortcutHandled] = useState(false);
   const tasksQuery = useApiQuery(qk.operations({ kind: "facility-tasks", branchId }), (api) => api.listFacilityTasks({ branchId }), { enabled: Boolean(branchId) });
-  const mutation = useApiMutation((api, input: UpsertFacilityTaskInput) => api.upsertFacilityTask(input), { onSuccess: async () => { await invalidate([qk.operations()]); }, successMessage: "Maintenance list updated." });
+  const mutation = useApiMutation((api, input: UpsertFacilityTaskInput) => api.upsertFacilityTask(input), { onSuccess: async () => { await invalidate([qk.operations()]); }, successMessage: t("operationsWorkspace.maintenanceUpdated") });
 
   useEffect(() => {
     if (shortcutHandled || !writeEnabled || !branchId || requestedAction !== "new-task" || !zones.some((zone) => zone.id === requestedZoneId)) return;
@@ -179,27 +187,27 @@ export function FacilityTaskWorkspace({ branchId, zones, writeEnabled }: { branc
   const criticalCount = activeTasks.filter((task) => task.severity === "critical").length;
   const inProgressCount = activeTasks.filter((task) => task.status === "in_progress").length;
 
-  if (!branchId) return <StatePanel icon={ClipboardCheck} title="Choose a branch first" description="Each branch has its own maintenance list. Choose a branch above." className="mt-2" />;
+  if (!branchId) return <StatePanel icon={ClipboardCheck} title={t("operationsWorkspace.chooseBranch")} description={t("operationsWorkspace.branchMaintenanceHint")} className="mt-2" />;
   if (tasksQuery.isLoading) return <div className="grid gap-3 sm:grid-cols-3"><div className="panel h-24 animate-pulse" /><div className="panel h-24 animate-pulse" /><div className="panel h-24 animate-pulse" /></div>;
-  if (tasksQuery.isError && (!tasksQuery.data || (isApiError(tasksQuery.error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(tasksQuery.error.code)))) return <QueryErrorState error={tasksQuery.error} onRetry={() => tasksQuery.refetch()} forbiddenDescription="You don’t have access to maintenance for this branch." />;
+  if (tasksQuery.isError && (!tasksQuery.data || (isApiError(tasksQuery.error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(tasksQuery.error.code)))) return <QueryErrorState error={tasksQuery.error} onRetry={() => tasksQuery.refetch()} forbiddenDescription={t("operationsWorkspace.noBranchMaintenanceAccess")} />;
 
   return (
     <div className="space-y-4" data-testid="operations-facilities">
-      {tasksQuery.isError ? <div role="status" className="text-[12px] text-warning-deep">The list could not update. It may be out of date. <Button size="sm" variant="ghost" onClick={() => void tasksQuery.refetch()}>{t("common.action.retry")}</Button></div> : null}
-      <div className="flex flex-wrap gap-x-6 gap-y-2 border-b border-line pb-3 text-[13.5px]" aria-label="Maintenance summary">
-        <span><strong className="tabular-nums">{activeTasks.length}</strong>{" "}{t("palette.hints.open")}{" "}{activeTasks.length === 1 ? "job" : "jobs"}</span>
-        <span className={criticalCount > 0 ? "text-danger" : "text-ink-2"}><strong className="tabular-nums">{criticalCount}</strong> critical</span>
-        <span className="text-ink-2"><strong className="tabular-nums">{inProgressCount}</strong> in progress</span>
+      {tasksQuery.isError ? <div role="status" className="text-[12px] text-warning-deep">{t("operationsWorkspace.listRefreshFailed")}{" "}<Button size="sm" variant="ghost" onClick={() => void tasksQuery.refetch()}>{t("common.action.retry")}</Button></div> : null}
+      <div className="flex flex-wrap gap-x-6 gap-y-2 border-b border-line pb-3 text-[13.5px]" aria-label={t("operationsWorkspace.maintenanceSummary")}>
+        <span className="tabular-nums">{t("operationsWorkspace.openJobs", { count: activeTasks.length })}</span>
+        <span className={criticalCount > 0 ? "text-danger" : "text-ink-2"}><span className="tabular-nums">{t("operationsWorkspace.criticalCount", { count: criticalCount })}</span></span>
+        <span className="text-ink-2"><span className="tabular-nums">{t("operationsWorkspace.inProgressCount", { count: inProgressCount })}</span></span>
       </div>
-      {requestedZoneId ? <div className="flex flex-wrap items-center gap-2 text-[13px]">Area: {zones.find((zone) => zone.id === requestedZoneId)?.name ?? "Unknown area"}<Button size="sm" variant="ghost" onClick={() => { const next = new URLSearchParams(searchParams.toString()); next.delete("zone"); next.delete("action"); router.replace(`/maintenance?${next}`, { scroll: false }); }}>Show all areas</Button></div> : null}
+      {requestedZoneId ? <div className="flex flex-wrap items-center gap-2 text-[13px]">{t("operationsWorkspace.areaNamed", { name: zones.find((zone) => zone.id === requestedZoneId)?.name ?? t("operationsWorkspace.unknownArea") })}<Button size="sm" variant="ghost" onClick={() => { const next = new URLSearchParams(searchParams.toString()); next.delete("zone"); next.delete("action"); router.replace(`/maintenance?${next}`, { scroll: false }); }}>{t("operationsWorkspace.allAreas")}</Button></div> : null}
 
       <section className="panel overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5">
-          <div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><ClipboardCheck className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="text-[15px] font-semibold text-ink">Maintenance list</h2></div></div>
-          <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" aria-pressed={showHistory} onClick={() => { const next = new URLSearchParams(searchParams.toString()); if (showHistory) next.delete("history"); else next.set("history", "1"); router.replace(`/maintenance?${next}`, { scroll: false }); }}>{showHistory ? "Hide history" : "Show history"}</Button>{writeEnabled ? <><Button size="sm" variant="secondary" onClick={() => setQrDialog(true)} disabled={zones.length === 0}><QrCode /> Area QR code</Button><Button size="sm" onClick={() => setTaskDialog("new")} disabled={zones.length === 0}><Plus /> New job</Button></> : null}</div>
+          <div className="flex min-w-0 items-start gap-2.5"><span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-sunken"><ClipboardCheck className="size-3.5 text-ink-2" aria-hidden /></span><div><h2 className="text-[15px] font-semibold text-ink">{t("operationsWorkspace.maintenanceList")}</h2></div></div>
+          <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" aria-pressed={showHistory} onClick={() => { const next = new URLSearchParams(searchParams.toString()); if (showHistory) next.delete("history"); else next.set("history", "1"); router.replace(`/maintenance?${next}`, { scroll: false }); }}>{showHistory ? t("operationsWorkspace.hideHistory") : t("operationsWorkspace.showHistory")}</Button>{writeEnabled ? <><Button size="sm" variant="secondary" onClick={() => setQrDialog(true)} disabled={zones.length === 0}><QrCode /> {" "}{t("operationsWorkspace.areaQr")}</Button><Button size="sm" onClick={() => setTaskDialog("new")} disabled={zones.length === 0}><Plus /> {" "}{t("operationsWorkspace.newJob")}</Button></> : null}</div>
         </div>
-        {!writeEnabled ? <div className="border-b border-line bg-sunken/50 px-4 py-2 text-[12px] text-ink-2">You can only view this list. Ask a manager to add or change jobs.</div> : null}
-        {zones.length === 0 ? <EmptyState title="No areas yet" description="An owner can add areas like Reception, Main floor or Studio in Settings." className="m-4" /> : visibleTasks.length === 0 ? <EmptyState title={showHistory ? "No maintenance history" : "No open maintenance jobs"} description={showHistory ? "Jobs for this branch will show here." : "Nothing to do now. Add a job or scan an area QR code when something needs work."} className="m-4" /> : <div className="divide-y divide-line">{visibleTasks.map((task) => <article key={task.id} ref={task.id === requestedTaskId ? selectedTaskRef : undefined} aria-label={task.title} className={cn(task.id === requestedTaskId && "bg-sunken/60","grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", task.severity === "critical" && ACTIVE_STATUSES.has(task.status) && "bg-danger-bg/20")}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(task.status)} dot>{STATUS_LABELS[task.status]}</Badge><Badge variant={task.severity === "critical" ? "danger" : task.severity === "high" ? "warning" : "neutral"}>{PRIORITY_LABELS[task.severity]} priority</Badge><span className="text-[12px] text-ink-3">{KIND_LABELS[task.kind]} · {task.zoneName}</span></div><h3 className="mt-2 text-[14px] font-medium text-ink">{task.title}</h3><p className="mt-1 text-[12px] text-ink-2">{task.assigneeId ? "Assigned to a staff member" : t("memberProfile.details.notAssigned")}</p>{task.notes ? <p className="mt-1 text-[12px] leading-5 text-ink-2">{task.notes}</p> : null}<p className="mt-1 text-[12px] text-ink-3">{task.dueAt ? <>Due <DateTimeText iso={task.dueAt} /></> : <>{t("common.label.updatedAt")}{" "}<DateTimeText iso={task.updatedAt} /></>}</p></div>{writeEnabled ? <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">{task.status === "open" ? <Button size="xs" variant="secondary" onClick={() => mutation.mutate(taskUpdate(task, "in_progress"))} loading={mutation.isPending}><Play /> Start</Button> : null}{["open", "in_progress", "blocked"].includes(task.status) ? <Button size="xs" onClick={() => mutation.mutate(taskUpdate(task, "completed"))} loading={mutation.isPending}><CheckCircle2 /> Mark done</Button> : null}{["open", "in_progress"].includes(task.status) ? <Button size="xs" variant="ghost" onClick={() => mutation.mutate(taskUpdate(task, "blocked"))} loading={mutation.isPending}><Flag /> Put on hold</Button> : null}<Button size="xs" variant="ghost" onClick={() => setTaskDialog(task)}>{t("common.action.edit")}</Button></div> : null}</article>)}</div>}
+        {!writeEnabled ? <div className="border-b border-line bg-sunken/50 px-4 py-2 text-[12px] text-ink-2">{t("operationsWorkspace.readOnlyJobs")}</div> : null}
+        {zones.length === 0 ? <EmptyState title={t("operationsWorkspace.noAreas")} description={t("operationsWorkspace.addAreasHint")} className="m-4" /> : visibleTasks.length === 0 ? <EmptyState title={showHistory ? t("operationsWorkspace.noMaintenanceHistory") : t("operationsWorkspace.noOpenJobs")} description={showHistory ? t("operationsWorkspace.jobsAppear") : t("operationsWorkspace.noJobsHint")} className="m-4" /> : <div className="divide-y divide-line">{visibleTasks.map((task) => <article key={task.id} ref={task.id === requestedTaskId ? selectedTaskRef : undefined} aria-label={task.title} className={cn(task.id === requestedTaskId && "bg-sunken/60","grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center", task.severity === "critical" && ACTIVE_STATUSES.has(task.status) && "bg-danger-bg/20")}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(task.status)} dot>{t(STATUS_LABELS[task.status])}</Badge><Badge variant={task.severity === "critical" ? "danger" : task.severity === "high" ? "warning" : "neutral"}>{t("operationsWorkspace.priorityNamed", { priority: t(PRIORITY_LABELS[task.severity]) })}</Badge><span className="text-[12px] text-ink-3">{t(KIND_LABELS[task.kind])} · {task.zoneName}</span></div><h3 className="mt-2 text-[14px] font-medium text-ink">{task.title}</h3><p className="mt-1 text-[12px] text-ink-2">{task.assigneeId ? t("operationsWorkspace.assignedStaff") : t("memberProfile.details.notAssigned")}</p>{task.notes ? <p className="mt-1 text-[12px] leading-5 text-ink-2">{task.notes}</p> : null}<p className="mt-1 text-[12px] text-ink-3">{task.dueAt ? <>{t("operationsWorkspace.due")}{" "}<DateTimeText iso={task.dueAt} /></> : <>{t("common.label.updatedAt")}{" "}<DateTimeText iso={task.updatedAt} /></>}</p></div>{writeEnabled ? <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">{task.status === "open" ? <Button size="xs" variant="secondary" onClick={() => mutation.mutate(taskUpdate(task, "in_progress"))} loading={mutation.isPending}><Play /> {" "}{t("operationsWorkspace.start")}</Button> : null}{["open", "in_progress", "blocked"].includes(task.status) ? <Button size="xs" onClick={() => mutation.mutate(taskUpdate(task, "completed"))} loading={mutation.isPending}><CheckCircle2 /> {" "}{t("operationsWorkspace.markDone")}</Button> : null}{["open", "in_progress"].includes(task.status) ? <Button size="xs" variant="ghost" onClick={() => mutation.mutate(taskUpdate(task, "blocked"))} loading={mutation.isPending}><Flag /> {" "}{t("operationsWorkspace.putOnHold")}</Button> : null}<Button size="xs" variant="ghost" onClick={() => setTaskDialog(task)}>{t("common.action.edit")}</Button></div> : null}</article>)}</div>}
       </section>
 
       {taskDialog ? <TaskDialog key={taskDialog === "new" ? `new-${requestedZoneId ?? "default"}` : taskDialog.id} branchId={branchId} zones={zones} task={taskDialog === "new" ? undefined : taskDialog} initialZoneId={requestedZoneId} pending={mutation.isPending} onClose={() => setTaskDialog(null)} onSubmit={(input) => mutation.mutate(input, { onSuccess: () => setTaskDialog(null) })} /> : null}

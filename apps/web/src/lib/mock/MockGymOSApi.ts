@@ -1,3 +1,4 @@
+import { describeEquipmentRationale } from "../domain/equipment-rationale";
 import { describeMemberImportError } from "@/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "@/lib/domain/workspace-module-error";
 import { makeFormatters } from "@/lib/i18n/formatters";
@@ -12111,7 +12112,7 @@ export class MockGymOSApi implements GymOSApi {
       const safetyIssue = relevantIssues.some((issue) => issue.status !== "resolved" && issue.safetyStatus === "out_of_service");
       let decision: T.EquipmentRecommendation["decision"] = "insufficient_data";
       if (repairCostMinor > 0 && replacement?.replacementEstimate && asset.purchaseDate && asset.expectedUsefulLifeMonths) decision = ageMonths! >= asset.expectedUsefulLifeMonths || repairCostMinor >= replacement.replacementEstimate.amount * 0.6 || safetyIssue ? "replace" : "fix";
-      return { assetId: asset.id, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor ? money(repairCostMinor, this.db.organization.currency) : undefined, replacementEstimate: replacement?.replacementEstimate ? { ...replacement.replacementEstimate } : undefined, issueCount: relevantIssues.length, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale };
+      return { assetId: asset.id, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor ? money(repairCostMinor, this.db.organization.currency) : undefined, replacementEstimate: replacement?.replacementEstimate ? { ...replacement.replacementEstimate } : undefined, issueCount: relevantIssues.length, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale, rationaleMessages: rationale.map(describeEquipmentRationale) };
     });
   }
 

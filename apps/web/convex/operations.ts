@@ -1,3 +1,4 @@
+import { describeEquipmentRationale } from "../src/lib/domain/equipment-rationale";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "../src/lib/domain/purchase-orders";
 import { todayISODate } from "../src/lib/utils/dates";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -1954,7 +1955,7 @@ async function getEquipmentRecommendation(ctx: QueryCtx, actor: ActorContext, in
     rationale.push(`Repairs cost ${Math.round((repairCostMinor / replacementEstimateMinor) * 100)}% of the estimated replacement cost.`);
     if (!agedOut && !repairRatioHigh && !reliabilityConcern && !safetyIssue) rationale.push("Repair costs are low enough to keep this machine. Few problems have been reported.");
   }
-  return { assetId: asset.publicId, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor > 0 ? { amount: repairCostMinor, currency: actor.organization.currency } : undefined, replacementEstimate: replacementEstimateMinor !== undefined ? { amount: replacementEstimateMinor, currency: actor.organization.currency } : undefined, issueCount, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale };
+  return { assetId: asset.publicId, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor > 0 ? { amount: repairCostMinor, currency: actor.organization.currency } : undefined, replacementEstimate: replacementEstimateMinor !== undefined ? { amount: replacementEstimateMinor, currency: actor.organization.currency } : undefined, issueCount, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale, rationaleMessages: rationale.map(describeEquipmentRationale) };
 }
 
 export async function operationsQuery(ctx: QueryCtx, actor: ActorContext, operation: string, input: Data): Promise<unknown> {

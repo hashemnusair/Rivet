@@ -36,16 +36,16 @@ export function MaintenanceWorkspace() {
     void setBranch(requestedBranchId);
   }, [searchParams, session?.activeBranchId, session?.branches, setBranch]);
 
-  if (!can("members.read")) return <ForbiddenState description="You don’t have access to maintenance." />;
+  if (!can("members.read")) return <ForbiddenState description={t("operationsWorkspace.noMaintenanceAccess")} />;
 
   return (
     <div className="space-y-4" data-testid="maintenance-workspace">
-      <PageHeader title={t("palette.pages.maintenance")} description={branchId ? `Cleaning, inspections and incidents at ${branchLabel}.` : "Choose a branch to see its cleaning, inspections and incidents."} actions={<div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-2"><label htmlFor="maintenance-branch" className="sr-only">{t("common.label.branch")}</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
+      <PageHeader title={t("palette.pages.maintenance")} description={branchId ? t("operationsWorkspace.branchMaintenance", { branch: branchLabel }) : t("operationsWorkspace.chooseMaintenanceBranch")} actions={<div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-2"><label htmlFor="maintenance-branch" className="sr-only">{t("common.label.branch")}</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
             const next = new URLSearchParams(searchParams.toString());
             if (value === "all") next.delete("branch"); else next.set("branch", value);
             next.delete("zone"); next.delete("action");
             router.replace(`/maintenance?${next}`, { scroll: false }); }}><SelectTrigger id="maintenance-branch" aria-label={t("common.label.branch")} className="min-w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("common.label.allBranches")}</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div><Button asChild variant="secondary" size="sm"><Link href={branchId ? `/operations?branch=${encodeURIComponent(branchId)}` : "/operations"}><Boxes />{" "}{t("nav.item.operations")}</Link></Button></div>} />
-      {branchId && zonesQuery.isError ? <QueryErrorState error={zonesQuery.error} onRetry={() => void zonesQuery.refetch()} /> : branchId && zonesQuery.isLoading ? <div className="panel h-40 animate-pulse" aria-label="Loading areas" /> : branchId ? <FacilityTaskWorkspace key={branchId} branchId={branchId} zones={zonesQuery.data ?? []} writeEnabled={writeEnabled} /> : <StatePanel icon={ClipboardCheck} title="Choose a branch first" description="Each branch has its own maintenance list. Choose a branch above." className="mt-2" />}
+      {branchId && zonesQuery.isError ? <QueryErrorState error={zonesQuery.error} onRetry={() => void zonesQuery.refetch()} /> : branchId && zonesQuery.isLoading ? <div className="panel h-40 animate-pulse" aria-label={t("operationsWorkspace.loadingAreas")} /> : branchId ? <FacilityTaskWorkspace key={branchId} branchId={branchId} zones={zonesQuery.data ?? []} writeEnabled={writeEnabled} /> : <StatePanel icon={ClipboardCheck} title={t("operationsWorkspace.chooseBranch")} description={t("operationsWorkspace.branchMaintenanceHint")} className="mt-2" />}
     </div>
   );
 }

@@ -3965,10 +3965,12 @@
     },
     {
       "id": "partial-delivery",
-      "keys": [],
+      "keys": [
+        "operationsWorkspace.partiallyReceived"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4088,7 +4090,8 @@
     {
       "id": "machine",
       "keys": [
-        "dashboard.today.kind.equipment_issue"
+        "dashboard.today.kind.equipment_issue",
+        "operationsWorkspace.machine"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -4142,8 +4145,14 @@
           "line": 48
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "operationsWorkspace.repairPrefix",
+          "template": "{approved}:"
+        }
+      ]
     },
     {
       "id": "maintenance",
@@ -4192,34 +4201,42 @@
     },
     {
       "id": "out-of-service",
-      "keys": [],
+      "keys": [
+        "operationsWorkspace.unsafe"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "working",
-      "keys": [],
+      "keys": [
+        "operationsWorkspace.safe"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "repairer",
-      "keys": [],
+      "keys": [
+        "operationsWorkspace.repairer"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "area",
-      "keys": [],
+      "keys": [
+        "operationsWorkspace.area"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4323,7 +4340,8 @@
     {
       "id": "blocked-task",
       "keys": [
-        "reception.decision.blocked"
+        "reception.decision.blocked",
+        "operationsWorkspace.blocked"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -4341,7 +4359,9 @@
     },
     {
       "id": "resolved",
-      "keys": [],
+      "keys": [
+        "operationsWorkspace.fixed"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -4353,7 +4373,7 @@
           "line": 79
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {

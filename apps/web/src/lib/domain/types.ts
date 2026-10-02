@@ -1,3 +1,4 @@
+import type { EquipmentRationaleMessage } from "./equipment-rationale";
 import type { LeadProgressFacts } from "@/lib/crm/lead-progression";
 import type { Money } from "./money";
 export type { Money } from "./money";
@@ -1208,6 +1209,8 @@ export interface EquipmentRecommendation {
   assetAgeMonths?: number;
   expectedUsefulLifeMonths?: number;
   rationale: string[];
+  /** Optional presentation descriptors; the source rationale remains unchanged. */
+  rationaleMessages?: Array<EquipmentRationaleMessage | null>;
 }
 
 

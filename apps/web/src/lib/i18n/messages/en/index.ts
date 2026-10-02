@@ -1,3 +1,4 @@
+import { operationsWorkspace } from "./operationsWorkspace";
 import { ptWorkspace } from "./ptWorkspace";
 import { classWorkspace } from "./classWorkspace";
 import { memberMigration } from "./memberMigration";
@@ -41,6 +42,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  operationsWorkspace,
   ptWorkspace,
   classWorkspace,
   memberMigration,
