@@ -1,3 +1,10 @@
+import { crmCompletion } from "./crmCompletion";
+import { platformFinance } from "./platformFinance";
+import { platformConsole } from "./platformConsole";
+import { publicCompletion } from "./publicCompletion";
+import { staffTools } from "./staffTools";
+import { deskCompletion } from "./deskCompletion";
+import { communicationCompletion } from "./communicationCompletion";
 import { reportsWorkspace } from "./reportsWorkspace";
 import { statements } from "./statements";
 import { accountingMessages } from "./accountingMessages";
@@ -48,6 +55,14 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  crmCompletion,
+  platformFinance,
+  platformConsole,
+  publicCompletion,
+  staffTools,
+  deskCompletion,
+  communicationCompletion,
+
   reportsWorkspace,
   statements,
   accountingMessages,
