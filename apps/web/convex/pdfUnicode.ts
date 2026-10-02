@@ -55,7 +55,7 @@ export function shapeUnicode(text: string, kind: PdfFont): ShapedText {
   if (cached) return cached;
   const font = unicodeFont(face);
   const levels = bidi.getEmbeddingLevels(text);
-  const mirrored = bidi.getMirroredCharactersMap(text, levels);
+  const mirrored = bidi.getMirroredCharactersMap(text, levels.levels);
   const runs: Array<{ start: number; end: number; level: number }> = [];
   const runAt: number[] = [];
   for (let index = 0; index < text.length; index += 1) {
@@ -74,7 +74,8 @@ export function shapeUnicode(text: string, kind: PdfFont): ShapedText {
     for (let index = run.start; index < run.end; index += 1) logical += mirrored.get(index) ?? text[index];
     logical = logical.replace(CONTROLS, "");
     if (!logical) continue;
-    const layout = (font as DirectionalFont).layout(logical, undefined, undefined, undefined, run.level % 2 ? "rtl" : "ltr");
+    // UAX #9 already mirrored these code points; fontkit must not mirror them again.
+    const layout = (font as DirectionalFont).layout(logical, { rtlm: false, ltrm: false }, undefined, undefined, run.level % 2 ? "rtl" : "ltr");
     layout.glyphs.forEach((glyph, index) => {
       const position = layout.positions[index]!;
       glyphs.push({ id: glyph.id, x: (x + position.xOffset) / font.unitsPerEm, y: position.yOffset / font.unitsPerEm, width: glyph.advanceWidth * 1000 / font.unitsPerEm, unicode: glyph.codePoints });
@@ -113,4 +114,22 @@ export function unicodeObjects(face: UnicodeFace, firstId: number, glyphs: Map<n
     stream(unicodeProgram(face), ` /Length1 ${unicodeProgram(face).length}`),
     stream(encode(cmap)),
   ];
+}
+
+
+/** Keep paragraph direction and open isolates when a logical paragraph wraps.
+ * Each drawn line must be independently balanced because it is shaped separately.
+ */
+export function isolateWrappedLines(paragraph: string, lines: string[]): string[] {
+  if (lines.length < 2 || !requiresUnicode(paragraph)) return lines;
+  const base = bidi.getEmbeddingLevels(paragraph).paragraphs[0]?.level ?? 0;
+  const stack: string[] = [];
+  return lines.map((line, index) => {
+    const prefix = index ? `${base % 2 ? "\u200f" : "\u200e"}${stack.join("")}` : "";
+    for (const character of line) {
+      if (/^[\u2066-\u2068]$/.test(character)) stack.push(character);
+      else if (character === "\u2069") stack.pop();
+    }
+    return prefix + line + "\u2069".repeat(stack.length);
+  });
 }

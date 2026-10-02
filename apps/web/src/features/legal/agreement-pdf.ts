@@ -1,6 +1,7 @@
 "use client";
 
-import { SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION } from "../../../convex/legalAgreementText";
+import { makeFormatters } from "@/lib/i18n/formatters";
+import { agreementLanguageForVersion, agreementSectionsForVersion } from "../../../convex/legalAgreementText";
 import { agreementPdfFilename, renderAgreementPdf, type AgreementPdfInput } from "../../../convex/legalAgreementPdf";
 import type { AgreementTextSection, SubscriptionAgreement } from "@/lib/domain/types";
 
@@ -13,14 +14,14 @@ export function agreementPdfInput(agreement: SubscriptionAgreement): AgreementPd
     organizationName: agreement.organizationName,
     customer: { legalName: agreement.customer.legalName, address: agreement.customer.address, city: agreement.customer.city },
     signatory: { name: agreement.signatory.name, idType: agreement.signatory.idType, idNumberMasked: agreement.signatory.idNumberMasked, email: agreement.signatory.email },
-    subscription: { plan: agreement.subscription.plan, startDate: agreement.subscription.startDate },
+    subscription: { ...agreement.subscription },
     signature: { method: agreement.signature.method, typedName: agreement.signature.typedName, printImageDataUrl: agreement.signature.printImageDataUrl },
     signedAtLocal: agreement.signedAtLocal,
     timezone: agreement.timezone,
     placeOfSigning: agreement.placeOfSigning,
     documentSha256: agreement.documentSha256,
     hashMatch: agreement.hashMatch,
-    countersign: agreement.countersign ? { byName: agreement.countersign.byName, title: agreement.countersign.title, atLocal: agreement.countersign.at, signature: agreement.countersign.signature } : undefined,
+    countersign: agreement.countersign ? { byName: agreement.countersign.byName, title: agreement.countersign.title, atLocal: agreementLanguageForVersion(agreement.version) === "ar" ? (() => { const f = makeFormatters("ar", "", agreement.timezone); return `${f.date(agreement.countersign!.at)}، ${f.time(agreement.countersign!.at)}`; })() : new Intl.DateTimeFormat("en-GB", { timeZone: agreement.timezone, day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(agreement.countersign.at)), signature: agreement.countersign.signature } : undefined,
   };
 }
 
@@ -31,7 +32,7 @@ export function agreementPdfInput(agreement: SubscriptionAgreement): AgreementPd
  */
 function sectionsFor(agreement: SubscriptionAgreement, sections?: AgreementTextSection[]) {
   if (sections && sections.length > 0) return sections;
-  return agreement.version === SUBSCRIPTION_AGREEMENT_VERSION ? SUBSCRIPTION_AGREEMENT_SECTIONS : undefined;
+  return agreementSectionsForVersion(agreement.version);
 }
 
 /** Build the PDF in the browser and save it. Same bytes as the emailed copy. */

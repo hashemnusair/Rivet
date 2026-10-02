@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Eraser, PenLine, Type } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -22,9 +23,12 @@ export interface SignatureValue {
  * data URL or the typed name only when the signer submits.
  */
 export function SignaturePad({ value, onChange, signatoryName, invalid }: { value: SignatureValue; onChange: (value: SignatureValue) => void; signatoryName: string; invalid?: boolean }) {
+  const t = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
-  const [hasStrokes, setHasStrokes] = useState(false);
+  const [hasStrokes, setHasStrokes] = useState(Boolean(value.imageDataUrl));
+  const currentValue = useRef(value);
+  useEffect(() => { currentValue.current = value; }, [value]);
 
   const resize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -42,6 +46,17 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
     context.lineJoin = "round";
     context.lineWidth = 2.2;
     context.strokeStyle = "#1b1a15";
+    const saved = currentValue.current.imageDataUrl;
+    if (saved) {
+      const image = new Image();
+      image.onload = () => {
+        if (canvasRef.current === canvas && currentValue.current.imageDataUrl === saved) {
+          context.drawImage(image, 0, 0, width, height);
+          setHasStrokes(true);
+        }
+      };
+      image.src = saved;
+    }
   }, []);
 
   // The canvas is created afresh each time the method switches back to
@@ -50,7 +65,7 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
   // strokes far from the pointer and blurs them.
   useEffect(() => {
     if (value.method !== "drawn") return;
-    setHasStrokes(false);
+    setHasStrokes(Boolean(currentValue.current.imageDataUrl));
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
@@ -132,12 +147,12 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
 
   return (
     <div className="space-y-3" data-testid="signature-pad">
-      <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Signature method">
+      <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label={t("agreementFlow.method")}>
         <button type="button" role="radio" aria-checked={value.method === "drawn"} onClick={() => onChange({ method: "drawn", imageDataUrl: undefined, printImageDataUrl: undefined })} className={cn("inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-[13px]", value.method === "drawn" ? "border-ink bg-ink text-paper" : "border-line-2 text-ink-2 hover:border-line-3")}>
-          <PenLine className="size-3.5" /> Draw
+          <PenLine className="size-3.5" /> {t("agreementFlow.draw")}
         </button>
         <button type="button" role="radio" aria-checked={value.method === "typed"} onClick={() => onChange({ method: "typed", typedName: value.typedName ?? "" })} className={cn("inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-[13px]", value.method === "typed" ? "border-ink bg-ink text-paper" : "border-line-2 text-ink-2 hover:border-line-3")}>
-          <Type className="size-3.5" /> Type my name
+          <Type className="size-3.5" /> {t("agreementFlow.type")}
         </button>
       </div>
       {value.method === "drawn" ? (
@@ -145,7 +160,7 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
           <canvas
             ref={canvasRef}
             role="img"
-            aria-label="Sign here with your finger, a pen or the mouse"
+            aria-label={t("agreementFlow.canvasLabel")}
             className="block h-[180px] w-full touch-none rounded-md"
             onPointerDown={start}
             onPointerMove={move}
@@ -153,21 +168,21 @@ export function SignaturePad({ value, onChange, signatoryName, invalid }: { valu
             onPointerLeave={end}
             onPointerCancel={end}
           />
-          {!hasStrokes ? <span className="pointer-events-none absolute inset-x-0 bottom-3 text-center text-[12px] text-ink-3">Sign here</span> : null}
+          {!hasStrokes ? <span className="pointer-events-none absolute inset-x-0 bottom-3 text-center text-[12px] text-ink-3">{t("agreementFlow.signHere")}</span> : null}
           <div className="absolute end-2 top-2">
-            <Button type="button" size="xs" variant="secondary" onClick={clear}><Eraser /> Clear</Button>
+            <Button type="button" size="xs" variant="secondary" onClick={clear}><Eraser />{" "}{t("common.action.clear")}</Button>
           </div>
         </div>
       ) : (
         <div>
           <Input
-            aria-label="Type your full name as your signature"
+            aria-label={t("agreementFlow.typedLabel")}
             value={value.typedName ?? ""}
             onChange={(event) => onChange({ method: "typed", typedName: event.target.value })}
-            placeholder={signatoryName || "Your full name"}
+            placeholder={signatoryName || t("agreementFlow.namePlaceholder")}
             className={cn("h-14 font-display text-[22px] italic", invalid && "border-danger")}
           />
-          <p className="mt-1.5 text-[12px] text-ink-3">Your typed name becomes your signature. It must match the name you entered exactly.</p>
+          <p className="mt-1.5 text-[12px] text-ink-3">{t("agreementFlow.typedHint")}</p>
         </div>
       )}
     </div>

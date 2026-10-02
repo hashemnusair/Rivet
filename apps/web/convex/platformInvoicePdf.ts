@@ -73,7 +73,7 @@ export function invoicePdfBlocks(input: InvoicePdfInput): PdfBlock[] {
           heading: t("documents.from"),
           lines: [
             { text: BRAND_LEGAL.legalEntity ?? "RIVET", font: "bold" },
-            { text: BRAND_CONTACT.city },
+            { text: t("agreementDocument.city") },
             ...(brandLegalLine() && BRAND_LEGAL.legalEntity ? [{ text: brandLegalLine().replace(`${BRAND_LEGAL.legalEntity} · `, ""), size: 9 }] : []),
             { text: BRAND_CONTACT.website, size: 9 },
             { text: BRAND_CONTACT.email, size: 9 },
@@ -153,7 +153,7 @@ export function renderInvoicePdf(input: InvoicePdfInput): Uint8Array {
     subject: `${input.customer.name} · ${input.total}`,
     documentLabel: t("documents.invoiceTitle"),
     runningTitle: t("documents.invoiceTitle"),
-    footer: `${input.number} · RIVET, ${BRAND_CONTACT.city} · ${BRAND_CONTACT.email}`,
+    footer: `${input.number} · RIVET, ${t("agreementDocument.city")} · ${BRAND_CONTACT.email}`,
     footerPlaceholder: brandLegalLine() || undefined,
     lockupJpeg: RIVET_LOCKUP_JPEG,
     glyphJpeg: RIVET_GLYPH_JPEG,

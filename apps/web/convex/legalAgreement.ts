@@ -1,3 +1,7 @@
+import { latinDigits } from "../src/lib/utils/text";
+import { makeFormatters } from "../src/lib/i18n/formatters";
+import { createTranslator } from "../src/lib/i18n/core";
+import { termPriceMinor } from "./planCatalogue";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { domainError, publicOrganizationId, publicUserId, requireActor, requirePlatformAdmin, requireReason, type ActorContext, type RequestArgs } from "./security";
@@ -14,8 +18,10 @@ import {
   MAX_SIGNATURE_IMAGE_LENGTH,
   MAX_SIGNATURE_PRINT_IMAGE_LENGTH,
   SIGNATURE_METHODS,
-  SUBSCRIPTION_AGREEMENT_SECTIONS,
   SUBSCRIPTION_AGREEMENT_VERSION,
+  SUBSCRIPTION_AGREEMENT_VERSION_AR,
+  agreementVersionForLanguage,
+  agreementLanguageForVersion,
   agreementReference,
   agreementSectionsForVersion,
   canonicalAgreementText,
@@ -59,7 +65,8 @@ function localDate(timestamp: number, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(timestamp));
 }
 
-function localDateTime(timestamp: number, timeZone: string): string {
+function localDateTime(timestamp: number, timeZone: string, language: "en" | "ar" = "en"): string {
+  if (language === "ar") { const format = makeFormatters(language, "", timeZone); return `${format.date(iso(timestamp))}، ${format.time(iso(timestamp))}`; }
   return new Intl.DateTimeFormat("en-GB", { timeZone: timeZone || "Asia/Amman", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(timestamp));
 }
 
@@ -80,11 +87,13 @@ function requireField(condition: boolean, field: string, message: string, correl
  * an operator has set one, else the launch price. Frozen onto the agreement
  * at signing so the document keeps saying what was true then.
  */
-async function publishedFee(ctx: ReadContext, plan: string, interval: "monthly" | "annual" | undefined): Promise<string | undefined> {
+async function publishedFee(ctx: ReadContext, plan: string, interval: "monthly" | "annual" | undefined, language: "en" | "ar" = "en"): Promise<string | undefined> {
   const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
   const row = rows.map((item) => value(item.data)).find((item) => String(item.name ?? "").toLowerCase() === plan.toLowerCase());
   const priceMinor = typeof row?.priceMinor === "number" ? row.priceMinor : findPlan(plan)?.priceMinor;
-  return priceMinor === undefined ? undefined : feeLabel(priceMinor, interval ?? "monthly");
+  if (priceMinor === undefined) return undefined;
+  if (language === "ar") return createTranslator(language)(interval === "annual" ? "agreementDocument.feePerYear" : "agreementDocument.feePerMonth", { amount: makeFormatters(language, "").money({ amount: termPriceMinor(priceMinor, interval ?? "monthly"), currency: "JOD" }) });
+  return feeLabel(priceMinor, interval ?? "monthly");
 }
 
 async function activeAgreement(ctx: ReadContext, organizationId: Id<"organizations">): Promise<AgreementRow | undefined> {
@@ -168,11 +177,13 @@ export async function agreementSummaryForOrganization(ctx: ReadContext, organiza
   return current ? agreementSummary(current, organizationName) : undefined;
 }
 
-async function signingContext(ctx: ReadContext, actor: ActorContext): Promise<Data> {
+async function signingContext(ctx: ReadContext, actor: ActorContext, language: "en" | "ar" = "en"): Promise<Data> {
   const organization = actor.organization;
   const current = await activeAgreement(ctx, organization._id);
-  const textBody = canonicalAgreementText();
-  const sha256 = await sha256Hex(textBody);
+  const version = current?.agreementVersion ?? agreementVersionForLanguage(language);
+  const sections = agreementSectionsForVersion(version);
+  const textBody = sections ? canonicalAgreementText(version, sections) : "";
+  const sha256 = current?.documentSha256 ?? await sha256Hex(textBody);
   const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
   const application = organization.publicId
     ? (await ctx.db.query("gymApplications").collect()).find((row) => row.provisionedOrganizationId === organization.publicId)
@@ -181,8 +192,8 @@ async function signingContext(ctx: ReadContext, actor: ActorContext): Promise<Da
   const startDate = organization.subscriptionStartedAt ? localDate(organization.subscriptionStartedAt, timeZone) : localDate(Date.now(), timeZone);
   const address = branches.find((branch) => branch.active && branch.address)?.address ?? branches[0]?.address;
   return {
-    version: SUBSCRIPTION_AGREEMENT_VERSION,
-    sections: SUBSCRIPTION_AGREEMENT_SECTIONS.map((section) => ({ ...section, paragraphs: [...section.paragraphs] })),
+    version,
+    sections: (sections ?? []).map((section) => ({ ...section, paragraphs: [...section.paragraphs] })),
     text: textBody,
     sha256,
     status: current ? current.status : actor.role === "owner" ? "required" : "not_applicable",
@@ -195,7 +206,8 @@ async function signingContext(ctx: ReadContext, actor: ActorContext): Promise<Da
       signatoryName: actor.user.fullName,
       email: actor.user.email,
       plan: organization.subscriptionPlan ?? application?.plan ?? "Growth",
-      feeLabel: await publishedFee(ctx, organization.subscriptionPlan ?? application?.plan ?? "Growth", (await ctx.db.get(organization._id))?.billingInterval),
+      billingInterval: (await ctx.db.get(organization._id))?.billingInterval ?? "monthly",
+      feeLabel: await publishedFee(ctx, organization.subscriptionPlan ?? application?.plan ?? "Growth", (await ctx.db.get(organization._id))?.billingInterval, agreementLanguageForVersion(version)),
       startDate,
     },
     agreement: current ? agreementView(current, organization.name) : undefined,
@@ -219,7 +231,7 @@ function agreementCopy(row: AgreementRow, organizationName: string): AgreementCo
     countersign: row.countersignedAt ? {
       byName: row.countersignedByName ?? "RIVET",
       title: row.countersignTitle ?? "",
-      atLocal: localDateTime(row.countersignedAt, row.timezone),
+      atLocal: localDateTime(row.countersignedAt, row.timezone, agreementLanguageForVersion(row.agreementVersion)),
       signature: row.countersignSignature ?? { method: "typed", typedName: row.countersignTypedName },
     } : undefined,
   };
@@ -256,7 +268,7 @@ function agreementPdfAttachment(row: AgreementRow, organizationName: string, bil
     contentBase64: renderAgreementPdfBase64({
       ...copy,
       signatory: { ...copy.signatory, title: row.signatory.title },
-      subscription: { ...copy.subscription, billingInterval, feeLabel: row.subscription.feeLabel },
+      subscription: { ...copy.subscription, billingInterval: row.subscription.billingInterval ?? billingInterval, feeLabel: row.subscription.feeLabel },
       status: row.status,
       placeOfSigning: row.placeOfSigning,
       signature: { method: row.signature.method, typedName: row.signature.typedName, printImageDataUrl: row.signature.printImageDataUrl },
@@ -387,6 +399,9 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   const current = await activeAgreement(ctx, actor.organization._id);
   if (current) domainError("CONFLICT", `This gym already signed agreement ${current.reference}. Contact RIVET if it must be replaced.`, { correlationId, details: { reference: current.reference } });
 
+  const version = optionalTrimmed(input.agreementVersion) ?? SUBSCRIPTION_AGREEMENT_VERSION;
+  requireField([SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR].includes(version), "agreementVersion", "Reload the agreement before signing.", correlationId);
+  const language = agreementLanguageForVersion(version);
   const customer = value(input.customer);
   const signatory = value(input.signatory);
   const subscription = value(input.subscription);
@@ -416,7 +431,7 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   requireField(!signatoryTitle || signatoryTitle.length <= 80, "signatoryTitle", "Role is too long.", correlationId);
   const idType = trimmed(signatory.idType) as (typeof AGREEMENT_ID_TYPES)[number];
   requireField(AGREEMENT_ID_TYPES.includes(idType), "idType", "Choose the ID document.", correlationId);
-  const idNumber = trimmed(signatory.idNumber);
+  const idNumber = latinDigits(trimmed(signatory.idNumber));
   requireField(idType === "national" ? validNationalId(idNumber) : validPassportNumber(idNumber), "idNumber", idType === "national" ? "Enter the ten-digit Jordanian national ID number." : "Enter a valid passport number.", correlationId);
   const phone = optionalTrimmed(signatory.phone);
   requireField(!phone || (validPhone(phone) && phone.length <= 40), "phone", "Enter a valid phone number.", correlationId);
@@ -432,7 +447,7 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   const quote = optionalTrimmed(subscription.quote);
   requireField(!quote || quote.length <= 60, "quote", "Quote number is too long.", correlationId);
   const organizationRow = await ctx.db.get(actor.organization._id);
-  const agreedFee = await publishedFee(ctx, plan, organizationRow?.billingInterval);
+  const agreedFee = await publishedFee(ctx, plan, organizationRow?.billingInterval, language);
 
   for (const key of ["agreement", "authority", "electronic", "accurate"] as const) {
     requireField(consents[key] === true, `consent_${key}`, "Every declaration must be accepted before signing.", correlationId);
@@ -444,7 +459,7 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   const placeOfSigning = optionalTrimmed(input.placeOfSigning) ?? city;
   requireField(!placeOfSigning || placeOfSigning.length <= 80, "placeOfSigning", "Place of signing is too long.", correlationId);
   const clientDocumentSha256 = optionalTrimmed(input.clientDocumentSha256)?.toLowerCase();
-  const documentText = canonicalAgreementText();
+  const documentText = canonicalAgreementText(version);
   const documentSha256 = await sha256Hex(documentText);
   // A mismatch is flagged for review rather than rejected: the signer still
   // agreed to the text RIVET published, and the flag makes the discrepancy
@@ -461,20 +476,20 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     organizationPublicId,
     publicId,
     reference,
-    agreementVersion: SUBSCRIPTION_AGREEMENT_VERSION,
+    agreementVersion: version,
     documentSha256,
     clientDocumentSha256,
     hashMatch,
     status: "signed",
     customer: { legalName, tradeName, registrationNumber, address, city, branches },
     signatory: { name: signatoryName, title: signatoryTitle, idType, idNumber, phone, email },
-    subscription: { plan, startDate, termMonths, quote, feeLabel: agreedFee },
+    subscription: { plan, startDate, termMonths, quote, feeLabel: agreedFee, billingInterval: organizationRow?.billingInterval ?? "monthly" },
     consents: { agreement: true, authority: true, electronic: true, accurate: true },
     signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, printImageDataUrl: method === "drawn" ? printImageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
     client: { userAgent: trimmed(client.userAgent).slice(0, 300), language: trimmed(client.language).slice(0, 20), viewport: trimmed(client.viewport).slice(0, 40) },
     placeOfSigning,
     signedAt: now,
-    signedAtLocal: localDateTime(now, timeZone),
+    signedAtLocal: localDateTime(now, timeZone, language),
     timezone: timeZone,
     signedByUserId: actor.user._id,
     signedByName: actor.user.fullName,
@@ -495,7 +510,7 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     entityPublicId: publicId,
     entityLabel: reference,
     summary: `Signed subscription agreement ${reference} (${plan}, from ${startDate})`,
-    after: { reference, version: SUBSCRIPTION_AGREEMENT_VERSION, plan, startDate, signatory: signatoryName, hashMatch, method },
+    after: { reference, version, plan, startDate, signatory: signatoryName, hashMatch, method },
     correlationId,
     occurredAt: now,
   });
@@ -552,7 +567,7 @@ export async function legalAgreementQuery(ctx: QueryCtx, operation: string, inpu
   switch (operation) {
     case "legal.agreement.current": {
       const actor = await requireActor(ctx, request);
-      return await signingContext(ctx, actor);
+      return await signingContext(ctx, actor, input.language === "ar" ? "ar" : "en");
     }
     case "platform.agreements.list": {
       await requirePlatformAdmin(ctx, request.correlationId);

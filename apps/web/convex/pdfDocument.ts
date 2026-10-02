@@ -3,7 +3,7 @@
  * embedded IBM Plex Sans Arabic, OpenType shaping and the Unicode bidi algorithm.
  * Original text is preserved through ToUnicode maps and /ActualText.
  */
-import { requiresUnicode, shapeUnicode, unicodeObjects, utf16Hex, type PositionedGlyph, type UnicodeFace } from "./pdfUnicode";
+import { isolateWrappedLines, requiresUnicode, shapeUnicode, unicodeObjects, utf16Hex, type PositionedGlyph, type UnicodeFace } from "./pdfUnicode";
 
 /** A4 in PostScript points. */
 export const PDF_PAGE_WIDTH = 595.28;
@@ -218,22 +218,24 @@ function rgb(hex: string): string {
 function wrap(text: string, font: PdfFont, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
   for (const paragraph of text.split("\n")) {
+    const paragraphLines: string[] = [];
     let current = "";
     for (const word of paragraph.split(/\s+/).filter(Boolean)) {
       const candidate = current ? `${current} ${word}` : word;
       if (widthOf(candidate, font, size) <= maxWidth) { current = candidate; continue; }
-      if (current) lines.push(current);
+      if (current) paragraphLines.push(current);
       // An unbreakable run, such as a 64-character fingerprint, is split by
       // character so it never runs past the margin.
       if (widthOf(word, font, size) <= maxWidth) { current = word; continue; }
       let chunk = "";
       for (const character of word) {
-        if (widthOf(chunk + character, font, size) > maxWidth) { lines.push(chunk); chunk = character; }
+        if (widthOf(chunk + character, font, size) > maxWidth) { paragraphLines.push(chunk); chunk = character; }
         else chunk += character;
       }
       current = chunk;
     }
-    lines.push(current);
+    paragraphLines.push(current);
+    lines.push(...isolateWrappedLines(paragraph, paragraphLines));
   }
   return lines.length > 0 ? lines : [""];
 }
@@ -533,15 +535,23 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
   const fits = (height: number) => cursor - height >= bottom;
 
   startPage(0);
-  for (const block of blocks) {
+  for (const [blockIndex, block] of blocks.entries()) {
     const items = itemsFor(block);
     if (items.length === 0) continue;
+    const repeatedHeader = block.type === "table" ? itemsFor({ ...block, rows: [] }).slice(0, -1) : [];
+    // A heading travels with the first two body lines; a table heading with its first row.
+    const nextBody = block.type === "heading" && blocks[blockIndex + 1] ? itemsFor(blocks[blockIndex + 1]!).slice(0, 2) : [];
+    const opening = block.type === "heading" ? [...items, ...nextBody] : repeatedHeader.length ? items.slice(0, repeatedHeader.length + 1) : [];
+    if (opening.length && !fits(opening.reduce((sum, item) => sum + item.height, 0))) { pages.push(content); startPage(pages.length); }
     if (block.type === "keep" || block.type === "image" || block.type === "panel" || block.type === "frame") {
       const total = items.reduce((sum, item) => sum + item.height, 0);
       if (!fits(total) && cursor < PDF_PAGE_HEIGHT - PDF_MARGIN * 2) { pages.push(content); startPage(pages.length); }
     }
-    for (const item of items) {
-      if (!fits(item.height)) { pages.push(content); startPage(pages.length); }
+    for (const [itemIndex, item] of items.entries()) {
+      if (!fits(item.height)) {
+        pages.push(content); startPage(pages.length);
+        if (itemIndex >= repeatedHeader.length) for (const header of repeatedHeader) draw(header);
+      }
       draw(item);
     }
   }

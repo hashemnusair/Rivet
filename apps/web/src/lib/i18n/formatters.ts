@@ -1,4 +1,4 @@
-import type { Money } from "../domain/types";
+import type { Money } from "../domain/money";
 import { TENANT_TIMEZONE } from "../utils/dates";
 import { formatMoney, type FormatMoneyOptions } from "../utils/money";
 import { numberingLocale, type Locale } from "./locale";

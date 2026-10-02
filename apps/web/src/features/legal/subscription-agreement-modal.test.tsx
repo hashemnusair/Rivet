@@ -3,6 +3,8 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { useApp } from "@/lib/providers/app-providers";
+import { LocaleProvider } from "@/lib/i18n/provider";
+import { SUBSCRIPTION_AGREEMENT_VERSION_AR } from "../../../convex/legalAgreementText";
 import { SubscriptionAgreementGate } from "./subscription-agreement-modal";
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
@@ -136,4 +138,44 @@ describe("subscription agreement modal", () => {
     await renderWithApp(<SessionGate />, { role: "manager", prepare: async (api) => { api.setBehavior({ agreementUnsigned: true }); } });
     await waitFor(() => expect(screen.queryByTestId("agreement-modal")).not.toBeInTheDocument());
   });
+});
+
+
+it("retains details and signature while switching language, requires reading and fresh declarations, and signs Arabic", async () => {
+  const user = userEvent.setup();
+  const { api } = await renderWithApp(<LocaleProvider><SessionGate /></LocaleProvider>, { role: "owner", prepare: async api => { api.setBehavior({ agreementUnsigned: true }); } });
+  const signSpy = vi.spyOn(api, "signSubscriptionAgreement");
+  const modal = await screen.findByTestId("agreement-modal");
+  const read = async () => {
+    const scroller = within(modal).getByTestId("agreement-scroll");
+    scroller.scrollTop = 1200;
+    fireEvent.scroll(scroller);
+    await waitFor(() => expect(within(modal).getByTestId("agree-continue")).toBeEnabled());
+    await user.click(within(modal).getByTestId("agree-continue"));
+  };
+  await read();
+  const name = within(modal).getByLabelText(/Full name, as on your ID/);
+  await user.clear(name); await user.type(name, "عمر حداد");
+  await user.type(within(modal).getByLabelText(/ID number/), "٩٨٧١٢٣٤٥٦٧");
+  await user.click(within(modal).getByTestId("details-continue"));
+  await user.click(within(modal).getByRole("radio", { name: "Type my name" }));
+  await user.type(within(modal).getByLabelText("Type your full name as your signature"), "عمر حداد");
+  for (const box of within(modal).getAllByRole("checkbox")) await user.click(box);
+  await waitFor(() => expect(within(modal).getByTestId("sign-agreement")).toBeEnabled());
+  await user.click(within(modal).getByTestId("language-switch"));
+  await waitFor(() => expect(within(modal).getByTestId("agreement-text")).toHaveTextContent("التوقيع الإلكتروني"));
+  expect(within(modal).getByTestId("agree-continue")).toBeDisabled();
+  expect(within(modal).getByTestId("agreement-scroll").scrollTop).toBe(0);
+  await read();
+  expect(within(modal).getByLabelText(/الاسم الكامل/)).toHaveValue("عمر حداد");
+  expect(within(modal).getByLabelText(/رقم وثيقة الهوية/)).toHaveValue("9871234567");
+  await user.click(within(modal).getByTestId("details-continue"));
+  expect(within(modal).getByLabelText("يرجى كتابة اسمك الكامل كتوقيع")).toHaveValue("عمر حداد");
+  expect(within(modal).getByTestId("sign-agreement")).toBeDisabled();
+  for (const box of within(modal).getAllByRole("checkbox")) { expect(box).not.toBeChecked(); await user.click(box); }
+  await waitFor(() => expect(within(modal).getByTestId("sign-agreement")).toBeEnabled());
+  await user.click(within(modal).getByTestId("sign-agreement"));
+  await screen.findByTestId("agreement-signed");
+  expect(signSpy).toHaveBeenCalledWith(expect.objectContaining({ agreementVersion: SUBSCRIPTION_AGREEMENT_VERSION_AR, signatory: expect.objectContaining({ name: "عمر حداد", idNumber: "9871234567" }), signature: { method: "typed", typedName: "عمر حداد" } }));
+  expect(screen.getByTestId("agreement-signed")).toHaveTextContent("تم توقيع الاتفاقية");
 });

@@ -1,3 +1,5 @@
+import { agreementFlow } from "./agreementFlow";
+import { agreementDocument } from "./agreementDocument";
 import { documents } from "./documents";
 import { reception } from "./reception";
 import { marketing } from "./marketing";
@@ -21,6 +23,8 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  agreementFlow,
+  agreementDocument,
   documents,
   auth,
   common,

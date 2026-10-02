@@ -435,6 +435,8 @@ export interface SubscriptionAgreementTerms {
   quote?: string;
   /** The fee RIVET published for the plan when the agreement was signed. */
   feeLabel?: string;
+  /** Billing interval frozen with the signed fee, independent of later plan changes. */
+  billingInterval?: "monthly" | "annual";
 }
 
 export interface SubscriptionAgreementConsents {
@@ -502,6 +504,8 @@ export interface SubscriptionAgreementPrefill {
   plan: AgreementPlan;
   /** The fee RIVET currently publishes for that plan, as the document prints it. */
   feeLabel?: string;
+  /** Billing interval frozen with the signed fee, independent of later plan changes. */
+  billingInterval?: "monthly" | "annual";
   startDate: ISODate;
 }
 
@@ -521,6 +525,8 @@ export interface SubscriptionAgreementContext {
 }
 
 export interface SignSubscriptionAgreementInput {
+  /** Exact version displayed and hashed; omitted by legacy English clients. */
+  agreementVersion?: string;
   customer: SubscriptionAgreementCustomer;
   signatory: { name: string; idType: AgreementIdType; idNumber: string; email: string; title?: string; phone?: string };
   subscription: SubscriptionAgreementTerms;

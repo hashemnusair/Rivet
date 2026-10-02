@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { renderPdf, type PdfBlock } from "./pdfDocument";
-import { shapeUnicode, unicodeFont, utf16Hex } from "./pdfUnicode";
+import { isolateWrappedLines, shapeUnicode, unicodeFont, utf16Hex } from "./pdfUnicode";
 
 const title = "وصل دفع";
 const phrase = "كل تفاصيل ناديك و مشتركينه في مكان واحد";
@@ -51,4 +51,20 @@ describe("Arabic PDF contract", () => {
       writeFileSync(join(output, "arabic-receipt-agreement.pdf"), bytes);
     }
   });
+});
+
+
+it("mirrors parentheses only once around Latin tokens in Arabic", () => {
+  const font = unicodeFont("regular");
+  const glyphs = shapeUnicode("البصمة (SHA-256)", "regular").glyphs;
+  const opening = font.glyphForCodePoint(40).id, closing = font.glyphForCodePoint(41).id;
+  const ids = glyphs.map(glyph => glyph.id);
+  expect(ids.indexOf(opening)).toBeLessThan(ids.indexOf(font.glyphForCodePoint(83).id));
+  expect(ids.indexOf(closing)).toBeGreaterThan(ids.indexOf(font.glyphForCodePoint(54).id));
+});
+
+it("keeps a mixed name isolated across a paragraph line break", () => {
+  const lines = isolateWrappedLines("العميل \u2068عمر Haddad\u2069 وافق", ["العميل \u2068عمر", "Haddad\u2069 وافق"]);
+  expect(lines).toEqual(["العميل \u2068عمر\u2069", "\u200f\u2068Haddad\u2069 وافق"]);
+  for (const line of lines) expect(shapeUnicode(line, "regular").glyphs.every(glyph => glyph.id > 0)).toBe(true);
 });

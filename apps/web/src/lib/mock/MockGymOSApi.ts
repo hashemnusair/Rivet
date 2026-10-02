@@ -1,4 +1,6 @@
-import { searchKey } from "@/lib/utils/text";
+import { makeFormatters } from "@/lib/i18n/formatters";
+import { createTranslator } from "@/lib/i18n/core";
+import { latinDigits, searchKey } from "@/lib/utils/text";
 import { isCalendarDate } from "@/lib/utils/dates";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
 import type {
@@ -80,7 +82,7 @@ import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type Brief
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
 import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
-import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_SECTIONS, SUBSCRIPTION_AGREEMENT_VERSION, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
+import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR, agreementVersionForLanguage, agreementLanguageForVersion, agreementSectionsForVersion, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
@@ -11030,16 +11032,18 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => this.platformInvoices.filter((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "draft").map((invoice) => ({ ...invoice })));
   }
 
-  getSubscriptionAgreementContext(): Promise<T.SubscriptionAgreementContext> {
+  getSubscriptionAgreementContext(options: { language?: "en" | "ar" } = {}): Promise<T.SubscriptionAgreementContext> {
     return this.respond(async () => {
       const user = this.actor();
       const current = this.activeSubscriptionAgreement();
-      const textBody = canonicalAgreementText();
+      const version = current?.version ?? agreementVersionForLanguage(options.language);
+      const sections = agreementSectionsForVersion(version) ?? [];
+      const textBody = canonicalAgreementText(version, sections);
       const organization = this.db.organization;
       const branches = this.db.branches.filter((branch) => branch.status === "active");
       return {
-        version: SUBSCRIPTION_AGREEMENT_VERSION,
-        sections: SUBSCRIPTION_AGREEMENT_SECTIONS.map((section) => ({ ...section, paragraphs: [...section.paragraphs] })),
+        version,
+        sections: sections.map((section) => ({ ...section, paragraphs: [...section.paragraphs] })),
         text: textBody,
         sha256: await sha256Hex(textBody),
         status: current ? (current.status === "countersigned" ? "countersigned" : "signed") : user.role === "owner" ? "required" : "not_applicable",
@@ -11052,7 +11056,8 @@ export class MockGymOSApi implements GymOSApi {
           signatoryName: user.name,
           email: user.email,
           plan: organization.subscriptionPlan ?? "Growth",
-          feeLabel: (() => { const plan = findPlan(organization.subscriptionPlan ?? "Growth"); return plan ? feeLabel(plan.priceMinor) : undefined; })(),
+          billingInterval: "monthly",
+          feeLabel: (() => { const plan = findPlan(organization.subscriptionPlan ?? "Growth"); return plan ? (agreementLanguageForVersion(version) === "ar" ? createTranslator("ar")("agreementDocument.feePerMonth", { amount: makeFormatters("ar", "").money({ amount: plan.priceMinor, currency: "JOD" }) }) : feeLabel(plan.priceMinor)) : undefined; })(),
           startDate: organization.subscriptionStartedAt ? managementLocalDate(organization.subscriptionStartedAt, organization.timezone) : this.today(),
         },
         agreement: current ? this.agreementView(current) : undefined,
@@ -11084,7 +11089,7 @@ export class MockGymOSApi implements GymOSApi {
       const signatoryTitle = input.signatory.title?.trim() || undefined;
       field(!signatoryTitle || signatoryTitle.length <= 80, "signatoryTitle", "Role is too long.");
       field(input.signatory.idType === "national" || input.signatory.idType === "passport", "idType", "Choose the ID document.");
-      const idNumber = input.signatory.idNumber?.trim() ?? "";
+      const idNumber = latinDigits(input.signatory.idNumber?.trim() ?? "");
       field(input.signatory.idType === "national" ? validNationalId(idNumber) : validPassportNumber(idNumber), "idNumber", input.signatory.idType === "national" ? "Enter the ten-digit Jordanian national ID number." : "Enter a valid passport number.");
       const phone = input.signatory.phone?.trim() || undefined;
       field(!phone || (/^\+?[\d\s().-]{7,}$/.test(phone) && phone.length <= 40), "phone", "Enter a valid phone number.");
@@ -11105,25 +11110,28 @@ export class MockGymOSApi implements GymOSApi {
         field(!printImageDataUrl || (printImageDataUrl.startsWith("data:image/jpeg;base64,") && printImageDataUrl.length <= MAX_SIGNATURE_PRINT_IMAGE_LENGTH), "signature", "The signature image could not be read. Draw it again.");
       }
       else field(Boolean(typedName) && typedName!.toLowerCase() === signatoryName.toLowerCase(), "signature", "The typed signature must match the owner's full name.");
-      const documentSha256 = await sha256Hex(canonicalAgreementText());
+      const version = input.agreementVersion ?? SUBSCRIPTION_AGREEMENT_VERSION;
+      field([SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR].includes(version), "agreementVersion", "Reload the agreement before signing.");
+      const language = agreementLanguageForVersion(version);
+      const documentSha256 = await sha256Hex(canonicalAgreementText(version));
       const clientDocumentSha256 = input.clientDocumentSha256?.trim().toLowerCase() || undefined;
       const now = nowISO();
       const row: MockSubscriptionAgreement = {
         id: mockUuid(),
         reference: agreementReference(this.today()),
-        version: SUBSCRIPTION_AGREEMENT_VERSION,
+        version,
         status: "signed",
         organizationId: this.db.organization.id,
         organizationName: this.db.organization.name,
         customer: { legalName, tradeName: customer.tradeName?.trim() || undefined, registrationNumber: customer.registrationNumber?.trim() || undefined, address, city, branches: customer.branches },
         signatory: { name: signatoryName, title: signatoryTitle, idType: input.signatory.idType, idNumber, phone, email },
-        subscription: { plan: input.subscription.plan, startDate: input.subscription.startDate, termMonths, quote: input.subscription.quote?.trim() || undefined, feeLabel: (() => { const plan = findPlan(input.subscription.plan); return plan ? feeLabel(plan.priceMinor) : undefined; })() },
+        subscription: { plan: input.subscription.plan, startDate: input.subscription.startDate, billingInterval: "monthly", termMonths, quote: input.subscription.quote?.trim() || undefined, feeLabel: (() => { const plan = findPlan(input.subscription.plan); return plan ? (agreementLanguageForVersion(version) === "ar" ? createTranslator("ar")("agreementDocument.feePerMonth", { amount: makeFormatters("ar", "").money({ amount: plan.priceMinor, currency: "JOD" }) }) : feeLabel(plan.priceMinor)) : undefined; })() },
         consents: { agreement: true, authority: true, electronic: true, accurate: true },
         signature: { method, imageDataUrl: method === "drawn" ? imageDataUrl : undefined, printImageDataUrl: method === "drawn" ? printImageDataUrl : undefined, typedName: method === "typed" ? typedName : undefined },
         client: { userAgent: (input.client?.userAgent ?? "").slice(0, 300), language: (input.client?.language ?? "").slice(0, 20), viewport: (input.client?.viewport ?? "").slice(0, 40) },
         placeOfSigning: input.placeOfSigning?.trim() || city,
         signedAt: now,
-        signedAtLocal: new Intl.DateTimeFormat("en-GB", { timeZone: this.db.organization.timezone, day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(now)),
+        signedAtLocal: language === "ar" ? `${makeFormatters(language, "", this.db.organization.timezone).date(now)}، ${makeFormatters(language, "", this.db.organization.timezone).time(now)}` : new Intl.DateTimeFormat("en-GB", { timeZone: this.db.organization.timezone, day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(now)),
         timezone: this.db.organization.timezone,
         signedByName: user.name,
         documentSha256,

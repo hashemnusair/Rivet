@@ -1214,7 +1214,7 @@ export interface GymOSApi {
   listMessageTemplateCatalogue(): Promise<import("@/lib/domain/types").MessageTemplateCatalogueEntry[]>;
 
   // Subscription agreement (e-signature at onboarding)
-  getSubscriptionAgreementContext(): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
+  getSubscriptionAgreementContext(options?: { language?: "en" | "ar" }): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
   signSubscriptionAgreement(input: import("@/lib/domain/types").SignSubscriptionAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
   listPlatformAgreements(): Promise<import("@/lib/domain/types").PlatformAgreementSummary[]>;
   getPlatformAgreement(agreementId: UUID): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
