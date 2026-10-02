@@ -18,7 +18,7 @@ export const memberExperience: typeof English = {
   notFound: "الاشتراك غير موجود",
   notFoundDescription: "هذا الاشتراك غير مرتبط بحسابك، أو أن الرابط قديم.",
   backHome: "العودة للرئيسية",
-  showCode: "عرض رمز الدخول",
+  showCode: "اعرض رمز QR عند الاستقبال.",
   classes: "الحصص",
   started: "بدأ في",
   memberNumber: "رقم العضو",

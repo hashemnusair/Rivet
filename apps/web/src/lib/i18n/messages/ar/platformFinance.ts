@@ -111,7 +111,7 @@ export const platformFinance: typeof EnPlatformFinance = {
     createDraft: "إنشاء مسودة",
     draftInvoiceCreated: "تم إنشاء مسودة الفاتورة.",
     invoiceIssuedToast: "تم إصدار الفاتورة.",
-    paymentRecordedToast: "تم تسجيل الدفعة اليدوية.",
+    paymentRecordedToast: "تم تسجيل الدفعة.",
     markedPastDueToast: "تم تسجيل تجاوز موعد الدفع.",
     invoiceVoidedToast: "تم إلغاء الفاتورة.",
     table: {

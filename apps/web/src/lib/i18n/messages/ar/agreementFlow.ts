@@ -45,7 +45,7 @@ export const agreementFlow: typeof EnAgreementFlow = {
   "emailCopy": "سنرسل نسختك الموقّعة إلى {email}. يسجّل RIVET تاريخ التوقيع ووقته.",
   "continueSignature": "المتابعة إلى التوقيع",
   "contractStart": "بدء العقد",
-  "signature": "التوقيع",
+  "signature": "التوقيع الإلكتروني",
   "signatureHint": "يمكنك التوقيع بإصبعك أو بالقلم أو بالفأرة، أو كتابة اسمك الكامل لاستخدامه كتوقيع.",
   "declarations": "الإقرارات",
   "authorityLabel": "أنا مالك النادي أو مفوّض من المالك بالتوقيع عنه، والبيانات أعلاه صحيحة.",

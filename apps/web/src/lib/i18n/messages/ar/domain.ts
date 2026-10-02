@@ -39,7 +39,7 @@ export const domain: typeof EnDomain = {
     trial_completed: "تمت التجربة",
     offer_sent: "أُرسل العرض",
     won: "تم البيع",
-    lost: "لم يتم البيع",
+    lost: "فرصة بيع مفقودة",
   },
   checkInDecision: {
     allowed: "مسموح",

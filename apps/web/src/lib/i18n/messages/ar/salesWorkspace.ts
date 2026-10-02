@@ -163,7 +163,7 @@ export const salesWorkspace = {
   openChecklists: "فتح قوائم التحقق اليومية",
   keepsHappening: "متكرر",
   sameJob: "مهمة الصيانة نفسها",
-  sameArea: "المنطقة نفسها",
+  sameArea: "في القسم نفسه من النادي",
   recurringReason: "بند قائمة التحقق نفسه ما زال مفتوحًا في أكثر من يوم.",
   taskReason: "أُحيلت هذه البنود إلى مهمة صيانة واحدة.",
   spaceReason: "تقع هذه البنود في المنطقة نفسها، وقد تكون مشكلات مختلفة.",

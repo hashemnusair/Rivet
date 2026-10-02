@@ -16,7 +16,7 @@ export const marketing: typeof EnMarketing = {
 
   actions: {
     apply: "أرسل طلب انضمام النادي",
-    applyShort: "إرسال طلب النادي",
+    applyShort: "إضافة ناديك إلى RIVET",
     seeHow: "شاهد كيف يعمل",
     signIn: "تسجيل الدخول",
     signInToRivet: "تسجيل الدخول إلى RIVET",
@@ -25,7 +25,7 @@ export const marketing: typeof EnMarketing = {
     preparingAccountLong: "جارٍ تجهيز حسابك…",
     createFreeAccount: "أنشئ حسابًا مجانيًا",
     createAccount: "إنشاء حساب",
-    findGym: "ابحث عن نادٍ",
+    findGym: "تصفّح الأندية الرياضية",
   },
 
   hero: {

@@ -1,15 +1,17 @@
 {
   "catalogVersion": "2026-09-30-v1",
   "revision": 607,
-  "note": "Implementation tracking only; does not modify the locked approval evidence. A mapped key does not certify a complete workflow.",
+  "note": "Implementation tracking only; locked approval evidence is unchanged. Exact key mappings are validated against the current Arabic catalog. Test paths are references, not claims that every test was run. Candidate occurrences are leads, not proof of full workflow coverage. No decision is certified complete.",
   "decisions": [
     {
       "id": "voice",
       "keys": [],
-      "rules": [],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#uses formal, concise Arabic in current staff-screen examples"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "verified",
+      "remaining": "Verified as a style rule by current staff-screen examples. The approved no-payments sentence is an editorial sample, not a claim that a staff empty-state workflow currently exists; no unused catalog key was introduced."
     },
     {
       "id": "buttons",
@@ -19,15 +21,17 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: settingsCore.text166."
     },
     {
       "id": "address",
       "keys": [],
-      "rules": [],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#uses polite gender-neutral wording in current member payment guidance"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "verified",
+      "remaining": "Verified as a style rule by current member-facing payment guidance. No member-facing overdue-balance reminder using this exact sentence is claimed; no message workflow or unused catalog key was invented."
     },
     {
       "id": "digits",
@@ -40,7 +44,7 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Referenced test rules: apps/web/src/features/checkout/sales-arabic.test.tsx, apps/web/src/features/operations/stock-arabic.test.tsx, apps/web/src/lib/i18n/format.test.ts, apps/web/src/lib/utils/text.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "calendar",
@@ -55,7 +59,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Referenced test rules: apps/web/src/lib/i18n/format.test.ts; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "months",
@@ -65,7 +69,7 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Referenced test rules: apps/web/src/lib/i18n/format.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "money-format",
@@ -77,7 +81,7 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Referenced test rules: apps/web/src/features/checkout/sales-arabic.test.tsx, apps/web/src/features/operations/stock-arabic.test.tsx, apps/web/src/lib/i18n/format.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "time-format",
@@ -87,23 +91,27 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Referenced test rules: apps/web/src/lib/i18n/format.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "brand",
-      "keys": [],
+      "keys": [
+        "common.brand.name"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: common.brand.name."
     },
     {
       "id": "english-terms",
-      "keys": [],
+      "keys": [
+        "settingsPublic.pt"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: settingsPublic.pt."
     },
     {
       "id": "plural",
@@ -113,15 +121,18 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Referenced test rules: apps/web/src/lib/i18n/dictionary.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "politeness",
-      "keys": [],
+      "keys": [
+        "crmCompletion.newLead.branchRequired",
+        "crmCompletion.validation.branch"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: crmCompletion.newLead.branchRequired, crmCompletion.validation.branch."
     },
     {
       "id": "dashboard",
@@ -168,7 +179,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: nav.item.dashboard. 9 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "reception",
@@ -266,7 +277,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.role.receptionist, marketing.ops.reception.label, nav.item.reception, settingsCore.text050. 21 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "needs-attention",
@@ -311,7 +322,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: dashboard.owner.needsAttention, dashboard.needsAttention.title, marketing.device.needsAttention. 8 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "members",
@@ -415,7 +426,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: marketing.footer.members, members.list.title, members.list.listLabel, nav.item.members, palette.groups.members, publicTerms.text013. 22 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "membership",
@@ -522,7 +533,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: crm.lead.membership.heading, marketing.vocabulary.membership, marketing.loop.stages.membership.label, marketing.member.card.membershipLabel, memberProfile.followUp.membershipFallback. 23 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "plans",
@@ -549,7 +560,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberEnrollment.plansTitle. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "branch",
@@ -772,11 +783,14 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.label.branch, crm.newLead.branch, members.list.columns.branch, members.tabs.checkIns.branch, reception.activity.branch. 52 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "workspace",
-      "keys": [],
+      "keys": [
+        "platformConsole.navigation.workspace",
+        "publicCompletion.preview.nav.workspace"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -800,8 +814,8 @@
           "line": 68
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformConsole.navigation.workspace, publicCompletion.preview.nav.workspace. 5 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "staff",
@@ -840,7 +854,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: settingsCore.text078. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "settings",
@@ -888,7 +902,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: nav.item.settings, shell.account.settings. 9 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "activity-log",
@@ -936,7 +950,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: nav.item.activityLog, nav.item.auditLog. 9 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "downloads",
@@ -971,7 +985,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: nav.item.downloads. 6 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "getting-started",
@@ -994,7 +1008,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: shell.account.gettingStarted. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "search",
@@ -1022,7 +1036,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: members.list.search.label, members.list.searchLabel. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "save",
@@ -1063,7 +1077,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.action.save, common.action.saveChanges, settingsCore.text166. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "cancel",
@@ -1274,7 +1288,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.action.cancel. 50 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "remove",
@@ -1313,7 +1327,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.action.remove. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "retry",
@@ -1345,10 +1359,6 @@
         {
           "path": "apps/web/src/app/customer/receipts/[receiptId]/receipt.client.tsx",
           "line": 76
-        },
-        {
-          "path": "apps/web/src/app/offline/page.tsx",
-          "line": 18
         },
         {
           "path": "apps/web/src/components/public/entry-pass-dialog.tsx",
@@ -1408,7 +1418,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.action.retry. 20 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "continue",
@@ -1423,7 +1433,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.action.continue. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "back",
@@ -1449,10 +1459,6 @@
           "line": 333
         },
         {
-          "path": "apps/web/src/features/personal-training/booking-outcome-confirmation.tsx",
-          "line": 75
-        },
-        {
           "path": "apps/web/src/features/reports/ledger-tutorial.tsx",
           "line": 298
         },
@@ -1462,12 +1468,17 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.action.back. 6 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "all-branches",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "statements.allBranches"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#keeps all mapped catalogue labels equal to the approved contextual wording",
+        "apps/web/src/features/reports/management-statements-workspace.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/app/(app)/reports/page.tsx",
@@ -1494,8 +1505,8 @@
           "line": 127
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Mapped and assertion-tested at the report-scope label; the listed occurrences are report and ledger call-site references for follow-up of other branch-scope copy."
     },
     {
       "id": "empty-search",
@@ -1510,7 +1521,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.state.noResults. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "loading",
@@ -1550,7 +1561,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.state.loading, common.a11y.loading. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "renew",
@@ -1565,7 +1576,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: renewFlow.sale.titleRenew. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "freeze",
@@ -1586,15 +1597,18 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.header.menu.freeze, renewFlow.adjust.freeze.title, permissions.memberships_freeze.label. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "unfreeze",
-      "keys": [],
+      "keys": [
+        "platformFinance.billing.table.reactivate",
+        "staffTools.audit.action.membershipUnfreeze"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformFinance.billing.table.reactivate, staffTools.audit.action.membershipUnfreeze."
     },
     {
       "id": "extend",
@@ -1614,7 +1628,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.header.menu.extend, renewFlow.adjust.extend.title. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "change-plan",
@@ -1642,7 +1656,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.header.menu.changePlan, renewFlow.adjust.planChange.submit. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "home-branch",
@@ -1688,15 +1702,17 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: crm.lead.membership.homeBranch, memberProfile.edit.homeBranch, members.bulk.homeBranch, members.header.homeBranch. 8 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "transfer-member",
-      "keys": [],
+      "keys": [
+        "staffTools.audit.action.membershipBranchTransfer"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: staffTools.audit.action.membershipBranchTransfer."
     },
     {
       "id": "active",
@@ -1807,7 +1823,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.membershipStatus.active, marketing.device.phone.active, members.list.filters.recordActive, renewFlow.adjust.membershipStatus.active, settingsCore.text001. 24 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "expired",
@@ -1831,7 +1847,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.membershipStatus.expired, memberProfile.header.ended. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "cancelled",
@@ -1983,7 +1999,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: crm.lead.cancelled, domain.membershipStatus.cancelled, domain.paymentStatus.void, domain.transactionStatus.voided, memberProfile.pt.bookingStatus.cancelled, memberProfile.pt.orderStatus.cancelled, members.list.filters.cancelled, renewFlow.adjust.membershipStatus.cancelled, renewFlow.receipt.cancelled, settingsDetails.text123. 33 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "frozen",
@@ -2025,7 +2041,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.membershipStatus.frozen, marketing.device.verdict.frozen, members.list.filters.frozen, renewFlow.adjust.membershipStatus.frozen. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "scheduled",
@@ -2035,15 +2051,27 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.membershipStatus.scheduled."
     },
     {
       "id": "ends-tomorrow",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/public/membership-status.ts",
+          "line": 44
+        },
+        {
+          "path": "apps/web/src/lib/public/membership-status.ts",
+          "line": 41
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current member UI copy: membership detail presents dynamic expiry dates/statuses and reminders say “soon”; there is no next-day-specific notice or “tomorrow” label to translate. Relevant current surface: apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx.",
+      "notApplicable": true
     },
     {
       "id": "remaining-visits",
@@ -2058,15 +2086,23 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberMigration.visitsRemaining. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "unlimited",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/public/membership-status.ts",
+          "line": 46
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current generated UI copy: plan labels/terms are authored plan content, and no visit-limit “unlimited” badge is rendered. Relevant current surface: apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx.",
+      "notApplicable": true
     },
     {
       "id": "freeze-allowance",
@@ -2076,11 +2112,13 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberEnrollment.freezeAllowed."
     },
     {
       "id": "freeze-request",
-      "keys": [],
+      "keys": [
+        "memberExperience.requestFreeze"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -2092,12 +2130,14 @@
           "line": 860
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: memberExperience.requestFreeze. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "freeze-pending",
-      "keys": [],
+      "keys": [
+        "staffTools.audit.waitingApproval"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -2117,12 +2157,18 @@
           "line": 263
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: staffTools.audit.waitingApproval. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "reason",
-      "keys": [],
+      "keys": [
+        "platformFinance.plans.reason",
+        "platformFinance.wizard.reason",
+        "platformFinance.subscriptions.reason",
+        "platformFinance.detail.reason",
+        "renewFlow.sale.changeReason"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -2146,24 +2192,44 @@
           "line": 200
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformFinance.plans.reason, platformFinance.wizard.reason, platformFinance.subscriptions.reason, platformFinance.detail.reason, renewFlow.sale.changeReason. 5 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "member-timeline",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "memberProfile.tabs.timeline"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/[memberId]/member-detail.client.tsx",
+          "line": 216
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: memberProfile.tabs.timeline. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "duplicate",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "memberMigration.possibleMatch"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/duplicates/page.tsx",
+          "line": 29
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: memberMigration.possibleMatch. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "merge",
@@ -2174,7 +2240,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "Exact Arabic catalog mapping: memberMigration.combineTitle, memberMigration.combineRecords.",
       "composedKeys": [
         {
           "key": "memberMigration.reviewCombine",
@@ -2203,7 +2269,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "Exact Arabic catalog mapping: members.list.actions.import. 3 current source locations remain candidates only; verify contextual usage and missing states before completion.",
       "composedKeys": [
         {
           "key": "memberMigration.importMembers",
@@ -2213,11 +2279,21 @@
     },
     {
       "id": "map-columns",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "memberMigration.matchColumns"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/members/import/page.tsx",
+          "line": 242
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: memberMigration.matchColumns. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "import-skipped",
@@ -2225,7 +2301,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "",
       "composedKeys": [
         {
           "key": "memberMigration.finishedDetail",
@@ -2259,7 +2335,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "Exact Arabic catalog mapping: memberProfile.edit.emergencyContact, members.header.emergencyContact. 4 current source locations remain candidates only; verify contextual usage and missing states before completion.",
       "composedKeys": [
         {
           "key": "memberEnrollment.emergencyDetails",
@@ -2278,14 +2354,33 @@
     {
       "id": "consent",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+          "line": 497
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: crmCompletion.lead.marketingConsentAria. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "crmCompletion.lead.marketingConsentAria",
+          "template": "{approved} التسويقية"
+        }
+      ]
     },
     {
       "id": "check-in",
-      "keys": [],
+      "keys": [
+        "deskCompletion.reception.lookup.checkInTitle",
+        "deskCompletion.reception.lookup.checkInAction",
+        "deskCompletion.reception.verdict.checkIn",
+        "deskCompletion.dashboard.reception.checkInAction",
+        "staffTools.audit.category.checkins"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -2305,24 +2400,45 @@
           "line": 70
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: deskCompletion.reception.lookup.checkInTitle, deskCompletion.reception.lookup.checkInAction, deskCompletion.reception.verdict.checkIn, deskCompletion.dashboard.reception.checkInAction, staffTools.audit.category.checkins. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "check-out",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/app/(app)/reception/reception.test.tsx",
+        "apps/web/src/features/reception/checkin-copy.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 807
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current behavior: reception records entry/check-in only; there is no visit check-out operation or matching UI. Related behavior is covered by apps/web/src/app/(app)/reception/reception.test.tsx and apps/web/src/features/reception/checkin-copy.test.ts.",
+      "notApplicable": true
     },
     {
       "id": "inside",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/app/(app)/reception/reception.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 987
+        },
+        {
+          "path": "apps/web/src/features/reception/reception-dialogs.tsx",
+          "line": 74
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current behavior: visits do not have an open/closed state or an “inside now” roster because the current reception workflow records check-in only. Related behavior is covered by apps/web/src/app/(app)/reception/reception.test.tsx.",
+      "notApplicable": true
     },
     {
       "id": "allow-entry",
@@ -2366,19 +2482,31 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.checkInDecision.overridden, settingsCore.text130. 8 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "entry-blocked",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "deskCompletion.reception.verdict.blocked"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/reception/page.tsx",
+          "line": 807
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: deskCompletion.reception.verdict.blocked. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "already-inside",
-      "keys": [],
+      "keys": [
+        "deskCompletion.reception.verdict.duplicate"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -2386,8 +2514,8 @@
           "line": 805
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: deskCompletion.reception.verdict.duplicate. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "no-valid-membership",
@@ -2403,39 +2531,67 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.membershipStatus.none, memberProfile.checkIns.reason.NO_ACTIVE_MEMBERSHIP. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "wrong-branch",
-      "keys": [],
+      "keys": [
+        "deskCompletion.reception.message.wrongBranch"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: deskCompletion.reception.message.wrongBranch."
     },
     {
       "id": "no-visits",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reception/checkin-copy.ts",
+          "line": 112
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: deskCompletion.reception.message.visitsDepleted. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "deskCompletion.reception.message.visitsDepleted",
+          "template": "{approved} انتهى رصيد هذه البطاقة."
+        }
+      ]
     },
     {
       "id": "qr-code",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "memberExperience.showCode"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 148
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: memberExperience.showCode. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "entry-history",
-      "keys": [],
+      "keys": [
+        "memberExperience.visitHistory",
+        "publicCompletion.story.stack.items.activity.caps.attendance"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: memberExperience.visitHistory, publicCompletion.story.stack.items.activity.caps.attendance."
     },
     {
       "id": "collect-payment",
@@ -2494,7 +2650,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.header.collectPayment, memberProfile.createTask.types.payment_collection, palette.actions.collectPayment.title, renewFlow.payment.title, renewFlow.payment.collectPlain. 11 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "payment",
@@ -2573,11 +2729,17 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.transactionType.payment, marketing.loop.stages.payment.label, memberProfile.memberships.payment, members.tabs.membershipColumns.payment, renewFlow.receipt.kindPayment. 16 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "unpaid",
-      "keys": [],
+      "keys": [
+        "communicationCompletion.email.rows.remaining",
+        "documents.balance",
+        "exportDocuments.labels.outstanding_amount",
+        "memberEnrollment.stillOwes",
+        "publicCompletion.preview.queue.balance"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -2589,8 +2751,8 @@
           "line": 294
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: communicationCompletion.email.rows.remaining, documents.balance, exportDocuments.labels.outstanding_amount, memberEnrollment.stillOwes, publicCompletion.preview.queue.balance. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "paid",
@@ -2663,15 +2825,17 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.paymentStatus.paid, memberProfile.pt.orderStatus.active, settingsDetails.text120. 15 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "part-paid",
-      "keys": [],
+      "keys": [
+        "domain.paymentStatus.partial"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: domain.paymentStatus.partial."
     },
     {
       "id": "cash",
@@ -2710,7 +2874,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.paymentMethod.cash. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "card",
@@ -2738,7 +2902,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.paymentMethod.card, salesWorkspace.card. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "bank-transfer",
@@ -2773,7 +2937,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.paymentMethod.bank_transfer. 6 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "reference",
@@ -2796,7 +2960,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: renewFlow.shared.referenceNumber. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "receipt",
@@ -2855,7 +3019,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: marketing.vocabulary.receipt, memberProfile.payments.receipt, members.tabs.payments.receipt, palette.kind.receipt, renewFlow.payment.receipt, renewFlow.receipt.heading, settingsDetails.text181. Referenced test rules: apps/web/src/features/checkout/sales-arabic.test.tsx; confirm they still exercise this approved context. 10 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "invoice",
@@ -2895,7 +3059,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: renewFlow.shared.invoice, renewFlow.payment.invoice. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "refund",
@@ -2944,7 +3108,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.transactionType.refund, renewFlow.receipt.refundButton, renewFlow.receipt.kindRefund. 9 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "void-payment",
@@ -2954,15 +3118,20 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: permissions.payments_void.label."
     },
     {
       "id": "refund-warning",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "renewFlow.receipt.refund.description"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: renewFlow.receipt.refund.description. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "discount",
@@ -2992,23 +3161,44 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.memberships.discount, members.tabs.membershipColumns.discount, renewFlow.sale.rowDiscount, renewFlow.receipt.discount. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "price-override",
-      "keys": [],
+      "keys": [
+        "staffTools.audit.action.membershipPriceOverride"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: staffTools.audit.action.membershipPriceOverride."
     },
     {
       "id": "payment-saved",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "platformFinance.billing.paymentRecordedToast"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/platform/billing/page.tsx",
+          "line": 134
+        },
+        {
+          "path": "apps/web/src/features/membership-actions/payment-dialog.tsx",
+          "line": 187
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: platformFinance.billing.paymentRecordedToast, renewFlow.payment.titleSaved. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "renewFlow.payment.titleSaved",
+          "template": "{approved} طريقة الدفع: {method}"
+        }
+      ]
     },
     {
       "id": "open-shift",
@@ -3033,7 +3223,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: payablesWorkspace.openShift, permissions.reconciliation_open_shift.label, salesWorkspace.openCashShift, salesWorkspace.openShift. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "close-shift",
@@ -3050,7 +3240,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: permissions.reconciliation_close_shift.label, salesWorkspace.closeShift, salesWorkspace.closeShiftMore. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "opening-cash",
@@ -3065,7 +3255,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "Exact Arabic catalog mapping: salesWorkspace.startingCash. 1 current source locations remain candidates only; verify contextual usage and missing states before completion.",
       "composedKeys": [
         {
           "key": "salesWorkspace.startingCurrency",
@@ -3088,7 +3278,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: dashboard.reception.expectedCash, salesWorkspace.expected, salesWorkspace.expectedDrawer. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "counted-cash",
@@ -3098,7 +3288,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: salesWorkspace.counted."
     },
     {
       "id": "cash-difference",
@@ -3124,7 +3314,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: dashboard.today.kind.cash_variance, salesWorkspace.difference. Referenced test rules: apps/web/src/features/checkout/sales-arabic.test.tsx; confirm they still exercise this approved context. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "cash-short",
@@ -3132,7 +3322,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "",
       "composedKeys": [
         {
           "key": "salesWorkspace.cashShort",
@@ -3146,7 +3336,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "",
       "composedKeys": [
         {
           "key": "salesWorkspace.cashOver",
@@ -3168,23 +3358,48 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: permissions.reconciliation_approve_variance.label, salesWorkspace.approveDifference. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "cash-in",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/features/finance/shift-dialogs.ui.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/dashboard/reception-dashboard.tsx",
+          "line": 191
+        },
+        {
+          "path": "apps/web/src/features/finance/shift-dialogs.tsx",
+          "line": 79
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current behavior: the cash shift tracks opening float, eligible payments/refunds/supplier payments, and closing count; it has no standalone cash deposit adjustment. Related behavior is covered by apps/web/src/features/finance/shift-dialogs.ui.test.tsx.",
+      "notApplicable": true
     },
     {
       "id": "cash-out",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/features/finance/shift-dialogs.ui.test.tsx",
+        "apps/web/src/features/operations/payables/payables-arabic.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/finance/shift-dialogs.tsx",
+          "line": 181
+        },
+        {
+          "path": "apps/web/src/lib/mock/MockGymOSApi.ts",
+          "line": 8484
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current behavior: supplier cash payments/refunds are recorded against their source workflows, but the drawer has no generic cash withdrawal adjustment with a reason. Related behavior is covered by apps/web/src/features/finance/shift-dialogs.ui.test.tsx.",
+      "notApplicable": true
     },
     {
       "id": "end-of-day",
@@ -3199,7 +3414,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: salesWorkspace.endDay. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "lead",
@@ -3241,15 +3456,18 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: marketing.vocabulary.lead, marketing.loop.stages.lead.label, nav.item.leads, palette.kind.lead. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "pipeline",
-      "keys": [],
+      "keys": [
+        "crmCompletion.pipeline.title",
+        "navigationCatalogue.report_crm.label"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: crmCompletion.pipeline.title, navigationCatalogue.report_crm.label."
     },
     {
       "id": "follow-up",
@@ -3260,7 +3478,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: dashboard.today.kind.follow_up, memberProfile.createTask.types.follow_up."
     },
     {
       "id": "assigned-to",
@@ -3275,7 +3493,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.createTask.assignedTo. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "walk-in",
@@ -3285,15 +3503,18 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.leadSource.walk_in."
     },
     {
       "id": "trial",
-      "keys": [],
+      "keys": [
+        "crmCompletion.pipeline.columns.trial.label",
+        "crmCompletion.lead.trial"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: crmCompletion.pipeline.columns.trial.label, crmCompletion.lead.trial."
     },
     {
       "id": "no-answer",
@@ -3320,7 +3541,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.contact.outcome.no_answer. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "not-interested",
@@ -3344,60 +3565,108 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: crm.lead.reason.notInterested, memberProfile.contact.outcome.answered_not_interested. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "lost-lead",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "domain.leadStage.lost"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/crm/crm-labels.ts",
+          "line": 40
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: domain.leadStage.lost. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "converted",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "crmCompletion.lead.trialStatus.converted"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/crm/leads/[leadId]/lead-detail.client.tsx",
+          "line": 50
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: crmCompletion.lead.trialStatus.converted. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "retention",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "reportsWorkspace.retention",
+        "navigationCatalogue.report_retention.label"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#keeps all mapped catalogue labels equal to the approved contextual wording",
+        "apps/web/src/features/reports/operational-reports-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/convex/navigationCatalogue.ts",
           "line": 76
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Mapped and assertion-tested for the report view and navigation search label; the linked server descriptor identifies the current Retention report destination."
     },
     {
       "id": "at-risk",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "dashboard.today.kind.at_risk"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/crm/queues/page.tsx",
+          "line": 71
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: dashboard.today.kind.at_risk. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "inactive-member",
-      "keys": [],
+      "keys": [
+        "crmCompletion.queues.riskReason.inactive"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: crmCompletion.queues.riskReason.inactive."
     },
     {
       "id": "followup-due",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "dashboard.sales.dueToday"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/dashboard/sales-dashboard.tsx",
+          "line": 64
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: dashboard.sales.dueToday. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "whatsapp",
@@ -3416,19 +3685,36 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.whatsapp.open. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "message-draft",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "memberProfile.whatsapp.message"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/crm/whatsapp-handoff.tsx",
+          "line": 165
+        },
+        {
+          "path": "apps/web/src/features/crm/whatsapp-handoff.tsx",
+          "line": 166
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: memberProfile.whatsapp.message. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "sent",
-      "keys": [],
+      "keys": [
+        "crmCompletion.offers.sentStatus",
+        "platformConsole.status.notification.sent"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3444,16 +3730,24 @@
           "line": 116
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: crmCompletion.offers.sentStatus, platformConsole.status.notification.sent. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "message-failed",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/system-messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/system-messages.ts",
+          "line": 222
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to the current failed-delivery recovery: after provider retries are exhausted, the notice records attempt count and directs staff to contact the member another way; there is no retry action, so replacing it with “retry” would be misleading. See apps/web/src/lib/i18n/system-messages.ts and its focused test.",
+      "notApplicable": true
     },
     {
       "id": "offer",
@@ -3473,7 +3767,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: marketing.vocabulary.offer, marketing.loop.stages.offer.label. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "class",
@@ -3500,15 +3794,17 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: classWorkspace.classFallback. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "book-class",
-      "keys": [],
+      "keys": [
+        "memberExperience.bookClass"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: memberExperience.bookClass."
     },
     {
       "id": "session",
@@ -3516,7 +3812,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "",
       "composedKeys": [
         {
           "key": "memberProfile.pt.dialogTitle",
@@ -3583,7 +3879,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.role.trainer, memberProfile.pt.trainer, members.tabs.pt.trainer. 12 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "package",
@@ -3611,7 +3907,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: memberProfile.pt.packageFallback, ptWorkspace.packageFallback. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "credits",
@@ -3619,7 +3915,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "",
       "composedKeys": [
         {
           "key": "ptWorkspace.creditsHeld",
@@ -3647,7 +3943,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: crm.lead.noShow, dashboard.trainer.noShow, memberProfile.pt.bookingStatus.no_show, classWorkspace.noShow. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "waitlist",
@@ -3663,7 +3959,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: settingsDetails.text030, classWorkspace.waiting. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "class-full",
@@ -3671,7 +3967,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "",
       "composedKeys": [
         {
           "key": "classWorkspace.waitlistedToast",
@@ -3682,14 +3978,29 @@
     {
       "id": "spots",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/my-gyms/[membershipId]/membership-detail.client.tsx",
+          "line": 438
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: memberExperience.spotsLeft. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "memberExperience.spotsLeft",
+          "template": "{approved}: {count}"
+        }
+      ]
     },
     {
       "id": "cancel-booking",
-      "keys": [],
+      "keys": [
+        "memberExperience.cancelBooking"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3697,8 +4008,8 @@
           "line": 392
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: memberExperience.cancelBooking. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "cancel-class",
@@ -3713,7 +4024,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: classWorkspace.cancelClass. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "return-credit",
@@ -3721,7 +4032,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "",
       "composedKeys": [
         {
           "key": "ptWorkspace.cancelledToast",
@@ -3738,7 +4049,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ptWorkspace.completeAction, dashboard.trainer.complete."
     },
     {
       "id": "availability",
@@ -3753,7 +4064,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ptWorkspace.availability. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "trainer-timeoff",
@@ -3768,15 +4079,28 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ptWorkspace.timeOff. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "recurring",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/classes/page.tsx",
+          "line": 348
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: classWorkspace.repeatsBranch. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "classWorkspace.repeatsBranch",
+          "template": "{approved} · {branch}"
+        }
+      ]
     },
     {
       "id": "stock",
@@ -3807,7 +4131,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: dashboard.today.kind.low_stock. 5 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "checkout",
@@ -3846,7 +4170,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: nav.item.checkout. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "supplier",
@@ -3903,7 +4227,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: stockWorkspace.supplier. Referenced test rules: apps/web/src/features/operations/stock-arabic.test.tsx; confirm they still exercise this approved context. 11 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "supplier-bills",
@@ -3950,17 +4274,19 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: palette.pages.supplierBills. 9 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "purchase-order",
-      "keys": [],
+      "keys": [
+        "exportDocuments.values.purchase_order"
+      ],
       "rules": [
         "apps/web/src/features/operations/stock-arabic.test.tsx"
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "Exact Arabic catalog mapping: exportDocuments.values.purchase_order. Referenced test rules: apps/web/src/features/operations/stock-arabic.test.tsx; confirm they still exercise this approved context.",
       "composedKeys": [
         {
           "key": "stockWorkspace.createOrder",
@@ -3983,7 +4309,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: stockWorkspace.receiveStock. Referenced test rules: apps/web/src/features/operations/stock-arabic.test.tsx; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "partial-delivery",
@@ -3993,7 +4319,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: operationsWorkspace.partiallyReceived."
     },
     {
       "id": "low-stock",
@@ -4010,7 +4336,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: stockWorkspace.lowStock. Referenced test rules: apps/web/src/features/operations/stock-arabic.test.tsx; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "out-of-stock",
@@ -4027,7 +4353,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: salesWorkspace.outOfStock. Referenced test rules: apps/web/src/features/checkout/sales-arabic.test.tsx; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "stock-adjustment",
@@ -4040,7 +4366,7 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ledgerWorkspace.stockChange. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "stock-transfer",
@@ -4052,19 +4378,33 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: stockWorkspace.moveStock. Referenced test rules: apps/web/src/features/operations/stock-arabic.test.tsx; confirm they still exercise this approved context."
     },
     {
       "id": "in-transit",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/features/operations/stock-arabic.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/inventory-tab.tsx",
+          "line": 83
+        },
+        {
+          "path": "apps/web/src/features/operations/inventory-tab.tsx",
+          "line": 125
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current stock-transfer behavior: the source/destination quantities update as a single operation; there is no pending receipt or in-transit status. Related transfer UI is covered by apps/web/src/features/operations/stock-arabic.test.tsx.",
+      "notApplicable": true
     },
     {
       "id": "unit-cost",
-      "keys": [],
+      "keys": [
+        "errorValues.field.unitCost"
+      ],
       "rules": [
         "apps/web/src/features/operations/stock-arabic.test.tsx"
       ],
@@ -4075,7 +4415,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "Exact Arabic catalog mapping: errorValues.field.unitCost. Referenced test rules: apps/web/src/features/operations/stock-arabic.test.tsx; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion.",
       "composedKeys": [
         {
           "key": "stockWorkspace.unitCostCurrency",
@@ -4098,7 +4438,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: stockWorkspace.sellingPrice. Referenced test rules: apps/web/src/features/operations/stock-arabic.test.tsx; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "supplier-payment",
@@ -4115,7 +4455,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: payablesWorkspace.recordSupplierPayment. Referenced test rules: apps/web/src/features/operations/payables/payables-arabic.test.tsx; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "reverse-supplier",
@@ -4132,15 +4472,36 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: payablesWorkspace.reverseSupplierPayment. Referenced test rules: apps/web/src/features/operations/payables/payables-arabic.test.tsx; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "supplier-missing",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/payables.ts",
+          "line": 35
+        },
+        {
+          "path": "apps/web/src/lib/i18n/payables.ts",
+          "line": 39
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: payablesWorkspace.missingPurchaseSupplier, payablesWorkspace.missingRepairSupplier. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "payablesWorkspace.missingPurchaseSupplier",
+          "template": "{approved} يرجى مراجعة التكلفة في دفتر الحسابات الإداري."
+        },
+        {
+          "key": "payablesWorkspace.missingRepairSupplier",
+          "template": "{approved} اسم جهة الإصلاح محفوظ كملاحظة."
+        }
+      ]
     },
     {
       "id": "machine",
@@ -4188,7 +4549,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: dashboard.today.kind.equipment_issue, operationsWorkspace.machine. 9 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "repair",
@@ -4201,7 +4562,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "1 current source locations remain candidates only; verify contextual usage and missing states before completion.",
       "composedKeys": [
         {
           "key": "operationsWorkspace.repairPrefix",
@@ -4239,20 +4600,45 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: dashboard.today.kind.facility_task, palette.pages.maintenance. 5 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "problem",
       "keys": [],
-      "rules": [],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#preserves exact approved terms inside composed labels",
+        "apps/web/src/features/operations/operations-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
-          "path": "apps/web/src/app/(app)/checklists/page.tsx",
-          "line": 162
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 104
+        },
+        {
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 114
+        },
+        {
+          "path": "apps/web/src/features/operations/equipment-tab.tsx",
+          "line": 116
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "composedKeys": [
+        {
+          "key": "operationsWorkspace.problemQuestion",
+          "template": "ما ال{approved}؟"
+        },
+        {
+          "key": "operationsWorkspace.reportMachine",
+          "template": "الإبلاغ عن {approved} في جهاز"
+        },
+        {
+          "key": "operationsWorkspace.reportProblem",
+          "template": "الإبلاغ عن {approved}"
+        }
+      ],
+      "remaining": "The fault term is tested in the current equipment issue form; checklist 'Problem?' is a separate generic checklist outcome and is deliberately not treated as an equipment/facility fault."
     },
     {
       "id": "out-of-service",
@@ -4262,7 +4648,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: operationsWorkspace.unsafe."
     },
     {
       "id": "working",
@@ -4272,7 +4658,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: operationsWorkspace.safe."
     },
     {
       "id": "repairer",
@@ -4282,7 +4668,7 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: operationsWorkspace.repairer."
     },
     {
       "id": "area",
@@ -4292,15 +4678,25 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: operationsWorkspace.area."
     },
     {
       "id": "same-area",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "salesWorkspace.sameArea"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/branch-ops/handover-groups.tsx",
+          "line": 44
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: salesWorkspace.sameArea. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "checklist",
@@ -4331,39 +4727,79 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: nav.item.checklists. 5 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "pass-check",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/app/(app)/checklists/page.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 45
+        },
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 159
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current checklist result model: checklist items can be completed, failed, or skipped; “completed” means the task was done and is not an inspection-pass result. Related behavior is covered by apps/web/src/app/(app)/checklists/page.test.tsx.",
+      "notApplicable": true
     },
     {
       "id": "fail-check",
-      "keys": [],
+      "keys": [
+        "staffTools.checklists.result.failed",
+        "staffTools.checklists.item.somethingWrong"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: staffTools.checklists.result.failed, staffTools.checklists.item.somethingWrong."
     },
     {
       "id": "not-applicable",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/app/(app)/checklists/page.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 45
+        },
+        {
+          "path": "apps/web/src/app/(app)/checklists/page.tsx",
+          "line": 159
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to current checklist result model: there is no N/A outcome; “skipped” is a separate action (“skip today”) and must not be relabeled. Related behavior is covered by apps/web/src/app/(app)/checklists/page.test.tsx.",
+      "notApplicable": true
     },
     {
       "id": "handover",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/features/branch-ops/branch-ops.test.tsx",
+        "apps/web/src/app/(app)/checklists/page.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/branch-ops/handover-groups.tsx",
+          "line": 58
+        },
+        {
+          "path": "apps/web/src/features/branch-ops/handover-groups.tsx",
+          "line": 44
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable as a note field: unfinished checklist items are carried into a handover summary, but the current handover view has no authored shift/team notes. Related behavior is covered by apps/web/src/features/branch-ops/branch-ops.test.tsx and apps/web/src/app/(app)/checklists/page.test.tsx.",
+      "notApplicable": true
     },
     {
       "id": "priority",
@@ -4390,7 +4826,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: dashboard.needsAttention.urgent. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "blocked-task",
@@ -4410,7 +4846,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: reception.decision.blocked, operationsWorkspace.blocked. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "resolved",
@@ -4429,7 +4865,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: operationsWorkspace.fixed. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "reports",
@@ -4460,7 +4896,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: nav.item.reports. 5 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "bookkeeping",
@@ -4498,7 +4934,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ledgerWorkspace.bookkeeping. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context. 6 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "ledger",
@@ -4561,11 +4997,13 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ledgerWorkspace.ledger, nav.section.managementLedger. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context. 12 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "charged-paid",
-      "keys": [],
+      "keys": [
+        "reportsWorkspace.collections"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -4581,8 +5019,8 @@
           "line": 351
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: reportsWorkspace.collections. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "revenue",
@@ -4609,28 +5047,36 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ledgerWorkspace.revenue, palette.moduleBoundary.name.revenue. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "collections",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "navigationCatalogue.report_collections.label"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#keeps all mapped catalogue labels equal to the approved contextual wording",
+        "apps/web/src/features/reports/operational-reports-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/convex/navigationCatalogue.ts",
           "line": 78
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Mapped and assertion-tested for the collections report and its navigation search label; definitions continue to distinguish charged amounts from amounts actually received."
     },
     {
       "id": "expenses",
-      "keys": [],
+      "keys": [
+        "accountingMessages.accountType.expense",
+        "ledgerWorkspace.spent"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: accountingMessages.accountType.expense, ledgerWorkspace.spent."
     },
     {
       "id": "profit-loss",
@@ -4663,7 +5109,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ledgerWorkspace.incomeStatement, statements.income. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts, apps/web/src/features/reports/management-statements-arabic.test.tsx, apps/web/src/lib/domain/statement-messages.test.ts; confirm they still exercise this approved context. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "balance-sheet",
@@ -4696,7 +5142,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ledgerWorkspace.balanceSheet, statements.balance. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts, apps/web/src/features/reports/management-statements-arabic.test.tsx, apps/web/src/lib/domain/statement-messages.test.ts; confirm they still exercise this approved context. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "cash-flow",
@@ -4717,7 +5163,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ledgerWorkspace.cashflow, statements.cashflow. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts, apps/web/src/features/reports/management-statements-arabic.test.tsx, apps/web/src/lib/domain/statement-messages.test.ts; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "assets-finance",
@@ -4730,7 +5176,7 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: accountingMessages.accountType.asset. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "liabilities",
@@ -4751,28 +5197,34 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: accountingMessages.accountType.liability, statements.liabilities. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts, apps/web/src/features/reports/management-statements-arabic.test.tsx, apps/web/src/lib/domain/statement-messages.test.ts; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "receivables",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "accountingMessages.account1200"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#keeps all mapped catalogue labels equal to the approved contextual wording"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/convex/accounting.ts",
           "line": 80
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Mapped and assertion-tested as the current Arabic label for chart account 1200 (Accounts receivable); account code and ledger behavior remain unchanged."
     },
     {
       "id": "payables",
-      "keys": [],
+      "keys": [
+        "accountingMessages.account2100"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: accountingMessages.account2100."
     },
     {
       "id": "debit-credit",
@@ -4782,8 +5234,8 @@
         "apps/web/src/lib/i18n/accounting.test.ts"
       ],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "journal-entry",
@@ -4794,7 +5246,7 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "remaining": "Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context.",
       "composedKeys": [
         {
           "key": "ledgerWorkspace.addJournalTitle",
@@ -4813,15 +5265,25 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: ledgerWorkspace.postToBooks. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "reconcile",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "statements.cashCheck"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
+          "line": 294
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: statements.cashCheck. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "balanced",
@@ -4836,20 +5298,25 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: salesWorkspace.cashMatches. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "incomplete-report",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "statements.incomplete"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#keeps all mapped catalogue labels equal to the approved contextual wording",
+        "apps/web/src/features/reports/management-statements-workspace.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
           "line": 211
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Mapped and assertion-tested at the current report warning heading; source-linked detail explains missing postings without changing report calculations."
     },
     {
       "id": "period-closed",
@@ -4862,7 +5329,7 @@
       ],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: apiErrors.theAccountingPeriodIsClosed. Referenced test rules: apps/web/src/features/finance/ledger-arabic.test.tsx, apps/web/src/lib/i18n/accounting.test.ts; confirm they still exercise this approved context."
     },
     {
       "id": "roles",
@@ -4890,7 +5357,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: setup.rolesTitle, settingsCore.text185. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "owner",
@@ -4967,7 +5434,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: crm.newLead.owner, crm.lead.ownerLabel, domain.role.owner. 16 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "manager",
@@ -5006,7 +5473,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.role.manager. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "sales-role",
@@ -5062,11 +5529,14 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: domain.role.salesperson, nav.section.sales. 11 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "permission-denied",
-      "keys": [],
+      "keys": [
+        "apiErrors.forbidden",
+        "staffTools.automations.editor.permission"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5074,12 +5544,14 @@
           "line": 325
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.forbidden, staffTools.automations.editor.permission. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "inactive-account",
-      "keys": [],
+      "keys": [
+        "apiErrors.inactiveAccount"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5087,12 +5559,14 @@
           "line": 211
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.inactiveAccount. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "required-reason",
-      "keys": [],
+      "keys": [
+        "apiErrors.reasonRequired"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5100,8 +5574,8 @@
           "line": 144
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.reasonRequired. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "required-field",
@@ -5192,11 +5666,15 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.state.required. 20 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "invalid-phone",
-      "keys": [],
+      "keys": [
+        "apiErrors.invalidPhone",
+        "crmCompletion.editLead.invalidPhone",
+        "crmCompletion.validation.validPhone"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5228,53 +5706,68 @@
           "line": 422
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.invalidPhone, crmCompletion.editLead.invalidPhone, crmCompletion.validation.validPhone. 7 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "save-failed",
-      "keys": [],
+      "keys": [
+        "apiErrors.saveFailed",
+        "crmCompletion.pipeline.saveFailed"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.saveFailed, crmCompletion.pipeline.saveFailed."
     },
     {
       "id": "offline",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "customerPortal.staleNotice"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#keeps all mapped catalogue labels equal to the approved contextual wording",
+        "apps/web/src/lib/providers/experience-provider.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/lib/providers/experience-provider.tsx",
           "line": 565
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Mapped and assertion-tested in the member portal stale-data notice. This warning appears after a refresh connection failure and explicitly identifies displayed data as last saved."
     },
     {
       "id": "session-ended",
-      "keys": [],
+      "keys": [
+        "apiErrors.sessionEnded"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.sessionEnded."
     },
     {
       "id": "not-found",
-      "keys": [],
+      "keys": [
+        "apiErrors.notFound",
+        "apiErrors.recordNotFound"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.notFound, apiErrors.recordNotFound."
     },
     {
       "id": "conflict",
-      "keys": [],
+      "keys": [
+        "apiErrors.conflict"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.conflict."
     },
     {
       "id": "unsaved",
@@ -5284,36 +5777,59 @@
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: settingsCore.text172."
     },
     {
       "id": "irreversible",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/features/operations/payables/supplier-payment-history-dialog.tsx",
+          "line": 49
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: payablesWorkspace.irreversible. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "payablesWorkspace.irreversible",
+          "template": "{approved} سيُحفظ اسمك معه."
+        }
+      ]
     },
     {
       "id": "rate-limit",
-      "keys": [],
+      "keys": [
+        "apiErrors.rateLimited",
+        "apiErrors.tooManyRequestsPleaseWaitAndTryAgain"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.rateLimited, apiErrors.tooManyRequestsPleaseWaitAndTryAgain."
     },
     {
       "id": "unknown-outcome",
-      "keys": [],
+      "keys": [
+        "apiErrors.unknownPayment"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: apiErrors.unknownPayment."
     },
     {
       "id": "my-gyms",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "publicCompletion.footer.myGyms"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#keeps all mapped catalogue labels equal to the approved contextual wording",
+        "apps/web/src/components/public/public-footer.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/components/public/public-footer.tsx",
@@ -5324,24 +5840,50 @@
           "line": 33
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Mapped and assertion-tested for the public member footer link to the member's own gym subscriptions. Auth destination records continue to use stable URLs."
     },
     {
       "id": "browse-gyms",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "marketing.actions.findGym"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/page.tsx",
+          "line": 243
+        },
+        {
+          "path": "apps/web/src/app/customer/discover/page.tsx",
+          "line": 78
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: marketing.actions.findGym. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "join",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/app/signup/page.test.tsx"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+          "line": 374
+        },
+        {
+          "path": "apps/web/src/app/customer/gyms/[gymId]/gym-detail.client.tsx",
+          "line": 204
+        }
+      ],
+      "status": "verified",
+      "remaining": "Not applicable to current behavior; no matching copy key or workflow is being claimed. Not applicable to the public directory flow: it supports gym discovery and trial requests; membership purchase/joining with a selected gym is not implemented. Account sign-up and trial request remain separate. Current public application/trial surfaces: apps/web/src/app/customer/discover/page.tsx and apps/web/src/app/signup/page.tsx.",
+      "notApplicable": true
     },
     {
       "id": "profile",
@@ -5372,23 +5914,35 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: settingsCore.text178. 5 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "finance-member",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "customerPortal.transactions"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/finance/customer-finance.client.tsx",
+          "line": 119
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: customerPortal.transactions. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "contact-gym",
-      "keys": [],
+      "keys": [
+        "customerPortal.askGym"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: customerPortal.askGym."
     },
     {
       "id": "sign-in",
@@ -5455,7 +6009,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: auth.pageTitle.signIn, auth.invitation.signIn, common.action.signIn, marketing.actions.signIn, marketing.footer.signIn. 13 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "create-account",
@@ -5483,23 +6037,56 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: auth.invitation.form.submit, marketing.actions.createAccount. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "email-code",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "authErrors.emailCode"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
+          "line": 506
+        },
+        {
+          "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
+          "line": 518
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: authErrors.emailCode. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "resend-code",
-      "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "keys": [
+        "authErrors.resend"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
+          "line": 442
+        },
+        {
+          "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
+          "line": 525
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: authErrors.resend, auth.signIn.resend. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "auth.signIn.verify.resend",
+          "template": "لم يصلكم الرمز؟ {approved}"
+        }
+      ]
     },
     {
       "id": "sign-out",
@@ -5531,15 +6118,20 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.action.signOut, shell.account.signOut. 5 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "register-gym",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "marketing.actions.applyShort"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: marketing.actions.applyShort. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": []
     },
     {
       "id": "marketing-promise",
@@ -5558,7 +6150,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: common.brand.tagline. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "marketing-ops",
@@ -5573,7 +6165,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: auth.brand.chooser.context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "trial-plan",
@@ -5594,7 +6186,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: marketing.vocabulary.freeTrial, marketing.loop.stages.trial.label, settingsDetails.text124. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "privacy",
@@ -5647,7 +6239,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: auth.chrome.privacy, publicPrivacy.text124, publicTerms.text094. 10 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "terms",
@@ -5696,20 +6288,25 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: auth.chrome.terms, publicPrivacy.text126, publicTerms.text092. 9 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "signature",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "agreementFlow.signature"
+      ],
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts#keeps all mapped catalogue labels equal to the approved contextual wording",
+        "apps/web/src/features/legal/subscription-agreement-modal.test.tsx"
+      ],
       "candidateOccurrences": [
         {
-          "path": "apps/web/convex/legalAgreementText.ts",
-          "line": 100
+          "path": "apps/web/src/features/legal/subscription-agreement-modal.tsx",
+          "line": 330
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Mapped and assertion-tested for the current agreement-signing step label. Versioned legal agreement source and already-signed documents remain unchanged."
     },
     {
       "id": "legal-consent",
@@ -5725,12 +6322,15 @@
           "line": 326
         }
       ],
-      "status": "in_progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: agreementFlow.electronicLabel. Referenced test rules: apps/web/src/features/legal/subscription-agreement-modal.test.tsx; confirm they still exercise this approved context. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "gym-applications",
-      "keys": [],
+      "keys": [
+        "platformConsole.navigation.applications",
+        "platformConsole.applications.title"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5738,12 +6338,15 @@
           "line": 254
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformConsole.navigation.applications, platformConsole.applications.title. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "under-review",
-      "keys": [],
+      "keys": [
+        "platformConsole.status.application.underReview",
+        "platformConsole.applications.underReview"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5759,12 +6362,14 @@
           "line": 33
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformConsole.status.application.underReview, platformConsole.applications.underReview. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "approve",
-      "keys": [],
+      "keys": [
+        "platformConsole.applications.approve"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5772,12 +6377,15 @@
           "line": 351
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformConsole.applications.approve. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "reject",
-      "keys": [],
+      "keys": [
+        "memberEnrollment.declineRequest",
+        "platformConsole.applications.reject"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5785,12 +6393,15 @@
           "line": 352
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: memberEnrollment.declineRequest, platformConsole.applications.reject. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "entitlements",
-      "keys": [],
+      "keys": [
+        "platformConsole.navigation.entitlements",
+        "platformFinance.plans.title"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5802,8 +6413,8 @@
           "line": 26
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformConsole.navigation.entitlements, platformFinance.plans.title. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "billing",
@@ -5826,7 +6437,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: settingsDetails.text128. 3 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "past-due",
@@ -5873,7 +6484,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: settingsDetails.text121. 9 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "suspended",
@@ -5900,31 +6511,69 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: settingsDetails.text126. 4 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "support-case",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/src/lib/i18n/system-messages.ts",
+          "line": 196
+        },
+        {
+          "path": "apps/web/src/lib/i18n/system-messages.ts",
+          "line": 199
+        },
+        {
+          "path": "apps/web/src/lib/i18n/system-messages.ts",
+          "line": 200
+        },
+        {
+          "path": "apps/web/src/lib/i18n/system-messages.ts",
+          "line": 200
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: communicationCompletion.notifications.supportAssigned, communicationCompletion.notifications.supportCreated, communicationCompletion.notifications.supportCreatedUrgent. Current source call sites are listed as candidates for route-level review.",
+      "composedKeys": [
+        {
+          "key": "communicationCompletion.notifications.supportAssigned",
+          "template": "أُسند إليك {approved}"
+        },
+        {
+          "key": "communicationCompletion.notifications.supportCreated",
+          "template": "{approved} جديد من نادٍ"
+        },
+        {
+          "key": "communicationCompletion.notifications.supportCreatedUrgent",
+          "template": "{approved} عاجل من نادٍ"
+        }
+      ]
     },
     {
       "id": "support-reply",
-      "keys": [],
+      "keys": [
+        "platformConsole.support.sendReply",
+        "staffTools.support.sendReply"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformConsole.support.sendReply, staffTools.support.sendReply."
     },
     {
       "id": "reopen",
-      "keys": [],
+      "keys": [
+        "platformConsole.support.reopen"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformConsole.support.reopen."
     },
     {
       "id": "notifications",
@@ -5961,7 +6610,7 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: nav.aria.notifications, palette.notifications.title, settingsCore.text188. 6 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "mark-read",
@@ -5976,19 +6625,25 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "remaining": "Exact Arabic catalog mapping: palette.notifications.markAllRead. 1 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "automations-paused",
-      "keys": [],
+      "keys": [
+        "staffTools.automations.globalPaused",
+        "staffTools.automations.comingSoon.paused"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: staffTools.automations.globalPaused, staffTools.automations.comingSoon.paused."
     },
     {
       "id": "email-log",
-      "keys": [],
+      "keys": [
+        "platformConsole.navigation.emailLog",
+        "platformConsole.emailLog.title"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -6000,24 +6655,39 @@
           "line": 29
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: platformConsole.navigation.emailLog, platformConsole.emailLog.title. 2 current source locations remain candidates only; verify contextual usage and missing states before completion."
     },
     {
       "id": "receipt-email",
-      "keys": [],
+      "keys": [
+        "communicationCompletion.email.kinds.payment_receipt.subject"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Exact Arabic catalog mapping: communicationCompletion.email.kinds.payment_receipt.subject."
     },
     {
       "id": "renewal-message",
       "keys": [],
-      "rules": [],
-      "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "rules": [
+        "apps/web/src/lib/i18n/messages.test.ts"
+      ],
+      "candidateOccurrences": [
+        {
+          "path": "apps/web/convex/operationalEmail.ts",
+          "line": 155
+        }
+      ],
+      "status": "in progress",
+      "remaining": "Current composed email wording is asserted by apps/web/src/lib/i18n/messages.test.ts; apps/web/convex/operationalEmail.ts:155 selects localized subject/body/action by recipient-language kind. Dates, names and saved email-language behavior are unchanged.",
+      "composedKeys": [
+        {
+          "key": "communicationCompletion.email.kinds.renewal_reminder.body",
+          "template": "{approved} سجّل الدخول إلى RIVET لمراجعة المدة الحالية والفاتورة القادمة وبيانات التواصل مع النادي."
+        }
+      ]
     }
   ]
 }

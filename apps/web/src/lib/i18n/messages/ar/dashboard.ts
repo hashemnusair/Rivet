@@ -309,7 +309,7 @@ export const dashboard: typeof En = {
 
     kind: {
       follow_up: "متابعة",
-      at_risk: "معرّض للانقطاع",
+      at_risk: "قد لا يجدّد اشتراكه",
       renewal: "تجديد",
       outstanding_balance: "غير مدفوع",
       access_denial: "دخول مرفوض",
@@ -407,7 +407,7 @@ export const dashboard: typeof En = {
     noOpenLeads: "لا توجد فرص مفتوحة مسندة إليك حاليًا.",
     description: "كل ما هو مستحق الآن، ثم كل ما يجعل هذا الشهر مهمًّا.",
     overdueFollowUps: "متابعات متأخرة",
-    dueToday: "مستحقة اليوم",
+    dueToday: "موعد المتابعة اليوم",
     collectedThisMonth: "المحصّل هذا الشهر",
     leadsConverted: "فرص تحوّلت",
     followUpCompleted: "تمت المتابعة.",

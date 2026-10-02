@@ -148,7 +148,7 @@ export const navigationCatalogue = {
     "description": "الحصص التي تمتلئ مقاعدها وأماكن ضياع السعة أو انخفاض الحضور."
   },
   "report_retention": {
-    "label": "الاحتفاظ بالمشتركين",
+    "label": "استمرارية الاشتراكات",
     "description": "مدى استمرار المشتركين بعد انضمامهم ونسب الاحتفاظ بهم وتوقفهم عن الاشتراك."
   },
   "report_renewals": {
@@ -156,7 +156,7 @@ export const navigationCatalogue = {
     "description": "الاشتراكات التي تنتهي خلال 30 يومًا وقيمتها."
   },
   "report_collections": {
-    "label": "التحصيل",
+    "label": "التحصيلات",
     "description": "مدى تحصيل النادي للمبالغ المطلوبة، والمبالغ التي ما زالت مستحقة."
   },
   "report_crm": {

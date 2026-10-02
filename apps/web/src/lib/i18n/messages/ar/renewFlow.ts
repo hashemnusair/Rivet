@@ -88,7 +88,7 @@ export const renewFlow: typeof En = {
   payment: {
     title: "استلام دفعة",
     titleCash: "تم تحصيل النقد",
-    titleSaved: "تم حفظ الدفعة: {method}",
+    titleSaved: "تم تسجيل الدفعة. طريقة الدفع: {method}",
     receipt: "وصل دفع",
     amount: "المبلغ",
     status: "الحالة",
@@ -340,7 +340,7 @@ export const renewFlow: typeof En = {
 
     refund: {
       title: "استرداد دفعة",
-      description: "يعيد هذا الإجراء المبلغ إلى العضو. لا يمكن التراجع عنه.",
+      description: "سيُسجَّل المبلغ كمردود. يجب إعادة المال للعضو خارج النظام.",
       canStillRefund: "المتاح للاسترداد",
       hint: "يرجى ترك الحقل فارغًا لاسترداد {amount} كاملًا.",
       reasonPlaceholder: "مثال: تم التأكد مع البنك من خصم مكرر",

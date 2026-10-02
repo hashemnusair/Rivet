@@ -92,11 +92,23 @@ describe("approved Arabic decisions", () => {
       expect(arLeaves.get(key), `${entry.id}: ${key}`).toBe(decisions.decisions.find(decision => decision.id === entry.id)?.agreedText);
     }
   });
-  it("preserves exact approved terms inside labels that display a currency or amount", () => {
+  it("preserves exact approved terms inside composed labels", () => {
     for (const entry of coverage.decisions) for (const composed of entry.composedKeys ?? []) {
       const approved = decisions.decisions.find(decision => decision.id === entry.id)!.agreedText;
       expect(arLeaves.get(composed.key), `${entry.id}: ${composed.key}`).toBe(composed.template.replace("{approved}", approved));
     }
+  });
+
+  it("uses formal, concise Arabic in current staff-screen examples", () => {
+    expect(arLeaves.get("stockWorkspace.saveItem")).toBe("حفظ المنتج");
+    expect(arLeaves.get("memberMigration.matchColumns")).toBe("تحديد محتوى كل عمود");
+    expect(arLeaves.get("stockWorkspace.itemHint")).toContain("يرجى إدخال المنتج");
+  });
+
+  it("uses polite gender-neutral wording in current member payment guidance", () => {
+    const paymentReceipt = arLeaves.get("communicationCompletion.email.kinds.payment_receipt.body");
+    expect(paymentReceipt).toContain("يرجى تسجيل الدخول");
+    expect(paymentReceipt).not.toMatch(/سجّلوا|ادفعوا|ادفع|أدخلوا/);
   });
 
   it("accounts for all decisions without certifying untranslated occurrences", () => {

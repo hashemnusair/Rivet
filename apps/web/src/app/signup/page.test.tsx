@@ -126,7 +126,7 @@ describe("gym application pricing selection", () => {
     render(<LocaleProvider initialLocale="ar"><GymApplicationPage /></LocaleProvider>);
 
     expect(await screen.findByRole("heading", { name: "تقديم طلب للنادي الرياضي." })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /إرسال طلب/ }));
+    await user.click(screen.getByRole("button", { name: /إضافة ناديك إلى RIVET/ }));
     expect(await screen.findByText("أدخل اسم المالك.")).toBeInTheDocument();
 
     await user.type(screen.getByPlaceholderText("Omar Khalil"), "ليان أحمد");
@@ -134,7 +134,7 @@ describe("gym application pricing selection", () => {
     await user.type(screen.getByPlaceholderText("أدخل رقم هاتفك"), "٠٧٩١٢٣٤٥٦٧");
     await user.type(screen.getByPlaceholderText("Northstar Fitness"), "نادي النجمة");
     await user.type(screen.getByPlaceholderText("الشارع، المنطقة، المدينة"), "شارع الملكة رانيا، عمّان");
-    await user.click(screen.getByRole("button", { name: /إرسال طلب/ }));
+    await user.click(screen.getByRole("button", { name: /إضافة ناديك إلى RIVET/ }));
 
     expect(state.submitGymApplication).toHaveBeenCalledWith(expect.objectContaining({
       ownerName: "ليان أحمد",

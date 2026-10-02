@@ -32,7 +32,7 @@ describe("Arabic financial statements", () => {
     expect(screen.getAllByText((_, element) => element?.tagName === "BDI" && element.textContent === "15.000 د.أ").length).toBeGreaterThan(0);
     expect(screen.getByRole("region", { name: "حول هذه الأرقام" })).toHaveTextContent("آب 2026");
     if (kind === "cashflow") {
-      expect(screen.getByRole("status", { name: "مراجعة النقد" })).toHaveTextContent("تحتاج أرقام النقد إلى مراجعة");
+      expect(screen.getByRole("status", { name: "تسوية الحسابات" })).toHaveTextContent("تحتاج أرقام النقد إلى مراجعة");
       expect(screen.queryByText("أرقام النقد متطابقة")).not.toBeInTheDocument();
     }
     fireEvent.change(screen.getByLabelText("من تاريخ"), { target: { value: "2026-08-02" } });

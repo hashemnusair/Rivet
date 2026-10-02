@@ -46,7 +46,7 @@ export const publicCompletion: typeof EnPublicCompletion = {
     forMembers: "للمشتركين",
     apply: "تقديم طلب للنادي",
     findGym: "العثور على نادٍ",
-    myGyms: "أنديتي",
+    myGyms: "اشتراكاتي في الأندية",
     createAccount: "إنشاء حساب للمشترك",
     signInToRivet: "تسجيل الدخول إلى RIVET",
     whatsappLink: "التواصل مع RIVET عبر واتساب",

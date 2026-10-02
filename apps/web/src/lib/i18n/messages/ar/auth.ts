@@ -100,7 +100,7 @@ export const auth: typeof En = {
       digit: "الرقم {number}",
       submit: "التحقق والمواصلة",
       useAnother: "استخدام حساب آخر",
-      resend: "لم يصلكم الرمز؟ إرسال رمز جديد",
+      resend: "لم يصلكم الرمز؟ إعادة إرسال الرمز",
     },
   },
 

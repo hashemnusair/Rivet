@@ -76,7 +76,7 @@ export const customerPortal: typeof English = {
   financeDescription: "كل الدفعات التي سجّلتها أنديتك لك، مع وصولات الدفع.",
   downloadDataHint: "تنزيل ملف جدول بيانات يحتوي على بياناتك",
   downloadData: "تنزيل بياناتي (CSV)",
-  transactions: "الحركات المالية",
+  transactions: "دفعاتك",
   searchPaymentsPlaceholder: "البحث برقم وصل الدفع أو النادي أو طريقة الدفع",
   searchPayments: "البحث في الدفعات ووصولات الدفع",
   filters: "التصفية",
@@ -218,7 +218,6 @@ export const customerPortal: typeof English = {
   directoryRefreshFailed: "تعذّر على RIVET تحديث دليل الأندية.",
   memberRefreshFailed: "تعذّر على RIVET تحديث بيانات العضو.",
   platformRefreshFailed: "تعذّر على RIVET تحديث بيانات إدارة المنصة.",
-  staleNotice: "تعذّر الاتصال. تُعرض آخر معلومات محفوظة لديك.",
+  staleNotice: "لا يوجد اتصال. هذه آخر معلومات تم حفظها.",
   subscriptionTimedOut: "انتهت مهلة تحميل أحدث المعلومات. يرجى المحاولة مجددًا.",
 };
-

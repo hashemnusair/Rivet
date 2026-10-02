@@ -3,7 +3,7 @@ import { plural } from "../../dictionary";
 export const reportsWorkspace = {
   peakHours: "ساعات الذروة",
   classes: "الحصص الجماعية",
-  retention: "استمرار المشتركين",
+  retention: "استمرارية الاشتراكات",
   renewals: "التجديدات",
   collections: "المبالغ المطلوبة والمدفوعة",
   leads: "العملاء المحتملون",

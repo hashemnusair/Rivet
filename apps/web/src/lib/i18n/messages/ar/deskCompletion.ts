@@ -85,7 +85,7 @@ export const deskCompletion: typeof En = {
     verdict: {
       allowed: "مسموح بالدخول",
       warning: "مسموح بالدخول مع تنبيه",
-      blocked: "الدخول مرفوض",
+      blocked: "الدخول غير مسموح",
       overridden: "السماح بالدخول استثنائيًا",
       duplicate: "تم تسجيل دخول هذا المشترك",
       checkedInAt: "تم تسجيل الدخول · {time}",
@@ -107,7 +107,7 @@ export const deskCompletion: typeof En = {
       membershipCancelled: "أُلغي الاشتراك. يتطلب الدخول موافقة المدير.",
       membershipInvalid: "الاشتراك غير صالح حاليًا. جدّد الاشتراك للسماح بالدخول.",
       membershipFrozen: "الاشتراك مجمّد. أعد تفعيل الاشتراك أو اطلب من المدير السماح بالدخول استثنائيًا.",
-      visitsDepleted: "لا توجد زيارات متبقية في هذه البطاقة.",
+      visitsDepleted: "لا توجد زيارات متبقية. انتهى رصيد هذه البطاقة.",
       wrongBranch: "هذا الفرع غير مشمول في الاشتراك.",
       branchClosed: "الفرع مغلق حاليًا. يتطلب الدخول موافقة المدير.",
       duplicateScan: "تم تسجيل دخول هذا المشترك مؤخرًا. لم تُسجَّل زيارة ثانية.",

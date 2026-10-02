@@ -23,7 +23,7 @@ export const memberProfile: typeof En = {
 
   tabs: {
     overview: "نظرة عامة",
-    timeline: "سجل العضو",
+    timeline: "سجل المشترك",
     memberships: "الاشتراكات",
     payments: "المدفوعات",
     checkins: "الحضور",
@@ -425,7 +425,7 @@ export const memberProfile: typeof En = {
     description: "يُفتح واتساب ومعه هذه الرسالة جاهزة. اضغطوا إرسال هناك.",
     phoneNumber: "رقم الهاتف",
     countryCodeHelp: "الأرقام التي لا تحتوي على رمز الدولة تستخدم {code}. الأرقام التي تبدأ بـ ⁦+⁩ أو ⁦00⁩ تحتفظ برمز دولتها.",
-    message: "الرسالة",
+    message: "مسودة رسالة",
     messageAria: "رسالة واتساب",
     followUpOn: "المتابعة في",
     followUpHint: "يبقى في قائمتكم إذا لم يصل رد. امسحوا التاريخ إذا لم تكن هناك حاجة إلى متابعة.",
