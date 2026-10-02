@@ -193,3 +193,10 @@ Validation: 35 existing statement/scope/catalog and forensic accounting tests pa
 All seven operational reports and the finance overview now translate controls, definitions, totals, export titles/headers, known status/action labels and empty/refresh states. Weekday/hour charts use Arabic 12-hour labels; human exports use Jordanian dates and preserve timestamp seconds. CSV amounts and percentage cells stay spreadsheet-readable, with UTF-8/formula escaping and original member names, receipt references and audit text. Currency comes from the reporting context. In-flight overview exports retain their original date/branch snapshot even when filters or language change during the request.
 
 Validation: 34 analytics/overview/CSV/catalog tests passed; seven dual-language report/download journeys and one in-flight overview scope/language journey passed. Web and Convex typechecks and full lint passed, with a final focused lint gate for the last test additions. Whole-product browser and accessibility verification remains outstanding.
+
+
+## Shared numeric settings and deferred errors checkpoint
+
+Operational rule fields, branch/area capacities and receipt tax use text controls so Arabic/Persian digits reach normalization before browser number-input sanitization. Empty, fractional, out-of-range and over-precision drafts remain visible and block saving. Switching language preserves those drafts; discarding resets even an invalid draft whose last valid underlying value never changed. Existing fee currency precision, integer policy limits, canonical payloads and original receipt/footer text remain intact. In-flight mutation refusals and post-save refresh warnings use the current UI language without resubmitting a write or losing its request/error envelope.
+
+Validation: 22 focused settings/parser/shared-query tests pass, including five new numeric settings journeys and two delayed-response language-switch cases. Focused lint, the locked-decision checksum and whitespace checks pass. Whole-repository gates are deferred until the parallel packets have finished editing their owned namespaces.

@@ -1,11 +1,11 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { LanguageToggle } from "@/components/shared/language-toggle";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { SettingsPageInner } from "./settings-page-inner";
-import { NotificationsSection, OrganizationSection, PaymentsSection } from "./settings-sections";
+import { BranchesSection, GymSpacesSection, NotificationsSection, OrganizationSection, PaymentsSection, ReceiptsSection } from "./settings-sections";
 import { ApiError } from "@/lib/api/errors";
 
 vi.mock("next/navigation", () => ({
@@ -114,5 +114,97 @@ describe("Arabic operational and public settings", () => {
     await user.click(screen.getByRole("button", { name: "Save hours" }));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0]?.[0].operatingHours.some(schedule => schedule.days.sun.opensAt === "08:15")).toBe(true);
+  });
+});
+
+
+describe("Arabic numeric settings", () => {
+  it("keeps invalid rule drafts visible across language changes and saves exact corrected values", async () => {
+    const { OperationalRulesSection } = await import("./operational-settings-sections");
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<LocaleProvider initialLocale="en"><LanguageToggle /><OperationalRulesSection /></LocaleProvider>);
+    const save = vi.spyOn(api, "updateOperationalPolicies");
+    const warning = await screen.findByRole("textbox", { name: "Ending soon warning, days" });
+    fireEvent.change(warning, { target: { value: "٣١" } });
+    expect(warning).toHaveValue("31");
+    expect(screen.getByRole("button", { name: "Save rules" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /Arabic/ }));
+    expect(warning).toHaveValue("31");
+    expect(warning).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent("30");
+    await user.click(screen.getByRole("button", { name: /English/ }));
+    fireEvent.change(warning, { target: { value: "١٤" } });
+    const freezeToggle = screen.getByRole("switch", { name: "Accept requests" });
+    if (freezeToggle.getAttribute("data-state") !== "checked") await user.click(freezeToggle);
+    const fee = screen.getByRole("textbox", { name: "Fee for each extra freeze, JOD" });
+    fireEvent.change(fee, { target: { value: "٢٥٫١٢٥١" } });
+    expect(screen.getByRole("button", { name: "Save rules" })).toBeDisabled();
+    fireEvent.change(fee, { target: { value: "٢٥٫١٢٥" } });
+    expect(save).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save rules" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      entry: expect.objectContaining({ expiryWarningDays: 14 }),
+      memberFreezes: expect.objectContaining({ extraFreezeFeeMinor: 25125 }),
+    })));
+  });
+
+  it("discards an empty rule draft even when its underlying numeric value never changed", async () => {
+    const { OperationalRulesSection } = await import("./operational-settings-sections");
+    const user = userEvent.setup();
+    await renderWithApp(<OperationalRulesSection />);
+    const warning = await screen.findByRole("textbox", { name: "Ending soon warning, days" });
+    const original = (warning as HTMLInputElement).value;
+    fireEvent.change(warning, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Save rules" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.getByRole("textbox", { name: "Ending soon warning, days" })).toHaveValue(original);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("accepts Arabic branch capacity and retains the draft while rejecting fractional capacity", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<LocaleProvider initialLocale="en"><LanguageToggle /><BranchesSection /></LocaleProvider>);
+    const save = vi.spyOn(api, "upsertBranch");
+    await user.click(await screen.findByRole("button", { name: "Add branch" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText(/Name/), { target: { value: "فرع جديد" } });
+    fireEvent.change(dialog.getByLabelText(/Code/), { target: { value: "ARA" } });
+    fireEvent.change(dialog.getByLabelText("Capacity"), { target: { value: "١٫٥" } });
+    expect(dialog.getByRole("button", { name: "Add branch" })).toBeDisabled();
+    fireEvent.change(dialog.getByLabelText("Capacity"), { target: { value: "۱۲۵" } });
+    fireEvent.change(dialog.getByLabelText("Phone"), { target: { value: "٠٧٩١٢٣٤٥٦٧" } });
+    await user.click(dialog.getByRole("button", { name: "Add branch" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ name: "فرع جديد", capacity: 125, phone: "0791234567" })));
+  });
+
+  it("validates optional space capacity without silently submitting NaN", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<GymSpacesSection />);
+    const save = vi.spyOn(api, "upsertZone");
+    await user.click(await screen.findByRole("button", { name: "Add gym area" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText(/Name/), { target: { value: "قاعة" } });
+    fireEvent.change(dialog.getByLabelText("Capacity"), { target: { value: "١٠٠٠٠١" } });
+    expect(dialog.getByRole("button", { name: "Add gym area" })).toBeDisabled();
+    fireEvent.change(dialog.getByLabelText("Capacity"), { target: { value: "٦٠" } });
+    await user.click(dialog.getByRole("button", { name: "Add gym area" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ capacity: 60, name: "قاعة" })));
+  });
+
+  it("accepts a decimal Arabic tax rate, preserves authored footer text, and does not coerce an empty rate", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<LocaleProvider initialLocale="en"><LanguageToggle /><ReceiptsSection /></LocaleProvider>);
+    const save = vi.spyOn(api, "updateOrganizationSettings");
+    const tax = await screen.findByRole("textbox", { name: "Sales tax" });
+    fireEvent.change(tax, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Save receipt settings" })).toBeDisabled();
+    fireEvent.change(tax, { target: { value: "١٦٫٢٥" } });
+    fireEvent.change(screen.getByLabelText("Receipt footer"), { target: { value: "Thank you — شكرًا" } });
+    await user.click(screen.getByRole("button", { name: /Arabic/ }));
+    expect(tax).toHaveValue("16.25");
+    expect(save).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /English/ }));
+    await user.click(screen.getByRole("button", { name: "Save receipt settings" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ taxRatePercent: 16.25, receiptFooter: "Thank you — شكرًا" })));
   });
 });

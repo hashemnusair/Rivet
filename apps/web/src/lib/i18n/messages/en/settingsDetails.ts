@@ -315,5 +315,8 @@ export const settingsDetails = {
   previousPerson: "Previous person (no longer listed)",
   assignmentSaved: "Checklist person saved.",
   assignPerson: "Assign a person",
-  saveAssignment: "Save assignment"
+  saveAssignment: "Save assignment",
+  decimalRange: "Enter a number from {min} to {max}, with up to {places} decimal places.",
+  invalidNumbers: "Check the highlighted numbers before saving.",
+
 };

@@ -316,5 +316,8 @@ export const settingsDetails: typeof English = {
   previousPerson: "المسؤول السابق (لم يعد مدرجًا)",
   assignmentSaved: "تم حفظ المسؤول عن قائمة المهام.",
   assignPerson: "تعيين مسؤول",
-  saveAssignment: "حفظ التعيين"
+  saveAssignment: "حفظ التعيين",
+  decimalRange: "أدخل رقمًا من {min} إلى {max}، بما لا يزيد عن {places} منازل عشرية.",
+  invalidNumbers: "تحقّق من الأرقام المحدّدة قبل الحفظ.",
+
 };

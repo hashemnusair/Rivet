@@ -1,9 +1,9 @@
 "use client";
 import { useFormat } from "@/lib/i18n/format";
-import { latinDigits } from "@/lib/utils/text";
+import { readSettingsNumber } from "./settings-number";
 import { useT } from "@/lib/i18n/provider";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { toast } from "sonner";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Field, FieldGrid } from "@/components/ui/field";
@@ -17,7 +17,7 @@ import { qk } from "@/lib/api/keys";
 import type { OperationalPolicies, WeekdayKey } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { exponentFor } from "@/lib/utils/money";
+import { exponentFor, toWesternDigits } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 
 const WEEKDAY_ROWS: Array<{ key: WeekdayKey }> = [
@@ -147,13 +147,13 @@ function policySnapshot(value: OperationalPolicies | null): string {
   return value ? JSON.stringify(value) : "";
 }
 
-function useOperationalPoliciesDraft() {
+function useOperationalPoliciesDraft(extraDirty = false) {
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const [policies, setPolicies] = useState<OperationalPolicies | null>(null);
   const [baseline, setBaseline] = useState<OperationalPolicies | null>(null);
   const dirty = Boolean(policies && baseline && policySnapshot(policies) !== policySnapshot(baseline));
-  const dirtyRef = useRef(dirty);
-  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  const dirtyRef = useRef(dirty || extraDirty);
+  useEffect(() => { dirtyRef.current = dirty || extraDirty; }, [dirty, extraDirty]);
 
   useEffect(() => {
     const settings = settingsQuery.data;
@@ -180,11 +180,35 @@ function useOperationalPoliciesDraft() {
   return { settingsQuery, policies, setPolicies, dirty, discard, markSaved };
 }
 
-/** A numeric rule with its unit inside the control: "Ending soon warning" · 7 days. */
-function NumberSetting({ label, unit, hint, ...props }: Omit<ComponentProps<typeof Input>, "type"> & { label: string; unit: string; hint?: string }) {
+const NumberSettingValidity = createContext<((id: string, invalid: boolean) => void) | null>(null);
+
+/** Keep incomplete and invalid drafts visible, without writing NaN or a coerced zero into a policy. */
+function NumberSetting({ label, unit, hint, value, onValueChange, min, max, decimalPlaces = 0, ...props }: Omit<ComponentProps<typeof Input>, "type" | "value" | "onChange" | "min" | "max" | "step"> & {
+  label: string; unit: string; hint?: string; value: number; onValueChange: (value: number) => void;
+  min: number; max: number; decimalPlaces?: number;
+}) {
+  const t = useT();
+  const id = useId();
+  const reportValidity = useContext(NumberSettingValidity);
+  const [raw, setRaw] = useState(String(value));
+  useEffect(() => { setRaw(String(value)); }, [value]);
+  const invalid = readSettingsNumber(raw, { min, max, decimalPlaces }) === null;
+  useEffect(() => { reportValidity?.(id, invalid); }, [id, invalid, reportValidity]);
+  useEffect(() => () => { reportValidity?.(id, false); }, [id, reportValidity]);
+  const error = invalid ? decimalPlaces
+    ? t("settingsDetails.decimalRange", { min, max, places: decimalPlaces })
+    : t("operationsWorkspace.integerRange", { min, max }) : undefined;
   return (
-    <Field label={label} hint={hint}>
-      <SettingsUnitInput {...props} type="number" inputMode="numeric" unit={unit} aria-label={`${label}, ${unit}`} />
+    <Field label={label} hint={hint} error={error} htmlFor={id}>
+      <SettingsUnitInput {...props} id={id} type="text" inputMode={decimalPlaces ? "decimal" : "numeric"} dir="ltr" unit={unit} value={raw}
+        aria-label={`${label}, ${unit}`} aria-invalid={invalid || undefined} aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
+        onChange={(event) => {
+          const next = toWesternDigits(event.target.value);
+          setRaw(next);
+          const parsed = readSettingsNumber(next, { min, max, decimalPlaces });
+          reportValidity?.(id, parsed === null);
+          if (parsed !== null) onValueChange(parsed);
+        }} />
     </Field>
   );
 }
@@ -230,7 +254,17 @@ export function OperationalRulesSection() {
   const { session: rulesSession } = useApp();
   const currency = rulesSession?.organization.currency ?? "JOD";
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
-  const { settingsQuery, policies, setPolicies, dirty, discard, markSaved } = useOperationalPoliciesDraft();
+  const [invalidNumbers, setInvalidNumbers] = useState<Set<string>>(new Set());
+  const { settingsQuery, policies, setPolicies, dirty, discard, markSaved } = useOperationalPoliciesDraft(invalidNumbers.size > 0);
+  const [numberDraftRevision, setNumberDraftRevision] = useState(0);
+  const reportNumberValidity = useCallback((id: string, invalid: boolean) => {
+    setInvalidNumbers((current) => {
+      if (current.has(id) === invalid) return current;
+      const next = new Set(current);
+      if (invalid) next.add(id); else next.delete(id);
+      return next;
+    });
+  }, []);
   const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
     onSuccess: async () => {
       toast.success(t("settingsDetails.text002"));
@@ -255,6 +289,7 @@ export function OperationalRulesSection() {
   const updateRetention = <K extends keyof OperationalPolicies["retention"]>(key: K, value: OperationalPolicies["retention"][K]) =>
     setPolicies((current) => current ? { ...current, retention: { ...current.retention, [key]: value } } : current);
   const commit = async () => {
+    if (invalidNumbers.size) return;
     await save.mutateAsync(policies);
     markSaved(policies);
   };
@@ -262,7 +297,8 @@ export function OperationalRulesSection() {
 
   return (
     <SettingsSection title={t("settingsCore.text191")} description={RULES_DESCRIPTION}>
-      <div className="space-y-4">
+      <NumberSettingValidity.Provider value={reportNumberValidity}>
+      <div key={numberDraftRevision} className="space-y-4">
         <SettingsPanel title={t("settingsDetails.text004")} description={t("settingsDetails.text005")}>
           <FieldGrid className="md:grid-cols-3">
             <Field label={t("settingsDetails.text006")} hint={t("settingsDetails.text007")}>
@@ -275,8 +311,8 @@ export function OperationalRulesSection() {
                 </SelectContent>
               </Select>
             </Field>
-            <NumberSetting label={t("settingsDetails.text012")} unit={t("settingsDetails.unitDays")} hint={t("settingsDetails.text013")} min={0} max={30} value={policies.entry.expiryWarningDays} onChange={(event) => updateEntry("expiryWarningDays", Number(latinDigits(event.target.value)))} />
-            <NumberSetting label={t("settingsDetails.text014")} unit={t("settingsDetails.unitMinutes")} hint={t("settingsDetails.text015")} min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onChange={(event) => updateEntry("duplicateScanWindowMinutes", Number(latinDigits(event.target.value)))} />
+            <NumberSetting label={t("settingsDetails.text012")} unit={t("settingsDetails.unitDays")} hint={t("settingsDetails.text013")} min={0} max={30} value={policies.entry.expiryWarningDays} onValueChange={(value) => updateEntry("expiryWarningDays", value)} />
+            <NumberSetting label={t("settingsDetails.text014")} unit={t("settingsDetails.unitMinutes")} hint={t("settingsDetails.text015")} min={1} max={15} value={policies.entry.duplicateScanWindowMinutes} onValueChange={(value) => updateEntry("duplicateScanWindowMinutes", value)} />
           </FieldGrid>
           <div className="mt-4 border-t border-line">
             <SettingsToggleRow label={t("settingsDetails.text016")} hint={t("settingsDetails.text017")} checked={policies.entry.enforceOperatingHours} onCheckedChange={(value) => updateEntry("enforceOperatingHours", value)} />
@@ -296,9 +332,9 @@ export function OperationalRulesSection() {
                   <SelectContent><SelectItem value="all_active_memberships">{t("settingsDetails.text023")}</SelectItem><SelectItem value="selected_plans">{t("settingsDetails.text024")}</SelectItem></SelectContent>
                 </Select>
               </Field>
-              <NumberSetting label={t("settingsDetails.text025")} unit={t("settingsDetails.unitDays")} min={1} max={120} value={policies.classBooking.bookingHorizonDays} onChange={(event) => updateClassBooking("bookingHorizonDays", Number(latinDigits(event.target.value)))} />
-              <NumberSetting label={t("settingsDetails.text026")} unit={t("settingsDetails.unitHours")} min={0} max={72} value={policies.classBooking.cancellationCutoffHours} onChange={(event) => updateClassBooking("cancellationCutoffHours", Number(latinDigits(event.target.value)))} />
-              <NumberSetting label={t("settingsDetails.text027")} unit={t("settingsDetails.unitBookings")} min={1} max={100} value={policies.classBooking.maxActiveBookingsPerMember} onChange={(event) => updateClassBooking("maxActiveBookingsPerMember", Number(latinDigits(event.target.value)))} />
+              <NumberSetting label={t("settingsDetails.text025")} unit={t("settingsDetails.unitDays")} min={1} max={120} value={policies.classBooking.bookingHorizonDays} onValueChange={(value) => updateClassBooking("bookingHorizonDays", value)} />
+              <NumberSetting label={t("settingsDetails.text026")} unit={t("settingsDetails.unitHours")} min={0} max={72} value={policies.classBooking.cancellationCutoffHours} onValueChange={(value) => updateClassBooking("cancellationCutoffHours", value)} />
+              <NumberSetting label={t("settingsDetails.text027")} unit={t("settingsDetails.unitBookings")} min={1} max={100} value={policies.classBooking.maxActiveBookingsPerMember} onValueChange={(value) => updateClassBooking("maxActiveBookingsPerMember", value)} />
             </FieldGrid>
             {policies.classBooking.eligibilityMode === "selected_plans" ? (
               <div className="mt-5 border-t border-line pt-4">
@@ -315,7 +351,7 @@ export function OperationalRulesSection() {
               <div className="divide-y divide-line">
                 <SettingsToggleRow label={t("settingsDetails.text030")} hint={t("settingsDetails.text031")} checked={policies.classBooking.waitlistEnabled} onCheckedChange={(value) => updateClassBooking("waitlistEnabled", value)} />
                 <div className="py-3">
-                  <NumberSetting label={t("settingsDetails.text032")} unit={t("settingsDetails.unitMembers")} className="max-w-56" min={1} max={200} value={policies.classBooking.waitlistSize} disabled={!policies.classBooking.waitlistEnabled} onChange={(event) => updateClassBooking("waitlistSize", Number(latinDigits(event.target.value)))} />
+                  <NumberSetting label={t("settingsDetails.text032")} unit={t("settingsDetails.unitMembers")} className="max-w-56" min={1} max={200} value={policies.classBooking.waitlistSize} disabled={!policies.classBooking.waitlistEnabled} onValueChange={(value) => updateClassBooking("waitlistSize", value)} />
                 </div>
               </div>
               <div className="divide-y divide-line">
@@ -354,17 +390,17 @@ export function OperationalRulesSection() {
             <section>
               <SectionLead title={t("settingsDetails.text044")} description={t("settingsDetails.text045")} />
               <FieldGrid className="sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                <NumberSetting label={t("settingsDetails.text046")} unit={t("settingsDetails.unitDays")} min={3} max={180} value={policies.retention.inactivityDays} onChange={(event) => updateRetention("inactivityDays", Number(latinDigits(event.target.value)))} />
-                <NumberSetting label={t("settingsDetails.text047")} unit={t("settingsDetails.unitDays")} min={7} max={365} value={policies.retention.expiredWinBackDays} onChange={(event) => updateRetention("expiredWinBackDays", Number(latinDigits(event.target.value)))} />
-                <NumberSetting label={t("settingsDetails.text048")} unit={t("settingsDetails.unitDays")} min={1} max={90} value={policies.retention.defaultSnoozeDays} onChange={(event) => updateRetention("defaultSnoozeDays", Number(latinDigits(event.target.value)))} />
+                <NumberSetting label={t("settingsDetails.text046")} unit={t("settingsDetails.unitDays")} min={3} max={180} value={policies.retention.inactivityDays} onValueChange={(value) => updateRetention("inactivityDays", value)} />
+                <NumberSetting label={t("settingsDetails.text047")} unit={t("settingsDetails.unitDays")} min={7} max={365} value={policies.retention.expiredWinBackDays} onValueChange={(value) => updateRetention("expiredWinBackDays", value)} />
+                <NumberSetting label={t("settingsDetails.text048")} unit={t("settingsDetails.unitDays")} min={1} max={90} value={policies.retention.defaultSnoozeDays} onValueChange={(value) => updateRetention("defaultSnoozeDays", value)} />
               </FieldGrid>
             </section>
             <section className="border-t border-line pt-5 lg:border-t-0 lg:ps-6 lg:pt-0">
               <SectionLead title={t("settingsDetails.text049")} description={t("settingsDetails.text050")} />
               <FieldGrid className="sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                <NumberSetting label={t("settingsDetails.text051")} unit={t("settingsDetails.unitDays")} hint={t("settingsDetails.text052")} min={1} max={90} value={policies.membership.renewalWindowDays} onChange={(event) => updateMembership("renewalWindowDays", Number(latinDigits(event.target.value)))} />
-                <NumberSetting label={t("settingsDetails.text053")} unit={t("settingsDetails.unitDays")} min={1} max={30} value={policies.membership.minimumFreezeDays} onChange={(event) => updateMembership("minimumFreezeDays", Number(latinDigits(event.target.value)))} />
-                <NumberSetting label={t("settingsDetails.text054")} unit={t("settingsDetails.unitDays")} min={1} max={365} value={policies.membership.maximumExtensionDays} onChange={(event) => updateMembership("maximumExtensionDays", Number(latinDigits(event.target.value)))} />
+                <NumberSetting label={t("settingsDetails.text051")} unit={t("settingsDetails.unitDays")} hint={t("settingsDetails.text052")} min={1} max={90} value={policies.membership.renewalWindowDays} onValueChange={(value) => updateMembership("renewalWindowDays", value)} />
+                <NumberSetting label={t("settingsDetails.text053")} unit={t("settingsDetails.unitDays")} min={1} max={30} value={policies.membership.minimumFreezeDays} onValueChange={(value) => updateMembership("minimumFreezeDays", value)} />
+                <NumberSetting label={t("settingsDetails.text054")} unit={t("settingsDetails.unitDays")} min={1} max={365} value={policies.membership.maximumExtensionDays} onValueChange={(value) => updateMembership("maximumExtensionDays", value)} />
               </FieldGrid>
               <div className="mt-3 border-t border-line">
                 <SettingsToggleRow label={t("settingsDetails.text055")} hint={t("settingsDetails.text056")} checked={policies.membership.allowOverlappingMemberships} onCheckedChange={(value) => updateMembership("allowOverlappingMemberships", value)} />
@@ -379,9 +415,9 @@ export function OperationalRulesSection() {
               <SectionLead title={t("settingsDetails.text059")} description={t("settingsDetails.text060")} toggle={<HeaderToggle label={t("settingsDetails.text061")} checked={policies.referrals.enabled} onCheckedChange={(value) => updateReferrals("enabled", value)} />} />
               <Governed enabled={policies.referrals.enabled}>
                 <FieldGrid className="sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
-                  <NumberSetting label={t("settingsDetails.text062")} unit={t("settingsDetails.unitDays")} min={1} max={90} value={policies.referrals.rewardDays} onChange={(event) => updateReferrals("rewardDays", Number(latinDigits(event.target.value)))} />
-                  <NumberSetting label={t("settingsDetails.text063")} unit={t("settingsDetails.unitDays")} min={1} max={365} value={policies.referrals.maxRewardDaysPerWindow} onChange={(event) => updateReferrals("maxRewardDaysPerWindow", Number(latinDigits(event.target.value)))} />
-                  <NumberSetting label={t("settingsDetails.text064")} unit={t("settingsDetails.unitDays")} min={7} max={365} value={policies.referrals.windowDays} onChange={(event) => updateReferrals("windowDays", Number(latinDigits(event.target.value)))} />
+                  <NumberSetting label={t("settingsDetails.text062")} unit={t("settingsDetails.unitDays")} min={1} max={90} value={policies.referrals.rewardDays} onValueChange={(value) => updateReferrals("rewardDays", value)} />
+                  <NumberSetting label={t("settingsDetails.text063")} unit={t("settingsDetails.unitDays")} min={1} max={365} value={policies.referrals.maxRewardDaysPerWindow} onValueChange={(value) => updateReferrals("maxRewardDaysPerWindow", value)} />
+                  <NumberSetting label={t("settingsDetails.text064")} unit={t("settingsDetails.unitDays")} min={7} max={365} value={policies.referrals.windowDays} onValueChange={(value) => updateReferrals("windowDays", value)} />
                 </FieldGrid>
               </Governed>
             </section>
@@ -389,22 +425,25 @@ export function OperationalRulesSection() {
               <SectionLead title={t("settingsDetails.text065")} description={t("settingsDetails.text066")} toggle={<HeaderToggle label={t("settingsDetails.text067")} checked={policies.memberFreezes.requestsEnabled} onCheckedChange={(value) => updateFreezes("requestsEnabled", value)} />} />
               <Governed enabled={policies.memberFreezes.requestsEnabled}>
                 <FieldGrid className="sm:grid-cols-2">
-                  <NumberSetting label={t("settingsDetails.text068")} unit={t("settingsDetails.unitFreezes")} min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} onChange={(event) => updateFreezes("freeFreezesPerWindow", Number(latinDigits(event.target.value)))} />
-                  <NumberSetting label={t("settingsDetails.text069")} unit={currency} min={0} max={1000} step={1 / 10 ** exponentFor(currency)} value={policies.memberFreezes.extraFreezeFeeMinor / 10 ** exponentFor(currency)} onChange={(event) => updateFreezes("extraFreezeFeeMinor", Math.round(Number(latinDigits(event.target.value)) * 10 ** exponentFor(currency)))} />
-                  <NumberSetting label={t("settingsDetails.text070")} unit={t("settingsDetails.unitDays")} min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} onChange={(event) => updateFreezes("maxDaysPerFreeze", Number(latinDigits(event.target.value)))} />
-                  <NumberSetting label={t("settingsDetails.text071")} unit={t("settingsDetails.unitDays")} min={30} max={730} value={policies.memberFreezes.windowDays} onChange={(event) => updateFreezes("windowDays", Number(latinDigits(event.target.value)))} />
+                  <NumberSetting label={t("settingsDetails.text068")} unit={t("settingsDetails.unitFreezes")} min={0} max={12} value={policies.memberFreezes.freeFreezesPerWindow} onValueChange={(value) => updateFreezes("freeFreezesPerWindow", value)} />
+                  <NumberSetting label={t("settingsDetails.text069")} unit={currency} min={0} max={1000} decimalPlaces={exponentFor(currency)} value={policies.memberFreezes.extraFreezeFeeMinor / 10 ** exponentFor(currency)} onValueChange={(value) => updateFreezes("extraFreezeFeeMinor", Math.round(value * 10 ** exponentFor(currency)))} />
+                  <NumberSetting label={t("settingsDetails.text070")} unit={t("settingsDetails.unitDays")} min={1} max={180} value={policies.memberFreezes.maxDaysPerFreeze} onValueChange={(value) => updateFreezes("maxDaysPerFreeze", value)} />
+                  <NumberSetting label={t("settingsDetails.text071")} unit={t("settingsDetails.unitDays")} min={30} max={730} value={policies.memberFreezes.windowDays} onValueChange={(value) => updateFreezes("windowDays", value)} />
                 </FieldGrid>
               </Governed>
             </section>
           </div>
         </SettingsPanel>
       </div>
+      </NumberSettingValidity.Provider>
       <SettingsSaveBar
-        dirty={dirty}
+        dirty={dirty || invalidNumbers.size > 0}
         saving={save.isPending}
+        saveDisabled={invalidNumbers.size > 0}
+        saveDisabledReason={invalidNumbers.size ? t("settingsDetails.invalidNumbers") : undefined}
         error={save.isError ? (isApiError(save.error) ? save.error.message : t("settingsDetails.text072")) : undefined}
         onSave={commit}
-        onDiscard={discard}
+        onDiscard={() => { discard(); setNumberDraftRevision((current) => current + 1); }}
         saveLabel={t("settingsDetails.text073")}
         guardTitle={t("settingsDetails.text074")}
       />

@@ -8,7 +8,7 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { getApi } from "@/lib/api/client";
 import { useLocale } from "@/lib/i18n/provider";
@@ -93,6 +93,10 @@ export function useApiMutation<TData, TVariables = void>(
   // would overwrite these wrappers and silently drop the toasts whenever a
   // caller passes both a successMessage and its own callback.
   const { locale, t } = useLocale();
+  // A pending write can outlive a UI language change. Its eventual error or
+  // refresh warning must use the current language without reissuing the write.
+  const presentation = useRef({ locale, t });
+  useEffect(() => { presentation.current = { locale, t }; }, [locale, t]);
   const { successMessage, onSuccess, onError, ...rest } = options ?? {};
   const mutation = useMutation<TData, Error, TVariables>({
     mutationFn: (variables) => fn(getApi(), variables),
@@ -112,11 +116,11 @@ export function useApiMutation<TData, TVariables = void>(
         await onSuccess?.(data, variables, onMutateResult, context);
       } catch (followUpError) {
         console.error("Mutation follow-up failed after the change was saved", followUpError);
-        toast.warning(t("apiErrors.savedRefresh"));
+        toast.warning(presentation.current.t("apiErrors.savedRefresh"));
       }
     },
     onError: async (error, variables, onMutateResult, context) => {
-      const presented = localizeApiError(error, locale);
+      const presented = localizeApiError(error, presentation.current.locale);
       toast.error(presented.message);
       await onError?.(presented, variables, onMutateResult, context);
     },
@@ -126,7 +130,7 @@ export function useApiMutation<TData, TVariables = void>(
   const execute = mutation.mutateAsync;
   const mutateAsync = useCallback<typeof execute>(async (variables, callOptions) => {
     try { return await execute(variables, callOptions); }
-    catch (error) { throw localizeApiError(error, locale); }
-  }, [execute, locale]);
+    catch (error) { throw localizeApiError(error, presentation.current.locale); }
+  }, [execute]);
   return { ...mutation, error: presentedError, mutateAsync };
 }

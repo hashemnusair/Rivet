@@ -5,7 +5,7 @@ import { paymentMethodLabel, roleLabel } from "@/lib/i18n/labels";
 import { useLocale, useT } from "@/lib/i18n/provider";
 
 import { Check, Pencil, Plus, UserPlus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApiError, isApiError, localizeApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
@@ -13,10 +13,11 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { PERMISSIONS } from "@/lib/domain/permissions";
 import type { Branch, NotificationSettings, PaymentMethod, RoleKey, StaffUser, Zone, ZoneKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
-import { money, parseMoneyInput, toMajorString } from "@/lib/utils/money";
+import { money, parseMoneyInput, toMajorString, toWesternDigits } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
 import { useFormat } from "@/lib/i18n/format";
 import { latinDigits } from "@/lib/utils/text";
+import { readSettingsNumber } from "./settings-number";
 import { RelativeText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -121,26 +122,32 @@ export function OrganizationSection() {
 
 export function BranchesSection() {
   const t = useT();
+  const f = useFormat();
   const BRANCHES_DESCRIPTION = t("settingsCore.text028");
 
   const invalidate = useInvalidate();
   const { refreshSession } = useApp();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const [dialog, setDialog] = useState<{ open: boolean; branch?: Branch }>({ open: false });
-  const [form, setForm] = useState({ name: "", code: "", address: "", phone: "", capacity: 100, status: "active" as "active" | "inactive" });
+  const [form, setForm] = useState({ name: "", code: "", address: "", phone: "", capacity: "100", status: "active" as "active" | "inactive" });
 
   useEffect(() => {
     if (dialog.open) {
       setForm(
         dialog.branch
-          ? { name: dialog.branch.name, code: dialog.branch.code, address: dialog.branch.address, phone: dialog.branch.phone, capacity: dialog.branch.capacity, status: dialog.branch.status }
-          : { name: "", code: "", address: "", phone: "", capacity: 100, status: "active" },
+          ? { name: dialog.branch.name, code: dialog.branch.code, address: dialog.branch.address, phone: dialog.branch.phone, capacity: String(dialog.branch.capacity), status: dialog.branch.status }
+          : { name: "", code: "", address: "", phone: "", capacity: "100", status: "active" },
       );
     }
   }, [dialog]);
 
+  const capacity = readSettingsNumber(form.capacity, { min: 1 });
+  const capacityError = capacity === null ? t("operationsWorkspace.integerMinimum", { min: 1 }) : undefined;
   const save = useApiMutation(
-    (api) => api.upsertBranch({ id: dialog.branch?.id, ...form, capacity: Number(form.capacity) }),
+    (api) => {
+      if (capacity === null) throw ApiError.of("VALIDATION_ERROR", "Check the highlighted fields and try again.", { message: { key: "apiErrors.validation" } });
+      return api.upsertBranch({ id: dialog.branch?.id, ...form, capacity });
+    },
     {
       onSuccess: async () => {
         toast.success(dialog.branch ? t("settingsCore.text029") : t("settingsCore.text030"));
@@ -175,7 +182,7 @@ export function BranchesSection() {
                     <StatusBadge status={b.status} />
                   </div>
                   <p className="mt-0.5 text-[12.5px] text-ink-2">{b.address || t("settingsCore.text036")}</p>
-                  <p className="mt-0.5 text-[12px] text-ink-3">{t("settingsCore.text037")}{" "}<span className="tabular">{b.capacity}</span>{b.phone ? <> · <span dir="ltr">{b.phone}</span></> : null}</p>
+                  <p className="mt-0.5 text-[12px] text-ink-3">{t("settingsCore.text037")}{" "}<span className="tabular">{f.number(b.capacity)}</span>{b.phone ? <> · <span dir="ltr">{b.phone}</span></> : null}</p>
                 </div>
                 <Button variant="secondary" size="sm" aria-label={t("settingsCore.editNamed", { name: b.name })} data-touch-target onClick={() => setDialog({ open: true, branch: b })}><Pencil />{" "}{t("common.action.edit")}</Button>
               </li>
@@ -198,7 +205,7 @@ export function BranchesSection() {
                   <TableCell className="font-medium">{b.name}</TableCell>
                   <TableCell className="font-mono text-[12px]">{b.code}</TableCell>
                   <TableCell className="max-w-64 truncate text-[12.5px] text-ink-2">{b.address}</TableCell>
-                  <TableCell className="text-end tabular">{b.capacity}</TableCell>
+                  <TableCell className="text-end tabular">{f.number(b.capacity)}</TableCell>
                   <TableCell><StatusBadge status={b.status} /></TableCell>
                   <TableCell className="text-end">
                     <Button variant="ghost" size="icon-sm" aria-label={t("settingsCore.editNamed", { name: b.name })} data-touch-target onClick={() => setDialog({ open: true, branch: b })}>
@@ -232,10 +239,10 @@ export function BranchesSection() {
             </Field>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Field label={t("common.label.phone")}>
-                <Input dir="ltr" type="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+                <Input dir="ltr" type="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: latinDigits(e.target.value) }))} />
               </Field>
-              <Field label={t("settingsCore.text037")}>
-                <Input type="number" min={1} inputMode="numeric" value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: Number(latinDigits(e.target.value)) }))} />
+              <Field label={t("settingsCore.text037")} error={capacityError}>
+                <Input type="text" dir="ltr" inputMode="numeric" aria-invalid={Boolean(capacityError) || undefined} value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: latinDigits(e.target.value) }))} />
               </Field>
               <Field label={t("common.label.status")}>
                 <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as "active" | "inactive" }))}>
@@ -252,7 +259,7 @@ export function BranchesSection() {
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDialog({ open: false })}>{t("common.action.cancel")}</Button>
-            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.name.trim() || !form.code.trim()}>
+            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.name.trim() || !form.code.trim() || capacity === null}>
               {dialog.branch ? t("settingsCore.text042") : t("settingsCore.text032")}
             </Button>
           </DialogFooter>
@@ -315,16 +322,21 @@ export function GymSpacesSection() {
     (api) => api.listZones({ branchId, includeArchived: true }),
     { enabled: Boolean(branchId) },
   );
+  const capacity = form.capacity.trim() === "" ? undefined : readSettingsNumber(form.capacity, { min: 1, max: 100_000 });
+  const capacityError = capacity === null ? t("operationsWorkspace.integerRange", { min: 1, max: 100_000 }) : undefined;
   const save = useApiMutation(
-    (api) => api.upsertZone({
+    (api) => {
+      if (capacity === null) throw ApiError.of("VALIDATION_ERROR", "Check the highlighted fields and try again.", { message: { key: "apiErrors.validation" } });
+      return api.upsertZone({
       id: dialog.space?.id,
       branchId,
       code: dialog.space?.code ?? newSpaceCode(),
       name: form.name.trim(),
       kind: form.kind,
-      capacity: form.capacity ? Number(form.capacity) : undefined,
+      capacity,
       status: form.status,
-    }),
+    });
+    },
     {
       onSuccess: async () => {
         toast.success(dialog.space ? t("settingsCore.text054") : t("settingsCore.text055"));
@@ -403,7 +415,7 @@ export function GymSpacesSection() {
                     <TableRow key={space.id}>
                       <TableCell className="font-medium">{space.name}</TableCell>
                       <TableCell className="text-[12.5px] text-ink-2">{SPACE_KIND_LABELS[space.kind]}</TableCell>
-                      <TableCell className="text-end tabular">{space.capacity?.toLocaleString() ?? "—"}</TableCell>
+                      <TableCell className="text-end tabular">{space.capacity === undefined ? "—" : f.number(space.capacity)}</TableCell>
                       <TableCell><StatusBadge status={space.status} /></TableCell>
                       <TableCell className="text-end"><Button variant="ghost" size="icon-sm" aria-label={t("settingsCore.editNamed", { name: space.name })} data-touch-target onClick={() => setDialog({ open: true, space })}><Pencil /></Button></TableCell>
                     </TableRow>
@@ -432,8 +444,8 @@ export function GymSpacesSection() {
                   <SelectContent>{Object.entries(SPACE_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label={t("settingsCore.text037")} hint={t("settingsCore.text071")}>
-                <Input type="number" min={1} max={100000} inputMode="numeric" value={form.capacity} onChange={(event) => setForm((current) => ({ ...current, capacity: event.target.value }))} />
+              <Field label={t("settingsCore.text037")} hint={t("settingsCore.text071")} error={capacityError}>
+                <Input type="text" dir="ltr" inputMode="numeric" aria-invalid={Boolean(capacityError) || undefined} value={form.capacity} onChange={(event) => setForm((current) => ({ ...current, capacity: latinDigits(event.target.value) }))} />
               </Field>
               {dialog.space ? (
                 <Field label={t("common.label.status")}>
@@ -447,7 +459,7 @@ export function GymSpacesSection() {
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDialog({ open: false })}>{t("common.action.cancel")}</Button>
-            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || (form.capacity !== "" && Number(form.capacity) < 1)}>{dialog.space ? t("common.action.saveChanges") : t("settingsCore.text057")}</Button>
+            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || capacity === null}>{dialog.space ? t("common.action.saveChanges") : t("settingsCore.text057")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -995,6 +1007,7 @@ export function PaymentsSection() {
 export function ReceiptsSection() {
   const RECEIPTS_DESCRIPTION_KEY = "settingsCore.text109";
   const t = useT();
+  const taxInputId = useId();
   const RECEIPTS_DESCRIPTION = t(RECEIPTS_DESCRIPTION_KEY);
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
@@ -1012,8 +1025,12 @@ export function ReceiptsSection() {
     setBaseline(next);
   }, [org]);
 
+  const tax = readSettingsNumber(form.taxRatePercent, { min: 0, max: 30, decimalPlaces: "any" });
   const save = useApiMutation(
-    (api) => api.updateOrganizationSettings({ receiptPrefix: form.receiptPrefix, receiptFooter: form.receiptFooter, taxRatePercent: Number(latinDigits(form.taxRatePercent)) }),
+    (api) => {
+      if (tax === null) throw ApiError.of("VALIDATION_ERROR", "Check the highlighted fields and try again.", { message: { key: "apiErrors.validation" } });
+      return api.updateOrganizationSettings({ receiptPrefix: form.receiptPrefix, receiptFooter: form.receiptFooter, taxRatePercent: tax });
+    },
     {
       onSuccess: async () => {
         toast.success(t("settingsCore.text110"));
@@ -1026,11 +1043,11 @@ export function ReceiptsSection() {
   if (settingsQuery.isError) return <SettingsSection title={t("settingsCore.text111")} description={RECEIPTS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const commit = async () => {
+    if (tax === null || !form.receiptPrefix.trim()) return;
     await save.mutateAsync();
     setBaseline(form);
   };
-  const tax = Number(latinDigits(form.taxRatePercent));
-  const taxInvalid = form.taxRatePercent.trim() === "" || !Number.isFinite(tax) || tax < 0 || tax > 30;
+  const taxInvalid = tax === null;
   const prefixInvalid = form.receiptPrefix.trim().length === 0;
   const saveDisabledReason = prefixInvalid ? t("settingsCore.text112") : taxInvalid ? t("settingsCore.text113") : undefined;
 
@@ -1041,8 +1058,8 @@ export function ReceiptsSection() {
           <Field label={t("settingsCore.text116")} required hint={t("settingsCore.text117")} error={prefixInvalid ? t("settingsCore.text112") : undefined}>
             <Input value={form.receiptPrefix} aria-invalid={prefixInvalid || undefined} onChange={(e) => setForm((f) => ({ ...f, receiptPrefix: e.target.value }))} className="w-32 font-mono" maxLength={6} />
           </Field>
-          <Field label={t("settingsCore.text118")} hint={t("settingsCore.text119")} error={taxInvalid ? t("settingsCore.text120") : undefined}>
-            <SettingsUnitInput unit="%" type="number" min={0} max={30} step={0.5} inputMode="decimal" className="w-32" aria-invalid={taxInvalid || undefined} value={form.taxRatePercent} onChange={(e) => setForm((f) => ({ ...f, taxRatePercent: e.target.value }))} />
+          <Field htmlFor={taxInputId} label={t("settingsCore.text118")} hint={t("settingsCore.text119")} error={taxInvalid ? t("settingsCore.text120") : undefined}>
+            <SettingsUnitInput id={taxInputId} aria-describedby={`${taxInputId}-${taxInvalid ? "error" : "hint"}`} unit="%" type="text" dir="ltr" aria-label={t("settingsCore.text118")} inputMode="decimal" className="w-32" aria-invalid={taxInvalid || undefined} value={form.taxRatePercent} onChange={(e) => setForm((f) => ({ ...f, taxRatePercent: toWesternDigits(e.target.value) }))} />
           </Field>
         </div>
         <Field label={t("settingsCore.text121")} hint={t("settingsCore.text122")} className="mt-4"><Textarea rows={2} value={form.receiptFooter} onChange={(e) => setForm((f) => ({ ...f, receiptFooter: e.target.value }))} /></Field>
