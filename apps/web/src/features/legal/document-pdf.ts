@@ -43,7 +43,7 @@ export function documentBlocksFromElement(root: HTMLElement): PdfBlock[] {
 
 /** Build the PDF from the document on the page and save it. */
 export function downloadDocumentPdf(options: DocumentPdfOptions & { version: string }, root: HTMLElement): void {
-  const bytes = renderDocumentPdf(options, documentBlocksFromElement(root));
+  const bytes = renderDocumentPdf({ ...options, locale: options.locale ?? (root.closest("[lang]")?.getAttribute("lang") === "ar" ? "ar" : "en") }, documentBlocksFromElement(root));
   const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -57,5 +57,5 @@ export function downloadDocumentPdf(options: DocumentPdfOptions & { version: str
 
 /** The same bytes as base64, for tests and for anything that mails them. */
 export function documentPdfBase64(options: DocumentPdfOptions, root: HTMLElement): string {
-  return encodeBase64(renderDocumentPdf(options, documentBlocksFromElement(root)));
+  return encodeBase64(renderDocumentPdf({ ...options, locale: options.locale ?? (root.closest("[lang]")?.getAttribute("lang") === "ar" ? "ar" : "en") }, documentBlocksFromElement(root)));
 }

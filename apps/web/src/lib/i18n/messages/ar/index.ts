@@ -1,3 +1,4 @@
+import { documents } from "./documents";
 import { reception } from "./reception";
 import { marketing } from "./marketing";
 import { crm } from "./crm";
@@ -13,11 +14,9 @@ import { palette } from "./palette";
 import { renewFlow } from "./renewFlow";
 import { shell } from "./shell";
 
-/**
- * Typed against the English catalogue, so a missing or extra key is a build
- * error. All wording follows docs/arabic/GLOSSARY.md: one Arabic term per concept.
- */
+/** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  documents,
   auth,
   common,
   reception,

@@ -67,9 +67,12 @@ describe("pdf writer", () => {
     }
   });
 
-  it("escapes PDF delimiters and replaces characters a standard font cannot draw", () => {
-    const body = text(renderPdf([{ type: "paragraph", text: "Forge (Amman) \\ نادي" }], { title: "t", author: "RIVET" }));
-    expect(body).toContain("(Forge \\(Amman\\) \\\\ ????) Tj");
+  it("preserves Arabic with Unicode mappings and original extraction text", () => {
+    const body = text(renderPdf([{ type: "paragraph", text: "Forge (Amman) نادي" }], { title: "t", author: "RIVET" }));
+    expect(body).toContain("/Subtype /Type0");
+    expect(body).toContain("/ToUnicode");
+    expect(body).toContain("/ActualText <FEFF");
+    expect(body).not.toContain("????");
   });
 
   it("breaks long documents into pages, numbers them, and keeps a group together", () => {

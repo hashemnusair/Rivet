@@ -1,0 +1,2 @@
+# Preserve the upstream OFL license byte-for-byte for its recorded source hash.
+apps/web/scripts/pdf-fonts/OFL-IBM-Plex-Sans-Arabic.txt -text whitespace=cr-at-eol,-blank-at-eol

@@ -29,4 +29,3 @@ export const ARABIC_ENABLED = arabicEnabledFor({
 export function resolveLocale(cookieValue: string | undefined, enabled: boolean = ARABIC_ENABLED): Locale {
   return enabled && isLocale(cookieValue) ? cookieValue : DEFAULT_LOCALE;
 }
-

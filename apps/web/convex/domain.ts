@@ -1,3 +1,4 @@
+import { searchKey } from "../src/lib/utils/text";
 import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -923,12 +924,12 @@ function normalize(value: string | undefined): string {
 
 function matchesSearch(values: unknown[], search?: string): boolean {
   if (!search?.trim()) return true;
-  const query = search.trim().toLowerCase();
+  const query = searchKey(search);
   const compact = query.replace(/[\s\-]/g, "");
   return values.some((value) => {
     if (typeof value !== "string") return false;
-    return value.toLowerCase().includes(query)
-      || value.replace(/[\s\-]/g, "").includes(compact)
+    return searchKey(value).includes(query)
+      || searchKey(value).replace(/[\s\-]/g, "").includes(compact)
       || phoneSearchMatches(value, query);
   });
 }
@@ -8939,7 +8940,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             recipientReference: publicUserId(billedRecipient.user),
             recipientEmail: billedRecipient.user.email,
             dedupeKey: `subscription-change-invoice:${invoiceId}`,
-            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user))] : undefined,
+            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user), { locale: billedRecipient.organization.defaultLanguage === "ar" ? "ar" : "en", timeZone: billedRecipient.organization.timezone })] : undefined,
           });
         }
       }
@@ -9288,7 +9289,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         recipientEmail: recipient.user.email,
         dedupeKey: `${operation}:${invoiceId}:${now}`,
         // The invoice travels with the notice, as the paperwork it is.
-        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user))],
+        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user), { locale: recipient.organization.defaultLanguage === "ar" ? "ar" : "en", timeZone: recipient.organization.timezone })],
       });
       if (recipient && operation === "platform.invoice.past_due") {
         await notifyOrganizationRoles(ctx, {

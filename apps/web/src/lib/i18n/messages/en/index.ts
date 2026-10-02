@@ -1,3 +1,4 @@
+import { documents } from "./documents";
 import { reception } from "./reception";
 import { marketing } from "./marketing";
 import { crm } from "./crm";
@@ -20,6 +21,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  documents,
   auth,
   common,
   reception,
