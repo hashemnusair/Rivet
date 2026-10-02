@@ -1,5 +1,7 @@
 /** Unicode shaping/encoding shared unchanged by the browser and Convex runtime. */
-import { create, type Font, type GlyphRun, type TypeFeatures } from "@pdf-lib/fontkit";
+// The browser ESM bundle exports the fontkit object as default; named create
+// exists only in its CommonJS build. Use the shared default in both runtimes.
+import fontkit, { type Font, type GlyphRun, type TypeFeatures } from "@pdf-lib/fontkit";
 import bidiFactory from "bidi-js";
 import { ARABIC_PDF_FONTS } from "./pdfArabicFonts";
 import type { PdfFont } from "./pdfDocument";
@@ -34,7 +36,7 @@ export function unicodeProgram(face: UnicodeFace): Uint8Array {
 
 export function unicodeFont(face: UnicodeFace): Font {
   let font = fonts.get(face);
-  if (!font) { font = create(unicodeProgram(face)); fonts.set(face, font); }
+  if (!font) { font = fontkit.create(unicodeProgram(face)); fonts.set(face, font); }
   return font;
 }
 
