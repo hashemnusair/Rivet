@@ -1,16 +1,16 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 
 import { Ban, Download, Eye, FileSignature, PenLine, Send } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
+import { localizeApiError } from "@/lib/api/errors";
 import type { PlatformAgreementSummary, ResendAgreementCopiesResult, SubscriptionAgreement } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { formatDateTime } from "@/lib/utils/dates";
 import { AGREEMENT_COPY_RECIPIENTS } from "../../../../convex/legalAgreementText";
 import { AgreementRecord } from "@/features/legal/agreement-record";
 import { SignaturePad, type SignatureValue } from "@/features/legal/signature-pad";
@@ -27,6 +27,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { EmptyState, QueryErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { isCalendarDate } from "@/lib/utils/dates";
 
 function newKey(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -38,6 +39,7 @@ function newKey(prefix: string) {
  */
 export function PlatformAgreements() {
   const t = useT();
+  const f = useFormat();
   const searchParams = useSearchParams();
   const requested = searchParams.get("agreement");
   const [selectedId, setSelectedId] = useState<string | null>(requested);
@@ -45,7 +47,7 @@ export function PlatformAgreements() {
 
   useEffect(() => { if (requested) setSelectedId(requested); }, [requested]);
 
-  if (list.isLoading) return <PlatformPage><div className="space-y-3" role="status" aria-label="Loading agreements"><Skeleton className="h-8 w-56" /><Skeleton className="h-64 w-full" /></div></PlatformPage>;
+  if (list.isLoading) return <PlatformPage><div className="space-y-3" role="status" aria-label={t("platformConsole.agreements.loading")}><Skeleton className="h-8 w-56" /><Skeleton className="h-64 w-full" /></div></PlatformPage>;
   if (list.isError || !list.data) return <PlatformPage><QueryErrorState error={list.error} onRetry={() => void list.refetch()} /></PlatformPage>;
   const rows = list.data;
   const awaiting = rows.filter((row) => row.status === "signed").length;
@@ -53,21 +55,21 @@ export function PlatformAgreements() {
   return (
     <PlatformPage className="space-y-5" data-testid="platform-agreements">
       <PageHeader
-        title="Subscription agreements"
-        description="Every agreement a gym owner has signed in RIVET. Countersign to complete one; the signatory’s ID number stays masked until you reveal it with a reason."
-        actions={<Badge variant={awaiting > 0 ? "warning" : "success"} dot>{awaiting > 0 ? `${awaiting} awaiting countersignature` : "All countersigned"}</Badge>}
+        title={t("platformConsole.agreements.title")}
+        description={t("platformConsole.agreements.description")}
+        actions={<Badge variant={awaiting > 0 ? "warning" : "success"} dot>{awaiting > 0 ? t("platformConsole.agreements.awaitingCount", { count: awaiting }) : t("platformConsole.agreements.allCountersigned")}</Badge>}
       />
 
-      {rows.length === 0 ? <EmptyState layout="page" icon={FileSignature} title="No agreements signed yet" description="When a gym owner signs during onboarding, the agreement appears here for countersigning." /> : (
+      {rows.length === 0 ? <EmptyState layout="page" icon={FileSignature} title={t("platformConsole.agreements.noAgreements")} description={t("platformConsole.agreements.emptyDescription")} /> : (
         <PlatformPanel className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>{t("shell.topbar.gym")}</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead>{t("renewFlow.adjust.planChange.rowPlan")}</TableHead>
-                <TableHead>{t("renewFlow.adjust.planChange.starts")}</TableHead>
-                <TableHead>Signed</TableHead>
+                <TableHead>{t("platformConsole.agreements.reference")}</TableHead>
+                <TableHead>{t("platformConsole.agreements.plan")}</TableHead>
+                <TableHead>{t("platformConsole.agreements.starts")}</TableHead>
+                <TableHead>{t("platformConsole.agreements.signed")}</TableHead>
                 <TableHead>{t("common.label.status")}</TableHead>
                 <TableHead className="text-end">{t("dashboard.today.action.open")}</TableHead>
               </TableRow>
@@ -76,12 +78,12 @@ export function PlatformAgreements() {
               {rows.map((row) => (
                 <TableRow key={row.id} data-testid="platform-agreement-row">
                   <TableCell><span className="font-medium">{row.organizationName}</span><span className="block text-[12.5px] text-ink-3">{row.signatoryName}</span></TableCell>
-                  <TableCell><span className="font-mono text-[12px]" dir="ltr">{row.reference}</span>{row.hashMatch ? null : <Badge variant="warning" className="ms-2">Fingerprint mismatch</Badge>}</TableCell>
-                  <TableCell>{row.plan}{row.termMonths ? ` · ${row.termMonths}m` : ""}</TableCell>
-                  <TableCell dir="ltr">{row.startDate}</TableCell>
-                  <TableCell>{formatDateTime(row.signedAt)}</TableCell>
-                  <TableCell><Badge variant={row.status === "void" ? "neutral" : row.status === "countersigned" ? "success" : "warning"} dot>{row.status === "void" ? "Void" : row.status === "countersigned" ? "Countersigned" : "Awaiting RIVET"}</Badge></TableCell>
-                  <TableCell className="text-end"><Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)} aria-label={`Open agreement ${row.reference}`}><Eye />{" "}{t("dashboard.today.action.open")}</Button></TableCell>
+                  <TableCell><span className="font-mono text-[12px]" dir="ltr">{row.reference}</span>{row.hashMatch ? null : <Badge variant="warning" className="ms-2">{t("platformConsole.agreements.fingerprintMismatch")}</Badge>}</TableCell>
+                  <TableCell dir="auto">{row.plan}{row.termMonths ? ` · ${t("platformConsole.agreements.months", { count: row.termMonths })}` : ""}</TableCell>
+                  <TableCell dir="auto">{isCalendarDate(row.startDate) ? f.date(row.startDate) : row.startDate || "—"}</TableCell>
+                  <TableCell>{f.dateTime(row.signedAt)}</TableCell>
+                  <TableCell><Badge variant={row.status === "void" ? "neutral" : row.status === "countersigned" ? "success" : "warning"} dot>{row.status === "void" ? t("platformConsole.agreements.statusVoid") : row.status === "countersigned" ? t("platformConsole.agreements.countersigned") : t("platformConsole.agreements.awaitingRivet")}</Badge></TableCell>
+                  <TableCell className="text-end"><Button size="sm" variant="secondary" onClick={() => setSelectedId(row.id)} aria-label={t("platformConsole.agreements.openAgreement", { reference: row.reference })}><Eye />{" "}{t("dashboard.today.action.open")}</Button></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -96,10 +98,12 @@ export function PlatformAgreements() {
 
 function AgreementDialog({ agreementId, summary, onClose }: { agreementId: string; summary?: PlatformAgreementSummary; onClose: () => void }) {
   const t = useT();
+  const f = useFormat();
+  const { locale, isolate, isolateLtr } = useLocale();
   const { session } = useApp();
   const invalidate = useInvalidate();
   const detail = useApiQuery(qk.platformAgreement(agreementId), (api) => api.getPlatformAgreement(agreementId));
-  const [title, setTitle] = useState("Co-founder");
+  const [title, setTitle] = useState(() => t("platformConsole.agreements.defaultRivetRole"));
   const [typedName, setTypedName] = useState(session?.user.name ?? "");
   const [revealReason, setRevealReason] = useState("");
   const [revealedId, setRevealedId] = useState<string>();
@@ -123,12 +127,12 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
     replace: replacing,
     idempotencyKey: countersignKey,
   }), {
-    onSuccess: async () => { toast.success("Agreement countersigned. The signatory will receive the completed copy."); setReplacing(false); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
-    onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not countersign."),
+    onSuccess: async () => { toast.success(t("platformConsole.agreements.countersignedToast")); setReplacing(false); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
+    onError: (failure) => setError(localizeApiError(failure, locale).message || t("platformConsole.agreements.couldNotCountersign")),
   });
   const voidAgreement = useApiMutation((api) => api.voidPlatformAgreement({ agreementId, reason: voidReason.trim() }), {
-    onSuccess: async () => { toast.success("Agreement voided. The owner will be asked to sign again."); setVoiding(false); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
-    onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not void the agreement."),
+    onSuccess: async () => { toast.success(t("platformConsole.agreements.voidedToast")); setVoiding(false); await invalidate([qk.platformAgreements, qk.platformAgreement(agreementId)]); },
+    onError: (failure) => setError(localizeApiError(failure, locale).message || t("platformConsole.agreements.couldNotVoid")),
   });
   const attachPrint = useApiMutation((api, input: { target: "signatory" | "countersign"; printImageDataUrl: string }) => api.attachAgreementPrintSignature({ agreementId, ...input }), {
     onSuccess: async () => { await invalidate([qk.platformAgreement(agreementId)]); },
@@ -141,14 +145,14 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
       setResent(result);
       setResendKey(newKey("resend"));
       const sent = result.deliveries.filter((delivery) => delivery.status === "queued").length;
-      if (sent > 0) toast.success(`Queued ${sent} ${sent === 1 ? "copy" : "copies"}. Delivery follows within a minute.`);
-      else toast.error("Nothing was sent. Every copy was suppressed; the reason is shown below.");
+      if (sent > 0) toast.success(t("platformConsole.agreements.copiesQueued", { count: sent }));
+      else toast.error(t("platformConsole.agreements.copiesSuppressed"));
     },
-    onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not re-send the copies."),
+    onError: (failure) => setError(localizeApiError(failure, locale).message || t("platformConsole.agreements.couldNotResend")),
   });
   const reveal = useApiMutation((api) => api.revealPlatformAgreementId({ agreementId, reason: revealReason.trim() }), {
     onSuccess: async (result) => { setRevealedId(result.idNumber); await invalidate([qk.platformAgreement(agreementId)]); },
-    onError: (failure) => setError(isApiError(failure) ? failure.message : "Could not reveal the ID number."),
+    onError: (failure) => setError(localizeApiError(failure, locale).message || t("platformConsole.agreements.couldNotReveal")),
   });
 
   const agreement: SubscriptionAgreement | undefined = detail.data;
@@ -178,8 +182,8 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{summary ? `${summary.organizationName} · ${summary.reference}` : "Subscription agreement"}</DialogTitle>
-          <DialogDescription>Countersigning completes the agreement and emails the signatory. Revealing the ID number is audited with your name and reason.</DialogDescription>
+          <DialogTitle dir="auto">{summary ? `${summary.organizationName} · ${summary.reference}` : t("platformConsole.agreements.dialogTitle")}</DialogTitle>
+          <DialogDescription>{t("platformConsole.agreements.dialogDescription")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="max-h-[70vh] space-y-4 overflow-y-auto">
           {detail.isLoading ? <Skeleton className="h-64 w-full" /> : detail.isError || !agreement ? <QueryErrorState error={detail.error} onRetry={() => void detail.refetch()} /> : (
@@ -187,65 +191,65 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
               <AgreementRecord agreement={agreement} idNumberOverride={revealedId} />
               <div className="grid gap-4 md:grid-cols-2">
                 <section className="panel space-y-3 p-4">
-                  <p className="context-label">Reveal ID number</p>
-                  <p className="text-[12px] text-ink-3">Revealed {agreement.idRevealCount} {agreement.idRevealCount === 1 ? "time" : "times"} so far. Each reveal is written to the platform audit trail.</p>
-                  <Field label={t("common.label.reason")} required><Textarea rows={2} value={revealReason} onChange={(event) => setRevealReason(event.target.value)} placeholder="Verifying the signatory before countersigning" data-testid="reveal-reason" /></Field>
-                  <Button variant="secondary" size="sm" disabled={revealReason.trim().length < 3} loading={reveal.isPending} onClick={() => reveal.mutate()} data-testid="reveal-id"><Eye /> Reveal ID number</Button>
+                  <p className="context-label">{t("platformConsole.agreements.revealId")}</p>
+                  <p className="text-[12px] text-ink-3">{t("platformConsole.agreements.revealCount", { count: agreement.idRevealCount })}</p>
+                  <Field label={t("common.label.reason")} required><Textarea rows={2} value={revealReason} onChange={(event) => setRevealReason(event.target.value)} placeholder={t("platformConsole.agreements.verifyingSignatory")} data-testid="reveal-reason" dir="auto" /></Field>
+                  <Button variant="secondary" size="sm" disabled={revealReason.trim().length < 3} loading={reveal.isPending} onClick={() => reveal.mutate()} data-testid="reveal-id"><Eye /> {t("platformConsole.agreements.revealId")}</Button>
                 </section>
                 <section className="panel space-y-3 p-4">
-                  <p className="context-label">Countersign for RIVET</p>
+                  <p className="context-label">{t("platformConsole.agreements.countersignForRivet")}</p>
                   {agreement.status === "countersigned" && !replacing ? (
                     <>
-                      <p className="text-[12.5px] text-ink-2">Countersigned by {agreement.countersign?.byName} ({agreement.countersign?.title}) on {agreement.countersign ? formatDateTime(agreement.countersign.at) : ""}{t("members.bulk.toast.end")}</p>
-                      <Button size="xs" variant="secondary" onClick={() => setReplacing(true)} data-testid="replace-countersignature"><PenLine /> Replace RIVET&apos;s signature</Button>
+                      <p className="text-[12.5px] text-ink-2" dir="auto">{t("platformConsole.agreements.countersignedBy", { name: isolate(agreement.countersign?.byName ?? ""), title: isolate(agreement.countersign?.title ?? ""), date: agreement.countersign ? f.dateTime(agreement.countersign.at) : "" })}</p>
+                      <Button size="xs" variant="secondary" onClick={() => setReplacing(true)} data-testid="replace-countersignature"><PenLine /> {t("platformConsole.agreements.replaceRivetSignature")}</Button>
                     </>
                   ) : (
                     <>
-                      {!agreement.hashMatch ? <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12px] text-warning-deep">The signer’s browser produced a different document fingerprint from RIVET’s copy. Review before countersigning.</p> : null}
-                      {replacing ? <p className="text-[12px] text-ink-3">The new signature replaces the one on the record. The signatory receives a fresh completed copy, and the change is audited.</p> : null}
-                      <Field label="Your role at RIVET" required><Input value={title} onChange={(event) => setTitle(event.target.value)} /></Field>
-                      <Field label="Type your full name to confirm" required hint="Must match your RIVET account name exactly."><Input value={typedName} onChange={(event) => setTypedName(event.target.value)} data-testid="countersign-name" /></Field>
-                      <Field label="Sign for RIVET" required><SignaturePad value={countersignature} onChange={setCountersignature} signatoryName={typedName} /></Field>
-                      <Button size="sm" disabled={title.trim().length < 2 || typedName.trim().length < 2 || !countersignatureReady} loading={countersign.isPending} onClick={() => countersign.mutate()} data-testid="countersign"><PenLine /> {replacing ? "Replace the signature" : "Countersign"}</Button>
+                      {!agreement.hashMatch ? <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12px] text-warning-deep">{t("platformConsole.agreements.signerFingerprintMismatch")}</p> : null}
+                      {replacing ? <p className="text-[12px] text-ink-3">{t("platformConsole.agreements.replacementNotice")}</p> : null}
+                      <Field label={t("platformConsole.agreements.roleAtRivet")} required><Input value={title} onChange={(event) => setTitle(event.target.value)} dir="auto" /></Field>
+                      <Field label={t("platformConsole.agreements.typeFullName")} required hint={t("platformConsole.agreements.accountNameMatch")}><Input value={typedName} onChange={(event) => setTypedName(event.target.value)} data-testid="countersign-name" dir="auto" /></Field>
+                      <Field label={t("platformConsole.agreements.signForRivet")} required><SignaturePad value={countersignature} onChange={setCountersignature} signatoryName={typedName} /></Field>
+                      <Button size="sm" disabled={title.trim().length < 2 || typedName.trim().length < 2 || !countersignatureReady} loading={countersign.isPending} onClick={() => countersign.mutate()} data-testid="countersign"><PenLine /> {replacing ? t("platformConsole.agreements.replaceSignature") : t("platformConsole.agreements.countersign")}</Button>
                       {replacing ? <Button size="xs" variant="ghost" onClick={() => setReplacing(false)}>{t("common.action.cancel")}</Button> : null}
                     </>
                   )}
                 </section>
               </div>
               <section className="panel space-y-3 p-4" data-testid="agreement-copies">
-                <p className="context-label">Send the copies again</p>
-                <p className="text-[12px] text-ink-3">RIVET always receives a copy at {AGREEMENT_COPY_RECIPIENTS.join(" and ")}, with the agreement attached as a PDF. Use this when the first copies were suppressed, or after the record changed.</p>
+                <p className="context-label">{t("platformConsole.agreements.sendCopiesAgain")}</p>
+                <p className="text-[12px] text-ink-3">{t("platformConsole.agreements.rivetAlwaysGetsCopy", { recipients: isolateLtr(AGREEMENT_COPY_RECIPIENTS.join(", ")) })}</p>
                 <label className="flex cursor-pointer items-start gap-3 text-[12.5px] text-ink-2">
-                  <Checkbox checked={includeSigner} onCheckedChange={(checked) => setIncludeSigner(checked === true)} aria-label="Also send to the signatory" className="mt-0.5" />
-                  <span>Also send to the signatory, <span dir="ltr">{agreement.signatory.email}</span></span>
+                  <Checkbox checked={includeSigner} onCheckedChange={(checked) => setIncludeSigner(checked === true)} aria-label={t("platformConsole.agreements.alsoSendToSigner")} className="mt-0.5" />
+                  <span>{t("platformConsole.agreements.alsoSendToSigner")} <span dir="ltr">{agreement.signatory.email}</span></span>
                 </label>
-                <Button size="sm" variant="secondary" loading={resend.isPending} onClick={() => { setError(null); resend.mutate(); }} data-testid="resend-copies"><Send /> Send the copies</Button>
+                <Button size="sm" variant="secondary" loading={resend.isPending} onClick={() => { setError(null); resend.mutate(); }} data-testid="resend-copies"><Send /> {t("platformConsole.agreements.sendCopies")}</Button>
                 {resent ? (
                   <ul className="space-y-1 text-[12px]" data-testid="resend-result">
                     {resent.deliveries.map((delivery) => (
                       <li key={delivery.recipient} className={delivery.status === "queued" ? "text-ink-2" : "text-warning-deep"}>
-                        <span dir="ltr">{delivery.recipient}</span>: {delivery.status === "queued" ? "queued for delivery" : `not sent, ${delivery.reason ?? "suppressed"}`}
+                        <span dir="ltr">{delivery.recipient}</span>: <span dir="auto">{delivery.status === "queued" ? t("platformConsole.agreements.queuedForDelivery") : t("platformConsole.agreements.notSentReason", { reason: delivery.reason ?? t("platformConsole.emailLog.suppressed") })}</span>
                       </li>
                     ))}
                   </ul>
                 ) : null}
               </section>
               {agreement.status === "void" ? (
-                <p className="rounded-md border border-line bg-sunken/40 px-3 py-2 text-[12.5px] text-ink-2" data-testid="agreement-void-notice">Voided{agreement.voidedAt ? ` on ${formatDateTime(agreement.voidedAt)}` : ""}{agreement.voidReason ? `: ${agreement.voidReason}` : ""}. The owner is asked to sign a new agreement the next time they open RIVET.</p>
+                <p className="rounded-md border border-line bg-sunken/40 px-3 py-2 text-[12.5px] text-ink-2" data-testid="agreement-void-notice" dir="auto">{t("platformConsole.agreements.voidNotice", { date: agreement.voidedAt ? ` ${f.dateTime(agreement.voidedAt)}` : "", reason: agreement.voidReason ? `: ${isolate(agreement.voidReason)}` : "" })}</p>
               ) : (
                 <section className="panel space-y-3 p-4" data-testid="agreement-void">
-                  <p className="context-label">Retire this agreement</p>
-                  <p className="text-[12px] text-ink-3">Voiding keeps the record as evidence, marks it void with your reason, and asks the owner to sign again through the current agreement. Use it when the signed details are wrong or the agreement was signed under an older text.</p>
+                  <p className="context-label">{t("platformConsole.agreements.retireAgreement")}</p>
+                  <p className="text-[12px] text-ink-3">{t("platformConsole.agreements.voidExplanation")}</p>
                   {voiding ? (
                     <>
-                      <Field label={t("common.label.reason")} required><Textarea rows={2} value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder="Signed under version 1.0 before the short form; re-signing on 1.1" data-testid="void-reason" /></Field>
+                      <Field label={t("common.label.reason")} required><Textarea rows={2} value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder={t("platformConsole.agreements.voidReasonPlaceholder")} data-testid="void-reason" dir="auto" /></Field>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="danger" disabled={voidReason.trim().length < 3} loading={voidAgreement.isPending} onClick={() => { setError(null); voidAgreement.mutate(); }} data-testid="void-confirm"><Ban /> Void and ask the owner to sign again</Button>
+                        <Button size="sm" variant="danger" disabled={voidReason.trim().length < 3} loading={voidAgreement.isPending} onClick={() => { setError(null); voidAgreement.mutate(); }} data-testid="void-confirm"><Ban /> {t("platformConsole.agreements.voidAndResign")}</Button>
                         <Button size="sm" variant="ghost" onClick={() => setVoiding(false)}>{t("common.action.cancel")}</Button>
                       </div>
                     </>
                   ) : (
-                    <Button size="sm" variant="secondary" onClick={() => setVoiding(true)} data-testid="void-agreement"><Ban /> Void this agreement</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setVoiding(true)} data-testid="void-agreement"><Ban /> {t("platformConsole.agreements.voidThis")}</Button>
                   )}
                 </section>
               )}
@@ -254,7 +258,7 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
           )}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" disabled={!agreement} onClick={() => { if (agreement) downloadAgreementPdf(agreement); }} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>
+          <Button variant="secondary" disabled={!agreement} onClick={() => { if (agreement) downloadAgreementPdf(agreement); }} data-testid="download-agreement-pdf"><Download /> {t("platformConsole.agreements.downloadPdf")}</Button>
           <Button variant="secondary" onClick={onClose}>{t("common.action.close")}</Button>
         </DialogFooter>
       </DialogContent>

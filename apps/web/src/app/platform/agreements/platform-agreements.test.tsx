@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
+import type { Locale } from "@/lib/i18n/locale";
 import { PlatformAgreements } from "./platform-agreements.client";
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
@@ -11,7 +14,14 @@ vi.mock("next/navigation", () => ({ useRouter: () => routerMock, usePathname: ()
 HTMLElement.prototype.scrollIntoView = vi.fn();
 HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
 
-afterEach(() => { params = new URLSearchParams(); resetApiForTests(); });
+let setTestLocale: ((locale: Locale) => void) | undefined;
+function LocaleSwitch() {
+  const { setLocale } = useLocale();
+  useEffect(() => { setTestLocale = setLocale; return () => { setTestLocale = undefined; }; }, [setLocale]);
+  return null;
+}
+
+afterEach(() => { params = new URLSearchParams(); setTestLocale = undefined; resetApiForTests(); });
 
 describe("platform agreements console", () => {
   it("lists signed agreements and opens one from a deep link", async () => {
@@ -26,7 +36,7 @@ describe("platform agreements console", () => {
 
   it("reveals the ID with a reason and countersigns a newly signed agreement", async () => {
     const user = userEvent.setup();
-    const { api } = await renderWithApp(<PlatformAgreements />, { role: "owner", prepare: async (api) => {
+    const { api } = await renderWithApp(<LocaleProvider initialLocale="en"><><LocaleSwitch /><PlatformAgreements /></></LocaleProvider>, { role: "owner", prepare: async (api) => {
       api.setBehavior({ agreementUnsigned: true });
       const { canonicalAgreementText, sha256Hex } = await import("../../../../convex/legalAgreementText");
       await api.signSubscriptionAgreement({
@@ -56,13 +66,31 @@ describe("platform agreements console", () => {
     const nameInput = within(dialog).getByTestId("countersign-name");
     await user.clear(nameInput);
     await user.type(nameInput, actorName);
+    await user.click(within(dialog).getByRole("radio", { name: "Type my name" }));
+    const signatureInput = within(dialog).getByLabelText("Type your full name as your signature");
+    await user.type(signatureInput, actorName);
+    const recordBeforeSwitch = within(dialog).getByTestId("agreement-record").textContent;
+    act(() => setTestLocale?.("ar"));
+    expect(within(dialog).getByTestId("countersign-name")).toHaveValue(actorName);
+    expect(within(dialog).getByLabelText("يرجى كتابة اسمك الكامل كتوقيع")).toHaveValue(actorName);
+    expect(within(dialog).getByTestId("reveal-reason")).toHaveValue("Verifying before countersigning");
+    expect(within(dialog).getByTestId("agreement-record").textContent).toBe(recordBeforeSwitch);
+    act(() => setTestLocale?.("en"));
     // RIVET signs its own side. A canvas cannot be drawn on in jsdom, so the
     // test adopts the typed name, which the server checks against the account.
-    expect(within(dialog).getByTestId("countersign")).toBeDisabled();
-    await user.click(within(dialog).getByRole("radio", { name: "Type my name" }));
-    await user.type(within(dialog).getByLabelText("Type your full name as your signature"), actorName);
+    const attemptKeys: string[] = [];
+    const countersignAgreement = api.countersignPlatformAgreement.bind(api);
+    vi.spyOn(api, "countersignPlatformAgreement")
+      .mockImplementationOnce(async (input) => { attemptKeys.push(input.idempotencyKey); throw new Error("Temporary network failure"); })
+      .mockImplementation(async (input) => { attemptKeys.push(input.idempotencyKey); return countersignAgreement(input); });
+    await user.click(within(dialog).getByTestId("countersign"));
+    await within(dialog).findByRole("alert");
+    expect(within(dialog).getByTestId("countersign-name")).toHaveValue(actorName);
+    expect(within(dialog).getByLabelText("Type your full name as your signature")).toHaveValue(actorName);
     await user.click(within(dialog).getByTestId("countersign"));
     await waitFor(() => expect(within(dialog).getByText(new RegExp(`Countersigned by ${actorName}`))).toBeInTheDocument());
+    expect(attemptKeys).toHaveLength(2);
+    expect(attemptKeys[0]).toBe(attemptKeys[1]);
 
     // Copies can be sent again, and the console says plainly what happened to
     // each one rather than implying delivery.

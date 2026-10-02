@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformSnapshot, PlatformSupportCase } from "@/lib/api/GymOSApi";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import SupportPage from "./page";
 
 const state = {
@@ -70,6 +72,11 @@ function snapshot(supportCases: PlatformSupportCase[]): PlatformSnapshot {
   };
 }
 
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button type="button" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>Use {locale === "en" ? "Arabic" : "English"}</button>;
+}
+
 describe("SupportPage", () => {
   beforeEach(() => {
     state.snapshot = snapshot([supportCase(), supportCase({ id: "SUP-2", subject: "Owner access request", priority: "normal" })]);
@@ -84,5 +91,22 @@ describe("SupportPage", () => {
     window.history.replaceState({}, "", "/platform/support?case=SUP-2");
     view.rerender(<SupportPage />);
     expect(screen.getByRole("heading", { name: "Owner access request" })).toBeInTheDocument();
+  });
+
+  it("keeps a reply draft while preserving authored support history across locale changes", async () => {
+    const user = userEvent.setup();
+    const history = "We checked the July invoice retry and will send an update.";
+    state.snapshot = snapshot([supportCase({ messages: [{ id: "MSG-1", caseId: "SUP-1", authorType: "gym", authorId: "owner-1", authorName: "Northline owner", body: history, createdAt: "2026-08-20T08:00:00.000Z" }] })]);
+
+    render(<LocaleProvider initialLocale="en"><><LocaleSwitch /><SupportPage /></></LocaleProvider>);
+    await screen.findByRole("heading", { name: "Payment retry failed" });
+    const draft = "سنراجع محاولة التحصيل ونوافيكم بالتحديث.";
+    await user.type(screen.getByRole("textbox", { name: "Support reply" }), draft);
+    expect(screen.getByText(history)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Use Arabic" }));
+    expect(await screen.findByRole("textbox", { name: "الرد على طلب الدعم" })).toHaveValue(draft);
+    expect(screen.getByText(history)).toBeInTheDocument();
+    expect(screen.getAllByText("مفتوح").length).toBeGreaterThan(0);
   });
 });

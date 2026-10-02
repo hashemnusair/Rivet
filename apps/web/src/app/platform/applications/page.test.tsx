@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GymProvisioningResult, PlatformGymApplication } from "@/lib/api/GymOSApi";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import PlatformApplicationsPage from "./page";
 
 const state = vi.hoisted(() => ({
@@ -61,6 +62,11 @@ function provisioningResult(input: PlatformGymApplication): GymProvisioningResul
     clerkOrganizationId: `clerk-org-${input.id}`,
     clerkInvitationId: `clerk-inv-${input.id}`,
   };
+}
+
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button type="button" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>Use {locale === "en" ? "Arabic" : "English"}</button>;
 }
 
 describe("PlatformApplicationsPage", () => {
@@ -163,6 +169,34 @@ describe("PlatformApplicationsPage", () => {
     await user.click(screen.getByRole("button", { name: "Provision gym workspace" }));
     await waitFor(() => expect(screen.getByText("Workspace provisioned", { selector: "strong" })).toBeInTheDocument());
     expect(state.provision).toHaveBeenCalledWith({ applicationId: pending.id });
+  });
+
+  it("keeps an Arabic rejection draft across a locale switch and retry", async () => {
+    const user = userEvent.setup();
+    const pending = application();
+    const note = "تكرار في الطلب؛ جرى التحقق من بيانات النادي";
+    state.rows = [pending];
+    state.review
+      .mockRejectedValueOnce(new Error("Temporary network failure"))
+      .mockResolvedValueOnce(application({ status: "rejected", reviewNotes: note, reviewNotificationStatus: "not_configured" }));
+
+    render(<LocaleProvider initialLocale="en"><><LocaleSwitch /><PlatformApplicationsPage /></></LocaleProvider>);
+    await screen.findByRole("heading", { name: "Northline Strength" });
+    const notes = screen.getByRole("textbox", { name: "Review notes" });
+    await user.type(notes, note);
+    await user.click(screen.getByRole("button", { name: "Use Arabic" }));
+
+    const arabicNotes = screen.getByRole("textbox", { name: "ملاحظات المراجعة" });
+    expect(arabicNotes).toHaveValue(note);
+    expect(screen.getAllByText("بانتظار المراجعة").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "رفض الطلب" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("textbox", { name: "ملاحظات المراجعة" })).toHaveValue(note);
+
+    await user.click(screen.getByRole("button", { name: "رفض الطلب" }));
+    await waitFor(() => expect(screen.getByText("تم رفض الطلب", { selector: "strong" })).toBeInTheDocument());
+    expect(state.review).toHaveBeenNthCalledWith(2, { applicationId: pending.id, decision: "rejected", note });
+    expect(screen.getByText(note)).toBeInTheDocument();
   });
 
   it("lets an operator refresh an in-progress provisioning state to a terminal result", async () => {
