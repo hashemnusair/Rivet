@@ -1,3 +1,4 @@
+import { searchKey } from "../src/lib/utils/text";
 import { formatMinorUnits } from "../src/lib/exports/csv";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -414,7 +415,8 @@ async function resolveFilters(ctx: ReadContext, actor: ActorContext, input: Data
   if (requestedSupplier && !supplier) domainError("NOT_FOUND", "Supplier not found.", { correlationId: actor.correlationId });
   const requestedStatus = optionalText(input.status) ?? "open";
   if (requestedStatus !== "open" && requestedStatus !== "all" && !PAYABLE_STATUSES.includes(requestedStatus as PayableStatus)) domainError("VALIDATION_ERROR", "Payable status filter is invalid.", { correlationId: actor.correlationId });
-  const search = optionalText(input.search)?.toLowerCase();
+  const rawSearch = optionalText(input.search);
+  const search = rawSearch ? searchKey(rawSearch) : undefined;
   if (search && search.length > 120) domainError("VALIDATION_ERROR", "Search text is too long.", { correlationId: actor.correlationId });
   return { branch, supplier: supplier ?? undefined, status: requestedStatus as PayableFilters["status"], search };
 }
@@ -423,7 +425,7 @@ function matchesFilters(payable: PayableProjection, filters: PayableFilters): bo
   if (filters.supplier && payable.supplierId !== filters.supplier._id) return false;
   if (filters.status === "open" ? payable.status !== "unpaid" && payable.status !== "partially_paid" : filters.status !== "all" && payable.status !== filters.status) return false;
   if (filters.search) {
-    const haystack = `${payable.supplierName} ${payable.sourceId} ${payable.sourceLabel} ${payable.externalReference ?? ""} ${payable.branchName}`.toLowerCase();
+    const haystack = searchKey(`${payable.supplierName} ${payable.sourceId} ${payable.sourceLabel} ${payable.externalReference ?? ""} ${payable.branchName}`);
     if (!haystack.includes(filters.search)) return false;
   }
   return true;

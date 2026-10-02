@@ -1,22 +1,12 @@
 import type { FinancialPostingStatus } from "@/lib/domain/types";
 import { Badge } from "@/components/ui/badge";
+import { useT } from "@/lib/i18n/provider";
+import { ledgerStatusLabel } from "@/lib/i18n/payables";
+export { ledgerStatusLabel } from "@/lib/i18n/payables";
 
-/**
- * "Recorded" and "posted" are two different facts. A payment is recorded the
- * moment staff save it; it reaches the management ledger only when the
- * accounting queue posts it. The badge never blurs the two.
- */
-export function ledgerStatusLabel(status: FinancialPostingStatus | undefined): string {
-  switch (status) {
-    case "posted": return "In the accounts";
-    case "reversed": return "Taken out of the accounts";
-    case "pending": return "Waiting to go into the accounts";
-    case "failed": return "Could not go into the accounts";
-    default: return "Not in the accounts yet";
-  }
-}
-
+/** Recording a payment and posting it to the accounts are separate facts. */
 export function LedgerStatusBadge({ status, className }: { status: FinancialPostingStatus | undefined; className?: string }) {
+  const t = useT();
   const variant = status === "posted" ? "success" : status === "reversed" || status === "failed" ? "danger" : status === "pending" ? "warning" : "outline";
-  return <Badge variant={variant} dot className={className}>{ledgerStatusLabel(status)}</Badge>;
+  return <Badge variant={variant} dot className={className}>{ledgerStatusLabel(status, t)}</Badge>;
 }

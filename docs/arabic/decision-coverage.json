@@ -4093,28 +4093,36 @@
     },
     {
       "id": "supplier-payment",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "payablesWorkspace.recordSupplierPayment"
+      ],
+      "rules": [
+        "apps/web/src/features/operations/payables/payables-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/operations/payables/record-supplier-payment-dialog.tsx",
           "line": 131
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "reverse-supplier",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "payablesWorkspace.reverseSupplierPayment"
+      ],
+      "rules": [
+        "apps/web/src/features/operations/payables/payables-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/operations/payables/supplier-payment-history-dialog.tsx",
           "line": 41
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {

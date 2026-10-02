@@ -43,3 +43,25 @@ describe("payables exports", () => {
     expect(csv).not.toContain("receipt");
   });
 });
+
+it("exports Arabic human labels and dates while preserving original names, references, and decimal amounts", () => {
+  const copy = structuredClone(exported);
+  copy.rows[0]!.supplierName = "=شركة أحمد, Supplier";
+  copy.rows[0]!.sourceLabel = "Purchase order · مُكمّل A × 100";
+  const before = structuredClone(copy);
+  const csv = buildPayablesCsv(copy, { locale: "ar", timeZone: "Asia/Amman", branchLabel: "عبدون", supplierLabel: "جميع المورّدين", statusLabel: "غير مدفوعة بالكامل" });
+  expect(csv.startsWith("\uFEFF")).toBe(true);
+  expect(csv).toContain("فواتير المورّدين");
+  expect(csv).toContain("طلب شراء · مُكمّل A × 100");
+  expect(csv).toContain("12 آب 2026 · 12:00 م");
+  expect(csv).toContain("1650.000,650.000,1000.000,مدفوعة جزئيًا,JSS-INV-0147,لم تُرحّل إلى الحسابات بعد");
+  expect(csv).toContain('"\'=شركة أحمد, Supplier"');
+  expect(csv).not.toContain("Supplier bills");
+  expect(copy).toEqual(before);
+  const payment = buildSupplierPaymentRecordCsv({ ...detail, notes: "اتفاق ٠٠٧ original" }, "Asia/Amman", "ar");
+  expect(payment).toContain("تأكيد دفعة المورّد");
+  expect(payment).toContain("المبلغ,1000.000 JOD");
+  expect(payment).toContain("الرقم المرجعي,TRF-2026-0091");
+  expect(payment).toContain("ملاحظات,اتفاق ٠٠٧ original");
+  expect(payment).toContain("مُرحّلة إلى الحسابات");
+});

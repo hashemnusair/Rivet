@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
 
 import { Banknote, Landmark, Smartphone, WalletCards } from "lucide-react";
 import Link from "next/link";
@@ -8,10 +8,13 @@ import { qk } from "@/lib/api/keys";
 import { MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, SUPPLIER_PAYMENT_METHOD_LABELS, suggestPayableAllocations } from "@/lib/domain/payables";
 import type { Payable, RecordSupplierPaymentInput, Session, Supplier, SupplierPaymentDetail, SupplierPaymentMethod } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { money, parseMoneyInput, toMajorString } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
-import { DateText, MoneyText } from "@/components/shared/data-display";
+import { useFormat } from "@/lib/i18n/format";
+import type { TKey } from "@/lib/i18n/core";
+import { payableSourceLabel, supplierPaymentMethodLabel } from "@/lib/i18n/payables";
+import { useOperationsNumberProblems } from "../operations-shared";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -20,10 +23,10 @@ import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const METHOD_ICONS: Record<SupplierPaymentMethod, typeof Banknote> = { cash: Banknote, bank_transfer: Landmark, cliq: Smartphone };
-const METHOD_HINTS: Record<SupplierPaymentMethod, string> = {
-  cash: "Taken from this branch's cash drawer.",
-  bank_transfer: "Enter the bank reference so you can find the transfer later.",
-  cliq: "Enter the CliQ reference so you can find the payment later.",
+const METHOD_HINTS: Record<SupplierPaymentMethod, TKey> = {
+  cash: "payablesWorkspace.cashHint",
+  bank_transfer: "payablesWorkspace.bankHint",
+  cliq: "payablesWorkspace.cliqHint",
 };
 
 function newIdempotencyKey(): string {
@@ -55,7 +58,9 @@ export interface RecordSupplierPaymentDialogProps {
  * as a credit balance.
  */
 export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, branches, currency, initialBranchId, initialSupplierId, initialPayable, onRecorded }: RecordSupplierPaymentDialogProps) {
-  const t = useT();
+  const { t, locale, isolate, isolateLtr } = useLocale();
+  const f = useFormat();
+  const validate = useOperationsNumberProblems();
   const activeSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.status === "active"), [suppliers]);
   const [supplierId, setSupplierId] = useState("");
   const [branchId, setBranchId] = useState("");
@@ -66,7 +71,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
   const [allocationText, setAllocationText] = useState<Record<string, string>>({});
   const [manualAllocation, setManualAllocation] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -87,6 +92,8 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
   const shiftQuery = useApiQuery(qk.currentShift(branchId), (api) => api.getCurrentCashShift(branchId), { enabled: open && method === "cash" && Boolean(branchId) });
   const openPayables = useMemo(() => payablesQuery.data?.items ?? [], [payablesQuery.data]);
   const amountMinor = parseMajor(amountText, currency);
+  const amountProblem = validate.amount(amountText, currency);
+  const invalidAllocations = openPayables.some(payable => Boolean(validate.amount(allocationText[payable.id] ?? "", currency)));
 
   useEffect(() => {
     if (!open || manualAllocation) return;
@@ -104,11 +111,11 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
   const shift = shiftQuery.data ?? null;
   const cashBlocked = method === "cash" && (shiftQuery.isLoading || shiftQuery.isError || !shift);
   const referenceMissing = method !== "cash" && !reference.trim();
-  const canSubmit = Boolean(supplier && branch && amountMinor && amountMinor > 0 && allocatedMinor === amountMinor && allocations.some((allocation) => allocation.amountMinor > 0) && overAllocated.length === 0 && !referenceMissing && !cashBlocked && reference.trim().length <= MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH);
+  const canSubmit = Boolean(!amountProblem && !invalidAllocations && supplier && branch && amountMinor && amountMinor > 0 && allocatedMinor === amountMinor && allocations.some((allocation) => allocation.amountMinor > 0) && overAllocated.length === 0 && !referenceMissing && !cashBlocked && reference.trim().length <= MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH);
 
   const mutation = useApiMutation((api, input: RecordSupplierPaymentInput) => api.recordSupplierPayment(input), {
     onSuccess: (detail) => { setError(null); onRecorded(detail); },
-    onError: (failure) => setError(isApiError(failure) ? failure.message : "The payment could not be recorded. Nothing was saved."),
+    onError: (failure) => setError(failure),
   });
 
   const submit = () => {
@@ -130,28 +137,28 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
     <Dialog open={open} onOpenChange={(next) => { if (!mutation.isPending) onOpenChange(next); }}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Record supplier payment</DialogTitle>
-          <DialogDescription>Choose the supplier and enter what you paid. Then choose which bills it pays.</DialogDescription>
+          <DialogTitle>{t("payablesWorkspace.recordSupplierPayment")}</DialogTitle>
+          <DialogDescription>{t("payablesWorkspace.recordHint")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); submit(); }} data-testid="record-supplier-payment-form">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Supplier" required>
+              <Field label={t("stockWorkspace.supplier")} required>
                 <Select value={supplierId || "none"} onValueChange={(value) => { setSupplierId(value === "none" ? "" : value); setManualAllocation(false); setAllocationText({}); }}>
-                  <SelectTrigger aria-label="Supplier"><SelectValue placeholder="Choose supplier" /></SelectTrigger>
-                  <SelectContent>{activeSuppliers.length === 0 ? <SelectItem value="none" disabled>No active suppliers</SelectItem> : activeSuppliers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
+                  <SelectTrigger aria-label={t("stockWorkspace.supplier")}><SelectValue placeholder={t("stockWorkspace.chooseSupplier")} /></SelectTrigger>
+                  <SelectContent>{activeSuppliers.length === 0 ? <SelectItem value="none" disabled>{t("payablesWorkspace.noActiveSuppliers")}</SelectItem> : activeSuppliers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="Paying from branch" hint={method === "cash" ? "The cash comes from this branch's drawer." : "The branch that made the payment."} required>
+              <Field label={t("payablesWorkspace.payingFrom")} hint={method === "cash" ? t("payablesWorkspace.cashBranchHint") : t("payablesWorkspace.payingBranchHint")} required>
                 <Select value={branchId || "none"} onValueChange={(value) => setBranchId(value === "none" ? "" : value)}>
-                  <SelectTrigger aria-label="Paying branch"><SelectValue placeholder={t("members.bulk.chooseBranch")} /></SelectTrigger>
+                  <SelectTrigger aria-label={t("payablesWorkspace.payingBranch")}><SelectValue placeholder={t("members.bulk.chooseBranch")} /></SelectTrigger>
                   <SelectContent>{branches.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
             </div>
 
             <fieldset className="space-y-2">
-              <legend className="text-[13px] font-medium text-ink-2">Paid by</legend>
+              <legend className="text-[13px] font-medium text-ink-2">{t("payablesWorkspace.paidBy")}</legend>
               <div className="grid gap-2 sm:grid-cols-3">
                 {(Object.keys(SUPPLIER_PAYMENT_METHOD_LABELS) as SupplierPaymentMethod[]).map((candidate) => {
                   const Icon = METHOD_ICONS[candidate];
@@ -160,75 +167,77 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
                     <label key={candidate} className={cn("flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md border px-3 py-2 text-[13px]", selected ? "border-ink bg-sunken" : "border-line-2 hover:border-line-3")}>
                       <input type="radio" name="supplier-payment-method" value={candidate} checked={selected} onChange={() => { setMethod(candidate); if (candidate === "cash") setReference(""); }} className="sr-only" />
                       <Icon className="size-4 shrink-0 text-ink-2" aria-hidden />
-                      <span className="font-medium">{SUPPLIER_PAYMENT_METHOD_LABELS[candidate]}</span>
+                      <span className="font-medium">{supplierPaymentMethodLabel(candidate, t)}</span>
                     </label>
                   );
                 })}
               </div>
-              <p className="text-[12px] text-ink-3">{METHOD_HINTS[method]}</p>
+              <p className="text-[12px] text-ink-3">{t(METHOD_HINTS[method])}</p>
             </fieldset>
 
             {method === "cash" && branchId ? (
-              shiftQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">Checking for an open cash shift…</p>
-                : shiftQuery.isError ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">The cash shift could not be checked. <button type="button" className="font-medium underline" onClick={() => void shiftQuery.refetch()}>{t("common.action.retry")}</button></p>
-                  : shift ? <p role="status" className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12.5px] text-ink-2">Open cash shift at {branch?.name ?? "this branch"}, opened by {shift.openedByName} <DateText iso={shift.openedAt} />. The cash is taken from this drawer.</p>
-                    : <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">No cash shift is open at {branch?.name ?? "this branch"}{t("members.bulk.toast.end")}{" "}<Link href="/payments/shifts" className="font-medium underline">Open a shift</Link> first, or pay by bank transfer or CliQ.</p>
+              shiftQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">{t("payablesWorkspace.checkingShift")}</p>
+                : shiftQuery.isError ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">{t("payablesWorkspace.shiftCheckFailed")}{" "}<button type="button" className="font-medium underline" onClick={() => void shiftQuery.refetch()}>{t("common.action.retry")}</button></p>
+                  : shift ? <p role="status" className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12.5px] text-ink-2">{t("payablesWorkspace.shiftOpen", { branch: isolate(branch?.name ?? t("payablesWorkspace.thisBranch")), name: isolate(shift.openedByName), date: f.date(shift.openedAt) })}</p>
+                    : <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">{t("payablesWorkspace.shiftClosed", { branch: isolate(branch?.name ?? t("payablesWorkspace.thisBranch")) })}{" "}<Link href="/payments/shifts" className="font-medium underline">{t("payablesWorkspace.openShift")}</Link> {" "}{t("payablesWorkspace.shiftAlternative")}</p>
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label={`Amount paid (${currency})`} required>
-                <Input inputMode="decimal" dir="ltr" value={amountText} onChange={(event) => { setAmountText(event.target.value); setManualAllocation(false); }} placeholder="0.000" aria-label="Amount paid" />
+              <Field label={t("payablesWorkspace.amountCurrency", { currency })} error={amountProblem} required>
+                <Input inputMode="decimal" dir="ltr" aria-invalid={Boolean(amountProblem) || undefined} value={amountText} onChange={(event) => { setAmountText(event.target.value); setManualAllocation(false); }} placeholder={toMajorString(money(0, currency))} aria-label={t("payablesWorkspace.amountPaid")} />
               </Field>
               {method !== "cash" ? (
-                <Field label={`${SUPPLIER_PAYMENT_METHOD_LABELS[method]} reference`} hint="Copy it exactly from the bank or app." required>
-                  <Input dir="ltr" value={reference} onChange={(event) => setReference(event.target.value)} maxLength={MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH} placeholder={method === "cliq" ? "CLIQ-…" : "TRF-…"} aria-label={`${SUPPLIER_PAYMENT_METHOD_LABELS[method]} reference`} />
+                <Field label={t("payablesWorkspace.methodReference", { method: supplierPaymentMethodLabel(method, t) })} hint={t("payablesWorkspace.copyReference")} required>
+                  <Input dir="ltr" value={reference} onChange={(event) => setReference(event.target.value)} maxLength={MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH} placeholder={method === "cliq" ? "CLIQ-…" : "TRF-…"} aria-label={t("payablesWorkspace.methodReference", { method: supplierPaymentMethodLabel(method, t) })} />
                 </Field>
               ) : null}
             </div>
 
-            <section aria-label="Bills this pays" className="rounded-md border border-line">
+            <section aria-label={t("payablesWorkspace.billsThisPays")} className="rounded-md border border-line">
               <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
                 <div>
-                  <p className="text-[13px] font-medium">Bills this pays</p>
-                  <p className="text-[12px] text-ink-3">{manualAllocation ? "You changed the amounts. " : "Oldest bills first. "}{supplier ? <>You owe {supplier.name}: <MoneyText money={money(supplierOutstandingMinor, currency)} /></> : "Choose a supplier to see what you owe."}</p>
+                  <p className="text-[13px] font-medium">{t("payablesWorkspace.billsThisPays")}</p>
+                  <p className="text-[12px] text-ink-3">{manualAllocation ? t("payablesWorkspace.manualAmounts") : t("payablesWorkspace.oldestBillsFirst")}{supplier ? t("payablesWorkspace.supplierOwed", { supplier: isolate(supplier.name), amount: isolateLtr(f.money(money(supplierOutstandingMinor, currency))) }) : t("payablesWorkspace.chooseSupplierOwed")}</p>
                 </div>
-                {manualAllocation && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setManualAllocation(false)}>Reset to oldest first</Button> : null}
+                {manualAllocation && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setManualAllocation(false)}>{t("payablesWorkspace.resetOldest")}</Button> : null}
               </header>
               {!supplierId ? null : payablesQuery.isLoading ? <div className="space-y-2 p-3"><Skeleton className="h-8" /><Skeleton className="h-8" /></div>
-                : payablesQuery.isError ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">The bills could not load. <button type="button" className="font-medium underline" onClick={() => void payablesQuery.refetch()}>{t("common.action.retry")}</button></p>
-                  : openPayables.length === 0 ? <p className="px-3 py-3 text-[12.5px] text-ink-3">You owe {supplier?.name ?? "this supplier"} nothing right now.</p>
+                : payablesQuery.isError ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">{t("payablesWorkspace.billsLoadFailed")}{" "}<button type="button" className="font-medium underline" onClick={() => void payablesQuery.refetch()}>{t("common.action.retry")}</button></p>
+                  : openPayables.length === 0 ? <p className="px-3 py-3 text-[12.5px] text-ink-3">{t("payablesWorkspace.oweNothing", { supplier: isolate(supplier?.name ?? t("payablesWorkspace.thisSupplier")) })}</p>
                     : (
                       <div className="divide-y divide-line">
                         {allocations.map(({ payable, amountMinor: allocated }) => {
                           const over = allocated > payable.remaining.amount;
+                          const allocationProblem = validate.amount(allocationText[payable.id] ?? "", currency);
                           return (
                             <div key={payable.id} className="grid items-center gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_150px]">
                               <div className="min-w-0">
-                                <p className="truncate text-[13px] font-medium">{payable.sourceLabel}</p>
-                                <p className="text-[12px] text-ink-3">Received <DateText iso={payable.receivedAt} /> · {payable.ageDays} {payable.ageDays === 1 ? "day" : "days"} ago · still owed <MoneyText money={payable.remaining} />{payable.externalReference ? ` · ${payable.externalReference}` : ""}</p>
-                                {over ? <p role="alert" className="text-[12px] text-danger">More than you owe on this bill.</p> : null}
+                                <p className="truncate text-[13px] font-medium">{payableSourceLabel(payable.sourceLabel, t)}</p>
+                                <p className="text-[12px] text-ink-3">{t("payablesWorkspace.billReceived", { date: f.date(payable.receivedAt), age: t("payablesWorkspace.days", { count: payable.ageDays }), amount: isolateLtr(f.money(payable.remaining)) })}{payable.externalReference ? ` · ${payable.externalReference}` : ""}</p>
+                                {over ? <p role="alert" className="text-[12px] text-danger">{t("payablesWorkspace.moreThanBill")}</p> : null}
                               </div>
-                              <Input inputMode="decimal" dir="ltr" aria-label={`Amount for ${payable.sourceLabel}`} value={allocationText[payable.id] ?? ""} onChange={(event) => { setManualAllocation(true); setAllocationText((current) => ({ ...current, [payable.id]: event.target.value })); }} placeholder="0.000" className={cn(over && "border-danger")} />
+                              <Input inputMode="decimal" dir="ltr" aria-label={t("payablesWorkspace.amountFor", { bill: payableSourceLabel(payable.sourceLabel, t) })} aria-invalid={over || Boolean(allocationProblem) || undefined} aria-describedby={allocationProblem ? `allocation-error-${payable.id}` : undefined} value={allocationText[payable.id] ?? ""} onChange={(event) => { setManualAllocation(true); setAllocationText((current) => ({ ...current, [payable.id]: event.target.value })); }} placeholder={toMajorString(money(0, currency))} className={cn((over || allocationProblem) && "border-danger")} />
+                              {allocationProblem ? <p id={`allocation-error-${payable.id}`} role="alert" className="text-[12px] text-danger sm:col-span-2">{allocationProblem}</p> : null}
                             </div>
                           );
                         })}
                         <div className="flex flex-wrap items-center justify-between gap-2 bg-sunken/40 px-3 py-2 text-[12.5px]">
-                          <span className="text-ink-2">On bills: <MoneyText money={money(allocatedMinor, currency)} /> of <MoneyText money={money(amountMinor ?? 0, currency)} /></span>
-                          {amountMinor && unallocatedMinor !== 0 ? <span role="alert" className={cn("font-medium", unallocatedMinor > 0 ? "text-warning-deep" : "text-danger")}>{unallocatedMinor > 0 ? <>Not on a bill yet: <MoneyText money={money(unallocatedMinor, currency)} />. Put it on a bill or lower the amount.</> : <>The bills add up to <MoneyText money={money(-unallocatedMinor, currency)} /> more than the amount paid.</>}</span> : null}
+                          <span className="text-ink-2">{t("payablesWorkspace.allocated", { allocated: isolateLtr(f.money(money(allocatedMinor, currency))), amount: isolateLtr(f.money(money(amountMinor ?? 0, currency))) })}</span>
+                          {amountMinor && unallocatedMinor !== 0 ? <span role="alert" className={cn("font-medium", unallocatedMinor > 0 ? "text-warning-deep" : "text-danger")}>{unallocatedMinor > 0 ? t("payablesWorkspace.notAllocated", { amount: isolateLtr(f.money(money(unallocatedMinor, currency))) }) : t("payablesWorkspace.overAllocated", { amount: isolateLtr(f.money(money(-unallocatedMinor, currency))) })}</span> : null}
                         </div>
                       </div>
                     )}
             </section>
 
-            <Field label={t("common.label.notes")} hint="Shown on the payment confirmation.">
-              <Textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} placeholder="Invoice numbers, who took the cash, anything to remember" />
+            <Field label={t("common.label.notes")} hint={t("payablesWorkspace.confirmationNotesHint")}>
+              <Textarea rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} placeholder={t("payablesWorkspace.notesExample")} />
             </Field>
-            {error ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">{error}</p> : null}
+            {error != null ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg/40 px-3 py-2 text-[12.5px] text-danger">{isApiError(error) ? localizeApiError(error, locale).message : t("payablesWorkspace.recordFailure")}</p> : null}
           </form>
         </DialogBody>
         <DialogFooter>
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>{t("common.action.cancel")}</Button>
-          <Button type="button" onClick={submit} loading={mutation.isPending} disabled={!canSubmit} data-testid="confirm-supplier-payment"><WalletCards /> Record payment</Button>
+          <Button type="button" onClick={submit} loading={mutation.isPending} disabled={!canSubmit} data-testid="confirm-supplier-payment"><WalletCards /> {" "}{t("payablesWorkspace.recordPayment")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
