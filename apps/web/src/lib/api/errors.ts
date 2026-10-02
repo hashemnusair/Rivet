@@ -1,3 +1,9 @@
+import type { MessageVars } from "../i18n/dictionary";
+import { defaultErrorDescriptor, fieldErrorDescriptors, legacyErrorDescriptor, parseErrorDescriptor, type ErrorMessageDescriptor } from "../i18n/error-messages";
+import { createTranslator } from "../i18n/core";
+import type { Locale } from "../i18n/locale";
+import { isolate } from "../i18n/bidi";
+
 /**
  * Single API error envelope (docs/06). Frontend code keys off stable `code`
  * values, never off message text.
@@ -6,6 +12,9 @@ export interface ApiErrorBody {
   error: {
     code: string;
     message: string;
+    messageKey?: string;
+    messageParams?: MessageVars;
+    fieldMessages?: Record<string, ErrorMessageDescriptor[]>;
     details?: Record<string, unknown>;
     requestId: string;
     fieldErrors?: Record<string, string[]>;
@@ -18,21 +27,32 @@ export class ApiError extends Error {
   readonly details?: Record<string, unknown>;
   readonly fieldErrors?: Record<string, string[]>;
 
-  constructor(body: ApiErrorBody["error"]) {
+  readonly messageDescriptor?: ErrorMessageDescriptor;
+  readonly fieldMessages?: Record<string, ErrorMessageDescriptor[]>;
+  readonly sourceMessage: string;
+  readonly sourceFieldErrors?: Record<string, string[]>;
+
+  constructor(body: ApiErrorBody["error"], source?: ApiError) {
     super(body.message);
     this.name = "ApiError";
     this.code = body.code;
     this.requestId = body.requestId;
     this.details = body.details;
     this.fieldErrors = body.fieldErrors;
+    this.sourceMessage = source?.sourceMessage ?? body.message;
+    this.sourceFieldErrors = source?.sourceFieldErrors ?? body.fieldErrors;
+    this.messageDescriptor = parseErrorDescriptor({ key: body.messageKey, params: body.messageParams }) ?? source?.messageDescriptor ?? legacyErrorDescriptor(this.sourceMessage);
+    this.fieldMessages = body.fieldMessages ?? source?.fieldMessages ?? fieldErrorDescriptors(body.fieldErrors);
   }
 
-  static of(code: string, message: string, extra?: { fieldErrors?: Record<string, string[]>; details?: Record<string, unknown> }): ApiError {
+  static of(code: string, message: string, extra?: { fieldErrors?: Record<string, string[]>; details?: Record<string, unknown>; message?: ErrorMessageDescriptor }): ApiError {
     return new ApiError({
       code,
       message,
       requestId: `mock-${Math.random().toString(36).slice(2, 10)}`,
       fieldErrors: extra?.fieldErrors,
+      messageKey: extra?.message?.key,
+      messageParams: extra?.message?.params,
       details: extra?.details,
     });
   }
@@ -68,4 +88,21 @@ export const ERR = {
 
 export function isApiError(e: unknown): e is ApiError {
   return e instanceof ApiError;
+}
+
+
+/** Present only known domain copy. Unknown exception details never become UI text. */
+export function localizeApiError(error: unknown, locale: Locale): Error {
+  const t = createTranslator(locale);
+  if (!isApiError(error)) return new Error(t("apiErrors.unexpected"));
+  const render = (descriptor: ErrorMessageDescriptor) => {
+    const valid = parseErrorDescriptor(descriptor) ?? defaultErrorDescriptor("INTERNAL_ERROR");
+    const params = valid.params && Object.fromEntries(Object.entries(valid.params).map(([key, value]) => [key, locale === "ar" && typeof value === "string" ? isolate(value) : value]));
+    return t(valid.key, params);
+  };
+  const descriptor = error.messageDescriptor ?? defaultErrorDescriptor(error.code);
+  const known = error.messageDescriptor?.key !== "apiErrors.unexpected" && (error.messageDescriptor || defaultErrorDescriptor(error.code).key !== "apiErrors.unexpected");
+  const message = locale === "en" && known ? error.sourceMessage : render(descriptor);
+  const fields = locale === "en" ? error.sourceFieldErrors : error.fieldMessages && Object.fromEntries(Object.entries(error.fieldMessages).map(([field, messages]) => [field, messages.map(render)]));
+  return new ApiError({ code: error.code, message, requestId: error.requestId, details: error.details, fieldErrors: fields, fieldMessages: error.fieldMessages, messageKey: error.messageDescriptor?.key, messageParams: error.messageDescriptor?.params }, error);
 }

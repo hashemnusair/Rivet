@@ -1,3 +1,4 @@
+import { apiErrors } from "./apiErrors";
 import { agreementFlow } from "./agreementFlow";
 import { agreementDocument } from "./agreementDocument";
 import { documents } from "./documents";
@@ -23,6 +24,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  apiErrors,
   agreementFlow,
   agreementDocument,
   documents,

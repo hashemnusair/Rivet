@@ -3,9 +3,9 @@
 import { AlertTriangle, Inbox, Lock, SearchX, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ERR, isApiError } from "@/lib/api/errors";
+import { ERR, isApiError, localizeApiError } from "@/lib/api/errors";
 import { cn } from "@/lib/utils/cn";
-import { useT } from "@/lib/i18n/provider";
+import { useT, useLocale } from "@/lib/i18n/provider";
 import { Button } from "./button";
 
 /**
@@ -154,15 +154,16 @@ export function QueryErrorState({
   className?: string;
   layout?: "inline" | "section" | "page";
 }) {
-  const t = useT();
+  const { t, locale } = useLocale();
+  const presented = localizeApiError(error, locale);
   if (isApiError(error)) {
     if (error.code === ERR.FORBIDDEN) {
-      return <ForbiddenState description={forbiddenDescription ?? error.message} className={className} layout={layout} />;
+      return <ForbiddenState description={forbiddenDescription ?? presented.message} className={className} layout={layout} />;
     }
     if (error.code === ERR.NOT_FOUND) {
-      return <NotFoundState title={notFoundTitle ?? t("common.states.notFoundTitle")} description={error.message} className={className} layout={layout} />;
+      return <NotFoundState title={notFoundTitle ?? t("common.states.notFoundTitle")} description={presented.message} className={className} layout={layout} />;
     }
-    return <ErrorState description={error.message} onRetry={onRetry} className={className} layout={layout} />;
+    return <ErrorState description={presented.message} onRetry={onRetry} className={className} layout={layout} />;
   }
   return <ErrorState onRetry={onRetry} className={className} layout={layout} />;
 }

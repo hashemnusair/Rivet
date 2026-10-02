@@ -61,3 +61,11 @@ New agreements freeze billing interval together with the already frozen fee. Bro
 The actual Arabic agreement is 3 pages. Poppler renders were inspected; PDFium extraction finds the exact Arabic title, mixed names and full annual fee. Inspection found and fixed missing punctuation mirroring (the installed bidi API takes the level array, unlike its README example), isolates crossing line breaks, orphan headings and missing repeated table headings. No image/signature pixels are mirrored.
 
 Validation: 32 legal/signing/catalog tests passed; 23 PDF layout/document tests passed; both web and Convex typechecks passed. The test suite includes unpublished-version denial before writes, unchanged English hashes, Arabic signing/replay, owner/tenant boundaries, frozen annual terms, identical queued attachments, independent recipient language, and a full switch-language-mid-form signing journey.
+
+## Shared error boundary checkpoint
+
+The API envelope still carries English `message`, stable `code`, `requestId`, `details` and original field associations. It can additionally carry `messageKey`, `messageParams` and `fieldMessages`. A shared legacy registry supports older server responses; new explicit descriptors remain valid when English wording changes. Query caches retain original errors and recompute presentation on locale change. Unknown exceptions show a recovery message, not a stack or internal diagnostic. Mutation follow-up failures retain the distinction between a saved write and an unsuccessful screen refresh.
+
+The reproducible audit (`node apps/web/scripts/inventory-arabic-errors.mjs`) maps all 933 static error messages found at `domainError`, `ApiError.of` and `requireField` calls, including conditional branches. The source ledger is `server-error-coverage.json`. Dynamic/forwarded messages, other exception boundaries, notification data and outgoing templates still need work; static coverage is not package-E completion.
+
+Validation: 55 focused error/adapter/hook/catalog tests passed. Full regression: 1,776 passed, one outdated mock agreement-prefill expectation failed; its fixture now includes the frozen billing interval and its targeted suite passes. Web and Convex typechecks pass. Final full rerun remains required after the remaining packages.

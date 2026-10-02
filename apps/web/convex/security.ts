@@ -1,3 +1,4 @@
+import { legacyErrorDescriptor, fieldErrorDescriptors, type ErrorMessageDescriptor } from "../src/lib/i18n/error-messages";
 import { ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -120,9 +121,12 @@ type MaybeBranch = {
 export function domainError(
   code: string,
   message: string,
-  extra?: { details?: Record<string, unknown>; fieldErrors?: Record<string, string[]>; correlationId?: string },
+  extra?: { details?: Record<string, unknown>; fieldErrors?: Record<string, string[]>; correlationId?: string; message?: ErrorMessageDescriptor },
 ): never {
+  const descriptor = extra?.message ?? legacyErrorDescriptor(message);
   const payload = {
+    ...(descriptor ? { messageKey: descriptor.key, ...(descriptor.params ? { messageParams: descriptor.params } : {}) } : {}),
+    ...(extra?.fieldErrors ? { fieldMessages: fieldErrorDescriptors(extra.fieldErrors) } : {}),
     code,
     message,
     requestId: extra?.correlationId ?? newCorrelationId(),

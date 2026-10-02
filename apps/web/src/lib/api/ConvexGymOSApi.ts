@@ -1,3 +1,4 @@
+import { parseErrorDescriptor } from "@/lib/i18n/error-messages";
 import { api } from "../../../convex/_generated/api";
 import type {
   AuditQuery,
@@ -170,11 +171,17 @@ function errorFromConvex(error: unknown): ApiError {
   const nested = payload && isRecord(payload.error) ? payload.error : payload;
   const message = typeof candidate?.message === "string" ? candidate.message : "Convex request failed.";
   const code = nested && typeof nested.code === "string" ? nested.code : inferCode(message);
-  const safeMessage = nested && typeof nested.message === "string" ? nested.message : message;
+  const safeMessage = nested && typeof nested.message === "string" ? nested.message : "Something went wrong. Please try again.";
   const requestId = nested && typeof nested.requestId === "string" ? nested.requestId : correlationId();
   const details = nested && isRecord(nested.details) ? nested.details : undefined;
   const fieldErrors = nested && isRecord(nested.fieldErrors) ? (nested.fieldErrors as Record<string, string[]>) : undefined;
-  return new ApiError({ code, message: safeMessage, requestId, details, fieldErrors });
+  const descriptor = parseErrorDescriptor({ key: nested?.messageKey, params: nested?.messageParams });
+  const fieldMessages = nested && isRecord(nested.fieldMessages) ? Object.fromEntries(Object.entries(nested.fieldMessages).flatMap(([field, values]) => {
+    if (!Array.isArray(values)) return [];
+    const parsed = values.map(parseErrorDescriptor).filter((value): value is NonNullable<typeof value> => Boolean(value));
+    return parsed.length ? [[field, parsed]] : [];
+  })) : undefined;
+  return new ApiError({ code, message: safeMessage, requestId, details, fieldErrors, messageKey: descriptor?.key, messageParams: descriptor?.params, fieldMessages });
 }
 
 function inferCode(message: string): string {
