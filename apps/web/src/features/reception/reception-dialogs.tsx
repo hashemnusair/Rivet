@@ -1,7 +1,7 @@
 "use client";
 
 import { ShieldAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { isApiError } from "@/lib/api/errors";
 import type { CheckInPreview, CheckInResult } from "@/lib/domain/types";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
@@ -39,18 +39,24 @@ export function OverrideCheckInDialog({
   onOverridden: (result: CheckInResult) => void;
 }) {
   const invalidate = useInvalidate();
+  const attempt = useRef<{ signature: string; key: string } | null>(null);
   const [reason, setReason] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
+      attempt.current = null;
       setReason("");
       setServerError(null);
     }
   }, [open]);
 
   const mutation = useApiMutation(
-    (api) => api.overrideCheckIn({ memberId: preview.member!.id, branchId, reason, source: "manual" }),
+    (api) => {
+      const signature = `${branchId}:${preview.member!.id}:${reason}`;
+      if (attempt.current?.signature !== signature) attempt.current = { signature, key: crypto.randomUUID() };
+      return api.overrideCheckIn({ memberId: preview.member!.id, branchId, reason, source: "manual", idempotencyKey: attempt.current.key });
+    },
     {
       onSuccess: async (result) => {
         await invalidate();

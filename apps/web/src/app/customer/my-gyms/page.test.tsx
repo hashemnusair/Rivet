@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   getEntryPass: vi.fn(),
 }));
 
+vi.mock("@/features/attendance/attendance-panel", () => ({ MemberAttendance: () => <section aria-label="At the gym now">Live estimate</section> }));
 vi.mock("@/lib/api/client", () => ({ getApi: () => ({ getEntryPass: state.getEntryPass }) }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => state.searchParams,

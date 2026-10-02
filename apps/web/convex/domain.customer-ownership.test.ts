@@ -868,3 +868,17 @@ describe("exported Convex customer ownership boundaries", () => {
     await expectCode(formerStaff.query(api.domain.query, operation("customer.experience")), "FORBIDDEN");
   });
 });
+
+
+describe("member occupancy ownership", () => {
+  it("only exposes aggregates for the authenticated member's operational branch", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const customer = t.withIdentity({ subject: "clerk-customer-a" });
+    const report = await customer.query(api.domain.query, operation("customer.attendance", { membershipId: "membership-a-active", branchId: "branch-b" })) as { snapshot: { branchId: string }; curve: unknown[] };
+    expect(report.snapshot.branchId).toBe("branch-a");
+    expect(JSON.stringify(report)).not.toMatch(/Customer A|A-100|member-a/);
+    await expectCode(customer.query(api.domain.query, operation("customer.attendance", { membershipId: "membership-b" })), "NOT_FOUND");
+    await expectCode(t.query(api.domain.query, operation("customer.attendance", { membershipId: "membership-a-active" })), "UNAUTHENTICATED");
+  });
+});

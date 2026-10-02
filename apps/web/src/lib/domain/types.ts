@@ -2387,6 +2387,8 @@ export interface CheckInPreview {
 }
 
 export interface CreateCheckInInput {
+  /** Retain across retries of the same entry attempt. */
+  idempotencyKey?: UUID;
   memberId: UUID;
   branchId: UUID;
   source?: "search" | "qr" | "manual";
@@ -2408,6 +2410,8 @@ export interface CheckInResult {
 }
 
 export interface CheckInSummary {
+  attendanceWindowMinutes?: number;
+  attendanceSource?: string;
   id: UUID;
   memberId: UUID;
   memberName: string;
@@ -2422,13 +2426,7 @@ export interface CheckInSummary {
   occurredAt: ISODateTime;
 }
 
-export interface OccupancySnapshot {
-  branchId: UUID;
-  current: number;
-  capacity: number;
-  checkInsToday: number;
-  peakHour: string;
-}
+export type { OccupancySnapshot, AttendanceInsights, AttendanceSettings } from "../attendance/model";
 
 // ---------------------------------------------------------------------------
 // Finance

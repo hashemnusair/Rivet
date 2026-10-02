@@ -93,6 +93,7 @@ export const INVALIDATE_ALL = [
   "atRisk",
   "checkIns",
   "occupancy",
+  "attendance",
   "transactions",
   "receipts",
   "shifts",

@@ -66,7 +66,7 @@ const OWNER_ROUTES: Route[] = [
   { path: "/finance", slug: "finance", heading: /^Management ledger$/, ready: async (page) => { await expect(page.getByTestId("management-ledger-home")).toBeVisible(); } },
   { path: "/finance/income-statement", slug: "income-statement", heading: /^Income statement$/, ready: async (page) => { await expect(page.getByTestId("income-statement")).toBeVisible(); } },
   { path: "/finance/cash-flow", slug: "cash-flow", heading: /^Cash flow statement$/, ready: async (page) => { await expect(page.getByTestId("cashflow-statement")).toBeVisible(); } },
-  { path: "/finance/controls?tab=journals", slug: "finance-controls", heading: /^Bookkeeping$/, ready: async (page) => { await expect(page.getByRole("tab", { name: /journals/i })).toHaveAttribute("aria-selected", "true"); await expect(page.getByRole("heading", { name: "Journal entries" })).toBeVisible(); await expect(page.getByRole("region", { name: "Chart of accounts" })).toHaveCount(0); } },
+  { path: "/finance/controls?tab=journals", slug: "finance-controls", heading: /^Bookkeeping$/, ready: async (page) => { await expect(page.getByRole("tab", { name: /journals/i })).toHaveAttribute("aria-selected", "true"); await expect(page.getByRole("heading", { name: "Journal entries", exact: true })).toBeVisible(); await expect(page.getByRole("region", { name: "Chart of accounts" })).toHaveCount(0); } },
   { path: "/audit", slug: "audit", heading: /^Activity log$/, ready: async (page) => { await expect(page.getByRole("button", { name: /Voided JOD 40\.000/ })).toBeVisible(); } },
   { path: "/exports", slug: "exports", heading: /^Downloads$/, ready: async (page) => { await expect(page.getByRole("heading", { name: "Choose what to download" })).toBeVisible(); await expect(page.getByText("No downloads yet")).toBeVisible(); } },
   { path: "/automations", slug: "automations", heading: /^Automations$/, ready: async (page) => { await expect(page.getByRole("region", { name: "Connected services" }).locator("article")).toHaveCount(3); await expect(page.getByRole("link", { name: /Renewal reminder/ }).first()).toBeVisible(); await expect(page.getByRole("region", { name: "Recent runs" }).getByText(/Showing 1 to 15 of/)).toBeVisible(); } },
@@ -174,7 +174,7 @@ test("statements and ledger controls share one scope and trace to the journals",
   await expect(page.getByRole("combobox", { name: "Branch", exact: true })).toContainText("Abdoun");
   await visit(page, "/finance/controls?tab=journals", /^Bookkeeping$/);
   await expect(page.getByRole("tab", { name: /journals/i })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Journal entries" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Journal entries", exact: true })).toBeVisible();
 });
 
 test("audit questions are shareable and every row opens its evidence", async ({ page }) => {

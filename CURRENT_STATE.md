@@ -1,5 +1,71 @@
 # GymOS / RIVET current implementation state
 
+## 2 October 2026 — Live occupancy, attendance insights and bespoke-site integration (not deployed)
+
+Implemented through the existing Next.js / Convex / Clerk and `GymOSApi`
+boundaries; the approved RIVET styling and frozen `FRONTEND_HANDOFF.md` are
+preserved. Read `docs/23_ATTENDANCE_AND_WEBSITE_INTEGRATION.md` first for the
+contract, definitions, deliberate limits and website integration example.
+
+- A shared event-time attendance model normalizes existing check-ins, fixed
+  90-minute default windows, branch visit length, distinct people, repeated
+  scans, denied entries, delayed facts, real exits and re-entry. New entries
+  snapshot duration; timestamped policy history preserves delayed-event
+  semantics. Expiry never writes a departure. Reception has an explicit actual
+  exit action. Entry/override attempt IDs replay retries after expiry without
+  another visit. The existing admission and audit boundaries remain in place.
+- Counts refresh every 15 seconds without database writes; snapshots expire
+  after 45 seconds, and offline/failed/stale feeds never render as an empty
+  gym. External feeds require a two-minute heartbeat; there is only a
+  server-side adapter seam, no invented hardware integration.
+- Member Home and membership detail show `~N people` and busyness before a
+  visit. Member/staff views add a daily step curve, day/hour heatmap, peak and
+  quiet suggestions, branch-local time, keyboard-readable tables and
+  insufficient-history states. Reports retain a separately labelled accepted
+  check-in volume report. Staff insights require reporting access.
+- Settings → Attendance configures branch duration, optional capacity,
+  timezone, source health and audited public publication (off by default).
+  Public HTTP GET on the Convex `.site` origin exposes only current count,
+  status, freshness, timezone and disclosure; strict tenant/branch checks,
+  generic unpublished responses, no-store caching and a persisted request
+  budget protect it. A standalone themeable React widget supports Hashem and
+  Elias's individually designed gym `/live` pages. No builder, generated
+  websites, billing, pricing or commercial commitments were added.
+- Assumptions/limits: unmarked re-entry inside an open window is ambiguous;
+  staff can record an actual exit. Legacy check-ins keep 90 minutes. Historical
+  guidance uses the last 28 days, at least seven complete observed days and
+  20 visits; quiet suggestions exclude hours without recorded entry activity.
+  Capacity-free status uses documented historical percentiles, never an
+  invented capacity. Bounded reads fail unavailable above 10,000 records per
+  source type/branch in 29 recording days. High-volume rollups and actual
+  hardware coverage semantics need validation before such deployments.
+- Validation: the full unit/integration suite passes (280 files, 1,759 tests;
+  bounded rerun: `pnpm --filter web exec vitest run --maxWorkers=3`), along
+  with all 14 CLI/environment guards. Both TypeScript checks, lint/secret-output
+  audit, Convex codegen, production build and an approved mock-preview build
+  pass. All 47 browser journeys in attendance, happy-path and workflow passes
+  4/5 pass against the compiled preview, including 360/390/768/820/1280/1440px,
+  manual RTL, keyboard tables, offline/reconnect, staff permissions, reception
+  overrides and publication settings. Screenshots were visually reviewed.
+  Final browser/build evidence and reproduction commands are recorded in
+  `docs/ui-evidence/attendance/README.md`. A stale existing subscription-test
+  date was made relative to the test clock; no subscription runtime behavior
+  changed. Existing settings/member tests were updated for the added
+  section/component, and old browser selectors were aligned with the
+  Arabic-ready phone markup and exact ledger heading.
+- Release remains: guarded Convex dry run/deploy and matching frontend release,
+  authenticated isolated-staging member/staff/second-tenant checks, real public
+  enable/revoke/expiry checks, per-site edge/WAF policy and traffic headroom.
+  No production publication setting was changed. Website commercial terms
+  and hardware vendor selection remain founder/operator decisions.
+- Read first: `docs/23_ATTENDANCE_AND_WEBSITE_INTEGRATION.md`,
+  `apps/web/src/lib/attendance/model.ts`, `apps/web/convex/attendance.ts`,
+  `apps/web/src/features/attendance/`, then the added cases in
+  `apps/web/convex/domain.ts`. Recheck with `pnpm test`, `pnpm typecheck`,
+  `pnpm convex:typecheck`, `pnpm lint`, `pnpm convex:codegen`, `pnpm build`,
+  and `pnpm --filter web exec playwright test e2e/attendance.spec.ts`.
+
+
 ## 1 October 2026 — Arabic foundation and first translated flow (branch `arabic-foundation`, not pushed)
 
 Founder decision (Elias): start Arabic now, without waiting for the review-room answers. The production export (`arabicReview:exportForImplementation --prod`) was read once: 247 questions, 0 answered, 0 approvals, `readyForImplementation: false`, so nothing is agreed and every term is a draft. Drafts are clear Modern Standard Arabic (staff: neutral or plural-polite; members: simple and friendly; no dialect), Western digits, Gregorian dates with Arabic month names, money stays `JOD 25.000`. The founders' terminology list will be applied by search-and-replace using `docs/arabic/GLOSSARY.md` (132 terms, each row says whether it came from the old branch, was changed from it, or is new).

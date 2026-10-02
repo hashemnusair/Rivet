@@ -515,7 +515,7 @@ test.describe("sensitive actions are audited", () => {
     const expiredRow = page.getByTestId("member-row").first();
     await expect(expiredRow).toContainText("Expired");
     const memberNumber = await expiredRow.locator("p.font-mono").first().innerText();
-    const phone = await expiredRow.locator('td[dir="ltr"]').first().innerText();
+    const phone = await expiredRow.locator('td bdi[dir="ltr"]').last().innerText();
 
     await page.getByRole("link", { name: "Reception", exact: true }).click();
     await expect(page).toHaveURL(/\/reception/);

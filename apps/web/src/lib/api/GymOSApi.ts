@@ -1084,6 +1084,11 @@ export interface GymOSApi {
   overrideCheckIn(input: OverrideCheckInInput): Promise<CheckInResult>;
   listRecentCheckIns(query: RecentCheckInQuery): Promise<Page<CheckInSummary>>;
   subscribeRecentCheckIns(query: RecentCheckInQuery, onValue: (page: Page<CheckInSummary>) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  getAttendanceInsights(branchId: UUID, date?: string): Promise<import("../attendance/model").AttendanceInsights>;
+  getCustomerAttendance(membershipId: UUID): Promise<import("../attendance/model").AttendanceInsights>;
+  getAttendanceSettings(branchId: UUID): Promise<import("../attendance/model").AttendanceSettings>;
+  saveAttendanceSettings(branchId: UUID, settings: import("../attendance/model").AttendanceSettings): Promise<import("../attendance/model").AttendanceSettings>;
+  recordAttendanceExit(input: { branchId: UUID; memberId: UUID; eventId: UUID }): Promise<void>;
   getOccupancy(branchId: UUID): Promise<OccupancySnapshot>;
   subscribeOccupancy(branchId: UUID, onValue: (occupancy: OccupancySnapshot) => void, onError?: (error: unknown) => void): Promise<() => void>;
 

@@ -217,6 +217,31 @@ MemberSummary[]` and no decision, and profiles merged into another record are
 never candidates. A term that has not begun yet is reported with the reason
 code `MEMBERSHIP_NOT_STARTED` and its start date, not as expired.
 
+### Attendance and public website integration (2 October 2026)
+
+```ts
+getAttendanceInsights(branchId: UUID, date?: ISODate): Promise<AttendanceInsights>
+getCustomerAttendance(membershipId: UUID): Promise<AttendanceInsights>
+getAttendanceSettings(branchId: UUID): Promise<AttendanceSettings>
+saveAttendanceSettings(branchId: UUID, settings: AttendanceSettings): Promise<AttendanceSettings>
+recordAttendanceExit(input: { branchId: UUID; memberId: UUID; eventId: UUID }): Promise<void>
+```
+
+`getOccupancy` / `subscribeOccupancy` retain their names but now return a
+freshness-aware snapshot: `current` and `capacity` are nullable, with
+availability/status/basis, UTC `generatedAt`/`validUntil`/`nextExpiryAt` and
+branch timezone. Never coalesce an unavailable `current` to zero. The
+subscription refreshes on the clock; Convex reads include a 15-second bucket
+so time expiry does not require a write. `CreateCheckInInput` and overrides
+accept `idempotencyKey`; clients retain it across retries and regenerate for
+a new attempt. Entry retries are stored for 30 days.
+
+Member attendance derives the branch from an owned portal membership. Staff
+insights require reporting permission; settings require `settings.manage`;
+all staff operations enforce tenant and branch scope. The standalone public
+GET returns an explicit aggregate allowlist only when branch publication has
+been authorized. See [the complete protocol and widget example](23_ATTENDANCE_AND_WEBSITE_INTEGRATION.md).
+
 ### Payments and shifts
 
 ```ts

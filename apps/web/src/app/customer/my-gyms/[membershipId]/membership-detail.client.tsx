@@ -1,5 +1,6 @@
 "use client";
 
+import { MemberAttendance } from "@/features/attendance/attendance-panel";
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock3, Copy, Dumbbell, MapPin, MessageCircle, Phone, QrCode, ScanLine, Share2, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -157,6 +158,7 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
 
       {section === "membership" ? (
         <div className="mt-4 space-y-4" role="tabpanel" aria-label="Membership">
+          <MemberAttendance membershipId={membership.id} />
           <MembershipSummary membership={membership} gym={gym} branchName={branch?.name ?? membership.branchName} status={status} />
           <FreezeRequestCard membershipId={membership.id} />
           {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} /> : null}

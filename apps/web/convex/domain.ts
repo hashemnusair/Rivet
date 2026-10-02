@@ -1,3 +1,5 @@
+import { attendanceSettings as resolveAttendanceSettings, presenceWindows, checkInEvent, type AttendanceEvent } from "../src/lib/attendance/model";
+import { branchAttendance, validateAttendanceSettings } from "./attendance";
 import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -5259,6 +5261,13 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   if (operation === "customer.finance.summary") return await customerFinancialSummary(ctx);
   if (operation === "customer.finance.transactions") return await customerTransactionPage(ctx, input);
   if (operation === "customer.receipt") return await customerReceiptDetail(ctx, recordId(input.receiptId));
+  if (operation === "customer.attendance") {
+    const context = await customerPtContext(ctx, recordId(input.membershipId));
+    const branchId = stringValue(data(context.membership.data).homeBranchId, stringValue(data(context.projection.data).internalBranchId));
+    const branch = await branchByPublicId(ctx, context.organization._id, branchId);
+    if (!branch) domainError("NOT_FOUND", "Branch not found.");
+    return await branchAttendance(ctx, context.organization, branch);
+  }
   if (operation === "customer.membership.freezePolicy") {
     const context = await customerPtContext(ctx, recordId(input.membershipId));
     const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
@@ -6203,16 +6212,15 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       items.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
       return page(items, input);
     }
+    case "attendance.settings":
+    case "attendance.insights":
     case "checkins.occupancy": {
-      requirePermission(actor, "members.read");
-      const branchId = recordId(input.branchId);
-      const branch = await branchByPublicId(ctx, actor.organization._id, branchId);
+      requirePermission(actor, operation === "checkins.occupancy" ? "members.read" : operation === "attendance.settings" ? "settings.manage" : "reports.financial.read");
+      const branch = await branchByPublicId(ctx, actor.organization._id, recordId(input.branchId));
       assertBranchAccess(actor, branch);
-      const cutoff = Date.now() - 90 * 60_000;
-      const rows = (await recordsOfBranch(ctx, actor, "checkIn", branchId)).map((record) => data(record.data)).filter((item) => item.branchId === branchId && item.decision !== "blocked");
-      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
-      const todayRows = rows.filter((item) => businessDate(stringValue(item.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today);
-      return { branchId, current: rows.filter((item) => new Date(stringValue(item.occurredAt)).getTime() >= cutoff).length, capacity: branch.capacity ?? 120, checkInsToday: todayRows.length, peakHour: peakHour(todayRows, actor.organization.timezone || TZ_FALLBACK) };
+      if (operation === "attendance.settings") return resolveAttendanceSettings(branch.attendance, actor.organization.timezone, branch.capacity);
+      const result = await branchAttendance(ctx, actor.organization, branch, optionalString(input.date));
+      return operation === "checkins.occupancy" ? result.snapshot : result;
     }
     case "transactions.list": {
       requirePermission(actor, "reports.financial.read");
@@ -6437,30 +6445,14 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   }
 }
 
-function peakHour(rows: Data[], timezone: string): string {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    try {
-      const hour = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", hour12: false }).format(new Date(stringValue(row.occurredAt)));
-      counts.set(hour, (counts.get(hour) ?? 0) + 1);
-    } catch {
-      // Keep the projection resilient if a tenant has a malformed timezone.
-    }
-  }
-  let best = "—";
-  let count = 0;
-  for (const [hour, value] of counts) if (value > count) { best = `${hour}:00`; count = value; }
-  return best;
-}
-
 async function evaluateCheckIn(ctx: ReadContext, actor: ActorContext, member: Data, branchId: string, forCreation: boolean): Promise<Data> {
   const policies = (await settingsData(ctx, actor)).operationalPolicies;
   const entryPolicy = data(data(policies).entry);
   const membership = await currentMembership(ctx, actor, stringValue(member.id));
   const plan = membership ? await recordOfOptional(ctx, actor, "plan", stringValue(membership.planId)) : null;
   const checks = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data));
-  const duplicateWindow = numberValue(entryPolicy.duplicateScanWindowMinutes, 2);
-  const duplicate = checks.some((checkin) => checkin.memberId === member.id && checkin.branchId === branchId && checkin.decision !== "blocked" && Date.now() - new Date(stringValue(checkin.occurredAt)).getTime() < duplicateWindow * 60_000);
+  const events = (await recordsOfBranch(ctx, actor, "attendanceEvent", branchId)).map(row => row.data as AttendanceEvent);
+  const duplicate = presenceWindows([...checks.filter(c => c.branchId === branchId).map(c => checkInEvent({ id: stringValue(c.id), memberId: stringValue(c.memberId), occurredAt: stringValue(c.occurredAt), decision: stringValue(c.decision), attendanceWindowMinutes: typeof c.attendanceWindowMinutes === "number" ? c.attendanceWindowMinutes : undefined })), ...events], Date.now()).some(w => w.personId === member.id && w.end > Date.now());
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const codes: string[] = [];
   let decision = "allowed";
@@ -11101,10 +11093,48 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "crm.write");
       domainError("VALIDATION_ERROR", "Member-only conversion is no longer supported. Complete the trial and record a membership sale.", { correlationId: actor.correlationId });
     }
+    case "attendance.settings.save": {
+      requirePermission(actor, "settings.manage");
+      const branch = await branchByPublicId(ctx, actor.organization._id, recordId(input.branchId));
+      assertBranchAccess(actor, branch);
+      const settings = validateAttendanceSettings(data(input.settings));
+      if ((branch.attendance?.windowMinutes ?? 90) !== settings.windowMinutes) {
+        const changedAt = Date.now();
+        await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, branchId: branch._id, entityType: "attendancePolicy", publicId: newPublicId(), createdAt: changedAt, updatedAt: changedAt, data: { windowMinutes: settings.windowMinutes } });
+      }
+      await ctx.db.patch(branch._id, { attendance: settings, updatedAt: Date.now() });
+      await insertAudit(ctx, actor, { category: "settings", action: "attendance.settings.update", entityType: "branch", entityId: publicBranchId(branch), entityLabel: branch.name, summary: settings.publicEnabled ? "Attendance settings saved; public occupancy enabled" : "Attendance settings saved; public occupancy disabled", before: branch.attendance ?? {}, after: settings, branchId: publicBranchId(branch) });
+      return settings;
+    }
+    case "attendance.exit": {
+      requirePermission(actor, "members.read");
+      const branch = await branchByPublicId(ctx, actor.organization._id, recordId(input.branchId));
+      assertBranchAccess(actor, branch);
+      const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
+      const id = recordId(input.eventId);
+      const prior = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", q => q.eq("organizationId", actor.organization._id).eq("entityType", "attendanceEvent").eq("publicId", id)).unique();
+      if (prior) {
+        if (prior.memberPublicId !== member.publicId || prior.branchId !== branch._id) domainError("CONFLICT", "Exit reference already used.");
+        return null;
+      }
+      const now = Date.now();
+      await insertRecord(ctx, actor, "attendanceEvent", { id, personId: member.publicId, occurredAt: now, kind: "exit", accepted: true, source: "reception" }, { branchId: publicBranchId(branch), memberPublicId: member.publicId });
+      await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: publicBranchId(branch), type: "check_in", title: `Exit recorded — ${branch.name}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { attendanceEventId: id, kind: "exit" } });
+      return null;
+    }
     case "checkins.create": {
       requirePermission(actor, "members.read");
       const branchId = recordId(input.branchId);
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+      const idempotencyKey = optionalString(input.idempotencyKey);
+      const requestHash = JSON.stringify({ memberId: input.memberId, branchId, entryPassToken: input.entryPassToken ?? null });
+      if (idempotencyKey) {
+        const prior = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", q => q.eq("organizationId", actor.organization._id).eq("operation", "attendance.entry").eq("key", idempotencyKey)).unique();
+        if (prior) {
+          if (prior.requestHash !== requestHash) domainError("CONFLICT", "Entry attempt reference already used.");
+          return prior.result;
+        }
+      }
       const entryPassToken = optionalString(input.entryPassToken);
       const entryPass = entryPassToken ? await resolveEntryPass(ctx, actor, entryPassToken, branchId) : null;
       if (entryPassToken && !entryPass) domainError("NOT_FOUND", "This entry pass cannot be used. Ask the member for a new one.", { correlationId: actor.correlationId });
@@ -11113,7 +11143,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (entryPass && entryPass.payload.memberId && entryPass.payload.memberId !== member.id) domainError("NOT_FOUND", "Entry pass is not valid for this member.", { correlationId: actor.correlationId });
       const evaluation = await evaluateCheckIn(ctx, actor, member, branchId, true);
       const decision = stringValue(evaluation.decision);
-      const checkIn = { id: newPublicId(), memberId: member.id, memberName: member.fullName, memberNumber: member.memberNumber, branchId, branchName: (await branchByPublicId(ctx, actor.organization._id, branchId))?.name ?? "—", decision, reasonCodes: evaluation.reasonCodes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, occurredAt: isoNow() };
+      const checkIn = { id: newPublicId(), memberId: member.id, memberName: member.fullName, memberNumber: member.memberNumber, branchId, attendanceWindowMinutes: (await branchByPublicId(ctx, actor.organization._id, branchId))?.attendance?.windowMinutes ?? 90, attendanceSource: entryPass ? "qr" : "reception", branchName: (await branchByPublicId(ctx, actor.organization._id, branchId))?.name ?? "—", decision, reasonCodes: evaluation.reasonCodes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, occurredAt: isoNow() };
       await insertRecord(ctx, actor, "checkIn", checkIn, { branchId, memberPublicId: member.id });
       if (decision !== "blocked") {
         const membership = await currentMembership(ctx, actor, member.id);
@@ -11124,13 +11154,24 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision } });
         if (entryPass) await ctx.db.patch(entryPass.pass._id, { consumedAt: Date.now(), lastValidatedAt: Date.now() });
       }
-      return { checkInId: checkIn.id, decision, reasonCodes: evaluation.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: evaluation.message };
+      const result = { checkInId: checkIn.id, decision, reasonCodes: evaluation.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: evaluation.message };
+      if (idempotencyKey) await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "attendance.entry", key: idempotencyKey, requestHash, result, createdAt: Date.now(), expiresAt: Date.now() + 30 * 86_400_000 });
+      return result;
     }
     case "checkins.override": {
       requirePermission(actor, "checkins.override");
       requireReason(input.reason, actor.correlationId);
       const branchId = recordId(input.branchId);
       assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
+      const idempotencyKey = optionalString(input.idempotencyKey);
+      const requestHash = JSON.stringify({ memberId: input.memberId, branchId, reason: input.reason });
+      if (idempotencyKey) {
+        const prior = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", q => q.eq("organizationId", actor.organization._id).eq("operation", "attendance.override").eq("key", idempotencyKey)).unique();
+        if (prior) {
+          if (prior.requestHash !== requestHash) domainError("CONFLICT", "Entry attempt reference already used.");
+          return prior.result;
+        }
+      }
       const entryPassToken = optionalString(input.entryPassToken);
       const entryPass = entryPassToken ? await resolveEntryPass(ctx, actor, entryPassToken, branchId) : null;
       if (entryPassToken && !entryPass) domainError("NOT_FOUND", "This entry pass cannot be used. Ask the member for a new one.", { correlationId: actor.correlationId });
@@ -11138,7 +11179,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const member = data(memberRecord.data);
       if (entryPass && entryPass.payload.memberId && entryPass.payload.memberId !== member.id) domainError("NOT_FOUND", "Entry pass is not valid for this member.", { correlationId: actor.correlationId });
       const evaluation = await evaluateCheckIn(ctx, actor, member, branchId, true);
-      const checkIn = { id: newPublicId(), memberId: member.id, memberName: member.fullName, memberNumber: member.memberNumber, branchId, branchName: (await branchByPublicId(ctx, actor.organization._id, branchId))?.name ?? "—", decision: "overridden", reasonCodes: [...arrayValue(evaluation.reasonCodes).filter((code) => code !== "OK"), "MANUAL_OVERRIDE"], actorId: publicUserId(actor.user), actorName: actor.user.fullName, overrideReason: stringValue(input.reason), occurredAt: isoNow() };
+      const checkIn = { id: newPublicId(), memberId: member.id, memberName: member.fullName, memberNumber: member.memberNumber, branchId, attendanceWindowMinutes: (await branchByPublicId(ctx, actor.organization._id, branchId))?.attendance?.windowMinutes ?? 90, attendanceSource: entryPass ? "qr" : "reception", branchName: (await branchByPublicId(ctx, actor.organization._id, branchId))?.name ?? "—", decision: "overridden", reasonCodes: [...arrayValue(evaluation.reasonCodes).filter((code) => code !== "OK"), "MANUAL_OVERRIDE"], actorId: publicUserId(actor.user), actorName: actor.user.fullName, overrideReason: stringValue(input.reason), occurredAt: isoNow() };
       await insertRecord(ctx, actor, "checkIn", checkIn, { branchId, memberPublicId: member.id });
       const membership = await currentMembership(ctx, actor, member.id);
       if (membership && membership.remainingVisits != null) { const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id)); await patchRecord(ctx, actor, membershipRecord, { remainingVisits: Math.max(0, numberValue(membership.remainingVisits) - 1) }); }
@@ -11147,7 +11188,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "checkins", action: "checkin.override", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Manual check-in override (${arrayValue(evaluation.reasonCodes).join(", ")})`, reason: stringValue(input.reason), before: { decision: evaluation.decision }, after: { decision: "overridden" }, branchId });
       const overrideBranch = await branchByPublicId(ctx, actor.organization._id, branchId);
       await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: overrideBranch?._id, roles: ["owner", "manager"], kind: "checkin_override", title: "Check-in override recorded", body: `${member.fullName} · ${checkIn.branchName} · ${actor.user.fullName}`, href: `/members/${member.id}`, dedupeKey: `checkin-override:${checkIn.id}` });
-      return { checkInId: checkIn.id, decision: "overridden", reasonCodes: checkIn.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: `Overridden by ${actor.user.fullName}: ${input.reason}` };
+      const result = { checkInId: checkIn.id, decision: "overridden", reasonCodes: checkIn.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: `Overridden by ${actor.user.fullName}: ${input.reason}` };
+      if (idempotencyKey) await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "attendance.override", key: idempotencyKey, requestHash, result, createdAt: Date.now(), expiresAt: Date.now() + 30 * 86_400_000 });
+      return result;
     }
     case "payments.create": {
       requirePermission(actor, "payments.collect");

@@ -230,6 +230,8 @@ export default defineSchema({
     address: v.optional(v.string()),
     phone: v.optional(v.string()),
     capacity: v.optional(v.number()),
+    attendance: v.optional(v.object({ windowMinutes: v.number(), capacity: v.optional(v.number()), timezone: v.string(), publicEnabled: v.boolean(), feedMode: v.union(v.literal("reception"), v.literal("external"), v.literal("paused")) })),
+    attendanceHeartbeatAt: v.optional(v.number()),
     active: v.boolean(),
     status: v.optional(v.union(v.literal("active"), v.literal("inactive"))),
     createdAt: v.number(),
@@ -1783,6 +1785,7 @@ export default defineSchema({
     .index("by_organization_public_id", ["organizationId", "publicId"])
     .index("by_organization_type_public_id", ["organizationId", "entityType", "publicId"])
     .index("by_organization_branch_type", ["organizationId", "branchId", "entityType"])
+    .index("by_organization_branch_type_created", ["organizationId", "branchId", "entityType", "createdAt"])
     .index("by_organization_member_type", ["organizationId", "memberPublicId", "entityType"])
     .index("by_organization_lead_type", ["organizationId", "leadPublicId", "entityType"])
     .index("by_type_customer_user", ["entityType", "customerUserPublicId"])

@@ -1,3 +1,4 @@
+import { pollAttendance } from "../attendance/poll";
 import { api } from "../../../convex/_generated/api";
 import type {
   AuditQuery,
@@ -602,8 +603,13 @@ export class ConvexGymOSApi implements GymOSApi {
   overrideCheckIn(input: T.OverrideCheckInInput): Promise<T.CheckInResult> { return this.mutate("checkins.override", input); }
   listRecentCheckIns(query: RecentCheckInQuery): Promise<T.Page<T.CheckInSummary>> { return this.query("checkins.list", query); }
   subscribeRecentCheckIns(query: RecentCheckInQuery, onValue: (page: T.Page<T.CheckInSummary>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("checkins.list", query, onValue, onError); }
-  getOccupancy(branchId: T.UUID): Promise<T.OccupancySnapshot> { return this.query("checkins.occupancy", { branchId }); }
-  subscribeOccupancy(branchId: T.UUID, onValue: (occupancy: T.OccupancySnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("checkins.occupancy", { branchId }, onValue, onError); }
+  getAttendanceInsights(branchId: T.UUID, date?: string): Promise<T.AttendanceInsights> { return this.query("attendance.insights", { branchId, date, clockBucket: Math.floor(Date.now() / 15_000) }); }
+  getCustomerAttendance(membershipId: T.UUID): Promise<T.AttendanceInsights> { return this.query("customer.attendance", { membershipId, clockBucket: Math.floor(Date.now() / 15_000) }); }
+  getAttendanceSettings(branchId: T.UUID): Promise<T.AttendanceSettings> { return this.query("attendance.settings", { branchId }); }
+  saveAttendanceSettings(branchId: T.UUID, settings: T.AttendanceSettings): Promise<T.AttendanceSettings> { return this.mutate("attendance.settings.save", { branchId, settings }); }
+  recordAttendanceExit(input: { branchId: T.UUID; memberId: T.UUID; eventId: T.UUID }): Promise<void> { return this.mutate("attendance.exit", input); }
+  getOccupancy(branchId: T.UUID): Promise<T.OccupancySnapshot> { return this.query("checkins.occupancy", { branchId, clockBucket: Math.floor(Date.now() / 15_000) }); }
+  subscribeOccupancy(branchId: T.UUID, onValue: (occupancy: T.OccupancySnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> { return pollAttendance(() => this.getOccupancy(branchId), onValue, onError); }
 
   listTransactions(query: TransactionListQuery): Promise<T.Page<T.TransactionSummary>> { return this.query("transactions.list", query); }
   subscribeTransactions(query: TransactionListQuery, onValue: (page: T.Page<T.TransactionSummary>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("transactions.list", query, onValue, onError); }

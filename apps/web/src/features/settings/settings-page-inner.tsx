@@ -1,5 +1,6 @@
 "use client";
 
+import { AttendanceSettingsSection } from "@/features/attendance/attendance-settings";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import { AgreementSection } from "@/features/settings/agreement-section";
 import { SubscriptionSection } from "@/features/settings/subscription-section";
@@ -61,6 +62,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
       { id: "brand", label: "Brand kit", keywords: "identity sidebar menu logo palette primary main color colour theme", permission: "settings.manage", component: BrandKitSection },
       { id: "profile", label: "Public profile", keywords: "page publish website directory photos banner cover tagline amenities category", permission: "profiles.manage", component: GymPublicProfileSection },
       { id: "branches", label: "Branches", keywords: "locations address codes", permission: "settings.manage", component: BranchesSection },
+      { id: "attendance", label: "Attendance", keywords: "occupancy live website capacity people presence", permission: "settings.manage", component: AttendanceSettingsSection },
       { id: "spaces", label: "Gym areas", keywords: "spaces zones areas rooms floors studios", permission: "settings.manage", component: GymSpacesSection },
       { id: "agreement", label: "Agreement", keywords: "legal contract subscription agreement signature signed terms privacy", permission: "settings.manage", component: AgreementSection },
       { id: "subscription", label: "Subscription & invoices", keywords: "billing invoice invoices pdf plan rivet fees paid past due receipt", permission: "settings.manage", component: SubscriptionSection },
@@ -243,10 +245,10 @@ export function SettingsPageInner() {
                 <p className="sr-only" aria-live="polite">{filtered.length === 1 ? "1 section matches" : `${filtered.length} sections match`}</p>
               ) : null}
             </div>
-            <div ref={railRef} role="tablist" aria-orientation="vertical" aria-label="Settings sections" className="space-y-1.5 pb-1" onKeyDown={moveFocus}>
+            <div ref={railRef} role="tablist" aria-orientation="vertical" aria-label="Settings sections" className="space-y-1 pb-1" onKeyDown={moveFocus}>
               {filtered ? (
                 filtered.length > 0 ? (
-                  <div className="space-y-0.5">
+                  <div className="space-y-0">
                     {filtered.map(navButton)}
                     {!focusRail ? <p className="px-3 pt-2 text-[12px] leading-5 text-ink-3">Showing {active.label}. Choose a match to change section.</p> : null}
                   </div>
@@ -257,7 +259,7 @@ export function SettingsPageInner() {
                 visibleGroups.map((group) => (
                   <div key={group.label}>
                     <ContextLabel className="mb-0.5 px-3">{group.label}</ContextLabel>
-                    <div className="space-y-0.5">{group.entries.map(navButton)}</div>
+                    <div className="space-y-0">{group.entries.map(navButton)}</div>
                   </div>
                 ))
               )}

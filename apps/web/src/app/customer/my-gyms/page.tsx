@@ -1,5 +1,6 @@
 "use client";
 
+import { MemberAttendance } from "@/features/attendance/attendance-panel";
 import { ArrowRight, QrCode, Search, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -128,6 +129,7 @@ function MembershipPass({ membership, gym, onShowPass }: { membership: CustomerM
           <p className={cn("mt-0.5 text-[13px]", status.ended ? "text-danger" : status.key === "ending" ? "text-warning-deep" : "text-ink-3")}>{status.summary}</p>
         </div>
       </div>
+      <div className="px-4 pb-4"><MemberAttendance membershipId={membership.id} compact /></div>
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
         <Button size="sm" onClick={onShowPass}><QrCode /> Entry code</Button>
         <Button asChild size="sm" variant="secondary"><Link href={href}>Membership <ArrowRight /></Link></Button>

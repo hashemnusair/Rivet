@@ -36,6 +36,7 @@ import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog"
 import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
 import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
 import { CloseShiftDialog, OpenShiftDialog, authoritativeExpectedCash } from "@/features/finance/shift-dialogs";
+import { OccupancyReading } from "@/features/attendance/occupancy-widget";
 import { ContextLabel } from "@/components/ui/typography";
 
 export default function ReceptionPage() {
@@ -57,6 +58,8 @@ export default function ReceptionPage() {
   const [dialog, setDialog] = useState<"override" | "collect" | "renew" | "openShift" | "closeShift" | null>(null);
   const [branchSelecting, setBranchSelecting] = useState<string | null>(null);
   const [branchSelectionError, setBranchSelectionError] = useState<string | null>(null);
+  const attemptRef = useRef<{ signature: string; key: string } | null>(null);
+  const exitRef = useRef<{ memberId: string; eventId: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const automaticBranchAttempt = useRef<string | null>(null);
   // A scanner sends its Enter before the debounced preview has resolved. Keep
@@ -137,6 +140,7 @@ export default function ReceptionPage() {
   /** A recorded verdict remains visible until staff explicitly starts the next lane. */
   const resetLane = useCallback(() => {
     pendingCommit.current = null;
+    attemptRef.current = null;
     setResult(null);
     setQuery("");
     focusInput();
@@ -150,7 +154,16 @@ export default function ReceptionPage() {
     focusInput();
   }, [focusInput]);
 
-  const checkIn = useApiMutation((api) => api.createCheckIn({ memberId: preview!.member!.id, branchId: branchId!, source: query.trim().startsWith("rivet-pass.") ? "qr" : "search", ...(query.trim().startsWith("rivet-pass.") ? { entryPassToken: query.trim() } : {}) }), {
+  const entryKey = () => {
+    const signature = `${branchId}:${preview?.member?.id}:${query}`;
+    if (attemptRef.current?.signature !== signature) attemptRef.current = { signature, key: crypto.randomUUID() };
+    return attemptRef.current.key;
+  };
+  const recordExit = useApiMutation((api, memberId: string) => {
+    if (exitRef.current?.memberId !== memberId) exitRef.current = { memberId, eventId: crypto.randomUUID() };
+    return api.recordAttendanceExit({ memberId, branchId: branchId!, eventId: exitRef.current.eventId });
+  }, { successMessage: "Actual exit recorded.", onSuccess: async () => { exitRef.current = null; resetLane(); await invalidate(); } });
+  const checkIn = useApiMutation((api) => api.createCheckIn({ idempotencyKey: entryKey(), memberId: preview!.member!.id, branchId: branchId!, source: query.trim().startsWith("rivet-pass.") ? "qr" : "search", ...(query.trim().startsWith("rivet-pass.") ? { entryPassToken: query.trim() } : {}) }), {
     onSuccess: async (res) => {
       setResult(res);
       setRecentPage(1);
@@ -335,7 +348,7 @@ export default function ReceptionPage() {
                 <NoMatchState message={preview?.message ?? "No match."} query={debounced} canCreate={can("members.write")} />
               )
             ) : (
-              <VerdictPanel
+              <><VerdictPanel
                 decision={decision!}
                 message={result?.message ?? preview?.message ?? ""}
                 reasonCodes={result?.reasonCodes ?? preview?.reasonCodes ?? []}
@@ -357,6 +370,8 @@ export default function ReceptionPage() {
                 onRenew={() => setDialog("renew")}
                 onNext={resetLane}
               />
+              <Button className="mt-3" variant="secondary" disabled={recordExit.isPending} onClick={() => recordExit.mutate(member.id)}>Record actual exit</Button>
+              <p className="mt-2 text-[12px] text-night-ink-3">Use only when this member has left the gym.</p></>
             )}
           </div>
 
@@ -402,6 +417,7 @@ export default function ReceptionPage() {
             </dl>
           </section>
 
+          <div className="px-4 pb-4"><OccupancyReading data={occupancyQuery.data?.branchId === branchId ? occupancyQuery.data : undefined} failed={occupancyQuery.isError || occupancyQuery.isBackgroundError || occupancyQuery.streamState === "fallback"} loading={occupancyQuery.isLoading} style={{ "--occupancy-surface": "var(--color-night-2)", "--occupancy-ink": "var(--color-night-ink)", "--occupancy-muted": "var(--color-night-ink-2)", "--occupancy-line": "var(--color-night-line)" }} /></div>
           <section className="flex min-h-0 flex-1 flex-col">
             <ContextLabel tone="night" className="border-b border-night-line px-5 py-3">Who checked in today</ContextLabel>
             <ul className="flex-1 divide-y divide-night-line/70 overflow-y-auto">

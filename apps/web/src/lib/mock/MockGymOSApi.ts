@@ -1,3 +1,5 @@
+import { attendanceInsights, attendanceSettings, checkInEvent, presenceWindows, type AttendanceEvent, type AttendanceSettings } from "../attendance/model";
+import { pollAttendance } from "../attendance/poll";
 import { isCalendarDate } from "@/lib/utils/dates";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
 import type {
@@ -3525,6 +3527,10 @@ export class MockGymOSApi implements GymOSApi {
     const role = currentRole(this.db);
     const branch = this.db.session.activeBranchId;
     this.db = buildSeed();
+    this.attendanceConfig.clear();
+    this.attendanceEntryRetries.clear();
+    this.attendanceOverrideRetries.clear();
+    this.attendanceEvents = [];
     this.memberImports.clear();
     this.memberImportIdempotency.clear();
     this.publicApplicationIdempotency.clear();
@@ -7526,11 +7532,7 @@ export class MockGymOSApi implements GymOSApi {
     const today = this.today();
     const current = this.currentMembership(member.id);
     const plan = current ? this.db.plans.find((p) => p.id === current.planId) : undefined;
-    // duplicate scan suppression (2 minutes, same branch)
-    const lastCheckIn = this.db.checkIns.find(
-      (c) => c.memberId === member.id && c.branchId === branchId && c.decision !== "blocked",
-    );
-    const duplicate = lastCheckIn ? Date.now() - new Date(lastCheckIn.occurredAt).getTime() < 2 * 60_000 : false;
+    const duplicate = presenceWindows([...this.db.checkIns.filter(c => c.branchId === branchId).map(checkInEvent), ...this.attendanceEvents.filter(e => e.source.startsWith(branchId + ":"))], Date.now()).some(w => w.personId === member.id && w.end > Date.now());
 
     const result = evaluateCheckIn({
       memberStatus: member.status,
@@ -7594,6 +7596,9 @@ export class MockGymOSApi implements GymOSApi {
   createCheckIn(input: T.CreateCheckInInput): Promise<T.CheckInResult> {
     return this.respond(() => {
       this.require("members.read");
+      this.attendanceBranch(input.branchId);
+      const prior = input.idempotencyKey ? this.attendanceEntryRetries.get(input.idempotencyKey) : undefined;
+      if (prior) { if (prior.member.id !== input.memberId || prior.branchId !== input.branchId) throw ApiError.of(ERR.CONFLICT, "Entry attempt reference already used."); return prior; }
       const member = this.db.members.find((m) => m.id === input.memberId);
       if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
       const evaluation = this.evaluateForMember(member, input.branchId);
@@ -7613,21 +7618,29 @@ export class MockGymOSApi implements GymOSApi {
           actorName: this.actor().name,
           occurredAt: nowISO(),
         });
-        return {
+        const result: T.CheckInResult = {
           decision: "blocked",
           reasonCodes: evaluation.reasonCodes,
           member: summary,
           membership: evaluation.membership ? this.toMembershipSummary(evaluation.membership) : undefined,
           message: evaluation.message,
         };
+        if (input.idempotencyKey) this.attendanceEntryRetries.set(input.idempotencyKey, { ...result, branchId: input.branchId });
+        return result;
       }
-      return this.recordCheckIn(member, input.branchId, evaluation, undefined);
+      const result = this.recordCheckIn(member, input.branchId, evaluation, undefined);
+      if (input.idempotencyKey) this.attendanceEntryRetries.set(input.idempotencyKey, { ...result, branchId: input.branchId });
+      return result;
     });
   }
 
   overrideCheckIn(input: T.OverrideCheckInInput): Promise<T.CheckInResult> {
     return this.respond(() => {
       this.require("checkins.override");
+      this.attendanceBranch(input.branchId);
+      const signature = JSON.stringify({ branchId: input.branchId, memberId: input.memberId, reason: input.reason });
+      const prior = input.idempotencyKey ? this.attendanceOverrideRetries.get(input.idempotencyKey) : undefined;
+      if (prior) { if (prior.signature !== signature) throw ApiError.of(ERR.CONFLICT, "Entry attempt reference already used."); return prior.result; }
       if (!input.reason.trim()) {
         throw ApiError.of(ERR.VALIDATION, "An override reason is required.", { fieldErrors: { reason: ["Required"] } });
       }
@@ -7647,6 +7660,7 @@ export class MockGymOSApi implements GymOSApi {
         after: { decision: "overridden" },
         branchId: input.branchId,
       });
+      if (input.idempotencyKey) this.attendanceOverrideRetries.set(input.idempotencyKey, { signature, result });
       return result;
     });
   }
@@ -7660,6 +7674,7 @@ export class MockGymOSApi implements GymOSApi {
     const decision: T.CheckInDecision = overrideReason ? "overridden" : evaluation.decision;
     const checkIn: T.CheckInSummary = {
       id: mockUuid(),
+      attendanceWindowMinutes: this.attendanceConfig.get(branchId)?.windowMinutes ?? 90,
       memberId: member.id,
       memberName: member.fullName,
       memberNumber: member.memberNumber,
@@ -7716,41 +7731,57 @@ export class MockGymOSApi implements GymOSApi {
     return this.subscribeOnce(() => this.listRecentCheckIns(query), onValue, onError);
   }
 
-  getOccupancy(branchId: T.UUID): Promise<T.OccupancySnapshot> {
+  private attendanceOverrideRetries = new Map<string, { signature: string; result: T.CheckInResult }>();
+  private attendanceEntryRetries = new Map<string, T.CheckInResult & { branchId: string }>();
+  private attendanceConfig = new Map<string, AttendanceSettings>();
+  private attendanceEvents: AttendanceEvent[] = [];
+  private attendanceFor(branchId: T.UUID, date?: string): T.AttendanceInsights {
+    const branch = this.db.branches.find((b) => b.id === branchId);
+    if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+    return attendanceInsights({ branchId, settings: this.attendanceConfig.get(branchId) ?? attendanceSettings(undefined, this.db.organization.timezone, branch.capacity), events: [...this.db.checkIns.filter(c => c.branchId === branchId).map(checkInEvent), ...this.attendanceEvents.filter(e => e.source.startsWith(branchId + ":"))], now: Date.now(), date, truncated: branch.status !== "active" });
+  }
+  private attendanceBranch(branchId: string) {
+    if (!this.branchIsVisible(branchId) || !this.db.branches.some(b => b.id === branchId)) throw ApiError.of(ERR.FORBIDDEN, "Branch access denied.");
+  }
+  getAttendanceInsights(branchId: T.UUID, date?: string): Promise<T.AttendanceInsights> {
+    return this.respond(() => { this.require("reports.financial.read"); this.attendanceBranch(branchId); return this.attendanceFor(branchId, date); });
+  }
+  getCustomerAttendance(membershipId: T.UUID): Promise<T.AttendanceInsights> {
     return this.respond(() => {
-      const branch = this.db.branches.find((b) => b.id === branchId);
-      if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
-      const today = this.today();
-      const cutoff = Date.now() - 90 * 60_000;
-      const current = this.db.checkIns.filter(
-        (c) => c.branchId === branchId && c.decision !== "blocked" && new Date(c.occurredAt).getTime() >= cutoff,
-      ).length;
-      const todayCheckIns = this.db.checkIns.filter(
-        (c) => c.branchId === branchId && c.decision !== "blocked" && todayISODate(TZ, new Date(c.occurredAt)) === today,
-      );
-      const hourCounts = new Map<number, number>();
-      for (const c of todayCheckIns) {
-        const h = Number(new Date(c.occurredAt).toLocaleString("en-US", { timeZone: TZ, hour: "2-digit", hour12: false }));
-        hourCounts.set(h, (hourCounts.get(h) ?? 0) + 1);
-      }
-      let peakHour = "—";
-      let peak = 0;
-      for (const [h, count] of hourCounts) {
-        if (count > peak) {
-          peak = count;
-          peakHour = `${String(h).padStart(2, "0")}:00`;
-        }
-      }
-      return { branchId, current, capacity: branch.capacity, checkInsToday: todayCheckIns.length, peakHour };
+      const membership = INITIAL_CUSTOMER_MEMBERSHIPS.find(m => m.id === membershipId && m.customerId === this.activeCustomerId);
+      const branchId = membership ? this.platformGyms.find(g => g.id === membership.gymId)?.branches.find(b => b.id === membership.branchId)?.internalBranchId : undefined;
+      if (!branchId) throw ApiError.of(ERR.NOT_FOUND, "Attendance is not available for this membership.");
+      return this.attendanceFor(branchId);
     });
   }
-
-  // -------------------------------------------------------------------------
-  // payments
-  // -------------------------------------------------------------------------
-
+  getAttendanceSettings(branchId: T.UUID): Promise<T.AttendanceSettings> {
+    return this.respond(() => { this.require("settings.manage"); this.attendanceBranch(branchId); return this.attendanceConfig.get(branchId) ?? attendanceSettings(undefined, this.db.organization.timezone, this.db.branches.find(b => b.id === branchId)?.capacity); });
+  }
+  saveAttendanceSettings(branchId: T.UUID, settings: T.AttendanceSettings): Promise<T.AttendanceSettings> {
+    return this.respond(() => {
+      this.require("settings.manage"); this.attendanceBranch(branchId);
+      if (!Number.isInteger(settings.windowMinutes) || settings.windowMinutes < 15 || settings.windowMinutes > 720 || (settings.capacity !== undefined && (!Number.isInteger(settings.capacity) || settings.capacity <= 0 || settings.capacity > 100_000)) || typeof settings.publicEnabled !== "boolean" || !["reception", "external", "paused"].includes(settings.feedMode)) throw ApiError.of(ERR.VALIDATION, "Check the attendance settings.");
+      try { new Intl.DateTimeFormat("en", { timeZone: settings.timezone }).format(); } catch { throw ApiError.of(ERR.VALIDATION, "Choose a valid branch timezone."); }
+      this.attendanceConfig.set(branchId, settings);
+      this.audit({ category: "settings", action: "attendance.settings.update", entityType: "branch", entityId: branchId, entityLabel: branchId, summary: "Attendance settings updated", after: { windowMinutes: settings.windowMinutes, publicEnabled: String(settings.publicEnabled) }, branchId });
+      return settings;
+    });
+  }
+  recordAttendanceExit(input: { branchId: T.UUID; memberId: T.UUID; eventId: T.UUID }): Promise<void> {
+    return this.respond(() => {
+      this.require("members.read"); this.attendanceBranch(input.branchId);
+      if (!this.db.members.some(m => m.id === input.memberId && this.branchIsVisible(m.homeBranchId))) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      const prior = this.attendanceEvents.find(e => e.id === input.eventId);
+      if (prior) { if (prior.personId !== input.memberId || prior.source !== input.branchId + ":reception") throw ApiError.of(ERR.CONFLICT, "Exit reference already used."); return; }
+      this.attendanceEvents.push({ id: input.eventId, personId: input.memberId, occurredAt: Date.now(), kind: "exit", accepted: true, source: input.branchId + ":reception" });
+      this.activity({ memberId: input.memberId, type: "check_in", title: "Exit recorded", actorId: this.actor().id, actorName: this.actor().name, meta: { kind: "exit" } });
+    });
+  }
+  getOccupancy(branchId: T.UUID): Promise<T.OccupancySnapshot> {
+    return this.respond(() => { this.require("members.read"); this.attendanceBranch(branchId); return this.attendanceFor(branchId).snapshot; });
+  }
   subscribeOccupancy(branchId: T.UUID, onValue: (occupancy: T.OccupancySnapshot) => void, onError?: (error: unknown) => void): Promise<() => void> {
-    return this.subscribeOnce(() => this.getOccupancy(branchId), onValue, onError);
+    return pollAttendance(() => this.getOccupancy(branchId), onValue, onError);
   }
 
   private nextReceiptNumber(): string {

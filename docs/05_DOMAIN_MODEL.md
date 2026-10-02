@@ -181,6 +181,24 @@ Explicit start/end and status, rather than an unstructured date edit.
 - timestamp
 - override reason and actor if applicable
 
+### Estimated presence (2 October 2026)
+
+An accepted entry begins one fixed estimated-presence window per gym member
+and branch. The default is 90 minutes; new entries snapshot the branch policy.
+Repeated scans in the open window do not add people or extend it. Actual exits
+close windows; expiry is derived and creates no timeline departure. A genuine
+new entry after exit/expiry begins another visit. New entry attempts have
+retry-safe IDs independent of the estimated window.
+
+Existing `checkIn` rows and new `attendanceEvent` entry/exit facts normalize to
+one shared model. `attendancePolicy` facts preserve visit-length change times
+for delayed input. Branch attendance settings own timezone, optional capacity,
+feed mode and off-by-default public publication. External heartbeat timestamps
+represent delivery health, not attendance. No raw biometric data is stored.
+
+The aggregate contract, historical thresholds, observation limits and managed
+website publication boundary are documented in [docs/23](23_ATTENDANCE_AND_WEBSITE_INTEGRATION.md).
+
 ### AccessCredential
 
 QR/NFC/external-device identifier. Do not store raw biometric templates.

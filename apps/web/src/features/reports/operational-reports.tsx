@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffAttendance } from "@/features/attendance/attendance-panel";
 import { Download, FileBarChart } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
@@ -102,6 +103,7 @@ export function OperationalReports({ view, scope, branches, onScopeChange }: { v
       {active.isLoading ? <Skeleton className="h-72 w-full" /> : null}
       {active.isError ? <ErrorState onRetry={() => void active.refetch()} /> : null}
 
+      {view === "peak-hours" ? <StaffAttendance branchId={branchInput} date={to} /> : null}
       {!active.isLoading && !active.isError ? (
         view === "peak-hours" && peakQuery.data ? <PeakHoursView report={peakQuery.data} from={from} to={to} />
         : view === "classes" && classesQuery.data ? <ClassesView report={classesQuery.data} from={from} to={to} />
@@ -199,7 +201,7 @@ function PeakHoursView({ report, from, to }: { report: PeakHoursReport; from: st
   return (
     <section className="panel overflow-hidden">
       <ReportHeader
-        title="Peak hours"
+        title="Entry volume"
         definition="Check-ins for each day and hour, in the gym's local time. Refused entries are not counted. Members let in anyway are counted."
         onExport={exportCsv}
         exportDisabled={report.cells.length === 0}

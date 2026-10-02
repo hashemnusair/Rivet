@@ -1,5 +1,41 @@
 # 12 — System Maps and Release Runbook
 
+## Attendance and bespoke website integration — 2 October 2026
+
+Implementation is local, not released. The authoritative living integration
+contract is [docs/23](23_ATTENDANCE_AND_WEBSITE_INTEGRATION.md). All occupancy
+surfaces use `src/lib/attendance/model.ts` through the documented API boundary.
+
+```text
+Reception search / QR / manual admission ─┐
+Actual exit + future verified device seam ├─> Convex branch attendance projection
+Legacy check-in history ──────────────────┘      │
+                                                 ├─> GymOSApi → member + staff UI
+                                                 └─> authorized public aggregate GET
+                                                      → bespoke site's /live widget
+```
+
+Deploy `branches.attendance`, `branches.attendanceHeartbeatAt`, the additive
+`domainRecords.by_organization_branch_type_created` index, `attendance.ts`,
+`http.ts` and the domain dispatcher together, through `pnpm convex:deploy`.
+Policy and actual-exit facts use existing `domainRecords`; no destructive
+migration, backfill, cron-generated departure, new secret, or vendor is needed.
+Clock-driven 15-second reads handle expiry; 45-second freshness and external
+heartbeat checks prevent unavailable-as-zero states.
+
+Website publication is independently authorized for each gym branch through
+Settings → Attendance and defaults off. Provision a managed site's appropriate
+edge/WAF per-client rate policy and validate expected throughput before enabling
+it. Convex already enforces a shared 600-request/minute public budget. A stale
+cached response must never outlive `validUntil` or survive a failed refresh as
+a current headcount. Endpoint health, no-store revocation and second-tenant
+isolation must be checked on the selected live `.convex.site` origin.
+
+Local evidence and remaining staging/release steps are in `CURRENT_STATE.md`
+and `docs/ui-evidence/attendance/README.md`. Production deploy, public enabling,
+site creation and commercial decisions were not performed by this task.
+
+
 ## Arabic review room — 30 September 2026
 
 - Canonical route: `https://platform.rivetjo.com/platform/arabic-room`, protected by existing Clerk/platform identity and server-side `requirePlatformAdmin` checks on all review endpoints. Intended reviewers are the existing two founder admins; additional active platform admins would join the required approval roster.
