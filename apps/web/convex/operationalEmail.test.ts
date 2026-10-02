@@ -59,7 +59,7 @@ describe("durable operational email", () => {
     const { t, organizationId } = await seed();
     await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", language: "ar", recipientReference: "member-1", recipientEmail: "member@example.test", dedupeKey: "pt-arabic" });
     const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "pt-arabic")).unique());
-    expect(row).toMatchObject({ language: "ar", templateVersion: "pt-booking-confirmation-v1", subject: "تم حجز جلسة التدريب الشخصي", status: "suppressed" });
+    expect(row).toMatchObject({ language: "ar", templateVersion: "pt-booking-confirmation-v1", subject: "تم حجز حصة التدريب الشخصي", status: "suppressed" });
     expect(row?.html).toContain('dir="rtl"');
     expect(row?.text).not.toContain("delivered");
   });

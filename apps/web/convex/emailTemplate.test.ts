@@ -61,7 +61,7 @@ describe("branded email", () => {
     expect(arabic.html).toContain("IBM Plex Sans Arabic");
     expect(arabic.html).toContain("/brand/rivet-lockup.png");
     expect(arabic.text).toContain("RIVET · عمّان، الأردن");
-    expect(arabic.text).toContain("الدعم 09:00–21:00 بتوقيت عمّان، من السبت إلى الخميس");
+    expect(arabic.text).toContain("الدعم من 9:00 ص إلى 9:00 م بتوقيت عمّان، من السبت إلى الخميس");
   });
 
   it("is light in every client and never carries a dark palette", () => {

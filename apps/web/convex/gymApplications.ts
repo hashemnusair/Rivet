@@ -4,6 +4,8 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { domainError, publicUserId, requirePlatformAdmin } from "./security";
 import { notifyPlatformAdmins } from "./notificationDelivery";
+import { applicantReceivedEmail, applicantReviewEmail } from "./gymApplicationEmail";
+import { systemMessage } from "../src/lib/i18n/system-messages";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 
 const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"));
@@ -21,6 +23,8 @@ const applicationArgs = {
   billingInterval: v.optional(billingInterval),
   idempotencyKey: v.optional(v.string()),
   website: v.optional(v.string()),
+  /** The language the applicant applied in; their own copies follow it. */
+  language: v.optional(v.union(v.literal("en"), v.literal("ar"))),
 };
 
 const applicationResult = v.object({
@@ -203,6 +207,7 @@ export const create = internalMutation({
       contactNumber: values.contactNumber,
       plan: values.plan,
       billingInterval: values.billingInterval,
+      ...(args.language ? { language: args.language } : {}),
       status: "pending",
       notificationStatus: "pending",
       submittedAt: now,
@@ -212,6 +217,8 @@ export const create = internalMutation({
       kind: "application_awaiting_review",
       title: "Gym application awaiting review",
       body: `${values.gymName} · ${values.plan}`,
+      titleMessage: systemMessage("communicationCompletion.notifications.applicationAwaitingReview"),
+      bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: values.gymName, b: values.plan }),
       href: `/platform/applications?application=${publicId}`,
       dedupeKey: `gym-application:${publicId}`,
     });
@@ -327,6 +334,7 @@ export const reviewRecord = internalMutation({
 
     return {
       applicationDocumentId: application._id,
+      applicantLanguage: application.language,
       applicationId: application.publicId,
       gymName: application.gymName,
       gymAddress: application.gymAddress,
@@ -384,19 +392,6 @@ function detailsHtml(values: ApplicationInput): string {
   </table>`;
 }
 
-function reviewEmail(values: { gymName: string; ownerName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise" }, decision: "approved" | "rejected") {
-  const approved = decision === "approved";
-  const heading = approved ? "Your RIVET application is approved" : "An update on your RIVET application";
-  const message = approved
-    ? "Our team will contact you soon to finish setup and provide your gym access."
-    : "We are unable to approve the application at this time. Our team will contact you if more information is needed.";
-  return {
-    subject: approved ? `RIVET application approved · ${values.gymName}` : `RIVET application update · ${values.gymName}`,
-    html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>${heading}</h2><p>Hi ${escapeHtml(values.ownerName)},</p><p>${message}</p><p><strong>Gym:</strong> ${escapeHtml(values.gymName)}<br/><strong>Plan:</strong> ${escapeHtml(values.plan)}</p><p style="color:#777;font-size:12px">This message was sent by RIVET. Please contact our team directly if you have questions.</p></div>`,
-    text: `${heading}\n\nHi ${values.ownerName},\n\n${message}\n\nGym: ${values.gymName}\nPlan: ${values.plan}`,
-  };
-}
-
 function recipientList(value: string | undefined): string[] {
   return (value ?? "")
     .split(",")
@@ -424,17 +419,18 @@ export const submit = action({
     const recipients = recipientList(process.env.RIVET_APPLICATION_RECIPIENTS);
     const values = inputValues(args);
     const summary = detailsHtml(values);
+    const applicantLanguage = args.language ?? "en";
+    const applicantCopy = applicantReceivedEmail(values, applicantLanguage);
     const applicant = await ctx.runMutation(internal.operationalEmail.enqueue, {
       kind: "gym_application_received_applicant",
-      templateVersion: "gym-application-received-v1",
+      templateVersion: "gym-application-received-v2",
+      language: applicantLanguage,
       recipientReference: values.email,
       recipientEmail: values.email,
       dedupeKey: `gym-application-received-applicant:${created.applicationId}`,
       relatedEntityType: "gym_application_submission",
       relatedEntityPublicId: created.applicationId,
-      subject: "RIVET gym application received",
-      html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>Application received</h2><p>Thanks for applying to bring <strong>${escapeHtml(values.gymName)}</strong> onto RIVET.</p><p>Our team will review your application and contact you soon. There is no gym account to create yet; approved gyms receive access directly from RIVET.</p>${summary}</div>`,
-      text: `Application received for ${values.gymName}. Our team will review it and contact you soon.\n\nGym: ${values.gymName}\nAddress: ${values.gymAddress}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}`,
+      ...applicantCopy,
     });
     const internalRecipients = recipients.length > 0 ? recipients : [undefined];
     const internalNotifications = await Promise.all(internalRecipients.map((recipient, index) => ctx.runMutation(internal.operationalEmail.enqueue, {
@@ -468,8 +464,9 @@ export const review = action({
   returns: v.any(),
   handler: async (ctx, args): Promise<ReviewResult> => {
     const reviewed = await ctx.runMutation(internal.gymApplications.reviewRecord, args);
-    const { applicationDocumentId, ...publicReview } = reviewed as {
+    const { applicationDocumentId, applicantLanguage, ...publicReview } = reviewed as {
       applicationDocumentId: Id<"gymApplications">;
+      applicantLanguage?: "en" | "ar";
       applicationId: string;
       gymName: string;
       gymAddress?: string;
@@ -488,10 +485,11 @@ export const review = action({
     };
     if (args.decision === "under_review") return publicReview;
 
-    const email = reviewEmail({ gymName: publicReview.gymName, ownerName: publicReview.ownerName, plan: publicReview.plan }, args.decision);
+    const email = applicantReviewEmail({ gymName: publicReview.gymName, ownerName: publicReview.ownerName, plan: publicReview.plan }, args.decision, applicantLanguage ?? "en");
     const queued = await ctx.runMutation(internal.operationalEmail.enqueue, {
       kind: args.decision === "approved" ? "gym_application_approved" : "gym_application_rejected",
-      templateVersion: args.decision === "approved" ? "gym-application-approved-v1" : "gym-application-rejected-v1",
+      templateVersion: args.decision === "approved" ? "gym-application-approved-v2" : "gym-application-rejected-v2",
+      language: applicantLanguage ?? "en",
       recipientReference: publicReview.email,
       recipientEmail: publicReview.email,
       dedupeKey: `gym-application-review:${publicReview.applicationId}:${args.decision}`,

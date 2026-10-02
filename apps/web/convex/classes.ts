@@ -1,4 +1,5 @@
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { systemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   assertBranchAccess,
@@ -772,7 +773,7 @@ async function customerClassExperience(ctx: QueryCtx, context: CustomerClassCont
   };
 }
 
-async function insertClassTimeline(ctx: MutationCtx, input: { organization: Organization; branchId: Id<"branches">; memberId: string; actor: User; type: string; title: string; body?: string; meta?: Data }): Promise<void> {
+async function insertClassTimeline(ctx: MutationCtx, input: { organization: Organization; branchId: Id<"branches">; memberId: string; actor: User; type: string; title: string; titleMessage?: SystemMessage; body?: string; bodyMessage?: SystemMessage; meta?: Data }): Promise<void> {
   const now = Date.now();
   const publicId = crypto.randomUUID();
   await ctx.db.insert("domainRecords", {
@@ -783,7 +784,7 @@ async function insertClassTimeline(ctx: MutationCtx, input: { organization: Orga
     memberPublicId: input.memberId,
     createdAt: now,
     updatedAt: now,
-    data: { id: publicId, memberId: input.memberId, branchId: publicBranchId((await ctx.db.get(input.branchId))!), type: input.type, title: input.title, body: input.body, actorId: publicUserId(input.actor), actorName: input.actor.fullName, occurredAt: new Date(now).toISOString(), meta: input.meta },
+    data: { id: publicId, memberId: input.memberId, branchId: publicBranchId((await ctx.db.get(input.branchId))!), type: input.type, title: input.title, ...(input.titleMessage ? { titleMessage: input.titleMessage } : {}), body: input.body, ...(input.bodyMessage ? { bodyMessage: input.bodyMessage } : {}), actorId: publicUserId(input.actor), actorName: input.actor.fullName, occurredAt: new Date(now).toISOString(), meta: input.meta },
   });
 }
 
@@ -810,6 +811,11 @@ async function occurrenceAudit(ctx: MutationCtx, input: { organization: Organiza
   });
 }
 
+/** A class date is a calendar date when it reads as one; anything else stays verbatim. */
+function classDateParam(value: string): string | { date: string } {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? { date: value } : value;
+}
+
 async function notifyPromotedMember(ctx: MutationCtx, organization: Organization, booking: ClassBooking, occurrence: ClassOccurrence): Promise<void> {
   const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", booking.memberPublicId)).unique();
   const profileId = optionalText(valueData(member?.data).customerProfileId);
@@ -827,6 +833,8 @@ async function notifyPromotedMember(ctx: MutationCtx, organization: Organization
     kind: "class_waitlist_promoted",
     title: `You're in ${occurrence.name}`,
     body: `A place opened for the ${occurrence.date} class. Your waitlist booking is now confirmed.`,
+    titleMessage: systemMessage("communicationCompletion.notifications.waitlistPromoted", { className: occurrence.name }),
+    bodyMessage: systemMessage("communicationCompletion.notifications.waitlistPromotedBody", { classDate: classDateParam(occurrence.date) }),
     href: "/customer/my-gyms",
     dedupeKey,
     expiresAt: occurrence.endsAt + 86_400_000,
@@ -847,7 +855,7 @@ async function promoteWaitlist(ctx: MutationCtx, organization: Organization, occ
   await notifyPromotedMember(ctx, organization, updated, occurrence);
   const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", updated.memberPublicId)).unique();
   const actor = member ? await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", optionalText(valueData(member.data).customerUserId))).unique() : null;
-  if (actor) await insertClassTimeline(ctx, { organization, branchId: occurrence.branchId, memberId: updated.memberPublicId, actor, type: "class_waitlist_promoted", title: `Moved into ${occurrence.name}`, body: `A place opened for ${occurrence.date}.`, meta: { occurrenceId: occurrence.publicId, bookingId: updated.publicId } });
+  if (actor) await insertClassTimeline(ctx, { organization, branchId: occurrence.branchId, memberId: updated.memberPublicId, actor, type: "class_waitlist_promoted", title: `Moved into ${occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classWaitlistPromoted", { className: occurrence.name }), body: `A place opened for ${occurrence.date}.`, bodyMessage: systemMessage("communicationCompletion.timeline.classWaitlistPromotedBody", { classDate: classDateParam(occurrence.date) }), meta: { occurrenceId: occurrence.publicId, bookingId: updated.publicId } });
   return updated;
 }
 
@@ -907,7 +915,7 @@ async function createBooking(ctx: MutationCtx, input: { organization: Organizati
     updatedAt: now,
   });
   const booking = (await ctx.db.get(id))!;
-  await insertClassTimeline(ctx, { organization: input.organization, branchId: input.occurrence.branchId, memberId: input.member.publicId, actor: input.actor, type: outcome === "booked" ? "class_booked" : "class_waitlisted", title: outcome === "booked" ? `Booked ${input.occurrence.name}` : `Joined the ${input.occurrence.name} waitlist`, body: input.occurrence.date, meta: { occurrenceId: input.occurrence.publicId, bookingId: booking.publicId, bookedBy: input.bookedBy } });
+  await insertClassTimeline(ctx, { organization: input.organization, branchId: input.occurrence.branchId, memberId: input.member.publicId, actor: input.actor, type: outcome === "booked" ? "class_booked" : "class_waitlisted", title: outcome === "booked" ? `Booked ${input.occurrence.name}` : `Joined the ${input.occurrence.name} waitlist`, titleMessage: outcome === "booked" ? systemMessage("communicationCompletion.timeline.classBooked", { className: input.occurrence.name }) : systemMessage("communicationCompletion.timeline.classWaitlisted", { className: input.occurrence.name }), body: input.occurrence.date, meta: { occurrenceId: input.occurrence.publicId, bookingId: booking.publicId, bookedBy: input.bookedBy } });
   await occurrenceAudit(ctx, { organization: input.organization, branchId: input.occurrence.branchId, actor: input.actor, actorRole: input.actorRole, correlationId: input.correlationId, action: outcome === "booked" ? "classes.booking.create" : "classes.waitlist.join", occurrence: input.occurrence, summary: `${booking.memberName} ${outcome === "booked" ? "booked" : "joined the waitlist for"} ${input.occurrence.name}`, reason: optionalText(input.overrideReason), after: { memberId: booking.memberPublicId, membershipId: booking.membershipPublicId, status: outcome } });
   return { booking, outcome };
 }
@@ -924,7 +932,7 @@ async function cancelBooking(ctx: MutationCtx, input: { organization: Organizati
   await ctx.db.patch(input.booking._id, { status: outcome, cancelledAt: now, updatedAt: now });
   const updated = (await ctx.db.get(input.booking._id))!;
   const promoted = previousStatus === "booked" ? await promoteWaitlist(ctx, input.organization, input.occurrence) : undefined;
-  await insertClassTimeline(ctx, { organization: input.organization, branchId: input.occurrence.branchId, memberId: input.booking.memberPublicId, actor: input.actor, type: outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${input.occurrence.name}`, body: optionalText(input.reason) ?? (late ? "Cancelled after the gym's cutoff. No fee or membership penalty was applied." : undefined), meta: { occurrenceId: input.occurrence.publicId, bookingId: input.booking.publicId, late } });
+  await insertClassTimeline(ctx, { organization: input.organization, branchId: input.occurrence.branchId, memberId: input.booking.memberPublicId, actor: input.actor, type: outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${input.occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classCancelled", { className: input.occurrence.name }), body: optionalText(input.reason) ?? (late ? "Cancelled after the gym's cutoff. No fee or membership penalty was applied." : undefined), ...(!optionalText(input.reason) && late ? { bodyMessage: systemMessage("communicationCompletion.timeline.classCancelledLate") } : {}), meta: { occurrenceId: input.occurrence.publicId, bookingId: input.booking.publicId, late } });
   await occurrenceAudit(ctx, { organization: input.organization, branchId: input.occurrence.branchId, actor: input.actor, actorRole: input.actorRole, correlationId: input.correlationId, action: outcome === "late_cancelled" ? "classes.booking.cancel_late" : "classes.booking.cancel", occurrence: input.occurrence, summary: `${input.booking.memberName} cancelled ${input.occurrence.name}`, reason: optionalText(input.reason), before: { status: previousStatus }, after: { status: outcome, promotedBookingId: promoted?.publicId } });
   return { booking: updated, outcome, promoted };
 }
@@ -1019,7 +1027,7 @@ async function cancelClassOccurrence(ctx: MutationCtx, actor: ActorContext, inpu
     // late mark nor promotes somebody into a class that will not take place.
     for (const booking of bookings.filter(booking => ACTIVE_BOOKING_STATUSES.has(booking.status))) {
       await ctx.db.patch(booking._id, { status: "cancelled", cancelledAt: now, updatedAt: now });
-      await insertClassTimeline(ctx, { organization: actor.organization, branchId: occurrence.branchId, memberId: booking.memberPublicId, actor: actor.user, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, body: reason, meta: { occurrenceId: occurrence.publicId, bookingId: booking.publicId, cancelledByGym: true } });
+      await insertClassTimeline(ctx, { organization: actor.organization, branchId: occurrence.branchId, memberId: booking.memberPublicId, actor: actor.user, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classGymCancelled", { className: occurrence.name }), body: reason, meta: { occurrenceId: occurrence.publicId, bookingId: booking.publicId, cancelledByGym: true } });
     }
     await occurrenceAudit(ctx, { organization: actor.organization, branchId: occurrence.branchId, actor: actor.user, actorRole: actor.role, correlationId: actor.correlationId, action: "classes.occurrence.cancel", occurrence, summary: `Cancelled ${occurrence.name} on ${occurrence.date}`, reason, before: { status: occurrence.status }, after: { status: "cancelled", affectedBookings: bookings.filter(booking => ACTIVE_BOOKING_STATUSES.has(booking.status)).length } });
   }

@@ -16,6 +16,7 @@ import {
 import { requireWorkspaceModule, resolveWorkspaceEntitlements, resolveWorkspacePreferences } from "./workspaceModules";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
 import { formatMinorUnits } from "../src/lib/exports/csv";
+import { systemMessage } from "../src/lib/i18n/system-messages";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1083,7 +1084,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   }
   if (memberRecord) {
     const timelineId = `timeline-${crypto.randomUUID()}`;
-    await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "timeline", publicId: timelineId, branchId: branch._id, memberPublicId: memberRecord.publicId, createdAt: now, updatedAt: now, data: { id: timelineId, organizationId: publicOrganizationId(actor.organization), memberId: memberRecord.publicId, branchId: publicBranchId(branch), type: "payment_collected", title: `Retail sale — ${actor.organization.currency} ${formatMinorUnits(totalMinor, actor.organization.currency)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, occurredAt: iso(now), meta: { receiptNumber: receipt.number, receiptId: receipt.id, retailSaleId: saleId, saleType: "retail" } } });
+    await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "timeline", publicId: timelineId, branchId: branch._id, memberPublicId: memberRecord.publicId, createdAt: now, updatedAt: now, data: { id: timelineId, organizationId: publicOrganizationId(actor.organization), memberId: memberRecord.publicId, branchId: publicBranchId(branch), type: "payment_collected", title: `Retail sale — ${actor.organization.currency} ${formatMinorUnits(totalMinor, actor.organization.currency)}`, titleMessage: systemMessage("communicationCompletion.timeline.retailSale", { amount: { amountMinor: totalMinor, currency: actor.organization.currency } }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, occurredAt: iso(now), meta: { receiptNumber: receipt.number, receiptId: receipt.id, retailSaleId: saleId, saleType: "retail" } } });
   }
   await audit(ctx, actor, { action: "operations.retail_sale.create", entityType: "retail_sale", entityId: saleId, entityLabel: receipt.number, summary: `Retail sale ${receipt.number} · ${actor.organization.currency} ${formatMinorUnits(totalMinor, actor.organization.currency)}`, after: { receiptId: receipt.id, total: totalMinor, method, customer: customer.kind }, branchId: publicBranchId(branch) });
   const storedSale = await ctx.db.get(sale);

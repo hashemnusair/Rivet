@@ -1,4 +1,5 @@
 import { latinDigits } from "../src/lib/utils/text";
+import { systemMessage } from "../src/lib/i18n/system-messages";
 import { makeFormatters } from "../src/lib/i18n/formatters";
 import { createTranslator } from "../src/lib/i18n/core";
 import { termPriceMinor } from "./planCatalogue";
@@ -518,6 +519,10 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
     kind: "subscription_agreement_signed",
     title: `${actor.organization.name} signed its subscription agreement`,
     body: `${signatoryName} · ${plan} · ${reference}${hashMatch ? "" : " · document fingerprint mismatch, review before countersigning"}`,
+    titleMessage: systemMessage("communicationCompletion.notifications.agreementSigned", { gym: actor.organization.name }),
+    bodyMessage: hashMatch
+      ? systemMessage("communicationCompletion.notifications.facts3", { a: signatoryName, b: plan, c: reference })
+      : systemMessage("communicationCompletion.notifications.facts4", { a: signatoryName, b: plan, c: reference, d: { message: systemMessage("communicationCompletion.notifications.agreementMismatch") } }),
     href: "/platform/agreements",
     dedupeKey: `agreement-signed:${publicId}`,
   });

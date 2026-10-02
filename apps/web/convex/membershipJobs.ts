@@ -1,4 +1,6 @@
 import { v } from "convex/values";
+import { systemMessage } from "../src/lib/i18n/system-messages";
+import { resolveRecipientLanguage } from "../src/lib/i18n/communication";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import { enqueueOperationalEmail } from "./operationalEmail";
@@ -50,6 +52,8 @@ async function notifyMemberOnce(ctx: MutationCtx, input: {
     kind: input.kind,
     title: input.kind === "renewal_reminder" ? "Membership renewal approaching" : "Membership end date approaching",
     body: `Your current membership term ends ${input.endDate}.`,
+    titleMessage: systemMessage(input.kind === "renewal_reminder" ? "communicationCompletion.notifications.renewalApproaching" : "communicationCompletion.notifications.endDateApproaching"),
+    bodyMessage: systemMessage("communicationCompletion.notifications.termEnds", { endDate: { date: input.endDate } }),
     href: "/customer/my-gyms",
     dedupeKey,
     expiresAt: Date.parse(`${input.endDate}T23:59:59Z`) + 7 * 86_400_000,
@@ -90,12 +94,15 @@ export const queueLifecycleReminders = internalMutation({
         const memberData = value(member?.data);
         const dedupeKey = `${kind}:${record.publicId}:${endDate}`;
         const existed = await ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey)).unique();
+        const recipient = resolveRecipientLanguage(memberData.preferredLanguage, organization.defaultLanguage);
         await enqueueOperationalEmail(ctx, {
           organizationId: organization._id,
           branchId: record.branchId,
           kind,
           templateVersion: `${kind}-v1`,
-          language: memberData.preferredLanguage === "ar" ? "ar" : "en",
+          // The member's own language, then the gym default.
+          language: recipient.language,
+          languageSource: recipient.source,
           recipientReference: memberId,
           recipientEmail: stringValue(memberData.email),
           relatedEntityType: "membership",

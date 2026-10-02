@@ -8,6 +8,9 @@ import {
   type FollowUpTaskFact,
 } from "../src/lib/crm/contact-outcomes";
 import { MESSAGE_TEMPLATE_CATALOGUE, renderMessageTemplate, type CatalogueTemplate } from "./messagingTemplates";
+import { createTranslator } from "../src/lib/i18n/core";
+import { makeFormatters } from "../src/lib/i18n/formatters";
+import { resolveRecipientLanguage, type CommunicationLanguage } from "../src/lib/i18n/communication";
 import { consentForRenewalChannel, isRenewalQuietHours, nextRenewalQuietHoursEnd, renewalMessageSuppressionReason, renewalStopReason, type RenewalConsentStatus } from "./renewalPolicy";
 
 /**
@@ -334,6 +337,8 @@ export interface FollowUpContextInput {
   timezone: string;
   today: string;
   now: number;
+  /** The gym's default message language, used when the member has none stored. */
+  organizationDefaultLanguage?: string;
 }
 
 const STOP_REASON_LABELS: Record<string, string> = {
@@ -467,7 +472,8 @@ export function buildMemberFollowUpContext(input: FollowUpContextInput): MemberF
     memberId: input.member.id,
     memberName: input.member.fullName,
     phone: input.member.phone,
-    preferredLanguage: input.member.preferredLanguage === "ar" ? "ar" : "en",
+    // The member's language decides the drafted reminder, never the staff member's screen.
+    preferredLanguage: resolveRecipientLanguage(input.member.preferredLanguage, input.organizationDefaultLanguage).language,
     generatedAt: nowIso,
     renewal: {
       membershipId: membership?.id,
@@ -531,12 +537,24 @@ export function reminderTemplateUnavailableReason(context: MemberFollowUpContext
 /** The template filled from the member record, in the member's language; unknown variables stay visible. */
 export function renderReminderForMember(template: CatalogueTemplate, context: MemberFollowUpContext, gymName: string): string {
   const body = context.preferredLanguage === "ar" ? template.bodyAr : template.bodyEn;
+  const endDate = context.renewal.endDate;
   return renderMessageTemplate(body, {
     member_name: context.memberName.trim().split(/\s+/)[0] || context.memberName,
     gym_name: gymName,
-    end_date: context.renewal.endDate,
+    end_date: endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate) ? makeFormatters(context.preferredLanguage, "").date(endDate) : endDate,
     branch_name: context.renewal.branchName ?? gymName,
   });
+}
+
+/**
+ * The default text prefilled into a staff member's own WhatsApp handoff, in
+ * the recipient's language. It is a draft: opening WhatsApp records only
+ * that the handoff was opened, never that anything was sent.
+ */
+export function followUpHandoffDraft(recipient: { fullName: string; preferredLanguage?: unknown }, gymName: string, organizationDefaultLanguage?: unknown): { language: CommunicationLanguage; text: string } {
+  const language = resolveRecipientLanguage(recipient.preferredLanguage, organizationDefaultLanguage).language;
+  const name = recipient.fullName.trim().split(/\s+/)[0] || recipient.fullName.trim();
+  return { language, text: createTranslator(language)("communicationCompletion.whatsapp.defaultDraft", { name, gym: gymName }) };
 }
 
 // ---------------------------------------------------------------------------

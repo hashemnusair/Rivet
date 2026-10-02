@@ -7,7 +7,10 @@ import { marketingSuppressionReason } from "./marketing";
 import { consentForRenewalChannel, renewalMessageSuppressionReason } from "./renewalPolicy";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
 import { MESSAGE_MAX_ATTEMPTS, MESSAGE_RETRY_MINUTES, parseMessagingAllowlist, resolveMessagingMode, routeMessage, twilioMessageParams, twilioMessagesUrl, twilioRetryable, type MessagingChannel } from "./messagingMode";
-import { OPT_OUT_FOOTER, catalogueTemplate, renderMessageTemplate } from "./messagingTemplates";
+import { OPT_OUT_FOOTER, catalogueTemplateAt, renderMessageTemplate } from "./messagingTemplates";
+import { communicationLanguageOf, resolveRecipientLanguage } from "../src/lib/i18n/communication";
+import { makeFormatters } from "../src/lib/i18n/formatters";
+import { systemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
 
 /**
  * Outbound WhatsApp worker.
@@ -111,6 +114,15 @@ async function recordDeliveryOutcomeOnTimeline(ctx: MutationCtx, input: {
     : input.state === "failed"
       ? `Failed after ${input.attempts} attempt${input.attempts === 1 ? "" : "s"}${input.reason ? ` (${input.reason})` : ""}. Managers were notified; follow up by phone.`
       : input.reason ?? "Suppressed by RIVET's messaging rules.";
+  const descriptorParams = { channel: { enum: "channel" as const, value: input.channel === "sms" ? "sms" : "whatsapp" }, context: { enum: "messageContext" as const, value: input.context === "message" ? "message" : "renewal" } };
+  const titleMessage = systemMessage(input.state === "provider_accepted" ? "communicationCompletion.timeline.messageAccepted" : input.state === "failed" ? "communicationCompletion.timeline.messageFailed" : "communicationCompletion.timeline.messageNotSent", descriptorParams);
+  // A provider error code is kept verbatim inside the failure sentence; a
+  // suppression reason is its own text and keeps no descriptor.
+  const bodyMessage: SystemMessage | undefined = input.state === "provider_accepted"
+    ? systemMessage(input.mode === "sandbox" ? "communicationCompletion.timeline.messageSandboxed" : "communicationCompletion.timeline.messageHandedOver")
+    : input.state === "failed"
+      ? systemMessage(input.reason ? "communicationCompletion.timeline.messageFailedAfterReason" : "communicationCompletion.timeline.messageFailedAfter", { count: input.attempts, ...(input.reason ? { reason: input.reason } : {}) })
+      : input.reason ? undefined : systemMessage("communicationCompletion.timeline.messageSuppressedByRules");
   await ctx.db.insert("domainRecords", {
     organizationId: input.organizationId,
     entityType: "timeline",
@@ -128,6 +140,8 @@ async function recordDeliveryOutcomeOnTimeline(ctx: MutationCtx, input: {
       type: "message",
       title,
       body,
+      titleMessage,
+      ...(bodyMessage ? { bodyMessage } : {}),
       occurredAt: new Date(input.now).toISOString(),
       meta: { channel: input.channel, deliveryState: input.state, mode: input.mode, source: input.source, deliveryId: input.deliveryPublicId, providerMessageId: input.providerMessageId, attempts: input.attempts },
     },
@@ -147,8 +161,15 @@ async function memberVariables(ctx: MutationCtx, organizationId: Id<"organizatio
       : null;
   const data = value(record?.data);
   const name = stringValue(data.fullName) || stringValue(data.name) || "there";
-  const language = stringValue(data.preferredLanguage) === "ar" ? "ar" as const : "en" as const;
+  const organization = await ctx.db.get(organizationId);
+  const language = resolveRecipientLanguage(data.preferredLanguage, organization?.defaultLanguage).language;
   return { variables: { member_name: name, end_date: stringValue(data.endDate), branch_name: stringValue(data.branchName) }, phone: optionalString(data.phone), language, recipient: data };
+}
+
+/** Calendar dates read the recipient's way (15 أيلول 2026); other values are left exactly as stored. */
+function recipientVariables(variables: Record<string, string | undefined>, language: "en" | "ar"): Record<string, string | undefined> {
+  const format = makeFormatters(language, "");
+  return Object.fromEntries(Object.entries(variables).map(([key, raw]) => [key, raw && /_date$/.test(key) && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? format.date(raw) : raw]));
 }
 
 async function automationBody(ctx: MutationCtx, organizationId: Id<"organizations">, message: Data, language: "en" | "ar", variables: Record<string, string>): Promise<string> {
@@ -162,18 +183,23 @@ async function automationBody(ctx: MutationCtx, organizationId: Id<"organization
     body = language === "ar" ? stringValue(data.bodyAr) || stringValue(data.bodyEn) : stringValue(data.bodyEn) || stringValue(data.bodyAr);
   }
   if (!body && templateKey) {
-    const template = catalogueTemplate(templateKey);
+    // Rows queued before versions were recorded were queued under 1.0.
+    const template = catalogueTemplateAt(templateKey, optionalString(message.catalogueVersion) ?? "1.0");
     if (template) body = language === "ar" ? template.bodyAr : template.bodyEn;
   }
-  if (!body) body = language === "ar" ? `لديك تحديث من ${gymName}. تواصل مع الكاونتر للتفاصيل.` : `You have an update from ${gymName}. Contact the front desk for details.`;
-  const rendered = renderMessageTemplate(body, { ...variables, gym_name: gymName });
+  if (!body) body = language === "ar" ? `لديك تحديث من ${gymName}. يرجى التواصل مع الاستقبال لمعرفة التفاصيل.` : `You have an update from ${gymName}. Contact the front desk for details.`;
+  const rendered = renderMessageTemplate(body, { ...recipientVariables(variables, language), gym_name: gymName });
   return stringValue(message.messageClass) === "marketing" ? `${rendered}\n${OPT_OUT_FOOTER[language]}` : rendered;
 }
 
+function renewalTemplateKey(delivery: Renewal): string {
+  return delivery.checkpointKey === "14_day" || delivery.checkpointKey === "7_day" ? "renewal_7d" : delivery.checkpointKey === "3_day" ? "renewal_3d" : "renewal_today";
+}
+
 function renewalBody(gymName: string, delivery: Renewal, member: Data, language: "en" | "ar"): string {
-  const key = delivery.checkpointKey === "14_day" || delivery.checkpointKey === "7_day" ? "renewal_7d" : delivery.checkpointKey === "3_day" ? "renewal_3d" : "renewal_today";
-  const template = catalogueTemplate(key)!;
-  return renderMessageTemplate(language === "ar" ? template.bodyAr : template.bodyEn, { member_name: stringValue(member.fullName) || "there", gym_name: gymName, end_date: delivery.membershipEndDate, branch_name: stringValue(member.branchName) || gymName });
+  // Rows queued before versions were recorded were queued under 1.0.
+  const template = catalogueTemplateAt(renewalTemplateKey(delivery), delivery.catalogueVersion ?? "1.0")!;
+  return renderMessageTemplate(language === "ar" ? template.bodyAr : template.bodyEn, recipientVariables({ member_name: stringValue(member.fullName) || "there", gym_name: gymName, end_date: delivery.membershipEndDate, branch_name: stringValue(member.branchName) || gymName }, language));
 }
 
 export const leaseDue = internalMutation({
@@ -210,9 +236,14 @@ export const leaseDue = internalMutation({
         const data = value(record.data);
         const leaseToken = crypto.randomUUID();
         const member = await memberVariables(ctx, record.organizationId, record.memberPublicId, record.leadPublicId);
-        const language = stringValue(data.language) === "ar" ? "ar" as const : member.language;
-        const body = await automationBody(ctx, record.organizationId, data, language, member.variables);
-        await ctx.db.patch(record._id, { data: { ...data, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS }, updatedAt: now });
+        // The language chosen when the message was queued wins, including an
+        // explicit "en"; only a legacy row without one falls back to the
+        // recipient's current preference. The first lease captures the exact
+        // body, and every retry sends those same bytes.
+        const snapshot = optionalString(data.renderedBody);
+        const language = communicationLanguageOf(data.renderedLanguage) ?? communicationLanguageOf(data.language) ?? member.language;
+        const body = snapshot ?? await automationBody(ctx, record.organizationId, data, language, member.variables);
+        await ctx.db.patch(record._id, { data: { ...data, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, ...(snapshot ? {} : { renderedBody: body, renderedLanguage: language, renderedAt: now }) }, updatedAt: now });
         leased.push({ source: "automation", id: String(record._id), publicId: record.publicId, organizationId: record.organizationId, leaseToken, channel: stringValue(data.requestedChannel, "whatsapp") === "sms" ? "sms" : "whatsapp", recipientPhone: optionalString(data.recipientPhone) ?? member.phone, language, body, attemptCount: Array.isArray(data.attempts) ? data.attempts.length : 0, suppressionReason: data.messageClass === "marketing" ? marketingSuppressionReason(member.recipient) : undefined });
       } else {
         const row = candidate.row;
@@ -220,9 +251,11 @@ export const leaseDue = internalMutation({
         const memberRecord = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", row.organizationId).eq("entityType", "member").eq("publicId", row.memberPublicId)).unique();
         const gymName = await organizationName(ctx, row.organizationId);
         // A lease is a short exclusive hold: the status stays queued but the
-        // next attempt moves forward so a concurrent run skips the row.
-        await ctx.db.patch(row._id, { leaseToken, nextAttemptAt: now + LEASE_MS, updatedAt: now });
-        leased.push({ source: "renewal", id: String(row._id), publicId: row.publicId, organizationId: row.organizationId, leaseToken, channel: row.channel as MessagingChannel, recipientPhone: row.recipientPhone, language: row.language, body: renewalBody(gymName, row, value(memberRecord?.data), row.language), attemptCount: row.attempts.length, suppressionReason: renewalMessageSuppressionReason(consentForRenewalChannel(value(memberRecord?.data), row.channel as MessagingChannel).status, row.recipientPhone) });
+        // next attempt moves forward so a concurrent run skips the row. The
+        // first lease captures the body in the row's queued language.
+        const body = row.renderedBody ?? renewalBody(gymName, row, value(memberRecord?.data), row.language);
+        await ctx.db.patch(row._id, { leaseToken, nextAttemptAt: now + LEASE_MS, updatedAt: now, ...(row.renderedBody ? {} : { renderedBody: body, renderedTemplateKey: renewalTemplateKey(row), renderedAt: now }) });
+        leased.push({ source: "renewal", id: String(row._id), publicId: row.publicId, organizationId: row.organizationId, leaseToken, channel: row.channel as MessagingChannel, recipientPhone: row.recipientPhone, language: row.language, body, attemptCount: row.attempts.length, suppressionReason: renewalMessageSuppressionReason(consentForRenewalChannel(value(memberRecord?.data), row.channel as MessagingChannel).status, row.recipientPhone) });
       }
       nextSource = candidate.source === "automation" ? "renewal" : "automation";
     }
@@ -263,7 +296,7 @@ export const recordAttempt = internalMutation({
       const nextAttemptAt = status === "retrying" ? new Date(now + (MESSAGE_RETRY_MINUTES[Math.min(attempts.length - 1, MESSAGE_RETRY_MINUTES.length - 1)] ?? 30) * 60_000).toISOString() : undefined;
       await ctx.db.patch(record._id, { data: { ...data, status, attempts, nextAttemptAt, leaseToken: undefined, leaseExpiresAt: undefined, suppressionReason: args.suppressionReason ?? data.suppressionReason, providerMessageId: args.providerMessageId ?? data.providerMessageId, sentAt: status === "sent" ? new Date(now).toISOString() : data.sentAt, deliveryMode: args.mode, deliveredTo: args.deliveredTo ?? data.deliveredTo }, updatedAt: now });
       const channel = stringValue(data.requestedChannel, "whatsapp");
-      if (status === "failed") await notifyOrganizationSupervisors(ctx, { organizationId: record.organizationId, branchId: record.branchId, kind: "message_delivery_failed", title: "A member message could not be sent", body: `The message could not be sent after ${attempts.length} attempts. Contact the member another way.`, href: attentionHref(record.memberPublicId, record.leadPublicId), dedupeKey: `message-failed:${record.publicId}` });
+      if (status === "failed") await notifyOrganizationSupervisors(ctx, { organizationId: record.organizationId, branchId: record.branchId, kind: "message_delivery_failed", title: "A member message could not be sent", body: `The message could not be sent after ${attempts.length} attempts. Contact the member another way.`, titleMessage: systemMessage("communicationCompletion.notifications.messageFailed"), bodyMessage: systemMessage("communicationCompletion.notifications.messageFailedBody", { count: attempts.length }), href: attentionHref(record.memberPublicId, record.leadPublicId), dedupeKey: `message-failed:${record.publicId}` });
       if (status !== "retrying") {
         await recordDeliveryOutcomeOnTimeline(ctx, { organizationId: record.organizationId, branchId: record.branchId, memberPublicId: record.memberPublicId, leadPublicId: record.leadPublicId, channel, context: "message", state: status === "sent" ? "provider_accepted" : status === "failed" ? "failed" : "suppressed", mode: args.mode, attempts: attempts.length, reason: args.suppressionReason ?? args.errorCode, providerMessageId: args.providerMessageId, source: "automation", deliveryPublicId: record.publicId, now });
       }
@@ -279,7 +312,7 @@ export const recordAttempt = internalMutation({
     // The renewal journey gets the same visibility as automation messages: a
     // final failure reaches the managers, and every terminal outcome is on the
     // member's timeline beside the calls staff actually made.
-    if (status === "failed") await notifyOrganizationSupervisors(ctx, { organizationId: row.organizationId, branchId: row.branchId, kind: "message_delivery_failed", title: "A renewal reminder could not be sent", body: `The renewal reminder could not be sent after ${attempts.length} attempts. Call the member instead.`, href: attentionHref(row.memberPublicId), dedupeKey: `renewal-failed:${row.publicId}` });
+    if (status === "failed") await notifyOrganizationSupervisors(ctx, { organizationId: row.organizationId, branchId: row.branchId, kind: "message_delivery_failed", title: "A renewal reminder could not be sent", body: `The renewal reminder could not be sent after ${attempts.length} attempts. Call the member instead.`, titleMessage: systemMessage("communicationCompletion.notifications.renewalMessageFailed"), bodyMessage: systemMessage("communicationCompletion.notifications.renewalMessageFailedBody", { count: attempts.length }), href: attentionHref(row.memberPublicId), dedupeKey: `renewal-failed:${row.publicId}` });
     if (status !== "queued") {
       await recordDeliveryOutcomeOnTimeline(ctx, { organizationId: row.organizationId, branchId: row.branchId, memberPublicId: row.memberPublicId, channel: row.channel, context: "renewal reminder", state: status === "sent" ? "provider_accepted" : status === "failed" ? "failed" : "suppressed", mode: args.mode, attempts: attempts.length, reason: args.suppressionReason ?? args.errorCode, providerMessageId: args.providerMessageId, source: "renewal", deliveryPublicId: row.publicId, now });
     }

@@ -139,8 +139,8 @@ describe("renewal context and reminder suggestions", () => {
     const arabic = buildMemberFollowUpContext(contextInput({ member: { ...contextInput().member, fullName: "رانيا عودة", preferredLanguage: "ar" } }));
     const template = eligibleReminderTemplates(arabic)[0]!;
     const body = renderReminderForMember(template, arabic, "Forge Gym");
-    expect(body).toContain("مرحباً رانيا");
-    expect(body).toContain("2026-10-01");
+    expect(body).toContain("مرحبًا رانيا");
+    expect(body).toContain("1 تشرين الأول 2026");
     expect(body).toContain("Forge Gym");
     expect(body).not.toContain("{{");
   });

@@ -33,7 +33,9 @@ import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
 import { marketingStatusFromProvenance, marketingSuppressionReason } from "./marketing";
-import { enqueueOperationalEmail } from "./operationalEmail";
+import { enqueueOperationalEmail, type OperationalEmailFacts } from "./operationalEmail";
+import { resolveRecipientLanguage, type CommunicationLanguageSource } from "../src/lib/i18n/communication";
+import { systemMessage, type SystemMessage, type SystemMessageKey } from "../src/lib/i18n/system-messages";
 import {
   buildWorkspaceAccess,
   defaultWorkspacePreferences,
@@ -669,6 +671,8 @@ async function notificationView(ctx: ReadContext, notification: Doc<"operational
     kind: notification.kind,
     title: notification.title,
     body: notification.body,
+    ...(notification.titleMessage ? { titleMessage: notification.titleMessage } : {}),
+    ...(notification.bodyMessage ? { bodyMessage: notification.bodyMessage } : {}),
     href: notification.href,
     dedupeKey: notification.dedupeKey,
     organizationId: organization ? publicOrganizationId(organization) : undefined,
@@ -686,6 +690,9 @@ async function insertOperationalNotification(ctx: MutationCtx, input: {
   kind: string;
   title: string;
   body: string;
+  /** Optional descriptors beside the original English; omitted for authored text. */
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   href: string;
   dedupeKey: string;
   expiresAt?: number;
@@ -704,6 +711,8 @@ async function insertOperationalNotification(ctx: MutationCtx, input: {
     kind: input.kind,
     title: input.title,
     body: input.body,
+    ...(input.titleMessage ? { titleMessage: input.titleMessage } : {}),
+    ...(input.bodyMessage ? { bodyMessage: input.bodyMessage } : {}),
     href: input.href,
     dedupeKey: input.dedupeKey,
     expiresAt: input.expiresAt,
@@ -718,6 +727,8 @@ async function notifyOrganizationRoles(ctx: MutationCtx, input: {
   kind: string;
   title: string;
   body: string;
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   href: string;
   dedupeKey: string;
   excludeUserId?: Id<"users">;
@@ -739,10 +750,28 @@ async function notifyOrganizationRoles(ctx: MutationCtx, input: {
       kind: input.kind,
       title: input.title,
       body: input.body,
+      titleMessage: input.titleMessage,
+      bodyMessage: input.bodyMessage,
       href: input.href,
       dedupeKey: input.dedupeKey,
     });
   }));
+}
+
+/** A stored calendar date and wall-clock time, kept verbatim when either is not in its canonical form. */
+function dateClockMessage(date: unknown, time: unknown): SystemMessage {
+  const day = stringValue(date);
+  const clock = stringValue(time);
+  return systemMessage("communicationCompletion.notifications.dateClock", {
+    date: /^\d{4}-\d{2}-\d{2}$/.test(day) ? { date: day } : day,
+    time: /^([01]\d|2[0-3]):[0-5]\d$/.test(clock) ? { clock } : clock,
+  });
+}
+
+/** The recipient's stored language, then the gym default; never the acting operator's screen language. */
+function recipientLanguage(preference: unknown, organization: { defaultLanguage?: "en" | "ar" } | null | undefined): { language: "en" | "ar"; languageSource: CommunicationLanguageSource } {
+  const resolved = resolveRecipientLanguage(preference, organization?.defaultLanguage);
+  return { language: resolved.language, languageSource: resolved.source };
 }
 
 async function queueOperationalEmail(ctx: MutationCtx, input: {
@@ -751,6 +780,8 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
   kind: string;
   templateVersion: string;
   language?: "en" | "ar";
+  languageSource?: CommunicationLanguageSource;
+  facts?: OperationalEmailFacts;
   recipientReference: string;
   recipientEmail?: string;
   dedupeKey: string;
@@ -768,12 +799,23 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
     messageClass: input.messageClass,
     templateVersion: input.templateVersion,
     language: input.language,
+    languageSource: input.languageSource,
+    facts: input.facts,
     recipientReference: input.recipientReference,
     attachments: input.attachments,
     recipientEmail: input.recipientEmail,
     dedupeKey: input.dedupeKey,
     suppressionReason,
   });
+}
+
+/** The figures a platform invoice notice repeats, taken from the stored invoice as written. */
+function platformInvoiceFacts(invoiceId: string, invoice: Data): OperationalEmailFacts | undefined {
+  const amountMinor = invoice.amountMinor;
+  if (typeof amountMinor !== "number" || !Number.isSafeInteger(amountMinor)) return undefined;
+  // Calendar dates stay dates; instants are shown on the gym's own calendar day.
+  const when = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : undefined;
+  return { type: "invoice", invoiceNumber: invoiceId, amountMinor, currency: stringValue(invoice.currency, "JOD"), periodStart: when(invoice.periodStart), periodEnd: when(invoice.periodEnd), dueAt: when(invoice.dueAt) };
 }
 
 /** "Bill to" on an invoice: the gym, its owner, and the plan it is on. */
@@ -1346,6 +1388,7 @@ export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorCo
     timezone: actor.organization.timezone || TZ_FALLBACK,
     today,
     now: Date.now(),
+    organizationDefaultLanguage: actor.organization.defaultLanguage,
   });
 }
 
@@ -3573,6 +3616,8 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
       kind: "trial_request",
       title: "New free-trial request",
       body: `${base.fullName} · ${branch.name} · ${base.preferredDate} ${base.preferredTime}`,
+      titleMessage: systemMessage("communicationCompletion.notifications.trialRequest"),
+      bodyMessage: systemMessage("communicationCompletion.notifications.facts3", { a: stringValue(base.fullName), b: branch.name, c: { message: dateClockMessage(base.preferredDate, base.preferredTime) } }),
       href: `/crm/leads/${leadId}`,
       dedupeKey: `trial-request:${bookingId}`,
     });
@@ -3582,7 +3627,7 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     branchId: branch?._id,
     kind: "trial_request_confirmation",
     templateVersion: "trial-request-v1",
-    language: stringValue(profile.preferredLanguage, "en") === "ar" ? "ar" : "en",
+    ...recipientLanguage(profile.preferredLanguage, storageOrganization),
     recipientReference: publicUserId(user),
     recipientEmail: profile.email,
     dedupeKey: `trial-request-confirmation:${bookingId}`,
@@ -6656,15 +6701,16 @@ async function paymentRecord(
   const paid = amountOf(chargeData.paidAmount) + amount;
   await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, outstanding - amount), actor.organization.currency), status: paymentStatusForCharge(amountOf(chargeData.total), paid) });
   if (paid >= amountOf(chargeData.total)) await activatePtOrderForCharge(ctx, actor, charge.publicId);
-  await insertTimeline(ctx, actor, { memberId, type: "payment_collected", title: `Payment collected — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} ${method.replace("_", " ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { receiptNumber: allocated.number, receiptId: allocated.id } });
+  await insertTimeline(ctx, actor, { memberId, type: "payment_collected", title: `Payment collected — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} ${method.replace("_", " ")}`, titleMessage: systemMessage("communicationCompletion.timeline.paymentCollected", { amount: { amountMinor: amount, currency: actor.organization.currency }, method: { enum: "paymentMethod", value: method } }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { receiptNumber: allocated.number, receiptId: allocated.id } });
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.create", key: idempotencyKey, requestHash, result: { paymentId: payment.id, receiptId: receipt.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
   const member = data(memberRecord.data);
   await queueOperationalEmail(ctx, {
     organizationId: actor.organization._id,
     branchId: branch?._id,
     kind: "payment_receipt",
-    templateVersion: "payment-receipt-v1",
-    language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en",
+    templateVersion: "payment-receipt-v2",
+    facts: { type: "receipt", receiptNumber: allocated.number, amountMinor: amount, currency: actor.organization.currency, method, paidAt: Date.parse(now), outstandingMinor: Math.max(0, outstanding - amount) },
+    ...recipientLanguage(member.preferredLanguage, actor.organization),
     recipientReference: memberId,
     recipientEmail: optionalString(member.email),
     dedupeKey: `payment-receipt:${receipt.id}`,
@@ -7248,7 +7294,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     notes: optionalString(input.notes),
     createdAt: isoNow(),
   }, { branchId: homeBranchId });
-  await insertTimeline(ctx, actor, { memberId: member.id, type: "member_created", title: "Member profile created", actorId: publicUserId(actor.user), actorName: actor.user.fullName, branchId: homeBranchId });
+  await insertTimeline(ctx, actor, { memberId: member.id, type: "member_created", title: "Member profile created", titleMessage: systemMessage("communicationCompletion.timeline.memberCreated"), actorId: publicUserId(actor.user), actorName: actor.user.fullName, branchId: homeBranchId });
   await insertAudit(ctx, actor, { category: "members", action: "member.create", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: "Member profile created", branchId: homeBranchId });
   if (duplicates.length > 0 && unconfirmedDuplicates.length === 0) {
     await insertAudit(ctx, actor, { category: "members", action: "member.duplicate_identity_override", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: "Created a distinct member after reviewing contact matches", reason: "Front desk confirmed this is a different person.", after: { matchedMemberIds: duplicates.map((duplicate) => duplicate.memberId) }, branchId: homeBranchId });
@@ -7352,7 +7398,9 @@ async function createMembershipMutation(
     branchId: memberData.homeBranchId,
     type: operation === "plan_change" ? "membership_plan_changed" : renewal ? "membership_renewed" : "membership_sold",
     title: operation === "plan_change" ? `Membership plan changed to ${stringValue(planData.name)}` : `${stringValue(planData.name)} membership ${renewal ? "renewed" : "sold"}`,
+    titleMessage: operation === "plan_change" ? systemMessage("communicationCompletion.timeline.membershipPlanChanged", { plan: stringValue(planData.name) }) : renewal ? systemMessage("communicationCompletion.timeline.membershipRenewed", { plan: stringValue(planData.name) }) : systemMessage("communicationCompletion.timeline.membershipSold", { plan: stringValue(planData.name) }),
     body: operation === "plan_change" ? `${options.reason ?? "Plan change"} Effective ${membership.startDate}; no proration applied.` : `Term ${membership.startDate} → ${membership.endDate}.`,
+    ...(operation === "plan_change" ? {} : { bodyMessage: systemMessage("communicationCompletion.timeline.membershipTerm", { startDate: { date: stringValue(membership.startDate) }, endDate: { date: stringValue(membership.endDate) } }) }),
     actorId: publicUserId(actor.user),
     actorName: actor.user.fullName,
     meta: { membershipId: membership.id, previousMembershipId, previousPlanId: options.previousPlanId, effectiveDate: operation === "plan_change" ? options.effectiveDate : undefined },
@@ -7701,7 +7749,7 @@ async function executeAutomationCandidate(
         messageClass: "marketing",
         channel: "sandbox",
         requestedChannel: stringValue(action.channel, "whatsapp"),
-        language: stringValue(candidate.value.preferredLanguage, "en"),
+        ...recipientLanguage(candidate.value.preferredLanguage, actor.organization),
         templateId: optionalString(action.templateId),
         memberId,
         leadId,
@@ -7722,6 +7770,7 @@ async function executeAutomationCandidate(
         roles: ["owner", "manager"],
         kind: "automation_attention",
         title: stringValue(rule.name, "Automation requires attention"),
+        ...(typeof rule.name === "string" ? {} : { titleMessage: systemMessage("communicationCompletion.notifications.automationAttention") }),
         body: candidate.subjectName,
         href: automationAttentionHref(memberId, leadId),
         dedupeKey: `automation-notification:${executionId}`,
@@ -7816,7 +7865,7 @@ async function runBulkOperationMutation(ctx: MutationCtx, actor: ActorContext, i
         } else if (kind === "members_assign_branch") {
           if (member.homeBranchId === publicBranchId(branch!)) { skippedCount += 1; continue; }
           await ctx.db.patch(record._id, { branchId: branch!._id, data: { ...member, homeBranchId: publicBranchId(branch!) }, updatedAt: Date.now() });
-          await insertTimeline(ctx, actor, { memberId: id, branchId: publicBranchId(branch!), type: "member_updated", title: `Home branch assigned — ${branch!.name}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+          await insertTimeline(ctx, actor, { memberId: id, branchId: publicBranchId(branch!), type: "member_updated", title: `Home branch assigned — ${branch!.name}`, titleMessage: systemMessage("communicationCompletion.timeline.homeBranchAssigned", { branch: branch!.name }), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
         } else if (kind === "members_create_follow_up") {
           await createTaskMutation(ctx, actor, { type: "follow_up", title: `Follow up — ${stringValue(member.fullName)}`, ownerId: publicUserId(actor.user), dueAt, priority: "normal", memberId: id });
         } else if (kind === "members_archive") {
@@ -7833,13 +7882,13 @@ async function runBulkOperationMutation(ctx: MutationCtx, actor: ActorContext, i
         if (kind === "leads_assign_owner") {
           if (lead.ownerId === publicUserId(owner!)) { skippedCount += 1; continue; }
           await patchRecord(ctx, actor, record, { ownerId: publicUserId(owner!), ownerName: owner!.fullName, updatedAt: isoNow() });
-          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_assigned", title: `Assigned to ${owner!.fullName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_assigned", title: `Assigned to ${owner!.fullName}`, titleMessage: systemMessage("communicationCompletion.timeline.leadAssigned", { name: owner!.fullName }), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
         } else if (kind === "leads_create_follow_up") {
           await createTaskMutation(ctx, actor, { type: "follow_up", title: `Follow up — ${stringValue(lead.fullName)}`, ownerId: optionalString(lead.ownerId) ?? publicUserId(actor.user), dueAt, priority: "normal", leadId: id });
         } else if (kind === "leads_close_lost") {
           if (stringValue(lead.stage) === "lost") { skippedCount += 1; continue; }
           await patchRecord(ctx, actor, record, { stage: "lost", lostReason: reason, nextFollowUpAt: undefined, updatedAt: isoNow() });
-          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_lost", title: "Lead closed as not sold", body: reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_lost", title: "Lead closed as not sold", titleMessage: systemMessage("communicationCompletion.timeline.leadLost"), body: reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
         }
       }
       succeededCount += 1;
@@ -8063,11 +8112,11 @@ async function activatePtOrderForCharge(ctx: MutationCtx, actor: ActorContext, c
   });
   await ctx.db.patch(order._id, { status: "active", entitlementId, paidAt: now, updatedAt: now });
   await insertPtLedger(ctx, actor, { entitlementId, memberPublicId: order.memberPublicId, type: "grant", quantity: terms.sessionCount, reason: `Activated ${terms.name} after full payment` });
-  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_activated", title: `${terms.name} activated`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, chargeId } });
-  await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, roles: ["owner", "manager", "receptionist"], kind: "pt_package_activated", title: "PT package activated", body: terms.name, href: `/members/${order.memberPublicId}`, dedupeKey: `pt-package-activated:${order.publicId}` });
+  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_activated", title: `${terms.name} activated`, titleMessage: systemMessage("communicationCompletion.timeline.ptPackageActivated", { package: terms.name }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, chargeId } });
+  await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, roles: ["owner", "manager", "receptionist"], kind: "pt_package_activated", title: "PT package activated", titleMessage: systemMessage("communicationCompletion.notifications.ptPackageActivated"), body: terms.name, href: `/members/${order.memberPublicId}`, dedupeKey: `pt-package-activated:${order.publicId}` });
   const memberRecord = await recordOfOptional(ctx, actor, "member", order.memberPublicId);
   const member = data(memberRecord?.data);
-  await queueOperationalEmail(ctx, { organizationId: actor.organization._id, kind: "pt_package_paid", templateVersion: "pt-package-paid-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: order.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-package-paid:${order.publicId}` });
+  await queueOperationalEmail(ctx, { organizationId: actor.organization._id, kind: "pt_package_paid", templateVersion: "pt-package-paid-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: order.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-package-paid:${order.publicId}` });
 }
 
 async function reverseUnusedPtOrderAfterVoid(ctx: MutationCtx, actor: ActorContext, chargeId: string, reason: string): Promise<void> {
@@ -8114,7 +8163,7 @@ async function customerPtContext(ctx: ReadContext, membershipId: string) {
   return { user, organization, projection, membership, member };
 }
 
-async function insertCustomerPtTimeline(ctx: MutationCtx, input: { organization: Organization; memberId: string; branchId?: Id<"branches">; type: string; title: string; body?: string; meta?: Data; user: User }): Promise<void> {
+async function insertCustomerPtTimeline(ctx: MutationCtx, input: { organization: Organization; memberId: string; branchId?: Id<"branches">; type: string; title: string; titleMessage?: SystemMessage; bodyMessage?: SystemMessage; body?: string; meta?: Data; user: User }): Promise<void> {
   const now = Date.now();
   const id = newPublicId();
   await ctx.db.insert("domainRecords", {
@@ -8125,7 +8174,7 @@ async function insertCustomerPtTimeline(ctx: MutationCtx, input: { organization:
     memberPublicId: input.memberId,
     createdAt: now,
     updatedAt: now,
-    data: { id, organizationId: publicOrganizationId(input.organization), memberId: input.memberId, type: input.type, title: input.title, body: input.body, actorId: publicUserId(input.user), actorName: input.user.fullName, occurredAt: utcIso(now), meta: input.meta },
+    data: { id, organizationId: publicOrganizationId(input.organization), memberId: input.memberId, type: input.type, title: input.title, ...(input.titleMessage ? { titleMessage: input.titleMessage } : {}), body: input.body, ...(input.bodyMessage ? { bodyMessage: input.bodyMessage } : {}), actorId: publicUserId(input.user), actorName: input.user.fullName, occurredAt: utcIso(now), meta: input.meta },
   });
 }
 
@@ -8207,7 +8256,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const responseId = newPublicId();
     await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "offerResponse", publicId: responseId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: responseId, organizationId: publicOrganizationId(organization), offerId: offer.publicId, leadId: lead.publicId, outcome, reason: reason || undefined, source: "public_link", occurredAt: respondedAt } });
     const timelineId = newPublicId();
-    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: timelineId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: timelineId, organizationId: publicOrganizationId(organization), leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.publicId, outcome, source: "public_link" } } });
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: timelineId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: timelineId, organizationId: publicOrganizationId(organization), leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, titleMessage: outcome === "accepted" ? systemMessage("communicationCompletion.timeline.offerAccepted", { plan: stringValue(current.planName) }) : systemMessage("communicationCompletion.timeline.offerDeclined", { plan: stringValue(current.planName) }), body: reason || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.publicId, outcome, source: "public_link" } } });
     return await publicOfferView(ctx, token);
   }
 
@@ -8402,9 +8451,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     });
     const order = (await ctx.db.get(orderId))!;
     await ctx.db.insert("idempotencyRecords", { organizationId: context.organization._id, operation: "customer.pt.package.request", key: idempotencyKey, requestHash, result: { orderId: order.publicId }, createdAt: now, expiresAt: now + 365 * 86_400_000 });
-    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_package_requested", title: `${ptPackage.name} requested`, meta: { orderId: order.publicId, chargeId } });
+    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_package_requested", title: `${ptPackage.name} requested`, titleMessage: systemMessage("communicationCompletion.timeline.ptPackageRequested", { package: ptPackage.name }), meta: { orderId: order.publicId, chargeId } });
     await insertCustomerPtAudit(ctx, { organization: context.organization, user: context.user, branchId: branch._id, action: "pt.package.request", entityType: "pt_package_order", entityId: order.publicId, entityLabel: context.member.publicId, summary: `Member requested ${ptPackage.name}`, after: { sessions: ptPackage.sessionCount, amount: ptPackage.totalPriceMinor, chargeId }, correlationId: request.correlationId });
-    await notifyOrganizationRoles(ctx, { organizationId: context.organization._id, branchId: branch._id, roles: ["owner", "manager", "sales", "receptionist"], kind: "pt_package_request", title: "PT package payment requested", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${ptPackage.name}`, href: `/members/${context.member.publicId}`, dedupeKey: `pt-package-request:${order.publicId}` });
+    await notifyOrganizationRoles(ctx, { organizationId: context.organization._id, branchId: branch._id, roles: ["owner", "manager", "sales", "receptionist"], kind: "pt_package_request", title: "PT package payment requested", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${ptPackage.name}`, titleMessage: systemMessage("communicationCompletion.notifications.ptPackageRequested"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: stringValue(data(context.member.data).fullName, "Member"), b: ptPackage.name }), href: `/members/${context.member.publicId}`, dedupeKey: `pt-package-request:${order.publicId}` });
     return await ptPackageOrderView(ctx, context.organization, order);
   }
   if (operation === "customer.pt.booking.create") {
@@ -8449,10 +8498,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const bookingId = await ctx.db.insert("ptBookings", { organizationId: context.organization._id, publicId: newPublicId(), memberPublicId: context.member.publicId, membershipPublicId: context.membership.publicId, trainerProfileId: trainer._id, branchId: branch._id, entitlementId: entitlement._id, startsAt, endsAt, status: "reserved", bookedByUserId: context.user._id, idempotencyKey, createdAt: now, updatedAt: now });
     const booking = (await ctx.db.get(bookingId))!;
     await ctx.db.insert("ptCreditLedger", { organizationId: context.organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: context.member.publicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: "Member reserved PT booking", actorUserId: context.user._id, occurredAt: now });
-    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
+    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptBooked", { trainer: trainer.displayName }), meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
     await insertCustomerPtAudit(ctx, { organization: context.organization, user: context.user, branchId: branch._id, action: "pt.booking.create", entityType: "pt_booking", entityId: booking.publicId, entityLabel: `${stringValue(data(context.member.data).fullName)} · ${trainer.displayName}`, summary: "Member reserved one PT credit", after: { startsAt: utcIso(startsAt), trainerId: trainer.publicId, entitlementId: entitlement.publicId }, correlationId: request.correlationId });
-    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${utcIso(startsAt)}`, href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
-    await queueOperationalEmail(ctx, { organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", language: stringValue(data(context.member.data).preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: publicUserId(context.user), recipientEmail: context.user.email, dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
+    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${utcIso(startsAt)}`, titleMessage: systemMessage("communicationCompletion.notifications.ptBooking"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: stringValue(data(context.member.data).fullName, "Member"), b: { at: utcIso(startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
+    await queueOperationalEmail(ctx, { organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", ...recipientLanguage(data(context.member.data).preferredLanguage, context.organization), recipientReference: publicUserId(context.user), recipientEmail: context.user.email, dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
     return await ptBookingView(ctx, context.organization, booking);
   }
   if (operation === "customer.pt.booking.cancel") {
@@ -8475,9 +8524,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + (timely ? 0 : 1), updatedAt: Date.now() });
     await ctx.db.patch(booking._id, { status, cancellationReason: stringValue(input.reason).trim(), updatedAt: Date.now() });
     await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: timely ? "release" : "consume", quantity: timely ? 1 : -1, reason: stringValue(input.reason), actorUserId: user._id, occurredAt: Date.now() });
-    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: booking.branchId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
+    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: booking.branchId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", titleMessage: timely ? systemMessage("communicationCompletion.timeline.ptCancelledRestored") : systemMessage("communicationCompletion.timeline.ptCancelledUsed"), body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
     await insertCustomerPtAudit(ctx, { organization, user, branchId: booking.branchId, action: "pt.booking.cancel", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: timely ? "Member cancelled PT booking and restored credit" : "Member late-cancelled PT booking and consumed credit", reason: stringValue(input.reason), before: { status: booking.status }, after: { status }, correlationId: request.correlationId });
-    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-cancelled-v1", recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
+    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-cancelled-v1", ...recipientLanguage(profile?.preferredLanguage, organization), recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
     return await ptBookingView(ctx, organization, (await ctx.db.get(booking._id))!);
   }
   if (operation === "customer.pt.booking.reschedule") {
@@ -8525,10 +8574,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: "release", quantity: 1, reason: `Reschedule: ${stringValue(input.reason)}`, actorUserId: user._id, occurredAt: Date.now() });
     await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: `Reschedule: ${stringValue(input.reason)}`, actorUserId: user._id, occurredAt: Date.now() });
     await ctx.db.insert("idempotencyRecords", { organizationId: organization._id, operation: "customer.pt.booking.reschedule", key: idempotencyKey, requestHash, result: { bookingId: booking.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 365 * 86_400_000 });
-    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: branch._id, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
+    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: branch._id, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptRescheduled", { trainer: trainer.displayName }), body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
     await insertCustomerPtAudit(ctx, { organization, user, branchId: branch._id, action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: "Member rescheduled PT booking without changing credit balance", reason: stringValue(input.reason), before, after: { startsAt: utcIso(startsAt), trainerProfileId: trainer.publicId, branchId: publicBranchId(branch) }, correlationId: request.correlationId });
-    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
-    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
+    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), titleMessage: systemMessage("communicationCompletion.notifications.ptBookingRescheduled"), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: { at: utcIso(startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
+    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", ...recipientLanguage(profile?.preferredLanguage, organization), recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
     return await ptBookingView(ctx, organization, (await ctx.db.get(booking._id))!);
   }
   if (operation === "notifications.read" || operation === "notifications.readAll") {
@@ -8938,14 +8987,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const billedRecipient = await platformGymOwnerRecipient(ctx, gymId);
         if (billedRecipient && billedRecipient.organization._id === organization._id) {
           const issued = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "platformInvoice").eq("publicId", invoiceId)).unique();
+          // Gym-addressed: the gym's chosen language, for the notice and its PDF alike.
+          const notice = recipientLanguage(undefined, billedRecipient.organization);
           await queueOperationalEmail(ctx, {
             organizationId: billedRecipient.organization._id,
             kind: "platform_invoice_issued",
-            templateVersion: "platform-invoice-issued-v1",
+            templateVersion: "platform-invoice-issued-v2",
+            ...notice,
+            facts: issued ? platformInvoiceFacts(invoiceId, data(issued.data)) : undefined,
             recipientReference: publicUserId(billedRecipient.user),
             recipientEmail: billedRecipient.user.email,
             dedupeKey: `subscription-change-invoice:${invoiceId}`,
-            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user), { locale: billedRecipient.organization.defaultLanguage === "ar" ? "ar" : "en", timeZone: billedRecipient.organization.timezone })] : undefined,
+            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user), { locale: notice.language, timeZone: billedRecipient.organization.timezone })] : undefined,
           });
         }
       }
@@ -9286,15 +9339,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     });
     if (["platform.invoice.issue", "platform.invoice.past_due", "platform.invoice.payment"].includes(operation)) {
       const recipient = await platformGymOwnerRecipient(ctx, stringValue(current.gymId));
-      if (recipient) await queueOperationalEmail(ctx, {
+      const notice = recipient ? recipientLanguage(undefined, recipient.organization) : undefined;
+      if (recipient && notice) await queueOperationalEmail(ctx, {
         organizationId: recipient.organization._id,
         kind: operation === "platform.invoice.issue" ? "platform_invoice_issued" : operation === "platform.invoice.past_due" ? "platform_invoice_past_due" : "platform_invoice_paid",
-        templateVersion: operation === "platform.invoice.issue" ? "platform-invoice-issued-v1" : operation === "platform.invoice.past_due" ? "platform-invoice-past-due-v1" : "platform-invoice-paid-v1",
+        templateVersion: operation === "platform.invoice.issue" ? "platform-invoice-issued-v2" : operation === "platform.invoice.past_due" ? "platform-invoice-past-due-v2" : "platform-invoice-paid-v2",
+        ...notice,
+        facts: platformInvoiceFacts(invoiceId, updated),
         recipientReference: publicUserId(recipient.user),
         recipientEmail: recipient.user.email,
         dedupeKey: `${operation}:${invoiceId}:${now}`,
-        // The invoice travels with the notice, as the paperwork it is.
-        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user), { locale: recipient.organization.defaultLanguage === "ar" ? "ar" : "en", timeZone: recipient.organization.timezone })],
+        // The invoice travels with the notice, as the paperwork it is, in the same language.
+        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user), { locale: notice.language, timeZone: recipient.organization.timezone })],
       });
       if (recipient && operation === "platform.invoice.past_due") {
         await notifyOrganizationRoles(ctx, {
@@ -9303,6 +9359,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           kind: "platform_invoice_past_due",
           title: "RIVET invoice marked past due",
           body: `${invoiceId} · ${platformInvoiceAmount(numberValue(current.amountMinor), stringValue(current.currency, "JOD"))}`,
+          titleMessage: systemMessage("communicationCompletion.notifications.invoicePastDue"),
+          bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: invoiceId, b: { amountMinor: numberValue(current.amountMinor), currency: stringValue(current.currency, "JOD") } }),
           href: "/support",
           dedupeKey: `platform-invoice-past-due:${invoiceId}`,
         });
@@ -9377,6 +9435,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: record.branchId,
         kind: operation === "platform.support.reply" ? "support_reply" : "support_resolved",
         title: operation === "platform.support.reply" ? "RIVET replied to your support case" : "RIVET resolved your support case",
+        titleMessage: systemMessage(operation === "platform.support.reply" ? "communicationCompletion.notifications.supportReply" : "communicationCompletion.notifications.supportResolved"),
         body: stringValue(current.subject, publicId),
         href: `/support?case=${publicId}`,
         dedupeKey: `${operation}:${publicId}:${now}`,
@@ -9399,6 +9458,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: record.branchId,
         kind: "support_assignment",
         title: "Support case assigned to you",
+        titleMessage: systemMessage("communicationCompletion.notifications.supportAssigned"),
         body: `${stringValue(current.gym, "Gym")} · ${stringValue(current.subject, publicId)}`,
         href: `/platform/support?case=${publicId}`,
         dedupeKey: `support-assigned:${publicId}:${publicUserId(assignee)}`,
@@ -9576,6 +9636,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: record.branchId,
         kind: "support_gym_reply",
         title: "New gym reply on support case",
+        titleMessage: systemMessage("communicationCompletion.notifications.supportGymReply"),
         body: `${actor.organization.name} · ${stringValue(current.subject, record.publicId)}`,
         href: `/platform/support?case=${record.publicId}`,
         dedupeKey: `support-gym-reply:${messageId}`,
@@ -9639,6 +9700,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: branch?._id,
         kind: "support_case_created",
         title: priority === "urgent" ? "Urgent gym support case" : "New gym support case",
+        titleMessage: systemMessage(priority === "urgent" ? "communicationCompletion.notifications.supportCreatedUrgent" : "communicationCompletion.notifications.supportCreated"),
         body: `${actor.organization.name} · ${subject}`,
         href: `/platform/support?case=${caseId}`,
         dedupeKey: `support-created:${caseId}`,
@@ -9698,7 +9760,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           branchId: optionalString(updated.homeBranchId),
           type: "marketing_preference_changed",
           title: `Marketing messages ${updated.marketingOptIn ? "enabled" : "disabled"}`,
+          titleMessage: updated.marketingOptIn ? systemMessage("communicationCompletion.timeline.marketingEnabled") : systemMessage("communicationCompletion.timeline.marketingDisabled"),
           body: `Preference changed from ${marketingPreference(previous.marketingOptIn) ? "opted in" : "opted out"} to ${updated.marketingOptIn ? "opted in" : "opted out"}.`,
+          // The fixed sentences only describe a real flip; a source-only change keeps just the original text.
+          ...(Boolean(marketingPreference(previous.marketingOptIn)) === Boolean(updated.marketingOptIn) ? {} : { bodyMessage: updated.marketingOptIn ? systemMessage("communicationCompletion.timeline.marketingNowIn") : systemMessage("communicationCompletion.timeline.marketingNowOut") }),
           actorId: publicUserId(actor.user),
           actorName: actor.user.fullName,
           meta: { optedIn: Boolean(updated.marketingOptIn), source: stringValue(data(updated.marketingPreference).source, "staff_selected") },
@@ -9786,7 +9851,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "members.write");
       const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
       requireReason(input.body, actor.correlationId, "body");
-      return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "note", title: "Note added", body: stringValue(input.body), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "note", title: "Note added", titleMessage: systemMessage("communicationCompletion.timeline.noteAdded"), body: stringValue(input.body), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
     }
     case "members.contact": {
       requirePermission(actor, "members.write");
@@ -9796,7 +9861,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const nextFollowUpAt = optionalString(input.nextFollowUpAt);
       await resolveFollowUpTasksForContact(ctx, actor, { memberId: member.publicId }, stringValue(data(member.data).fullName), outcome, nextFollowUpAt, { createWhenMissing: true });
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Contact — ${outcome.replaceAll("_", " ")}`;
-      return await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(data(member.data).homeBranchId), type: "call_attempt", title: contactTitle, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
+      return await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(data(member.data).homeBranchId), type: "call_attempt", title: contactTitle, ...(outcome === "whatsapp_opened" ? { titleMessage: systemMessage("communicationCompletion.timeline.whatsappOpened") } : {}), body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
     }
     case "retention.snooze": {
       requirePermission(actor, "crm.write");
@@ -10129,7 +10194,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       });
       const order = (await ctx.db.get(orderId))!;
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.package.request", key: idempotencyKey, requestHash, result: { orderId: order.publicId }, createdAt: now, expiresAt: now + 365 * 86_400_000 });
-      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_package_requested", title: `${ptPackage.name} requested`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, chargeId: charge.id } });
+      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_package_requested", title: `${ptPackage.name} requested`, titleMessage: systemMessage("communicationCompletion.timeline.ptPackageRequested", { package: ptPackage.name }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, chargeId: charge.id } });
       await insertAudit(ctx, actor, { category: "memberships", action: "pt.package.request", entityType: "pt_package_order", entityId: order.publicId, entityLabel: stringValue(membership.memberId), summary: `Created unpaid charge for ${ptPackage.name}`, branchId: stringValue(membership.homeBranchId), after: { sessions: ptPackage.sessionCount, amount: ptPackage.totalPriceMinor, chargeId: charge.id } });
       return await ptPackageOrderView(ctx, actor.organization, order);
     }
@@ -10166,7 +10231,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const reason = stringValue(input.reason).trim();
       await patchRecord(ctx, actor, charge, { status: "void", paidAmount: money(0, actor.organization.currency), outstandingAmount: money(0, actor.organization.currency), voidReason: reason, voidedAt: utcIso(now) });
       await ctx.db.patch(order._id, { status: "cancelled", cancelledAt: now, cancellationReason: reason, updatedAt: now });
-      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_cancelled", title: "PT package order cancelled", body: reason, meta: { orderId: order.publicId, chargeId: order.chargePublicId } });
+      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_cancelled", title: "PT package order cancelled", titleMessage: systemMessage("communicationCompletion.timeline.ptPackageCancelled"), body: reason, meta: { orderId: order.publicId, chargeId: order.chargePublicId } });
       await insertAudit(ctx, actor, { category: "payments", action: "pt.package.cancel", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: "Cancelled pending PT package order and voided unpaid charge", reason, before: { orderStatus: order.status, chargeStatus: chargeData.status }, after: { orderStatus: "cancelled", chargeStatus: "void" } });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.package.cancel", key: idempotencyKey, requestHash, result: { orderId: order.publicId }, createdAt: now, expiresAt: now + 365 * 86_400_000 });
       return await ptPackageOrderView(ctx, actor.organization, (await ctx.db.get(order._id))!);
@@ -10298,12 +10363,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const bookingId = await ctx.db.insert("ptBookings", { organizationId: actor.organization._id, publicId: newPublicId(), memberPublicId: stringValue(membership.memberId), membershipPublicId: membershipRecord.publicId, trainerProfileId: trainer._id, branchId: branch._id, entitlementId: entitlement._id, startsAt, endsAt, status: "reserved", bookedByUserId: actor.user._id, idempotencyKey, createdAt: now, updatedAt: now });
       const booking = (await ctx.db.get(bookingId))!;
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: "PT booking reserved" });
-      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: publicBranchId(branch), type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
+      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: publicBranchId(branch), type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptBooked", { trainer: trainer.displayName }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
       await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.create", entityType: "pt_booking", entityId: booking.publicId, entityLabel: `${stringValue(data((await recordOf(ctx, actor, "member", stringValue(membership.memberId))).data).fullName)} · ${trainer.displayName}`, summary: "Reserved one PT credit", branchId: publicBranchId(branch), after: { startsAt: utcIso(startsAt), trainerId: trainer.publicId, entitlementId: entitlement.publicId } });
-      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
+      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: utcIso(startsAt), titleMessage: systemMessage("communicationCompletion.notifications.ptBooking"), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: { at: utcIso(startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
       const memberRecord = await recordOf(ctx, actor, "member", stringValue(membership.memberId));
       const member = data(memberRecord.data);
-      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: stringValue(membership.memberId), recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: stringValue(membership.memberId), recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
       return await ptBookingView(ctx, actor.organization, booking);
     }
     case "pt.booking.cancel": {
@@ -10322,11 +10387,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const status = cancelledByGym ? "gym_cancelled" : timely ? "cancelled" : "late_cancelled";
       await ctx.db.patch(booking._id, { status, cancellationReason: stringValue(input.reason).trim(), updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: timely ? "release" : "consume", quantity: timely ? 1 : -1, reason: stringValue(input.reason) });
-      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", titleMessage: timely ? systemMessage("communicationCompletion.timeline.ptCancelledRestored") : systemMessage("communicationCompletion.timeline.ptCancelledUsed"), body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.cancel", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: timely ? "Cancelled PT booking and restored credit" : "Late-cancelled PT booking and consumed credit", reason: stringValue(input.reason), before: { status: booking.status }, after: { status }, branchId: await publicBranchIdFromId(ctx, actor.organization._id, booking.branchId) });
       const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
       const member = data(memberRecord?.data);
-      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: cancelledByGym ? "pt-booking-gym-cancelled-v1" : "pt-booking-cancelled-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: cancelledByGym ? "pt-booking-gym-cancelled-v1" : "pt-booking-cancelled-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
       return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
     }
     case "pt.booking.reschedule": {
@@ -10371,13 +10436,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "release", quantity: 1, reason: `Reschedule: ${stringValue(input.reason)}` });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: `Reschedule: ${stringValue(input.reason)}` });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.booking.reschedule", key: idempotencyKey, requestHash, result: { bookingId: booking.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 365 * 86_400_000 });
-      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, branchId: publicBranchId(branch), type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, branchId: publicBranchId(branch), type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptRescheduled", { trainer: trainer.displayName }), body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
       await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: "Rescheduled PT booking without changing credit balance", reason: stringValue(input.reason), before, after: { startsAt: utcIso(startsAt), trainerProfileId: trainer.publicId, branchId: publicBranchId(branch) }, branchId: publicBranchId(branch) });
-      if (oldTrainer && oldTrainer.userId !== trainer.userId) await insertOperationalNotification(ctx, { recipientUserId: oldTrainer.userId, organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_reassigned", title: "PT booking reassigned", body: utcIso(booking.startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reassigned-old:${booking.publicId}:${startsAt}` });
-      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
+      if (oldTrainer && oldTrainer.userId !== trainer.userId) await insertOperationalNotification(ctx, { recipientUserId: oldTrainer.userId, organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_reassigned", title: "PT booking reassigned", body: utcIso(booking.startsAt), titleMessage: systemMessage("communicationCompletion.notifications.ptBookingReassigned"), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: { at: utcIso(booking.startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reassigned-old:${booking.publicId}:${startsAt}` });
+      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), titleMessage: systemMessage("communicationCompletion.notifications.ptBookingRescheduled"), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: { at: utcIso(startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
       const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
       const member = data(memberRecord?.data);
-      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
       return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
     }
     case "pt.booking.complete":
@@ -10395,18 +10460,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1, updatedAt: Date.now() });
       await ctx.db.patch(booking._id, { status, outcomeReason: optionalString(input.reason), updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "consume", quantity: -1, reason: status === "completed" ? "PT session completed" : "PT session no-show" });
-      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: status === "completed" ? "pt_session_completed" : "pt_session_no_show", title: status === "completed" ? "PT session completed" : "PT session marked no-show", body: optionalString(input.reason), meta: { bookingId: booking.publicId } });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: status === "completed" ? "pt_session_completed" : "pt_session_no_show", title: status === "completed" ? "PT session completed" : "PT session marked no-show", titleMessage: status === "completed" ? systemMessage("communicationCompletion.timeline.ptCompleted") : systemMessage("communicationCompletion.timeline.ptNoShow"), body: optionalString(input.reason), meta: { bookingId: booking.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: `pt.booking.${status}`, entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: status === "completed" ? "Completed PT session and consumed credit" : "Recorded PT no-show and consumed credit", reason: optionalString(input.reason), before: { status: booking.status }, after: { status }, branchId: await publicBranchIdFromId(ctx, actor.organization._id, booking.branchId) });
       if (status === "no_show") {
         const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
         const member = data(memberRecord?.data);
-        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-no-show-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-no-show:${booking.publicId}` });
+        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-no-show-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-no-show:${booking.publicId}` });
       }
       const remainingCredits = ptAvailable({ ...entitlement, reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1 });
       if (remainingCredits <= 2) {
         const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
         const member = data(memberRecord?.data);
-        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_low_balance", templateVersion: "pt-low-balance-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-low-balance:${entitlement.publicId}:${remainingCredits}` });
+        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_low_balance", templateVersion: "pt-low-balance-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-low-balance:${entitlement.publicId}:${remainingCredits}` });
       }
       return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
     }
@@ -10528,7 +10593,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const newEndDate = addDays(stringValue(value.endDate), days);
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "freeze", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { endDate: value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() };
       const updated = await patchRecord(ctx, actor, record, { activeFreeze: freeze, freezes: [...arrayValue(value.freezes), freeze], endDate: newEndDate, adjustments: [...arrayValue(value.adjustments), adjustment] });
-      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_frozen", title: `Membership frozen ${freeze.startDate} → ${freeze.endDate}`, body: freeze.reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_frozen", title: `Membership frozen ${freeze.startDate} → ${freeze.endDate}`, titleMessage: systemMessage("communicationCompletion.timeline.membershipFrozen", { startDate: { date: freeze.startDate }, endDate: { date: freeze.endDate } }), body: freeze.reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.freeze", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: `Frozen ${days} day${days === 1 ? "" : "s"}`, reason: stringValue(input.reason), before: { endDate: value.endDate }, after: { endDate: newEndDate }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
@@ -10548,7 +10613,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const completed = { ...freeze, status: "completed", endDate: today };
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "unfreeze", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { endDate: value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() };
       const updated = await patchRecord(ctx, actor, record, { activeFreeze: undefined, freezes: arrayValue(value.freezes).map((item) => data(item).id === freeze.id ? completed : item), frozenDaysUsed: numberValue(value.frozenDaysUsed) + usedDays, endDate: newEndDate, adjustments: [...arrayValue(value.adjustments), adjustment] });
-      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_unfrozen", title: "Freeze ended early", body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_unfrozen", title: "Freeze ended early", titleMessage: systemMessage("communicationCompletion.timeline.freezeEnded"), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.unfreeze", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: "Freeze ended early", reason: stringValue(input.reason), before: { endDate: value.endDate }, after: { endDate: newEndDate }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
@@ -10563,7 +10628,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const newEndDate = addDays(stringValue(value.endDate), days);
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "extension", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { endDate: value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() };
       const updated = await patchRecord(ctx, actor, record, { endDate: newEndDate, adjustments: [...arrayValue(value.adjustments), adjustment] });
-      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_extended", title: `Membership extended by ${days} day${days === 1 ? "" : "s"}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_extended", title: `Membership extended by ${days} day${days === 1 ? "" : "s"}`, titleMessage: systemMessage("communicationCompletion.timeline.membershipExtended", { count: days }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.date_override", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: `Extended ${days} days`, reason: stringValue(input.reason), before: { endDate: value.endDate }, after: { endDate: newEndDate }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
@@ -10581,7 +10646,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           await patchRecord(ctx, actor, futureCharge, { status: "void", outstandingAmount: money(0, actor.organization.currency), voidReason: stringValue(input.reason), voidedAt: isoNow() });
         }
       }
-      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_cancelled", title: "Membership cancelled", body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_cancelled", title: "Membership cancelled", titleMessage: systemMessage("communicationCompletion.timeline.membershipCancelled"), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.cancel", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: "Membership cancelled", reason: stringValue(input.reason), before: { status: value.status ?? "active" }, after: { status: "cancelled" }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
@@ -10625,7 +10690,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await ctx.db.patch(member._id, { branchId: destination._id, data: { ...memberValue, homeBranchId: destinationBranchId }, updatedAt: Date.now() });
       }
       const previousBranch = await branchByPublicId(ctx, actor.organization._id, previousBranchId);
-      await insertTimeline(ctx, actor, { memberId: value.memberId, branchId: destinationBranchId, type: "membership_transferred", title: `Membership transferred to ${destination.name}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId, previousBranchId, branchId: destinationBranchId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, branchId: destinationBranchId, type: "membership_transferred", title: `Membership transferred to ${destination.name}`, titleMessage: systemMessage("communicationCompletion.timeline.membershipTransferred", { branch: destination.name }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId, previousBranchId, branchId: destinationBranchId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.branch_transfer", entityType: "membership", entityId: record.publicId, entityLabel: `${memberValue.fullName} · ${memberValue.memberNumber}`, summary: `Transferred ${previousBranch?.name ?? "branch"} → ${destination.name}`, reason: stringValue(input.reason), before: { branchId: previousBranchId }, after: { branchId: destinationBranchId }, branchId: destinationBranchId });
       if (idempotencyKey && requestHash) {
         await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "membership.transfer", key: idempotencyKey, requestHash, result: { membershipId: record.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
@@ -10644,7 +10709,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (ownerId && ownerId !== publicUserId(actor.user)) requirePermission(actor, "crm.assign");
       if (ownerId) await assertLeadOwner(ctx, actor, ownerId);
       const lead = await insertRecord(ctx, actor, "lead", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId, fullName, phone, email, stage: "new", source: stringValue(input.source, "other"), ownerId, expectedValue: input.expectedValue ? { amount: amountOf(input.expectedValue), currency: actor.organization.currency } : undefined, nextFollowUpAt: optionalString(input.nextFollowUpAt), notes: optionalString(input.notes), createdAt: isoNow(), updatedAt: isoNow() }, { branchId });
-      await insertTimeline(ctx, actor, { leadId: lead.id, branchId, type: "member_created", title: "Lead captured", body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await insertTimeline(ctx, actor, { leadId: lead.id, branchId, type: "member_created", title: "Lead captured", titleMessage: systemMessage("communicationCompletion.timeline.leadCaptured"), body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return { ...(await toLeadSummary(ctx, actor, lead)), notes: optionalString(lead.notes), activities: [], offers: [] };
     }
     case "leads.update": {
@@ -10708,7 +10773,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       }
       const updated = await patchRecord(ctx, actor, record, { fullName, phone, email, updatedAt: isoNow() });
       await insertAudit(ctx, actor, { category: "crm", action: "lead.contact.update", entityType: "lead", entityId: record.publicId, entityLabel: fullName, summary: "Lead contact details corrected", before, after, branchId: optionalString(current.branchId) });
-      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "lead_contact_updated", title: "Lead contact details corrected", body: "Contact details were updated; pipeline status was unchanged.", actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { fields: changedFields.join(",") } });
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "lead_contact_updated", title: "Lead contact details corrected", titleMessage: systemMessage("communicationCompletion.timeline.leadContactUpdated"), body: "Contact details were updated; pipeline status was unchanged.", bodyMessage: systemMessage("communicationCompletion.timeline.leadContactUpdatedBody"), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { fields: changedFields.join(",") } });
       const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
       const offers = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
       return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities, offers };
@@ -10743,7 +10808,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       // are the same work and must not survive as duplicates on Today.
       await resolveFollowUpTasksForContact(ctx, actor, { leadId: record.publicId }, stringValue(current.fullName), outcome, nextStage === "lost" ? undefined : optionalString(input.nextFollowUpAt), { createWhenMissing: false });
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${outcome.replaceAll("_", " ")}`;
-      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, ...(outcome === "whatsapp_opened" ? { titleMessage: systemMessage("communicationCompletion.timeline.whatsappOpened") } : {}), body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
       if (nextStage === "lost") {
         await insertAudit(ctx, actor, {
           category: "crm",
@@ -10804,7 +10869,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         updatedAt: isoNow(),
       }, { branchId, leadPublicId: lead.publicId });
       const updatedLead = await patchRecord(ctx, actor, lead, { stage: "trial_booked", nextFollowUpAt: utcIso(requestedAt), updatedAt: isoNow() });
-      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", body: `${preferredDate} · ${preferredTime}${optionalString(input.goal) ? ` · ${optionalString(input.goal)}` : ""}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
+      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", titleMessage: systemMessage("communicationCompletion.timeline.trialScheduled"), body: `${preferredDate} · ${preferredTime}${optionalString(input.goal) ? ` · ${optionalString(input.goal)}` : ""}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
       await insertAudit(ctx, actor, { category: "crm", action: "trial.scheduled", entityType: "trial_booking", entityId: booking.id, entityLabel: `${stringValue(leadValue.fullName)} · ${preferredDate} ${preferredTime}`, summary: "Trial scheduled by staff", branchId });
       const activities = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === lead.publicId);
       const offers = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === lead.publicId);
@@ -10825,6 +10890,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const leadValue = data(lead.data);
       const occurredAt = isoNow();
       const labels: Record<string, string> = { confirmed: "Trial confirmed", completed: "Trial completed", no_show: "Trial marked as no-show", cancelled: "Trial cancelled" };
+      const labelKeys: Record<string, SystemMessageKey> = { confirmed: "communicationCompletion.notifications.trialConfirmed", completed: "communicationCompletion.notifications.trialCompleted", no_show: "communicationCompletion.notifications.trialNoShow", cancelled: "communicationCompletion.notifications.trialCancelled" };
       const eventTypes: Record<string, string> = { confirmed: "trial_confirmed", completed: "trial_completed", no_show: "trial_no_show", cancelled: "trial_cancelled" };
       const followUpAt = new Date(Date.now() + 86_400_000).toISOString();
       const leadPatch: Data = nextStatus === "completed"
@@ -10836,7 +10902,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             : { stage: "trial_booked", updatedAt: occurredAt };
       const updatedBooking = await patchRecord(ctx, actor, booking, { status: nextStatus, updatedAt: occurredAt });
       const updatedLead = await patchRecord(ctx, actor, lead, leadPatch);
-      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadValue.branchId), type: eventTypes[nextStatus], title: labels[nextStatus], body: note, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, status: nextStatus } });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadValue.branchId), type: eventTypes[nextStatus], title: labels[nextStatus], ...(labelKeys[nextStatus] ? { titleMessage: systemMessage(labelKeys[nextStatus]!) } : {}), body: note, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, status: nextStatus } });
       if (nextStatus === "completed" || nextStatus === "no_show") {
         const existing = (await recordsOf(ctx, actor, "task")).find((record) => {
           const task = data(record.data);
@@ -10850,7 +10916,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: booking.branchId,
         kind: "trial_status",
         templateVersion: `trial-${nextStatus}-v1`,
-        language: stringValue(current.preferredLanguage, "en") === "ar" ? "ar" : "en",
+        ...recipientLanguage(current.preferredLanguage, actor.organization),
         recipientReference: stringValue(current.customerUserId, booking.publicId),
         recipientEmail: optionalString(current.email) ?? optionalString(leadValue.email),
         dedupeKey: `trial-status:${booking.publicId}:${nextStatus}`,
@@ -10865,6 +10931,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           kind: "trial_status",
           title: stringValue(labels[nextStatus]),
           body: `${actor.organization.name} · ${stringValue(current.preferredDate)} ${stringValue(current.preferredTime)}`,
+          ...(labelKeys[nextStatus] ? { titleMessage: systemMessage(labelKeys[nextStatus]!) } : {}),
+          bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: actor.organization.name, b: { message: dateClockMessage(current.preferredDate, current.preferredTime) } }),
           href: "/customer/my-gyms",
           dedupeKey: `trial-status:${booking.publicId}:${nextStatus}`,
         });
@@ -10884,7 +10952,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const token = publicOfferToken();
       const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: price, currency: actor.organization.currency }, expiresAt: new Date(Date.now() + expiresInDays * 86_400_000).toISOString(), status: "draft", publicToken: token, createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
       await insertRecord(ctx, actor, "offerLink", { id: token, offerId: offer.id, leadId: lead.publicId, createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
-      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(data(lead.data).branchId), type: "offer_drafted", title: `Offer drafted — ${stringValue(data(plan.data).name)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offer.id } });
+      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(data(lead.data).branchId), type: "offer_drafted", title: `Offer drafted — ${stringValue(data(plan.data).name)}`, titleMessage: systemMessage("communicationCompletion.timeline.offerDrafted", { plan: stringValue(data(plan.data).name) }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offer.id } });
       return offer;
     }
     case "offers.deliver": {
@@ -10907,7 +10975,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const reference = typeof input.reference === "string" ? input.reference.trim() : undefined;
       const updated = await patchRecord(ctx, actor, offerRecord, { status: "sent", deliveryChannel: channel, deliveredAt, deliveredById: publicUserId(actor.user), deliveryReference: reference || undefined });
       await patchRecord(ctx, actor, lead, { stage: "offer_sent", updatedAt: deliveredAt });
-      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: "offer_sent", title: `Offer delivery confirmed — ${stringValue(current.planName)}`, body: `${channel === "manual" ? "Manual delivery" : channel} confirmed${reference ? ` · ${reference}` : ""}.`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, channel } });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: "offer_sent", title: `Offer delivery confirmed — ${stringValue(current.planName)}`, titleMessage: systemMessage("communicationCompletion.timeline.offerSent", { plan: stringValue(current.planName) }), body: `${channel === "manual" ? "Manual delivery" : channel} confirmed${reference ? ` · ${reference}` : ""}.`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, channel } });
       await insertAudit(ctx, actor, { category: "crm", action: "offer.delivered", entityType: "offer", entityId: offerRecord.publicId, entityLabel: `${stringValue(current.planName)} · ${stringValue(leadData.fullName)}`, summary: `Offer delivery confirmed via ${channel}`, reason: reference || `Manual ${channel} delivery confirmation`, before: { status: "draft" }, after: { status: "sent", deliveryChannel: channel }, branchId: optionalString(leadData.branchId) });
       return updated;
     }
@@ -10932,7 +11000,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const updated = await patchRecord(ctx, actor, offerRecord, { status: outcome, respondedAt, respondedById: publicUserId(actor.user), responseReason: reason || undefined });
       if (outcome === "declined") await patchRecord(ctx, actor, lead, { stage: "contacted", nextFollowUpAt: new Date(Date.now() + 86_400_000).toISOString(), updatedAt: respondedAt });
       else await patchRecord(ctx, actor, lead, { updatedAt: respondedAt });
-      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, outcome } });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, titleMessage: outcome === "accepted" ? systemMessage("communicationCompletion.timeline.offerAccepted", { plan: stringValue(current.planName) }) : systemMessage("communicationCompletion.timeline.offerDeclined", { plan: stringValue(current.planName) }), body: reason || undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, outcome } });
       await insertAudit(ctx, actor, { category: "crm", action: `offer.${outcome}`, entityType: "offer", entityId: offerRecord.publicId, entityLabel: `${stringValue(current.planName)} · ${stringValue(leadData.fullName)}`, summary: `Offer ${outcome}`, reason: reason || undefined, before: { status: "sent" }, after: { status: outcome }, branchId: optionalString(leadData.branchId) });
       return updated;
     }
@@ -11075,6 +11143,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: optionalString(leadData.branchId),
         type: "lead_converted",
         title: `Membership sold — ${stringValue(planData.name)}`,
+        titleMessage: systemMessage("communicationCompletion.timeline.leadConverted", { plan: stringValue(planData.name) }),
         body: existingMemberRecord
           ? `${stringValue(member.memberNumber)} received a new active membership record.`
           : `${stringValue(leadData.fullName)} became ${stringValue(member.memberNumber)} with an active membership record.`,
@@ -11128,7 +11197,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id));
           await patchRecord(ctx, actor, membershipRecord, { remainingVisits: Math.max(0, numberValue(membership.remainingVisits) - 1) });
         }
-        await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision } });
+        await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, titleMessage: systemMessage("communicationCompletion.timeline.checkedIn", { branch: checkIn.branchName }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision } });
         if (entryPass) await ctx.db.patch(entryPass.pass._id, { consumedAt: Date.now(), lastValidatedAt: Date.now() });
       }
       return { checkInId: checkIn.id, decision, reasonCodes: evaluation.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: evaluation.message };
@@ -11149,11 +11218,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertRecord(ctx, actor, "checkIn", checkIn, { branchId, memberPublicId: member.id });
       const membership = await currentMembership(ctx, actor, member.id);
       if (membership && membership.remainingVisits != null) { const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id)); await patchRecord(ctx, actor, membershipRecord, { remainingVisits: Math.max(0, numberValue(membership.remainingVisits) - 1) }); }
-      await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision: "overridden" } });
+      await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, titleMessage: systemMessage("communicationCompletion.timeline.checkedIn", { branch: checkIn.branchName }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision: "overridden" } });
       if (entryPass) await ctx.db.patch(entryPass.pass._id, { consumedAt: Date.now(), lastValidatedAt: Date.now() });
       await insertAudit(ctx, actor, { category: "checkins", action: "checkin.override", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Manual check-in override (${arrayValue(evaluation.reasonCodes).join(", ")})`, reason: stringValue(input.reason), before: { decision: evaluation.decision }, after: { decision: "overridden" }, branchId });
       const overrideBranch = await branchByPublicId(ctx, actor.organization._id, branchId);
-      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: overrideBranch?._id, roles: ["owner", "manager"], kind: "checkin_override", title: "Check-in override recorded", body: `${member.fullName} · ${checkIn.branchName} · ${actor.user.fullName}`, href: `/members/${member.id}`, dedupeKey: `checkin-override:${checkIn.id}` });
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: overrideBranch?._id, roles: ["owner", "manager"], kind: "checkin_override", title: "Check-in override recorded", titleMessage: systemMessage("communicationCompletion.notifications.checkinOverride"), body: `${member.fullName} · ${checkIn.branchName} · ${actor.user.fullName}`, href: `/members/${member.id}`, dedupeKey: `checkin-override:${checkIn.id}` });
       return { checkInId: checkIn.id, decision: "overridden", reasonCodes: checkIn.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: `Overridden by ${actor.user.fullName}: ${input.reason}` };
     }
     case "payments.create": {
@@ -11219,10 +11288,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amount); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "refunded" : "partial" });
       }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Refunded ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
-      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)}`, titleMessage: systemMessage("communicationCompletion.timeline.paymentRefunded", { amount: { amountMinor: amount, currency: actor.organization.currency } }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.refund", key: idempotencyKey, requestHash, result: { receiptId: receipt.id, paymentId: refund.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
       const refundBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
-      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: refundBranch?._id, roles: ["owner", "manager"], kind: "refund_review", title: "Payment refund recorded", body: `${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} · ${actor.user.fullName}`, href: `/payments/receipts/${receipt.id}`, dedupeKey: `refund:${refund.id}` });
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: refundBranch?._id, roles: ["owner", "manager"], kind: "refund_review", title: "Payment refund recorded", body: `${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} · ${actor.user.fullName}`, titleMessage: systemMessage("communicationCompletion.notifications.refundRecorded"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: { amountMinor: amount, currency: actor.organization.currency }, b: actor.user.fullName }), href: `/payments/receipts/${receipt.id}`, dedupeKey: `refund:${refund.id}` });
       return await receiptDetail(ctx, actor, receipt.id);
     }
     case "payments.void": {
@@ -11262,10 +11331,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" });
       }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Voided ${actor.organization.currency} ${formatMinorUnits(amountOf(original.amount), actor.organization.currency)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
-      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, titleMessage: systemMessage("communicationCompletion.timeline.paymentVoided", { receipt: original.receiptNumber }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.void", key: idempotencyKey, requestHash, result: { receiptId: original.receiptId, paymentId: original.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
       const voidBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
-      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: voidBranch?._id, roles: ["owner", "manager"], kind: "void_review", title: "Payment voided", body: `${actor.organization.currency} ${formatMinorUnits(amountOf(original.amount), actor.organization.currency)} · ${actor.user.fullName}`, href: `/payments/receipts/${stringValue(original.receiptId)}`, dedupeKey: `void:${original.id}` });
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: voidBranch?._id, roles: ["owner", "manager"], kind: "void_review", title: "Payment voided", body: `${actor.organization.currency} ${formatMinorUnits(amountOf(original.amount), actor.organization.currency)} · ${actor.user.fullName}`, titleMessage: systemMessage("communicationCompletion.notifications.paymentVoided"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: { amountMinor: amountOf(original.amount), currency: actor.organization.currency }, b: actor.user.fullName }), href: `/payments/receipts/${stringValue(original.receiptId)}`, dedupeKey: `void:${original.id}` });
       return await receiptDetail(ctx, actor, stringValue(original.receiptId));
     }
     case "shifts.open": {
@@ -11291,7 +11360,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "reconciliation", action: variance === 0 ? "shift.close" : "shift.close_variance", entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: variance === 0 ? "Cash shift closed" : `Cash shift closed with variance ${actor.organization.currency} ${formatMinorUnits(variance, actor.organization.currency)}`, reason: optionalString(input.varianceExplanation), before: { status: "open" }, after: { status: "closed", expected, counted, variance }, approvalStatus: varianceAuditApprovalStatusForAmount(variance), branchId: optionalString(shift.branchId) });
       if (variance !== 0) {
         const shiftBranch = await branchByPublicId(ctx, actor.organization._id, stringValue(shift.branchId));
-        await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: shiftBranch?._id, roles: ["owner", "manager"], kind: "cash_shift_variance", title: "Cash shift variance", body: `${actor.organization.currency} ${formatMinorUnits(variance, actor.organization.currency)} · ${actor.user.fullName}`, href: "/payments/shifts", dedupeKey: `shift-variance:${record.publicId}` });
+        await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: shiftBranch?._id, roles: ["owner", "manager"], kind: "cash_shift_variance", title: "Cash shift variance", body: `${actor.organization.currency} ${formatMinorUnits(variance, actor.organization.currency)} · ${actor.user.fullName}`, titleMessage: systemMessage("communicationCompletion.notifications.cashVariance"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: { amountMinor: variance, currency: actor.organization.currency }, b: actor.user.fullName }), href: "/payments/shifts", dedupeKey: `shift-variance:${record.publicId}` });
       }
       return updated;
     }
@@ -11376,6 +11445,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           roles: ["owner", "manager"],
           kind: "automation_failed",
           title: "Automation retries exhausted",
+          titleMessage: systemMessage("communicationCompletion.notifications.automationFailed"),
           body: stringValue(execution.subjectName, stringValue(execution.ruleName)),
           href: "/audit?category=automations",
           dedupeKey: `automation-exhausted:${executionRecord.publicId}`,
