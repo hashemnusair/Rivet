@@ -3013,11 +3013,15 @@
     {
       "id": "open-shift",
       "keys": [
+        "payablesWorkspace.openShift",
         "permissions.reconciliation_open_shift.label",
         "salesWorkspace.openCashShift",
         "salesWorkspace.openShift"
       ],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/finance/shift-dialogs.tsx",
@@ -4027,10 +4031,15 @@
     },
     {
       "id": "stock-adjustment",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "ledgerWorkspace.stockChange"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4455,8 +4464,13 @@
     },
     {
       "id": "bookkeeping",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "ledgerWorkspace.bookkeeping"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/app/(app)/audit/page.tsx",
@@ -4483,15 +4497,19 @@
           "line": 492
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "ledger",
       "keys": [
+        "ledgerWorkspace.ledger",
         "nav.section.managementLedger"
       ],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/components/marketing/product-screens.tsx",
@@ -4569,9 +4587,13 @@
     {
       "id": "revenue",
       "keys": [
+        "ledgerWorkspace.revenue",
         "palette.moduleBoundary.name.revenue"
       ],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/finance/management-ledger-workspace.tsx",
@@ -4612,8 +4634,13 @@
     },
     {
       "id": "profit-loss",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "ledgerWorkspace.incomeStatement"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/reports/ledger-tutorial.tsx",
@@ -4632,13 +4659,18 @@
           "line": 55
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "balance-sheet",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "ledgerWorkspace.balanceSheet"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/reports/ledger-tutorial.tsx",
@@ -4657,41 +4689,56 @@
           "line": 56
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "cash-flow",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "ledgerWorkspace.cashflow"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/reports/ledger-tutorial.tsx",
           "line": 243
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "assets-finance",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "accountingMessages.accountType.asset"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "liabilities",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "accountingMessages.accountType.liability"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/reports/management-statements-workspace.tsx",
           "line": 249
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4718,7 +4765,10 @@
     {
       "id": "debit-credit",
       "keys": [],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [],
       "status": "pending",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
@@ -4726,17 +4776,31 @@
     {
       "id": "journal-entry",
       "keys": [],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "ledgerWorkspace.addJournalTitle",
+          "template": "إضافة {approved}"
+        }
+      ]
     },
     {
       "id": "post-entry",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "ledgerWorkspace.postToBooks"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4777,10 +4841,15 @@
     },
     {
       "id": "period-closed",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "apiErrors.theAccountingPeriodIsClosed"
+      ],
+      "rules": [
+        "apps/web/src/features/finance/ledger-arabic.test.tsx",
+        "apps/web/src/lib/i18n/accounting.test.ts"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {

@@ -1,3 +1,4 @@
+import { describeAccountingReason } from "../domain/accounting-messages";
 import { describeEquipmentRationale } from "../domain/equipment-rationale";
 import { describeMemberImportError } from "@/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "@/lib/domain/workspace-module-error";
@@ -3961,6 +3962,7 @@ export class MockGymOSApi implements GymOSApi {
       journalEntryId: undefined,
       idempotencyKey: attempt.idempotencyKey,
       reason: attempt.reason,
+      reasonMessage: attempt.reason ? describeAccountingReason(attempt.reason) : undefined,
       details: attempt.details ? { ...attempt.details } : undefined,
       occurredAt: attempt.occurredAt,
       createdAt: attempt.createdAt,
@@ -8929,7 +8931,7 @@ export class MockGymOSApi implements GymOSApi {
       this.requireFinanceRead();
       const branchId = query.branchId ? this.accountingBranch(query.branchId)?.id : undefined;
       const rows = this.accountingSources.filter((row) => (!branchId || row.branchId === branchId) && (!query.status || row.status === query.status) && (!query.sourceType || row.sourceType === query.sourceType) && this.accountingBranchIsVisible(row.branchId)).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-      return paginate(rows.map((row) => ({ ...row, amount: row.amount ? { ...row.amount } : undefined })), query);
+      return paginate(rows.map((row) => ({ ...row, reasonMessage: row.reason && !row.reviewExcludedAt ? describeAccountingReason(row.reason) : undefined, amount: row.amount ? { ...row.amount } : undefined })), query);
     });
   }
 

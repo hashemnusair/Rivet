@@ -1,3 +1,5 @@
+import { accountingMessages } from "./accountingMessages";
+import { ledgerWorkspace } from "./ledgerWorkspace";
 import { payablesWorkspace } from "./payablesWorkspace";
 import { stockWorkspace } from "./stockWorkspace";
 import { operationsWorkspace } from "./operationsWorkspace";
@@ -39,6 +41,8 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  accountingMessages,
+  ledgerWorkspace,
   payablesWorkspace,
   stockWorkspace,
   operationsWorkspace,

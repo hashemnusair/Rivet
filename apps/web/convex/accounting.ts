@@ -1,3 +1,4 @@
+import { describeAccountingReason } from "../src/lib/domain/accounting-messages";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -653,6 +654,7 @@ function sourceView(row: SourcePosting, organizationId: string, branchPublicId?:
     journalEntryId: row.journalEntryPublicId,
     idempotencyKey: row.idempotencyKey,
     reason: row.reason,
+    reasonMessage: row.reason && row.reviewExcludedAt === undefined ? describeAccountingReason(row.reason) : undefined,
     details: row.details,
     occurredAt: iso(row.occurredAt),
     createdAt: iso(row.createdAt),
@@ -677,6 +679,7 @@ async function sourcePostingAttemptView(ctx: ReadContext, actor: ActorContext, a
     journalEntryId: undefined,
     idempotencyKey: attempt.idempotencyKey,
     reason: attempt.reason,
+    reasonMessage: attempt.reason ? describeAccountingReason(attempt.reason) : undefined,
     details: attempt.details,
     occurredAt: iso(attempt.occurredAt),
     createdAt: iso(attempt.createdAt),

@@ -2860,6 +2860,7 @@ export interface AccountingSourcePosting {
   journalEntryId?: UUID;
   idempotencyKey?: string;
   reason?: string;
+  reasonMessage?: import("./accounting-messages").AccountingReasonMessage;
   details?: Record<string, unknown>;
   projectionFingerprint?: string;
   /** Set when an owner/manager review permanently excluded this fact from the books. */

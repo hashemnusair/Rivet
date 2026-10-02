@@ -38,7 +38,7 @@ export function payableReconciliationReason(reason: string, t: TFunction): strin
     "This machine has a purchase cost. Its maker’s name does not identify the supplier.": "payablesWorkspace.missingMachineSupplier",
     "This repair cost has no linked supplier bill. The repairer’s name is saved as a note.": "payablesWorkspace.missingRepairSupplier",
   };
-  if (keys[reason]) return t(keys[reason]);
+  if (Object.hasOwn(keys, reason)) return t(keys[reason]!);
   const foreign = /^Recorded in ([A-Z]{3}), not ([A-Z]{3}); settle it with a manual journal\.$/.exec(reason);
   return foreign ? t("payablesWorkspace.foreignCurrency", { recordedCurrency: foreign[1]!, currency: foreign[2]! }) : reason;
 }
