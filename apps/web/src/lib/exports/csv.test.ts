@@ -36,6 +36,13 @@ describe("human-readable CSV exports", () => {
     expect(csvCell(false)).toBe("No");
   });
 
+  it("formats Arabic export timestamps with Jordanian months, Latin digits, 12-hour clocks and seconds", () => {
+    expect(formatExportDateTime("2026-08-31T12:30:45.000Z", "Asia/Amman", "ar")).toBe("31 آب 2026 3:30:45 م");
+    expect(formatExportDateTime("2026-08-31T22:00:07.000Z", "Asia/Amman", "ar")).toBe("1 أيلول 2026 1:00:07 ص");
+    expect(formatExportDateTime("2026-08-31T22:00:07.000Z", "America/New_York", "ar")).toBe("31 آب 2026 6:00:07 م");
+    expect(formatExportDateTime("2026-08-31", "Asia/Amman", "ar")).toBe("2026-08-31");
+  });
+
   it("preserves regional currency precision and blank unavailable amounts", () => {
     expect(formatMinorUnits(40_125, "IQD")).toBe("40.125");
     expect(formatMinorUnits(-40_125, "tnd")).toBe("-40.125");

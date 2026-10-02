@@ -1,3 +1,4 @@
+import { makeFormatters } from "../i18n/formatters";
 import type { Locale } from "../i18n/locale";
 import { createTranslator } from "../i18n/core";
 import { toMajorString } from "../utils/money";
@@ -84,11 +85,17 @@ export function buildSectionedCsvDocument(input: {
   return `${UTF8_BOM}${csvRows(rows)}\r\n`;
 }
 
-export function formatExportDateTime(value: string | number | Date | undefined, timeZone: string): string {
+export function formatExportDateTime(value: string | number | Date | undefined, timeZone: string, locale: Locale = "en"): string {
   if (value === undefined || value === "") return "";
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
+  if (locale === "ar") {
+    const f = makeFormatters(locale, createTranslator(locale)("common.time.now"), timeZone);
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", second: "2-digit", hourCycle: "h12", numberingSystem: "latn" }).formatToParts(date);
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? "";
+    return `${f.date(date.toISOString())} ${part("hour")}:${part("minute")}:${part("second")} ${part("dayPeriod") === "AM" ? "ص" : "م"}`;
+  }
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone,
     year: "numeric",

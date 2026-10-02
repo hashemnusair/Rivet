@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
 
 import { Download, FileBarChart } from "lucide-react";
 import Link from "next/link";
@@ -13,22 +13,28 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { TransactionStatusChip } from "@/components/shared/status-chip";
 import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { formatDate, todayISODate } from "@/lib/utils/dates";
-import { formatMoney, money } from "@/lib/utils/money";
+import { todayISODate } from "@/lib/utils/dates";
+import { money } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
-import { buildSectionedCsvDocument, exportStatusLabel, formatExportDateTime, formatMinorUnits } from "@/lib/exports/csv";
+import { buildSectionedCsvDocument, formatExportDateTime, formatMinorUnits } from "@/lib/exports/csv";
 import { downloadTextFile } from "@/lib/exports/download";
 import { OperationalReports, OPERATIONAL_REPORT_LABELS, OPERATIONAL_REPORT_QUESTIONS, type OperationalReportKind } from "@/features/reports/operational-reports";
-import { countLabel, loadTransactionsInRange, summarizeRange } from "@/features/reports/overview-totals";
+import { loadTransactionsInRange, summarizeRange } from "@/features/reports/overview-totals";
+import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
+import type { TFunction, TKey } from "@/lib/i18n/core";
 import { ReportScopeBar, parseReportScope, reportScopeFrom, reportScopeHref, type ReportScope } from "@/features/reports/report-scope";
+
+function paymentMethodLabel(method: string, t: TFunction): string {
+  return ["cash", "card", "bank_transfer", "cliq", "other"].includes(method) ? t(`domain.paymentMethod.${method}` as TKey) : method;
+}
 
 type ReportsView = "overview" | OperationalReportKind;
 const VIEWS: readonly ReportsView[] = ["overview", "peak-hours", "classes", "retention", "renewals", "collections", "crm", "controls"];
-const OVERVIEW_QUESTION = "What came in, how was it paid, and what do members still owe?";
+
 const TABLE_PAGE_SIZE = 25;
 
 function parseView(value: string | null): ReportsView {
@@ -41,16 +47,19 @@ function parseView(value: string | null): ReportsView {
  * export cannot drift away from the ledger that staff see at the desk.
  */
 function ReportsPageInner() {
-  const t = useT();
+  const { t, locale } = useLocale();
+  const f = useFormat();
+  const timeZone = useFormattingTimeZone();
   const { session } = useApp();
   const { can } = usePermissions();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const branches = useMemo(() => session?.branches ?? [], [session?.branches]);
+  const currency = session?.organization.currency ?? "JOD";
   const defaultBranchId = session?.activeBranchId ?? "all";
   const view = parseView(searchParams.get("view"));
-  const scope = useMemo(() => parseReportScope(searchParams, { branches, defaultBranchId }), [searchParams, branches, defaultBranchId]);
+  const scope = useMemo(() => parseReportScope(searchParams, { branches, defaultBranchId, timeZone }), [searchParams, branches, defaultBranchId, timeZone]);
   const from = reportScopeFrom(scope);
   const to = scope.to;
   const branchInput = scope.branchId === "all" ? undefined : scope.branchId;
@@ -61,7 +70,7 @@ function ReportsPageInner() {
   const pendingViewRef = useRef<ReportsView | null>(null);
   useEffect(() => { pendingScopeRef.current = null; }, [scope]);
   useEffect(() => { pendingViewRef.current = null; }, [view]);
-  const hrefFor = (nextView: ReportsView, nextScope: ReportScope = scope) => reportScopeHref(pathname, nextView, nextScope, { defaultBranchId });
+  const hrefFor = (nextView: ReportsView, nextScope: ReportScope = scope) => reportScopeHref(pathname, nextView, nextScope, { defaultBranchId, timeZone });
   // A tab clicked right after a scope edit must carry that edit, not the URL's old scope.
   const selectView = (event: React.MouseEvent<HTMLAnchorElement>, nextView: ReportsView) => {
     pendingViewRef.current = nextView;
@@ -105,58 +114,63 @@ function ReportsPageInner() {
   }, [transactions, transactionPage]);
   // The desk ledger only understands rolling windows that end today.
   const ledgerHref = (params: Record<string, string>) => {
-    if (to !== todayISODate()) return undefined;
+    if (to !== todayISODate(timeZone)) return undefined;
     const query = new URLSearchParams({ range: String(scope.rangeDays), ...params });
     return `/payments?${query}`;
   };
 
-  const exportReport = useApiMutation(async (api) => (await loadTransactionsInRange(api, { branchId: branchInput, from, to }, Number.POSITIVE_INFINITY)).items, {
-    successMessage: (items) => `Report downloaded: ${countLabel(items.length, "row")}.`,
-    onSuccess: (items) => {
+  const exportReport = useApiMutation(async (api) => {
+    // Freeze the report scope with the request; a tab/filter or language change
+    // while the download loads must not relabel another range's transactions.
+    const snapshot = { dashboard, from, to, timeZone, branchName: branches.find(branch => branch.id === scope.branchId)?.name };
+    const items = (await loadTransactionsInRange(api, { branchId: branchInput, from, to }, Number.POSITIVE_INFINITY)).items;
+    return { ...snapshot, items };
+  }, {
+    successMessage: ({ items }) => t("reportsWorkspace.downloaded", { count: items.length }),
+    onSuccess: ({ items, dashboard, from, to, timeZone, branchName }) => {
       if (!dashboard) return;
-      const timeZone = session?.organization.timezone ?? "Asia/Amman";
-      const scopedBranch = branches.find((branch) => branch.id === scope.branchId);
       downloadTextFile({
         fileName: `rivet-finance-report-${from}-${to}.csv`,
         mimeType: "text/csv;charset=utf-8",
         content: buildSectionedCsvDocument({
-          title: "Finance overview, payments and refunds",
+          locale,
+          title: t("reportsWorkspace.overviewCsvTitle"),
           metadata: [
-            { label: "Date range", value: `${from} to ${to}` },
-            { label: "Timezone", value: timeZone },
-            { label: "Branches", value: scopedBranch?.name ?? "All your branches" },
+            { label: t("statements.dateRange"), value: t("reportsWorkspace.range", { from: f.date(from), to: f.date(to) }) },
+            { label: t("reportsWorkspace.timezone"), value: timeZone },
+            { label: t("reportsWorkspace.branches"), value: branchName ?? t("statements.allBranches") },
           ],
           sections: [
             {
               title: t("nav.section.overview"),
-              headers: ["Item", "Value"],
+              headers: [t("reportsWorkspace.item"), t("reportsWorkspace.value")],
               rows: [
-                ["Revenue today", formatMoney(dashboard.kpis.revenueToday)],
-                ["Revenue this month", formatMoney(dashboard.kpis.revenueThisMonth)],
-                ["Unpaid now", formatMoney(dashboard.kpis.outstandingTotal)],
-                ["New members this month", dashboard.kpis.newMembersThisMonth],
-                ["Check-ins today", dashboard.kpis.checkInsToday],
+                [t("reportsWorkspace.revenueToday"), f.money(dashboard.kpis.revenueToday)],
+                [t("reportsWorkspace.revenueMonth"), f.money(dashboard.kpis.revenueThisMonth)],
+                [t("reportsWorkspace.unpaid"), f.money(dashboard.kpis.outstandingTotal)],
+                [t("reportsWorkspace.newMembersMonth"), dashboard.kpis.newMembersThisMonth],
+                [t("reportsWorkspace.checkinsToday"), dashboard.kpis.checkInsToday],
               ],
             },
             {
-              title: "Payments and refunds",
-              headers: ["When", "Member", "Member number", "Branch", "Payment method", "Type", "Amount", "Currency", "Status", "Receipt number", "Recorded by", "Bank or card reference", "RIVET payment ID"],
+              title: t("reportsWorkspace.paymentsRefunds"),
+              headers: [t("reportsWorkspace.when"), t("reportsWorkspace.member"), t("reportsWorkspace.memberNumber"), t("reportsWorkspace.branch"), t("reportsWorkspace.paymentMethod"), t("reportsWorkspace.type"), t("reportsWorkspace.amount"), t("reportsWorkspace.currency"), t("reportsWorkspace.status"), t("reportsWorkspace.receiptNumber"), t("reportsWorkspace.recordedBy"), t("reportsWorkspace.bankReference"), t("reportsWorkspace.paymentId")],
               rows: items.map((item) => [
-                formatExportDateTime(item.occurredAt, timeZone),
+                formatExportDateTime(item.occurredAt, timeZone, locale),
                 item.memberName,
                 item.memberNumber,
                 item.branchName,
-                exportStatusLabel(item.method),
-                exportStatusLabel(item.type),
+                paymentMethodLabel(item.method, t),
+                t(`domain.transactionType.${item.type}`),
                 formatMinorUnits(item.amount.amount, item.amount.currency),
                 item.amount.currency,
-                exportStatusLabel(item.status),
+                t(`domain.transactionStatus.${item.status}`),
                 item.receiptNumber,
                 item.collectedByName,
                 item.externalReference,
                 item.id,
               ]),
-              emptyMessage: "No payments or refunds in this date range.",
+              emptyMessage: t("reportsWorkspace.noRangePayments"),
             },
           ],
         }),
@@ -168,49 +182,49 @@ function ReportsPageInner() {
     <div className="space-y-5">
       <PageHeader
         title={t("nav.item.reports")}
-        description={view === "overview" ? OVERVIEW_QUESTION : OPERATIONAL_REPORT_QUESTIONS[view]}
-        actions={view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || transactions.length === 0}><Download /> Download report</Button> : undefined}
+        description={view === "overview" ? t("reportsWorkspace.overviewQuestion") : t(OPERATIONAL_REPORT_QUESTIONS[view])}
+        actions={view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || transactions.length === 0}><Download /> {" "}{t("reportsWorkspace.download")}</Button> : undefined}
       />
 
-      <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title="You don't have access to reports" description="Only owners and managers can see reports." />}>
-        <nav aria-label="Report views" className={tabListClassName}>
+      <Gate permission="reports.financial.read" fallback={<EmptyState icon={FileBarChart} title={t("reportsWorkspace.forbidden")} description={t("reportsWorkspace.forbiddenHint")} />}>
+        <nav aria-label={t("reportsWorkspace.views")} className={tabListClassName}>
           {VIEWS.map((kind) => (
             <Link key={kind} href={hrefFor(kind)} replace scroll={false} onClick={(event) => selectView(event, kind)} aria-current={view === kind ? "page" : undefined} className={tabTriggerClassName} data-tab-value={kind}>
-              {kind === "overview" ? t("nav.section.overview") : OPERATIONAL_REPORT_LABELS[kind]}
+              {kind === "overview" ? t("nav.section.overview") : t(OPERATIONAL_REPORT_LABELS[kind])}
             </Link>
           ))}
         </nav>
 
         {view !== "overview" ? <OperationalReports view={view} scope={scope} branches={branches} onScopeChange={changeScope} /> : <>
-        <ReportScopeBar branches={branches} scope={scope} onChange={changeScope} ranged onRefresh={refresh} refreshing={dashboardQuery.isFetching || rangeQuery.isFetching} note={rangeQuery.data?.truncated ? `only the newest ${transactions.length} counted` : undefined} />
+        <ReportScopeBar branches={branches} scope={scope} onChange={changeScope} ranged onRefresh={refresh} refreshing={dashboardQuery.isFetching || rangeQuery.isFetching} note={rangeQuery.data?.truncated ? t("reportsWorkspace.truncated", { count: transactions.length }) : undefined} />
 
-        {stale ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label="Report may be out of date">These numbers may be out of date. The last refresh failed. <button type="button" className="font-medium underline" onClick={refresh}>{t("common.action.retry")}</button></div> : null}
+        {stale ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label={t("reportsWorkspace.outdated")}>{t("reportsWorkspace.overviewOutdated")}{" "}<button type="button" className="font-medium underline" onClick={refresh}>{t("common.action.retry")}</button></div> : null}
         {error ? <ErrorState onRetry={refresh} /> : null}
         {loading ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-24" />)}</div> : null}
 
         {dashboard && rangeQuery.data ? <>
           {/* Unresolved money and reversals first; healthy totals after. */}
-          <section className="panel grid grid-cols-2 divide-line sm:grid-cols-3 xl:grid-cols-6" aria-label="Report totals">
-            <ReportStat label="Unpaid now" value={<MoneyText money={dashboard.kpis.outstandingTotal} compact />} tone={dashboard.kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context="owed by members, from any date" href={ledgerHref({ type: "payment" })} />
-            <ReportStat label={t("memberProfile.pt.orderStatus.refunded")} value={<MoneyText money={money(totals.refunded)} compact />} tone={totals.refunded > 0 ? "warning" : undefined} context={countLabel(totals.refundCount, "refund")} href={ledgerHref({ type: "refund" })} />
-            <ReportStat label="Cancelled payments" value={<MoneyText money={money(totals.voided)} compact />} tone={totals.voided > 0 ? "warning" : undefined} context={countLabel(totals.voidCount, "payment")} />
-            <ReportStat label={t("dashboard.owner.collected")} value={<MoneyText money={money(totals.collected)} compact />} context={countLabel(totals.paymentCount, "payment")} />
-            <ReportStat label="After refunds" value={<MoneyText money={money(totals.collected - totals.refunded)} compact signed={totals.collected - totals.refunded < 0} />} context="collected minus refunds" />
-            <ReportStat label={t("common.time.thisMonth")} value={<MoneyText money={dashboard.kpis.revenueThisMonth} compact />} context={`${dashboard.kpis.newMembersThisMonth} new member${dashboard.kpis.newMembersThisMonth === 1 ? "" : "s"}`} />
+          <section className="panel grid grid-cols-2 divide-line sm:grid-cols-3 xl:grid-cols-6" aria-label={t("reportsWorkspace.totals")}>
+            <ReportStat label={t("reportsWorkspace.unpaid")} value={<MoneyText money={dashboard.kpis.outstandingTotal} compact />} tone={dashboard.kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context={t("reportsWorkspace.owedAnyDate")} href={ledgerHref({ type: "payment" })} />
+            <ReportStat label={t("memberProfile.pt.orderStatus.refunded")} value={<MoneyText money={money(totals.refunded, currency)} compact />} tone={totals.refunded > 0 ? "warning" : undefined} context={t("reportsWorkspace.refundCount", { count: totals.refundCount })} href={ledgerHref({ type: "refund" })} />
+            <ReportStat label={t("reportsWorkspace.cancelledPayments")} value={<MoneyText money={money(totals.voided, currency)} compact />} tone={totals.voided > 0 ? "warning" : undefined} context={t("reportsWorkspace.payments", { count: totals.voidCount })} />
+            <ReportStat label={t("dashboard.owner.collected")} value={<MoneyText money={money(totals.collected, currency)} compact />} context={t("reportsWorkspace.payments", { count: totals.paymentCount })} />
+            <ReportStat label={t("reportsWorkspace.afterRefunds")} value={<MoneyText money={money(totals.collected - totals.refunded, currency)} compact signed={totals.collected - totals.refunded < 0} />} context={t("reportsWorkspace.collectedMinusRefunds")} />
+            <ReportStat label={t("common.time.thisMonth")} value={<MoneyText money={dashboard.kpis.revenueThisMonth} compact />} context={t("reportsWorkspace.newMembers", { count: dashboard.kpis.newMembersThisMonth })} />
           </section>
 
           <div className="grid gap-5 xl:grid-cols-2">
-            <BreakdownPanel sectionLabel="Payments collected" title="By payment method" empty="No payments in these dates." rows={totals.byMethod.map((row) => ({ key: row.key, label: PAYMENT_METHOD_LABELS[row.key] ?? row.key, count: row.count, amount: row.amount, refunds: row.refunds, href: ledgerHref({ method: row.key }) }))} />
-            <BreakdownPanel sectionLabel="Payments collected" title="By branch" empty="No payments in these dates." rows={totals.byBranch.map((row) => ({ key: row.key, label: row.key, count: row.count, amount: row.amount, refunds: row.refunds }))} />
+            <BreakdownPanel currency={currency} sectionLabel={t("reportsWorkspace.paymentsCollected")} title={t("reportsWorkspace.byMethod")} empty={t("reportsWorkspace.noPayments")} rows={totals.byMethod.map((row) => ({ key: row.key, label: paymentMethodLabel(row.key, t), count: row.count, amount: row.amount, refunds: row.refunds, href: ledgerHref({ method: row.key }) }))} />
+            <BreakdownPanel currency={currency} sectionLabel={t("reportsWorkspace.paymentsCollected")} title={t("reportsWorkspace.byBranch")} empty={t("reportsWorkspace.noPayments")} rows={totals.byBranch.map((row) => ({ key: row.key, label: row.key, count: row.count, amount: row.amount, refunds: row.refunds }))} />
           </div>
 
-          <section className="panel overflow-hidden" aria-label="Payments and refunds">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">Everything behind these totals</p><h2 className="mt-1 text-[16px] font-semibold">Payments and refunds</h2></div><Badge variant="outline">{transactions.length}{rangeQuery.data.truncated ? "+" : ""} rows</Badge></header>
-            {transactions.length === 0 ? <p className="p-5 text-[13px] text-ink-3">No payments or refunds in these dates.</p> : <>
+          <section className="panel overflow-hidden" aria-label={t("reportsWorkspace.paymentsRefunds")}>
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3"><div><p className="context-label">{t("reportsWorkspace.behindTotals")}</p><h2 className="mt-1 text-[16px] font-semibold">{t("reportsWorkspace.paymentsRefunds")}</h2></div><Badge variant="outline">{t(rangeQuery.data.truncated ? "reportsWorkspace.rowsTruncated" : "reportsWorkspace.rows", { count: transactions.length })}</Badge></header>
+            {transactions.length === 0 ? <p className="p-5 text-[13px] text-ink-3">{t("reportsWorkspace.noPaymentsRefunds")}</p> : <>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow><TableHead>{t("members.tabs.checkIns.when")}</TableHead><TableHead>{t("palette.kind.member")}</TableHead><TableHead>{t("common.label.branch")}</TableHead><TableHead>{t("renewFlow.shared.method")}</TableHead><TableHead>{t("common.label.type")}</TableHead><TableHead className="text-end">{t("common.label.amount")}</TableHead><TableHead>{t("common.label.status")}</TableHead><TableHead>{t("renewFlow.payment.receipt")}</TableHead></TableRow></TableHeader>
-                  <TableBody>{tablePage.items.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-[12px]">{formatDate(item.occurredAt)}</TableCell><TableCell><p className="font-medium">{item.memberName}</p><p className="font-mono text-[11px] text-ink-3">{item.memberNumber}</p></TableCell><TableCell className="text-[12px]">{item.branchName}</TableCell><TableCell className="text-[12px]">{PAYMENT_METHOD_LABELS[item.method] ?? item.method}</TableCell><TableCell className="text-[12px]">{TRANSACTION_TYPE_LABELS[item.type]}</TableCell><TableCell className="text-end"><MoneyText money={item.amount} className={item.type === "refund" ? "text-danger" : undefined} /></TableCell><TableCell><TransactionStatusChip status={item.status} /></TableCell><TableCell>{ledgerHref({ q: item.receiptNumber }) ? <Link href={ledgerHref({ q: item.receiptNumber })!} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink">{item.receiptNumber}</Link> : <span className="font-mono text-[12px]">{item.receiptNumber}</span>}</TableCell></TableRow>)}</TableBody>
+                  <TableBody>{tablePage.items.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-[12px]">{f.date(item.occurredAt)}</TableCell><TableCell><p className="font-medium">{item.memberName}</p><p className="font-mono text-[11px] text-ink-3"><bdi dir="ltr">{item.memberNumber}</bdi></p></TableCell><TableCell className="text-[12px]">{item.branchName}</TableCell><TableCell className="text-[12px]">{paymentMethodLabel(item.method, t)}</TableCell><TableCell className="text-[12px]">{t(`domain.transactionType.${item.type}`)}</TableCell><TableCell className="text-end"><MoneyText money={item.amount} className={item.type === "refund" ? "text-danger" : undefined} /></TableCell><TableCell><TransactionStatusChip status={item.status} /></TableCell><TableCell>{ledgerHref({ q: item.receiptNumber }) ? <Link href={ledgerHref({ q: item.receiptNumber })!} className="font-mono text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink"><bdi dir="ltr">{item.receiptNumber}</bdi></Link> : <span className="font-mono text-[12px]"><bdi dir="ltr">{item.receiptNumber}</bdi></span>}</TableCell></TableRow>)}</TableBody>
                 </Table>
               </div>
               <div className="px-4 pb-3"><DataPagination page={tablePage} onPage={setTransactionPage} /></div>
@@ -232,6 +246,7 @@ export default function ReportsPage() {
 }
 
 function ReportStat({ label, value, context, tone, href }: { label: string; value: React.ReactNode; context?: React.ReactNode; tone?: "warning"; href?: string }) {
+  const t = useT();
   const body = (
     <>
       <p className="context-label">{label}</p>
@@ -240,21 +255,22 @@ function ReportStat({ label, value, context, tone, href }: { label: string; valu
     </>
   );
   const className = "block border-e border-line px-4 py-3.5 last:border-e-0";
-  return href ? <Link href={href} className={cn(className, "transition-colors hover:bg-sunken/40")}>{body}<span className="sr-only">Open in Payments</span></Link> : <div className={className}>{body}</div>;
+  return href ? <Link href={href} className={cn(className, "transition-colors hover:bg-sunken/40")}>{body}<span className="sr-only">{t("reportsWorkspace.openPayments")}</span></Link> : <div className={className}>{body}</div>;
 }
 
-function BreakdownPanel({ sectionLabel, title, empty, rows }: { sectionLabel: string; title: string; empty: string; rows: Array<{ key: string; label: string; count: number; amount: number; refunds: number; href?: string }> }) {
+function BreakdownPanel({ currency, sectionLabel, title, empty, rows }: { currency: string; sectionLabel: string; title: string; empty: string; rows: Array<{ key: string; label: string; count: number; amount: number; refunds: number; href?: string }> }) {
+  const t = useT();
   return (
     <section className="panel overflow-hidden" aria-label={title}>
       <header className="border-b border-line px-4 py-3"><p className="context-label">{sectionLabel}</p><h2 className="mt-1 text-[16px] font-semibold">{title}</h2></header>
       {rows.length === 0 ? <p className="p-5 text-[13px] text-ink-3">{empty}</p> : (
         <ul className="divide-y divide-line">
           {rows.map((row) => {
-            const detail = <><p className="text-[13px] font-medium">{row.label}</p><p className="text-[12px] text-ink-3">{countLabel(row.count, "payment")}{row.refunds > 0 ? <> · <MoneyText money={money(row.refunds)} /> refunded</> : null}</p></>;
-            const amount = <MoneyText money={money(row.amount)} />;
+            const detail = <><p className="text-[13px] font-medium">{row.label}</p><p className="text-[12px] text-ink-3">{t("reportsWorkspace.payments", { count: row.count })}{row.refunds > 0 ? <> · <MoneyText money={money(row.refunds, currency)} /> {" "}{t("reportsWorkspace.refundedSuffix")}</> : null}</p></>;
+            const amount = <MoneyText money={money(row.amount, currency)} />;
             return (
               <li key={row.key}>
-                {row.href ? <Link href={row.href} className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-sunken/40"><span className="min-w-0">{detail}</span>{amount}<span className="sr-only">Open in Payments</span></Link> : <div className="flex items-center justify-between gap-3 px-4 py-3"><span className="min-w-0">{detail}</span>{amount}</div>}
+                {row.href ? <Link href={row.href} className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-sunken/40"><span className="min-w-0">{detail}</span>{amount}<span className="sr-only">{t("reportsWorkspace.openPayments")}</span></Link> : <div className="flex items-center justify-between gap-3 px-4 py-3"><span className="min-w-0">{detail}</span>{amount}</div>}
               </li>
             );
           })}

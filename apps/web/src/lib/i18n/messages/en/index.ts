@@ -1,3 +1,4 @@
+import { reportsWorkspace } from "./reportsWorkspace";
 import { statements } from "./statements";
 import { accountingMessages } from "./accountingMessages";
 import { ledgerWorkspace } from "./ledgerWorkspace";
@@ -47,6 +48,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  reportsWorkspace,
   statements,
   accountingMessages,
   ledgerWorkspace,
