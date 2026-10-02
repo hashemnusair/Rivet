@@ -3471,7 +3471,9 @@
     },
     {
       "id": "class",
-      "keys": [],
+      "keys": [
+        "classWorkspace.classFallback"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3491,7 +3493,7 @@
           "line": 4891
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -3611,7 +3613,8 @@
       "keys": [
         "crm.lead.noShow",
         "dashboard.trainer.noShow",
-        "memberProfile.pt.bookingStatus.no_show"
+        "memberProfile.pt.bookingStatus.no_show",
+        "classWorkspace.noShow"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3626,7 +3629,8 @@
     {
       "id": "waitlist",
       "keys": [
-        "settingsDetails.text030"
+        "settingsDetails.text030",
+        "classWorkspace.waiting"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3643,8 +3647,14 @@
       "keys": [],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "classWorkspace.waitlistedToast",
+          "template": "{approved} ترتيب {name} في قائمة الانتظار: {position}."
+        }
+      ]
     },
     {
       "id": "spots",
@@ -3669,7 +3679,9 @@
     },
     {
       "id": "cancel-class",
-      "keys": [],
+      "keys": [
+        "classWorkspace.cancelClass"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3677,7 +3689,7 @@
           "line": 19
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
