@@ -180,8 +180,8 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           })}
         </TabsList>
 
-        <TabsContent value="info" className="mt-5 grid gap-5">
-          <PlatformPanel className="overflow-hidden" aria-label={t("platformFinance.detail.usage")}>
+        <TabsContent value="info" className="mt-5 grid min-w-0 grid-cols-1 gap-5">
+          <PlatformPanel className="min-w-0 overflow-hidden" aria-label={t("platformFinance.detail.usage")}>
             <dl className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3 xl:grid-cols-6">
               <Usage label={t("members.list.activeMembers")} field={detail.usage.memberCount} />
               <Usage label={t("platformFinance.detail.activeStaff")} field={detail.usage.activeStaffCount} />
@@ -192,8 +192,8 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             </dl>
           </PlatformPanel>
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <PlatformPanel aria-labelledby="owner-title">
+          <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-2">
+            <PlatformPanel className="min-w-0" aria-labelledby="owner-title">
               <PlatformPanelHeader id="owner-title" title={t("platformFinance.detail.accountOwner")} />
               <div className="px-4 pt-4 sm:px-5">
                 {detail.owner.state === "available"
@@ -209,7 +209,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
               </dl>
             </PlatformPanel>
 
-            <PlatformPanel aria-labelledby="branches-title">
+            <PlatformPanel className="min-w-0" aria-labelledby="branches-title">
               <PlatformPanelHeader id="branches-title" title={t("platformFinance.detail.branches")} />
               {detail.branches.state === "available" && detail.branches.value.length > 0 ? (
                 <ul className="divide-y divide-line">
@@ -228,7 +228,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
             </PlatformPanel>
           </div>
 
-          <PlatformPanel className="overflow-hidden" aria-labelledby="subscription-facts-title">
+          <PlatformPanel className="min-w-0 overflow-hidden" aria-labelledby="subscription-facts-title">
             <PlatformPanelHeader id="subscription-facts-title" title={t("platformFinance.detail.subscriptionFacts")} actions={<Link href={`/platform/billing?bill=${detail.id}`} className="text-[12.5px] font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline">{t("platformFinance.detail.manageInBilling")}</Link>} />
             <dl className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
               <Fact label={t("renewFlow.adjust.planChange.rowPlan")}><FieldValue field={detail.subscription.plan} /></Fact>

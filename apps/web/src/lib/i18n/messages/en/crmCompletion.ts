@@ -3,7 +3,7 @@ import { plural } from "../../dictionary";
 export const crmCompletion = {
   pipeline: {
     title: "Leads",
-    description: "Call leads, follow up on trials, and record membership sales.",
+    description: "Call leads, follow up on trials, and record sales.",
     board: "Board",
     searchPlaceholder: "Search by name or phone…",
     searchLabel: "Search leads",

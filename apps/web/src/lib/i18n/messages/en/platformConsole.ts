@@ -4,7 +4,7 @@ export const platformConsole = {
   navigation: {
     overview: "Overview",
     platformName: "Platform",
-    applications: "Gym applications",
+    applications: "Applications",
     gyms: "Gyms",
     entitlements: "Pricing & entitlements",
     billing: "Billing",
@@ -125,7 +125,7 @@ export const platformConsole = {
     recentActivity: "Recent operator activity",
     immutableAudit: "Immutable platform audit; every entry names who did it and when.",
     noOperatorActivity: "No platform operator actions have been recorded.",
-    attention: "Needs your attention",
+    attention: "Needs attention",
     nothingNeedsAttention: "Nothing needs your attention right now.",
     applicationsAwaitingReview: plural({ one: "{count} application awaiting review", other: "{count} applications awaiting review" }),
     provisioningFailures: plural({ one: "{count} provisioning failure", other: "{count} provisioning failures" }),
