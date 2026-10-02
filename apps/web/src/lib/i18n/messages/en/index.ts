@@ -1,3 +1,6 @@
+import { settingsPublic } from "./settingsPublic";
+import { settingsDetails } from "./settingsDetails";
+import { settingsCore } from "./settingsCore";
 import { publicDocuments } from "./publicDocuments";
 import { publicPrivacy } from "./publicPrivacy";
 import { publicTerms } from "./publicTerms";
@@ -33,6 +36,9 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  settingsPublic,
+  settingsDetails,
+  settingsCore,
   publicDocuments,
   publicPrivacy,
   publicTerms,

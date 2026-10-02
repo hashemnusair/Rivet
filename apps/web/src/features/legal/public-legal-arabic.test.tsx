@@ -15,7 +15,7 @@ const evidence = process.env.RIVET_ARABIC_DOCUMENT_EVIDENCE;
 afterEach(cleanup);
 describe("Arabic public documents", () => {
   it.each([
-    { kind: "terms", Component: TermsOfService, target: "terms-of-service", title: "شروط الخدمة", sections: 19, version: TERMS_OF_SERVICE_VERSION },
+    { kind: "terms", Component: TermsOfService, target: "terms-of-service", title: "شروط الاستخدام", sections: 19, version: TERMS_OF_SERVICE_VERSION },
     { kind: "privacy", Component: PrivacyPolicy, target: "privacy-policy", title: "سياسة الخصوصية", sections: 15, version: PRIVACY_POLICY_VERSION },
   ])("preserves $kind anchors, published version and complete PDF content", ({ kind, Component, target, title, sections, version }) => {
     const t = createTranslator("ar");

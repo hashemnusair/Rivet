@@ -1,4 +1,5 @@
 export const apiErrors = {
+  paymentSettingsPartial: "Some payment settings could not be saved.",
   "unexpected": "Something went wrong. Please try again.",
   "validation": "Check the highlighted fields and try again.",
   "forbidden": "You do not have access to this action. Ask your gym owner.",

@@ -17,14 +17,14 @@ export function AgreementSection() {
   const query = useApiQuery(qk.legalAgreement, (api) => api.getSubscriptionAgreementContext());
   if (query.isLoading) {
     return (
-      <SettingsSection title="Agreement" description="Your signed agreement with RIVET.">
+      <SettingsSection title={t("settingsCore.text182")} description={t("settingsDetails.text094")}>
         <Skeleton className="h-64 w-full" />
       </SettingsSection>
     );
   }
   if (query.isError || !query.data) {
     return (
-      <SettingsSection title="Agreement" description="Your signed agreement with RIVET.">
+      <SettingsSection title={t("settingsCore.text182")} description={t("settingsDetails.text094")}>
         <QueryErrorState error={query.error} onRetry={() => void query.refetch()} />
       </SettingsSection>
     );
@@ -32,24 +32,24 @@ export function AgreementSection() {
   const context = query.data;
   if (!context.agreement) {
     return (
-      <SettingsSection title="Agreement" description="Your signed agreement with RIVET.">
+      <SettingsSection title={t("settingsCore.text182")} description={t("settingsDetails.text094")}>
         {context.canSign
-          ? <StatePanel icon={FileSignature} title="Your agreement is not signed yet" description="The owner must sign the agreement before your gym can use RIVET. It opens when the owner signs in. The signed copy will show here." />
-          : <StatePanel icon={FileSignature} title="Waiting for the owner's signature" description="Only the owner can sign the agreement with RIVET. The signed copy will show here." />}
+          ? <StatePanel icon={FileSignature} title={t("settingsDetails.text095")} description={t("settingsDetails.text096")} />
+          : <StatePanel icon={FileSignature} title={t("settingsDetails.text097")} description={t("settingsDetails.text098")} />}
       </SettingsSection>
     );
   }
   const agreement = context.agreement;
   const status = agreement.status === "countersigned"
-    ? "Signed by you and RIVET"
+    ? t("settingsDetails.text099")
     : agreement.status === "void"
       ? t("renewFlow.adjust.membershipStatus.cancelled")
-      : "Signed by you, waiting for RIVET";
+      : t("settingsDetails.text100");
   return (
     <SettingsSection
-      title="Agreement"
-      description={<>Version {agreement.version} · {status}</>}
-      actions={<Button variant="secondary" onClick={() => downloadAgreementPdf(agreement, context.sections)} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>}
+      title={t("settingsCore.text182")}
+      description={<>{t("settingsDetails.text101")}{" "}{agreement.version} · {status}</>}
+      actions={<Button variant="secondary" onClick={() => downloadAgreementPdf(agreement, context.sections)} data-testid="download-agreement-pdf"><Download /> {" "}{t("settingsDetails.text102")}</Button>}
     >
       <AgreementRecord agreement={agreement} sections={context.sections} />
     </SettingsSection>

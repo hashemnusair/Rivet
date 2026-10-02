@@ -1,12 +1,13 @@
 "use client";
+import type { TFunction } from "@/lib/i18n/core";
 import { permissionCopy, roleDescription } from "@/lib/i18n/permissions";
-import { roleLabel } from "@/lib/i18n/labels";
-import { useT } from "@/lib/i18n/provider";
+import { paymentMethodLabel, roleLabel } from "@/lib/i18n/labels";
+import { useLocale, useT } from "@/lib/i18n/provider";
 
 import { Check, Pencil, Plus, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ApiError, isApiError } from "@/lib/api/errors";
+import { ApiError, isApiError, localizeApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { PERMISSIONS } from "@/lib/domain/permissions";
@@ -14,7 +15,8 @@ import type { Branch, NotificationSettings, PaymentMethod, RoleKey, StaffUser, Z
 import { useApp } from "@/lib/providers/app-providers";
 import { money, parseMoneyInput, toMajorString } from "@/lib/utils/money";
 import { cn } from "@/lib/utils/cn";
-import { formatDateTime } from "@/lib/utils/dates";
+import { useFormat } from "@/lib/i18n/format";
+import { latinDigits } from "@/lib/utils/text";
 import { RelativeText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,15 +34,18 @@ function errorMessage(error: unknown, fallback: string): string {
   return isApiError(error) ? error.message : fallback;
 }
 
-const RECORD_STATUS: Record<string, { label: string; variant: "success" | "neutral" | "warning" | "outline" }> = {
-  active: { label: "Active", variant: "success" },
-  inactive: { label: "Inactive", variant: "neutral" },
-  archived: { label: "Archived", variant: "neutral" },
-  invited: { label: "Invited", variant: "warning" },
-  deactivated: { label: "Deactivated", variant: "outline" },
-};
+
 
 function StatusBadge({ status }: { status: string }) {
+  const t = useT();
+  const RECORD_STATUS: Record<string, { label: string; variant: "success" | "neutral" | "warning" | "outline" }> = {
+  active: { label: t("settingsCore.text001"), variant: "success" },
+  inactive: { label: t("settingsCore.text002"), variant: "neutral" },
+  archived: { label: t("settingsCore.text003"), variant: "neutral" },
+  invited: { label: t("settingsCore.text004"), variant: "warning" },
+  deactivated: { label: t("settingsCore.text005"), variant: "outline" },
+};
+
   const value = RECORD_STATUS[status] ?? { label: status, variant: "neutral" as const };
   return <Badge variant={value.variant}>{value.label}</Badge>;
 }
@@ -48,10 +53,11 @@ function StatusBadge({ status }: { status: string }) {
 // ---------------------------------------------------------------------------
 // Organization
 // ---------------------------------------------------------------------------
-const ORGANIZATION_DESCRIPTION = "Your gym’s name, time zone and language. Prices are always in JOD.";
 
 export function OrganizationSection() {
   const t = useT();
+  const ORGANIZATION_DESCRIPTION = t("settingsCore.text006");
+
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const org = settingsQuery.data?.organization;
@@ -70,13 +76,13 @@ export function OrganizationSection() {
 
   const save = useApiMutation((api) => api.updateOrganizationSettings(form), {
     onSuccess: async () => {
-      toast.success("Gym details saved.");
+      toast.success(t("settingsCore.text007"));
       await invalidate([qk.settings]);
     },
   });
 
-  if (settingsQuery.isLoading) return <SettingsSection title="Gym details" description={ORGANIZATION_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Gym details" description={ORGANIZATION_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading) return <SettingsSection title={t("settingsCore.text008")} description={ORGANIZATION_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title={t("settingsCore.text008")} description={ORGANIZATION_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const commit = async () => {
     await save.mutateAsync();
@@ -85,25 +91,25 @@ export function OrganizationSection() {
   const nameMissing = form.name.trim().length === 0;
 
   return (
-    <SettingsSection title="Gym details" description={ORGANIZATION_DESCRIPTION}>
+    <SettingsSection title={t("settingsCore.text008")} description={ORGANIZATION_DESCRIPTION}>
       <SettingsPanel className="max-w-3xl">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Gym name" required error={nameMissing ? "Enter the gym's name." : undefined}><Input value={form.name} aria-invalid={nameMissing || undefined} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
-          <Field label="Time zone" hint="Used for shifts, reports and reminders."><Select value={form.timezone} onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}><SelectTrigger aria-label="Time zone"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Amman">Amman (UTC+3)</SelectItem><SelectItem value="Asia/Riyadh">Riyadh (UTC+3)</SelectItem><SelectItem value="Asia/Dubai">Dubai (UTC+4)</SelectItem></SelectContent></Select></Field>
-          <Field label="Number and date format" hint="How numbers and dates look in RIVET."><Select value={form.locale} onValueChange={(v) => setForm((f) => ({ ...f, locale: v }))}><SelectTrigger aria-label="Number and date format"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en-JO">English (Jordan)</SelectItem><SelectItem value="ar-JO">العربية (الأردن)</SelectItem></SelectContent></Select></Field>
-          <Field label="Default phone country" hint="For local numbers only. Numbers that start with + or 00 keep their own country code."><div className="relative"><span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3" aria-hidden>+</span><Input className="ps-7 font-mono" inputMode="numeric" aria-label="Default phone country calling code" value={form.phoneCountryCallingCode} onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: event.target.value.replace(/\D/g, "").slice(0, 3) }))} /></div></Field>
-          <Field label="Language for emails and documents" hint="Emails from RIVET to your gym, and your agreement copies, use this language. PDFs are in English."><Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}><SelectTrigger aria-label="Default language"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">{t("common.language.english")}</SelectItem><SelectItem value="ar">{t("common.language.arabic")}</SelectItem></SelectContent></Select></Field>
+          <Field label={t("settingsCore.text009")} required error={nameMissing ? t("settingsCore.text010") : undefined}><Input value={form.name} aria-invalid={nameMissing || undefined} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
+          <Field label={t("settingsCore.text011")} hint={t("settingsCore.text012")}><Select value={form.timezone} onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}><SelectTrigger aria-label={t("settingsCore.text011")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Amman">{t("settingsCore.text013")}</SelectItem><SelectItem value="Asia/Riyadh">{t("settingsCore.text014")}</SelectItem><SelectItem value="Asia/Dubai">{t("settingsCore.text015")}</SelectItem></SelectContent></Select></Field>
+          <Field label={t("settingsCore.text016")} hint={t("settingsCore.text017")}><Select value={form.locale} onValueChange={(v) => setForm((f) => ({ ...f, locale: v }))}><SelectTrigger aria-label={t("settingsCore.text016")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en-JO">{t("settingsCore.text018")}</SelectItem><SelectItem value="ar-JO">العربية (الأردن)</SelectItem></SelectContent></Select></Field>
+          <Field label={t("settingsCore.text019")} hint={t("settingsCore.text020")}><div className="relative"><span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3" aria-hidden>+</span><Input className="ps-7 font-mono" inputMode="numeric" aria-label={t("settingsCore.text021")} value={form.phoneCountryCallingCode} onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: latinDigits(event.target.value).replace(/\D/g, "").slice(0, 3) }))} /></div></Field>
+          <Field label={t("settingsCore.text022")} hint={t("settingsCore.text023")}><Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}><SelectTrigger aria-label={t("settingsCore.text024")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">{t("common.language.english")}</SelectItem><SelectItem value="ar">{t("common.language.arabic")}</SelectItem></SelectContent></Select></Field>
         </div>
       </SettingsPanel>
       <SettingsSaveBar
         dirty={dirty}
         saving={save.isPending}
         saveDisabled={nameMissing}
-        saveDisabledReason={nameMissing ? "Enter the gym's name before saving." : undefined}
-        error={save.isError ? errorMessage(save.error, "Gym details were not saved. Try again.") : undefined}
+        saveDisabledReason={nameMissing ? t("settingsCore.text025") : undefined}
+        error={save.isError ? errorMessage(save.error, t("settingsCore.text026")) : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}
-        saveLabel="Save gym details"
+        saveLabel={t("settingsCore.text027")}
       />
     </SettingsSection>
   );
@@ -112,10 +118,11 @@ export function OrganizationSection() {
 // ---------------------------------------------------------------------------
 // Branches
 // ---------------------------------------------------------------------------
-const BRANCHES_DESCRIPTION = "Your gym’s locations. The branch code starts each member number and appears on receipts.";
 
 export function BranchesSection() {
   const t = useT();
+  const BRANCHES_DESCRIPTION = t("settingsCore.text028");
+
   const invalidate = useInvalidate();
   const { refreshSession } = useApp();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
@@ -136,29 +143,29 @@ export function BranchesSection() {
     (api) => api.upsertBranch({ id: dialog.branch?.id, ...form, capacity: Number(form.capacity) }),
     {
       onSuccess: async () => {
-        toast.success(dialog.branch ? "Branch updated." : "Branch added.");
+        toast.success(dialog.branch ? t("settingsCore.text029") : t("settingsCore.text030"));
         setDialog({ open: false });
         await invalidate([qk.settings, qk.session, qk.branches]);
         await refreshSession();
       },
-      onError: (e) => toast.error(errorMessage(e, "Could not save the branch.")),
+      onError: (e) => toast.error(errorMessage(e, t("settingsCore.text031"))),
     },
   );
 
-  const addAction = <Button onClick={() => setDialog({ open: true })}><Plus /> Add branch</Button>;
+  const addAction = <Button onClick={() => setDialog({ open: true })}><Plus /> {" "}{t("settingsCore.text032")}</Button>;
 
-  if (settingsQuery.isLoading) return <SettingsSection title="Branches" description={BRANCHES_DESCRIPTION} actions={addAction}><Skeleton className="h-48 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Branches" description={BRANCHES_DESCRIPTION} actions={addAction}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading) return <SettingsSection title={t("settingsCore.text033")} description={BRANCHES_DESCRIPTION} actions={addAction}><Skeleton className="h-48 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title={t("settingsCore.text033")} description={BRANCHES_DESCRIPTION} actions={addAction}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const branches = settingsQuery.data?.branches ?? [];
 
   return (
-    <SettingsSection title="Branches" description={BRANCHES_DESCRIPTION} actions={addAction}>
+    <SettingsSection title={t("settingsCore.text033")} description={BRANCHES_DESCRIPTION} actions={addAction}>
       {branches.length === 0 ? (
-        <EmptyState layout="section" title="No branches yet" description="Add the first branch to start selling memberships and checking members in." action={<Button size="sm" onClick={() => setDialog({ open: true })}><Plus /> Add branch</Button>} />
+        <EmptyState layout="section" title={t("settingsCore.text034")} description={t("settingsCore.text035")} action={<Button size="sm" onClick={() => setDialog({ open: true })}><Plus /> {" "}{t("settingsCore.text032")}</Button>} />
       ) : (
         <SettingsPanel className="max-w-4xl" bodyClassName="p-0">
-          <ul className="divide-y divide-line md:hidden" aria-label="Branches">
+          <ul className="divide-y divide-line md:hidden" aria-label={t("settingsCore.text033")}>
             {branches.map((b) => (
               <li key={b.id} className="flex items-start gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
@@ -167,10 +174,10 @@ export function BranchesSection() {
                     <span className="font-mono text-[12px] text-ink-2">{b.code}</span>
                     <StatusBadge status={b.status} />
                   </div>
-                  <p className="mt-0.5 text-[12.5px] text-ink-2">{b.address || "No address yet"}</p>
-                  <p className="mt-0.5 text-[12px] text-ink-3">Capacity <span className="tabular">{b.capacity}</span>{b.phone ? <> · <span dir="ltr">{b.phone}</span></> : null}</p>
+                  <p className="mt-0.5 text-[12.5px] text-ink-2">{b.address || t("settingsCore.text036")}</p>
+                  <p className="mt-0.5 text-[12px] text-ink-3">{t("settingsCore.text037")}{" "}<span className="tabular">{b.capacity}</span>{b.phone ? <> · <span dir="ltr">{b.phone}</span></> : null}</p>
                 </div>
-                <Button variant="secondary" size="sm" aria-label={`Edit ${b.name}`} data-touch-target onClick={() => setDialog({ open: true, branch: b })}><Pencil />{" "}{t("common.action.edit")}</Button>
+                <Button variant="secondary" size="sm" aria-label={t("settingsCore.editNamed", { name: b.name })} data-touch-target onClick={() => setDialog({ open: true, branch: b })}><Pencil />{" "}{t("common.action.edit")}</Button>
               </li>
             ))}
           </ul>
@@ -178,9 +185,9 @@ export function BranchesSection() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>{t("common.label.name")}</TableHead>
-                <TableHead>Code</TableHead>
+                <TableHead>{t("settingsCore.text038")}</TableHead>
                 <TableHead>{t("memberProfile.details.address")}</TableHead>
-                <TableHead className="text-end">Capacity</TableHead>
+                <TableHead className="text-end">{t("settingsCore.text037")}</TableHead>
                 <TableHead>{t("common.label.status")}</TableHead>
                 <TableHead><span className="sr-only">{t("common.action.edit")}</span></TableHead>
               </TableRow>
@@ -194,7 +201,7 @@ export function BranchesSection() {
                   <TableCell className="text-end tabular">{b.capacity}</TableCell>
                   <TableCell><StatusBadge status={b.status} /></TableCell>
                   <TableCell className="text-end">
-                    <Button variant="ghost" size="icon-sm" aria-label={`Edit ${b.name}`} data-touch-target onClick={() => setDialog({ open: true, branch: b })}>
+                    <Button variant="ghost" size="icon-sm" aria-label={t("settingsCore.editNamed", { name: b.name })} data-touch-target onClick={() => setDialog({ open: true, branch: b })}>
                       <Pencil />
                     </Button>
                   </TableCell>
@@ -208,15 +215,15 @@ export function BranchesSection() {
       <Dialog open={dialog.open} onOpenChange={(v) => setDialog({ open: v })}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{dialog.branch ? `Edit ${dialog.branch.name}` : "Add branch"}</DialogTitle>
-            <DialogDescription>Branch codes appear on member numbers and receipts.</DialogDescription>
+            <DialogTitle>{dialog.branch ? t("settingsCore.editNamed", { name: dialog.branch.name }) : t("settingsCore.text032")}</DialogTitle>
+            <DialogDescription>{t("settingsCore.text039")}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
             <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
               <Field label={t("common.label.name")} required>
-                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Forge — Khalda" />
+                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={t("settingsCore.text040")} />
               </Field>
-              <Field label="Code" required hint="Up to 4 letters">
+              <Field label={t("settingsCore.text038")} required hint={t("settingsCore.text041")}>
                 <Input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} className="font-mono uppercase" maxLength={4} placeholder="KHA" />
               </Field>
             </div>
@@ -227,8 +234,8 @@ export function BranchesSection() {
               <Field label={t("common.label.phone")}>
                 <Input dir="ltr" type="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
               </Field>
-              <Field label="Capacity">
-                <Input type="number" min={1} inputMode="numeric" value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: Number(e.target.value) }))} />
+              <Field label={t("settingsCore.text037")}>
+                <Input type="number" min={1} inputMode="numeric" value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: Number(latinDigits(e.target.value)) }))} />
               </Field>
               <Field label={t("common.label.status")}>
                 <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as "active" | "inactive" }))}>
@@ -246,7 +253,7 @@ export function BranchesSection() {
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDialog({ open: false })}>{t("common.action.cancel")}</Button>
             <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.name.trim() || !form.code.trim()}>
-              {dialog.branch ? "Save branch" : "Add branch"}
+              {dialog.branch ? t("settingsCore.text042") : t("settingsCore.text032")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -258,20 +265,8 @@ export function BranchesSection() {
 // ---------------------------------------------------------------------------
 // Gym spaces
 // ---------------------------------------------------------------------------
-const SPACE_KIND_LABELS: Record<ZoneKind, string> = {
-  floor: "General floor",
-  studio: "Studio",
-  weights: "Weights floor",
-  cardio: "Cardio area",
-  functional: "Functional training",
-  locker_room: "Locker room",
-  bathroom: "Bathroom",
-  reception: "Reception",
-  storage: "Storage",
-  other: "Other",
-};
 
-const SPACES_DESCRIPTION = "The places inside a branch, like Reception, Main floor, Studio or Locker room. They show where machines are and where maintenance jobs are needed.";
+
 
 function newSpaceCode(): string {
   return `SP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
@@ -279,6 +274,21 @@ function newSpaceCode(): string {
 
 export function GymSpacesSection() {
   const t = useT();
+  const f = useFormat();
+  const SPACES_DESCRIPTION = t("settingsCore.text053");
+  const SPACE_KIND_LABELS: Record<ZoneKind, string> = {
+  floor: t("settingsCore.text043"),
+  studio: t("settingsCore.text044"),
+  weights: t("settingsCore.text045"),
+  cardio: t("settingsCore.text046"),
+  functional: t("settingsCore.text047"),
+  locker_room: t("settingsCore.text048"),
+  bathroom: t("settingsCore.text049"),
+  reception: t("settingsCore.text050"),
+  storage: t("settingsCore.text051"),
+  other: t("settingsCore.text052"),
+};
+
   const invalidate = useInvalidate();
   const { session } = useApp();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
@@ -317,36 +327,36 @@ export function GymSpacesSection() {
     }),
     {
       onSuccess: async () => {
-        toast.success(dialog.space ? "Gym area updated." : "Gym area added.");
+        toast.success(dialog.space ? t("settingsCore.text054") : t("settingsCore.text055"));
         setDialog({ open: false });
         await invalidate([qk.operations()]);
       },
-      onError: (error) => toast.error(errorMessage(error, "Could not save this gym area.")),
+      onError: (error) => toast.error(errorMessage(error, t("settingsCore.text056"))),
     },
   );
 
-  const addAction = <Button onClick={() => setDialog({ open: true })} disabled={!branchId}><Plus /> Add gym area</Button>;
+  const addAction = <Button onClick={() => setDialog({ open: true })} disabled={!branchId}><Plus /> {" "}{t("settingsCore.text057")}</Button>;
 
-  if (settingsQuery.isLoading) return <SettingsSection title="Gym areas" description={SPACES_DESCRIPTION} actions={addAction}><Skeleton className="h-48 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Gym areas" description={SPACES_DESCRIPTION} actions={addAction}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading) return <SettingsSection title={t("settingsCore.text058")} description={SPACES_DESCRIPTION} actions={addAction}><Skeleton className="h-48 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title={t("settingsCore.text058")} description={SPACES_DESCRIPTION} actions={addAction}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const branchName = activeBranches.find((branch) => branch.id === branchId)?.name;
   const spaces = spacesQuery.data ?? [];
 
   return (
-    <SettingsSection title="Gym areas" description={SPACES_DESCRIPTION} actions={addAction}>
+    <SettingsSection title={t("settingsCore.text058")} description={SPACES_DESCRIPTION} actions={addAction}>
       {activeBranches.length === 0 ? (
-        <EmptyState layout="section" title="No active branches" description="First add a branch, or turn one back on, in Branches." />
+        <EmptyState layout="section" title={t("settingsCore.text059")} description={t("settingsCore.text060")} />
       ) : (
         <SettingsPanel
           className="max-w-4xl"
           bodyClassName="p-0"
-          title={branchName ? `Areas in ${branchName}` : "Areas"}
+          title={branchName ? t("settingsCore.areasIn", { branch: branchName }) : t("settingsCore.text061")}
           control={
             <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
               <span>{t("common.label.branch")}</span>
               <Select value={branchId} onValueChange={setBranchId}>
-                <SelectTrigger aria-label="Gym areas branch" className="w-52"><SelectValue placeholder={t("renewFlow.adjust.transfer.chooseBranch")} /></SelectTrigger>
+                <SelectTrigger aria-label={t("settingsCore.text062")} className="w-52"><SelectValue placeholder={t("renewFlow.adjust.transfer.chooseBranch")} /></SelectTrigger>
                 <SelectContent>
                   {activeBranches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
                 </SelectContent>
@@ -360,21 +370,21 @@ export function GymSpacesSection() {
             <EmptyState
               className="m-4 sm:m-5"
               layout="section"
-              title="No gym areas in this branch"
-              description="Add the places your staff already talk about, like Reception or Main floor. Keep it simple."
-              action={<Button size="sm" onClick={() => setDialog({ open: true })}><Plus /> Add first gym area</Button>}
+              title={t("settingsCore.text063")}
+              description={t("settingsCore.text064")}
+              action={<Button size="sm" onClick={() => setDialog({ open: true })}><Plus /> {" "}{t("settingsCore.text065")}</Button>}
             />
           ) : null}
           {spaces.length > 0 ? (
             <>
-              <ul className="divide-y divide-line md:hidden" aria-label="Gym areas">
+              <ul className="divide-y divide-line md:hidden" aria-label={t("settingsCore.text058")}>
                 {spaces.map((space) => (
                   <li key={space.id} className="flex items-center gap-3 px-4 py-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2"><p className="text-[13.5px] font-medium">{space.name}</p><StatusBadge status={space.status} /></div>
-                      <p className="mt-0.5 text-[12.5px] text-ink-2">{SPACE_KIND_LABELS[space.kind]}{space.capacity ? <> · capacity <span className="tabular">{space.capacity.toLocaleString()}</span></> : null}</p>
+                      <p className="mt-0.5 text-[12.5px] text-ink-2">{SPACE_KIND_LABELS[space.kind]}{space.capacity ? <> {" "}{t("settingsCore.text066")}{" "}<span className="tabular">{f.number(space.capacity)}</span></> : null}</p>
                     </div>
-                    <Button variant="secondary" size="sm" aria-label={`Edit ${space.name}`} data-touch-target onClick={() => setDialog({ open: true, space })}><Pencil />{" "}{t("common.action.edit")}</Button>
+                    <Button variant="secondary" size="sm" aria-label={t("settingsCore.editNamed", { name: space.name })} data-touch-target onClick={() => setDialog({ open: true, space })}><Pencil />{" "}{t("common.action.edit")}</Button>
                   </li>
                 ))}
               </ul>
@@ -383,7 +393,7 @@ export function GymSpacesSection() {
                   <TableRow className="hover:bg-transparent">
                     <TableHead>{t("common.label.name")}</TableHead>
                     <TableHead>{t("common.label.type")}</TableHead>
-                    <TableHead className="text-end">Capacity</TableHead>
+                    <TableHead className="text-end">{t("settingsCore.text037")}</TableHead>
                     <TableHead>{t("common.label.status")}</TableHead>
                     <TableHead><span className="sr-only">{t("common.action.edit")}</span></TableHead>
                   </TableRow>
@@ -395,7 +405,7 @@ export function GymSpacesSection() {
                       <TableCell className="text-[12.5px] text-ink-2">{SPACE_KIND_LABELS[space.kind]}</TableCell>
                       <TableCell className="text-end tabular">{space.capacity?.toLocaleString() ?? "—"}</TableCell>
                       <TableCell><StatusBadge status={space.status} /></TableCell>
-                      <TableCell className="text-end"><Button variant="ghost" size="icon-sm" aria-label={`Edit ${space.name}`} data-touch-target onClick={() => setDialog({ open: true, space })}><Pencil /></Button></TableCell>
+                      <TableCell className="text-end"><Button variant="ghost" size="icon-sm" aria-label={t("settingsCore.editNamed", { name: space.name })} data-touch-target onClick={() => setDialog({ open: true, space })}><Pencil /></Button></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -408,27 +418,27 @@ export function GymSpacesSection() {
       <Dialog open={dialog.open} onOpenChange={(open) => setDialog({ open, space: open ? dialog.space : undefined })}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{dialog.space ? `Edit ${dialog.space.name}` : "Add gym area"}</DialogTitle>
-            <DialogDescription>{branchName ? `In ${branchName}. ` : ""}Use the name your staff already use.</DialogDescription>
+            <DialogTitle>{dialog.space ? t("settingsCore.editNamed", { name: dialog.space.name }) : t("settingsCore.text057")}</DialogTitle>
+            <DialogDescription>{branchName ? t("settingsCore.inBranch", { branch: branchName ?? "" }) : ""}{t("settingsCore.text067")}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
-            <Field label={t("common.label.name")} required hint="For example: Reception, Main floor, Ladies studio, or Locker room.">
-              <Input autoFocus value={form.name} maxLength={80} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Main floor" />
+            <Field label={t("common.label.name")} required hint={t("settingsCore.text068")}>
+              <Input autoFocus value={form.name} maxLength={80} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder={t("settingsCore.text069")} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t("common.label.type")} required>
                 <Select value={form.kind} onValueChange={(value) => setForm((current) => ({ ...current, kind: value as ZoneKind }))}>
-                  <SelectTrigger aria-label="Gym area type"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label={t("settingsCore.text070")}><SelectValue /></SelectTrigger>
                   <SelectContent>{Object.entries(SPACE_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="Capacity" hint="Optional">
+              <Field label={t("settingsCore.text037")} hint={t("settingsCore.text071")}>
                 <Input type="number" min={1} max={100000} inputMode="numeric" value={form.capacity} onChange={(event) => setForm((current) => ({ ...current, capacity: event.target.value }))} />
               </Field>
               {dialog.space ? (
                 <Field label={t("common.label.status")}>
                   <Select value={form.status} onValueChange={(value) => setForm((current) => ({ ...current, status: value as "active" | "archived" }))}>
-                    <SelectTrigger aria-label="Gym area status"><SelectValue /></SelectTrigger>
+                    <SelectTrigger aria-label={t("settingsCore.text072")}><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="active">{t("renewFlow.adjust.membershipStatus.active")}</SelectItem><SelectItem value="archived">{t("members.list.archived")}</SelectItem></SelectContent>
                   </Select>
                 </Field>
@@ -437,7 +447,7 @@ export function GymSpacesSection() {
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDialog({ open: false })}>{t("common.action.cancel")}</Button>
-            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || (form.capacity !== "" && Number(form.capacity) < 1)}>{dialog.space ? t("common.action.saveChanges") : "Add gym area"}</Button>
+            <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!branchId || !form.name.trim() || (form.capacity !== "" && Number(form.capacity) < 1)}>{dialog.space ? t("common.action.saveChanges") : t("settingsCore.text057")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -448,10 +458,12 @@ export function GymSpacesSection() {
 // ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------
-const USERS_DESCRIPTION = "Who can sign in, their role, and which branches they can see.";
 
 export function UsersSection() {
   const t = useT();
+  const f = useFormat();
+  const USERS_DESCRIPTION = t("settingsCore.text073");
+
   const invalidate = useInvalidate();
   const { session } = useApp();
   const usersQuery = useApiQuery(qk.users({ settings: true }), (api) => api.listUsers({ pageSize: 50 }));
@@ -461,24 +473,24 @@ export function UsersSection() {
 
   const branchCodes = (user: StaffUser) => user.branchScope === "all"
     ? t("common.label.allBranches")
-    : user.branchIds.map((id) => settingsQuery.data?.branches.find((b) => b.id === id)?.code).filter(Boolean).join(", ") || "No branch";
+    : user.branchIds.map((id) => settingsQuery.data?.branches.find((b) => b.id === id)?.code).filter(Boolean).join(", ") || t("settingsCore.text074");
   const canEdit = (user: StaffUser) => user.role !== "owner" && user.id !== session?.user.id;
   const activity = (user: StaffUser) => user.status === "invited"
-    ? <>Invited {user.invitedAt ? formatDateTime(user.invitedAt) : "recently"}</>
-    : user.lastActiveAt ? <>{t("renewFlow.adjust.membershipStatus.active")}{" "}<RelativeText iso={user.lastActiveAt} /></> : <>Not active yet</>;
+    ? <>{t("settingsCore.invitedAt", { date: user.invitedAt ? f.dateTime(user.invitedAt) : t("settingsCore.text075") })}</>
+    : user.lastActiveAt ? <>{t("renewFlow.adjust.membershipStatus.active")}{" "}<RelativeText iso={user.lastActiveAt} /></> : <>{t("settingsCore.text076")}</>;
 
-  const inviteAction = <Button onClick={() => setInviteOpen(true)}><UserPlus /> Invite staff</Button>;
+  const inviteAction = <Button onClick={() => setInviteOpen(true)}><UserPlus /> {" "}{t("settingsCore.text077")}</Button>;
   const users = usersQuery.data?.items ?? [];
 
   return (
-    <SettingsSection title="Staff" description={USERS_DESCRIPTION} actions={inviteAction}>
+    <SettingsSection title={t("settingsCore.text078")} description={USERS_DESCRIPTION} actions={inviteAction}>
       {usersQuery.isLoading ? <Skeleton className="h-48 w-full" /> : usersQuery.isError ? (
         <ErrorState layout="section" onRetry={() => usersQuery.refetch()} />
       ) : users.length === 0 ? (
-        <EmptyState layout="section" title="No staff yet" description="Invite your first staff member. They show as Invited until they sign in." />
+        <EmptyState layout="section" title={t("settingsCore.text079")} description={t("settingsCore.text080")} />
       ) : (
         <SettingsPanel bodyClassName="p-0">
-          <ul className="divide-y divide-line md:hidden" aria-label="Staff">
+          <ul className="divide-y divide-line md:hidden" aria-label={t("settingsCore.text078")}>
             {users.map((u) => (
               <li key={u.id} className="flex items-start gap-3 px-4 py-3">
                 <Monogram name={u.name} size="sm" />
@@ -491,7 +503,7 @@ export function UsersSection() {
                   <p className="mt-0.5 truncate text-[12.5px] text-ink-2">{u.email}</p>
                   <p className="mt-0.5 text-[12px] text-ink-3">{branchCodes(u)} · {activity(u)}</p>
                 </div>
-                {canEdit(u) ? <Button variant="secondary" size="sm" aria-label={`Edit access for ${u.name}`} data-touch-target onClick={() => setEditTarget(u)}><Pencil /> Access</Button> : null}
+                {canEdit(u) ? <Button variant="secondary" size="sm" aria-label={t("settingsCore.editAccessFor", { name: u.name })} data-touch-target onClick={() => setEditTarget(u)}><Pencil /> {" "}{t("settingsCore.text081")}</Button> : null}
               </li>
             ))}
           </ul>
@@ -500,9 +512,9 @@ export function UsersSection() {
               <TableRow className="hover:bg-transparent">
                 <TableHead>{t("common.label.name")}</TableHead>
                 <TableHead>{t("common.label.role")}</TableHead>
-                <TableHead>Branches</TableHead>
+                <TableHead>{t("settingsCore.text033")}</TableHead>
                 <TableHead>{t("common.label.status")}</TableHead>
-                <TableHead>Last active</TableHead>
+                <TableHead>{t("settingsCore.text082")}</TableHead>
                 <TableHead><span className="sr-only">{t("common.label.actions")}</span></TableHead>
               </TableRow>
             </TableHeader>
@@ -524,7 +536,7 @@ export function UsersSection() {
                   <TableCell className="whitespace-nowrap text-[12.5px] text-ink-3">{activity(u)}</TableCell>
                   <TableCell className="text-end">
                     {canEdit(u) ? (
-                      <Button variant="ghost" size="icon-sm" aria-label={`Edit access for ${u.name}`} data-touch-target onClick={() => setEditTarget(u)}>
+                      <Button variant="ghost" size="icon-sm" aria-label={t("settingsCore.editAccessFor", { name: u.name })} data-touch-target onClick={() => setEditTarget(u)}>
                         <Pencil />
                       </Button>
                     ) : null}
@@ -564,13 +576,13 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
   const mutation = useApiMutation((api) => api.inviteUser(form), {
     onSuccess: async () => {
-      toast.success("Invite created. You can see it in the staff list.");
+      toast.success(t("settingsCore.text083"));
       onOpenChange(false);
       // The staff list is not part of the default invalidation set, so the
       // new "invited" row must be requested explicitly.
       await invalidate([qk.users()]);
     },
-    onError: (e) => toast.error(errorMessage(e, "The invite was not created. Try again.")),
+    onError: (e) => toast.error(errorMessage(e, t("settingsCore.text084"))),
   });
 
   const needsBranches = form.branchScope === "selected" && form.branchIds.length === 0;
@@ -579,14 +591,14 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Invite staff</DialogTitle>
-          <DialogDescription>They show as Invited until they sign in. Their role and branches decide what they can see and do.</DialogDescription>
+          <DialogTitle>{t("settingsCore.text077")}</DialogTitle>
+          <DialogDescription>{t("settingsCore.text085")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <Field label={t("common.label.fullName")} required>
             <Input value={form.name} autoComplete="off" onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </Field>
-          <Field label={t("common.label.email")} required hint="We send the invite to this email.">
+          <Field label={t("common.label.email")} required hint={t("settingsCore.text086")}>
             <Input type="email" inputMode="email" autoComplete="off" dir="ltr" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -602,20 +614,20 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Branch access">
+            <Field label={t("settingsCore.text087")}>
               <Select value={form.branchScope} onValueChange={(v) => setForm((f) => ({ ...f, branchScope: v as "all" | "selected" }))}>
-                <SelectTrigger aria-label="Branch access">
+                <SelectTrigger aria-label={t("settingsCore.text087")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("common.label.allBranches")}</SelectItem>
-                  <SelectItem value="selected">Only some branches</SelectItem>
+                  <SelectItem value="selected">{t("settingsCore.text088")}</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
           </div>
           {form.branchScope === "selected" ? (
-            <Field label="Branches" hint={needsBranches ? "Choose at least one branch." : undefined}>
+            <Field label={t("settingsCore.text033")} hint={needsBranches ? t("settingsCore.text089") : undefined}>
               <div className="flex flex-wrap gap-2">
                 {session?.branches.map((b) => {
                   const checked = form.branchIds.includes(b.id);
@@ -639,8 +651,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
           <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!form.name.trim() || !form.email.trim() || needsBranches}>
-            Send invite
-          </Button>
+            {" "}{t("settingsCore.text090")}{" "}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -667,7 +678,7 @@ function EditAccessDialog({
     (api) => api.updateUserAccess(user.id, { role, status: status === "deactivated" ? "deactivated" : "active" }),
     {
       onSuccess: () => onSaved(),
-      onError: (e) => toast.error(errorMessage(e, "Could not update access.")),
+      onError: (e) => toast.error(errorMessage(e, t("settingsCore.text091"))),
     },
   );
 
@@ -675,8 +686,8 @@ function EditAccessDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Access for {user.name}</DialogTitle>
-          <DialogDescription>Changes apply right away.</DialogDescription>
+          <DialogTitle>{t("settingsCore.accessFor", { name: user.name })}</DialogTitle>
+          <DialogDescription>{t("settingsCore.text092")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           <Field label={t("common.label.role")}>
@@ -692,13 +703,13 @@ function EditAccessDialog({
             </Select>
           </Field>
           <div className="rounded-md border border-line px-3">
-            <SettingsToggleRow label="Account active" hint="If you turn this off, they lose all access right away. Their history is kept." checked={status === "active"} onCheckedChange={(v) => setStatus(v ? "active" : "deactivated")} />
+            <SettingsToggleRow label={t("settingsCore.text093")} hint={t("settingsCore.text094")} checked={status === "active"} onCheckedChange={(v) => setStatus(v ? "active" : "deactivated")} />
           </div>
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
           <Button onClick={() => mutation.mutate()} loading={mutation.isPending} variant={deactivating ? "danger" : "primary"}>
-            {deactivating ? "Deactivate and save" : "Save access"}
+            {deactivating ? t("settingsCore.text095") : t("settingsCore.text096")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -839,7 +850,6 @@ export function RolesSection() {
 // ---------------------------------------------------------------------------
 // Payments
 // ---------------------------------------------------------------------------
-const PAYMENTS_DESCRIPTION = "How the desk can take payments, and how much discount each role can give without a manager.";
 
 type PaymentsForm = { methods: PaymentMethod[]; limits: Record<string, string> };
 
@@ -855,7 +865,9 @@ function parseLimit(value: string, currency: string): number | null {
 }
 
 export function PaymentsSection() {
-  const t = useT();
+  const { t, locale } = useLocale();
+  const PAYMENTS_DESCRIPTION = t("settingsCore.text097");
+
   const invalidate = useInvalidate();
   const { session } = useApp();
   const currency = session?.organization.currency ?? "JOD";
@@ -878,13 +890,13 @@ export function PaymentsSection() {
   const save = useApiMutation(async (api) => {
     if (!form || !baseline) return;
     const saved: PaymentsForm = { methods: baseline.methods, limits: { ...baseline.limits } };
-    const failures: string[] = [];
+    const failures: Array<{ kind: "methods" | "limit"; role?: RoleKey; error: unknown }> = [];
     if (JSON.stringify(form.methods) !== JSON.stringify(baseline.methods)) {
       try {
         await api.updatePaymentMethods(form.methods);
         saved.methods = form.methods;
       } catch (error) {
-        failures.push(`Payment methods: ${errorMessage(error, "not saved")}`);
+        failures.push({ kind: "methods", error });
       }
     }
     for (const role of limitRoles) {
@@ -895,15 +907,15 @@ export function PaymentsSection() {
         await api.updateRolePermissions(role.key, { discountLimitMinor: minor });
         saved.limits[role.key] = toMajorString(money(minor, currency));
       } catch (error) {
-        failures.push(`${role.label} limit: ${errorMessage(error, "not saved")}`);
+        failures.push({ kind: "limit", role: role.key, error });
       }
     }
     setBaseline(saved);
     setForm((current) => current ? { ...current, limits: { ...current.limits, ...Object.fromEntries(Object.entries(saved.limits).filter(([key]) => form.limits[key] !== baseline.limits[key])) } } : current);
-    if (failures.length > 0) throw ApiError.of("VALIDATION_ERROR", failures.join(" · "));
+    if (failures.length > 0) throw ApiError.of("VALIDATION_ERROR", "Some payment settings could not be saved.", { message: { key: "apiErrors.paymentSettingsPartial" }, details: { settingsFailures: failures } });
   }, {
     onSuccess: async () => {
-      toast.success("Payment settings saved.");
+      toast.success(t("settingsCore.text098"));
       await invalidate([qk.settings]);
     },
     onError: async () => { await invalidate([qk.settings]); },
@@ -912,20 +924,25 @@ export function PaymentsSection() {
   if (settingsQuery.isLoading || !form || !baseline) return <SettingsSection title={t("renewFlow.receipt.back")} description={PAYMENTS_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
   if (settingsQuery.isError) return <SettingsSection title={t("renewFlow.receipt.back")} description={PAYMENTS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
+  const failures = isApiError(save.error) ? save.error.details?.settingsFailures as Array<{ kind: "methods" | "limit"; role?: RoleKey; error: unknown }> | undefined : undefined;
+  const failureMessage = failures?.map(failure => {
+    const error = localizeApiError(failure.error, locale).message;
+    return failure.kind === "methods" ? t("settingsCore.partialMethods", { error }) : t("settingsCore.partialLimit", { role: roleLabel(t, failure.role), error });
+  }).join(" · ");
   const invalidLimit = limitRoles.some((role) => parseLimit(form.limits[role.key] ?? "", currency) === null);
   const noMethod = form.methods.every((m) => !m.enabled);
-  const saveDisabledReason = invalidLimit ? "Enter a discount limit of 0 or more for every role." : noMethod ? "Keep at least one payment method turned on." : undefined;
+  const saveDisabledReason = invalidLimit ? t("settingsCore.text099") : noMethod ? t("settingsCore.text100") : undefined;
 
   return (
     <SettingsSection title={t("renewFlow.receipt.back")} description={PAYMENTS_DESCRIPTION}>
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <SettingsPanel title="Payment methods" description="Methods you turn off are hidden when taking payments and at checkout." bodyClassName="px-4 py-1 sm:px-5">
+        <SettingsPanel title={t("settingsCore.text101")} description={t("settingsCore.text102")} bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
             {form.methods.map((m) => (
               <SettingsToggleRow
                 key={m.key}
-                label={m.label}
-                hint={m.affectsCashDrawer ? "Counts in the cash drawer and shift totals." : undefined}
+                label={paymentMethodLabel(t, m.key)}
+                hint={m.affectsCashDrawer ? t("settingsCore.text103") : undefined}
                 checked={m.enabled}
                 onCheckedChange={(enabled) => setForm((current) => current ? { ...current, methods: current.methods.map((x) => (x.key === m.key ? { ...x, enabled } : x)) } : current)}
               />
@@ -933,19 +950,19 @@ export function PaymentsSection() {
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Discount limits" description="A discount above the role’s limit waits for a manager to approve it." bodyClassName="px-4 py-1 sm:px-5">
+        <SettingsPanel title={t("settingsCore.text104")} description={t("settingsCore.text105")} bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
             {limitRoles.map((r) => {
               const invalid = parseLimit(form.limits[r.key] ?? "", currency) === null;
               return (
                 <div key={r.key} className="flex min-h-11 items-center justify-between gap-4 py-2.5">
-                  <label htmlFor={`discount-limit-${r.key}`} className="text-[13.5px] font-medium text-ink">{r.label}</label>
+                  <label htmlFor={`discount-limit-${r.key}`} className="text-[13.5px] font-medium text-ink">{roleLabel(t, r.key)}</label>
                   <SettingsUnitInput
                     id={`discount-limit-${r.key}`}
                     unit={currency}
                     className="w-36"
                     inputMode="decimal"
-                    aria-label={`${r.label} discount limit`}
+                    aria-label={t("settingsCore.roleDiscountLimit", { role: roleLabel(t, r.key) })}
                     aria-invalid={invalid || undefined}
                     value={form.limits[r.key] ?? ""}
                     onChange={(e) => setForm((current) => current ? { ...current, limits: { ...current.limits, [r.key]: e.target.value } } : current)}
@@ -961,11 +978,11 @@ export function PaymentsSection() {
         saving={save.isPending}
         saveDisabled={Boolean(saveDisabledReason)}
         saveDisabledReason={saveDisabledReason}
-        error={save.isError ? errorMessage(save.error, "Payment settings were not saved. Try again.") : undefined}
+        error={save.isError ? failureMessage ?? errorMessage(save.error, t("settingsCore.text106")) : undefined}
         onSave={async () => { await save.mutateAsync(); }}
         onDiscard={() => { if (baseline) setForm(baseline); }}
-        saveLabel="Save payment settings"
-        guardTitle="Unsaved payment settings"
+        saveLabel={t("settingsCore.text107")}
+        guardTitle={t("settingsCore.text108")}
       />
     </SettingsSection>
   );
@@ -974,9 +991,11 @@ export function PaymentsSection() {
 // ---------------------------------------------------------------------------
 // Receipts & tax
 // ---------------------------------------------------------------------------
-const RECEIPTS_DESCRIPTION = "How receipts are numbered and what they say.";
 
 export function ReceiptsSection() {
+  const RECEIPTS_DESCRIPTION_KEY = "settingsCore.text109";
+  const t = useT();
+  const RECEIPTS_DESCRIPTION = t(RECEIPTS_DESCRIPTION_KEY);
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const org = settingsQuery.data?.organization;
@@ -994,49 +1013,49 @@ export function ReceiptsSection() {
   }, [org]);
 
   const save = useApiMutation(
-    (api) => api.updateOrganizationSettings({ receiptPrefix: form.receiptPrefix, receiptFooter: form.receiptFooter, taxRatePercent: Number(form.taxRatePercent) }),
+    (api) => api.updateOrganizationSettings({ receiptPrefix: form.receiptPrefix, receiptFooter: form.receiptFooter, taxRatePercent: Number(latinDigits(form.taxRatePercent)) }),
     {
       onSuccess: async () => {
-        toast.success("Receipt settings saved.");
+        toast.success(t("settingsCore.text110"));
         await invalidate([qk.settings]);
       },
     },
   );
 
-  if (settingsQuery.isLoading) return <SettingsSection title="Receipts & tax" description={RECEIPTS_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Receipts & tax" description={RECEIPTS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading) return <SettingsSection title={t("settingsCore.text111")} description={RECEIPTS_DESCRIPTION}><Skeleton className="h-64 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title={t("settingsCore.text111")} description={RECEIPTS_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const commit = async () => {
     await save.mutateAsync();
     setBaseline(form);
   };
-  const tax = Number(form.taxRatePercent);
+  const tax = Number(latinDigits(form.taxRatePercent));
   const taxInvalid = form.taxRatePercent.trim() === "" || !Number.isFinite(tax) || tax < 0 || tax > 30;
   const prefixInvalid = form.receiptPrefix.trim().length === 0;
-  const saveDisabledReason = prefixInvalid ? "Enter a receipt prefix." : taxInvalid ? "Enter a sales tax between 0 and 30 percent." : undefined;
+  const saveDisabledReason = prefixInvalid ? t("settingsCore.text112") : taxInvalid ? t("settingsCore.text113") : undefined;
 
   return (
-    <SettingsSection title="Receipts & tax" description={RECEIPTS_DESCRIPTION}>
-      <SettingsPanel className="max-w-3xl" title="Numbering and tax" description={<>Next receipt: <span className="font-mono text-ink">{org?.receiptPrefix}{org?.nextReceiptNumber}</span></>}>
+    <SettingsSection title={t("settingsCore.text111")} description={RECEIPTS_DESCRIPTION}>
+      <SettingsPanel className="max-w-3xl" title={t("settingsCore.text114")} description={<>{t("settingsCore.text115")}{" "}<span className="font-mono text-ink">{org?.receiptPrefix}{org?.nextReceiptNumber}</span></>}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Receipt prefix" required hint="Up to 6 characters, like R-. Printed before each receipt number." error={prefixInvalid ? "Enter a receipt prefix." : undefined}>
+          <Field label={t("settingsCore.text116")} required hint={t("settingsCore.text117")} error={prefixInvalid ? t("settingsCore.text112") : undefined}>
             <Input value={form.receiptPrefix} aria-invalid={prefixInvalid || undefined} onChange={(e) => setForm((f) => ({ ...f, receiptPrefix: e.target.value }))} className="w-32 font-mono" maxLength={6} />
           </Field>
-          <Field label="Sales tax" hint="Enter 0 if receipts should not show a tax line." error={taxInvalid ? "Enter a rate between 0 and 30." : undefined}>
+          <Field label={t("settingsCore.text118")} hint={t("settingsCore.text119")} error={taxInvalid ? t("settingsCore.text120") : undefined}>
             <SettingsUnitInput unit="%" type="number" min={0} max={30} step={0.5} inputMode="decimal" className="w-32" aria-invalid={taxInvalid || undefined} value={form.taxRatePercent} onChange={(e) => setForm((f) => ({ ...f, taxRatePercent: e.target.value }))} />
           </Field>
         </div>
-        <Field label="Receipt footer" hint="Printed at the bottom of every receipt. You can leave it empty." className="mt-4"><Textarea rows={2} value={form.receiptFooter} onChange={(e) => setForm((f) => ({ ...f, receiptFooter: e.target.value }))} /></Field>
+        <Field label={t("settingsCore.text121")} hint={t("settingsCore.text122")} className="mt-4"><Textarea rows={2} value={form.receiptFooter} onChange={(e) => setForm((f) => ({ ...f, receiptFooter: e.target.value }))} /></Field>
       </SettingsPanel>
       <SettingsSaveBar
         dirty={dirty}
         saving={save.isPending}
         saveDisabled={Boolean(saveDisabledReason)}
         saveDisabledReason={saveDisabledReason}
-        error={save.isError ? errorMessage(save.error, "Receipt settings were not saved. Try again.") : undefined}
+        error={save.isError ? errorMessage(save.error, t("settingsCore.text123")) : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}
-        saveLabel="Save receipt settings"
+        saveLabel={t("settingsCore.text124")}
       />
     </SettingsSection>
   );
@@ -1045,10 +1064,11 @@ export function ReceiptsSection() {
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------
-const NOTIFICATIONS_DESCRIPTION = "Which alerts managers get in RIVET, and whether reminders are sent to members.";
 
 export function NotificationsSection() {
   const t = useT();
+  const NOTIFICATIONS_DESCRIPTION = t("settingsCore.text125");
+
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const notifications = settingsQuery.data?.notifications;
@@ -1073,7 +1093,7 @@ export function NotificationsSection() {
 
   const save = useApiMutation((api, v: NotificationSettings) => api.updateNotificationSettings(v), {
     onSuccess: async () => {
-      toast.success("Notification settings saved.");
+      toast.success(t("settingsCore.text126"));
       await invalidate([qk.settings]);
     },
   });
@@ -1083,10 +1103,10 @@ export function NotificationsSection() {
 
   const alerts = form.managerAlerts;
   const alertRows: Array<{ key: keyof typeof alerts; label: string; hint: string }> = [
-    { key: "cashVariance", label: t("dashboard.today.kind.cash_variance"), hint: "When a shift closes with too much or too little cash." },
-    { key: "refundOrVoid", label: "Refund or cancelled payment", hint: "Right away, for every refund or cancelled payment." },
-    { key: "checkinOverride", label: "Member let in anyway", hint: "When someone is let in against the rules." },
-    { key: "discountApproval", label: "Discount approvals", hint: "Discounts waiting for a decision." },
+    { key: "cashVariance", label: t("dashboard.today.kind.cash_variance"), hint: t("settingsCore.text127") },
+    { key: "refundOrVoid", label: t("settingsCore.text128"), hint: t("settingsCore.text129") },
+    { key: "checkinOverride", label: t("settingsCore.text130"), hint: t("settingsCore.text131") },
+    { key: "discountApproval", label: t("settingsCore.text132"), hint: t("settingsCore.text133") },
   ];
   const update = (patch: Partial<NotificationSettings>) => setForm((current) => current ? { ...current, ...patch } : current);
   const quietInvalid = !form.quietHoursStart || !form.quietHoursEnd;
@@ -1098,7 +1118,7 @@ export function NotificationsSection() {
   return (
     <SettingsSection title={t("palette.notifications.title")} description={NOTIFICATIONS_DESCRIPTION}>
       <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <SettingsPanel title="Manager alerts" description="Alerts shown to managers in RIVET." bodyClassName="px-4 py-1 sm:px-5">
+        <SettingsPanel title={t("settingsCore.text134")} description={t("settingsCore.text135")} bodyClassName="px-4 py-1 sm:px-5">
           <div className="divide-y divide-line">
             {alertRows.map((row) => (
               <SettingsToggleRow
@@ -1112,31 +1132,31 @@ export function NotificationsSection() {
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Automatic reminders" description="Members get reminders only when both WhatsApp from RIVET and “Send reminders to members” are on." bodyClassName="px-4 py-1 sm:px-5">
+        <SettingsPanel title={t("settingsCore.text136")} description={t("settingsCore.text137")} bodyClassName="px-4 py-1 sm:px-5">
           <MessagingStatusPanel />
           <div className="divide-y divide-line">
             <SettingsToggleRow
-              label="Renewal reminders"
-              hint="Prepare reminders 14, 7 and 3 days before a membership ends. One day before, add a call task for staff."
+              label={t("settingsCore.text138")}
+              hint={t("settingsCore.text139")}
               checked={form.renewalRecoveryEnabled === true}
               onCheckedChange={(enabled) => update({ renewalRecoveryEnabled: enabled })}
             />
             <SettingsToggleRow
-              label="Send reminders to members"
-              hint={form.automationDeliveryMode === "live" ? "On. Reminders go out by WhatsApp when WhatsApp from RIVET (above) allows it." : "Off. Reminders are kept in RIVET. No member gets a message."}
+              label={t("settingsCore.text140")}
+              hint={form.automationDeliveryMode === "live" ? t("settingsCore.text141") : t("settingsCore.text142")}
               checked={form.automationDeliveryMode === "live"}
               onCheckedChange={(enabled) => update({ automationDeliveryMode: enabled ? "live" : "sandbox" })}
             />
           </div>
           <div className="border-t border-line py-4">
-            <p className="text-[13.5px] font-medium text-ink">Quiet hours</p>
-            <p className="mt-0.5 text-[12px] leading-5 text-ink-3">Messages due in these hours wait and go out when the quiet hours end. Uses your gym&rsquo;s time zone.</p>
+            <p className="text-[13.5px] font-medium text-ink">{t("settingsCore.text143")}</p>
+            <p className="mt-0.5 text-[12px] leading-5 text-ink-3">{t("settingsCore.text144")}</p>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <Field label={t("common.label.from")}>
-                <Input type="time" value={form.quietHoursStart ?? ""} aria-label="Quiet hours from" onChange={(e) => update({ quietHoursStart: e.target.value })} />
+                <Input type="time" value={form.quietHoursStart ?? ""} aria-label={t("settingsCore.text145")} onChange={(e) => update({ quietHoursStart: e.target.value })} />
               </Field>
               <Field label={t("common.label.to")}>
-                <Input type="time" value={form.quietHoursEnd ?? ""} aria-label="Quiet hours to" onChange={(e) => update({ quietHoursEnd: e.target.value })} />
+                <Input type="time" value={form.quietHoursEnd ?? ""} aria-label={t("settingsCore.text146")} onChange={(e) => update({ quietHoursEnd: e.target.value })} />
               </Field>
             </div>
           </div>
@@ -1147,51 +1167,57 @@ export function NotificationsSection() {
         dirty={dirty}
         saving={save.isPending}
         saveDisabled={quietInvalid}
-        saveDisabledReason={quietInvalid ? "Set both quiet hours times before saving." : undefined}
-        error={save.isError ? errorMessage(save.error, "Notification settings were not saved. Try again.") : undefined}
+        saveDisabledReason={quietInvalid ? t("settingsCore.text147") : undefined}
+        error={save.isError ? errorMessage(save.error, t("settingsCore.text148")) : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}
-        saveLabel="Save notifications"
-        guardTitle="Unsaved notification settings"
+        saveLabel={t("settingsCore.text149")}
+        guardTitle={t("settingsCore.text150")}
       />
     </SettingsSection>
   );
 }
 
-const MESSAGING_MODE_LABELS: Record<string, string> = { off: "Off", sandbox: "Test mode", allowlist: "Approved numbers only", live: "On" };
+
 
 function MessagingStatusPanel() {
+  const t = useT();
+  const MESSAGING_MODE_LABELS: Record<string, string> = { off: t("settingsCore.text151"), sandbox: t("settingsCore.text152"), allowlist: t("settingsCore.text153"), live: t("settingsCore.text154") };
+
   const status = useApiQuery(["settings", "messaging-status"], (api) => api.getMessagingStatus());
   if (!status.data) return null;
   const value = status.data;
   return (
     <div className="my-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-sunken/60 px-3 py-2 text-[12.5px] text-ink-2" data-testid="messaging-status">
-      <span className="text-ink-3">WhatsApp from RIVET</span>
+      <span className="text-ink-3">{t("settingsCore.text155")}</span>
       <Badge variant={value.mode === "live" ? "success" : value.mode === "off" ? "neutral" : "warning"} dot>{MESSAGING_MODE_LABELS[value.mode] ?? value.mode}</Badge>
-      <span className="text-ink-3">{value.provider === "twilio" ? (value.whatsappReady ? "WhatsApp is connected and ready." : "WhatsApp is connected, but the sender is not set up yet.") : "WhatsApp is not connected. No messages are sent."}</span>
-      {value.warning ? <span className="text-warning-deep">{value.warning}</span> : null}
+      <span className="text-ink-3">{value.provider === "twilio" ? (value.whatsappReady ? t("settingsCore.text156") : t("settingsCore.text157")) : t("settingsCore.text158")}</span>
+      {value.warning ? <span className="text-warning-deep">{t("settingsCore.messagingModeWarning")}</span> : null}
     </div>
   );
 }
 
-const TEMPLATE_FAMILY_LABELS: Record<string, string> = { renewal: "Renewals", payment: "Payments", class: "Classes", entry: "Entry" };
+
 const CHANNEL_LABELS: Record<string, string> = { whatsapp: "WhatsApp", sms: "SMS" };
 
 function MessageTemplateCatalogue() {
+  const t = useT();
+  const TEMPLATE_FAMILY_LABELS: Record<string, string> = { renewal: t("settingsCore.text159"), payment: t("settingsCore.text160"), class: t("settingsCore.text161"), entry: t("settingsCore.text162") };
+
   const catalogue = useApiQuery(["settings", "message-template-catalogue"], (api) => api.listMessageTemplateCatalogue());
   const [open, setOpen] = useState(false);
   if (!catalogue.data?.length) return null;
   return (
     <div className="border-t border-line py-3">
       <button type="button" className="flex min-h-9 w-full cursor-pointer items-center justify-between gap-3 text-start text-[13.5px] font-medium text-ink" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
-        <span>Message wording <span className="font-normal text-ink-3">· {catalogue.data.length} messages in Arabic and English</span></span>
-        <span className="text-[12.5px] font-normal text-ink-3">{open ? "Hide" : "Show"}</span>
+        <span>{t("settingsCore.text163")}{" "}<span className="font-normal text-ink-3">· {t("settingsCore.templateCount", { count: catalogue.data.length })}</span></span>
+        <span className="text-[12.5px] font-normal text-ink-3">{open ? t("settingsCore.text164") : t("settingsCore.text165")}</span>
       </button>
       {open ? (
         <ul className="mt-2 divide-y divide-line" data-testid="message-template-catalogue">
           {catalogue.data.map((template) => (
             <li key={template.key} className="py-3 text-[12.5px]">
-              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-ink">{template.name}</span><span className="text-[12px] text-ink-3">{TEMPLATE_FAMILY_LABELS[template.family] ?? template.family} · {template.channels.map((channel) => CHANNEL_LABELS[channel] ?? channel).join(", ")}</span></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-ink">{templateName(t, template.key, template.name)}</span><span className="text-[12px] text-ink-3">{TEMPLATE_FAMILY_LABELS[template.family] ?? template.family} · {template.channels.map((channel) => CHANNEL_LABELS[channel] ?? channel).join(", ")}</span></div>
               <p className="mt-1.5 leading-5 text-ink-2">{template.bodyEn}</p>
               <p className="mt-1 leading-5 text-ink-2" dir="rtl">{template.bodyAr}</p>
             </li>
@@ -1206,3 +1232,14 @@ function MessageTemplateCatalogue() {
 // Operational rules and hours
 // ---------------------------------------------------------------------------
 export { HoursAndTrialsSection, OperationalRulesSection, normalizeOperationalPolicies } from "@/features/settings/operational-settings-sections";
+
+function templateName(t: TFunction, key: string, fallback: string): string {
+  const names: Record<string, string> = {
+    renewal_7d: t("settingsCore.templateRenewal7"), renewal_3d: t("settingsCore.templateRenewal3"),
+    renewal_today: t("settingsCore.templateRenewalToday"), renewal_expired_3d: t("settingsCore.templateRenewalExpired"),
+    payment_due_3d: t("settingsCore.templatePayment3"), payment_due_today: t("settingsCore.templatePaymentToday"),
+    payment_overdue_3d: t("settingsCore.templatePaymentOverdue"), class_booking_confirmation: t("settingsCore.templateClassConfirmation"),
+    class_reminder: t("settingsCore.templateClassReminder"), entry_pass: t("settingsCore.templateEntry"),
+  };
+  return names[key] ?? fallback;
+}

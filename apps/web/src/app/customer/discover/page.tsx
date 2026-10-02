@@ -1,4 +1,5 @@
 "use client";
+import { publicProfileLabel } from "@/lib/i18n/public-profile";
 import { searchKey } from "@/lib/utils/text";
 import { useFormat } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
@@ -62,9 +63,9 @@ function DiscoverGyms() {
 
   const categories = [ALL, ...Array.from(new Set(gyms.map((gym) => gym.category)))];
   const filtered = useMemo(() => gyms.filter((gym) => {
-    const haystack = searchKey(`${gym.name} ${gym.areas.join(" ")} ${gym.city} ${gym.category}`);
+    const haystack = searchKey(`${gym.name} ${gym.areas.join(" ")} ${gym.city} ${publicProfileLabel(t, gym.category)}`);
     return haystack.includes(searchKey(search)) && (category === ALL || gym.category === category);
-  }), [category, gyms, search]);
+  }), [category, gyms, search, t]);
   const clear = () => {
     setSearch("");
     router.replace(pathname, { scroll: false });
@@ -99,7 +100,7 @@ function DiscoverGyms() {
             <div className={cn("mt-3", tabListClassName)} role="group" aria-label={t("customerPortal.gymCategory")}>
               {categories.map((item) => (
                 <button key={item} type="button" aria-pressed={category === item} className={tabTriggerClassName} onClick={() => setParams({ category: item === ALL ? undefined : item })}>
-                  {item === ALL ? t("customerPortal.allGyms") : item}
+                  {item === ALL ? t("customerPortal.allGyms") : publicProfileLabel(t, item)}
                 </button>
               ))}
             </div>
@@ -137,7 +138,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
               </h2>
               {gym.featured ? <Badge variant="neutral">{t("customerPortal.featured")}</Badge> : null}
             </div>
-            <p className="mt-0.5 text-[12.5px] text-ink-3">{gym.category} · {gym.areas.join(", ") || gym.city}</p>
+            <p className="mt-0.5 text-[12.5px] text-ink-3">{publicProfileLabel(t, gym.category)} · {gym.areas.join(", ") || gym.city}</p>
           </div>
         </div>
         <p className="mt-3 line-clamp-2 text-[13.5px] leading-relaxed text-ink-2">{locale === "ar" ? gym.taglineAr || gym.tagline : gym.tagline}</p>

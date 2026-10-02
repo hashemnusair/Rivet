@@ -1,4 +1,5 @@
 "use client";
+import { publicProfileLabel } from "@/lib/i18n/public-profile";
 import { latinDigits } from "@/lib/utils/text";
 import { localizeApiError, isApiError } from "@/lib/api/errors";
 import { useFormat } from "@/lib/i18n/format";
@@ -197,7 +198,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       <header className="mt-4 flex flex-wrap items-center gap-3 sm:gap-4">
         <GymMark name={gym.name} shortName={gym.shortName} logoUrl={gym.logo?.url} accent={gym.accent} size="lg" />
         <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-medium text-ink-3">{gym.category} · {gym.city}</p>
+          <p className="text-[12px] font-medium text-ink-3">{publicProfileLabel(t, gym.category)} · {gym.city}</p>
           <h1 className="mt-0.5 font-display text-[26px] font-semibold leading-tight tracking-tight">{gym.name}</h1>
         </div>
         {!booked ? <Button asChild className="w-full sm:w-auto lg:hidden"><a href="#book-trial"><CalendarCheck /> {" "}{t("customerPortal.bookFreeTrial")}</a></Button> : null}
@@ -236,7 +237,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
           {gym.amenities.length ? (
             <section aria-labelledby="gym-amenities-title">
               <h2 id="gym-amenities-title" className="text-[17px] font-semibold">{t("customerPortal.amenities")}</h2>
-              <div className="mt-3 flex flex-wrap gap-2">{gym.amenities.map((amenity) => <Badge key={amenity} variant="neutral" className="px-2.5 py-1 text-[12.5px]">{amenity}</Badge>)}</div>
+              <div className="mt-3 flex flex-wrap gap-2">{gym.amenities.map((amenity) => <Badge key={amenity} variant="neutral" className="px-2.5 py-1 text-[12.5px]">{publicProfileLabel(t, amenity)}</Badge>)}</div>
             </section>
           ) : null}
 

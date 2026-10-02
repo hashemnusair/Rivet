@@ -1,4 +1,6 @@
 "use client";
+import { useFormat } from "@/lib/i18n/format";
+import { roleLabel } from "@/lib/i18n/labels";
 import { useT } from "@/lib/i18n/provider";
 
 import { ChecklistAssigneeSelect } from "@/features/checklists/checklist-assignment";
@@ -20,15 +22,8 @@ import { useApp } from "@/lib/providers/app-providers";
 import type { ChecklistRole, ChecklistTemplate, ChecklistType, UpsertChecklistTemplateInput, Zone } from "@/lib/domain/types";
 import { SettingsPanel, SettingsSection } from "@/features/settings/settings-layout";
 
-const ROLE_LABELS: Record<ChecklistRole, string> = {
-  owner: "Owner",
-  manager: "Manager",
-  sales: "Sales",
-  receptionist: "Reception",
-  trainer: "Trainer",
-};
 
-const DESCRIPTION = "The opening and closing jobs your team does every day. Each branch has its own lists. Staff tick items off on the Daily checklist page.";
+
 
 interface DraftItem {
   id?: string;
@@ -70,6 +65,9 @@ function draftFrom(template: ChecklistTemplate | undefined, branchId: string, ty
 
 export function ChecklistsSection() {
   const t = useT();
+  const f = useFormat();
+  const DESCRIPTION = t("settingsDetails.text146");
+
   const { session } = useApp();
   const invalidate = useInvalidate();
   const branches = session?.branches ?? [];
@@ -81,7 +79,7 @@ export function ChecklistsSection() {
   const zones = useMemo(() => zonesQuery.data ?? [], [zonesQuery.data]);
 
   const save = useApiMutation((api, input: UpsertChecklistTemplateInput) => api.upsertChecklistTemplate(input), {
-    successMessage: "Checklist saved.",
+    successMessage: t("settingsDetails.text147"),
     onSuccess: async () => {
       setDraft(undefined);
       await invalidate([qk.checklistTemplates(branchId)]);
@@ -120,42 +118,42 @@ export function ChecklistsSection() {
 
   const templates = templatesQuery.data ?? [];
   const branchName = branches.find((branch) => branch.id === branchId)?.name;
-  const newAction = <Button onClick={() => setDraft(draftFrom(undefined, branchId, "opening"))} disabled={!branchId}><Plus /> New checklist</Button>;
+  const newAction = <Button onClick={() => setDraft(draftFrom(undefined, branchId, "opening"))} disabled={!branchId}><Plus /> {" "}{t("settingsDetails.text148")}</Button>;
 
   return (
-    <SettingsSection title="Daily checklists" description={DESCRIPTION} actions={newAction}>
+    <SettingsSection title={t("settingsCore.text193")} description={DESCRIPTION} actions={newAction}>
       {branches.length === 0 ? (
-        <EmptyState layout="section" title="No branches yet" description="Add a branch under Branches before creating its daily checklists." />
+        <EmptyState layout="section" title={t("settingsCore.text034")} description={t("settingsDetails.text149")} />
       ) : (
         <SettingsPanel
           className="max-w-4xl"
-          title={branchName ? `Checklists for ${branchName}` : "Checklists"}
+          title={branchName ? t("settingsDetails.checklistsFor", { branch: branchName }) : t("settingsDetails.text150")}
           bodyClassName="p-0"
           control={branches.length > 1 ? (
             <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
               <span>{t("common.label.branch")}</span>
               <Select value={branchId} onValueChange={setBranchId}>
-                <SelectTrigger aria-label="Checklist branch" className="w-52"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("settingsDetails.text151")} className="w-52"><SelectValue /></SelectTrigger>
                 <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
               </Select>
             </label>
           ) : undefined}
         >
           {templatesQuery.isLoading ? <div className="p-4 sm:p-5"><Skeleton className="h-32 w-full" /></div> : templatesQuery.error ? <ErrorState layout="section" className="m-4 sm:m-5" onRetry={() => void templatesQuery.refetch()} /> : templates.length === 0 ? (
-            <EmptyState layout="section" className="m-4 sm:m-5" icon={ClipboardCheck} title="No checklists yet" description="Add your opening checklist first. The front desk sees it tomorrow morning." action={<Button size="sm" onClick={() => setDraft(draftFrom(undefined, branchId, "opening"))}><Plus /> New checklist</Button>} />
+            <EmptyState layout="section" className="m-4 sm:m-5" icon={ClipboardCheck} title={t("settingsDetails.text152")} description={t("settingsDetails.text153")} action={<Button size="sm" onClick={() => setDraft(draftFrom(undefined, branchId, "opening"))}><Plus /> {" "}{t("settingsDetails.text148")}</Button>} />
           ) : (
-            <ul className="divide-y divide-line" aria-label="Checklists">
+            <ul className="divide-y divide-line" aria-label={t("settingsDetails.text150")}>
               {templates.map((template) => (
                 <li key={template.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-[13.5px] font-medium">{template.name}</p>
-                      <Badge variant="neutral">{template.type === "opening" ? "Opening" : "Closing"}</Badge>
-                      {!template.active ? <Badge variant="outline">Turned off</Badge> : null}
+                      <Badge variant="neutral">{template.type === "opening" ? t("settingsDetails.text154") : t("settingsDetails.text155")}</Badge>
+                      {!template.active ? <Badge variant="outline">{t("settingsDetails.text156")}</Badge> : null}
                     </div>
-                    <p className="mt-0.5 text-[12.5px] text-ink-3">Due <span className="tabular">{template.dueTime}</span> · {template.assignedUserName ?? ROLE_LABELS[template.assignedRole]} · {template.items.length} item{template.items.length === 1 ? "" : "s"}</p>
+                    <p className="mt-0.5 text-[12.5px] text-ink-3">{t("settingsDetails.text144")}{" "}<span className="tabular">{f.clock(template.dueTime)}</span> · {template.assignedUserName ?? roleLabel(t, template.assignedRole)} · {t("settingsDetails.itemCount", { count: template.items.length })}</p>
                   </div>
-                  <Button size="sm" variant="secondary" data-touch-target aria-label={`Edit ${template.name}`} onClick={() => setDraft(draftFrom(template, branchId, template.type))}>{t("common.action.edit")}</Button>
+                  <Button size="sm" variant="secondary" data-touch-target aria-label={t("settingsCore.editNamed", { name: template.name })} onClick={() => setDraft(draftFrom(template, branchId, template.type))}>{t("common.action.edit")}</Button>
                 </li>
               ))}
             </ul>
@@ -166,48 +164,48 @@ export function ChecklistsSection() {
       <Dialog open={Boolean(draft)} onOpenChange={(open) => { if (!open) setDraft(undefined); }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{draft?.templateId ? "Edit checklist" : "New checklist"}</DialogTitle>
-            <DialogDescription>{branchName ? `For ${branchName}. ` : ""}Staff see the items in this order.</DialogDescription>
+            <DialogTitle>{draft?.templateId ? t("settingsDetails.text157") : t("settingsDetails.text148")}</DialogTitle>
+            <DialogDescription>{branchName ? t("settingsDetails.forBranch", { branch: branchName }) : ""}{t("settingsDetails.text158")}</DialogDescription>
           </DialogHeader>
           {draft ? (
             <DialogBody className="space-y-5">
               <FieldGrid className="sm:grid-cols-2">
-                <Field label={t("common.label.name")} required><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Opening walkthrough" /></Field>
+                <Field label={t("common.label.name")} required><Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder={t("settingsDetails.text159")} /></Field>
                 <Field label={t("members.tabs.checkIns.when")}>
                   <Select value={draft.type} onValueChange={(value) => setDraft({ ...draft, type: value as ChecklistType })}>
-                    <SelectTrigger aria-label="Checklist type"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="opening">Opening</SelectItem><SelectItem value="closing">Closing</SelectItem></SelectContent>
+                    <SelectTrigger aria-label={t("settingsDetails.text160")}><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="opening">{t("settingsDetails.text154")}</SelectItem><SelectItem value="closing">{t("settingsDetails.text155")}</SelectItem></SelectContent>
                   </Select>
                 </Field>
-                <Field label="Due by" hint="Branch time"><Input type="time" value={draft.dueTime} onChange={(event) => setDraft({ ...draft, dueTime: event.target.value })} /></Field>
-                <Field label="Who runs it">
+                <Field label={t("settingsDetails.text161")} hint={t("settingsDetails.text162")}><Input type="time" value={draft.dueTime} onChange={(event) => setDraft({ ...draft, dueTime: event.target.value })} /></Field>
+                <Field label={t("settingsDetails.text163")}>
                   <Select value={draft.assignedRole} onValueChange={(value) => setDraft({ ...draft, assignedRole: value as ChecklistRole })}>
-                    <SelectTrigger aria-label="Who runs it"><SelectValue /></SelectTrigger>
-                    <SelectContent>{(Object.keys(ROLE_LABELS) as ChecklistRole[]).map((role) => <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>)}</SelectContent>
+                    <SelectTrigger aria-label={t("settingsDetails.text163")}><SelectValue /></SelectTrigger>
+                    <SelectContent>{(["owner", "manager", "sales", "receptionist", "trainer"] as ChecklistRole[]).map((role) => <SelectItem key={role} value={role}>{roleLabel(t, role)}</SelectItem>)}</SelectContent>
                   </Select>
                 </Field>
                 <ChecklistAssigneeSelect branchId={draft.branchId} value={draft.assignedUserId} onChange={assignedUserId => setDraft({ ...draft, assignedUserId })} />
               </FieldGrid>
 
               <div>
-                <p className="text-[13px] font-medium text-ink">Items, in order</p>
+                <p className="text-[13px] font-medium text-ink">{t("settingsDetails.text164")}</p>
                 <ol className="mt-2 space-y-2">
                   {draft.items.map((item, index) => (
                     <li key={index} className="rounded-md border border-line p-3">
                       <div className="flex items-center gap-1.5">
-                        <Input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder="What needs doing?" aria-label={`Item ${index + 1} label`} />
-                        <Button variant="ghost" size="icon" aria-label={`Move item ${index + 1} up`} disabled={index === 0} onClick={() => moveItem(index, -1)}><ArrowUp /></Button>
-                        <Button variant="ghost" size="icon" aria-label={`Move item ${index + 1} down`} disabled={index === draft.items.length - 1} onClick={() => moveItem(index, 1)}><ArrowDown /></Button>
-                        <Button variant="ghost" size="icon" aria-label={`Remove item ${index + 1}`} disabled={draft.items.length === 1} onClick={() => setDraft({ ...draft, items: draft.items.filter((_, i) => i !== index) })}><X /></Button>
+                        <Input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} placeholder={t("settingsDetails.text165")} aria-label={t("settingsDetails.itemLabel", { number: index + 1 })} />
+                        <Button variant="ghost" size="icon" aria-label={t("settingsDetails.itemUp", { number: index + 1 })} disabled={index === 0} onClick={() => moveItem(index, -1)}><ArrowUp /></Button>
+                        <Button variant="ghost" size="icon" aria-label={t("settingsDetails.itemDown", { number: index + 1 })} disabled={index === draft.items.length - 1} onClick={() => moveItem(index, 1)}><ArrowDown /></Button>
+                        <Button variant="ghost" size="icon" aria-label={t("settingsDetails.itemRemove", { number: index + 1 })} disabled={draft.items.length === 1} onClick={() => setDraft({ ...draft, items: draft.items.filter((_, i) => i !== index) })}><X /></Button>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px] text-ink-2">
-                        <label className="flex min-h-9 cursor-pointer items-center gap-2"><Checkbox checked={item.required} onCheckedChange={(checked: boolean) => updateItem(index, { required: checked })} aria-label={`Item ${index + 1} required`} />{" "}{t("common.state.required")}</label>
-                        <label className="flex min-h-9 cursor-pointer items-center gap-2"><Checkbox checked={item.offerMaintenance} onCheckedChange={(checked: boolean) => updateItem(index, { offerMaintenance: checked })} aria-label={`Item ${index + 1} offers maintenance job`} /> Offer a maintenance job if it fails</label>
+                        <label className="flex min-h-9 cursor-pointer items-center gap-2"><Checkbox checked={item.required} onCheckedChange={(checked: boolean) => updateItem(index, { required: checked })} aria-label={t("settingsDetails.itemRequired", { number: index + 1 })} />{" "}{t("common.state.required")}</label>
+                        <label className="flex min-h-9 cursor-pointer items-center gap-2"><Checkbox checked={item.offerMaintenance} onCheckedChange={(checked: boolean) => updateItem(index, { offerMaintenance: checked })} aria-label={t("settingsDetails.itemMaintenance", { number: index + 1 })} /> {" "}{t("settingsDetails.text166")}</label>
                         {zones.length > 0 ? (
                           <Select value={item.zoneId || "none"} onValueChange={(value) => updateItem(index, { zoneId: value === "none" ? "" : value })}>
-                            <SelectTrigger sizeVariant="sm" className="w-44" aria-label={`Item ${index + 1} gym area`}><SelectValue /></SelectTrigger>
+                            <SelectTrigger sizeVariant="sm" className="w-44" aria-label={t("settingsDetails.itemArea", { number: index + 1 })}><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">No gym area</SelectItem>
+                              <SelectItem value="none">{t("settingsDetails.text167")}</SelectItem>
                               {zones.map((zone: Zone) => <SelectItem key={zone.id} value={zone.id}>{zone.name}</SelectItem>)}
                             </SelectContent>
                           </Select>
@@ -216,19 +214,19 @@ export function ChecklistsSection() {
                     </li>
                   ))}
                 </ol>
-                <Button variant="secondary" size="sm" className="mt-2" disabled={draft.items.length >= 50} onClick={() => setDraft({ ...draft, items: [...draft.items, { ...EMPTY_ITEM }] })}><Plus /> Add item</Button>
+                <Button variant="secondary" size="sm" className="mt-2" disabled={draft.items.length >= 50} onClick={() => setDraft({ ...draft, items: [...draft.items, { ...EMPTY_ITEM }] })}><Plus /> {" "}{t("settingsDetails.text168")}</Button>
               </div>
 
-              <label className="flex min-h-9 cursor-pointer items-start gap-2.5 text-[13px] text-ink"><Checkbox className="mt-0.5" checked={draft.active} onCheckedChange={(checked: boolean) => setDraft({ ...draft, active: checked })} aria-label="Checklist active" /> <span>Active. Your team sees it every day. If you turn it off, past results are kept.</span></label>
+              <label className="flex min-h-9 cursor-pointer items-start gap-2.5 text-[13px] text-ink"><Checkbox className="mt-0.5" checked={draft.active} onCheckedChange={(checked: boolean) => setDraft({ ...draft, active: checked })} aria-label={t("settingsDetails.text169")} /> <span>{t("settingsDetails.text170")}</span></label>
 
               <details className="rounded-md bg-sunken p-3">
-                <summary className="cursor-pointer text-[13px] font-medium text-ink">Preview what staff will see</summary>
+                <summary className="cursor-pointer text-[13px] font-medium text-ink">{t("settingsDetails.text171")}</summary>
                 <ul className="mt-2 space-y-1.5">
                   {draft.items.filter((item) => item.label.trim()).map((item, index) => (
                     <li key={index} className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2.5 text-[13px]">
                       <span aria-hidden className="size-4 rounded-full border border-line-3" />
                       <span className="flex-1">{item.label}</span>
-                      {!item.required ? <span className="text-[12px] text-ink-3">optional</span> : null}
+                      {!item.required ? <span className="text-[12px] text-ink-3">{t("settingsDetails.text173")}</span> : null}
                     </li>
                   ))}
                 </ul>
@@ -237,7 +235,7 @@ export function ChecklistsSection() {
           ) : null}
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDraft(undefined)}>{t("common.action.cancel")}</Button>
-            <Button loading={save.isPending} disabled={!draft || !draft.name.trim() || draft.items.every((item) => !item.label.trim())} onClick={submit}>Save checklist</Button>
+            <Button loading={save.isPending} disabled={!draft || !draft.name.trim() || draft.items.every((item) => !item.label.trim())} onClick={submit}>{t("settingsDetails.text172")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Check, RotateCcw, Save } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
@@ -125,12 +126,12 @@ export function SettingsSaveBar({
   saving,
   onSave,
   onDiscard,
-  saveLabel = "Save changes",
+  saveLabel: suppliedSaveLabel,
   saveDisabled = false,
   saveDisabledReason,
   error,
-  guardTitle = "Unsaved settings changes",
-  guardDescription = "Save your changes before you leave, discard them, or stay on this page.",
+  guardTitle: suppliedGuardTitle,
+  guardDescription: suppliedGuardDescription,
 }: {
   dirty: boolean;
   saving: boolean;
@@ -144,6 +145,10 @@ export function SettingsSaveBar({
   guardTitle?: string;
   guardDescription?: string;
 }) {
+  const t = useT();
+  const saveLabel = suppliedSaveLabel ?? t("settingsCore.text166");
+  const guardTitle = suppliedGuardTitle ?? t("settingsCore.text167");
+  const guardDescription = suppliedGuardDescription ?? t("settingsCore.text168");
   const { setGuard } = useUnsavedChanges();
   const actions = useRef({ onSave, onDiscard });
   const wasSaving = useRef(false);
@@ -161,13 +166,13 @@ export function SettingsSaveBar({
     setGuard({
       title: guardTitle,
       description: guardDescription,
-      detail: saveDisabledReason ?? "Your saved settings stay in use until you save these changes.",
+      detail: saveDisabledReason ?? t("settingsCore.text169"),
       saveDisabledReason,
       save: () => actions.current.onSave(),
       discard: async () => { await actions.current.onDiscard(); },
     });
     return () => setGuard(null);
-  }, [dirty, guardDescription, guardTitle, saveDisabledReason, setGuard]);
+  }, [dirty, guardDescription, guardTitle, saveDisabledReason, setGuard, t]);
 
   useEffect(() => {
     const saveFromKeyboard = (event: KeyboardEvent) => {
@@ -195,12 +200,12 @@ export function SettingsSaveBar({
   if (!dirty && !saving && !savedVisible) return null;
 
   const saved = savedVisible && !dirty && !saving;
-  const title = saved ? "Changes saved" : saving ? "Saving changes…" : "Unsaved changes";
+  const title = saved ? t("settingsCore.text170") : saving ? t("settingsCore.text171") : t("settingsCore.text172");
   const detail = saved
-    ? "Your new settings are now in use."
+    ? t("settingsCore.text173")
     : saving
-      ? "Keep this page open until saving is done."
-      : error ?? saveDisabledReason ?? "Save before you leave this section, or discard your changes.";
+      ? t("settingsCore.text174")
+      : error ?? saveDisabledReason ?? t("settingsCore.text175");
 
   return (
     <div
@@ -220,7 +225,7 @@ export function SettingsSaveBar({
       </div>
       {dirty || saving ? (
         <div className="flex items-center gap-2">
-          <Button type="button" variant="secondary" disabled={saving} onClick={() => void actions.current.onDiscard()}><RotateCcw /> Discard</Button>
+          <Button type="button" variant="secondary" disabled={saving} onClick={() => void actions.current.onDiscard()}><RotateCcw /> {" "}{t("settingsCore.text176")}</Button>
           <Button type="button" loading={saving} disabled={saveDisabled} title={saveDisabledReason} onClick={() => void actions.current.onSave().catch(() => undefined)}><Save /> {saveLabel}</Button>
         </div>
       ) : null}

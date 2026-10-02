@@ -1,6 +1,7 @@
 import type { apiErrors as EnApiErrors } from "../en/apiErrors";
 
 export const apiErrors: typeof EnApiErrors = {
+  paymentSettingsPartial: "تعذّر حفظ بعض إعدادات الدفعات.",
   "unexpected": "حدث خطأ. يرجى المحاولة مجددًا.",
   "validation": "يرجى مراجعة الحقول المحدّدة والمحاولة مجددًا.",
   "forbidden": "ليس لديك صلاحية لتنفيذ هذا الإجراء. تواصل مع مالك النادي.",

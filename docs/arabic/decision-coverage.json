@@ -13,10 +13,12 @@
     },
     {
       "id": "buttons",
-      "keys": [],
+      "keys": [
+        "settingsCore.text166"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -169,7 +171,8 @@
       "keys": [
         "domain.role.receptionist",
         "marketing.ops.reception.label",
-        "nav.item.reception"
+        "nav.item.reception",
+        "settingsCore.text050"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -313,7 +316,8 @@
         "members.list.title",
         "members.list.listLabel",
         "nav.item.members",
-        "palette.groups.members"
+        "palette.groups.members",
+        "publicTerms.text013"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -795,7 +799,9 @@
     },
     {
       "id": "staff",
-      "keys": [],
+      "keys": [
+        "settingsCore.text078"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -827,7 +833,7 @@
           "line": 529
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -1016,7 +1022,8 @@
       "id": "save",
       "keys": [
         "common.action.save",
-        "common.action.saveChanges"
+        "common.action.saveChanges",
+        "settingsCore.text166"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -1691,7 +1698,8 @@
         "domain.membershipStatus.active",
         "marketing.device.phone.active",
         "members.list.filters.recordActive",
-        "renewFlow.adjust.membershipStatus.active"
+        "renewFlow.adjust.membershipStatus.active",
+        "settingsCore.text001"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -1830,7 +1838,8 @@
         "memberProfile.pt.orderStatus.cancelled",
         "members.list.filters.cancelled",
         "renewFlow.adjust.membershipStatus.cancelled",
-        "renewFlow.receipt.cancelled"
+        "renewFlow.receipt.cancelled",
+        "settingsDetails.text123"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2273,7 +2282,8 @@
     {
       "id": "allow-entry",
       "keys": [
-        "domain.checkInDecision.overridden"
+        "domain.checkInDecision.overridden",
+        "settingsCore.text130"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2541,7 +2551,8 @@
       "id": "paid",
       "keys": [
         "domain.paymentStatus.paid",
-        "memberProfile.pt.orderStatus.active"
+        "memberProfile.pt.orderStatus.active",
+        "settingsDetails.text120"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2749,7 +2760,8 @@
         "members.tabs.payments.receipt",
         "palette.kind.receipt",
         "renewFlow.payment.receipt",
-        "renewFlow.receipt.heading"
+        "renewFlow.receipt.heading",
+        "settingsDetails.text181"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2893,7 +2905,7 @@
       ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -2966,7 +2978,7 @@
           "line": 62
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -2981,7 +2993,7 @@
           "line": 63
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -3071,7 +3083,7 @@
           "line": 64
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -3533,7 +3545,9 @@
     },
     {
       "id": "waitlist",
-      "keys": [],
+      "keys": [
+        "settingsDetails.text030"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3541,7 +3555,7 @@
           "line": 310
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4578,7 +4592,8 @@
     {
       "id": "roles",
       "keys": [
-        "setup.rolesTitle"
+        "setup.rolesTitle",
+        "settingsCore.text185"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -4599,7 +4614,7 @@
           "line": 732
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4988,10 +5003,12 @@
     },
     {
       "id": "unsaved",
-      "keys": [],
+      "keys": [
+        "settingsCore.text172"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -5053,7 +5070,9 @@
     },
     {
       "id": "profile",
-      "keys": [],
+      "keys": [
+        "settingsCore.text178"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5077,7 +5096,7 @@
           "line": 5043
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -5285,7 +5304,8 @@
       "id": "trial-plan",
       "keys": [
         "marketing.vocabulary.freeTrial",
-        "marketing.loop.stages.trial.label"
+        "marketing.loop.stages.trial.label",
+        "settingsDetails.text124"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -5304,7 +5324,9 @@
     {
       "id": "privacy",
       "keys": [
-        "auth.chrome.privacy"
+        "auth.chrome.privacy",
+        "publicPrivacy.text124",
+        "publicTerms.text094"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -5355,7 +5377,9 @@
     {
       "id": "terms",
       "keys": [
-        "auth.chrome.terms"
+        "auth.chrome.terms",
+        "publicPrivacy.text126",
+        "publicTerms.text092"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -5508,7 +5532,9 @@
     },
     {
       "id": "billing",
-      "keys": [],
+      "keys": [
+        "settingsDetails.text128"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5524,12 +5550,14 @@
           "line": 48
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "past-due",
-      "keys": [],
+      "keys": [
+        "settingsDetails.text121"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5569,12 +5597,14 @@
           "line": 45
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "suspended",
-      "keys": [],
+      "keys": [
+        "settingsDetails.text126"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -5594,7 +5624,7 @@
           "line": 161
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -5625,7 +5655,8 @@
       "id": "notifications",
       "keys": [
         "nav.aria.notifications",
-        "palette.notifications.title"
+        "palette.notifications.title",
+        "settingsCore.text188"
       ],
       "rules": [],
       "candidateOccurrences": [

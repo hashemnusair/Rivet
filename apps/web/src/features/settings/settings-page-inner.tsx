@@ -9,6 +9,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/shared/chrome";
 import { ForbiddenState } from "@/components/ui/states";
 import { Input } from "@/components/ui/input";
+import { searchKey } from "@/lib/utils/text";
 import { cn } from "@/lib/utils/cn";
 import {
   BranchesSection,
@@ -50,57 +51,55 @@ interface SettingsGroup {
   entries: SettingsEntry[];
 }
 
-const SETTINGS_GROUPS: SettingsGroup[] = [
+function settingsGroups(t: TFunction): SettingsGroup[] { return [
   {
-    label: "Account",
+    label: t("settingsCore.text177"),
     entries: [
-      { id: "my-profile", label: "My profile", keywords: "account name display name phone email role personal", component: MyProfileSection },
+      { id: "my-profile", label: t("settingsCore.text178"), keywords: t("settingsCore.text201"), component: MyProfileSection },
     ],
   },
   {
-    label: "Gym",
+    label: t("settingsCore.text179"),
     entries: [
-      { id: "organization", label: "Gym details", keywords: "organization identity contact gym name timezone time zone locale language phone country", permission: "settings.manage", component: OrganizationSection },
-      { id: "brand", label: "Brand kit", keywords: "identity sidebar menu logo palette primary main color colour theme", permission: "settings.manage", component: BrandKitSection },
-      { id: "profile", label: "Public profile", keywords: "page publish website directory photos banner cover tagline amenities category", permission: "profiles.manage", component: GymPublicProfileSection },
-      { id: "branches", label: "Branches", keywords: "locations address codes", permission: "settings.manage", component: BranchesSection },
-      { id: "spaces", label: "Gym areas", keywords: "spaces zones areas rooms floors studios", permission: "settings.manage", component: GymSpacesSection },
-      { id: "agreement", label: "Agreement", keywords: "legal contract subscription agreement signature signed terms privacy", permission: "settings.manage", component: AgreementSection },
-      { id: "subscription", label: "Subscription & invoices", keywords: "billing invoice invoices pdf plan rivet fees paid past due receipt", permission: "settings.manage", component: SubscriptionSection },
+      { id: "organization", label: t("settingsCore.text008"), keywords: t("settingsCore.text202"), permission: "settings.manage", component: OrganizationSection },
+      { id: "brand", label: t("settingsCore.text180"), keywords: t("settingsCore.text203"), permission: "settings.manage", component: BrandKitSection },
+      { id: "profile", label: t("settingsCore.text181"), keywords: t("settingsCore.text204"), permission: "profiles.manage", component: GymPublicProfileSection },
+      { id: "branches", label: t("settingsCore.text033"), keywords: t("settingsCore.text205"), permission: "settings.manage", component: BranchesSection },
+      { id: "spaces", label: t("settingsCore.text058"), keywords: t("settingsCore.text206"), permission: "settings.manage", component: GymSpacesSection },
+      { id: "agreement", label: t("settingsCore.text182"), keywords: t("settingsCore.text207"), permission: "settings.manage", component: AgreementSection },
+      { id: "subscription", label: t("settingsCore.text183"), keywords: t("settingsCore.text208"), permission: "settings.manage", component: SubscriptionSection },
     ],
   },
   {
-    label: "People",
+    label: t("settingsCore.text184"),
     entries: [
-      { id: "users", label: "Staff", keywords: "users team accounts invite deactivate branch access", permission: "users.manage", component: UsersSection },
-      { id: "roles", label: "Roles & access", keywords: "permissions matrix owner manager receptionist trainer coach", permission: "users.manage", component: RolesSection },
+      { id: "users", label: t("settingsCore.text078"), keywords: t("settingsCore.text209"), permission: "users.manage", component: UsersSection },
+      { id: "roles", label: t("settingsCore.text185"), keywords: t("settingsCore.text210"), permission: "users.manage", component: RolesSection },
     ],
   },
   {
-    label: "Money",
+    label: t("settingsCore.text186"),
     entries: [
-      { id: "payments", label: "Payments", keywords: "money methods cash card cliq bank transfer discount approval limits", permission: "settings.manage", component: PaymentsSection },
-      { id: "receipts", label: "Receipts & tax", keywords: "invoice vat rate prefix numbering footer", permission: "settings.manage", component: ReceiptsSection },
+      { id: "payments", label: t("settingsCore.text160"), keywords: t("settingsCore.text211"), permission: "settings.manage", component: PaymentsSection },
+      { id: "receipts", label: t("settingsCore.text111"), keywords: t("settingsCore.text212"), permission: "settings.manage", component: ReceiptsSection },
     ],
   },
   {
-    label: "Messages",
+    label: t("settingsCore.text187"),
     entries: [
-      { id: "notifications", label: "Notifications", keywords: "reminders templates manager alerts automation delivery whatsapp sms email renewals variance quiet hours", permission: "settings.manage", component: NotificationsSection },
-      { id: "email", label: "Emails", keywords: "operational email sender outbox delivery member service preferences mandatory notices", permission: "settings.manage", component: OperationalEmailSection },
+      { id: "notifications", label: t("settingsCore.text188"), keywords: t("settingsCore.text213"), permission: "settings.manage", component: NotificationsSection },
+      { id: "email", label: t("settingsCore.text189"), keywords: t("settingsCore.text214"), permission: "settings.manage", component: OperationalEmailSection },
     ],
   },
   {
-    label: "Daily work",
+    label: t("settingsCore.text190"),
     entries: [
-      { id: "operations", label: "Gym rules", keywords: "operational rules policies entry check-in scan freeze referral renewal lifecycle retention class booking waitlist", permission: "settings.manage", component: OperationalRulesSection },
-      { id: "hours", label: "Hours & trials", keywords: "opening closing operating schedule free trial windows branch", permission: "settings.manage", component: HoursAndTrialsSection },
-      { id: "checklists", label: "Daily checklists", keywords: "opening closing walkthrough morning night tasks", permission: "operations.manage", component: ChecklistsSection },
+      { id: "operations", label: t("settingsCore.text191"), keywords: t("settingsCore.text215"), permission: "settings.manage", component: OperationalRulesSection },
+      { id: "hours", label: t("settingsCore.text192"), keywords: t("settingsCore.text216"), permission: "settings.manage", component: HoursAndTrialsSection },
+      { id: "checklists", label: t("settingsCore.text193"), keywords: t("settingsCore.text217"), permission: "operations.manage", component: ChecklistsSection },
     ],
   },
-];
-
-const ALL_ENTRIES = SETTINGS_GROUPS.flatMap((group) => group.entries);
+]; }
 
 /** The access is named exactly as it is on the Roles & access page, so the two never drift apart. */
 const accessNeeded = (t: TFunction, permission: Permission, task: string) =>
@@ -108,6 +107,8 @@ const accessNeeded = (t: TFunction, permission: Permission, task: string) =>
 
 export function SettingsPageInner() {
   const t = useT();
+  const SETTINGS_GROUPS = useMemo(() => settingsGroups(t), [t]);
+  const ALL_ENTRIES = useMemo(() => SETTINGS_GROUPS.flatMap(group => group.entries), [SETTINGS_GROUPS]);
   const PERMISSION_COPY: Record<string, string> = {
     "settings.manage": accessNeeded(t, "settings.manage", t("setup.changeSettings")),
     "users.manage": accessNeeded(t, "users.manage", t("setup.changeStaff")),
@@ -125,7 +126,7 @@ export function SettingsPageInner() {
   // permission; the rail only avoids offering a section that would refuse.
   const visibleGroups = useMemo(
     () => SETTINGS_GROUPS.map((group) => ({ ...group, entries: group.entries.filter((entry) => !entry.permission || can(entry.permission)) })).filter((group) => group.entries.length > 0),
-    [can],
+    [can, SETTINGS_GROUPS],
   );
   const visibleEntries = useMemo(() => visibleGroups.flatMap((group) => group.entries), [visibleGroups]);
   // Keep the existing owner landing section stable while staff roles without
@@ -139,9 +140,9 @@ export function SettingsPageInner() {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle = searchKey(query);
     if (!needle) return null;
-    return visibleEntries.filter((entry) => `${entry.label} ${entry.keywords}`.toLowerCase().includes(needle));
+    return visibleEntries.filter((entry) => searchKey(`${entry.label} ${entry.keywords}`).includes(needle));
   }, [query, visibleEntries]);
 
   const active = ALL_ENTRIES.find((entry) => entry.id === activeSection) ?? defaultEntry;
@@ -151,7 +152,7 @@ export function SettingsPageInner() {
   useEffect(() => {
     const next = ALL_ENTRIES.find((entry) => entry.id === section)?.id ?? defaultEntry.id;
     setActiveSection((current) => current === next ? current : next);
-  }, [defaultEntry.id, section]);
+  }, [ALL_ENTRIES, defaultEntry.id, section]);
 
   const select = (id: string) =>
     requestNavigation(() => {
@@ -203,15 +204,15 @@ export function SettingsPageInner() {
     <div className="-mt-2 mx-auto max-w-[1480px] space-y-3 lg:-mt-3">
       <PageHeader
         title={t("shell.account.settings")}
-        description="Your gym, staff, money, messages and daily rules."
+        description={t("settingsCore.text194")}
         className="bg-paper py-0.5 lg:sticky lg:top-14 lg:z-20 lg:h-[72px] lg:border-b lg:border-line/80 lg:py-2"
       />
       <div className="space-y-3 lg:grid lg:grid-cols-[224px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:space-y-0">
           <div className="sticky top-14 z-20 -mx-4 border-y border-line/80 bg-paper px-4 py-2 sm:-mx-6 sm:px-6 lg:hidden">
             <div className="flex items-center gap-3">
-              <label className="shrink-0 text-[12px] font-medium text-ink-2" htmlFor="mobile-settings-section">Settings section</label>
+              <label className="shrink-0 text-[12px] font-medium text-ink-2" htmlFor="mobile-settings-section">{t("settingsCore.text195")}</label>
               <Select value={active.id} onValueChange={select}>
-                <SelectTrigger id="mobile-settings-section" aria-label="Settings section" className="h-11 min-w-0 flex-1 bg-surface"><SelectValue /></SelectTrigger>
+                <SelectTrigger id="mobile-settings-section" aria-label={t("settingsCore.text195")} className="h-11 min-w-0 flex-1 bg-surface"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {visibleGroups.map((group) => (
                     <div key={group.label} role="group" aria-label={group.label}>
@@ -224,7 +225,7 @@ export function SettingsPageInner() {
               </Select>
             </div>
           </div>
-          <nav aria-label="Settings sections" className="sticky top-[140px] hidden max-h-[calc(100dvh-9.25rem)] overflow-y-auto border-e border-line/80 pe-3 [scrollbar-gutter:stable] lg:block">
+          <nav aria-label={t("settingsCore.text196")} className="sticky top-[140px] hidden max-h-[calc(100dvh-9.25rem)] overflow-y-auto border-e border-line/80 pe-3 [scrollbar-gutter:stable] lg:block">
             <div className="sticky top-0 z-10 bg-paper pb-2">
               <div className="relative">
                 <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
@@ -232,29 +233,29 @@ export function SettingsPageInner() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={(event) => { if (event.key === "Escape" && query) { event.preventDefault(); setQuery(""); } }}
-                  placeholder="Search settings…"
-                  aria-label="Search settings"
+                  placeholder={t("settingsCore.text197")}
+                  aria-label={t("settingsCore.text198")}
                   className={cn("h-9 ps-8", query && "pe-8")}
                 />
                 {query ? (
-                  <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute end-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-sm text-ink-3 transition-colors hover:bg-sunken hover:text-ink">
+                  <button type="button" onClick={() => setQuery("")} aria-label={t("settingsCore.text199")} className="absolute end-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-sm text-ink-3 transition-colors hover:bg-sunken hover:text-ink">
                     <X className="size-3.5" aria-hidden />
                   </button>
                 ) : null}
               </div>
               {filtered ? (
-                <p className="sr-only" aria-live="polite">{filtered.length === 1 ? "1 section matches" : `${filtered.length} sections match`}</p>
+                <p className="sr-only" aria-live="polite">{t("settingsCore.matchCount", { count: filtered.length })}</p>
               ) : null}
             </div>
-            <div ref={railRef} role="tablist" aria-orientation="vertical" aria-label="Settings sections" className="space-y-1.5 pb-1" onKeyDown={moveFocus}>
+            <div ref={railRef} role="tablist" aria-orientation="vertical" aria-label={t("settingsCore.text196")} className="space-y-1.5 pb-1" onKeyDown={moveFocus}>
               {filtered ? (
                 filtered.length > 0 ? (
                   <div className="space-y-0.5">
                     {filtered.map(navButton)}
-                    {!focusRail ? <p className="px-3 pt-2 text-[12px] leading-5 text-ink-3">Showing {active.label}. Choose a match to change section.</p> : null}
+                    {!focusRail ? <p className="px-3 pt-2 text-[12px] leading-5 text-ink-3">{t("settingsCore.showingSection", { section: active.label })}</p> : null}
                   </div>
                 ) : (
-                  <p className="px-3 py-2 text-[12px] leading-5 text-ink-3">No settings match “{query.trim()}”. Try another word, like “freeze” or “logo”.</p>
+                  <p className="px-3 py-2 text-[12px] leading-5 text-ink-3">{t("settingsCore.noMatches", { query: query.trim() })}</p>
                 )
               ) : (
                 visibleGroups.map((group) => (
@@ -269,7 +270,7 @@ export function SettingsPageInner() {
           <div className="min-w-0 scroll-mt-20" role="tabpanel" aria-label={active.label}>
             {allowed
               ? <ActiveComponent />
-              : <ForbiddenState layout="page" description={active.permission ? PERMISSION_COPY[active.permission] ?? "Your role cannot change this section." : "Your role cannot change this section."} />}
+              : <ForbiddenState layout="page" description={active.permission ? PERMISSION_COPY[active.permission] ?? t("settingsCore.text200") : t("settingsCore.text200")} />}
           </div>
         </div>
       </div>

@@ -65,7 +65,7 @@ describe("message catalogues", () => {
   });
 
   it("have no accidental raw English in Arabic (brands and technical tokens are allowlisted)", () => {
-    const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID|SHA|JPEG|PNG|WebP|HTTP|HTTPS|Starter|Growth|Pro|STOP)\b|™/g;
+    const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID|SHA|JPEG|PNG|WebP|HTTP|HTTPS|UTC|Starter|Growth|Pro|STOP)\b|™/g;
     const raw = [...arLeaves.entries()].flatMap(([key, leaf]) =>
       strings(leaf)
         .filter(() => key !== "crm.newLead.emailPlaceholder") // Literal email example, not product prose.

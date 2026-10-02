@@ -1,3 +1,6 @@
+import { settingsPublic } from "./settingsPublic";
+import { settingsDetails } from "./settingsDetails";
+import { settingsCore } from "./settingsCore";
 import { publicDocuments } from "./publicDocuments";
 import { publicPrivacy } from "./publicPrivacy";
 import { publicTerms } from "./publicTerms";
@@ -28,6 +31,9 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  settingsPublic,
+  settingsDetails,
+  settingsCore,
   publicDocuments,
   publicPrivacy,
   publicTerms,
