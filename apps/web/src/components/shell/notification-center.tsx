@@ -11,10 +11,13 @@ import { useLocale, type TFunction } from "@/lib/i18n/provider";
 import type { OperationalNotification } from "@/lib/api/GymOSApi";
 import { NotificationGroupedView } from "@/features/branch-ops/notification-groups";
 import { groupNotifications } from "../../../convex/branchOpsAssist";
+import { useFormat } from "@/lib/i18n/format";
+import { presentNotification } from "@/lib/i18n/system-messages";
 
 export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark" }) {
   const router = useRouter();
-  const { t, isolate } = useLocale();
+  const { t, locale, isolate } = useLocale();
+  const format = useFormat();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<OperationalNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,17 +140,18 @@ export function NotificationCenter({ tone = "light" }: { tone?: "light" | "dark"
   );
 
   function renderRow(notification: OperationalNotification) {
+    const display = presentNotification(notification, { locale, t, format });
     return (
             <div key={notification.id} className="flex border-b border-line last:border-b-0 hover:bg-sunken" data-testid="notification-row" data-notification-id={notification.id}>
-              <button type="button" onClick={() => void openNotification(notification)} className="flex min-w-0 flex-1 gap-3 px-4 py-3 text-start">
+              <button type="button" onClick={() => void openNotification(notification)} aria-label={`${t("common.action.viewDetails")}: ${isolate(display.title)}`} className="flex min-w-0 flex-1 gap-3 px-4 py-3 text-start">
                 <span className={notification.readAt ? "mt-1.5 size-2 shrink-0 rounded-full bg-line-2" : "mt-1.5 size-2 shrink-0 rounded-full bg-signal"} />
                 <span className="min-w-0 flex-1">
-                  <span dir="auto" className="block text-[13px] font-semibold">{notification.title}</span>
-                  <span dir="auto" className="mt-1 block text-[12px] leading-relaxed text-ink-2">{notification.body}</span>
+                  <span dir="auto" className="block text-[13px] font-semibold">{display.title}</span>
+                  <span dir="auto" className="mt-1 block text-[12px] leading-relaxed text-ink-2">{display.body}</span>
                   <span className="mt-1.5 block text-[12px] text-ink-3">{relativeTime(t, notification.createdAt)}</span>
                 </span>
               </button>
-              <button type="button" onClick={() => void toggleRead(notification)} className="m-2 self-start rounded p-2 text-ink-3 hover:bg-surface hover:text-ink" aria-label={t(notification.readAt ? "palette.notifications.markUnreadFor" : "palette.notifications.markReadFor", { title: isolate(notification.title) })} title={t(notification.readAt ? "palette.notifications.markUnread" : "palette.notifications.markRead")}>
+              <button type="button" onClick={() => void toggleRead(notification)} className="m-2 self-start rounded p-2 text-ink-3 hover:bg-surface hover:text-ink" aria-label={t(notification.readAt ? "palette.notifications.markUnreadFor" : "palette.notifications.markReadFor", { title: isolate(display.title) })} title={t(notification.readAt ? "palette.notifications.markUnread" : "palette.notifications.markRead")}>
                 {notification.readAt ? <Circle className="size-3.5" /> : <CircleCheck className="size-3.5" />}
               </button>
             </div>

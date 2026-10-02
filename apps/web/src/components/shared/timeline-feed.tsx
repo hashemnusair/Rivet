@@ -23,7 +23,9 @@ import Link from "next/link";
 import type { TimelineEvent, TimelineEventType } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
 import { receiptHref } from "@/lib/utils/receipt-links";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
+import { presentTimelineEvent } from "@/lib/i18n/system-messages";
 import { DateTimeText, RelativeText } from "./data-display";
 
 const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> = {
@@ -89,7 +91,8 @@ export function TimelineFeed({
   showActor?: boolean;
   empty?: string;
 }) {
-  const t = useT();
+  const { locale, t } = useLocale();
+  const format = useFormat();
   if (events.length === 0) {
     return <p className="py-6 text-center text-[13px] text-ink-3">{empty ?? t("memberProfile.timeline.emptyDefault")}</p>;
   }
@@ -98,6 +101,7 @@ export function TimelineFeed({
       {events.map((event, i) => {
         const { icon: Icon, tone } = EVENT_ICON[event.type] ?? { icon: CircleDot, tone: "text-ink-2" };
         const receiptId = event.meta?.receiptId ? String(event.meta.receiptId) : undefined;
+        const display = presentTimelineEvent(event, { locale, t, format });
         return (
           <li key={event.id} id={`timeline-event-${event.id}`} className={cn("relative flex gap-3 scroll-mt-20", i < events.length - 1 && "pb-4")}>
             {i < events.length - 1 ? (
@@ -115,7 +119,7 @@ export function TimelineFeed({
             <div className={cn("min-w-0 flex-1", dense && "text-[12.5px]")}>
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                 <p className="text-[13px] font-medium leading-snug text-ink">
-                  <span dir="auto">{event.title}</span>
+                  <span dir="auto">{display.title}</span>
                   {receiptId ? (
                     <Link href={receiptHref(receiptId)} className="ms-1.5 font-mono text-[11px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">
                       {t("memberProfile.timeline.viewReceipt")}
@@ -126,7 +130,7 @@ export function TimelineFeed({
                   <RelativeText iso={event.occurredAt} />
                 </span>
               </div>
-              {event.body ? <p className="mt-0.5 text-[12.5px] leading-snug text-ink-2" dir="auto">{event.body}</p> : null}
+              {display.body ? <p className="mt-0.5 text-[12.5px] leading-snug text-ink-2" dir="auto">{display.body}</p> : null}
               <p className="mt-0.5 text-[12px] text-ink-3">
                 {showActor && event.actorName ? <span><bdi>{event.actorName}</bdi> · </span> : null}
                 <DateTimeText iso={event.occurredAt} />
