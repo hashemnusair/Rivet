@@ -89,11 +89,11 @@ export function StockPurchasingWorkspace() {
     void setBranch(requestedBranchId);
   }, [searchParams, session?.activeBranchId, session?.branches, setBranch]);
 
-  if (!can("members.read")) return <ForbiddenState description="You don’t have access to stock and purchasing." />;
-  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title={t("nav.item.operations")} description="Stock, orders, suppliers, bills and machines for each branch." /><LoadingGrid /></div>;
+  if (!can("members.read")) return <ForbiddenState description={t("stockWorkspace.noWorkspaceAccess")} />;
+  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title={t("nav.item.operations")} description={t("stockWorkspace.workspaceHint")} /><LoadingGrid /></div>;
   if (workspaceQuery.isError || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => workspaceQuery.refetch()} />;
-  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title="Stock & purchasing is not included in your plan" description="The Growth plan adds stock, checkout, suppliers, purchase orders and supplier bills." className="mt-4" />;
-  if (!operationsModule.enabled) return <StatePanel icon={Boxes} title="Stock & purchasing is turned off" description="An owner can turn it on in Settings." className="mt-4" />;
+  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title={t("stockWorkspace.planMissing")} description={t("stockWorkspace.upgradeHint")} className="mt-4" />;
+  if (!operationsModule.enabled) return <StatePanel icon={Boxes} title={t("stockWorkspace.workspaceOff")} description={t("stockWorkspace.ownerEnableHint")} className="mt-4" />;
 
   const inventoryError = productQuery.error ?? supplierQuery.error ?? inventoryQuery.error ?? alertQuery.error ?? ordersQuery.error;
   const equipmentError = zonesQuery.error ?? assetsQuery.error ?? issuesQuery.error ?? workOrdersQuery.error;
@@ -112,8 +112,8 @@ export function StockPurchasingWorkspace() {
 
   return (
     <div className="space-y-4" data-testid="operations-command-center">
-      <PageHeader title={t("nav.item.operations")} description={branchId ? `Stock, orders, suppliers, bills and machines at ${branchLabel}.` : "Showing all branches. Choose one branch to make changes."} />
-      {inventoryError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some details could not load. <button type="button" className="font-medium underline" onClick={() => { retryInventory(); retryEquipment(); }}>{t("common.action.retry")}</button></div> : null}
+      <PageHeader title={t("nav.item.operations")} description={branchId ? t("stockWorkspace.branchWorkspace", { branch: branchLabel }) : t("stockWorkspace.allBranchesHint")} />
+      {inventoryError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">{t("stockWorkspace.partialLoadFailed")}{" "}<button type="button" className="font-medium underline" onClick={() => { retryInventory(); retryEquipment(); }}>{t("common.action.retry")}</button></div> : null}
       <Tabs value={tab} onValueChange={(value) => {
         setTab(value as StockTab);
         const next = new URLSearchParams(searchParams.toString());
@@ -121,12 +121,12 @@ export function StockPurchasingWorkspace() {
         if (branchId) next.set("branch", branchId);
         router.replace(`/operations?${next}`, { scroll: false });
       }}>
-        <TabsList aria-label="Stock and purchasing">
+        <TabsList aria-label={t("stockWorkspace.workspaceLabel")}>
           <TabsTrigger value="inventory"><Boxes className="size-3.5" />{" "}{t("dashboard.today.kind.low_stock")}</TabsTrigger>
-          <TabsTrigger value="orders"><ShoppingCart className="size-3.5" /> Purchase orders</TabsTrigger>
-          <TabsTrigger value="suppliers"><Store className="size-3.5" /> Suppliers</TabsTrigger>
+          <TabsTrigger value="orders"><ShoppingCart className="size-3.5" /> {" "}{t("stockWorkspace.purchaseOrders")}</TabsTrigger>
+          <TabsTrigger value="suppliers"><Store className="size-3.5" /> {" "}{t("stockWorkspace.suppliers")}</TabsTrigger>
           {canReadPayables ? <TabsTrigger value="payables"><WalletCards className="size-3.5" />{" "}{t("palette.pages.supplierBills")}</TabsTrigger> : null}
-          <TabsTrigger value="equipment"><Wrench className="size-3.5" /> Machines</TabsTrigger>
+          <TabsTrigger value="equipment"><Wrench className="size-3.5" /> {" "}{t("operationsWorkspace.machines")}</TabsTrigger>
         </TabsList>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center"><div className="col-span-2 min-w-0 sm:w-64"><label htmlFor="operations-branch" className="sr-only">{t("common.label.branch")}</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
             const next = new URLSearchParams(searchParams.toString());

@@ -34,6 +34,7 @@
       "keys": [],
       "rules": [
         "apps/web/src/features/checkout/sales-arabic.test.tsx",
+        "apps/web/src/features/operations/stock-arabic.test.tsx",
         "apps/web/src/lib/i18n/format.test.ts",
         "apps/web/src/lib/utils/text.test.ts"
       ],
@@ -71,6 +72,7 @@
       "keys": [],
       "rules": [
         "apps/web/src/features/checkout/sales-arabic.test.tsx",
+        "apps/web/src/features/operations/stock-arabic.test.tsx",
         "apps/web/src/lib/i18n/format.test.ts"
       ],
       "candidateOccurrences": [],
@@ -3844,8 +3846,12 @@
     },
     {
       "id": "supplier",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "stockWorkspace.supplier"
+      ],
+      "rules": [
+        "apps/web/src/features/operations/stock-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/operations/payables/payables-export.ts",
@@ -3892,7 +3898,7 @@
           "line": 4779
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -3945,22 +3951,34 @@
     {
       "id": "purchase-order",
       "keys": [],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/operations/stock-arabic.test.tsx"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "stockWorkspace.createOrder",
+          "template": "إنشاء {approved}"
+        }
+      ]
     },
     {
       "id": "receive-stock",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "stockWorkspace.receiveStock"
+      ],
+      "rules": [
+        "apps/web/src/features/operations/stock-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/operations/purchasing-tabs.tsx",
           "line": 61
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -3975,15 +3993,19 @@
     },
     {
       "id": "low-stock",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "stockWorkspace.lowStock"
+      ],
+      "rules": [
+        "apps/web/src/features/operations/stock-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/operations/inventory-tab.tsx",
           "line": 115
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4013,10 +4035,14 @@
     },
     {
       "id": "stock-transfer",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "stockWorkspace.moveStock"
+      ],
+      "rules": [
+        "apps/web/src/features/operations/stock-arabic.test.tsx"
+      ],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4030,27 +4056,39 @@
     {
       "id": "unit-cost",
       "keys": [],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/operations/stock-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/convex/operations.ts",
           "line": 751
         }
       ],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "stockWorkspace.unitCostCurrency",
+          "template": "{approved} ({currency})"
+        }
+      ]
     },
     {
       "id": "selling-price",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "stockWorkspace.sellingPrice"
+      ],
+      "rules": [
+        "apps/web/src/features/operations/stock-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/operations/inventory-tab.tsx",
           "line": 115
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {

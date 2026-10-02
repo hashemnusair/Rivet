@@ -1,3 +1,4 @@
+import { stockWorkspace } from "./stockWorkspace";
 import { operationsWorkspace } from "./operationsWorkspace";
 import { ptWorkspace } from "./ptWorkspace";
 import { classWorkspace } from "./classWorkspace";
@@ -42,6 +43,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  stockWorkspace,
   operationsWorkspace,
   ptWorkspace,
   classWorkspace,

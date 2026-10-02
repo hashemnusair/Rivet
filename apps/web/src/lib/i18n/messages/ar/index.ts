@@ -1,3 +1,4 @@
+import { stockWorkspace } from "./stockWorkspace";
 import { operationsWorkspace } from "./operationsWorkspace";
 import { ptWorkspace } from "./ptWorkspace";
 import { classWorkspace } from "./classWorkspace";
@@ -37,6 +38,7 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  stockWorkspace,
   operationsWorkspace,
   ptWorkspace,
   classWorkspace,
